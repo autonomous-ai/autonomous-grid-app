@@ -18,6 +18,14 @@ class GridHomeStore {
     return map == null ? CredentialsFile.empty : CredentialsFile.fromToml(map);
   }
 
+  /// Sign-out: remove the local credentials file. The one mutation this store
+  /// performs — there is no documented `grid auth logout`, and `~/.grid` is the
+  /// app's source of truth, so deleting the file logs the user out.
+  void clearCredentials() {
+    final file = GridPaths.credentialsFile;
+    if (file.existsSync()) file.deleteSync();
+  }
+
   NetworkConfig? readNetworkConfig(String networkId) {
     final map = _readToml(GridPaths.networkConfigFile(networkId));
     return map == null ? null : NetworkConfig.fromToml(map);

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
@@ -40,7 +41,7 @@ class AppTopBar extends ConsumerWidget {
             const Spacer(),
             const _QuickActions(),
             const SizedBox(width: 8),
-            _Avatar(name: session.user['name'] as String? ?? email),
+            _AccountMenu(name: session.user['name'] as String? ?? email, email: email),
           ],
         ),
       ),
@@ -132,15 +133,40 @@ class _IconBtn extends StatelessWidget {
   }
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name});
+/// Avatar that opens an account menu (email header + Sign out).
+class _AccountMenu extends ConsumerWidget {
+  const _AccountMenu({required this.name, required this.email});
   final String name;
+  final String email;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
-    return Tooltip(
-      message: name,
+    return PopupMenuButton<String>(
+      tooltip: name,
+      offset: const Offset(0, 42),
+      onSelected: (value) async {
+        if (value == 'logout' && await _confirmSignOut(context)) {
+          await ref.read(authControllerProvider.notifier).logout();
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          enabled: false,
+          child: Text(email, style: const TextStyle(fontSize: 12.5)),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'logout',
+          child: Row(
+            children: [
+              Icon(Icons.logout, size: 18),
+              SizedBox(width: 10),
+              Text('Sign out'),
+            ],
+          ),
+        ),
+      ],
       child: CircleAvatar(
         radius: 14,
         backgroundColor: AppPalette.accentMuted,
@@ -151,5 +177,27 @@ class _Avatar extends StatelessWidget {
                 fontWeight: FontWeight.w600)),
       ),
     );
+  }
+
+  Future<bool> _confirmSignOut(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+            'Your local credentials will be cleared — you\'ll need to log in again.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 }

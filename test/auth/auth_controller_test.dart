@@ -2,9 +2,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/auth_controller.dart';
 import 'package:grid_app/features/auth/logic/auth_state.dart';
+import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/providers.dart';
+import 'package:grid_app/infrastructure/state/grid_home_store.dart';
+import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
+
+class _FakeStore extends GridHomeStore {
+  _FakeStore(this._creds);
+  CredentialsFile _creds;
+  bool cleared = false;
+
+  @override
+  CredentialsFile readCredentials() => _creds;
+
+  @override
+  void clearCredentials() {
+    cleared = true;
+    _creds = CredentialsFile.empty;
+  }
+}
 
 void main() {
   test('login surfaces the code then succeeds on exit 0', () async {
@@ -69,5 +87,26 @@ void main() {
     await container.read(authControllerProvider.notifier).login();
 
     expect(container.read(authControllerProvider), isA<AuthFailure>());
+  });
+
+  test('logout clears credentials and resets to idle', () async {
+    final store = _FakeStore(
+      const CredentialsFile(networks: [], sessionToken: 'tok'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(FakeGridCliService()),
+        gridHomeStoreProvider.overrideWithValue(store),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(sessionProvider).isLoggedIn, isTrue);
+
+    await container.read(authControllerProvider.notifier).logout();
+
+    expect(store.cleared, isTrue);
+    expect(container.read(authControllerProvider), isA<AuthIdle>());
+    expect(container.read(sessionProvider).isLoggedIn, isFalse);
   });
 }
