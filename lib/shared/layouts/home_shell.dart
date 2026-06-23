@@ -1,145 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../features/auth/logic/session_controller.dart';
 import '../../features/models/presentation/models_view.dart';
-import '../../features/network/presentation/network_view.dart';
-import '../../features/onboarding/preflight_providers.dart';
+import '../../features/network/presentation/networks_pane.dart';
 import '../../features/playground/presentation/playground_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
-import '../../infrastructure/state/models/network_credential.dart';
+import '../theme/app_theme.dart';
+import 'shell_state.dart';
+import 'widgets/app_top_bar.dart';
+import 'widgets/side_nav.dart';
 
-/// Which nav section is showing. Index matches [_destinations].
-final navIndexProvider = NotifierProvider<NavIndex, int>(NavIndex.new);
-
-class NavIndex extends Notifier<int> {
-  @override
-  int build() => 0;
-
-  void select(int index) => state = index;
-}
-
-const _destinations = [
-  (icon: Icons.chat_bubble_outline, label: 'Playground'),
-  (icon: Icons.lan_outlined, label: 'Network'),
-  (icon: Icons.memory_outlined, label: 'Provider'),
-  (icon: Icons.download_outlined, label: 'Models'),
-];
-
-/// The main app frame: a left nav rail, the active section, and a status bar.
+/// The main app frame, Tailscale-style: a full-width title bar on top, a left
+/// nav sidebar, and the active section to its right.
 class HomeShell extends ConsumerWidget {
   const HomeShell({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final index = ref.watch(navIndexProvider);
-    final networks = ref.watch(sessionProvider).networks;
-    final selected = ref.watch(selectedNetworkProvider);
+    final section = ref.watch(navSectionProvider);
 
     return Scaffold(
+      backgroundColor: AppPalette.windowBg,
       body: Column(
         children: [
+          const AppTopBar(),
+          const Divider(height: 1),
           Expanded(
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _NavRail(index: index),
+                const SideNav(),
                 const VerticalDivider(width: 1),
-                Expanded(
-                  child: IndexedStack(
-                    index: index,
-                    children: const [
-                      PlaygroundView(),
-                      NetworkView(),
-                      ProviderView(),
-                      ModelsView(),
-                    ],
-                  ),
-                ),
+                Expanded(child: _Content(section: section)),
               ],
             ),
           ),
-          const Divider(height: 1),
-          _StatusBar(networks: networks, selected: selected),
         ],
       ),
     );
   }
 }
 
-class _NavRail extends ConsumerWidget {
-  const _NavRail({required this.index});
-  final int index;
+/// Routes the active nav section to its pane. Networks is a two-column
+/// list/detail; the rest render their existing single view.
+class _Content extends StatelessWidget {
+  const _Content({required this.section});
+  final NavSection section;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return NavigationRail(
-      selectedIndex: index,
-      labelType: NavigationRailLabelType.all,
-      onDestinationSelected: (i) =>
-          ref.read(navIndexProvider.notifier).select(i),
-      destinations: [
-        for (final d in _destinations)
-          NavigationRailDestination(
-              icon: Icon(d.icon), label: Text(d.label)),
-      ],
-    );
-  }
-}
-
-class _StatusBar extends ConsumerWidget {
-  const _StatusBar({required this.networks, required this.selected});
-
-  final List<NetworkCredential> networks;
-  final NetworkCredential? selected;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final version = ref.watch(preflightProvider).asData?.value.gridVersion;
-
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          const Icon(Icons.lan_outlined, size: 16),
-          const SizedBox(width: 8),
-          _NetworkSwitcher(networks: networks, selected: selected),
-          const Spacer(),
-          if (version != null) Text(version, style: theme.textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
-}
-
-class _NetworkSwitcher extends ConsumerWidget {
-  const _NetworkSwitcher({required this.networks, required this.selected});
-
-  final List<NetworkCredential> networks;
-  final NetworkCredential? selected;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (networks.isEmpty) {
-      return Text('No network', style: Theme.of(context).textTheme.bodySmall);
-    }
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: selected?.networkId,
-        isDense: true,
-        items: [
-          for (final n in networks)
-            DropdownMenuItem(value: n.networkId, child: Text(n.name)),
-        ],
-        onChanged: (id) {
-          final next = networks.where((n) => n.networkId == id);
-          if (next.isNotEmpty) {
-            ref.read(selectedNetworkProvider.notifier).select(next.first);
-          }
-        },
-      ),
-    );
+  Widget build(BuildContext context) {
+    return switch (section) {
+      NavSection.networks => const NetworksPane(),
+      NavSection.playground => const PlaygroundView(),
+      NavSection.provider => const ProviderView(),
+      NavSection.models => const ModelsView(),
+    };
   }
 }

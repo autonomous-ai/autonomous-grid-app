@@ -13,6 +13,7 @@ Future<void> main() async {
     minimumSize: Size(880, 560),
     title: 'Grid',
     center: true,
+    titleBarStyle: TitleBarStyle.hidden,
   );
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.show();

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../shared/theme/app_theme.dart';
 import 'root_view.dart';
 
 class GridApp extends StatelessWidget {
@@ -10,16 +11,9 @@ class GridApp extends StatelessWidget {
     return MaterialApp(
       title: 'Grid',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF5B8DEF),
-        brightness: Brightness.light,
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF5B8DEF),
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
+      themeMode: ThemeMode.dark,
+      theme: buildAppTheme(),
+      darkTheme: buildAppTheme(),
       home: const RootView(),
     );
   }
