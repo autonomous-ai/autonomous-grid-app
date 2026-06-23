@@ -1,0 +1,105 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'grid_cli_service.dart';
+import 'parsers/download_progress.dart';
+
+/// Real implementation that spawns the `grid` binary. Always argv form
+/// (`runInShell: false`) — never string interpolation into a shell — to avoid
+/// command injection (CLI_Integration_Contract §2).
+class GridCliServiceImpl implements GridCliService {
+  GridCliServiceImpl(this.executable) : _env = _buildEnv();
+
+  /// Absolute path to `grid`, from [GridResolver].
+  final String executable;
+
+  /// Environment for spawned `grid` processes:
+  /// - `PYTHONUNBUFFERED` so the piped Python CLI flushes stdout per line —
+  ///   without it, streamed output (e.g. the device-login URL) is withheld
+  ///   until the process exits, which it doesn't while polling.
+  /// - an augmented `PATH` so `grid`'s own children (brew, docker, cmake,
+  ///   llama-server) resolve — a GUI app inherits only a minimal PATH.
+  final Map<String, String> _env;
+
+  static Map<String, String> _buildEnv() {
+    final env = <String, String>{'PYTHONUNBUFFERED': '1'};
+    if (!Platform.isWindows) {
+      final home = Platform.environment['HOME'] ?? '';
+      final inherited = Platform.environment['PATH'] ?? '';
+      env['PATH'] = <String>[
+        if (home.isNotEmpty) '$home/.local/bin',
+        '/opt/homebrew/bin',
+        '/usr/local/bin',
+        '/usr/bin',
+        '/bin',
+        '/usr/sbin',
+        '/sbin',
+        if (inherited.isNotEmpty) inherited,
+      ].join(':');
+    }
+    return env;
+  }
+
+  @override
+  Future<CliResult> run(List<String> args) async {
+    final result = await Process.run(executable, args,
+        runInShell: false, environment: _env);
+    return CliResult(
+      exitCode: result.exitCode,
+      stdout: result.stdout as String,
+      stderr: result.stderr as String,
+    );
+  }
+
+  @override
+  Future<GridProcess> start(List<String> args) async {
+    final process = await Process.start(executable, args,
+        runInShell: false, environment: _env);
+    final controller = StreamController<CliLine>();
+
+    final outSub = process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen((line) => controller.add(CliLine(isStderr: false, text: line)),
+            onError: controller.addError);
+    final errSub = process.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen((line) => controller.add(CliLine(isStderr: true, text: line)),
+            onError: controller.addError);
+
+    unawaited(process.exitCode.whenComplete(() async {
+      await outSub.cancel();
+      await errSub.cancel();
+      await controller.close();
+    }));
+
+    return GridProcess(
+      lines: controller.stream,
+      exitCode: process.exitCode,
+      kill: () => process.kill(ProcessSignal.sigterm),
+    );
+  }
+
+  @override
+  Stream<DownloadProgress> pull(List<String> args) async* {
+    final process =
+        await Process.start(executable, args,
+        runInShell: false, environment: _env);
+    // Progress is written with `\r`, so decode bytes and split on it ourselves
+    // rather than using a line splitter (which only breaks on `\n`).
+    final controller = StreamController<DownloadProgress>();
+
+    process.stderr.transform(utf8.decoder).listen(
+      (chunk) {
+        final progress = DownloadProgress.latest(chunk);
+        if (progress != null) controller.add(progress);
+      },
+      onError: controller.addError,
+    );
+
+    unawaited(process.exitCode.then((_) => controller.close()));
+    yield* controller.stream;
+  }
+}
