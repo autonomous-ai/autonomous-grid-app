@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
+
+/// Opens [url] in the user's default browser. Returns false if it could not be
+/// launched (malformed URL or no handler) so callers can fall back to copy.
+Future<bool> _openInBrowser(String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  return launchUrl(uri, mode: LaunchMode.externalApplication);
+}
 
 /// Device-flow login. Triggers `grid auth login --no-browser`, shows the URL +
 /// code while the CLI polls, and flips to the app on success.
@@ -12,6 +21,15 @@ class LoginScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Auto-open the browser the moment the device-flow URL streams in, so the
+    // user doesn't have to copy/paste it. Fires once per transition; the copy
+    // fields and the "Open in browser" button below stay as fallbacks.
+    ref.listen<AuthState>(authControllerProvider, (prev, next) {
+      if (next is AuthAwaitingApproval && prev is! AuthAwaitingApproval) {
+        _openInBrowser(next.url);
+      }
+    });
+
     final state = ref.watch(authControllerProvider);
     final controller = ref.read(authControllerProvider.notifier);
 
@@ -85,7 +103,16 @@ class _ApprovalView extends StatelessWidget {
       children: [
         Text('Finish signing in', style: theme.textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text('Open this URL in your browser and confirm the code:'),
+        const Text(
+          "We've opened your browser — confirm the code below. "
+          "If it didn't open, use the button or copy the URL.",
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: () => _openInBrowser(url),
+          icon: const Icon(Icons.open_in_new),
+          label: const Text('Open in browser'),
+        ),
         const SizedBox(height: 16),
         _CopyField(label: 'URL', value: url),
         const SizedBox(height: 8),
