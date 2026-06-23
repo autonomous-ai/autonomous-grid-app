@@ -10,7 +10,7 @@ void main() {
   test('login surfaces the code then succeeds on exit 0', () async {
     final fake = FakeGridCliService()
       ..stubStart(
-        ['auth', 'login', '--no-browser'],
+        ['auth', 'login', '--no-browser', '--api-url', 'https://api.test/'],
         exitCode: 0,
         exitDelay: const Duration(milliseconds: 10),
         lines: const [
@@ -20,7 +20,10 @@ void main() {
         ],
       );
     final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        gridApiUrlProvider.overrideWithValue('https://api.test/'),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -38,12 +41,15 @@ void main() {
   test('login fails with stderr on non-zero exit', () async {
     final fake = FakeGridCliService()
       ..stubStart(
-        ['auth', 'login', '--no-browser'],
+        ['auth', 'login', '--no-browser', '--api-url', 'https://api.test/'],
         exitCode: 1,
         lines: const [CliLine(isStderr: true, text: 'Grid browser login expired.')],
       );
     final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        gridApiUrlProvider.overrideWithValue('https://api.test/'),
+      ],
     );
     addTearDown(container.dispose);
 

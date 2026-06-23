@@ -62,6 +62,40 @@ void main() {
     expect((state as ProviderRunFailed).message, contains('scope'));
   });
 
+  test('startLocal serves a local model with no --at endpoint', () async {
+    const localArgs = [
+      'provider', 'start',
+      '--network', 'net',
+      '--model', 'qwen.gguf',
+      '--advertise-as', 'qwen',
+    ];
+    final fake = FakeGridCliService()
+      ..stubStart(
+        localArgs,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Serving qwen.gguf…')],
+      );
+    final container = ProviderContainer(
+      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+
+    final seen = <ProviderRunState>[];
+    container.listen(providerRunControllerProvider, (_, next) => seen.add(next));
+
+    await container.read(providerRunControllerProvider.notifier).startLocal(
+          network: 'net',
+          model: 'qwen.gguf',
+          advertiseAs: 'qwen',
+        );
+
+    // Matched the no-`--at` command (the fake returns its default empty run
+    // otherwise, never emitting an active state).
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunStopped>());
+    expect(seen.whereType<ProviderRunActive>(), isNotEmpty);
+  });
+
   test('fails fast when grid is absent', () async {
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(null)],

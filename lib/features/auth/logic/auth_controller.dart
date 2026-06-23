@@ -31,7 +31,11 @@ class AuthController extends Notifier<AuthState> {
     final parser = DeviceLoginParser();
     final errorLines = <String>[];
 
-    _process = await service.start(['auth', 'login', '--no-browser']);
+    final apiUrl = ref.read(gridApiUrlProvider);
+    _process = await service.start([
+      'auth', 'login', '--no-browser',
+      if (apiUrl.isNotEmpty) ...['--api-url', apiUrl],
+    ]);
     _process!.lines.listen((line) {
       if (line.isStderr) errorLines.add(line.text);
       parser.feed(line.text);

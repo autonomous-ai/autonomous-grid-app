@@ -51,13 +51,44 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     return const ProviderRunIdle();
   }
 
+  /// Serve a model already pulled into `~/.grid/models` — the local provider
+  /// flow (`provider start --network <net> --model <gguf> [--advertise-as]`,
+  /// no `--at`).
+  Future<void> startLocal({
+    required String network,
+    required String model,
+    String? advertiseAs,
+  }) {
+    return _start([
+      'provider', 'start',
+      '--network', network,
+      '--model', model,
+      ..._advertiseArgs(advertiseAs),
+    ]);
+  }
+
   /// Start a provider serving from an external OpenAI-compatible endpoint.
   Future<void> startExternal({
     required String network,
     required String endpoint,
     required String model,
     String? advertiseAs,
-  }) async {
+  }) {
+    return _start([
+      'provider', 'start',
+      '--network', network,
+      '--at', endpoint,
+      '--model', model,
+      ..._advertiseArgs(advertiseAs),
+    ]);
+  }
+
+  List<String> _advertiseArgs(String? advertiseAs) =>
+      (advertiseAs != null && advertiseAs.isNotEmpty)
+          ? ['--advertise-as', advertiseAs]
+          : const [];
+
+  Future<void> _start(List<String> args) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
@@ -67,17 +98,6 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     _stopping = false;
     final log = <String>[];
     state = const ProviderRunActive(log: [], starting: true);
-
-    final args = <String>[
-      'provider', 'start',
-      '--network', network,
-      '--at', endpoint,
-      '--model', model,
-      if (advertiseAs != null && advertiseAs.isNotEmpty) ...[
-        '--advertise-as',
-        advertiseAs,
-      ],
-    ];
 
     _process = await service.start(args);
     _process!.lines.listen((line) {

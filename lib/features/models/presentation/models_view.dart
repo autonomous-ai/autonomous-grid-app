@@ -12,11 +12,13 @@ import '../../provider_node/presentation/provider_running_card.dart';
 import '../logic/engine_status.dart';
 import '../logic/llama_install_controller.dart';
 import '../logic/models_providers.dart';
+import 'model_pull_card.dart';
+import 'serve_local_card.dart';
 
-/// Models & backends hub (Sprint 3). Detects existing inference backends
-/// (Ollama, LM Studio, grid's llama.cpp), installs llama.cpp when none is
-/// present, and lets the user serve a provider from an existing endpoint
-/// (`grid provider start --at`) — no GGUF re-download.
+/// Models & backends hub. Detects inference backends (Ollama, LM Studio,
+/// grid's llama.cpp), installs llama.cpp, pulls GGUF models (`grid models
+/// pull`), and serves a provider — from a local model (`provider start
+/// --model`, the main flow) or an external endpoint (`--at`).
 class ModelsView extends ConsumerStatefulWidget {
   const ModelsView({super.key});
 
@@ -78,8 +80,15 @@ class _ModelsViewState extends ConsumerState<ModelsView> {
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 16),
-          _sectionTitle(context, 'Run provider from a backend'),
-          _ProviderRunSection(
+          _sectionTitle(context, 'Local models'),
+          const ModelPullCard(),
+          const SizedBox(height: 16),
+          ..._localModels(models),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          _sectionTitle(context, 'Serve provider'),
+          _ServeSection(
             endpoint: _endpoint,
             model: _model,
             advertise: _advertise,
@@ -87,11 +96,6 @@ class _ModelsViewState extends ConsumerState<ModelsView> {
             onUse: _use,
             onStart: _start,
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
-          _sectionTitle(context, 'Local models'),
-          ..._localModels(models),
         ],
       ),
     );
@@ -107,8 +111,7 @@ class _ModelsViewState extends ConsumerState<ModelsView> {
       return [
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
-          child: Text('No local GGUF models. Pull one with '
-              '`grid models pull <repo>:<file>` (in-app pull — next).'),
+          child: Text('No local GGUF models yet — pull one above.'),
         ),
       ];
     }
@@ -200,9 +203,10 @@ class _LlamaCard extends ConsumerWidget {
   }
 }
 
-/// Either the BYO `--at` form, or the running provider card.
-class _ProviderRunSection extends ConsumerWidget {
-  const _ProviderRunSection({
+/// Gates on network/provider/run-state, then offers the local-model serve
+/// (the main flow) with the BYO external `--at` form as a secondary option.
+class _ServeSection extends ConsumerWidget {
+  const _ServeSection({
     required this.endpoint,
     required this.model,
     required this.advertise,
@@ -239,9 +243,6 @@ class _ProviderRunSection extends ConsumerWidget {
       return ProviderRunningCard(starting: run.starting, log: run.log);
     }
 
-    final backends = ref.watch(backendsProvider).asData?.value ?? const [];
-    final external = backends.where((b) => b.isExternal).toList();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -252,6 +253,59 @@ class _ProviderRunSection extends ConsumerWidget {
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.error)),
           ),
+        _subheading(theme, 'Serve a local model'),
+        ServeLocalCard(network: network),
+        const SizedBox(height: 20),
+        _subheading(theme, 'Or use an external endpoint (--at)'),
+        _ExternalRunForm(
+          network: network,
+          endpoint: endpoint,
+          model: model,
+          advertise: advertise,
+          suggestedModels: suggestedModels,
+          onUse: onUse,
+          onStart: onStart,
+        ),
+      ],
+    );
+  }
+
+  Widget _subheading(ThemeData theme, String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(text,
+            style: theme.textTheme.titleSmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      );
+}
+
+/// The BYO external OpenAI-compatible endpoint form (`provider start --at`).
+class _ExternalRunForm extends ConsumerWidget {
+  const _ExternalRunForm({
+    required this.network,
+    required this.endpoint,
+    required this.model,
+    required this.advertise,
+    required this.suggestedModels,
+    required this.onUse,
+    required this.onStart,
+  });
+
+  final NetworkCredential network;
+  final TextEditingController endpoint;
+  final TextEditingController model;
+  final TextEditingController advertise;
+  final List<String> suggestedModels;
+  final void Function(DetectedBackend) onUse;
+  final void Function(NetworkCredential) onStart;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final backends = ref.watch(backendsProvider).asData?.value ?? const [];
+    final external = backends.where((b) => b.isExternal).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         if (external.isNotEmpty)
           Wrap(
             spacing: 8,
@@ -305,7 +359,7 @@ class _ProviderRunSection extends ConsumerWidget {
               return FilledButton.icon(
                 onPressed: canStart ? () => onStart(network) : null,
                 icon: const Icon(Icons.play_arrow),
-                label: const Text('Start provider'),
+                label: const Text('Start (external)'),
               );
             },
           ),

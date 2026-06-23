@@ -23,3 +23,8 @@ final gridCliServiceProvider = Provider<GridCliService?>((ref) {
 /// Reads state from `~/.grid` (nguồn 1). Read-only; mutations go through the CLI.
 final gridHomeStoreProvider =
     Provider<GridHomeStore>((ref) => const GridHomeStore());
+
+/// Control-plane URL passed to `grid auth login --api-url`. Defaults to prod;
+/// override for staging/local.
+final gridApiUrlProvider =
+    Provider<String>((ref) => 'https://api-grid.autonomous.ai/');
