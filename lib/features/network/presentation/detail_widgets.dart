@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 
 /// A titled group of rows in the detail pane (e.g. "Endpoints", "Details").
@@ -112,6 +113,38 @@ class MetaRow extends StatelessWidget {
                     color: AppPalette.textPrimary, fontSize: 13)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A small pill showing the viewer's role on a network (Provider / Consumer).
+/// Provider is accented; consumer is muted.
+class RoleBadge extends StatelessWidget {
+  const RoleBadge({super.key, required this.network, this.compact = false});
+
+  final NetworkCredential network;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        network.isProvider ? AppPalette.accent : AppPalette.textSecondary;
+    return Container(
+      padding: EdgeInsets.symmetric(
+          horizontal: compact ? 6 : 8, vertical: compact ? 1 : 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        network.roleLabel,
+        style: TextStyle(
+            color: color,
+            fontSize: compact ? 10 : 11.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2),
       ),
     );
   }

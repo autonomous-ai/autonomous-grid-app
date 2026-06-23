@@ -13,6 +13,7 @@ class SideNav extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final active = ref.watch(navSectionProvider);
+    final sections = ref.watch(visibleNavSectionsProvider);
 
     return Container(
       width: width,
@@ -21,7 +22,7 @@ class SideNav extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final section in NavSection.values)
+          for (final section in sections)
             _NavItem(
               section: section,
               selected: section == active,

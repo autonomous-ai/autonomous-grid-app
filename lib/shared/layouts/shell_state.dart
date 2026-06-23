@@ -1,17 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/auth/logic/session_controller.dart';
+
 /// Primary nav sections shown in the left sidebar (Tailscale-style).
 enum NavSection {
   networks(Icons.lan_outlined, 'Networks'),
   playground(Icons.chat_bubble_outline, 'Playground'),
-  provider(Icons.podcasts_outlined, 'Provider'),
-  models(Icons.memory_outlined, 'Models');
+  provider(Icons.podcasts_outlined, 'Provider', providerOnly: true),
+  models(Icons.memory_outlined, 'Models', providerOnly: true);
 
-  const NavSection(this.icon, this.label);
+  const NavSection(this.icon, this.label, {this.providerOnly = false});
   final IconData icon;
   final String label;
+
+  /// Only available when the selected network grants the provider scope.
+  final bool providerOnly;
 }
+
+/// Sections visible for the currently selected network. Provider/Models are
+/// hidden on consumer networks (no `provider:poll` scope).
+final visibleNavSectionsProvider = Provider<List<NavSection>>((ref) {
+  final isProvider = ref.watch(selectedNetworkProvider)?.isProvider ?? false;
+  return [
+    for (final section in NavSection.values)
+      if (!section.providerOnly || isProvider) section,
+  ];
+});
 
 /// The active sidebar section. Networks is the landing screen.
 final navSectionProvider =
@@ -19,7 +34,15 @@ final navSectionProvider =
 
 class NavSectionNotifier extends Notifier<NavSection> {
   @override
-  NavSection build() => NavSection.networks;
+  NavSection build() {
+    // Switching to a consumer network hides the provider-only sections — don't
+    // strand the user on a now-invisible tab; fall back to Networks.
+    ref.listen(selectedNetworkProvider, (_, next) {
+      final isProvider = next?.isProvider ?? false;
+      if (state.providerOnly && !isProvider) state = NavSection.networks;
+    });
+    return NavSection.networks;
+  }
 
   void select(NavSection section) => state = section;
 }

@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../auth/logic/session_controller.dart';
 import '../logic/network_status.dart';
+import 'detail_widgets.dart';
 
 /// Middle column: searchable list of joined networks, grouped under the
 /// account owner — Tailscale's "Devices" list. Tapping one selects it.
@@ -184,6 +185,8 @@ class _NetworkTile extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
+                RoleBadge(network: network, compact: true),
               ],
             ),
           ),

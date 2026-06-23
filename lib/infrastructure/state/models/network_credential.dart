@@ -65,6 +65,10 @@ class NetworkCredential {
   /// Gate for provider UI — the CLI requires this scope (cli.py:679).
   bool get isProvider => scopes.contains('provider:poll');
 
+  /// The viewer's role on this network. Drives the role badge and which nav
+  /// sections (Provider/Models) are available.
+  String get roleLabel => isProvider ? 'Provider' : 'Consumer';
+
   bool isExpired(DateTime now) =>
       now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
 

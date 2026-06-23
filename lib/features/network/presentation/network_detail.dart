@@ -79,9 +79,17 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(network.name,
-            style: theme.textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w600, fontSize: 22)),
+        Row(
+          children: [
+            Flexible(
+              child: Text(network.name,
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w600, fontSize: 22)),
+            ),
+            const SizedBox(width: 12),
+            RoleBadge(network: network),
+          ],
+        ),
         const SizedBox(height: 8),
         Row(
           children: [

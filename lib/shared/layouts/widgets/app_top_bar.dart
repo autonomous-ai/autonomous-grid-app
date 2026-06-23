@@ -84,20 +84,25 @@ class _QuickActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isProvider = ref.watch(selectedNetworkProvider)?.isProvider ?? false;
     return Row(
       children: [
-        _IconBtn(
-          icon: Icons.devices_outlined,
-          tooltip: 'Provider',
-          onTap: () =>
-              ref.read(navSectionProvider.notifier).select(NavSection.provider),
-        ),
-        _IconBtn(
-          icon: Icons.memory_outlined,
-          tooltip: 'Models',
-          onTap: () =>
-              ref.read(navSectionProvider.notifier).select(NavSection.models),
-        ),
+        // Provider/Models shortcuts only make sense on a provider network.
+        if (isProvider) ...[
+          _IconBtn(
+            icon: Icons.devices_outlined,
+            tooltip: 'Provider',
+            onTap: () => ref
+                .read(navSectionProvider.notifier)
+                .select(NavSection.provider),
+          ),
+          _IconBtn(
+            icon: Icons.memory_outlined,
+            tooltip: 'Models',
+            onTap: () =>
+                ref.read(navSectionProvider.notifier).select(NavSection.models),
+          ),
+        ],
         _IconBtn(
           icon: Icons.refresh,
           tooltip: 'Refresh',

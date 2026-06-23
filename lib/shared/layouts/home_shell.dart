@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/auth/logic/session_controller.dart';
 import '../../features/models/presentation/models_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
 import '../../features/playground/presentation/playground_view.dart';
@@ -42,14 +43,18 @@ class HomeShell extends ConsumerWidget {
 }
 
 /// Routes the active nav section to its pane. Networks is a two-column
-/// list/detail; the rest render their existing single view.
-class _Content extends StatelessWidget {
+/// list/detail; the rest render their existing single view. Provider-only
+/// sections fall back to Networks when the selected network isn't a provider.
+class _Content extends ConsumerWidget {
   const _Content({required this.section});
   final NavSection section;
 
   @override
-  Widget build(BuildContext context) {
-    return switch (section) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isProvider = ref.watch(selectedNetworkProvider)?.isProvider ?? false;
+    final effective =
+        section.providerOnly && !isProvider ? NavSection.networks : section;
+    return switch (effective) {
       NavSection.networks => const NetworksPane(),
       NavSection.playground => const PlaygroundView(),
       NavSection.provider => const ProviderView(),
