@@ -28,7 +28,11 @@ class _NetworkListState extends ConsumerState<NetworkList> {
     final selected = ref.watch(selectedNetworkProvider);
     final owner = session.user['name'] as String? ?? session.userEmail ?? 'My grids';
 
-    final networks = session.networks
+    // Hide grids where the viewer is an admin — this list only surfaces
+    // grids the user joined to consume/provide on.
+    final visible =
+        session.networks.where((n) => n.role != NetworkRole.admin).toList();
+    final networks = visible
         .where((n) => n.name.toLowerCase().contains(_query.toLowerCase()))
         .toList();
 
@@ -38,7 +42,7 @@ class _NetworkListState extends ConsumerState<NetworkList> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _ListHeader(count: session.networks.length),
+          _ListHeader(count: visible.length),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: TextField(
