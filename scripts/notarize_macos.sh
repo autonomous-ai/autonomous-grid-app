@@ -50,16 +50,26 @@ codesign --force --options runtime --timestamp --deep \
   --entitlements "$ENTITLEMENTS" --sign "$DEV_ID" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
-echo ">>> Building DMG…"
-"$APP_ROOT/scripts/package_dmg_macos.sh" "$APP" "$OUT_DMG"
-
-echo ">>> Notarizing (a few minutes)…"
-xcrun notarytool submit "$OUT_DMG" --keychain-profile "$NOTARY_PROFILE" --wait
-
-echo ">>> Stapling the ticket…"
-xcrun stapler staple "$OUT_DMG"
+# Two passes so BOTH the app and the dmg end up stapled (offline-ready):
+# 1) notarize + staple the app, 2) build the dmg from the stapled app, then
+# notarize + staple the dmg. Stapling the app before packaging is the only way
+# the dmg's copy carries a ticket (a rebuilt dmg is a fresh, un-notarized file).
+echo ">>> Notarizing the app (a few minutes)…"
+APP_ZIP="$(dirname "$APP")/notarize-app.zip"
+/usr/bin/ditto -c -k --keepParent "$APP" "$APP_ZIP"
+xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+rm -f "$APP_ZIP"
 xcrun stapler staple "$APP"
 
-echo ">>> Gatekeeper assessment:"
-spctl -a -t open --context context:primary-signature -vv "$OUT_DMG" || true
+echo ">>> Building DMG from the stapled app…"
+"$APP_ROOT/scripts/package_dmg_macos.sh" "$APP" "$OUT_DMG"
+
+echo ">>> Notarizing the DMG (a few minutes)…"
+xcrun notarytool submit "$OUT_DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun stapler staple "$OUT_DMG"
+
+echo ">>> Gatekeeper assessment (app inside the dmg):"
+MP="$(hdiutil attach "$OUT_DMG" -nobrowse 2>/dev/null | grep -o '/Volumes/.*' | head -1)"
+spctl -a -t exec -vv "$MP/$(basename "$APP")" 2>&1 | head -3 || true
+hdiutil detach "$MP" >/dev/null 2>&1 || true
 echo "Done → $OUT_DMG"
