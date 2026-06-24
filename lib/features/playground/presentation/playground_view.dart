@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../logic/chat_controller.dart';
+import '../logic/network_models_provider.dart';
 
 /// Consumer chat playground — the main consumer action. Sends a message via
 /// `grid request chat --network <net> --model <model> --message "<msg>"` and
@@ -68,15 +69,7 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            controller: _model,
-            decoration: const InputDecoration(
-              labelText: 'Model (--model)',
-              hintText: 'Qwen3.6-35B-A3B',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
+          _ModelPicker(controller: _model),
           const SizedBox(height: 12),
           Expanded(
             child: chat.messages.isEmpty
@@ -101,6 +94,40 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Editable model dropdown — lists models advertised on the network (relay
+/// `/models`), yet stays typeable so it still works when none can be fetched
+/// (no provider online, missing inference scope, or relay down).
+class _ModelPicker extends ConsumerWidget {
+  const _ModelPicker({required this.controller});
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final network = ref.watch(selectedNetworkProvider);
+    final models = ref.watch(networkModelsProvider).asData?.value ?? const [];
+
+    return DropdownMenu<String>(
+      controller: controller,
+      enableFilter: true,
+      requestFocusOnTap: true,
+      expandedInsets: EdgeInsets.zero,
+      label: const Text('Model (--model)'),
+      hintText: 'Qwen3.6-35B-A3B',
+      leadingIcon: const Icon(Icons.smart_toy_outlined, size: 18),
+      helperText: models.isEmpty
+          ? 'No advertised models found — type a model name'
+          : '${models.length} model(s) on ${network?.name ?? 'network'}',
+      dropdownMenuEntries: [
+        for (final model in models)
+          DropdownMenuEntry(value: model, label: model),
+      ],
+      onSelected: (value) {
+        if (value != null) controller.text = value;
+      },
     );
   }
 }
