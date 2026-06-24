@@ -18,64 +18,57 @@ class NetworkDetail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final connected = ref.watch(connectedProvider);
     final config = ref.watch(selectedNetworkConfigProvider);
     final now = DateTime.now();
     final conn = networkConn(network, now);
 
-    return Opacity(
-      opacity: connected ? 1 : 0.45,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-        children: [
-          _Header(network: network, conn: conn, connected: connected),
-          const SizedBox(height: 22),
-          DetailSection(
-            title: 'Endpoints',
-            children: [
-              AddressRow(label: 'Network ID', value: network.networkId),
-              AddressRow(label: 'Signaling URL', value: network.lanSignalingUrl),
-              AddressRow(label: 'Relay (OpenAI base)', value: network.relayBaseUrl),
-            ],
-          ),
-          const SizedBox(height: 20),
-          DetailSection(
-            title: 'Details',
-            children: [
-              MetaRow(label: 'Type', value: prettyNetworkType(network.networkType)),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+      children: [
+        _Header(network: network, conn: conn),
+        const SizedBox(height: 22),
+        DetailSection(
+          title: 'Endpoints',
+          children: [
+            AddressRow(label: 'Network ID', value: network.networkId),
+            AddressRow(label: 'Signaling URL', value: network.lanSignalingUrl),
+            AddressRow(label: 'Relay (OpenAI base)', value: network.relayBaseUrl),
+          ],
+        ),
+        const SizedBox(height: 20),
+        DetailSection(
+          title: 'Details',
+          children: [
+            MetaRow(label: 'Type', value: prettyNetworkType(network.networkType)),
+            MetaRow(
+                label: 'Roles',
+                value: network.roles.isEmpty ? '—' : network.roles.join(', ')),
+            MetaRow(
+                label: 'Scopes',
+                value: network.scopes.isEmpty ? '—' : network.scopes.join(', ')),
+            MetaRow(label: 'Token expiry', value: expiryLabel(network.expiresAt, now)),
+            if (config != null)
               MetaRow(
-                  label: 'Roles',
-                  value: network.roles.isEmpty ? '—' : network.roles.join(', ')),
-              MetaRow(
-                  label: 'Scopes',
-                  value:
-                      network.scopes.isEmpty ? '—' : network.scopes.join(', ')),
-              MetaRow(label: 'Token expiry', value: expiryLabel(network.expiresAt, now)),
-              if (config != null)
-                MetaRow(
-                    label: 'Local server',
-                    value: config.hasServerPid ? 'running (pid ${config.serverPid})' : 'stopped'),
-            ],
-          ),
-          const SizedBox(height: 20),
-          _Actions(network: network),
-        ],
-      ),
+                  label: 'Local server',
+                  value: config.hasServerPid ? 'running (pid ${config.serverPid})' : 'stopped'),
+          ],
+        ),
+        const SizedBox(height: 20),
+        _Actions(network: network),
+      ],
     );
   }
 }
 
 class _Header extends StatelessWidget {
-  const _Header(
-      {required this.network, required this.conn, required this.connected});
+  const _Header({required this.network, required this.conn});
   final NetworkCredential network;
   final NetworkConn conn;
-  final bool connected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final (label, color) = _status(conn, connected);
+    final (label, color) = _status(conn);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -103,8 +96,7 @@ class _Header extends StatelessWidget {
     );
   }
 
-  (String, Color) _status(NetworkConn conn, bool connected) {
-    if (!connected) return ('Disconnected', AppPalette.offline);
+  (String, Color) _status(NetworkConn conn) {
     return switch (conn) {
       NetworkConn.connected => ('Connected', AppPalette.online),
       NetworkConn.expiringSoon => ('Expiring soon', AppPalette.warn),

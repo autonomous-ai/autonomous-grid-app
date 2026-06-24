@@ -10,8 +10,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
 import '../shell_state.dart';
 
-/// The Tailscale-style title bar: connection toggle + account on the left,
-/// quick actions + avatar on the right. Doubles as the window drag handle.
+/// The Tailscale-style title bar: account on the left, quick actions + avatar
+/// on the right. Doubles as the window drag handle.
 class AppTopBar extends ConsumerWidget {
   const AppTopBar({super.key});
 
@@ -19,7 +19,6 @@ class AppTopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final connected = ref.watch(connectedProvider);
     final session = ref.watch(sessionProvider);
     final email = session.userEmail ?? '—';
     // Leave room for the macOS traffic-light buttons under the hidden title bar.
@@ -32,12 +31,7 @@ class AppTopBar extends ConsumerWidget {
         padding: EdgeInsets.only(left: leftInset, right: 12),
         child: Row(
           children: [
-            Switch(
-              value: connected,
-              onChanged: (_) => ref.read(connectedProvider.notifier).toggle(),
-            ),
-            const SizedBox(width: 12),
-            _Account(email: email, connected: connected),
+            _Account(email: email),
             const Spacer(),
             const _QuickActions(),
             const SizedBox(width: 8),
@@ -50,9 +44,8 @@ class AppTopBar extends ConsumerWidget {
 }
 
 class _Account extends StatelessWidget {
-  const _Account({required this.email, required this.connected});
+  const _Account({required this.email});
   final String email;
-  final bool connected;
 
   @override
   Widget build(BuildContext context) {
@@ -66,11 +59,9 @@ class _Account extends StatelessWidget {
                 color: AppPalette.textPrimary, fontWeight: FontWeight.w500)),
         Row(
           children: [
-            StatusDot(
-                color: connected ? AppPalette.online : AppPalette.offline,
-                size: 7),
+            const StatusDot(color: AppPalette.online, size: 7),
             const SizedBox(width: 6),
-            Text(connected ? 'Connected' : 'Disconnected',
+            Text('Connected',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: AppPalette.textSecondary)),
           ],

@@ -47,16 +47,3 @@ class NavSectionNotifier extends Notifier<NavSection> {
 
   void select(NavSection section) => state = section;
 }
-
-/// The top-bar connection toggle. Cosmetic mock of Tailscale's "Connected"
-/// switch — flips the header status + dims the detail when off. Defaults on.
-final connectedProvider =
-    NotifierProvider<ConnectedNotifier, bool>(ConnectedNotifier.new);
-
-class ConnectedNotifier extends Notifier<bool> {
-  @override
-  bool build() => true;
-
-  void toggle() => state = !state;
-  void set(bool value) => state = value;
-}
