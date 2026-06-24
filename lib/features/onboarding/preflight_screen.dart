@@ -34,7 +34,7 @@ class PreflightScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               _CheckRow(label: 'grid binary', ok: report.gridAvailable),
               _CheckRow(
-                label: 'container engine (for network create)',
+                label: 'container engine (for creating grids)',
                 ok: report.hasContainerEngine,
                 optional: true,
                 detail: report.containerEngine,

@@ -101,7 +101,7 @@ class _ServeSection extends ConsumerWidget {
     final run = ref.watch(providerRunControllerProvider);
 
     if (network == null) {
-      return const Text('No network joined yet.');
+      return const Text('No grid joined yet.');
     }
     if (!network.isProvider) {
       return EnableProviderCard(network: network);

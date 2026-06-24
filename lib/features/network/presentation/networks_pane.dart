@@ -41,7 +41,7 @@ class _NoSelection extends StatelessWidget {
         children: [
           Icon(Icons.lan_outlined, size: 40, color: AppPalette.textFaint),
           SizedBox(height: 12),
-          Text('Select a network to see its details.',
+          Text('Select a grid to see its details.',
               style: TextStyle(color: AppPalette.textSecondary)),
         ],
       ),

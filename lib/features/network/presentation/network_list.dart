@@ -26,7 +26,7 @@ class _NetworkListState extends ConsumerState<NetworkList> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final selected = ref.watch(selectedNetworkProvider);
-    final owner = session.user['name'] as String? ?? session.userEmail ?? 'My networks';
+    final owner = session.user['name'] as String? ?? session.userEmail ?? 'My grids';
 
     final networks = session.networks
         .where((n) => n.name.toLowerCase().contains(_query.toLowerCase()))
@@ -84,7 +84,7 @@ class _ListHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 18, 12, 14),
       child: Row(
         children: [
-          Text('Networks',
+          Text('Grids',
               style: theme.textTheme.titleLarge
                   ?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
           const SizedBox(width: 8),
@@ -204,7 +204,7 @@ class _Empty extends StatelessWidget {
     return const Center(
       child: Padding(
         padding: EdgeInsets.all(24),
-        child: Text('No networks match.',
+        child: Text('No grids match.',
             style: TextStyle(color: AppPalette.textSecondary)),
       ),
     );

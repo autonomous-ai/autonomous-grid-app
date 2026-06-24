@@ -21,8 +21,8 @@ class EnableProviderCard extends ConsumerWidget {
 
     if (network.role != NetworkRole.admin) {
       return Text(
-        'This network token has no provider scope (provider:poll), so it '
-        'cannot run a provider. Ask a network admin to grant you the '
+        'This grid token has no provider scope (provider:poll), so it '
+        'cannot run a provider. Ask a grid admin to grant you the '
         'provider role.',
         style: theme.textTheme.bodyMedium
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -89,7 +89,7 @@ class _Idle extends ConsumerWidget {
           icon: const Icon(Icons.verified_user_outlined, size: 16),
           label: Text(error != null
               ? 'Retry enabling provider'
-              : 'Enable provider on this network'),
+              : 'Enable provider on this grid'),
         ),
       ],
     );

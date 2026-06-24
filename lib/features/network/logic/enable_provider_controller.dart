@@ -72,7 +72,7 @@ class EnableProviderController extends Notifier<EnableProviderState> {
       return;
     }
 
-    step('Refreshing the network token…');
+    step('Refreshing the grid token…');
     final join = await service.run(['network', 'join', networkId]);
     step(_lastLine(join));
     if (!join.ok) {

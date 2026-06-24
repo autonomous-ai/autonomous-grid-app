@@ -82,7 +82,7 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
     if (network == null) {
       return const SectionScaffold(
         title: 'Playground',
-        child: ComingSoon(message: 'Join a network first to start chatting.'),
+        child: ComingSoon(message: 'Join a grid first to start chatting.'),
       );
     }
 
@@ -107,7 +107,7 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
           const SizedBox(height: 12),
           Expanded(
             child: chat.messages.isEmpty
-                ? const ComingSoon(message: 'Send a message to the network.')
+                ? const ComingSoon(message: 'Send a message to the grid.')
                 : ListView.builder(
                     controller: _scroll,
                     itemCount: chat.messages.length,
@@ -154,7 +154,7 @@ class _ModelPicker extends ConsumerWidget {
       leadingIcon: const Icon(Icons.smart_toy_outlined, size: 18),
       helperText: models.isEmpty
           ? 'No advertised models found — type a model name'
-          : '${models.length} model(s) on ${network?.name ?? 'network'}',
+          : '${models.length} model(s) on ${network?.name ?? 'grid'}',
       dropdownMenuEntries: [
         for (final model in models)
           DropdownMenuEntry(value: model, label: model),

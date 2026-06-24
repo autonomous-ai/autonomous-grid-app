@@ -30,7 +30,7 @@ class NetworkDetail extends ConsumerWidget {
         DetailSection(
           title: 'Endpoints',
           children: [
-            AddressRow(label: 'Network ID', value: network.networkId),
+            AddressRow(label: 'Grid ID', value: network.networkId),
             AddressRow(label: 'Signaling URL', value: network.lanSignalingUrl),
             AddressRow(label: 'Relay (OpenAI base)', value: network.relayBaseUrl),
           ],

@@ -5,7 +5,7 @@ import '../../features/auth/logic/session_controller.dart';
 
 /// Primary nav sections shown in the left sidebar (Tailscale-style).
 enum NavSection {
-  networks(Icons.lan_outlined, 'Networks'),
+  networks(Icons.lan_outlined, 'Grids'),
   playground(Icons.chat_bubble_outline, 'Playground'),
   provider(Icons.podcasts_outlined, 'Provider', providerOnly: true),
   models(Icons.memory_outlined, 'Models', providerOnly: true),
