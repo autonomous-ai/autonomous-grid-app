@@ -51,9 +51,10 @@ class _Content extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isProvider = ref.watch(selectedNetworkProvider)?.isProvider ?? false;
+    final canManage =
+        ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
     final effective =
-        section.providerOnly && !isProvider ? NavSection.networks : section;
+        section.providerOnly && !canManage ? NavSection.networks : section;
     return switch (effective) {
       NavSection.networks => const NetworksPane(),
       NavSection.playground => const PlaygroundView(),

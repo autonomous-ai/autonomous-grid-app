@@ -129,7 +129,7 @@ class _Actions extends ConsumerWidget {
           icon: const Icon(Icons.chat_bubble_outline, size: 16),
           label: const Text('Open in Playground'),
         ),
-        if (network.isProvider)
+        if (network.canManageProvider)
           OutlinedButton.icon(
             onPressed: () =>
                 ref.read(navSectionProvider.notifier).select(NavSection.models),

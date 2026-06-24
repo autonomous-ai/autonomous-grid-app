@@ -128,8 +128,12 @@ class RoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        network.isProvider ? AppPalette.accent : AppPalette.textSecondary;
+    final color = switch (network.role) {
+      NetworkRole.admin => AppPalette.online,
+      NetworkRole.provider => AppPalette.accent,
+      NetworkRole.consumer => AppPalette.textSecondary,
+      NetworkRole.member => AppPalette.textSecondary,
+    };
     return Container(
       padding: EdgeInsets.symmetric(
           horizontal: compact ? 6 : 8, vertical: compact ? 1 : 3),

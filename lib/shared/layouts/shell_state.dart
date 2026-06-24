@@ -19,12 +19,13 @@ enum NavSection {
 }
 
 /// Sections visible for the currently selected network. Provider/Models are
-/// hidden on consumer networks (no `provider:poll` scope).
+/// hidden on consumer-only networks; admins and providers see them.
 final visibleNavSectionsProvider = Provider<List<NavSection>>((ref) {
-  final isProvider = ref.watch(selectedNetworkProvider)?.isProvider ?? false;
+  final canManage =
+      ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
   return [
     for (final section in NavSection.values)
-      if (!section.providerOnly || isProvider) section,
+      if (!section.providerOnly || canManage) section,
   ];
 });
 
@@ -38,8 +39,8 @@ class NavSectionNotifier extends Notifier<NavSection> {
     // Switching to a consumer network hides the provider-only sections — don't
     // strand the user on a now-invisible tab; fall back to Networks.
     ref.listen(selectedNetworkProvider, (_, next) {
-      final isProvider = next?.isProvider ?? false;
-      if (state.providerOnly && !isProvider) state = NavSection.networks;
+      final canManage = next?.canManageProvider ?? false;
+      if (state.providerOnly && !canManage) state = NavSection.networks;
     });
     return NavSection.networks;
   }

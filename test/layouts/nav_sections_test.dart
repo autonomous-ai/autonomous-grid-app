@@ -11,6 +11,7 @@ NetworkCredential _network(
   String id,
   String name, {
   required List<String> scopes,
+  List<String> roles = const ['member'],
 }) =>
     NetworkCredential(
       networkId: id,
@@ -22,7 +23,7 @@ NetworkCredential _network(
       email: 'dev@x.com',
       nodeId: 'node-$id',
       deviceId: 'dev',
-      roles: const ['member'],
+      roles: roles,
       scopes: scopes,
       memberEpoch: 1,
       networkEpoch: 1,
@@ -52,11 +53,23 @@ void main() {
     return container;
   }
 
-  test('role label reflects the provider scope', () {
+  test('roleLabel reflects the roles claim — not the provider:poll scope', () {
+    // The provider:poll scope is a capability, not a governance role.
     expect(consumer.isProvider, isFalse);
-    expect(consumer.roleLabel, 'Consumer');
     expect(provider.isProvider, isTrue);
-    expect(provider.roleLabel, 'Provider');
+
+    // An admin keeps the Admin label even without provider:poll (the bug:
+    // it used to fall back to "Consumer" because it read scopes, not roles).
+    final admin = _network('grid-adm', 'admin',
+        roles: const ['admin'], scopes: const ['network:sync']);
+    expect(admin.role, NetworkRole.admin);
+    expect(admin.roleLabel, 'Admin');
+    expect(admin.isProvider, isFalse);
+
+    final consumerRole = _network('grid-c2', 'c2',
+        roles: const ['consumer'], scopes: const ['inference:create']);
+    expect(consumerRole.role, NetworkRole.consumer);
+    expect(consumerRole.roleLabel, 'Consumer');
   });
 
   test('consumer network hides the provider-only sections', () {
@@ -69,6 +82,20 @@ void main() {
     final container = containerWith('grid-prov');
     final sections = container.read(visibleNavSectionsProvider);
     expect(sections, NavSection.values);
+  });
+
+  test('admin network shows every section without provider:poll', () {
+    final admin = _network('grid-adm', 'admin',
+        roles: const ['admin'], scopes: const ['network:sync']);
+    final creds = CredentialsFile(networks: [admin], activeNetwork: 'grid-adm');
+    final container = ProviderContainer(
+      overrides: [gridHomeStoreProvider.overrideWithValue(_FakeStore(creds))],
+    );
+    addTearDown(container.dispose);
+
+    expect(admin.isProvider, isFalse);
+    expect(admin.canManageProvider, isTrue);
+    expect(container.read(visibleNavSectionsProvider), NavSection.values);
   });
 
   test('switching to a consumer network resets a provider-only section', () {

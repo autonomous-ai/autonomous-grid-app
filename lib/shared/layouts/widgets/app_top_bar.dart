@@ -85,11 +85,12 @@ class _QuickActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isProvider = ref.watch(selectedNetworkProvider)?.isProvider ?? false;
+    final canManage =
+        ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
     return Row(
       children: [
-        // Provider/Models shortcuts only make sense on a provider network.
-        if (isProvider) ...[
+        // Provider/Models shortcuts only show where those tabs are available.
+        if (canManage) ...[
           _IconBtn(
             icon: Icons.devices_outlined,
             tooltip: 'Provider',

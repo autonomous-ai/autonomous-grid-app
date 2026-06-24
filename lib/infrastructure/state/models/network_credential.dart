@@ -1,3 +1,8 @@
+/// The viewer's governance role on a network, taken from the `roles` claim.
+/// Distinct from [NetworkCredential.isProvider], which is a *capability*
+/// (the `provider:poll` scope), not a role.
+enum NetworkRole { admin, provider, consumer, member }
+
 /// One Grid network's credentials bundle, as stored under `[[networks]]` in
 /// `~/.grid/credentials.toml`. Mirrors the CLI `NetworkCredentials` dataclass
 /// (config.py:25). See CLI_Integration_Contract §1.1.
@@ -62,12 +67,32 @@ class NetworkCredential {
 
   String get relayApiKey => accessToken;
 
-  /// Gate for provider UI — the CLI requires this scope (cli.py:679).
+  /// Capability gate for the provider UI — the CLI requires this scope to run
+  /// a provider (cli.py:679). Independent of [role] (an admin may or may not
+  /// also hold provider:poll).
   bool get isProvider => scopes.contains('provider:poll');
 
-  /// The viewer's role on this network. Drives the role badge and which nav
-  /// sections (Provider/Models) are available.
-  String get roleLabel => isProvider ? 'Provider' : 'Consumer';
+  /// The viewer's governance role, read from the `roles` claim — the same value
+  /// the web console shows (Admin / Consumer / …).
+  NetworkRole get role {
+    if (roles.contains('admin')) return NetworkRole.admin;
+    if (roles.contains('provider')) return NetworkRole.provider;
+    if (roles.contains('consumer')) return NetworkRole.consumer;
+    return NetworkRole.member;
+  }
+
+  /// Display label for [role] (badge text).
+  String get roleLabel => switch (role) {
+        NetworkRole.admin => 'Admin',
+        NetworkRole.provider => 'Provider',
+        NetworkRole.consumer => 'Consumer',
+        NetworkRole.member => 'Member',
+      };
+
+  /// May the viewer reach the Provider/Models tabs on this network? Admins
+  /// manage the network so they always can; otherwise the provider:poll
+  /// capability is required. (Pure consumers/members are excluded.)
+  bool get canManageProvider => role == NetworkRole.admin || isProvider;
 
   bool isExpired(DateTime now) =>
       now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
