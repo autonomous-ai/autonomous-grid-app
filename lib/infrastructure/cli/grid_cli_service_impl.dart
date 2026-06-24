@@ -18,12 +18,22 @@ class GridCliServiceImpl implements GridCliService {
   /// - `PYTHONUNBUFFERED` so the piped Python CLI flushes stdout per line —
   ///   without it, streamed output (e.g. the device-login URL) is withheld
   ///   until the process exits, which it doesn't while polling.
-  /// - an augmented `PATH` so `grid`'s own children (brew, docker, cmake,
-  ///   llama-server) resolve — a GUI app inherits only a minimal PATH.
+  /// - `PYTHONUTF8` / `PYTHONIOENCODING` force UTF-8 I/O. A Finder-launched GUI
+  ///   app inherits no `LANG`, so the frozen Python `grid` would otherwise pick
+  ///   ASCII stdio and crash with `UnicodeEncodeError` the moment it prints a
+  ///   non-ASCII char (e.g. the "–"/"—" in its own messages) — failing install,
+  ///   provider start, etc. with exit 1.
+  /// - an augmented `PATH` (+ a UTF-8 `LANG`) so `grid`'s own children (brew,
+  ///   docker, cmake, llama-server) resolve and also emit UTF-8 — a GUI app
+  ///   inherits only a minimal environment.
   final Map<String, String> _env;
 
   static Map<String, String> _buildEnv() {
-    final env = <String, String>{'PYTHONUNBUFFERED': '1'};
+    final env = <String, String>{
+      'PYTHONUNBUFFERED': '1',
+      'PYTHONUTF8': '1',
+      'PYTHONIOENCODING': 'utf-8',
+    };
     if (!Platform.isWindows) {
       final home = Platform.environment['HOME'] ?? '';
       final inherited = Platform.environment['PATH'] ?? '';
@@ -37,6 +47,10 @@ class GridCliServiceImpl implements GridCliService {
         '/sbin',
         if (inherited.isNotEmpty) inherited,
       ].join(':');
+      // Keep the user's locale when present; otherwise give children a sane
+      // UTF-8 default instead of the C/POSIX (ASCII) locale.
+      final lang = Platform.environment['LANG'];
+      env['LANG'] = (lang != null && lang.isNotEmpty) ? lang : 'en_US.UTF-8';
     }
     return env;
   }
