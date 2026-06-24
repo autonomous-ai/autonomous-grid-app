@@ -44,7 +44,7 @@ class GridResolver {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
     final exe = Platform.isWindows ? 'grid.exe' : 'grid';
     if (Platform.isMacOS) {
-      // Grid.app/Contents/MacOS/grid_app → Contents/Resources/grid
+      // Grid.app/Contents/MacOS/Grid → Contents/Resources/grid
       yield '$exeDir/../Resources/$exe';
     }
     // Linux/Windows: next to the executable, or in a `grid/` subfolder.
