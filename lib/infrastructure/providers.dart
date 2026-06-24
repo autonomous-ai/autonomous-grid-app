@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'cli/command_log.dart';
 import 'cli/grid_cli_service.dart';
 import 'cli/grid_cli_service_impl.dart';
 import 'cli/grid_resolver.dart';
+import 'cli/logging_grid_cli_service.dart';
 import 'state/grid_home_store.dart';
 
 /// Locates the `grid` binary (sidecar → GRID_BIN → PATH). A user-configured
@@ -15,9 +17,12 @@ final gridPathProvider =
 
 /// The CLI seam. Null when `grid` is absent — preflight gates the rest of the
 /// app on this being non-null. Override with [FakeGridCliService] in dev/test.
+/// Wrapped in [LoggingGridCliService] so every command shows up in the Debug tab.
 final gridCliServiceProvider = Provider<GridCliService?>((ref) {
   final path = ref.watch(gridPathProvider);
-  return path == null ? null : GridCliServiceImpl(path);
+  if (path == null) return null;
+  final recorder = ref.read(commandLogProvider.notifier);
+  return LoggingGridCliService(GridCliServiceImpl(path), recorder);
 });
 
 /// Reads state from `~/.grid` (nguồn 1). Read-only; mutations go through the CLI.

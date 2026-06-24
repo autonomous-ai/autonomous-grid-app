@@ -1,6 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/providers.dart';
+import '../../auth/logic/session_controller.dart';
+import 'chat_reply.dart';
+import 'local_chat_client.dart';
 
 final chatControllerProvider =
     NotifierProvider<ChatController, ChatState>(ChatController.new);
@@ -25,10 +29,12 @@ class ChatState {
   final String? error;
 }
 
-/// Consumer chat via the CLI smoke-test path:
-/// `grid request chat --network <net> --model <model> --message "<msg>"`.
-/// Each send is a standalone, non-streaming request (the CLI keeps no history),
-/// so the transcript is local UI state only.
+/// Consumer chat. Two paths:
+/// - Relay (default): runs `grid request chat --network ... --model ...
+///   --message ...` — single-turn, the CLI keeps no history.
+/// - Local ([localBaseUrl] set): a direct OpenAI-style HTTP call to a
+///   locally-running provider, like `curl localhost:PORT/v1/chat/completions`.
+/// The transcript is local UI state either way.
 class ChatController extends Notifier<ChatState> {
   @override
   ChatState build() => const ChatState();
@@ -37,6 +43,7 @@ class ChatController extends Notifier<ChatState> {
     required String network,
     required String model,
     required String message,
+    String? localBaseUrl,
   }) async {
     final text = message.trim();
     if (text.isEmpty || state.sending) return;
@@ -45,36 +52,73 @@ class ChatController extends Notifier<ChatState> {
       ...state.messages,
       ChatMessage(role: ChatRole.user, text: text),
     ];
-
-    final service = ref.read(gridCliServiceProvider);
-    if (service == null) {
-      state = ChatState(messages: history, error: 'grid executable not found.');
-      return;
-    }
-
     state = ChatState(messages: history, sending: true);
-    final result = await service.run([
-      'request', 'chat',
-      '--network', network,
-      '--model', model,
-      '--message', text,
-    ]);
 
-    if (!result.ok) {
-      state = ChatState(messages: history, error: result.errorMessage);
+    final (reply, error) = localBaseUrl != null
+        ? await _sendLocal(localBaseUrl, model, history)
+        : await _sendViaCli(network: network, model: model, message: text);
+
+    if (error != null) {
+      state = ChatState(messages: history, error: error);
       return;
     }
-
-    final reply = result.stdout.trim();
     state = ChatState(
       messages: [
         ...history,
         ChatMessage(
           role: ChatRole.assistant,
-          text: reply.isEmpty ? '(empty response)' : reply,
+          text: (reply == null || reply.isEmpty) ? '(empty response)' : reply,
         ),
       ],
     );
+  }
+
+  Future<(String?, String?)> _sendViaCli({
+    required String network,
+    required String model,
+    required String message,
+  }) async {
+    final service = ref.read(gridCliServiceProvider);
+    if (service == null) return (null, 'grid executable not found.');
+
+    final result = await service.run([
+      'request', 'chat',
+      '--network', network,
+      '--model', model,
+      '--message', message,
+    ]);
+    // The CLI prints the full JSON response — show just the assistant text.
+    return result.ok
+        ? (parseChatReply(result.stdout), null)
+        : (null, result.errorMessage);
+  }
+
+  Future<(String?, String?)> _sendLocal(
+    String baseUrl,
+    String model,
+    List<ChatMessage> history,
+  ) async {
+    final apiKey = ref.read(selectedNetworkProvider)?.accessToken ?? '';
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': 'You are a helpful assistant.'},
+      for (final m in history)
+        {
+          'role': m.role == ChatRole.user ? 'user' : 'assistant',
+          'content': m.text,
+        },
+    ];
+
+    // Mirror the call into the Debug tab alongside the grid commands.
+    final log = ref.read(commandLogProvider.notifier);
+    final id = log.begin(CliCallKind.http, 'POST $baseUrl/v1/chat/completions');
+    final (reply, error) = await LocalChatClient.complete(
+      baseUrl: baseUrl,
+      apiKey: apiKey,
+      model: model,
+      messages: messages,
+    );
+    log.finish(id, exitCode: error == null ? 200 : null, error: error);
+    return (reply, error);
   }
 
   void clear() => state = const ChatState();

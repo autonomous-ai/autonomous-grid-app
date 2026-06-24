@@ -8,7 +8,8 @@ enum NavSection {
   networks(Icons.lan_outlined, 'Networks'),
   playground(Icons.chat_bubble_outline, 'Playground'),
   provider(Icons.podcasts_outlined, 'Provider', providerOnly: true),
-  models(Icons.memory_outlined, 'Models', providerOnly: true);
+  models(Icons.memory_outlined, 'Models', providerOnly: true),
+  debug(Icons.bug_report_outlined, 'Debug');
 
   const NavSection(this.icon, this.label, {this.providerOnly = false});
   final IconData icon;

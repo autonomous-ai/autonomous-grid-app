@@ -43,10 +43,6 @@ class NetworkDetail extends ConsumerWidget {
             MetaRow(
                 label: 'Roles',
                 value: network.roles.isEmpty ? '—' : network.roles.join(', ')),
-            MetaRow(
-                label: 'Scopes',
-                value: network.scopes.isEmpty ? '—' : network.scopes.join(', ')),
-            MetaRow(label: 'Token expiry', value: expiryLabel(network.expiresAt, now)),
             if (config != null)
               MetaRow(
                   label: 'Local server',

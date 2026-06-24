@@ -12,6 +12,33 @@ final providerRunControllerProvider =
     NotifierProvider<ProviderRunController, ProviderRunState>(
         ProviderRunController.new);
 
+/// Base URL of the locally-running provider's OpenAI-compatible server, parsed
+/// from its run log (e.g. `http://localhost:8081`). Null when no local provider
+/// is serving or the port can't be read yet. Lets the Playground hit the local
+/// server directly over HTTP for a quick smoke test.
+final localProviderEndpointProvider = Provider<String?>((ref) {
+  final state = ref.watch(providerRunControllerProvider);
+  if (state is! ProviderRunActive) return null;
+  final port = _parseLocalPort(state.log);
+  return port == null ? null : 'http://localhost:$port';
+});
+
+/// `127.0.0.1:8081` / `localhost:8081` in httpx log lines, or the
+/// `llama_llm_8081.log` filename the provider prints on spawn.
+final _localPortPattern =
+    RegExp(r'(?:localhost|127\.0\.0\.1):(\d{2,5})|llama_\w*?(\d{2,5})\.log');
+
+int? _parseLocalPort(List<String> log) {
+  for (final line in log.reversed) {
+    final match = _localPortPattern.firstMatch(line);
+    if (match == null) continue;
+    final port = match.group(1) ?? match.group(2);
+    final parsed = port == null ? null : int.tryParse(port);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
 sealed class ProviderRunState {
   const ProviderRunState();
 }

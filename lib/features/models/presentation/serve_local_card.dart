@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
+import '../logic/advertise_name.dart';
 import '../logic/models_providers.dart';
 
 /// Step 4 (the main provider action): serve a locally pulled GGUF model via
-/// `grid provider start --network <net> --model <gguf> [--advertise-as]`.
+/// `grid provider start --network <net> --model <gguf> --advertise-as <name>`.
 class ServeLocalCard extends ConsumerStatefulWidget {
   const ServeLocalCard({super.key, required this.network});
 
@@ -19,6 +20,7 @@ class ServeLocalCard extends ConsumerStatefulWidget {
 class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   final _advertise = TextEditingController();
   String? _model;
+  String? _advertiseFilledFor;
 
   @override
   void dispose() {
@@ -26,11 +28,25 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     super.dispose();
   }
 
-  void _start() {
+  /// Pre-fill the advertise field from the model name, once per selection — but
+  /// keep the user's manual edits while the same model stays selected.
+  void _syncAdvertiseFor(String model) {
+    if (model == _advertiseFilledFor) return;
+    _advertiseFilledFor = model;
+    final derived = deriveAdvertiseName(model);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _advertise.text = derived;
+    });
+  }
+
+  void _start(String model) {
+    final advertise = _advertise.text.trim();
+    // --advertise-as is always sent; derive from the model name if left blank.
     ref.read(providerRunControllerProvider.notifier).startLocal(
           network: widget.network.networkId,
-          model: _model!,
-          advertiseAs: _advertise.text.trim(),
+          model: model,
+          advertiseAs:
+              advertise.isEmpty ? deriveAdvertiseName(model) : advertise,
         );
   }
 
@@ -49,7 +65,8 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
     // Default to the first model; keep selection valid if the list changes.
     final names = models.map((m) => m.name).toList();
-    final selected = names.contains(_model) ? _model : names.first;
+    final selected = names.contains(_model) ? _model! : names.first;
+    _syncAdvertiseFor(selected);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -70,7 +87,8 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         TextField(
           controller: _advertise,
           decoration: const InputDecoration(
-            labelText: 'Advertise as (optional, --advertise-as)',
+            labelText: 'Advertise as (--advertise-as)',
+            helperText: 'Auto-filled from the model name; edit if you like.',
             hintText: 'Qwen3.6-35B-A3B',
             border: OutlineInputBorder(),
           ),
@@ -79,10 +97,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         Align(
           alignment: Alignment.centerLeft,
           child: FilledButton.icon(
-            onPressed: () {
-              _model ??= selected;
-              _start();
-            },
+            onPressed: () => _start(selected),
             icon: const Icon(Icons.play_arrow),
             label: const Text('Start provider'),
           ),

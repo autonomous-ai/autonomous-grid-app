@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/chat_controller.dart';
+import '../logic/local_test_state.dart';
 import '../logic/network_models_provider.dart';
 
 /// Consumer chat playground — the main consumer action. Sends a message via
@@ -17,9 +20,10 @@ class PlaygroundView extends ConsumerStatefulWidget {
 }
 
 class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
-  final _model = TextEditingController(text: 'Qwen3.6-35B-A3B');
+  final _model = TextEditingController();
   final _message = TextEditingController();
   final _scroll = ScrollController();
+  String _autoModel = '';
 
   @override
   void dispose() {
@@ -29,13 +33,30 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
     super.dispose();
   }
 
+  /// Default the model field to the first advertised model (blank when none),
+  /// re-applying when the list changes — but never clobbering a model the user
+  /// typed themselves.
+  void _syncDefaultModel(List<String> models) {
+    final first = models.isEmpty ? '' : models.first;
+    if (first == _autoModel) return;
+    final userCustomized = _model.text.isNotEmpty && _model.text != _autoModel;
+    _autoModel = first;
+    if (userCustomized) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _model.text != first) _model.text = first;
+    });
+  }
+
   void _send(String networkId) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
+    final useLocal = ref.read(useLocalTestProvider);
+    final localEndpoint = ref.read(localProviderEndpointProvider);
     ref.read(chatControllerProvider.notifier).send(
           network: networkId,
           model: _model.text.trim(),
           message: message,
+          localBaseUrl: useLocal ? localEndpoint : null,
         );
     _message.clear();
   }
@@ -50,6 +71,8 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
     final theme = Theme.of(context);
     final network = ref.watch(selectedNetworkProvider);
     final chat = ref.watch(chatControllerProvider);
+    final localEndpoint = ref.watch(localProviderEndpointProvider);
+    final useLocal = ref.watch(useLocalTestProvider);
 
     // Keep the transcript pinned to the latest message.
     ref.listen(chatControllerProvider, (_, __) {
@@ -63,12 +86,23 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
       );
     }
 
+    final models = ref.watch(networkModelsProvider).asData?.value;
+    if (models != null) _syncDefaultModel(models);
+
     return SectionScaffold(
       title: 'Playground',
       subtitle: network.name,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (localEndpoint != null) ...[
+            _LocalTestToggle(
+              value: useLocal,
+              endpoint: localEndpoint,
+              onChanged: (v) => ref.read(useLocalTestProvider.notifier).set(v),
+            ),
+            const SizedBox(height: 12),
+          ],
           _ModelPicker(controller: _model),
           const SizedBox(height: 12),
           Expanded(
@@ -132,6 +166,53 @@ class _ModelPicker extends ConsumerWidget {
   }
 }
 
+/// Shown only while a local provider is serving — flips the Playground from the
+/// relay to a direct HTTP call against the local server (the curl smoke test).
+class _LocalTestToggle extends StatelessWidget {
+  const _LocalTestToggle({
+    required this.value,
+    required this.endpoint,
+    required this.onChanged,
+  });
+
+  final bool value;
+  final String endpoint;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
+      decoration: BoxDecoration(
+        color: AppPalette.cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.bolt_outlined, size: 18, color: AppPalette.online),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Test local provider',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w500)),
+                Text('Call $endpoint directly over HTTP — skips the relay',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
 class _Bubble extends StatelessWidget {
   const _Bubble({required this.message});
   final ChatMessage message;
@@ -183,29 +264,47 @@ class _InputBar extends StatelessWidget {
           child: TextField(
             controller: controller,
             minLines: 1,
-            maxLines: 4,
+            maxLines: 5,
             enabled: !sending,
+            textInputAction: TextInputAction.send,
             onSubmitted: (_) => onSend(),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Message…',
-              border: OutlineInputBorder(),
+              filled: true,
+              fillColor: AppPalette.cardBg,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              border: _border(AppPalette.divider),
+              enabledBorder: _border(AppPalette.divider),
+              focusedBorder: _border(AppPalette.accent, width: 1.5),
             ),
           ),
         ),
         const SizedBox(width: 10),
         SizedBox(
+          width: 48,
           height: 48,
           child: FilledButton(
             onPressed: sending ? null : onSend,
+            style: FilledButton.styleFrom(
+              shape: const CircleBorder(),
+              padding: EdgeInsets.zero,
+            ),
             child: sending
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.send, size: 18),
+                : const Icon(Icons.arrow_upward_rounded, size: 20),
           ),
         ),
       ],
     );
   }
+
+  OutlineInputBorder _border(Color color, {double width = 1}) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: color, width: width),
+      );
 }
