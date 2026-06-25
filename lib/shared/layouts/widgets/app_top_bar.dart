@@ -84,7 +84,7 @@ class _QuickActions extends ConsumerWidget {
         if (canManage) ...[
           _IconBtn(
             icon: Icons.devices_outlined,
-            tooltip: 'Provider',
+            tooltip: 'Share a Model',
             onTap: () => ref
                 .read(navSectionProvider.notifier)
                 .select(NavSection.provider),
@@ -177,7 +177,7 @@ class _AccountMenu extends ConsumerWidget {
       builder: (context) => AlertDialog(
         title: const Text('Sign out?'),
         content: const Text(
-            'Your local credentials will be cleared — you\'ll need to log in again.'),
+            "You'll be signed out and need to sign in again."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

@@ -81,11 +81,12 @@ class NetworkCredential {
     return NetworkRole.member;
   }
 
-  /// Display label for [role] (badge text).
+  /// Plain-language label for [role] (badge text) — chosen so end users grasp it
+  /// at a glance: a "provider" shares a model, a "consumer" uses one.
   String get roleLabel => switch (role) {
         NetworkRole.admin => 'Admin',
-        NetworkRole.provider => 'Provider',
-        NetworkRole.consumer => 'Consumer',
+        NetworkRole.provider => 'Sharing',
+        NetworkRole.consumer => 'Using',
         NetworkRole.member => 'Member',
       };
 

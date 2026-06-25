@@ -24,17 +24,17 @@ class PreflightScreen extends ConsumerWidget {
               Icon(Icons.warning_amber_rounded,
                   size: 48, color: theme.colorScheme.error),
               const SizedBox(height: 16),
-              Text('Grid CLI not found', style: theme.textTheme.headlineSmall),
+              Text('Grid needs setup', style: theme.textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
-                'The app drives the `grid` command but could not locate it on '
-                'your PATH. Install it, then re-check.',
+                "Grid couldn't find the components it needs to run. Please "
+                'install them, then check again.',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
-              _CheckRow(label: 'grid binary', ok: report.gridAvailable),
+              _CheckRow(label: 'Grid core', ok: report.gridAvailable),
               _CheckRow(
-                label: 'container engine (for creating grids)',
+                label: 'Docker or Podman (needed to create your own grid)',
                 ok: report.hasContainerEngine,
                 optional: true,
                 detail: report.containerEngine,
@@ -43,7 +43,7 @@ class PreflightScreen extends ConsumerWidget {
               FilledButton.icon(
                 onPressed: () => ref.invalidate(preflightProvider),
                 icon: const Icon(Icons.refresh),
-                label: const Text('Re-check'),
+                label: const Text('Check again'),
               ),
             ],
           ),

@@ -29,10 +29,10 @@ class NetworkDetail extends ConsumerWidget {
         _Header(network: network, conn: conn),
         const SizedBox(height: 22),
         DetailSection(
-          title: 'Endpoints',
+          title: 'Connection',
           children: [
             AddressRow(label: 'Grid ID', value: network.networkId),
-            AddressRow(label: 'Signaling URL', value: network.lanSignalingUrl),
+            AddressRow(label: 'Server address', value: network.lanSignalingUrl),
           ],
         ),
         const SizedBox(height: 20),
@@ -45,12 +45,12 @@ class NetworkDetail extends ConsumerWidget {
           children: [
             MetaRow(label: 'Type', value: prettyNetworkType(network.networkType)),
             MetaRow(
-                label: 'Roles',
+                label: 'Your role',
                 value: network.roles.isEmpty ? '—' : network.roles.join(', ')),
             if (config != null)
               MetaRow(
-                  label: 'Local server',
-                  value: config.hasServerPid ? 'running (pid ${config.serverPid})' : 'stopped'),
+                  label: 'Model sharing',
+                  value: config.hasServerPid ? 'On' : 'Off'),
           ],
         ),
         const SizedBox(height: 20),
@@ -100,7 +100,7 @@ class _Header extends StatelessWidget {
     return switch (conn) {
       NetworkConn.connected => ('Connected', AppPalette.online),
       NetworkConn.expiringSoon => ('Expiring soon', AppPalette.warn),
-      NetworkConn.expired => ('Token expired', AppPalette.offline),
+      NetworkConn.expired => ('Access expired', AppPalette.offline),
     };
   }
 }
@@ -126,7 +126,7 @@ class _Actions extends ConsumerWidget {
             onPressed: () =>
                 ref.read(navSectionProvider.notifier).select(NavSection.models),
             icon: const Icon(Icons.podcasts_outlined, size: 16),
-            label: const Text('Run as provider'),
+            label: const Text('Share a model'),
           ),
       ],
     );

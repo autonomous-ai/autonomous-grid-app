@@ -41,7 +41,8 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
         TextField(
           controller: _spec,
           decoration: const InputDecoration(
-            labelText: 'Model spec (repo:file)',
+            labelText: 'Model to download',
+            helperText: 'Paste a model from Hugging Face',
             hintText: 'unsloth/…-GGUF:…IQ3_S.gguf',
             border: OutlineInputBorder(),
           ),
@@ -52,7 +53,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
             children: [
               const Icon(Icons.check_circle, color: Colors.green, size: 18),
               const SizedBox(width: 8),
-              Expanded(child: Text('Pulled ${state.file}')),
+              Expanded(child: Text('Downloaded ${state.file}')),
             ],
           ),
         ],
@@ -70,7 +71,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
             builder: (context, _) => FilledButton.icon(
               onPressed: _spec.text.trim().isEmpty ? null : _pull,
               icon: const Icon(Icons.download_outlined, size: 18),
-              label: Text(state is ModelPullFailed ? 'Retry pull' : 'Pull model'),
+              label: Text(state is ModelPullFailed ? 'Try again' : 'Download'),
             ),
           ),
         ),
@@ -102,7 +103,7 @@ class _ProgressView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Pulling ${state.spec}',
+        Text('Downloading ${state.spec}',
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium),
         const SizedBox(height: 10),

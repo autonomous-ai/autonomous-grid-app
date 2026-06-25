@@ -21,9 +21,8 @@ class EnableProviderCard extends ConsumerWidget {
 
     if (network.role != NetworkRole.admin) {
       return Text(
-        'This grid token has no provider scope (provider:poll), so it '
-        'cannot run a provider. Ask a grid admin to grant you the '
-        'provider role.',
+        "You don't have permission to share a model on this grid yet. "
+        "Ask the grid's owner to allow it.",
         style: theme.textTheme.bodyMedium
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       );
@@ -64,18 +63,17 @@ class _Idle extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("You're an admin here, but this token can't serve models yet "
-            '(missing the provider:poll scope).'),
+        Text("You own this grid, but model sharing isn't turned on for your "
+            'account yet.'),
         const SizedBox(height: 4),
         Text(
-          'Enable provider to grant your account the provider role and refresh '
-          'your token — then you can start serving the model below.',
+          'Turn it on to start sharing a model from this computer below.',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         if (error != null) ...[
           const SizedBox(height: 10),
-          Text('Failed: $error',
+          Text("Couldn't turn it on: $error",
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.error)),
         ],
@@ -87,9 +85,7 @@ class _Idle extends ConsumerWidget {
                     email: network.email,
                   ),
           icon: const Icon(Icons.verified_user_outlined, size: 16),
-          label: Text(error != null
-              ? 'Retry enabling provider'
-              : 'Enable provider on this grid'),
+          label: Text(error != null ? 'Try again' : 'Turn on sharing'),
         ),
       ],
     );
@@ -113,7 +109,7 @@ class _Running extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2)),
             SizedBox(width: 12),
-            Text('Enabling provider…'),
+            Text('Turning on sharing…'),
           ],
         ),
         const SizedBox(height: 12),

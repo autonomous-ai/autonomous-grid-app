@@ -107,7 +107,7 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
           const SizedBox(height: 12),
           Expanded(
             child: chat.messages.isEmpty
-                ? const ComingSoon(message: 'Send a message to the grid.')
+                ? const ComingSoon(message: 'Send a message to start chatting.')
                 : ListView.builder(
                     controller: _scroll,
                     itemCount: chat.messages.length,
@@ -149,11 +149,11 @@ class _ModelPicker extends ConsumerWidget {
       enableFilter: true,
       requestFocusOnTap: true,
       expandedInsets: EdgeInsets.zero,
-      label: const Text('Model (--model)'),
+      label: const Text('Model'),
       hintText: 'Qwen3.6-35B-A3B',
       leadingIcon: const Icon(Icons.smart_toy_outlined, size: 18),
       helperText: models.isEmpty
-          ? 'No advertised models found — type a model name'
+          ? 'No models available yet — type a name'
           : '${models.length} model(s) on ${network?.name ?? 'grid'}',
       dropdownMenuEntries: [
         for (final model in models)
@@ -197,10 +197,10 @@ class _LocalTestToggle extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Test local provider',
+                Text('Test your own model',
                     style: theme.textTheme.bodyMedium
                         ?.copyWith(fontWeight: FontWeight.w500)),
-                Text('Call $endpoint directly over HTTP — skips the relay',
+                Text('Chat with your model directly, without going through the grid',
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
               ],

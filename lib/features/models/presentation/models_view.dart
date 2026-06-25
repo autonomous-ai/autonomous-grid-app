@@ -31,15 +31,15 @@ class ModelsView extends ConsumerWidget {
 
     return SectionScaffold(
       title: 'Models',
-      subtitle: '${models.length} local model(s) in ~/.grid/models',
+      subtitle: '${models.length} model(s) on this computer',
       child: ListView(
         children: [
-          _sectionTitle(context, 'Inference backends'),
+          _sectionTitle(context, 'AI engines'),
           const _BackendsSection(),
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 16),
-          _sectionTitle(context, 'Local models'),
+          _sectionTitle(context, 'Downloaded models'),
           const ModelPullCard(),
           const SizedBox(height: 16),
           ..._localModels(models),
@@ -58,7 +58,7 @@ class ModelsView extends ConsumerWidget {
       return [
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
-          child: Text('No local GGUF models yet — pull one above.'),
+          child: Text('No models downloaded yet — download one above.'),
         ),
       ];
     }
@@ -88,9 +88,9 @@ class _BackendsSection extends ConsumerWidget {
     return backends.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
-        child: Text('Scanning for Ollama / LM Studio / llama.cpp…'),
+        child: Text('Looking for installed AI engines…'),
       ),
-      error: (e, _) => Text('Scan failed: $e'),
+      error: (e, _) => Text("Couldn't check for AI engines: $e"),
       data: (list) {
         final external = list.where((b) => b.isExternal).toList();
         return Column(
@@ -109,8 +109,8 @@ class _BackendsSection extends ConsumerWidget {
             if (external.isEmpty && !engine.llamaInstalled)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
-                child: Text('No running server found (Ollama :11434, '
-                    'LM Studio :1234). Install llama.cpp, or start your own.'),
+                child: Text('No AI engine is running yet. Install the built-in '
+                    'engine below, or start your own (like Ollama or LM Studio).'),
               ),
           ],
         );
@@ -133,12 +133,12 @@ class _LlamaCard extends ConsumerWidget {
           installed ? Icons.check_circle : Icons.download_outlined,
           color: installed ? Colors.green : null,
         ),
-        title: const Text('llama.cpp (grid engine)'),
+        title: const Text('Built-in AI engine'),
         subtitle: Text(installed
-            ? (engine.llamaPath ?? 'installed')
+            ? 'Installed'
             : failed
-                ? 'install failed — retry'
-                : 'not installed'),
+                ? 'Install failed — try again'
+                : 'Not installed yet'),
         trailing: installed
             ? null
             : FilledButton(
@@ -167,7 +167,7 @@ class _InstallingPane extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2)),
             SizedBox(width: 12),
-            Text('Installing llama.cpp…'),
+            Text('Installing the built-in engine…'),
           ],
         ),
         const SizedBox(height: 12),

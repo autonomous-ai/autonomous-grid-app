@@ -57,7 +57,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
     if (models.isEmpty) {
       return Text(
-        'No local model yet — pull one above first.',
+        'No models on this computer yet — download one above first.',
         style: theme.textTheme.bodyMedium
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       );
@@ -74,7 +74,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         DropdownButtonFormField<String>(
           initialValue: selected,
           decoration: const InputDecoration(
-            labelText: 'Local model (--model)',
+            labelText: 'Model',
             border: OutlineInputBorder(),
           ),
           items: [
@@ -87,8 +87,8 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         TextField(
           controller: _advertise,
           decoration: const InputDecoration(
-            labelText: 'Advertise as (--advertise-as)',
-            helperText: 'Auto-filled from the model name; edit if you like.',
+            labelText: 'Display name',
+            helperText: 'The name others on the grid will see. Edit if you like.',
             hintText: 'Qwen3.6-35B-A3B',
             border: OutlineInputBorder(),
           ),
@@ -99,7 +99,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
           child: FilledButton.icon(
             onPressed: () => _start(selected),
             icon: const Icon(Icons.play_arrow),
-            label: const Text('Start provider'),
+            label: const Text('Start sharing'),
           ),
         ),
       ],

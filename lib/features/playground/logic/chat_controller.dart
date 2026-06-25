@@ -79,7 +79,9 @@ class ChatController extends Notifier<ChatState> {
     required String message,
   }) async {
     final service = ref.read(gridCliServiceProvider);
-    if (service == null) return (null, 'grid executable not found.');
+    if (service == null) {
+      return (null, 'Grid core is missing — please reinstall the app.');
+    }
 
     final result = await service.run([
       'request', 'chat',

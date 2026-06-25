@@ -37,7 +37,7 @@ class ProviderRunningCard extends ConsumerWidget {
                 else
                   const Icon(Icons.podcasts, color: Colors.green, size: 18),
                 const SizedBox(width: 10),
-                Text(starting ? 'Starting provider…' : 'Provider running'),
+                Text(starting ? 'Starting…' : 'Sharing now'),
                 const Spacer(),
                 OutlinedButton.icon(
                   onPressed: () =>

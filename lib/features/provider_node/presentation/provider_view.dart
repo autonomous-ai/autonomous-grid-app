@@ -57,7 +57,7 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
     final network = ref.watch(selectedNetworkProvider);
 
     return SectionScaffold(
-      title: 'Provider',
+      title: 'Share a Model',
       subtitle: network?.name,
       child: ListView(
         children: [
@@ -101,7 +101,7 @@ class _ServeSection extends ConsumerWidget {
     final run = ref.watch(providerRunControllerProvider);
 
     if (network == null) {
-      return const Text('No grid joined yet.');
+      return const Text("You haven't joined a grid yet.");
     }
     if (!network.isProvider) {
       return EnableProviderCard(network: network);
@@ -117,14 +117,14 @@ class _ServeSection extends ConsumerWidget {
         if (run is ProviderRunFailed)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text('Last run failed: ${run.message}',
+            child: Text("Couldn't start last time: ${run.message}",
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.error)),
           ),
-        _subheading(theme, 'Serve a local model'),
+        _subheading(theme, 'Share a model from this computer'),
         ServeLocalCard(network: network),
         const SizedBox(height: 20),
-        _subheading(theme, 'Or use an external endpoint (--at)'),
+        _subheading(theme, 'Or connect your own server'),
         _ExternalRunForm(
           network: network,
           endpoint: endpoint,
@@ -190,7 +190,7 @@ class _ExternalRunForm extends ConsumerWidget {
         TextField(
           controller: endpoint,
           decoration: const InputDecoration(
-            labelText: 'Endpoint (--at)',
+            labelText: 'Server address',
             hintText: 'http://192.168.1.10:8080/v1',
             border: OutlineInputBorder(),
           ),
@@ -199,19 +199,19 @@ class _ExternalRunForm extends ConsumerWidget {
         TextField(
           controller: model,
           decoration: InputDecoration(
-            labelText: 'Model (--model)',
+            labelText: 'Model',
             hintText: 'gemma4-31b',
             border: const OutlineInputBorder(),
             helperText: suggestedModels.isEmpty
                 ? null
-                : 'Detected: ${suggestedModels.take(5).join(', ')}',
+                : 'Found: ${suggestedModels.take(5).join(', ')}',
           ),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: advertise,
           decoration: const InputDecoration(
-            labelText: 'Advertise as (optional, --advertise-as)',
+            labelText: 'Display name (optional)',
             hintText: 'mac-studio',
             border: OutlineInputBorder(),
           ),
@@ -227,7 +227,7 @@ class _ExternalRunForm extends ConsumerWidget {
               return FilledButton.icon(
                 onPressed: canStart ? () => onStart(network) : null,
                 icon: const Icon(Icons.play_arrow),
-                label: const Text('Start (external)'),
+                label: const Text('Start sharing'),
               );
             },
           ),

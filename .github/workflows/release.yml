@@ -55,7 +55,9 @@ jobs:
             label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 60
+    # The Nuitka sidecar build is slow (macOS ~45m; Windows >56m), and macOS adds
+    # notarization wait on top — 60m timed Windows out mid-compile. 120m is safe.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout app

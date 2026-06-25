@@ -7,7 +7,7 @@ import '../../features/auth/logic/session_controller.dart';
 enum NavSection {
   networks(Icons.lan_outlined, 'Grids'),
   playground(Icons.chat_bubble_outline, 'Playground'),
-  provider(Icons.podcasts_outlined, 'Provider', providerOnly: true),
+  provider(Icons.podcasts_outlined, 'Share a Model', providerOnly: true),
   models(Icons.memory_outlined, 'Models', providerOnly: true),
   debug(Icons.bug_report_outlined, 'Debug');
 

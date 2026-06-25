@@ -42,7 +42,7 @@ class ConsumerEnvCard extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DetailSection(
-          title: 'OpenAI access',
+          title: 'API access (for developers)',
           children: [
             EnvVarRow(name: 'OPENAI_BASE_URL', value: network.relayBaseUrl),
             EnvVarRow(
@@ -62,7 +62,7 @@ class ConsumerEnvCard extends ConsumerWidget {
           child: TextButton.icon(
             onPressed: () => _copyEnvBlock(context),
             icon: const Icon(Icons.terminal_rounded, size: 15),
-            label: const Text('Copy as env'),
+            label: const Text('Copy'),
           ),
         ),
       ],
@@ -77,7 +77,7 @@ class ConsumerEnvCard extends ConsumerWidget {
     Clipboard.setData(ClipboardData(text: env));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-          content: Text('Copied env block'), duration: Duration(seconds: 1)),
+          content: Text('Copied'), duration: Duration(seconds: 1)),
     );
   }
 }

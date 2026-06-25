@@ -69,13 +69,15 @@ void main() {
     final consumerRole = _network('grid-c2', 'c2',
         roles: const ['consumer'], scopes: const ['inference:create']);
     expect(consumerRole.role, NetworkRole.consumer);
-    expect(consumerRole.roleLabel, 'Consumer');
+    expect(consumerRole.roleLabel, 'Using');
   });
 
   test('consumer network hides the provider-only sections', () {
     final container = containerWith('grid-con');
     final sections = container.read(visibleNavSectionsProvider);
-    expect(sections, [NavSection.networks, NavSection.playground]);
+    // Provider/Models are hidden; Debug stays visible for everyone (README).
+    expect(sections,
+        [NavSection.networks, NavSection.playground, NavSection.debug]);
   });
 
   test('provider network shows every section', () {

@@ -37,15 +37,15 @@ class LocalChatClient {
           await request.close().timeout(const Duration(seconds: 180));
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
-        return (null, 'HTTP ${response.statusCode}: ${_briefError(body)}');
+        return (null, 'Error ${response.statusCode}: ${_briefError(body)}');
       }
       return (extractAssistantText(jsonDecode(body)), null);
     } on TimeoutException {
-      return (null, 'Local server timed out (no response in 180s).');
+      return (null, "Your model didn't respond in time (180s).");
     } on SocketException catch (e) {
-      return (null, 'Cannot reach local server: ${e.message}');
+      return (null, "Couldn't reach your model: ${e.message}");
     } on Object catch (e) {
-      return (null, 'Local request failed: $e');
+      return (null, "Couldn't reach your model: $e");
     } finally {
       client.close(force: true);
     }
