@@ -44,9 +44,9 @@ class ConsumerEnvCard extends ConsumerWidget {
         DetailSection(
           title: 'API access (for developers)',
           children: [
-            EnvVarRow(name: 'OPENAI_BASE_URL', value: network.relayBaseUrl),
+            EnvVarRow(name: 'BASE_URL', value: network.relayBaseUrl),
             EnvVarRow(
-              name: 'OPENAI_API_KEY',
+              name: 'API_KEY',
               value: network.relayApiKey,
               secret: true,
               revealed: revealed,
@@ -72,8 +72,8 @@ class ConsumerEnvCard extends ConsumerWidget {
   /// Copies the two `export …` lines verbatim — paste into a shell to use any
   /// OpenAI-compatible client against this grid's relay.
   void _copyEnvBlock(BuildContext context) {
-    final env = 'export OPENAI_BASE_URL="${network.relayBaseUrl}"\n'
-        'export OPENAI_API_KEY="${network.relayApiKey}"';
+    final env = 'export BASE_URL="${network.relayBaseUrl}"\n'
+        'export API_KEY="${network.relayApiKey}"';
     Clipboard.setData(ClipboardData(text: env));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(

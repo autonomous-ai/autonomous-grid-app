@@ -5,7 +5,6 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
-import '../logic/network_providers.dart';
 import '../logic/network_status.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
@@ -19,7 +18,6 @@ class NetworkDetail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(selectedNetworkConfigProvider);
     final now = DateTime.now();
     final conn = networkConn(network, now);
 
@@ -40,20 +38,6 @@ class NetworkDetail extends ConsumerWidget {
           ConsumerEnvCard(network: network),
           const SizedBox(height: 20),
         ],
-        DetailSection(
-          title: 'Details',
-          children: [
-            MetaRow(label: 'Type', value: prettyNetworkType(network.networkType)),
-            MetaRow(
-                label: 'Your role',
-                value: network.roles.isEmpty ? '—' : network.roles.join(', ')),
-            if (config != null)
-              MetaRow(
-                  label: 'Model sharing',
-                  value: config.hasServerPid ? 'On' : 'Off'),
-          ],
-        ),
-        const SizedBox(height: 20),
         _Actions(network: network),
       ],
     );
