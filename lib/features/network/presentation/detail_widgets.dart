@@ -81,7 +81,7 @@ class AddressRow extends StatelessWidget {
               ],
             ),
           ),
-          _CopyButton(value: value),
+          CopyIconButton(value: value),
         ],
       ),
     );
@@ -154,8 +154,9 @@ class RoleBadge extends StatelessWidget {
   }
 }
 
-class _CopyButton extends StatelessWidget {
-  const _CopyButton({required this.value});
+/// A compact icon button that copies [value] to the clipboard and toasts.
+class CopyIconButton extends StatelessWidget {
+  const CopyIconButton({super.key, required this.value});
   final String value;
 
   @override
