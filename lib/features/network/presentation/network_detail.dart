@@ -7,6 +7,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/network_providers.dart';
 import '../logic/network_status.dart';
+import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
 
 /// Right-hand detail pane for the selected network — Tailscale device-detail
@@ -32,10 +33,13 @@ class NetworkDetail extends ConsumerWidget {
           children: [
             AddressRow(label: 'Grid ID', value: network.networkId),
             AddressRow(label: 'Signaling URL', value: network.lanSignalingUrl),
-            AddressRow(label: 'Relay (OpenAI base)', value: network.relayBaseUrl),
           ],
         ),
         const SizedBox(height: 20),
+        if (network.role == NetworkRole.consumer) ...[
+          ConsumerEnvCard(network: network),
+          const SizedBox(height: 20),
+        ],
         DetailSection(
           title: 'Details',
           children: [
