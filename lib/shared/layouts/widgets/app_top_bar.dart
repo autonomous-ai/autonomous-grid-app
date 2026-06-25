@@ -8,7 +8,6 @@ import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
-import '../shell_state.dart';
 
 /// The Tailscale-style title bar: account on the left, quick actions + avatar
 /// on the right. Doubles as the window drag handle.
@@ -33,8 +32,6 @@ class AppTopBar extends ConsumerWidget {
           children: [
             _Account(email: email),
             const Spacer(),
-            const _QuickActions(),
-            const SizedBox(width: 8),
             _AccountMenu(name: session.user['name'] as String? ?? email, email: email),
           ],
         ),
@@ -67,60 +64,6 @@ class _Account extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _QuickActions extends ConsumerWidget {
-  const _QuickActions();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final canManage =
-        ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
-    return Row(
-      children: [
-        // Provider/Models shortcuts only show where those tabs are available.
-        if (canManage) ...[
-          _IconBtn(
-            icon: Icons.devices_outlined,
-            tooltip: 'Share a Model',
-            onTap: () => ref
-                .read(navSectionProvider.notifier)
-                .select(NavSection.provider),
-          ),
-          _IconBtn(
-            icon: Icons.memory_outlined,
-            tooltip: 'Models',
-            onTap: () =>
-                ref.read(navSectionProvider.notifier).select(NavSection.models),
-          ),
-        ],
-        _IconBtn(
-          icon: Icons.refresh,
-          tooltip: 'Refresh',
-          onTap: () => ref.invalidate(sessionProvider),
-        ),
-      ],
-    );
-  }
-}
-
-class _IconBtn extends StatelessWidget {
-  const _IconBtn(
-      {required this.icon, required this.tooltip, required this.onTap});
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, size: 18),
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      color: AppPalette.textSecondary,
-      onPressed: onTap,
     );
   }
 }
