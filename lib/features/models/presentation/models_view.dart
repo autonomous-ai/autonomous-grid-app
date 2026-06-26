@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../node_setup/presentation/node_setup_card.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/engine_status.dart';
 import '../logic/llama_install_controller.dart';
@@ -34,6 +35,10 @@ class ModelsView extends ConsumerWidget {
       subtitle: '${models.length} model(s) on this computer',
       child: ListView(
         children: [
+          const NodeSetupCard(),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
           _sectionTitle(context, 'AI engines'),
           const _BackendsSection(),
           const SizedBox(height: 16),

@@ -12,8 +12,22 @@ import 'session_controller.dart';
 final authControllerProvider =
     NotifierProvider<AuthController, AuthState>(AuthController.new);
 
-/// Drives `grid auth login --no-browser`: spawns it, surfaces the URL + code as
-/// they stream in, and resolves on the process exit code (cli.py:357/381).
+/// Live CLI output for the sign-in flow, surfaced on the login screen so a
+/// stuck or browser-less login is debuggable — and the link copy-able — without
+/// reaching the in-app Debug tab (which only exists once you're signed in).
+final authLogProvider = NotifierProvider<AuthLog, List<String>>(AuthLog.new);
+
+class AuthLog extends Notifier<List<String>> {
+  @override
+  List<String> build() => const [];
+  void clear() => state = const [];
+  void add(String line) => state = [...state, line];
+}
+
+/// Drives `grid auth login --no-browser`: spawns it, surfaces the device-login
+/// URL + code as they stream in (the login screen opens the browser to that
+/// URL — the CLI can't reliably open one when spawned from a GUI app), and
+/// resolves on the process exit code.
 class AuthController extends Notifier<AuthState> {
   GridProcess? _process;
 
@@ -36,17 +50,19 @@ class AuthController extends Notifier<AuthState> {
 
     state = const AuthStarting();
     final parser = DeviceLoginParser();
-    final output = <String>[];
+    final log = ref.read(authLogProvider.notifier)..clear();
 
-    final apiUrl = ref.read(gridApiUrlProvider);
-    final proc = await service.start([
-      'auth', 'login', '--no-browser',
-      if (apiUrl.isNotEmpty) ...['--api-url', apiUrl],
-    ]);
+    // `--no-browser` tells the CLI to print the device-login URL instead of
+    // opening a browser itself (which silently fails when spawned from the GUI
+    // app, leaving the screen stuck on "Signing in…"). The login screen opens
+    // the URL — see _openInBrowser.
+    const args = <String>['auth', 'login', '--no-browser'];
+    log.add('\$ grid ${args.join(' ')}');
+    final proc = await service.start(args);
     _process = proc;
 
     proc.lines.listen((line) {
-      output.add(line.text);
+      log.add(line.text);
       parser.feed(line.text);
       final login = parser.result;
       if (login != null && state is! AuthAwaitingApproval) {
@@ -59,7 +75,7 @@ class AuthController extends Notifier<AuthState> {
     final timeout = Timer(_linkTimeout, () {
       if (identical(_process, proc) && state is AuthStarting) {
         proc.kill();
-        state = AuthFailure(diagnoseCliFailure(output,
+        state = AuthFailure(diagnoseCliFailure(ref.read(authLogProvider),
             headline: 'Timed out waiting for the sign-in link (30s).'));
       }
     });
@@ -78,7 +94,7 @@ class AuthController extends Notifier<AuthState> {
     // Don't clobber a state a timeout or cancel already settled.
     if (identical(_process, proc) &&
         (state is AuthStarting || state is AuthAwaitingApproval)) {
-      state = AuthFailure(diagnoseCliFailure(output,
+      state = AuthFailure(diagnoseCliFailure(ref.read(authLogProvider),
           headline: 'Login failed (exit $exitCode).'));
     }
   }
