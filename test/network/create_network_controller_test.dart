@@ -48,6 +48,17 @@ ManagedNetworkCreateFn _recordCreate(
   };
 }
 
+/// A [FakeGridCliService] that records the lifecycle commands it's asked to run.
+class _RecordingCli extends FakeGridCliService {
+  final List<List<String>> runs = [];
+
+  @override
+  Future<CliResult> run(List<String> args) {
+    runs.add(args);
+    return super.run(args);
+  }
+}
+
 NetworkCredential _existingNetwork() => NetworkCredential.fromToml(const {
       'network_id': 'net-existing',
       'lan_signaling_url': 'https://signal.example',
@@ -94,6 +105,20 @@ void main() {
     expect(state, isA<CreateNetworkDone>());
     expect((state as CreateNetworkDone).joinWarning, isNull);
     expect(state.network.networkId, _net);
+  });
+
+  test('syncs after joining so the new grid lands fully in ~/.grid', () async {
+    final cli = _RecordingCli()
+      ..stubResult(_joinArgs,
+          const CliResult(exitCode: 0, stdout: 'Joined', stderr: ''));
+    final container =
+        _container(create: _stubCreate((_created, null)), cli: cli);
+
+    await container
+        .read(createNetworkControllerProvider.notifier)
+        .submit(name: 'my-grid', type: ManagedNetworkType.permissionedPublic);
+
+    expect(cli.runs, containsAllInOrder([_joinArgs, const ['sync']]));
   });
 
   test('surfaces the API error and stays failed', () async {
