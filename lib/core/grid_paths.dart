@@ -24,6 +24,11 @@ class GridPaths {
 
   static File get credentialsFile => File('${home.path}/credentials.toml');
 
+  /// `~/.grid/cli.toml` — where grid 0.1.0 stores its auth session (`[auth]`)
+  /// alongside provider/pricing config. `grid auth login` writes the session
+  /// here; this is the file the app checks to know it is signed in.
+  static File get cliConfigFile => File('${home.path}/cli.toml');
+
   static Directory get networksDir => Directory('${home.path}/networks');
 
   static Directory networkDir(String networkId) =>

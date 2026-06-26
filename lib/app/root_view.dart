@@ -19,7 +19,7 @@ class RootView extends ConsumerWidget {
           error: (error, _) => _ErrorView(message: '$error'),
           data: (report) {
             if (!report.canProceed) return PreflightScreen(report: report);
-            final loggedIn = ref.watch(sessionProvider).isLoggedIn;
+            final loggedIn = ref.watch(authSessionProvider).isAuthenticated;
             return loggedIn ? const HomeShell() : const LoginScreen();
           },
         );

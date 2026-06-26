@@ -68,6 +68,9 @@ class AuthController extends Notifier<AuthState> {
     timeout.cancel();
 
     if (exitCode == 0) {
+      // Re-read cli.toml [auth] (the login gate) and credentials.toml (networks)
+      // so RootView swaps LoginScreen → HomeShell instead of spinning forever.
+      ref.invalidate(authSessionProvider);
       ref.invalidate(sessionProvider);
       state = const AuthSuccess();
       return;
@@ -85,12 +88,15 @@ class AuthController extends Notifier<AuthState> {
     state = const AuthIdle();
   }
 
-  /// Sign out: best-effort `grid auth logout` (if the CLI supports it), then
-  /// clear the local credentials so the app drops back to the login screen.
+  /// Sign out. grid 0.1.0 keeps the session in `cli.toml [auth]` and ships no
+  /// `grid auth logout`, so we clear it ourselves: strip `[auth]` from cli.toml
+  /// (preserving provider/pricing) and drop the legacy credentials file. The
+  /// session watchers then route back to the login screen.
   Future<void> logout() async {
-    final service = ref.read(gridCliServiceProvider);
-    await service?.run(['auth', 'logout']);
-    ref.read(gridHomeStoreProvider).clearCredentials();
+    final store = ref.read(gridHomeStoreProvider);
+    store.clearCliAuth();
+    store.clearCredentials();
+    ref.invalidate(authSessionProvider);
     ref.invalidate(sessionProvider);
     state = const AuthIdle();
   }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:toml/toml.dart';
 
 import '../../core/grid_paths.dart';
+import 'models/cli_auth.dart';
 import 'models/credentials_file.dart';
 import 'models/local_files.dart';
 import 'models/network_config.dart';
@@ -18,12 +19,30 @@ class GridHomeStore {
     return map == null ? CredentialsFile.empty : CredentialsFile.fromToml(map);
   }
 
+  /// The signed-in session, from `cli.toml [auth]` (grid 0.1.0). Empty when the
+  /// file is absent or unauthenticated. Invalidate after a login/logout.
+  CliAuth readCliAuth() {
+    final map = _readToml(GridPaths.cliConfigFile);
+    return map == null ? CliAuth.empty : CliAuth.fromToml(map);
+  }
+
   /// Sign-out: remove the local credentials file. The one mutation this store
   /// performs — there is no documented `grid auth logout`, and `~/.grid` is the
   /// app's source of truth, so deleting the file logs the user out.
   void clearCredentials() {
     final file = GridPaths.credentialsFile;
     if (file.existsSync()) file.deleteSync();
+  }
+
+  /// Sign-out for grid 0.1.0: the session lives in `cli.toml [auth]` and the CLI
+  /// ships no `grid auth logout`. Strip the `[auth]` table and rewrite the file
+  /// so the user's `[provider]`/`[pricing]` config survives — deleting cli.toml
+  /// outright would discard it.
+  void clearCliAuth() {
+    final file = GridPaths.cliConfigFile;
+    final map = _readToml(file);
+    if (map == null || map.remove('auth') == null) return;
+    file.writeAsStringSync(TomlDocument.fromMap(map).toString());
   }
 
   NetworkConfig? readNetworkConfig(String networkId) {
