@@ -49,8 +49,13 @@ List<SetupAction> _actions(List<SetupStep> steps) =>
     steps.map((s) => s.action).toList();
 
 void main() {
-  test('a fresh machine installs both engines and downloads both', () {
+  test('media is off by default — a fresh machine sets up text only', () {
     final plan = buildSetupPlan(_caps());
+    expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
+  });
+
+  test('with media enabled, a fresh machine installs both engines', () {
+    final plan = buildSetupPlan(_caps(), includeMedia: true);
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.pullModel,
@@ -59,33 +64,30 @@ void main() {
     ]);
   });
 
-  test('skips the model step when the catalog recommends none', () {
-    final plan = buildSetupPlan(_caps(recommended: null));
+  test('an existing Ollama with models needs nothing (media off)', () {
+    final plan = buildSetupPlan(_caps(backends: [_ollama()]));
+    expect(plan, isEmpty);
+  });
+
+  test('with media enabled, an existing Ollama still installs ComfyUI', () {
+    final plan = buildSetupPlan(_caps(backends: [_ollama()]), includeMedia: true);
     expect(_actions(plan), [
-      SetupAction.installLlama,
       SetupAction.installComfy,
       SetupAction.pullMediaBundle,
     ]);
   });
 
-  test('an existing Ollama with models skips the text engine and model', () {
-    final plan = buildSetupPlan(_caps(backends: [_ollama()]));
-    expect(_actions(plan), [
-      SetupAction.installComfy,
-      SetupAction.pullMediaBundle,
-    ]);
+  test('skips the model step when the catalog recommends none', () {
+    final plan = buildSetupPlan(_caps(recommended: null));
+    expect(_actions(plan), [SetupAction.installLlama]);
   });
 
   test('a fully set-up node needs no steps', () {
     final plan = buildSetupPlan(
       _caps(engineInstalled: true, media: _completeMedia, models: 1),
+      includeMedia: true,
     );
     expect(plan, isEmpty);
-  });
-
-  test('includeMedia: false skips all ComfyUI work', () {
-    final plan = buildSetupPlan(_caps(), includeMedia: false);
-    expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
   });
 
   test('the model step pulls the catalog label, not a hardcoded id', () {

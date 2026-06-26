@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/node_capabilities.dart';
+import '../logic/node_setup_config.dart';
 import '../logic/node_setup_controller.dart';
 import '../logic/node_setup_plan.dart';
 
@@ -137,10 +138,11 @@ class _CapabilitySummary extends StatelessWidget {
               ? 'Text · ${caps.textBackendLabel}'
               : 'Text · none',
         ),
-        _CapChip(
-          ok: caps.hasMediaEngine,
-          label: caps.hasMediaEngine ? 'Media · ComfyUI' : 'Media · none',
-        ),
+        if (kMediaSetupEnabled)
+          _CapChip(
+            ok: caps.hasMediaEngine,
+            label: caps.hasMediaEngine ? 'Media · ComfyUI' : 'Media · none',
+          ),
         _CapChip(
           ok: caps.hasModels,
           label: '${caps.localModelCount} local model(s)',

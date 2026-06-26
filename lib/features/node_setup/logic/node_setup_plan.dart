@@ -1,4 +1,5 @@
 import 'node_capabilities.dart';
+import 'node_setup_config.dart';
 
 /// One install/download action in the node-setup sequence.
 enum SetupAction { installLlama, pullModel, installComfy, pullMediaBundle }
@@ -33,7 +34,7 @@ const defaultMediaBundle = 'image_generation';
 /// hardcoded id.
 List<SetupStep> buildSetupPlan(
   NodeCapabilities caps, {
-  bool includeMedia = true,
+  bool includeMedia = kMediaSetupEnabled,
 }) {
   final steps = <SetupStep>[];
 

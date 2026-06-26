@@ -6,6 +6,7 @@ import '../../models/logic/models_providers.dart';
 import '../../provider_node/logic/backend_detector.dart';
 import 'media_status.dart';
 import 'model_catalog.dart';
+import 'node_setup_config.dart';
 
 /// A snapshot of what this computer can already do as a Grid node: which text
 /// inference backends exist (Ollama / LM Studio / grid llama.cpp), whether the
@@ -74,9 +75,12 @@ final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
   final modelCount = ref.read(localModelsProvider).length;
   final recommended = await ref.watch(recommendedModelProvider.future);
 
-  // Probe text backends and the media engine concurrently.
+  // Probe text backends and (only when media setup is enabled) the media
+  // engine concurrently. With media off we skip the `grid media status` spawn.
   final backendsFuture = BackendDetector().detect();
-  final mediaFuture = MediaDetector(service).detect();
+  final mediaFuture = kMediaSetupEnabled
+      ? MediaDetector(service).detect()
+      : Future<MediaStatus>.value(MediaStatus.notInstalled);
 
   return NodeCapabilities(
     textBackends: await backendsFuture,
