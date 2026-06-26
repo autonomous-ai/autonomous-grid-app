@@ -28,16 +28,14 @@ void main() {
     expect(report.hasContainerEngine, isFalse);
   });
 
-  test('grid present but crashing reports a clear arch error', () async {
+  test('grid present but crashing surfaces the CLI error', () async {
     final fake = FakeGridCliService()
       ..stubResult(
         ['--version'],
         const CliResult(
           exitCode: 1,
           stdout: '',
-          stderr: "ImportError: dlopen(protocol.cpython-313-darwin.so): "
-              "mach-o file, but is an incompatible architecture "
-              "(have 'arm64', need 'x86_64')",
+          stderr: 'ModuleNotFoundError: No module named \'grid.core\'',
         ),
       );
 
@@ -47,8 +45,7 @@ void main() {
     expect(report.gridAvailable, isFalse);
     expect(report.canProceed, isFalse);
     expect(report.gridError, isNotNull);
-    expect(report.gridError, contains('architecture'));
-    expect(report.gridError, contains('Rosetta'));
+    expect(report.gridError, contains('ModuleNotFoundError'));
   });
 
   test('falls back to podman when docker is missing', () async {

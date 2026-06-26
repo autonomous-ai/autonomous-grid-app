@@ -77,9 +77,15 @@ void main() {
     ]);
   });
 
-  test('skips the model step when the catalog recommends none', () {
-    final plan = buildSetupPlan(_caps(recommended: null));
-    expect(_actions(plan), [SetupAction.installLlama]);
+  test('falls back to a default model when the catalog recommends none', () {
+    final plan = buildSetupPlan(_caps(recommended: null), isMacOS: true);
+    expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
+    final pull = plan.firstWhere((s) => s.action == SetupAction.pullModel);
+    expect(pull.args, [
+      'models',
+      'pull',
+      'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
+    ]);
   });
 
   test('a fully set-up node needs no steps', () {

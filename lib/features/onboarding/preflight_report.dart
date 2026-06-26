@@ -12,8 +12,8 @@ class PreflightReport {
   final bool gridAvailable;
   final String? gridVersion;
 
-  /// Why `grid` didn't run, when it's installed but failed (e.g. a Rosetta
-  /// arch mismatch). Null when `grid` is simply absent or working.
+  /// Why `grid` didn't run, when it's installed but failed (e.g. a missing
+  /// dependency). Null when `grid` is simply absent or working.
   final String? gridError;
 
   /// "docker", "podman", or null if neither is installed.

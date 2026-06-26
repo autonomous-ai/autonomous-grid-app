@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'node_capabilities.dart';
 import 'node_setup_config.dart';
 
@@ -26,15 +28,25 @@ class SetupStep {
 /// Default ComfyUI bundle so the media engine is usable right after install.
 const defaultMediaBundle = 'image_generation';
 
+/// Fallback model used only when `grid models list --catalog` is unavailable
+/// (CLI error, empty target list, parse miss) — so a node never finishes with an
+/// engine but no model. These are the catalog's own picks expressed as
+/// `repo:file`, which `grid models pull` parses directly without a catalog
+/// lookup, making them robust when the catalog itself can't be read.
+String _fallbackModelSpec({bool? isMacOS}) => (isMacOS ?? Platform.isMacOS)
+    ? 'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-IQ3_S.gguf'
+    : 'unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q5_K_XL.gguf';
+
 /// Decides the minimal sequence of steps to make this computer a usable node,
 /// installing only what's missing (the "auto-detect, fill the gaps" flow). Pure
 /// and side-effect free, so it's trivially testable. Steps run in list order;
 /// the ComfyUI bundle download is sequenced after its install. The model to pull
-/// comes from [NodeCapabilities.recommendedModel] (the CLI catalog), never a
-/// hardcoded id.
+/// prefers [NodeCapabilities.recommendedModel] (the CLI catalog) and falls back
+/// to [_fallbackModelSpec] so the model download is never silently skipped.
 List<SetupStep> buildSetupPlan(
   NodeCapabilities caps, {
   bool includeMedia = kMediaSetupEnabled,
+  bool? isMacOS,
 }) {
   final steps = <SetupStep>[];
 
@@ -48,13 +60,17 @@ List<SetupStep> buildSetupPlan(
     ));
   }
 
-  final model = caps.recommendedModel;
-  if (!caps.hasModels && !caps.hasExternalModels && model != null) {
+  // Always pull a model when this node has none and no external backend to
+  // serve through — catalog label when known, otherwise a robust repo:file spec.
+  if (!caps.hasModels && !caps.hasExternalModels) {
+    final model = caps.recommendedModel;
+    final spec = model?.label ?? _fallbackModelSpec(isMacOS: isMacOS);
+    final display = model?.repoFile ?? spec;
     steps.add(SetupStep(
       action: SetupAction.pullModel,
-      title: 'Download a model (${model.label})',
-      detail: 'From the recommended catalog — ${model.repoFile}.',
-      args: ['models', 'pull', model.label],
+      title: 'Download a model',
+      detail: 'Downloading $display so this node can answer chat.',
+      args: ['models', 'pull', spec],
       isDownload: true,
     ));
   }

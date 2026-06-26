@@ -61,7 +61,6 @@ class GridResolver {
     final wellKnown = <String>[
       if (home.isNotEmpty) '$home/.local/bin/grid', // uv tool / pipx
       '/opt/homebrew/bin/grid', // Homebrew (Apple Silicon)
-      '/usr/local/bin/grid', // Homebrew (Intel) / manual
       '/usr/bin/grid',
     ];
     for (final path in wellKnown) {
