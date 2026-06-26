@@ -96,6 +96,7 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
     }
 
     final joinWarning = await _joinLocally(network.networkId);
+    await _sync();
     ref.invalidate(sessionProvider);
     state = CreateNetworkDone(network, joinWarning: joinWarning);
   }
@@ -114,6 +115,12 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
   }
 
   void reset() => state = const CreateNetworkIdle();
+
+  /// Best-effort `grid sync` so the new grid's full state lands in `~/.grid`
+  /// before we refresh the session. Failures are non-fatal (logged in Debug).
+  Future<void> _sync() async {
+    await ref.read(gridCliServiceProvider)?.run(['sync']);
+  }
 
   /// Best-effort `grid network join` so the new grid lands in the local list.
   /// Returns a warning when it couldn't run — the grid still exists server-side.
