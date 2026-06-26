@@ -7,7 +7,6 @@ name: release
 # publishes a DRAFT GitHub Release with the installers:
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
-#   Grid-<ver>-macOS-Intel.dmg           (signed + notarized — see note below)
 #   Grid-<ver>-Windows-x64.zip           (unsigned; SmartScreen may warn)
 #
 #   git tag v0.1.2 && git push origin v0.1.2
@@ -21,14 +20,6 @@ name: release
 #   APPLE_TEAM_ID               Apple Developer Team ID (notarization)
 #   APPLE_APP_PASSWORD          app-specific password   (notarization)
 # GITHUB_TOKEN is provided automatically and needs `contents: write` (below).
-#
-# NOTE on the Intel job: Nuitka cannot cross-compile, so the x86_64 sidecar is
-# built under Rosetta 2 on the Apple-Silicon runner (GitHub retired the Intel
-# macos-13 pool). The Flutter app itself is universal (a Release build targets
-# arm64 + x86_64), so only the sidecar differs between the two DMGs. The Rosetta
-# sidecar build is the one step not yet validated on a real runner — the matrix
-# uses `fail-fast: false` so a failure there never blocks the arm64 + Windows
-# releases. Validate it on the first tag, then drop this note.
 
 on:
   push:
@@ -47,9 +38,6 @@ jobs:
           - platform: macos-latest      # Apple Silicon, native build
             arch: arm64
             label: macOS-Apple-Silicon
-          - platform: macos-latest      # Intel, cross-built under Rosetta (see note)
-            arch: x64
-            label: macOS-Intel
           - platform: windows-latest
             arch: x64
             label: Windows-x64
@@ -104,18 +92,6 @@ jobs:
         if: runner.os == 'macOS' && matrix.arch == 'arm64'
         working-directory: autonomous-grid-cli
         run: ./build/build_macos.sh
-
-      # x86_64 sidecar under Rosetta. python.org builds are universal2, so one
-      # runs as x86_64 under `arch -x86_64`; Nuitka then emits an x86_64 binary.
-      - name: Build grid sidecar (macOS Intel, Rosetta)
-        if: runner.os == 'macOS' && matrix.arch == 'x64'
-        working-directory: autonomous-grid-cli
-        run: |
-          set -euxo pipefail
-          curl -fsSLO https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg
-          sudo installer -pkg python-3.11.9-macos11.pkg -target /
-          arch -x86_64 env GRID_BUILD_PYTHON=/usr/local/bin/python3.11 \
-            /bin/bash ./build/build_macos.sh
 
       - name: Build macOS app + inject sidecar
         if: runner.os == 'macOS'
