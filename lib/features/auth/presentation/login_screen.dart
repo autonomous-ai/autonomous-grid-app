@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../shared/widgets/error_box.dart';
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
 
@@ -40,10 +41,11 @@ class LoginScreen extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: switch (state) {
-              AuthAwaitingApproval(:final url, :final userCode) =>
-                _ApprovalView(url: url, userCode: userCode),
-              AuthStarting() || AuthSuccess() =>
-                const _Busy(label: 'Signing in…'),
+              AuthAwaitingApproval(:final url, :final userCode) => _ApprovalView(
+                  url: url, userCode: userCode, onCancel: controller.cancel),
+              AuthStarting() =>
+                _Busy(label: 'Signing in…', onCancel: controller.cancel),
+              AuthSuccess() => const _Busy(label: 'Signing in…'),
               AuthFailure(:final message) =>
                 _SignIn(onSignIn: controller.login, error: message),
               AuthIdle() => _SignIn(onSignIn: controller.login),
@@ -78,10 +80,7 @@ class _SignIn extends StatelessWidget {
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
-          Text(error!,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error),
-              textAlign: TextAlign.center),
+          ErrorBox(message: error!),
         ],
       ],
     );
@@ -89,10 +88,15 @@ class _SignIn extends StatelessWidget {
 }
 
 class _ApprovalView extends StatelessWidget {
-  const _ApprovalView({required this.url, required this.userCode});
+  const _ApprovalView({
+    required this.url,
+    required this.userCode,
+    required this.onCancel,
+  });
 
   final String url;
   final String userCode;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -127,6 +131,8 @@ class _ApprovalView extends StatelessWidget {
             Text('Waiting for approval…'),
           ],
         ),
+        const SizedBox(height: 12),
+        TextButton(onPressed: onCancel, child: const Text('Cancel')),
       ],
     );
   }
@@ -165,8 +171,9 @@ class _CopyField extends StatelessWidget {
 }
 
 class _Busy extends StatelessWidget {
-  const _Busy({required this.label});
+  const _Busy({required this.label, this.onCancel});
   final String label;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -176,6 +183,10 @@ class _Busy extends StatelessWidget {
         const CircularProgressIndicator(),
         const SizedBox(height: 16),
         Text(label),
+        if (onCancel != null) ...[
+          const SizedBox(height: 16),
+          TextButton(onPressed: onCancel, child: const Text('Cancel')),
+        ],
       ],
     );
   }

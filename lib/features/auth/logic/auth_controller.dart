@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/cli_diagnostics.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
 import 'auth_state.dart';
@@ -13,6 +16,10 @@ final authControllerProvider =
 /// they stream in, and resolves on the process exit code (cli.py:357/381).
 class AuthController extends Notifier<AuthState> {
   GridProcess? _process;
+
+  /// How long to wait for the sign-in link to appear before giving up. A broken
+  /// or hung CLI must surface as an error, never an endless spinner.
+  static const _linkTimeout = Duration(seconds: 30);
 
   @override
   AuthState build() {
@@ -29,15 +36,17 @@ class AuthController extends Notifier<AuthState> {
 
     state = const AuthStarting();
     final parser = DeviceLoginParser();
-    final errorLines = <String>[];
+    final output = <String>[];
 
     final apiUrl = ref.read(gridApiUrlProvider);
-    _process = await service.start([
+    final proc = await service.start([
       'auth', 'login', '--no-browser',
       if (apiUrl.isNotEmpty) ...['--api-url', apiUrl],
     ]);
-    _process!.lines.listen((line) {
-      if (line.isStderr) errorLines.add(line.text);
+    _process = proc;
+
+    proc.lines.listen((line) {
+      output.add(line.text);
       parser.feed(line.text);
       final login = parser.result;
       if (login != null && state is! AuthAwaitingApproval) {
@@ -45,17 +54,30 @@ class AuthController extends Notifier<AuthState> {
       }
     });
 
-    final exitCode = await _process!.exitCode;
+    // If the link never streams in, the CLI is stuck or crashed — bail with a
+    // readable reason instead of spinning forever on "Signing in…".
+    final timeout = Timer(_linkTimeout, () {
+      if (identical(_process, proc) && state is AuthStarting) {
+        proc.kill();
+        state = AuthFailure(diagnoseCliFailure(output,
+            headline: 'Timed out waiting for the sign-in link (30s).'));
+      }
+    });
+
+    final exitCode = await proc.exitCode;
+    timeout.cancel();
+
     if (exitCode == 0) {
       ref.invalidate(sessionProvider);
       state = const AuthSuccess();
       return;
     }
-    state = AuthFailure(
-      errorLines.isNotEmpty
-          ? errorLines.join('\n')
-          : 'Login failed (exit $exitCode).',
-    );
+    // Don't clobber a state a timeout or cancel already settled.
+    if (identical(_process, proc) &&
+        (state is AuthStarting || state is AuthAwaitingApproval)) {
+      state = AuthFailure(diagnoseCliFailure(output,
+          headline: 'Login failed (exit $exitCode).'));
+    }
   }
 
   void cancel() {

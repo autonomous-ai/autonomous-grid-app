@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../shared/widgets/error_box.dart';
 import 'preflight_providers.dart';
 import 'preflight_report.dart';
 
@@ -27,8 +28,11 @@ class PreflightScreen extends ConsumerWidget {
               Text('Grid needs setup', style: theme.textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
-                "Grid couldn't find the components it needs to run. Please "
-                'install them, then check again.',
+                report.gridError != null
+                    ? "Grid is installed but couldn't start. Fix the issue "
+                        'below, then check again.'
+                    : "Grid couldn't find the components it needs to run. "
+                        'Please install them, then check again.',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
@@ -39,6 +43,10 @@ class PreflightScreen extends ConsumerWidget {
                 optional: true,
                 detail: report.containerEngine,
               ),
+              if (report.gridError != null) ...[
+                const SizedBox(height: 16),
+                ErrorBox(message: report.gridError!),
+              ],
               const SizedBox(height: 24),
               FilledButton.icon(
                 onPressed: () => ref.invalidate(preflightProvider),

@@ -78,6 +78,40 @@ void main() {
     expect((state as AuthFailure).message, contains('expired'));
   });
 
+  test('login surfaces a clear, actionable message on an arch-mismatch crash',
+      () async {
+    final fake = FakeGridCliService()
+      ..stubStart(
+        ['auth', 'login', '--no-browser', '--api-url', 'https://api.test/'],
+        exitCode: 1,
+        lines: const [
+          CliLine(isStderr: true, text: 'Traceback (most recent call last):'),
+          CliLine(
+              isStderr: true,
+              text: "ImportError: dlopen(...protocol.cpython-313-darwin.so): "
+                  "mach-o file, but is an incompatible architecture "
+                  "(have 'arm64', need 'x86_64')"),
+        ],
+      );
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        gridApiUrlProvider.overrideWithValue('https://api.test/'),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(authControllerProvider.notifier).login();
+
+    final state = container.read(authControllerProvider);
+    expect(state, isA<AuthFailure>());
+    final message = (state as AuthFailure).message;
+    expect(message, contains('architecture'));
+    expect(message, contains('Rosetta'));
+    // The raw Python traceback must not leak into the message.
+    expect(message, isNot(contains('Traceback')));
+  });
+
   test('login fails fast when grid is absent', () async {
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(null)],
