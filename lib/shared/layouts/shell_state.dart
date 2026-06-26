@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,24 +10,31 @@ enum NavSection {
   playground(Icons.chat_bubble_outline, 'Playground'),
   provider(Icons.podcasts_outlined, 'Share a Model', providerOnly: true),
   models(Icons.memory_outlined, 'Models', providerOnly: true),
-  debug(Icons.bug_report_outlined, 'Debug');
+  debug(Icons.bug_report_outlined, 'Debug', devOnly: true);
 
-  const NavSection(this.icon, this.label, {this.providerOnly = false});
+  const NavSection(this.icon, this.label,
+      {this.providerOnly = false, this.devOnly = false});
   final IconData icon;
   final String label;
 
   /// Only available when the selected network grants the provider scope.
   final bool providerOnly;
+
+  /// Only available in dev (debug) builds — hidden in release/production.
+  final bool devOnly;
 }
 
 /// Sections visible for the currently selected network. Provider/Models are
-/// hidden on consumer-only networks; admins and providers see them.
+/// hidden on consumer-only networks; admins and providers see them. Dev-only
+/// sections (Debug) are hidden outside debug builds.
 final visibleNavSectionsProvider = Provider<List<NavSection>>((ref) {
   final canManage =
       ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
   return [
     for (final section in NavSection.values)
-      if (!section.providerOnly || canManage) section,
+      if ((!section.providerOnly || canManage) &&
+          (!section.devOnly || kDebugMode))
+        section,
   ];
 });
 

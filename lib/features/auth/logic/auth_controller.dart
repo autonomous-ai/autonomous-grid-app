@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
+import '../../network/logic/create_network_controller.dart';
 import 'auth_state.dart';
 import 'device_login_parser.dart';
 import 'session_controller.dart';
@@ -49,6 +52,11 @@ class AuthController extends Notifier<AuthState> {
     if (exitCode == 0) {
       ref.invalidate(sessionProvider);
       state = const AuthSuccess();
+      // Brand-new accounts land with no grids — give them a starter one named
+      // after them. Runs in the background; the list refreshes when it lands.
+      unawaited(ref
+          .read(createNetworkControllerProvider.notifier)
+          .createFirstGridIfNeeded());
       return;
     }
     state = AuthFailure(

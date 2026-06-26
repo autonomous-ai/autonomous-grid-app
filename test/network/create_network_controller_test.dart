@@ -7,6 +7,7 @@ import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/providers.dart';
 import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 const _net = 'net-1';
 const _joinArgs = ['network', 'join', _net];
@@ -31,17 +32,45 @@ ManagedNetworkCreateFn _stubCreate((ManagedNetwork?, String?) result) {
       result;
 }
 
+/// Like [_stubCreate] but records the name passed to the create call.
+ManagedNetworkCreateFn _recordCreate(
+  List<String> names,
+  (ManagedNetwork?, String?) result,
+) {
+  return ({
+    required String apiUrl,
+    required String sessionToken,
+    required String name,
+    required ManagedNetworkType type,
+  }) async {
+    names.add(name);
+    return result;
+  };
+}
+
+NetworkCredential _existingNetwork() => NetworkCredential.fromToml(const {
+      'network_id': 'net-existing',
+      'lan_signaling_url': 'https://signal.example',
+      'access_token': 'a',
+    });
+
 ProviderContainer _container({
   required ManagedNetworkCreateFn create,
   GridCliService? cli,
   String? sessionToken = 'tok',
+  List<NetworkCredential> networks = const [],
+  String? email,
 }) {
   final container = ProviderContainer(
     overrides: [
       managedNetworkCreateProvider.overrideWithValue(create),
       gridCliServiceProvider.overrideWithValue(cli),
       sessionProvider.overrideWithValue(
-        CredentialsFile(networks: const [], sessionToken: sessionToken),
+        CredentialsFile(
+          networks: networks,
+          sessionToken: sessionToken,
+          user: email == null ? const {} : {'email': email},
+        ),
       ),
     ],
   );
@@ -123,5 +152,45 @@ void main() {
 
     expect(container.read(createNetworkControllerProvider),
         isA<CreateNetworkFailed>());
+  });
+
+  test('createFirstGridIfNeeded provisions a grid named after the user',
+      () async {
+    final names = <String>[];
+    final fake = FakeGridCliService()
+      ..stubResult(_joinArgs,
+          const CliResult(exitCode: 0, stdout: 'Joined', stderr: ''));
+    final container = _container(
+      create: _recordCreate(names, (_created, null)),
+      cli: fake,
+      email: 'huy@gmail.com',
+    );
+
+    await container
+        .read(createNetworkControllerProvider.notifier)
+        .createFirstGridIfNeeded();
+
+    expect(names, ['Huy Grid']);
+    expect(container.read(createNetworkControllerProvider),
+        isA<CreateNetworkDone>());
+  });
+
+  test('createFirstGridIfNeeded is a no-op when a grid already exists',
+      () async {
+    final names = <String>[];
+    final container = _container(
+      create: _recordCreate(names, (_created, null)),
+      cli: FakeGridCliService(),
+      networks: [_existingNetwork()],
+      email: 'huy@gmail.com',
+    );
+
+    await container
+        .read(createNetworkControllerProvider.notifier)
+        .createFirstGridIfNeeded();
+
+    expect(names, isEmpty);
+    expect(container.read(createNetworkControllerProvider),
+        isA<CreateNetworkIdle>());
   });
 }

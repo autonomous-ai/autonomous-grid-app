@@ -5,6 +5,7 @@ import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/providers.dart';
 import '../../auth/logic/session_controller.dart';
+import 'default_grid_name.dart';
 
 /// The `POST /v1/grid/managed-networks` call, behind a provider so tests can
 /// swap in a fake without a real HTTP round-trip. Defaults to the live client.
@@ -97,6 +98,19 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
     final joinWarning = await _joinLocally(network.networkId);
     ref.invalidate(sessionProvider);
     state = CreateNetworkDone(network, joinWarning: joinWarning);
+  }
+
+  /// Provision the user's very first grid right after sign-in, named after them
+  /// ("Huy Grid" for huy@gmail.com). No-op once they already have a grid, so it
+  /// only ever fires for a brand-new account. Delegates to [submit] for the
+  /// actual create + local join + session refresh.
+  Future<void> createFirstGridIfNeeded() async {
+    final session = ref.read(sessionProvider);
+    if (session.networks.isNotEmpty) return;
+    await submit(
+      name: defaultGridName(session.userEmail),
+      type: ManagedNetworkType.fallback,
+    );
   }
 
   void reset() => state = const CreateNetworkIdle();
