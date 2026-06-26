@@ -109,8 +109,9 @@ class _Actions extends ConsumerWidget {
         ),
         if (network.canManageProvider)
           OutlinedButton.icon(
-            onPressed: () =>
-                ref.read(navSectionProvider.notifier).select(NavSection.models),
+            onPressed: () => ref
+                .read(navSectionProvider.notifier)
+                .select(NavSection.provider),
             icon: const Icon(Icons.podcasts_outlined, size: 16),
             label: const Text('Share a model'),
           ),
