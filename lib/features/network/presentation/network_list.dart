@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../auth/logic/session_controller.dart';
 import '../logic/network_status.dart';
+import 'create_network_dialog.dart';
 import 'detail_widgets.dart';
 
 /// Middle column: searchable list of joined networks, grouped under the
@@ -28,10 +29,9 @@ class _NetworkListState extends ConsumerState<NetworkList> {
     final selected = ref.watch(selectedNetworkProvider);
     final owner = session.user['name'] as String? ?? session.userEmail ?? 'My grids';
 
-    // Hide grids where the viewer is an admin — this list only surfaces
-    // grids the user joined to consume/provide on.
-    final visible =
-        session.networks.where((n) => n.role != NetworkRole.admin).toList();
+    // Show every grid the user belongs to — including ones they own/administer
+    // (e.g. a grid just created via "+") — so nothing is silently hidden.
+    final visible = session.networks;
     final networks = visible
         .where((n) => n.name.toLowerCase().contains(_query.toLowerCase()))
         .toList();
@@ -95,6 +95,18 @@ class _ListHeader extends StatelessWidget {
           Text('$count',
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: AppPalette.textFaint)),
+          const Spacer(),
+          FilledButton.icon(
+            onPressed: () => CreateNetworkDialog.show(context),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('New grid'),
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              textStyle:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );
