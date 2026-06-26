@@ -28,9 +28,23 @@ class GridResolver {
     for (final candidate in _explicitCandidates()) {
       if (candidate == null || candidate.isEmpty) continue;
       final file = File(candidate);
-      if (_isExecutableFile(file)) return file.absolute.path;
+      if (!_isExecutableFile(file) || _isSelf(file)) continue;
+      return file.absolute.path;
     }
     return _pathLookup();
+  }
+
+  /// True when [file] is the running app's own executable. Guards against
+  /// resolving — and then spawning — the app instead of the CLI: the macOS app
+  /// binary is "Grid", which a case-insensitive filesystem also matches as
+  /// "grid", so a naive probe of `Contents/MacOS` would launch the app itself.
+  static bool _isSelf(File file) {
+    try {
+      return file.resolveSymbolicLinksSync() ==
+          File(Platform.resolvedExecutable).resolveSymbolicLinksSync();
+    } on FileSystemException {
+      return false;
+    }
   }
 
   Iterable<String?> _explicitCandidates() sync* {
@@ -44,8 +58,11 @@ class GridResolver {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
     final exe = Platform.isWindows ? 'grid.exe' : 'grid';
     if (Platform.isMacOS) {
-      // Grid.app/Contents/MacOS/Grid → Contents/Resources/grid
+      // Grid.app/Contents/MacOS/Grid → Contents/Resources/grid. Stop here: never
+      // probe Contents/MacOS — the app binary "Grid" matches "grid" on a
+      // case-insensitive filesystem, so we'd resolve (and spawn) the app itself.
       yield '$exeDir/../Resources/$exe';
+      return;
     }
     // Linux/Windows: next to the executable, or in a `grid/` subfolder.
     yield '$exeDir/$exe';

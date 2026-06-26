@@ -45,4 +45,15 @@ void main() {
         GridResolver(configuredPath: notExec.path, pathLookup: () => null);
     expect(resolver.resolve(), isNull);
   });
+
+  test('never resolves the app\'s own executable (self-spawn guard)', () {
+    // The macOS app binary is named "Grid", which a case-insensitive filesystem
+    // matches as "grid" — without the guard the resolver would hand back our own
+    // executable and the app would spawn itself instead of the CLI.
+    final self = Platform.resolvedExecutable;
+    final resolver =
+        GridResolver(configuredPath: self, pathLookup: () => '/usr/bin/grid');
+    expect(resolver.resolve(), isNot(self));
+    expect(resolver.resolve(), '/usr/bin/grid');
+  });
 }
