@@ -22,12 +22,12 @@ class NodeSetupBanner extends ConsumerWidget {
   }
 }
 
-class _RunningBanner extends ConsumerWidget {
+class _RunningBanner extends StatelessWidget {
   const _RunningBanner({required this.state});
   final NodeSetupRunning state;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final progress = state.progress;
     final value = progress == null || progress.isIndeterminate
@@ -39,7 +39,7 @@ class _RunningBanner extends ConsumerWidget {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
             child: Row(
               children: [
                 const SizedBox(
@@ -55,17 +55,6 @@ class _RunningBanner extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall,
                   ),
-                ),
-                TextButton(
-                  onPressed: () => ref
-                      .read(navSectionProvider.notifier)
-                      .select(NavSection.models),
-                  child: const Text('View'),
-                ),
-                TextButton(
-                  onPressed: () =>
-                      ref.read(nodeSetupControllerProvider.notifier).cancel(),
-                  child: const Text('Cancel'),
                 ),
               ],
             ),
