@@ -79,8 +79,5 @@ submits to Apple's notary service, and staples the ticket. **Prerequisites (one
 The sidecar removes the "install Python + grid" step. It does **not** bundle the
 heavy external runtimes, which `grid` still installs on demand:
 
-- **Docker / Podman** — required by `grid network create`.
 - **llama-server** — `grid llama.cpp install` (Homebrew/Metal or CUDA).
 - **ComfyUI** — `grid media install`.
-
-The onboarding preflight checks for these and guides the user.

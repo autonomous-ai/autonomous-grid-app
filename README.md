@@ -25,8 +25,8 @@ Windows, and Linux.
 Provider and Models are shown only on grids where your role can manage a provider;
 consumer-only grids see Grids, Playground, and Debug.
 
-First launch runs an **onboarding preflight** that checks for the `grid` CLI and a
-container engine, then guides you through anything missing.
+First launch runs an **onboarding preflight** that checks for the `grid` CLI,
+then guides you through anything missing.
 
 ---
 
@@ -175,13 +175,12 @@ git tag v0.1.2 && git push origin v0.1.2
 ## External runtimes (not bundled)
 
 The sidecar removes the “install Python + grid” step, but `grid` still installs
-these heavy runtimes on demand — the onboarding preflight checks for them:
+these heavy provider runtimes on demand:
 
-- **Docker / Podman** — required by `grid network create`.
 - **llama-server** — `grid llama.cpp install` (Homebrew/Metal or CUDA).
 - **ComfyUI** — `grid media install`.
 
-> **Platform scope:** running a provider (llama.cpp / ComfyUI / containers) targets
+> **Platform scope:** running a provider (llama.cpp / ComfyUI) targets
 > **macOS (Apple Silicon)** and **Linux (NVIDIA)**. On **Windows** the app is
 > effectively consumer/playground only.
 
