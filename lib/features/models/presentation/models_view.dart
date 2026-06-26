@@ -5,8 +5,6 @@ import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
-import '../../provider_node/logic/provider_run_controller.dart';
-import '../logic/engine_status.dart';
 import '../logic/llama_install_controller.dart';
 import '../logic/models_providers.dart';
 import 'model_pull_card.dart';
@@ -36,11 +34,6 @@ class ModelsView extends ConsumerWidget {
       child: ListView(
         children: [
           const NodeSetupCard(),
-          const SizedBox(height: 16),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
-          _sectionTitle(context, 'AI engines'),
-          const _BackendsSection(),
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 16),
@@ -76,83 +69,6 @@ class ModelsView extends ConsumerWidget {
           trailing: Text('${model.sizeGb.toStringAsFixed(2)} GB'),
         ),
     ];
-  }
-}
-
-/// Detected backends + the grid llama.cpp engine (install when missing).
-class _BackendsSection extends ConsumerWidget {
-  const _BackendsSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final engine = ref.watch(engineStatusProvider);
-    final backends = ref.watch(backendsProvider);
-    final installFailed =
-        ref.watch(llamaInstallControllerProvider) is LlamaInstallFailed;
-
-    return backends.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Text('Looking for installed AI engines…'),
-      ),
-      error: (e, _) => Text("Couldn't check for AI engines: $e"),
-      data: (list) {
-        final external = list.where((b) => b.isExternal).toList();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final backend in external)
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.dns_outlined, color: Colors.green),
-                  title: Text(backend.label),
-                  subtitle: Text(
-                      '${backend.baseUrl} · ${backend.models.length} model(s)'),
-                ),
-              ),
-            _LlamaCard(engine: engine, failed: installFailed),
-            if (external.isEmpty && !engine.llamaInstalled)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('No AI engine is running yet. Install the built-in '
-                    'engine below, or start your own (like Ollama or LM Studio).'),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _LlamaCard extends ConsumerWidget {
-  const _LlamaCard({required this.engine, required this.failed});
-  final EngineStatus engine;
-  final bool failed;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final installed = engine.llamaInstalled;
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          installed ? Icons.check_circle : Icons.download_outlined,
-          color: installed ? Colors.green : null,
-        ),
-        title: const Text('Built-in AI engine'),
-        subtitle: Text(installed
-            ? 'Installed'
-            : failed
-                ? 'Install failed — try again'
-                : 'Not installed yet'),
-        trailing: installed
-            ? null
-            : FilledButton(
-                onPressed: () =>
-                    ref.read(llamaInstallControllerProvider.notifier).install(),
-                child: Text(failed ? 'Retry' : 'Install'),
-              ),
-      ),
-    );
   }
 }
 

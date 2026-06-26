@@ -86,8 +86,8 @@ class NetworkCredential {
   String get roleLabel => switch (role) {
         NetworkRole.admin => 'Admin',
         NetworkRole.provider => 'Sharing',
-        NetworkRole.consumer => 'Using',
-        NetworkRole.member => 'Member',
+        NetworkRole.consumer => 'Public',
+        NetworkRole.member => 'Private',
       };
 
   /// May the viewer reach the Provider/Models tabs on this network? Admins

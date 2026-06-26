@@ -163,7 +163,6 @@ which builds each target and publishes a **draft** GitHub Release with:
 
 ```
 Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
-Grid-<ver>-macOS-Intel.dmg           (signed + notarized, built under Rosetta)
 Grid-<ver>-Windows-x64.zip           (unsigned; SmartScreen may warn)
 ```
 

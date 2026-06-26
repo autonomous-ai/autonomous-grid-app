@@ -40,7 +40,6 @@ class GridCliServiceImpl implements GridCliService {
       env['PATH'] = <String>[
         if (home.isNotEmpty) '$home/.local/bin',
         '/opt/homebrew/bin',
-        '/usr/local/bin',
         '/usr/bin',
         '/bin',
         '/usr/sbin',

@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/command_log.dart';
+import '../../../infrastructure/providers.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../onboarding/preflight_providers.dart';
+import '../../onboarding/preflight_report.dart';
 
 /// Debug tab — a live log of every `grid` command the app runs (newest first).
 /// Fed by [LoggingGridCliService]; handy for seeing exactly what the UI shells
@@ -20,6 +25,8 @@ class DebugView extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const _WhichGridCard(),
+          const SizedBox(height: 12),
           _Toolbar(count: logs.length),
           const SizedBox(height: 12),
           Expanded(
@@ -175,4 +182,141 @@ String _formatDuration(Duration d) {
   final ms = d.inMilliseconds;
   if (ms < 1000) return '${ms}ms';
   return '${(ms / 1000).toStringAsFixed(ms < 10000 ? 1 : 0)}s';
+}
+
+/// Shows which `grid` binary the app resolved (and from where), plus whether it
+/// actually runs — the first thing to check when commands fail (e.g. a wrong
+/// path or an arch mismatch). Re-check re-resolves and re-runs the preflight.
+class _WhichGridCard extends ConsumerWidget {
+  const _WhichGridCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final path = ref.watch(gridPathProvider);
+    final preflight = ref.watch(preflightProvider);
+    final gridBin = Platform.environment['GRID_BIN'];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppPalette.cardBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.terminal, size: 16, color: AppPalette.textFaint),
+              const SizedBox(width: 8),
+              Text('grid binary', style: theme.textTheme.titleSmall),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Re-check',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.refresh, size: 16),
+                onPressed: () {
+                  ref.invalidate(gridPathProvider);
+                  ref.invalidate(preflightProvider);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          _PathRow(
+            label: 'path',
+            value: path ?? 'Not found on this system',
+            ok: path != null,
+          ),
+          if (gridBin != null && gridBin.isNotEmpty)
+            _PathRow(label: 'GRID_BIN', value: gridBin, ok: true),
+          const SizedBox(height: 6),
+          _version(theme, preflight),
+        ],
+      ),
+    );
+  }
+
+  Widget _version(ThemeData theme, AsyncValue<PreflightReport> preflight) {
+    return preflight.when(
+      loading: () => Row(
+        children: [
+          const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 8),
+          Text('checking…', style: theme.textTheme.bodySmall),
+        ],
+      ),
+      error: (e, _) => SelectableText('check failed: $e',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.error)),
+      data: (report) {
+        final version = report.gridVersion;
+        if (version != null) {
+          return Row(
+            children: [
+              const Icon(Icons.check_circle, size: 14, color: AppPalette.online),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SelectableText(version,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(fontFamily: 'monospace')),
+              ),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error, size: 14, color: theme.colorScheme.error),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SelectableText(report.gridError ?? 'grid did not run',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.error)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PathRow extends StatelessWidget {
+  const _PathRow({required this.label, required this.value, required this.ok});
+  final String label;
+  final String value;
+  final bool ok;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 70,
+            child: Text(label,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppPalette.textFaint)),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: ok ? AppPalette.textPrimary : theme.colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
