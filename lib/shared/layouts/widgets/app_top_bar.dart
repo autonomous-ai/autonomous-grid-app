@@ -19,10 +19,7 @@ class AppTopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
-    // The signed-in email comes from cli.toml [auth] (grid 0.1.0); credentials
-    // .toml only carries it on the legacy schema, so fall back to it.
-    final email =
-        ref.watch(authSessionProvider).userEmail ?? session.userEmail ?? '—';
+    final email = session.userEmail ?? '—';
     // Leave room for the macOS traffic-light buttons under the hidden title bar.
     final leftInset = Platform.isMacOS ? 78.0 : 16.0;
 

@@ -5,23 +5,30 @@ import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import '../../provider_node/logic/backend_detector.dart';
 import 'media_status.dart';
+import 'model_catalog.dart';
 
 /// A snapshot of what this computer can already do as a Grid node: which text
 /// inference backends exist (Ollama / LM Studio / grid llama.cpp), whether the
-/// ComfyUI media engine is installed, and how many local GGUF models are on
-/// disk. Drives `buildSetupPlan` — the "first node" auto-setup only fills gaps.
+/// ComfyUI media engine is installed, how many local GGUF models are on disk,
+/// and the CLI-recommended model for this host. Drives `buildSetupPlan` — the
+/// "first node" auto-setup only fills gaps.
 class NodeCapabilities {
   const NodeCapabilities({
     required this.textBackends,
     required this.engine,
     required this.media,
     required this.localModelCount,
+    this.recommendedModel,
   });
 
   final List<DetectedBackend> textBackends;
   final EngineStatus engine;
   final MediaStatus media;
   final int localModelCount;
+
+  /// Default model to auto-download, from `grid models list --catalog`. Null
+  /// when the CLI recommends none for this machine (then no model is pulled).
+  final CatalogModel? recommendedModel;
 
   /// External OpenAI-compatible servers already running (Ollama, LM Studio).
   List<DetectedBackend> get externalBackends =>
@@ -50,10 +57,24 @@ class NodeCapabilities {
 
 /// Probes every node capability of this machine, running the text-backend and
 /// media-engine checks concurrently. Re-detected (invalidated) after a setup run.
-final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
-  final service = ref.watch(gridCliServiceProvider);
-  final modelCount = ref.watch(localModelsProvider).length;
+/// The host's recommended model from `grid models list --catalog`. The catalog
+/// is static for the session, so this runs the command exactly once and caches
+/// it — re-detecting capabilities never re-spawns the catalog lookup.
+final recommendedModelProvider = FutureProvider<CatalogModel?>((ref) {
+  return ModelCatalog(ref.read(gridCliServiceProvider)).defaultLanguageModel();
+});
 
+/// Probes this machine's node capabilities. Dependencies are read (not watched)
+/// so an unrelated `localModels` refresh doesn't re-spawn the `grid` probes;
+/// detection re-runs only when explicitly invalidated (after a setup run). The
+/// per-detection cost is one `grid media status` plus HTTP backend probes — the
+/// catalog comes cached from [recommendedModelProvider].
+final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
+  final service = ref.read(gridCliServiceProvider);
+  final modelCount = ref.read(localModelsProvider).length;
+  final recommended = await ref.watch(recommendedModelProvider.future);
+
+  // Probe text backends and the media engine concurrently.
   final backendsFuture = BackendDetector().detect();
   final mediaFuture = MediaDetector(service).detect();
 
@@ -62,5 +83,6 @@ final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
     engine: EngineDetector().detect(),
     media: await mediaFuture,
     localModelCount: modelCount,
+    recommendedModel: recommended,
   );
 });

@@ -97,7 +97,7 @@ class _PlanPreview extends ConsumerWidget {
             ],
           )
         else ...[
-          Text("We'll install only what's missing:",
+          Text('Setting up automatically — installing what\'s missing:',
               style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           for (final step in plan) _StepTile(step: step),
@@ -112,7 +112,7 @@ class _PlanPreview extends ConsumerWidget {
               onPressed: () =>
                   ref.read(nodeSetupControllerProvider.notifier).run(plan),
               icon: const Icon(Icons.rocket_launch_outlined),
-              label: const Text('Set up this computer'),
+              label: const Text('Set up now'),
             ),
           ),
         ],

@@ -64,6 +64,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   static const _maxLogLines = 400;
   GridProcess? _process;
   bool _cancelled = false;
+  bool _autoStarted = false;
 
   @override
   NodeSetupState build() {
@@ -71,20 +72,30 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     return const NodeSetupIdle();
   }
 
+  /// Hands-off background entry point: starts setup once per app session when
+  /// there are gaps to fill. A no-op if it already auto-started, or if a run is
+  /// in flight. After a cancel/failure the user resumes via [run] — we don't
+  /// auto-restart and nag. Returns immediately when [steps] is empty.
+  Future<void> autoStart(List<SetupStep> steps) async {
+    if (_autoStarted || steps.isEmpty || state is! NodeSetupIdle) return;
+    _autoStarted = true;
+    await run(steps);
+  }
+
   Future<void> run(List<SetupStep> steps) async {
     if (state is NodeSetupRunning) return;
+    if (steps.isEmpty) {
+      state = const NodeSetupDone([]);
+      return;
+    }
 
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = NodeSetupFailed(
-        step: steps.isEmpty ? _noopStep : steps.first,
+        step: steps.first,
         message: 'grid executable not found.',
         log: const [],
       );
-      return;
-    }
-    if (steps.isEmpty) {
-      state = const NodeSetupDone([]);
       return;
     }
 
@@ -194,12 +205,4 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     ref.invalidate(localModelsProvider);
     ref.invalidate(nodeCapabilitiesProvider);
   }
-
-  static const _noopStep = SetupStep(
-    action: SetupAction.installLlama,
-    title: 'Set up this computer',
-    detail: '',
-    args: [],
-    isDownload: false,
-  );
 }

@@ -7,7 +7,6 @@ import 'package:grid_app/infrastructure/cli/parsers/catalog_entry.dart';
 import 'package:grid_app/infrastructure/cli/parsers/denylist_entry.dart';
 import 'package:grid_app/infrastructure/cli/parsers/download_progress.dart';
 import 'package:grid_app/infrastructure/cli/parsers/member_entry.dart';
-import 'package:grid_app/infrastructure/state/models/cli_auth.dart';
 import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
 import 'package:grid_app/infrastructure/state/models/network_config.dart';
 
@@ -159,63 +158,6 @@ refresh_expires_at = 1700600000
       expect(active.relayBaseUrl, 'http://192.168.1.10:8090/relay/v1');
       expect(active.isProvider, isTrue);
       expect(active.isExpired(DateTime.utc(2026)), isTrue);
-    });
-  });
-
-  group('cli.toml [auth] (grid 0.1.0)', () {
-    test('parses the auth session and flags signed-in', () {
-      const toml = '''
-[auth]
-api_key = "key-abc"
-node_id = "grid-node-1"
-user_id = "dev@autonomous.ai"
-signaling_server_url = "https://grid-llm.autonomous.ai/grid-x"
-
-[provider]
-default_model = "model.gguf"
-''';
-      final auth = CliAuth.fromToml(TomlDocument.parse(toml).toMap());
-      expect(auth.isAuthenticated, isTrue);
-      expect(auth.userEmail, 'dev@autonomous.ai');
-      expect(auth.nodeId, 'grid-node-1');
-      expect(auth.signalingServerUrl, 'https://grid-llm.autonomous.ai/grid-x');
-    });
-
-    test('no [auth] table degrades to empty / not signed in', () {
-      final auth =
-          CliAuth.fromToml(TomlDocument.parse('[provider]\nx = 1').toMap());
-      expect(auth.isAuthenticated, isFalse);
-      expect(auth.userEmail, isNull);
-    });
-
-    // Mirrors GridHomeStore.clearCliAuth: dropping [auth] and re-serializing
-    // must leave [provider]/[pricing] intact and stay valid, parseable TOML.
-    test('stripping [auth] preserves provider/pricing on rewrite', () {
-      const toml = '''
-[auth]
-api_key = "key-abc"
-user_id = "dev@autonomous.ai"
-
-[provider]
-default_model = "model.gguf"
-llama_port = 8081
-flash_attn = "on"
-temp = 1.0
-
-[pricing]
-input_per_1k_tokens = 0.0
-''';
-      final map = TomlDocument.parse(toml).toMap();
-      expect(map.remove('auth'), isNotNull);
-      final rewritten = TomlDocument.fromMap(map).toString();
-
-      final reparsed = TomlDocument.parse(rewritten).toMap();
-      expect(reparsed.containsKey('auth'), isFalse);
-      expect((reparsed['provider'] as Map)['default_model'], 'model.gguf');
-      expect((reparsed['provider'] as Map)['llama_port'], 8081);
-      expect((reparsed['provider'] as Map)['temp'], 1.0);
-      expect((reparsed['pricing'] as Map)['input_per_1k_tokens'], 0.0);
-      expect(CliAuth.fromToml(reparsed).isAuthenticated, isFalse);
     });
   });
 

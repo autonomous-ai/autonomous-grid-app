@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'node_capabilities.dart';
 
 /// One install/download action in the node-setup sequence.
@@ -27,25 +25,14 @@ class SetupStep {
 /// Default ComfyUI bundle so the media engine is usable right after install.
 const defaultMediaBundle = 'image_generation';
 
-// Default text model pulled when this node has no local GGUF and no external
-// backend to serve through. Mirrors the CLI catalog labels (catalog.py),
-// resolved by platform since Grid providers target Apple Silicon / NVIDIA.
-// TODO(BE): the app shouldn't hardcode catalog labels — fetch them from
-// `grid models list --catalog` once that output is stable, to avoid drift.
-const _appleSiliconModel = 'qwen36-35b-a3b-mtp';
-const _nvidiaModel = 'qwen36-27b-mtp';
-
-/// Catalog label of the default text model for this platform.
-String defaultModelSpec({bool? isMacOS}) =>
-    (isMacOS ?? Platform.isMacOS) ? _appleSiliconModel : _nvidiaModel;
-
 /// Decides the minimal sequence of steps to make this computer a usable node,
 /// installing only what's missing (the "auto-detect, fill the gaps" flow). Pure
 /// and side-effect free, so it's trivially testable. Steps run in list order;
-/// the ComfyUI bundle download is sequenced after its install.
+/// the ComfyUI bundle download is sequenced after its install. The model to pull
+/// comes from [NodeCapabilities.recommendedModel] (the CLI catalog), never a
+/// hardcoded id.
 List<SetupStep> buildSetupPlan(
   NodeCapabilities caps, {
-  bool? isMacOS,
   bool includeMedia = true,
 }) {
   final steps = <SetupStep>[];
@@ -60,13 +47,13 @@ List<SetupStep> buildSetupPlan(
     ));
   }
 
-  if (!caps.hasModels && !caps.hasExternalModels) {
-    final spec = defaultModelSpec(isMacOS: isMacOS);
+  final model = caps.recommendedModel;
+  if (!caps.hasModels && !caps.hasExternalModels && model != null) {
     steps.add(SetupStep(
       action: SetupAction.pullModel,
-      title: 'Download a model ($spec)',
-      detail: 'Several GB — served locally so this node can answer chat.',
-      args: ['models', 'pull', spec],
+      title: 'Download a model (${model.label})',
+      detail: 'From the recommended catalog — ${model.repoFile}.',
+      args: ['models', 'pull', model.label],
       isDownload: true,
     ));
   }

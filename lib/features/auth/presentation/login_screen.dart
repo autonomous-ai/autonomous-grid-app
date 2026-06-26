@@ -1,49 +1,17 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../shared/widgets/error_box.dart';
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
 
-/// Opens [url] in the user's default browser. Tries `url_launcher` first, then
-/// falls back to the OS opener — the frozen `grid` CLI can't reliably open a
-/// browser when spawned from the app, so opening it is the app's job. Returns
-/// false only when both routes fail, so callers can prompt a manual copy.
+/// Opens [url] in the user's default browser. Returns false if it could not be
+/// launched (malformed URL or no handler) so callers can fall back to copy.
 Future<bool> _openInBrowser(String url) async {
   final uri = Uri.tryParse(url);
   if (uri == null) return false;
-  try {
-    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return true;
-  } catch (_) {
-    // url_launcher can throw on desktop when no handler is wired up — fall back.
-  }
-  return _openWithOsOpener(url);
-}
-
-/// Last-resort browser open via the platform's URL opener. The app already
-/// shells out to `grid`, so this path works even where `url_launcher` doesn't.
-Future<bool> _openWithOsOpener(String url) async {
-  final String exe;
-  final List<String> args;
-  if (Platform.isMacOS) {
-    (exe, args) = ('open', [url]);
-  } else if (Platform.isLinux) {
-    (exe, args) = ('xdg-open', [url]);
-  } else if (Platform.isWindows) {
-    (exe, args) = ('cmd', ['/c', 'start', '', url]);
-  } else {
-    return false;
-  }
-  try {
-    final result = await Process.run(exe, args);
-    return result.exitCode == 0;
-  } catch (_) {
-    return false;
-  }
+  return launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 /// Device-flow login. Triggers `grid auth login --no-browser`, shows the URL +
@@ -53,17 +21,13 @@ class LoginScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Auto-open the browser the moment the device-flow URL streams in. If it
-    // can't be opened (sandbox, no handler), tell the user to use the link
-    // shown below instead of leaving them on a silent spinner.
-    ref.listen<AuthState>(authControllerProvider, (prev, next) async {
-      if (next is! AuthAwaitingApproval || prev is AuthAwaitingApproval) return;
-      final opened = await _openInBrowser(next.url);
-      if (opened || !context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-            "Couldn't open the browser automatically — use the link below."),
-      ));
+    // Auto-open the browser the moment the device-flow URL streams in, so the
+    // user doesn't have to copy/paste it. Fires once per transition; the copy
+    // fields and the "Open in browser" button below stay as fallbacks.
+    ref.listen<AuthState>(authControllerProvider, (prev, next) {
+      if (next is AuthAwaitingApproval && prev is! AuthAwaitingApproval) {
+        _openInBrowser(next.url);
+      }
     });
 
     final state = ref.watch(authControllerProvider);
@@ -73,60 +37,17 @@ class LoginScreen extends ConsumerWidget {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 460),
-          child: SingleChildScrollView(
+          child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                switch (state) {
-                  AuthAwaitingApproval(:final url, :final userCode) =>
-                    _ApprovalView(
-                        url: url,
-                        userCode: userCode,
-                        onCancel: controller.cancel),
-                  AuthStarting() =>
-                    _Busy(label: 'Signing in…', onCancel: controller.cancel),
-                  AuthSuccess() => const _Busy(label: 'Signing in…'),
-                  AuthFailure(:final message) =>
-                    _SignIn(onSignIn: controller.login, error: message),
-                  AuthIdle() => _SignIn(onSignIn: controller.login),
-                },
-                const _CliConsole(),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Live `grid auth login` output — the streamed device-login URL, code and any
-/// errors — so a stuck or browser-less sign-in stays visible and copy-able.
-class _CliConsole extends ConsumerWidget {
-  const _CliConsole();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final lines = ref.watch(authLogProvider);
-    if (lines.isEmpty) return const SizedBox.shrink();
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(top: 24),
-      padding: const EdgeInsets.all(12),
-      constraints: const BoxConstraints(maxHeight: 180),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: Scrollbar(
-        child: SingleChildScrollView(
-          reverse: true,
-          child: SelectableText(
-            lines.join('\n'),
-            style: const TextStyle(
-                fontFamily: 'monospace', fontSize: 12, height: 1.4),
+            child: switch (state) {
+              AuthAwaitingApproval(:final url, :final userCode) =>
+                _ApprovalView(url: url, userCode: userCode),
+              AuthStarting() || AuthSuccess() =>
+                const _Busy(label: 'Signing in…'),
+              AuthFailure(:final message) =>
+                _SignIn(onSignIn: controller.login, error: message),
+              AuthIdle() => _SignIn(onSignIn: controller.login),
+            },
           ),
         ),
       ),
@@ -157,7 +78,10 @@ class _SignIn extends StatelessWidget {
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
-          ErrorBox(message: error!),
+          Text(error!,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error),
+              textAlign: TextAlign.center),
         ],
       ],
     );
@@ -165,15 +89,10 @@ class _SignIn extends StatelessWidget {
 }
 
 class _ApprovalView extends StatelessWidget {
-  const _ApprovalView({
-    required this.url,
-    required this.userCode,
-    required this.onCancel,
-  });
+  const _ApprovalView({required this.url, required this.userCode});
 
   final String url;
   final String userCode;
-  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -208,8 +127,6 @@ class _ApprovalView extends StatelessWidget {
             Text('Waiting for approval…'),
           ],
         ),
-        const SizedBox(height: 12),
-        TextButton(onPressed: onCancel, child: const Text('Cancel')),
       ],
     );
   }
@@ -248,9 +165,8 @@ class _CopyField extends StatelessWidget {
 }
 
 class _Busy extends StatelessWidget {
-  const _Busy({required this.label, this.onCancel});
+  const _Busy({required this.label});
   final String label;
-  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -260,10 +176,6 @@ class _Busy extends StatelessWidget {
         const CircularProgressIndicator(),
         const SizedBox(height: 16),
         Text(label),
-        if (onCancel != null) ...[
-          const SizedBox(height: 16),
-          TextButton(onPressed: onCancel, child: const Text('Cancel')),
-        ],
       ],
     );
   }

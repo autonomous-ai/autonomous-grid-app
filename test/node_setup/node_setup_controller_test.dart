@@ -106,4 +106,27 @@ void main() {
 
     expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
   });
+
+  test('autoStart with an empty plan stays idle', () async {
+    final container = _container(FakeGridCliService());
+
+    await container.read(nodeSetupControllerProvider.notifier).autoStart(const []);
+
+    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupIdle>());
+  });
+
+  test('autoStart runs once, then is a no-op', () async {
+    final fake = FakeGridCliService()
+      ..stubStart(['llama.cpp', 'install'],
+          exitCode: 0, lines: const [CliLine(isStderr: false, text: 'ok')]);
+    final container = _container(fake);
+    final notifier = container.read(nodeSetupControllerProvider.notifier);
+
+    await notifier.autoStart([_llamaStep]);
+    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
+
+    // A second auto-start (e.g. after capabilities re-detect) must not re-run.
+    await notifier.autoStart([_llamaStep]);
+    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
+  });
 }

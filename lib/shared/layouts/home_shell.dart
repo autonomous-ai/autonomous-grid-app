@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,21 +7,27 @@ import '../../features/auth/logic/session_controller.dart';
 import '../../features/debug/presentation/debug_view.dart';
 import '../../features/models/presentation/models_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
+import '../../features/node_setup/logic/node_capabilities.dart';
+import '../../features/node_setup/logic/node_setup_controller.dart';
+import '../../features/node_setup/logic/node_setup_plan.dart';
 import '../../features/playground/presentation/playground_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
 import '../theme/app_theme.dart';
 import 'shell_state.dart';
 import 'widgets/app_top_bar.dart';
+import 'widgets/node_setup_banner.dart';
 import 'widgets/side_nav.dart';
 
 /// The main app frame, Tailscale-style: a full-width title bar on top, a left
-/// nav sidebar, and the active section to its right.
+/// nav sidebar, and the active section to its right. Also kicks off the
+/// hands-off node setup in the background and surfaces it via [NodeSetupBanner].
 class HomeShell extends ConsumerWidget {
   const HomeShell({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final section = ref.watch(navSectionProvider);
+    _autoStartNodeSetup(ref);
 
     return Scaffold(
       backgroundColor: AppPalette.windowBg,
@@ -27,6 +35,7 @@ class HomeShell extends ConsumerWidget {
         children: [
           const AppTopBar(),
           const Divider(height: 1),
+          const NodeSetupBanner(),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -40,6 +49,20 @@ class HomeShell extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Once capabilities are known, start filling the gaps in the background — no
+  /// prompt. Only on provider-capable hosts (macOS / Linux); Windows is
+  /// consumer-only, so there's nothing to install there.
+  void _autoStartNodeSetup(WidgetRef ref) {
+    if (!Platform.isMacOS && !Platform.isLinux) return;
+    ref.listen(nodeCapabilitiesProvider, (_, next) {
+      final caps = next.asData?.value;
+      if (caps == null) return;
+      ref
+          .read(nodeSetupControllerProvider.notifier)
+          .autoStart(buildSetupPlan(caps));
+    });
   }
 }
 
