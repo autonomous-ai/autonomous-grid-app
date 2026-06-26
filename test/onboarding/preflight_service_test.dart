@@ -28,6 +28,29 @@ void main() {
     expect(report.hasContainerEngine, isFalse);
   });
 
+  test('grid present but crashing reports a clear arch error', () async {
+    final fake = FakeGridCliService()
+      ..stubResult(
+        ['--version'],
+        const CliResult(
+          exitCode: 1,
+          stdout: '',
+          stderr: "ImportError: dlopen(protocol.cpython-313-darwin.so): "
+              "mach-o file, but is an incompatible architecture "
+              "(have 'arm64', need 'x86_64')",
+        ),
+      );
+
+    final report =
+        await PreflightService(fake, hasExecutable: (_) => false).check();
+
+    expect(report.gridAvailable, isFalse);
+    expect(report.canProceed, isFalse);
+    expect(report.gridError, isNotNull);
+    expect(report.gridError, contains('architecture'));
+    expect(report.gridError, contains('Rosetta'));
+  });
+
   test('falls back to podman when docker is missing', () async {
     final fake = FakeGridCliService()
       ..stubResult(['--version'],

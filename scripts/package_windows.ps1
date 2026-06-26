@@ -1,5 +1,5 @@
 # Package the built Windows app into a distributable .zip, with the `grid.exe`
-# sidecar injected next to grid_app.exe — exactly where GridResolver looks
+# sidecar injected next to grid_app.exe - exactly where GridResolver looks
 # (`<exeDir>/grid.exe`, see lib/infrastructure/cli/grid_resolver.dart).
 #
 # Run AFTER `flutter build windows --release` (produces the Release folder) and
@@ -18,10 +18,10 @@ $RepoRoot   = Split-Path -Parent $PSScriptRoot
 $ReleaseDir = Join-Path $RepoRoot "build\windows\x64\runner\Release"
 
 if (-not (Test-Path $ReleaseDir)) {
-    throw "Windows Release build not found at $ReleaseDir — run 'flutter build windows --release' first."
+    throw "Windows Release build not found at $ReleaseDir - run 'flutter build windows --release' first."
 }
 if (-not (Test-Path $Sidecar)) {
-    throw "Sidecar not found: $Sidecar — build it with the CLI repo's build_windows.ps1 first."
+    throw "Sidecar not found: $Sidecar - build it with the CLI repo's build_windows.ps1 first."
 }
 
 Write-Host ">>> Injecting grid.exe sidecar into $ReleaseDir"

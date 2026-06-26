@@ -6,10 +6,15 @@ class PreflightReport {
     required this.gridAvailable,
     required this.gridVersion,
     required this.containerEngine,
+    this.gridError,
   });
 
   final bool gridAvailable;
   final String? gridVersion;
+
+  /// Why `grid` didn't run, when it's installed but failed (e.g. a Rosetta
+  /// arch mismatch). Null when `grid` is simply absent or working.
+  final String? gridError;
 
   /// "docker", "podman", or null if neither is installed.
   final String? containerEngine;
