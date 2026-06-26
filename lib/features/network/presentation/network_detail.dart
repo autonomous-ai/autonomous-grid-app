@@ -8,6 +8,7 @@ import '../../../shared/widgets/status_dot.dart';
 import '../logic/network_status.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
+import 'grid_overview_card.dart';
 
 /// Right-hand detail pane for the selected network — Tailscale device-detail
 /// style: a status header, an endpoints card, and a details card.
@@ -26,10 +27,11 @@ class NetworkDetail extends ConsumerWidget {
       children: [
         _Header(network: network, conn: conn),
         const SizedBox(height: 22),
+        const GridOverviewView(),
+        const SizedBox(height: 22),
         DetailSection(
           title: 'Connection',
           children: [
-            AddressRow(label: 'Grid ID', value: network.networkId),
             AddressRow(label: 'Server address', value: network.lanSignalingUrl),
           ],
         ),
