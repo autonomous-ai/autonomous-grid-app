@@ -43,10 +43,17 @@ class ConsumerEnvCard extends ConsumerWidget {
       children: [
         DetailSection(
           title: 'API access (for developers)',
+          trailing: IconButton(
+            icon: const Icon(Icons.help_outline_rounded, size: 16),
+            color: AppPalette.textSecondary,
+            tooltip: 'How to configure an agent',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _showAgentGuide(context),
+          ),
           children: [
-            EnvVarRow(name: 'BASE_URL', value: network.relayBaseUrl),
+            EnvVarRow(name: 'OPENAI_BASE_URL', value: network.relayBaseUrl),
             EnvVarRow(
-              name: 'API_KEY',
+              name: 'OPENAI_API_KEY',
               value: network.relayApiKey,
               secret: true,
               revealed: revealed,
@@ -78,6 +85,128 @@ class ConsumerEnvCard extends ConsumerWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
           content: Text('Copied'), duration: Duration(seconds: 1)),
+    );
+  }
+
+  /// Explains how to point an OpenAI-compatible agent at this grid, with the
+  /// grid's real BASE_URL / API_KEY pre-filled into copy-ready snippets.
+  void _showAgentGuide(BuildContext context) {
+    final envSnippet = 'export OPENAI_BASE_URL="${network.relayBaseUrl}"\n'
+        'export OPENAI_API_KEY="${network.relayApiKey}"';
+    final pySnippet = 'from openai import OpenAI\n'
+        '\n'
+        'client = OpenAI(\n'
+        '    base_url="${network.relayBaseUrl}",\n'
+        '    api_key="${network.relayApiKey}",\n'
+        ')\n'
+        '\n'
+        'resp = client.chat.completions.create(\n'
+        '    model="<model>",  # any model this grid serves (see Models tab)\n'
+        '    messages=[{"role": "user", "content": "Hello"}],\n'
+        ')\n'
+        'print(resp.choices[0].message.content)';
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppPalette.panelBg,
+        title: const Text('Configure an agent'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This grid exposes an OpenAI-compatible endpoint. Point any '
+                  'agent or SDK (OpenAI SDK, LangChain, Cursor, …) at the '
+                  'BASE_URL and API_KEY below — no other changes needed.',
+                  style: TextStyle(
+                      color: AppPalette.textSecondary, fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 18),
+                const _GuideLabel('1 · Set the environment variables'),
+                _CodeBlock(code: envSnippet),
+                const SizedBox(height: 18),
+                const _GuideLabel('2 · Or pass them directly (Python)'),
+                _CodeBlock(code: pySnippet),
+                const SizedBox(height: 14),
+                const Text(
+                  'Pick any model your grid serves from the Models tab and use '
+                  'its name as the "model" value.',
+                  style: TextStyle(
+                      color: AppPalette.textFaint, fontSize: 12, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small heading above a code block in the agent guide.
+class _GuideLabel extends StatelessWidget {
+  const _GuideLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+            color: AppPalette.textPrimary,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+/// A monospace, selectable code panel with a copy button in the corner.
+class _CodeBlock extends StatelessWidget {
+  const _CodeBlock({required this.code});
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: AppPalette.windowBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
+            child: SelectableText(
+              code,
+              style: const TextStyle(
+                  color: AppPalette.textPrimary,
+                  fontFamily: 'monospace',
+                  fontSize: 12.5,
+                  height: 1.45),
+            ),
+          ),
+          Positioned(
+            top: 2,
+            right: 2,
+            child: CopyIconButton(value: code),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -6,10 +6,15 @@ import '../../../shared/theme/app_theme.dart';
 
 /// A titled group of rows in the detail pane (e.g. "Endpoints", "Details").
 class DetailSection extends StatelessWidget {
-  const DetailSection({super.key, required this.title, required this.children});
+  const DetailSection(
+      {super.key, required this.title, required this.children, this.trailing});
 
   final String title;
   final List<Widget> children;
+
+  /// Optional action shown at the trailing edge of the title row (e.g. a help
+  /// icon). Sits inline with the section heading.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -18,14 +23,19 @@ class DetailSection extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 8, left: 2),
-          child: Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              color: AppPalette.textFaint,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-            ),
+          child: Row(
+            children: [
+              Text(
+                title.toUpperCase(),
+                style: const TextStyle(
+                  color: AppPalette.textFaint,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              if (trailing != null) ...[const Spacer(), trailing!],
+            ],
           ),
         ),
         Container(

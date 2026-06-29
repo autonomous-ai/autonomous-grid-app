@@ -82,13 +82,11 @@ class _OverviewTab extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 20),
-        if (network.role == NetworkRole.consumer) ...[
-          ConsumerEnvCard(network: network),
-          const SizedBox(height: 20),
-        ],
+        // API access (BASE_URL + API_KEY) is shown for every grid, regardless
+        // of role — any member may want OpenAI-compatible credentials.
+        ConsumerEnvCard(network: network),
+        const SizedBox(height: 20),
         _Actions(network: network),
-        const SizedBox(height: 24),
-        _DeveloperSection(network: network),
       ],
     );
   }
@@ -171,46 +169,5 @@ class _Actions extends ConsumerWidget {
     return primary
         ? FilledButton.icon(onPressed: open, icon: icon, label: label)
         : OutlinedButton.icon(onPressed: open, icon: icon, label: label);
-  }
-}
-
-/// Technical details for the grid — IDs, scopes and token epochs — surfaced for
-/// every grid so developers can read and copy them straight from the UI. Secret
-/// tokens are deliberately omitted (the consumer card reveals the API key).
-class _DeveloperSection extends StatelessWidget {
-  const _DeveloperSection({required this.network});
-  final NetworkCredential network;
-
-  @override
-  Widget build(BuildContext context) {
-    final expires = _formatEpoch(network.expiresAt);
-    return DetailSection(
-      title: 'Developer',
-      children: [
-        AddressRow(label: 'Grid ID', value: network.networkId),
-        if (network.nodeId.isNotEmpty)
-          AddressRow(label: 'Node ID', value: network.nodeId),
-        if (network.deviceId.isNotEmpty)
-          AddressRow(label: 'Device ID', value: network.deviceId),
-        AddressRow(label: 'Relay base URL', value: network.relayBaseUrl),
-        MetaRow(label: 'Network type', value: network.networkType),
-        MetaRow(label: 'Roles', value: _orDash(network.roles)),
-        MetaRow(label: 'Scopes', value: _orDash(network.scopes)),
-        MetaRow(label: 'Member epoch', value: '${network.memberEpoch}'),
-        MetaRow(label: 'Network epoch', value: '${network.networkEpoch}'),
-        if (expires != null) MetaRow(label: 'Access expires', value: expires),
-      ],
-    );
-  }
-
-  String _orDash(List<String> values) => values.isEmpty ? '—' : values.join(', ');
-
-  /// Unix-seconds → `YYYY-MM-DD HH:MM` local; null for the unset (0) sentinel.
-  String? _formatEpoch(int epochSeconds) {
-    if (epochSeconds <= 0) return null;
-    final dt = DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000);
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
-        '${two(dt.hour)}:${two(dt.minute)}';
   }
 }
