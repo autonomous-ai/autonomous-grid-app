@@ -7,9 +7,14 @@ environment:
   sdk: ^3.9.2
 
 dependencies:
+  cached_network_image: ^3.4.1
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.3.2
+  gpt_markdown: ^1.1.7
+  media_kit: ^1.2.6
+  media_kit_libs_video: ^1.0.7
+  media_kit_video: ^2.0.1
   package_info_plus: ^10.2.0
   toml: ^0.18.0
   tray_manager: ^0.5.3

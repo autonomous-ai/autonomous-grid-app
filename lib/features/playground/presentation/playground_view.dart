@@ -8,6 +8,7 @@ import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/chat_controller.dart';
 import '../logic/local_test_state.dart';
 import '../logic/network_models_provider.dart';
+import 'message_content.dart';
 
 /// Consumer chat playground — the main consumer action. Sends a message via
 /// `grid request chat --network <net> --model <model> --message "<msg>"` and
@@ -233,11 +234,11 @@ class _Bubble extends StatelessWidget {
               : theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: SelectableText(
-          message.text,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
-          ),
+        child: MessageContent(
+          text: message.text,
+          color: isUser
+              ? theme.colorScheme.onPrimary
+              : theme.colorScheme.onSurface,
         ),
       ),
     );
