@@ -39,8 +39,7 @@ class _OverviewBody extends StatelessWidget {
         if (overview.models.isNotEmpty) ...[
           const SizedBox(height: 24),
           const _SectionHeading(
-              title: 'Models',
-              subtitle: 'Pick a model by its id — each is priced per use.'),
+              title: 'Models', subtitle: 'Pick a model by its id.'),
           const SizedBox(height: 14),
           for (final m in overview.models) ...[
             _ModelTile(model: m),
@@ -62,7 +61,7 @@ class _OverviewBody extends StatelessWidget {
         const SizedBox(height: 8),
         const Center(
           child: Text(
-            'Pricing and stats are placeholders, pending the managed layer.',
+            "Pricing and stats are examples for now — you're not being billed.",
             style: TextStyle(
                 fontFamily: _mono, fontSize: 12, color: AppPalette.textFaint),
           ),
@@ -224,7 +223,7 @@ class _ModelTile extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                         color: AppPalette.textPrimary)),
                 const SizedBox(height: 2),
-                const Text('per 1M in / out',
+                const Text('example · per 1M in / out',
                     style: TextStyle(
                         fontFamily: _mono,
                         fontSize: 11.5,

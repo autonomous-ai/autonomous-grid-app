@@ -84,7 +84,7 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
     if (network == null) {
       return const SectionScaffold(
         title: 'Playground',
-        child: ComingSoon(message: 'Join a grid first to start chatting.'),
+        child: ComingSoon(message: 'Select a grid first to start chatting.'),
       );
     }
 

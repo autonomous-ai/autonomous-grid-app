@@ -47,7 +47,8 @@ class ModelPullController extends Notifier<ModelPullState> {
 
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
-      state = const ModelPullFailed('grid executable not found.');
+      state = const ModelPullFailed(
+          "Grid's background helper isn't available — please restart the app.");
       return;
     }
 
@@ -56,22 +57,33 @@ class ModelPullController extends Notifier<ModelPullState> {
       await for (final progress in service.pull(['pull', trimmed])) {
         state = ModelPulling(spec: trimmed, progress: progress);
       }
-    } catch (error) {
-      state = ModelPullFailed(error.toString());
+    } catch (_) {
+      state = const ModelPullFailed(
+          "Couldn't download the model — check your internet connection and "
+          'that the model name is correct, then try again.');
       return;
     }
 
-    // Refresh the on-disk list and confirm the file actually landed.
+    // Refresh the on-disk list and confirm the file actually landed. Match
+    // leniently (case-insensitive, by filename) so a slightly different saved
+    // name doesn't read as a failure when the download actually succeeded.
     ref.invalidate(localModelsProvider);
     final target = trimmed.contains(':') ? trimmed.split(':').last : null;
     final models = ref.read(localModelsProvider);
-    if (target == null || models.any((m) => m.name == target)) {
+    bool landed(String t) {
+      final want = t.toLowerCase();
+      return models.any((m) {
+        final name = m.name.toLowerCase();
+        return name == want || name.endsWith(want) || name.contains(want);
+      });
+    }
+
+    if (target == null || landed(target)) {
       state = ModelPullDone(target ?? trimmed);
     } else {
-      state = ModelPullFailed(
-        'Download finished but "$target" is not in ~/.grid/models — '
-        'check the repo:file spec.',
-      );
+      state = const ModelPullFailed(
+          "The download finished but the model couldn't be found afterwards. "
+          'Check the model name and try again.');
     }
   }
 

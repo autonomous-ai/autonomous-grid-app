@@ -275,9 +275,17 @@ class _FailedBody extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 8),
+        // Plain-language guidance first; the raw CLI line stays below (and in the
+        // log) for anyone who needs the technical detail.
+        Text(
+          'Check your internet connection and that you have enough free disk '
+          'space, then try again.',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 6),
         Text(state.message,
             style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.error)),
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         if (state.log.isNotEmpty) ...[
           const SizedBox(height: 12),
           SizedBox(height: 160, child: LogView(lines: state.log)),

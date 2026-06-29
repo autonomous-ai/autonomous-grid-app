@@ -63,7 +63,8 @@ void main() {
     expect(awaiting.first.userCode, 'AB-12');
   });
 
-  test('login fails with stderr on non-zero exit', () async {
+  test('login shows a friendly message on non-zero exit (no raw stderr)',
+      () async {
     final fake = FakeGridCliService()
       ..stubStart(
         ['login', '--no-browser'],
@@ -79,7 +80,10 @@ void main() {
 
     final state = container.read(authControllerProvider);
     expect(state, isA<AuthFailure>());
-    expect((state as AuthFailure).message, contains('expired'));
+    // Raw CLI stderr is mapped to plain language, not surfaced verbatim.
+    final message = (state as AuthFailure).message;
+    expect(message, contains('try again'));
+    expect(message, isNot(contains('Grid browser login')));
   });
 
   test('login fails fast when grid is absent', () async {

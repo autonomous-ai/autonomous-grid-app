@@ -74,7 +74,8 @@ void main() {
     final consumerRole = _network('grid-c2', 'c2',
         roles: const ['consumer'], scopes: const ['inference:create']);
     expect(consumerRole.role, NetworkRole.consumer);
-    expect(consumerRole.roleLabel, 'Public');
+    // Role labels deliberately avoid Public/Private (reserved for visibility).
+    expect(consumerRole.roleLabel, 'Using');
   });
 
   test('consumer network hides the provider-only sections', () {

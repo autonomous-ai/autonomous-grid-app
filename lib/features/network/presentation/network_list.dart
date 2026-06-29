@@ -55,7 +55,7 @@ class _NetworkListState extends ConsumerState<NetworkList> {
           ),
           Expanded(
             child: networks.isEmpty
-                ? const _Empty()
+                ? _Empty(hasGrids: visible.isNotEmpty)
                 : ListView(
                     padding: const EdgeInsets.only(bottom: 12),
                     children: [
@@ -149,8 +149,13 @@ class _NetworkTile extends StatelessWidget {
       NetworkConn.expiringSoon => AppPalette.warn,
       NetworkConn.expired => AppPalette.offline,
     };
-    final subtitle =
-        Uri.tryParse(network.lanSignalingUrl)?.host ?? network.networkId;
+    // A plain-language status, not the raw signaling host — beginners don't need
+    // (or want) infra URLs in the list.
+    final subtitle = switch (conn) {
+      NetworkConn.connected => 'Active',
+      NetworkConn.expiringSoon => 'Access expiring soon',
+      NetworkConn.expired => 'Access expired',
+    };
     final fg = selected ? Colors.white : AppPalette.textPrimary;
 
     return Padding(
@@ -171,24 +176,12 @@ class _NetworkTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(network.name,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: fg,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500)),
-                          ),
-                          const SizedBox(width: 6),
-                          Icon(Icons.computer,
-                              size: 13,
-                              color: selected
-                                  ? Colors.white70
-                                  : AppPalette.textFaint),
-                        ],
-                      ),
+                      Text(network.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: fg,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500)),
                       const SizedBox(height: 2),
                       Text(subtitle,
                           overflow: TextOverflow.ellipsis,
@@ -196,8 +189,7 @@ class _NetworkTile extends StatelessWidget {
                               color: selected
                                   ? Colors.white70
                                   : AppPalette.textSecondary,
-                              fontSize: 12,
-                              fontFamily: 'monospace')),
+                              fontSize: 12)),
                     ],
                   ),
                 ),
@@ -213,15 +205,51 @@ class _NetworkTile extends StatelessWidget {
 }
 
 class _Empty extends StatelessWidget {
-  const _Empty();
+  const _Empty({required this.hasGrids});
+
+  /// True when the user has grids but the search filtered them all out — versus
+  /// a genuine first-run with no grids at all (each needs different copy).
+  final bool hasGrids;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final theme = Theme.of(context);
+    if (hasGrids) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('No grids match your search.',
+              style: TextStyle(color: AppPalette.textSecondary)),
+        ),
+      );
+    }
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Text('No grids match.',
-            style: TextStyle(color: AppPalette.textSecondary)),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.hub_outlined,
+                size: 36, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 14),
+            Text("You don't have any grids yet",
+                style: theme.textTheme.titleSmall, textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            Text(
+              'A grid is your private network for running and using AI models. '
+              'Create one to get started.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: AppPalette.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => CreateNetworkDialog.show(context),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Create your first grid'),
+            ),
+          ],
+        ),
       ),
     );
   }

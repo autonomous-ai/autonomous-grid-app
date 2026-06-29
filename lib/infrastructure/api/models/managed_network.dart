@@ -4,13 +4,13 @@
 enum ManagedNetworkType {
   permissionedPublic(
     'permissioned-public',
-    'Public',
-    'Anyone allow-listed can join to consume or provide.',
+    'Use and share models',
+    'People you invite can both use models and run their own on this grid.',
   ),
   permissionedProviders(
     'permissioned-providers',
-    'Providers only',
-    'Only allow-listed providers can join — no open consumers.',
+    'Share models only',
+    'Only people who run a model can join — there are no use-only members.',
   );
 
   const ManagedNetworkType(this.wire, this.label, this.description);

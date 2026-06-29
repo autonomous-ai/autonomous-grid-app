@@ -46,7 +46,16 @@ class AuthController extends Notifier<AuthState> {
       }
     });
 
-    final exitCode = await _process!.exitCode;
+    // Device codes expire after a few minutes; cap the wait so a closed browser
+    // or abandoned approval doesn't leave the UI stuck on "Waiting…" forever.
+    final int exitCode;
+    try {
+      exitCode = await _process!.exitCode.timeout(const Duration(minutes: 5));
+    } on TimeoutException {
+      _process?.kill();
+      state = const AuthFailure('Sign-in timed out — please try again.');
+      return;
+    }
     if (exitCode == 0) {
       ref.invalidate(sessionProvider);
       state = const AuthSuccess();
@@ -57,11 +66,22 @@ class AuthController extends Notifier<AuthState> {
           .createFirstGridIfNeeded());
       return;
     }
-    state = AuthFailure(
-      errorLines.isNotEmpty
-          ? errorLines.join('\n')
-          : 'Login failed (exit $exitCode).',
-    );
+    state = AuthFailure(_friendlyLoginError(errorLines));
+  }
+
+  /// Turns raw CLI stderr into one plain-language line for a non-technical user.
+  /// The full output still lands in the Debug tab's command log.
+  static String _friendlyLoginError(List<String> errorLines) {
+    final raw = errorLines.join('\n').toLowerCase();
+    const networkHints = [
+      'network', 'connection', 'connect', 'timed out', 'timeout',
+      'resolve', 'unreachable', 'dns', 'socket',
+    ];
+    if (networkHints.any(raw.contains)) {
+      return "Couldn't reach Grid's servers — check your internet connection "
+          'and try again.';
+    }
+    return "Sign-in didn't complete. Please try again.";
   }
 
   void cancel() {

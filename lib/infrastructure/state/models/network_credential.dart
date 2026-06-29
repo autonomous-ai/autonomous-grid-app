@@ -81,13 +81,15 @@ class NetworkCredential {
     return NetworkRole.member;
   }
 
-  /// Plain-language label for [role] (badge text) — chosen so end users grasp it
-  /// at a glance: a "provider" shares a model, a "consumer" uses one.
+  /// Plain-language label for [role] (badge text) — describes what you do on the
+  /// grid: a "provider" shares a model, a "consumer" uses one. Deliberately
+  /// avoids the words Public/Private, which are reserved for grid *visibility*
+  /// ([visibilityLabel]) — reusing them for roles read as a settings collision.
   String get roleLabel => switch (role) {
         NetworkRole.admin => 'Admin',
         NetworkRole.provider => 'Sharing',
-        NetworkRole.consumer => 'Public',
-        NetworkRole.member => 'Private',
+        NetworkRole.consumer => 'Using',
+        NetworkRole.member => 'Member',
       };
 
   /// Whether the grid admits public consumers, from its managed network type

@@ -162,8 +162,8 @@ class RoleBadge extends StatelessWidget {
   Color _roleColor(NetworkRole role) => switch (role) {
         NetworkRole.admin => AppPalette.teal,
         NetworkRole.provider => AppPalette.accent,
-        NetworkRole.consumer => _visibilityColor(true), // "Public"
-        NetworkRole.member => _visibilityColor(false), // "Private"
+        NetworkRole.consumer => _visibilityColor(true), // "Using" (green)
+        NetworkRole.member => _visibilityColor(false), // "Member" (muted)
       };
 }
 

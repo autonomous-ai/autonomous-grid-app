@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/command_log.dart';
+import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
 import '../../auth/logic/session_controller.dart';
 import 'chat_reply.dart';
@@ -67,7 +68,9 @@ class ChatController extends Notifier<ChatState> {
         ...history,
         ChatMessage(
           role: ChatRole.assistant,
-          text: (reply == null || reply.isEmpty) ? '(empty response)' : reply,
+          text: (reply == null || reply.isEmpty)
+              ? 'The model returned no text.'
+              : reply,
         ),
       ],
     );
@@ -80,7 +83,10 @@ class ChatController extends Notifier<ChatState> {
   }) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
-      return (null, 'Grid core is missing — please reinstall the app.');
+      return (
+        null,
+        "Grid's background helper isn't available — please restart the app."
+      );
     }
 
     final result = await service.run([
@@ -94,7 +100,17 @@ class ChatController extends Notifier<ChatState> {
     // assistant text (parseChatReply also tolerates a plain-text fallback).
     return result.ok
         ? (parseChatReply(result.stdout), null)
-        : (null, result.errorMessage);
+        : (null, _friendlyChatError(result));
+  }
+
+  /// Maps a failed relay `chat` call to one plain-language line for the user;
+  /// the raw CLI output is still captured in the Debug tab's command log.
+  static String _friendlyChatError(CliResult result) {
+    if (result.sessionExpired) {
+      return 'Your session expired — please sign in again.';
+    }
+    return "Couldn't get a reply. Make sure a model is running on this grid, "
+        'then try again.';
   }
 
   Future<(String?, String?)> _sendLocal(

@@ -40,8 +40,11 @@ class LoginScreen extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: switch (state) {
-              AuthAwaitingApproval(:final url, :final userCode) =>
-                _ApprovalView(url: url, userCode: userCode),
+              AuthAwaitingApproval(:final url, :final userCode) => _ApprovalView(
+                  url: url,
+                  userCode: userCode,
+                  onCancel: controller.cancel,
+                ),
               AuthStarting() || AuthSuccess() =>
                 const _Busy(label: 'Signing in…'),
               AuthFailure(:final message) =>
@@ -70,11 +73,25 @@ class _SignIn extends StatelessWidget {
         Icon(Icons.hub_outlined, size: 56, color: theme.colorScheme.primary),
         const SizedBox(height: 16),
         Text('Grid', style: theme.textTheme.headlineMedium),
+        const SizedBox(height: 8),
+        Text(
+          'One private endpoint for the AI models you run.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
         const SizedBox(height: 24),
         FilledButton.icon(
           onPressed: onSignIn,
           icon: const Icon(Icons.login),
           label: const Text('Sign in with Google'),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'First time? Signing in creates your account automatically.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
@@ -89,10 +106,15 @@ class _SignIn extends StatelessWidget {
 }
 
 class _ApprovalView extends StatelessWidget {
-  const _ApprovalView({required this.url, required this.userCode});
+  const _ApprovalView({
+    required this.url,
+    required this.userCode,
+    required this.onCancel,
+  });
 
   final String url;
   final String userCode;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -103,45 +125,91 @@ class _ApprovalView extends StatelessWidget {
       children: [
         Text('Finish signing in', style: theme.textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text(
-          "We've opened your browser — confirm the code below. "
-          "If it didn't open, use the button or copy the URL.",
+        Text(
+          'We opened Grid sign-in in your browser. Check that it shows this '
+          'code, then approve there to continue:',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: () => _openInBrowser(url),
-          icon: const Icon(Icons.open_in_new),
-          label: const Text('Open in browser'),
+        // The code is the hero — it's what the user must match in the browser.
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: theme.colorScheme.outline),
+          ),
+          child: Center(
+            child: SelectableText(
+              userCode,
+              style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2),
+            ),
+          ),
         ),
-        const SizedBox(height: 16),
-        _CopyField(label: 'URL', value: url),
-        const SizedBox(height: 8),
-        _CopyField(label: 'Code', value: userCode, monospace: true),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
         const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
-                width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2)),
             SizedBox(width: 12),
             Text('Waiting for approval…'),
           ],
+        ),
+        const SizedBox(height: 20),
+        // Fallbacks, de-emphasized — the browser usually opened already.
+        _BrowserFallback(url: url),
+        const SizedBox(height: 4),
+        Center(
+          child: TextButton(
+            onPressed: onCancel,
+            child: const Text('Cancel'),
+          ),
         ),
       ],
     );
   }
 }
 
+/// Collapsed "browser didn't open?" helper — the open button + copyable URL.
+class _BrowserFallback extends StatelessWidget {
+  const _BrowserFallback({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      title: const Text("Browser didn't open?"),
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.tonalIcon(
+            onPressed: () => _openInBrowser(url),
+            icon: const Icon(Icons.open_in_new, size: 18),
+            label: const Text('Open in browser'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _CopyField(label: 'URL', value: url),
+      ],
+    );
+  }
+}
+
 class _CopyField extends StatelessWidget {
-  const _CopyField({
-    required this.label,
-    required this.value,
-    this.monospace = false,
-  });
+  const _CopyField({required this.label, required this.value});
 
   final String label;
   final String value;
-  final bool monospace;
 
   @override
   Widget build(BuildContext context) {
@@ -155,11 +223,7 @@ class _CopyField extends StatelessWidget {
           onPressed: () => Clipboard.setData(ClipboardData(text: value)),
         ),
       ),
-      child: Text(
-        value,
-        overflow: TextOverflow.ellipsis,
-        style: monospace ? const TextStyle(fontFamily: 'monospace') : null,
-      ),
+      child: Text(value, overflow: TextOverflow.ellipsis),
     );
   }
 }

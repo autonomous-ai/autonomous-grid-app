@@ -53,8 +53,8 @@ List<SetupStep> buildSetupPlan(
   if (!caps.hasTextInference) {
     steps.add(const SetupStep(
       action: SetupAction.installLlama,
-      title: 'Install the built-in engine (llama.cpp)',
-      detail: 'Runs `grid engine install llama.cpp`.',
+      title: 'Install the built-in engine',
+      detail: 'The software that runs AI models on this computer.',
       args: ['engine', 'install', 'llama.cpp'],
       isDownload: false,
     ));
@@ -69,7 +69,7 @@ List<SetupStep> buildSetupPlan(
     steps.add(SetupStep(
       action: SetupAction.pullModel,
       title: 'Download a model',
-      detail: 'Downloading $display so this node can answer chat.',
+      detail: 'A ready-to-use AI model ($display) — can be several GB.',
       args: ['pull', spec],
       isDownload: true,
     ));
@@ -78,8 +78,8 @@ List<SetupStep> buildSetupPlan(
   if (includeMedia && !caps.hasMediaEngine) {
     steps.add(const SetupStep(
       action: SetupAction.installComfy,
-      title: 'Install the media engine (ComfyUI)',
-      detail: 'Runs `grid engine install comfyui`.',
+      title: 'Install the media engine',
+      detail: 'The software that generates images on this computer.',
       args: ['engine', 'install', 'comfyui'],
       isDownload: false,
     ));
@@ -89,8 +89,8 @@ List<SetupStep> buildSetupPlan(
       !(caps.media.bundle(defaultMediaBundle)?.isComplete ?? false)) {
     steps.add(const SetupStep(
       action: SetupAction.pullMediaBundle,
-      title: 'Download image models ($defaultMediaBundle)',
-      detail: 'Several GB of model files for ComfyUI image generation.',
+      title: 'Download image models',
+      detail: 'Model files for image generation — several GB.',
       args: ['engine', 'pull', defaultMediaBundle],
       isDownload: true,
     ));

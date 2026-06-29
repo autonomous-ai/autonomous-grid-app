@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../shared/widgets/error_box.dart';
 import 'preflight_providers.dart';
 import 'preflight_report.dart';
+
+/// Where users go to install or get help with the `grid` background helper.
+const _helpUrl = 'https://grid.autonomous.ai';
+const _installCommand =
+    'curl -fsSL https://grid.autonomous.ai/install.sh | bash';
 
 /// Shown when `grid` cannot be found. Explains the gap and offers a re-check.
 class PreflightScreen extends ConsumerWidget {
@@ -31,25 +38,92 @@ class PreflightScreen extends ConsumerWidget {
                 report.gridError != null
                     ? "Grid is installed but couldn't start. Fix the issue "
                         'below, then check again.'
-                    : "Grid couldn't find the components it needs to run. "
-                        'Please install them, then check again.',
+                    : "Grid needs its background helper installed before it can "
+                        'run. Install it using the steps below, then check again.',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
-              _CheckRow(label: 'Grid core', ok: report.gridAvailable),
+              _CheckRow(label: 'Grid background helper', ok: report.gridAvailable),
               if (report.gridError != null) ...[
                 const SizedBox(height: 16),
                 ErrorBox(message: report.gridError!),
               ],
+              // Only the "missing" case needs install instructions; a present-
+              // but-broken install is a different problem (shown via ErrorBox).
+              if (report.gridError == null) ...[
+                const SizedBox(height: 20),
+                Text('Install it', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                Text(
+                  'On macOS or Linux, run this in a terminal:',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 8),
+                _InstallCommand(command: _installCommand),
+              ],
               const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: () => ref.invalidate(preflightProvider),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Check again'),
+              Row(
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => ref.invalidate(preflightProvider),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Check again'),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => launchUrl(Uri.parse(_helpUrl),
+                        mode: LaunchMode.externalApplication),
+                    icon: const Icon(Icons.help_outline, size: 18),
+                    label: const Text('Get help'),
+                  ),
+                ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A copyable one-liner install command, shown in monospace with a copy button.
+class _InstallCommand extends StatelessWidget {
+  const _InstallCommand({required this.command});
+  final String command;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.outline),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SelectableText(
+              command,
+              maxLines: 1,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy, size: 16),
+            tooltip: 'Copy',
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: command));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Copied'), duration: Duration(seconds: 1)),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../logic/model_pull_controller.dart';
+
+/// Where to find GGUF models to paste into the download field.
+const _huggingFaceGgufUrl =
+    'https://huggingface.co/models?library=gguf&sort=trending';
 
 /// Step 3 of the provider flow: pull a GGUF model from Hugging Face into
 /// `~/.grid/models` via `grid models pull <repo>:<file>`, with a live bar.
@@ -42,19 +47,44 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
           controller: _spec,
           decoration: const InputDecoration(
             labelText: 'Model to download',
-            helperText: 'Paste a model from Hugging Face',
+            helperText: 'A model in the format  owner/repo:file.gguf',
             hintText: 'unsloth/…-GGUF:…IQ3_S.gguf',
             border: OutlineInputBorder(),
           ),
         ),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => launchUrl(Uri.parse(_huggingFaceGgufUrl),
+                mode: LaunchMode.externalApplication),
+            icon: const Icon(Icons.open_in_new, size: 15),
+            label: const Text('Browse models on Hugging Face'),
+            style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                textStyle: const TextStyle(fontSize: 12.5)),
+          ),
+        ),
+        Text(
+          'Models are large — often several GB — and download in the background.',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
         if (state is ModelPullDone) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             children: [
               const Icon(Icons.check_circle, color: Colors.green, size: 18),
               const SizedBox(width: 8),
               Expanded(child: Text('Downloaded ${state.file}')),
             ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Ready to use. Close this, then start the engine to serve it.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ],
         if (state is ModelPullFailed) ...[

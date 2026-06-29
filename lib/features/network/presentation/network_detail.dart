@@ -75,18 +75,18 @@ class _OverviewTab extends StatelessWidget {
       children: [
         const GridOverviewView(),
         const SizedBox(height: 22),
-        DetailSection(
-          title: 'Connection',
-          children: [
-            AddressRow(label: 'Grid address', value: network.lanSignalingUrl),
-          ],
-        ),
-        const SizedBox(height: 20),
-        // API access (BASE_URL + API_KEY) is shown for every grid, regardless
-        // of role — any member may want OpenAI-compatible credentials.
+        // API access shown directly (as before — no developer expander).
         ConsumerEnvCard(network: network),
         const SizedBox(height: 20),
         _Actions(network: network),
+        // Connection block (grid address) temporarily hidden per request:
+        // const SizedBox(height: 20),
+        // DetailSection(
+        //   title: 'Connection',
+        //   children: [
+        //     AddressRow(label: 'Grid address', value: network.lanSignalingUrl),
+        //   ],
+        // ),
       ],
     );
   }
