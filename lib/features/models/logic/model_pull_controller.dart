@@ -34,9 +34,9 @@ class ModelPullFailed extends ModelPullState {
   final String message;
 }
 
-/// Runs `grid models pull <repo>:<file>`, streaming the stderr download bar
-/// (§3.4). `pull()` doesn't surface an exit code, so success is confirmed by
-/// re-scanning `~/.grid/models` for the target file afterwards.
+/// Runs `grid pull <repo>:<file>`, streaming the stderr download bar (§3.4).
+/// `pull()` doesn't surface an exit code, so success is confirmed by re-scanning
+/// `~/.grid/models` for the target file afterwards.
 class ModelPullController extends Notifier<ModelPullState> {
   @override
   ModelPullState build() => const ModelPullIdle();
@@ -53,7 +53,7 @@ class ModelPullController extends Notifier<ModelPullState> {
 
     state = ModelPulling(spec: trimmed);
     try {
-      await for (final progress in service.pull(['models', 'pull', trimmed])) {
+      await for (final progress in service.pull(['pull', trimmed])) {
         state = ModelPulling(spec: trimmed, progress: progress);
       }
     } catch (error) {

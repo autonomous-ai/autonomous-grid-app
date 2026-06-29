@@ -25,7 +25,7 @@ class _RevealedKeysNotifier extends Notifier<Set<String>> {
 }
 
 /// The consumer's OpenAI-compatible credentials for a grid — the exact pair
-/// `grid consumer env` prints (OPENAI_BASE_URL + OPENAI_API_KEY). Both are
+/// `grid info --env` prints (OPENAI_BASE_URL + OPENAI_API_KEY). Both are
 /// derived from the already-loaded credential ([NetworkCredential.relayBaseUrl]
 /// / [NetworkCredential.relayApiKey]), so this needs no subprocess. The key is
 /// masked until the viewer reveals it.

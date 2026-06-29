@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:toml/toml.dart';
@@ -29,6 +30,26 @@ class GridHomeStore {
   NetworkConfig? readNetworkConfig(String networkId) {
     final map = _readToml(GridPaths.networkConfigFile(networkId));
     return map == null ? null : NetworkConfig.fromToml(map);
+  }
+
+  /// The active cloud grid (name or network_id) the user picked with
+  /// `grid use`, read from `~/.grid/state.json` (`active.cloud`). Null when the
+  /// file is missing/unreadable or nothing is selected — callers fall back to a
+  /// default grid. Lenient like the CLI: a corrupt state file must never brick
+  /// the app. See [GridPaths.stateFile].
+  String? readActiveCloudGrid() {
+    final file = GridPaths.stateFile;
+    if (!file.existsSync()) return null;
+    try {
+      final decoded = jsonDecode(file.readAsStringSync());
+      if (decoded is! Map) return null;
+      final active = decoded['active'];
+      if (active is! Map) return null;
+      final cloud = active['cloud'];
+      return cloud is String && cloud.isNotEmpty ? cloud : null;
+    } on Exception {
+      return null;
+    }
   }
 
   /// Scan `~/.grid/models/*.gguf` for local models.

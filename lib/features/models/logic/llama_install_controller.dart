@@ -35,9 +35,9 @@ class LlamaInstallFailed extends LlamaInstallState {
   final String message;
 }
 
-/// Runs `grid llama.cpp install`, streaming its log, and re-detects the engine
-/// on success. On Apple Silicon this drives Homebrew; on Linux a CUDA tarball
-/// or source build.
+/// Runs `grid engine install llama.cpp`, streaming its log, and re-detects the
+/// engine on success. On Apple Silicon this drives Homebrew; on Linux a CUDA
+/// tarball or source build.
 class LlamaInstallController extends Notifier<LlamaInstallState> {
   static const _maxLogLines = 300;
   GridProcess? _process;
@@ -58,7 +58,7 @@ class LlamaInstallController extends Notifier<LlamaInstallState> {
     final log = <String>[];
     state = const LlamaInstalling([]);
 
-    _process = await service.start(['llama.cpp', 'install']);
+    _process = await service.start(['engine', 'install', 'llama.cpp']);
     _process!.lines.listen((line) {
       log.add(line.text);
       if (log.length > _maxLogLines) log.removeRange(0, log.length - _maxLogLines);

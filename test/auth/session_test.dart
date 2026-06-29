@@ -24,11 +24,15 @@ NetworkCredential _network(String id, String name) => NetworkCredential(
     );
 
 class _FakeStore extends GridHomeStore {
-  const _FakeStore(this.credentials);
+  const _FakeStore(this.credentials, {this.activeCloud});
   final CredentialsFile credentials;
+  final String? activeCloud;
 
   @override
   CredentialsFile readCredentials() => credentials;
+
+  @override
+  String? readActiveCloudGrid() => activeCloud;
 }
 
 void main() {
@@ -43,10 +47,26 @@ void main() {
     return container;
   }
 
-  test('selected network defaults to active_network', () {
+  test('selected network falls back to legacy active_network', () {
     final container = containerWith(
       CredentialsFile(networks: [foo, bar], activeNetwork: 'grid-bar'),
     );
+    expect(container.read(selectedNetworkProvider)!.networkId, 'grid-bar');
+  });
+
+  test('selected network honors the state.json active grid (grid use)', () {
+    final container = ProviderContainer(
+      overrides: [
+        gridHomeStoreProvider.overrideWithValue(
+          _FakeStore(
+            CredentialsFile(networks: [foo, bar], activeNetwork: 'grid-foo'),
+            activeCloud: 'grid-bar',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    // state.json `active.cloud` (grid-bar) wins over the legacy active_network.
     expect(container.read(selectedNetworkProvider)!.networkId, 'grid-bar');
   });
 

@@ -27,8 +27,8 @@ class NodeCapabilities {
   final MediaStatus media;
   final int localModelCount;
 
-  /// Default model to auto-download, from `grid models list --catalog`. Null
-  /// when the CLI recommends none for this machine (then no model is pulled).
+  /// Default model to auto-download, from `grid catalog`. Null when the CLI
+  /// recommends none for this machine (then no model is pulled).
   final CatalogModel? recommendedModel;
 
   /// External OpenAI-compatible servers already running (Ollama, LM Studio).
@@ -36,7 +36,7 @@ class NodeCapabilities {
       textBackends.where((b) => b.isExternal).toList();
 
   /// An external backend that already advertises at least one model — this node
-  /// can serve through it (`provider start --at`) without a local GGUF.
+  /// can serve through it (`grid join --at`) without a local GGUF.
   bool get hasExternalModels =>
       externalBackends.any((b) => b.models.isNotEmpty);
 

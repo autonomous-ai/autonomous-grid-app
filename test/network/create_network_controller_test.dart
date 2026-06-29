@@ -10,7 +10,8 @@ import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 const _net = 'net-1';
-const _joinArgs = ['network', 'join', _net];
+const _syncArgs = ['sync'];
+const _useArgs = ['use', _net];
 
 const _created = ManagedNetwork(
   networkId: _net,
@@ -90,12 +91,9 @@ ProviderContainer _container({
 }
 
 void main() {
-  test('creates the grid, joins locally, then reports done', () async {
-    final fake = FakeGridCliService()
-      ..stubResult(_joinArgs,
-          const CliResult(exitCode: 0, stdout: 'Joined', stderr: ''));
-    final container =
-        _container(create: _stubCreate((_created, null)), cli: fake);
+  test('creates the grid, syncs + selects it, then reports done', () async {
+    final container = _container(
+        create: _stubCreate((_created, null)), cli: FakeGridCliService());
 
     await container
         .read(createNetworkControllerProvider.notifier)
@@ -107,10 +105,8 @@ void main() {
     expect(state.network.networkId, _net);
   });
 
-  test('syncs after joining so the new grid lands fully in ~/.grid', () async {
-    final cli = _RecordingCli()
-      ..stubResult(_joinArgs,
-          const CliResult(exitCode: 0, stdout: 'Joined', stderr: ''));
+  test('syncs then selects the new grid with `grid use`', () async {
+    final cli = _RecordingCli();
     final container =
         _container(create: _stubCreate((_created, null)), cli: cli);
 
@@ -118,7 +114,7 @@ void main() {
         .read(createNetworkControllerProvider.notifier)
         .submit(name: 'my-grid', type: ManagedNetworkType.permissionedPublic);
 
-    expect(cli.runs, containsAllInOrder([_joinArgs, const ['sync']]));
+    expect(cli.runs, containsAllInOrder([_syncArgs, _useArgs]));
   });
 
   test('surfaces the API error and stays failed', () async {
@@ -136,10 +132,10 @@ void main() {
     expect((state as CreateNetworkFailed).message, contains('already own'));
   });
 
-  test('done with a warning when the local join fails', () async {
+  test('done with a warning when the local sync fails', () async {
     final fake = FakeGridCliService()
-      ..stubResult(_joinArgs,
-          const CliResult(exitCode: 1, stdout: '', stderr: 'join refused'));
+      ..stubResult(_syncArgs,
+          const CliResult(exitCode: 1, stdout: '', stderr: 'sync refused'));
     final container =
         _container(create: _stubCreate((_created, null)), cli: fake);
 
@@ -149,7 +145,7 @@ void main() {
 
     final state = container.read(createNetworkControllerProvider);
     expect(state, isA<CreateNetworkDone>());
-    expect((state as CreateNetworkDone).joinWarning, contains('join refused'));
+    expect((state as CreateNetworkDone).joinWarning, contains('sync refused'));
   });
 
   test('fails fast when not signed in', () async {
@@ -182,12 +178,9 @@ void main() {
   test('createFirstGridIfNeeded provisions a grid named after the user',
       () async {
     final names = <String>[];
-    final fake = FakeGridCliService()
-      ..stubResult(_joinArgs,
-          const CliResult(exitCode: 0, stdout: 'Joined', stderr: ''));
     final container = _container(
       create: _recordCreate(names, (_created, null)),
-      cli: fake,
+      cli: FakeGridCliService(),
       email: 'huy@gmail.com',
     );
 

@@ -45,14 +45,12 @@ class _RecordingCli extends FakeGridCliService {
 
 ProviderContainer _container({
   required CredentialsFile creds,
-  required GridCliService cli,
-  String apiUrl = '',
+  required GridCliService? cli,
 }) {
   final container = ProviderContainer(
     overrides: [
       gridCliServiceProvider.overrideWithValue(cli),
       gridHomeStoreProvider.overrideWithValue(_FakeStore(creds)),
-      gridApiUrlProvider.overrideWithValue(apiUrl),
     ],
   );
   addTearDown(container.dispose);
@@ -61,41 +59,25 @@ ProviderContainer _container({
 
 CredentialsFile _loggedIn(String networkId) => CredentialsFile(
       networks: [_network(networkId)],
-      activeNetwork: networkId,
       sessionToken: 'session-tok',
     );
 
 void main() {
-  test('refreshes the active network token and recovers silently', () async {
+  test('refreshes the grid tokens with `grid sync` and recovers silently',
+      () async {
     final cli = _RecordingCli();
     final container = _container(creds: _loggedIn('grid-1'), cli: cli);
 
     await container.read(sessionExpiryProvider.notifier).onExpired();
 
     expect(container.read(sessionExpiryProvider), SessionExpiry.healthy);
-    expect(cli.runs, contains(equals(['auth', 'refresh', '--network', 'grid-1'])));
+    expect(cli.runs, contains(equals(const ['sync'])));
   });
 
-  test('passes --api-url through to refresh when configured', () async {
-    final cli = _RecordingCli();
-    final container =
-        _container(creds: _loggedIn('grid-1'), cli: cli, apiUrl: 'https://api.test/');
-
-    await container.read(sessionExpiryProvider.notifier).onExpired();
-
-    expect(
-      cli.runs,
-      contains(equals([
-        'auth', 'refresh', '--network', 'grid-1', //
-        '--api-url', 'https://api.test/',
-      ])),
-    );
-  });
-
-  test('prompts re-login when refresh fails', () async {
+  test('prompts re-login when sync fails (dead session token)', () async {
     final cli = _RecordingCli()
-      ..stubResult(['auth', 'refresh', '--network', 'grid-1'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'refresh token expired'));
+      ..stubResult(const ['sync'],
+          const CliResult(exitCode: 1, stdout: '', stderr: 'session has expired'));
     final container = _container(creds: _loggedIn('grid-1'), cli: cli);
 
     await container.read(sessionExpiryProvider.notifier).onExpired();
@@ -103,13 +85,11 @@ void main() {
     expect(container.read(sessionExpiryProvider), SessionExpiry.needsLogin);
   });
 
-  test('needs login when there is no network to refresh', () async {
-    final cli = _RecordingCli();
-    final container = _container(creds: CredentialsFile.empty, cli: cli);
+  test('needs login when the CLI is absent', () async {
+    final container = _container(creds: CredentialsFile.empty, cli: null);
 
     await container.read(sessionExpiryProvider.notifier).onExpired();
 
     expect(container.read(sessionExpiryProvider), SessionExpiry.needsLogin);
-    expect(cli.runs, isEmpty);
   });
 }

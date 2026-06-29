@@ -30,8 +30,8 @@ class ChatState {
 }
 
 /// Consumer chat. Two paths:
-/// - Relay (default): runs `grid request chat --network ... --model ...
-///   --message ...` — single-turn, the CLI keeps no history.
+/// - Relay (default): runs `grid chat -m MODEL --grid GRID --json "MESSAGE"` —
+///   single-turn, the CLI keeps no history.
 /// - Local ([localBaseUrl] set): a direct OpenAI-style HTTP call to a
 ///   locally-running provider, like `curl localhost:PORT/v1/chat/completions`.
 /// The transcript is local UI state either way.
@@ -84,12 +84,14 @@ class ChatController extends Notifier<ChatState> {
     }
 
     final result = await service.run([
-      'request', 'chat',
-      '--network', network,
-      '--model', model,
-      '--message', message,
+      'chat',
+      '-m', model,
+      '--grid', network,
+      '--json', // print the full JSON response so we can pull out the text
+      message,
     ]);
-    // The CLI prints the full JSON response — show just the assistant text.
+    // With --json the CLI prints the full JSON response — show just the
+    // assistant text (parseChatReply also tolerates a plain-text fallback).
     return result.ok
         ? (parseChatReply(result.stdout), null)
         : (null, result.errorMessage);

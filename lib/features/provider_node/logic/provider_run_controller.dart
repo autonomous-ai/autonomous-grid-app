@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/providers.dart';
@@ -64,50 +66,72 @@ class ProviderRunFailed extends ProviderRunState {
   final String message;
 }
 
-/// Runs `grid provider start` as an app-owned foreground process and streams its
-/// log. The process is killed on stop or app dispose (loại 2 in the contract's
-/// process model — no zombie llama-server / poll loop left behind).
+/// Shares a model to a grid with `grid join`, streaming its startup log.
+///
+/// Unlike the old foreground `provider start`, `grid join` spawns the engine as a
+/// **detached** background process and returns once it's launched — so a clean
+/// exit (0) means "now serving", not "stopped". The engine keeps running via the
+/// relay until we `grid leave` it, which [stop] (and dispose) do so no engine is
+/// left behind. We pass a fixed `--name` so `grid leave --engine` can target it.
+///
+/// TODO(BE): the detached engine logs to `~/.grid/run/engines/...`, not through
+/// this process, so the streamed log is just `join`'s startup lines and the
+/// Playground's local-port auto-detection ([localProviderEndpointProvider]) no
+/// longer fires — consumers fall back to the relay chat path.
 class ProviderRunController extends Notifier<ProviderRunState> {
   static const _maxLogLines = 400;
+
+  /// Stable engine id passed via `--name`, so [stop] can target it with
+  /// `grid leave --engine`. Namespaced per grid by the CLI's run records.
+  static const _engineName = 'grid-app';
+
   GridProcess? _process;
+  GridCliService? _service;
+  String? _grid;
   bool _stopping = false;
 
   @override
   ProviderRunState build() {
-    ref.onDispose(() => _process?.kill());
+    ref.onDispose(_teardown);
     return const ProviderRunIdle();
   }
 
-  /// Serve a model already pulled into `~/.grid/models` — the local provider
-  /// flow (`provider start --network <net> --model <gguf> [--advertise-as]`,
-  /// no `--at`).
+  /// Serve a model already pulled into `~/.grid/models` via the built-in engine
+  /// (`grid join <grid> --serve <gguf> [--advertise-as]`).
   Future<void> startLocal({
     required String network,
     required String model,
     String? advertiseAs,
   }) {
-    return _start([
-      'provider', 'start',
-      '--network', network,
-      '--model', model,
-      ..._advertiseArgs(advertiseAs),
-    ]);
+    return _start(
+      [
+        'join', network,
+        '--serve', model,
+        ..._advertiseArgs(advertiseAs),
+        '--name', _engineName,
+      ],
+      grid: network,
+    );
   }
 
-  /// Start a provider serving from an external OpenAI-compatible endpoint.
+  /// Serve from an external OpenAI-compatible endpoint
+  /// (`grid join <grid> --at <url> -m <model>`).
   Future<void> startExternal({
     required String network,
     required String endpoint,
     required String model,
     String? advertiseAs,
   }) {
-    return _start([
-      'provider', 'start',
-      '--network', network,
-      '--at', endpoint,
-      '--model', model,
-      ..._advertiseArgs(advertiseAs),
-    ]);
+    return _start(
+      [
+        'join', network,
+        '--at', endpoint,
+        '-m', model,
+        ..._advertiseArgs(advertiseAs),
+        '--name', _engineName,
+      ],
+      grid: network,
+    );
   }
 
   List<String> _advertiseArgs(String? advertiseAs) =>
@@ -115,13 +139,15 @@ class ProviderRunController extends Notifier<ProviderRunState> {
           ? ['--advertise-as', advertiseAs]
           : const [];
 
-  Future<void> _start(List<String> args) async {
+  Future<void> _start(List<String> args, {required String grid}) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
       return;
     }
 
+    _service = service;
+    _grid = grid;
     _stopping = false;
     final log = <String>[];
     state = const ProviderRunActive(log: [], starting: true);
@@ -132,22 +158,48 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       if (log.length > _maxLogLines) {
         log.removeRange(0, log.length - _maxLogLines);
       }
-      state = ProviderRunActive(log: List.unmodifiable(log), starting: false);
+      // Still "starting" until `join` exits 0 — the engine serves detached after.
+      state = ProviderRunActive(log: List.unmodifiable(log), starting: true);
     });
 
     final exitCode = await _process!.exitCode;
+    _process = null;
     if (_stopping) {
       state = const ProviderRunStopped();
       return;
     }
-    state = exitCode == 0
-        ? const ProviderRunStopped()
-        : ProviderRunFailed(
-            log.isNotEmpty ? log.last : 'provider exited ($exitCode).');
+    if (exitCode == 0) {
+      // `grid join` launched the engine in the background; it's serving now.
+      state = ProviderRunActive(log: List.unmodifiable(log), starting: false);
+      return;
+    }
+    _grid = null;
+    state = ProviderRunFailed(
+        log.isNotEmpty ? log.last : 'sharing failed to start (exit $exitCode).');
   }
 
-  void stop() {
+  /// Stop sharing: `grid leave` unregisters and kills the detached engine.
+  Future<void> stop() async {
     _stopping = true;
     _process?.kill();
+    final service = _service;
+    final grid = _grid;
+    _grid = null;
+    if (service != null && grid != null) {
+      await service.run(['leave', grid, '--engine', _engineName]);
+    }
+    state = const ProviderRunStopped();
+  }
+
+  /// On dispose, leave any still-serving detached engine so none is left behind
+  /// (best-effort; dispose can't await).
+  void _teardown() {
+    _process?.kill();
+    final service = _service;
+    final grid = _grid;
+    _grid = null;
+    if (service != null && grid != null) {
+      unawaited(service.run(['leave', grid, '--engine', _engineName]));
+    }
   }
 }

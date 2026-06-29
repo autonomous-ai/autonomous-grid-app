@@ -8,22 +8,21 @@ import 'package:grid_app/infrastructure/providers.dart';
 const _net = 'grid-xyz';
 const _email = 'me@x.com';
 const _addArgs = [
-  'network', 'allowlist', 'add', _net, _email,
-  '--role', 'admin', '--role', 'provider',
+  'members', 'add', _net, _email, '--role', 'provider',
 ];
-const _joinArgs = ['network', 'join', _net];
+const _syncArgs = ['sync'];
 
 void main() {
-  test('grants the provider role, joins, then reports done', () async {
+  test('grants the provider role, syncs, then reports done', () async {
     final fake = FakeGridCliService()
       ..stubResult(
           _addArgs,
           const CliResult(
               exitCode: 0,
-              stdout: 'Added me@x.com roles=admin,provider',
+              stdout: 'Added me@x.com (roles: provider)',
               stderr: ''))
-      ..stubResult(_joinArgs,
-          const CliResult(exitCode: 0, stdout: 'Joined network', stderr: ''));
+      ..stubResult(_syncArgs,
+          const CliResult(exitCode: 0, stdout: 'Synced 1 grid(s): xyz.', stderr: ''));
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(fake)],
     );
@@ -40,7 +39,7 @@ void main() {
     expect(seen.whereType<EnableRunning>(), isNotEmpty);
   });
 
-  test('surfaces the allowlist failure and never joins', () async {
+  test('surfaces the members-add failure and never syncs', () async {
     final fake = FakeGridCliService()
       ..stubResult(
           _addArgs,

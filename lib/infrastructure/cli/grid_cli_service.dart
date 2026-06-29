@@ -21,13 +21,24 @@ class CliResult {
     return err.isNotEmpty ? err : stdout.trim();
   }
 
-  /// The command failed because the saved Grid session is no longer valid —
-  /// the user must re-run `grid auth login`. The CLI prints
-  /// "Grid session expired or invalid. Run `grid auth login` to sign in again."
-  /// on a 401-equivalent (cli.py). String-matched because the control plane has
-  /// no structured error code; kept in one place so detection stays consistent.
-  bool get sessionExpired =>
-      !ok && errorMessage.toLowerCase().contains('session expired or invalid');
+  /// The command failed because the saved Grid session is no longer valid — the
+  /// user must re-run `grid login`. The control plane has no structured error
+  /// code, so we string-match the CLI's own sign-in-required messages, kept in
+  /// one place so detection stays consistent:
+  /// - `grid sync` on a dead session: "Your grid session has expired. Run
+  ///   `grid login` to sign in again." (cli/auth.py)
+  /// - the `require_session` gate every cloud command shares: "You're not signed
+  ///   in. Run `grid login` to sign in." (cloud/credentials.py)
+  /// - `grid chat`/media on a 401: "Your access token has expired…"
+  /// - the legacy single-mode wording, kept for older binaries.
+  bool get sessionExpired {
+    if (ok) return false;
+    final msg = errorMessage.toLowerCase();
+    return msg.contains('session expired or invalid') ||
+        msg.contains('session has expired') ||
+        msg.contains('access token has expired') ||
+        msg.contains("you're not signed in");
+  }
 }
 
 /// One line emitted by a long-running command (provider/install logs, §3.5).
@@ -40,8 +51,8 @@ class CliLine {
 
 /// A handle to a running, app-owned `grid` process. Used where we need both the
 /// live output (e.g. the device-login URL mid-stream) and the final exit code,
-/// and where we may need to kill it (e.g. `provider start` on window close —
-/// loại 2 in the contract's process model).
+/// and where we may need to kill it (e.g. `grid join` / an install on window
+/// close — loại 2 in the contract's process model).
 class GridProcess {
   const GridProcess({
     required this.lines,

@@ -14,7 +14,7 @@ Future<bool> _openInBrowser(String url) async {
   return launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Device-flow login. Triggers `grid auth login --no-browser`, shows the URL +
+/// Device-flow login. Triggers `grid login --no-browser`, shows the URL +
 /// code while the CLI polls, and flips to the app on success.
 class LoginScreen extends ConsumerWidget {
   const LoginScreen({super.key});

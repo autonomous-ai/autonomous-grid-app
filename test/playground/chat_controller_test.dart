@@ -6,10 +6,11 @@ import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/providers.dart';
 
 const _args = [
-  'request', 'chat',
-  '--network', 'net',
-  '--model', 'm',
-  '--message', 'hi',
+  'chat',
+  '-m', 'm',
+  '--grid', 'net',
+  '--json',
+  'hi',
 ];
 
 Future<void> _send(ProviderContainer c) =>

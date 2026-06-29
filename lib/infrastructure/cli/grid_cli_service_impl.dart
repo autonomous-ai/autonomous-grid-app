@@ -22,7 +22,7 @@ class GridCliServiceImpl implements GridCliService {
   ///   app inherits no `LANG`, so the frozen Python `grid` would otherwise pick
   ///   ASCII stdio and crash with `UnicodeEncodeError` the moment it prints a
   ///   non-ASCII char (e.g. the "–"/"—" in its own messages) — failing install,
-  ///   provider start, etc. with exit 1.
+  ///   joining an engine, etc. with exit 1.
   /// - an augmented `PATH` (+ a UTF-8 `LANG`) so `grid`'s own children (brew,
   ///   docker, cmake, llama-server) resolve and also emit UTF-8 — a GUI app
   ///   inherits only a minimal environment.

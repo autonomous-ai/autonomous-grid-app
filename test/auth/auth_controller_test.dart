@@ -24,11 +24,21 @@ class _FakeStore extends GridHomeStore {
   }
 }
 
+class _RecordingCli extends FakeGridCliService {
+  final List<List<String>> runs = [];
+
+  @override
+  Future<CliResult> run(List<String> args) {
+    runs.add(args);
+    return super.run(args);
+  }
+}
+
 void main() {
   test('login surfaces the code then succeeds on exit 0', () async {
     final fake = FakeGridCliService()
       ..stubStart(
-        ['auth', 'login', '--no-browser', '--api-url', 'https://api.test/'],
+        ['login', '--no-browser'],
         exitCode: 0,
         exitDelay: const Duration(milliseconds: 10),
         lines: const [
@@ -38,10 +48,7 @@ void main() {
         ],
       );
     final container = ProviderContainer(
-      overrides: [
-        gridCliServiceProvider.overrideWithValue(fake),
-        gridApiUrlProvider.overrideWithValue('https://api.test/'),
-      ],
+      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
     );
     addTearDown(container.dispose);
 
@@ -59,15 +66,12 @@ void main() {
   test('login fails with stderr on non-zero exit', () async {
     final fake = FakeGridCliService()
       ..stubStart(
-        ['auth', 'login', '--no-browser', '--api-url', 'https://api.test/'],
+        ['login', '--no-browser'],
         exitCode: 1,
         lines: const [CliLine(isStderr: true, text: 'Grid browser login expired.')],
       );
     final container = ProviderContainer(
-      overrides: [
-        gridCliServiceProvider.overrideWithValue(fake),
-        gridApiUrlProvider.overrideWithValue('https://api.test/'),
-      ],
+      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
     );
     addTearDown(container.dispose);
 
@@ -89,13 +93,26 @@ void main() {
     expect(container.read(authControllerProvider), isA<AuthFailure>());
   });
 
-  test('logout clears credentials and resets to idle', () async {
+  test('logout runs `grid logout` and resets to idle', () async {
+    final cli = _RecordingCli();
+    final container = ProviderContainer(
+      overrides: [gridCliServiceProvider.overrideWithValue(cli)],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(authControllerProvider.notifier).logout();
+
+    expect(cli.runs, contains(equals(const ['logout'])));
+    expect(container.read(authControllerProvider), isA<AuthIdle>());
+  });
+
+  test('logout without the CLI clears local credentials directly', () async {
     final store = _FakeStore(
       const CredentialsFile(networks: [], sessionToken: 'tok'),
     );
     final container = ProviderContainer(
       overrides: [
-        gridCliServiceProvider.overrideWithValue(FakeGridCliService()),
+        gridCliServiceProvider.overrideWithValue(null),
         gridHomeStoreProvider.overrideWithValue(store),
       ],
     );

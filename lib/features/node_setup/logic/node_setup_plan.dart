@@ -28,11 +28,11 @@ class SetupStep {
 /// Default ComfyUI bundle so the media engine is usable right after install.
 const defaultMediaBundle = 'image_generation';
 
-/// Fallback model used only when `grid models list --catalog` is unavailable
-/// (CLI error, empty target list, parse miss) — so a node never finishes with an
-/// engine but no model. These are the catalog's own picks expressed as
-/// `repo:file`, which `grid models pull` parses directly without a catalog
-/// lookup, making them robust when the catalog itself can't be read.
+/// Fallback model used only when `grid catalog` is unavailable (CLI error, empty
+/// target list, parse miss) — so a node never finishes with an engine but no
+/// model. These are the catalog's own picks expressed as `repo:file`, which
+/// `grid pull` parses directly without a catalog lookup, making them robust when
+/// the catalog itself can't be read.
 String _fallbackModelSpec({bool? isMacOS}) => (isMacOS ?? Platform.isMacOS)
     ? 'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-IQ3_S.gguf'
     : 'unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q5_K_XL.gguf';
@@ -54,8 +54,8 @@ List<SetupStep> buildSetupPlan(
     steps.add(const SetupStep(
       action: SetupAction.installLlama,
       title: 'Install the built-in engine (llama.cpp)',
-      detail: 'Runs `grid llama.cpp install`.',
-      args: ['llama.cpp', 'install'],
+      detail: 'Runs `grid engine install llama.cpp`.',
+      args: ['engine', 'install', 'llama.cpp'],
       isDownload: false,
     ));
   }
@@ -70,7 +70,7 @@ List<SetupStep> buildSetupPlan(
       action: SetupAction.pullModel,
       title: 'Download a model',
       detail: 'Downloading $display so this node can answer chat.',
-      args: ['models', 'pull', spec],
+      args: ['pull', spec],
       isDownload: true,
     ));
   }
@@ -79,8 +79,8 @@ List<SetupStep> buildSetupPlan(
     steps.add(const SetupStep(
       action: SetupAction.installComfy,
       title: 'Install the media engine (ComfyUI)',
-      detail: 'Runs `grid media install`.',
-      args: ['media', 'install'],
+      detail: 'Runs `grid engine install comfyui`.',
+      args: ['engine', 'install', 'comfyui'],
       isDownload: false,
     ));
   }
@@ -91,7 +91,7 @@ List<SetupStep> buildSetupPlan(
       action: SetupAction.pullMediaBundle,
       title: 'Download image models ($defaultMediaBundle)',
       detail: 'Several GB of model files for ComfyUI image generation.',
-      args: ['media', 'pull', defaultMediaBundle],
+      args: ['engine', 'pull', defaultMediaBundle],
       isDownload: true,
     ));
   }

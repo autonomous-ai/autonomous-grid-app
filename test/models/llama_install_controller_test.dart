@@ -9,7 +9,7 @@ void main() {
   test('streams log then marks done on exit 0', () async {
     final fake = FakeGridCliService()
       ..stubStart(
-        ['llama.cpp', 'install'],
+        ['engine', 'install', 'llama.cpp'],
         exitCode: 0,
         exitDelay: const Duration(milliseconds: 10),
         lines: const [
@@ -34,7 +34,7 @@ void main() {
   test('fails with the last log line on non-zero exit', () async {
     final fake = FakeGridCliService()
       ..stubStart(
-        ['llama.cpp', 'install'],
+        ['engine', 'install', 'llama.cpp'],
         exitCode: 1,
         lines: const [CliLine(isStderr: true, text: 'brew: command not found')],
       );

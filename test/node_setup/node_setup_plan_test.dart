@@ -82,7 +82,6 @@ void main() {
     expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
     final pull = plan.firstWhere((s) => s.action == SetupAction.pullModel);
     expect(pull.args, [
-      'models',
       'pull',
       'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
     ]);
@@ -99,6 +98,6 @@ void main() {
   test('the model step pulls the catalog label, not a hardcoded id', () {
     final plan = buildSetupPlan(_caps());
     final pull = plan.firstWhere((s) => s.action == SetupAction.pullModel);
-    expect(pull.args, ['models', 'pull', 'qwen36-35b-a3b-mtp']);
+    expect(pull.args, ['pull', 'qwen36-35b-a3b-mtp']);
   });
 }

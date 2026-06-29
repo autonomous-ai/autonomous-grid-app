@@ -5,9 +5,9 @@ import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/auth/logic/session_expiry_controller.dart';
 
-/// App-wide strip for session recovery. While the app tries `grid auth refresh`
-/// it shows a quiet "Refreshing…" row; only if that fails does it prompt a
-/// re-login. Invisible when the session is healthy or already signed out.
+/// App-wide strip for session recovery. While the app tries `grid sync` it shows
+/// a quiet "Refreshing…" row; only if that fails does it prompt a re-login.
+/// Invisible when the session is healthy or already signed out.
 class SessionExpiredBanner extends ConsumerWidget {
   const SessionExpiredBanner({super.key});
 

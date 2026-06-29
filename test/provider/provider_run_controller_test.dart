@@ -6,20 +6,22 @@ import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/providers.dart';
 
 const _args = [
-  'provider', 'start',
-  '--network', 'net',
+  'join', 'net',
   '--at', 'http://x/v1',
-  '--model', 'm',
+  '-m', 'm',
+  '--name', 'grid-app',
 ];
 
 void main() {
-  test('startExternal streams log then stops cleanly on exit 0', () async {
+  test('startExternal streams log then serves on exit 0', () async {
+    // `grid join` launches the engine detached and exits 0; the controller then
+    // reports "serving" (ProviderRunActive, not starting), not stopped.
     final fake = FakeGridCliService()
       ..stubStart(
         _args,
         exitCode: 0,
         exitDelay: const Duration(milliseconds: 15),
-        lines: const [CliLine(isStderr: false, text: 'Registering node_id=...')],
+        lines: const [CliLine(isStderr: false, text: 'Joining engine grid-app...')],
       );
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(fake)],
@@ -35,7 +37,9 @@ void main() {
           model: 'm',
         );
 
-    expect(container.read(providerRunControllerProvider), isA<ProviderRunStopped>());
+    final state = container.read(providerRunControllerProvider);
+    expect(state, isA<ProviderRunActive>());
+    expect((state as ProviderRunActive).starting, isFalse);
     expect(seen.whereType<ProviderRunActive>(), isNotEmpty);
   });
 
@@ -62,12 +66,12 @@ void main() {
     expect((state as ProviderRunFailed).message, contains('scope'));
   });
 
-  test('startLocal serves a local model with no --at endpoint', () async {
+  test('startLocal serves a local model via --serve (built-in engine)', () async {
     const localArgs = [
-      'provider', 'start',
-      '--network', 'net',
-      '--model', 'qwen.gguf',
+      'join', 'net',
+      '--serve', 'qwen.gguf',
       '--advertise-as', 'qwen',
+      '--name', 'grid-app',
     ];
     final fake = FakeGridCliService()
       ..stubStart(
@@ -90,9 +94,9 @@ void main() {
           advertiseAs: 'qwen',
         );
 
-    // Matched the no-`--at` command (the fake returns its default empty run
+    // Matched the --serve command (the fake returns its default empty run
     // otherwise, never emitting an active state).
-    expect(container.read(providerRunControllerProvider), isA<ProviderRunStopped>());
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
     expect(seen.whereType<ProviderRunActive>(), isNotEmpty);
   });
 

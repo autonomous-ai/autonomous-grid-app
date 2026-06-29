@@ -12,8 +12,8 @@ import 'session_controller.dart';
 final authControllerProvider =
     NotifierProvider<AuthController, AuthState>(AuthController.new);
 
-/// Drives `grid auth login --no-browser`: spawns it, surfaces the URL + code as
-/// they stream in, and resolves on the process exit code (cli.py:357/381).
+/// Drives `grid login --no-browser`: spawns it, surfaces the device-login URL +
+/// code as they stream in, and resolves on the process exit code (cli/auth.py).
 class AuthController extends Notifier<AuthState> {
   GridProcess? _process;
 
@@ -34,11 +34,9 @@ class AuthController extends Notifier<AuthState> {
     final parser = DeviceLoginParser();
     final errorLines = <String>[];
 
-    final apiUrl = ref.read(gridApiUrlProvider);
-    _process = await service.start([
-      'auth', 'login', '--no-browser',
-      if (apiUrl.isNotEmpty) ...['--api-url', apiUrl],
-    ]);
+    // The merged CLI's device sign-in reads its own control-plane URL from
+    // `~/.grid`, so the old `--api-url` knob is gone.
+    _process = await service.start(['login', '--no-browser']);
     _process!.lines.listen((line) {
       if (line.isStderr) errorLines.add(line.text);
       parser.feed(line.text);
@@ -71,11 +69,17 @@ class AuthController extends Notifier<AuthState> {
     state = const AuthIdle();
   }
 
-  /// Sign out. The CLI has no `grid auth logout` — it only exposes
-  /// `auth {login, refresh}` — and `~/.grid` is the source of truth, so deleting
-  /// the local credentials *is* the sign-out: the app drops to the login screen.
+  /// Sign out via `grid logout`, which clears the stored cloud credentials and
+  /// the active-grid pointer in `state.json`. Falls back to deleting the local
+  /// credentials directly when the CLI is unavailable — `~/.grid` is the app's
+  /// source of truth either way, so the app drops to the login screen.
   Future<void> logout() async {
-    ref.read(gridHomeStoreProvider).clearCredentials();
+    final service = ref.read(gridCliServiceProvider);
+    if (service != null) {
+      await service.run(['logout']);
+    } else {
+      ref.read(gridHomeStoreProvider).clearCredentials();
+    }
     ref.invalidate(sessionProvider);
     state = const AuthIdle();
   }

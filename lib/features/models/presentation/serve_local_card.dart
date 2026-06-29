@@ -7,7 +7,7 @@ import '../logic/advertise_name.dart';
 import '../logic/models_providers.dart';
 
 /// Step 4 (the main provider action): serve a locally pulled GGUF model via
-/// `grid provider start --network <net> --model <gguf> --advertise-as <name>`.
+/// `grid join <grid> --serve <gguf> --advertise-as <name>`.
 class ServeLocalCard extends ConsumerStatefulWidget {
   const ServeLocalCard({super.key, required this.network});
 

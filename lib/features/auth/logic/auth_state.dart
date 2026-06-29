@@ -8,7 +8,7 @@ class AuthIdle extends AuthState {
   const AuthIdle();
 }
 
-/// `grid auth login` spawned; waiting for the URL + code to appear.
+/// `grid login` spawned; waiting for the URL + code to appear.
 class AuthStarting extends AuthState {
   const AuthStarting();
 }

@@ -61,8 +61,8 @@ class NetworkCredential {
     );
   }
 
-  /// Data-plane base URL — exactly what `consumer env` prints (cli.py:879),
-  /// derived locally so we never have to shell out for it.
+  /// Data-plane base URL — exactly what `grid info --env` prints, derived
+  /// locally so we never have to shell out for it.
   String get relayBaseUrl => '$lanSignalingUrl/relay/v1';
 
   String get relayApiKey => accessToken;

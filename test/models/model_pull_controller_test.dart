@@ -30,7 +30,7 @@ ProviderContainer _container(FakeGridCliService fake, List<LocalModel> onDisk) {
 void main() {
   test('streams progress then completes when the file lands', () async {
     final fake = FakeGridCliService()
-      ..stubPull(['models', 'pull', 'repo:qwen.gguf'], const [
+      ..stubPull(['pull', 'repo:qwen.gguf'], const [
         DownloadProgress(doneMb: 10, totalMb: 100, pct: 10),
         DownloadProgress(doneMb: 100, totalMb: 100, pct: 100),
       ]);
@@ -52,7 +52,7 @@ void main() {
 
   test('fails when the target file never appears', () async {
     final fake = FakeGridCliService()
-      ..stubPull(['models', 'pull', 'repo:missing.gguf'], const []);
+      ..stubPull(['pull', 'repo:missing.gguf'], const []);
     final container = _container(fake, const []);
 
     await container.read(modelPullControllerProvider.notifier).pull('repo:missing.gguf');

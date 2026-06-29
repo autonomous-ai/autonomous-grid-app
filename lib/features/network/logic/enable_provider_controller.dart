@@ -33,14 +33,14 @@ class EnableFailed extends EnableProviderState {
   final String message;
 }
 
-/// One-click "become a provider on a network you administer".
+/// One-click "become a provider on a grid you administer".
 ///
-/// Grants the current user the `provider` role (keeping `admin`) via the
-/// allowlist, then re-fetches the network token so it carries the
+/// Grants the current user the `provider` role via `grid members add`, then runs
+/// `grid sync` to re-fetch the grid tokens so the active grid's token carries the
 /// `provider:poll` scope, and refreshes the session so [NetworkCredential.
 /// isProvider] flips true and the run form unlocks. Mirrors the manual flow:
-/// `network allowlist add <id> <self> --role admin --role provider` →
-/// `network join <id>`.
+/// `members add <grid> <self> --role provider` → `grid sync`. (The merged CLI
+/// dropped the `admin` role and only takes a single `--role`.)
 class EnableProviderController extends Notifier<EnableProviderState> {
   @override
   EnableProviderState build() => const EnableIdle();
@@ -63,8 +63,7 @@ class EnableProviderController extends Notifier<EnableProviderState> {
 
     step('Granting the provider role to $email…');
     final add = await service.run([
-      'network', 'allowlist', 'add', networkId, email,
-      '--role', 'admin', '--role', 'provider',
+      'members', 'add', networkId, email, '--role', 'provider',
     ]);
     step(_lastLine(add));
     if (!add.ok) {
@@ -73,10 +72,10 @@ class EnableProviderController extends Notifier<EnableProviderState> {
     }
 
     step('Refreshing the grid token…');
-    final join = await service.run(['network', 'join', networkId]);
-    step(_lastLine(join));
-    if (!join.ok) {
-      state = EnableFailed(networkId, join.errorMessage);
+    final sync = await service.run(['sync']);
+    step(_lastLine(sync));
+    if (!sync.ok) {
+      state = EnableFailed(networkId, sync.errorMessage);
       return;
     }
 

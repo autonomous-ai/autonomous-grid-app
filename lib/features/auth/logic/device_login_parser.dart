@@ -1,4 +1,4 @@
-/// The URL + user code surfaced by `grid auth login --no-browser` (cli.py:361).
+/// The URL + user code surfaced by `grid login --no-browser` (cli/auth.py).
 class DeviceLogin {
   const DeviceLogin({required this.url, required this.userCode});
   final String url;

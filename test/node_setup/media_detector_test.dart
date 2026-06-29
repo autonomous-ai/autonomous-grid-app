@@ -39,7 +39,7 @@ void main() {
 
   test('detect() reports not-installed when the CLI command fails', () async {
     final fake = FakeGridCliService()
-      ..stubResult(['media', 'status'],
+      ..stubResult(['engine', 'status'],
           const CliResult(exitCode: 2, stdout: '', stderr: 'media unsupported'));
 
     final status = await MediaDetector(fake).detect();

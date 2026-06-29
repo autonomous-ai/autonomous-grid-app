@@ -8,11 +8,11 @@ enum SessionExpiry {
   /// Normal — nothing to recover.
   healthy,
 
-  /// Trying `grid auth refresh` to renew the network token without bothering
-  /// the user.
+  /// Trying `grid sync` to renew the grid tokens from the saved session without
+  /// bothering the user.
   refreshing,
 
-  /// Refresh wasn't possible or failed — a full `grid auth login` is required.
+  /// Refresh wasn't possible or failed — a full `grid login` is required.
   needsLogin,
 }
 
@@ -28,29 +28,23 @@ class SessionExpiryController extends Notifier<SessionExpiry> {
   @override
   SessionExpiry build() => SessionExpiry.healthy;
 
-  /// A command saw an expired/invalid session. `grid sync` fails on a dead
-  /// *session* token, but each network keeps its own *refresh* token — so try
-  /// `grid auth refresh` for the active network first. Only a dead refresh
-  /// token forces a full re-login.
+  /// A command saw an expired/invalid session. Try `grid sync` first — it reuses
+  /// the saved session token to re-fetch every grid's access token without a
+  /// browser, recovering silently when only the per-grid tokens lapsed. Only a
+  /// dead *session* token (sync fails) forces a full re-login.
   Future<void> onExpired() async {
     if (state == SessionExpiry.refreshing) return; // dedupe concurrent triggers
     state = SessionExpiry.refreshing;
 
-    final networkId = ref.read(sessionProvider).active?.networkId;
     final service = ref.read(gridCliServiceProvider);
-    if (networkId == null || service == null) {
+    if (service == null) {
       state = SessionExpiry.needsLogin;
       return;
     }
 
-    final apiUrl = ref.read(gridApiUrlProvider);
-    final result = await service.run([
-      'auth', 'refresh', '--network', networkId,
-      if (apiUrl.isNotEmpty) ...['--api-url', apiUrl],
-    ]);
-
+    final result = await service.run(['sync']);
     if (result.ok) {
-      ref.invalidate(sessionProvider); // re-read the freshly written token
+      ref.invalidate(sessionProvider); // re-read the freshly written tokens
       state = SessionExpiry.healthy;
       return;
     }

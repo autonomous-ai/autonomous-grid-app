@@ -1,8 +1,8 @@
 import '../../../infrastructure/cli/grid_cli_service.dart';
 
-/// One entry from `grid models list --catalog`'s "Recommended catalog:" section.
-/// The CLI already filters this list to the host's target (Apple Silicon /
-/// NVIDIA), so its first language entry is the right default for this machine.
+/// One entry from `grid catalog`'s "Grid can pull:" section. The CLI already
+/// filters this list to the host's target (Apple Silicon / NVIDIA), so its first
+/// language entry is the right default for this machine.
 class CatalogModel {
   const CatalogModel({
     required this.label,
@@ -10,7 +10,7 @@ class CatalogModel {
     required this.kind,
   });
 
-  /// Catalog label — passed verbatim to `grid models pull <label>`.
+  /// Catalog label — passed verbatim to `grid pull <label>`.
   final String label;
 
   /// `hf_repo/quantized_file`, shown for context.
@@ -22,10 +22,10 @@ class CatalogModel {
   bool get isLanguage => kind == 'language';
 }
 
-/// Reads the curated model catalog from the CLI (`grid models list --catalog`)
-/// so the app never hardcodes model ids — the labels stay in sync with the CLI's
-/// catalog.py. On any failure returns an empty list, and the setup flow then
-/// simply skips the automatic model download.
+/// Reads the curated model catalog from the CLI (`grid catalog`) so the app
+/// never hardcodes model ids — the labels stay in sync with the CLI's catalog.py.
+/// On any failure returns an empty list, and the setup flow then simply skips the
+/// automatic model download.
 class ModelCatalog {
   const ModelCatalog(this._service);
 
@@ -34,7 +34,7 @@ class ModelCatalog {
   Future<List<CatalogModel>> recommended() async {
     final service = _service;
     if (service == null) return const [];
-    final result = await service.run(const ['models', 'list', '--catalog']);
+    final result = await service.run(const ['catalog']);
     if (!result.ok) return const [];
     return parse(result.stdout);
   }
@@ -49,15 +49,19 @@ class ModelCatalog {
     return entries.isEmpty ? null : entries.first;
   }
 
-  /// Parses the "Recommended catalog:" block. Exposed for tests.
+  /// Parses the "Grid can pull:" block. Exposed for tests. The block is a
+  /// contiguous run of indented entries; a blank line or the trailing
+  /// "Also: `grid pull …`" hint ends it (and the optional "Local models:"
+  /// section above the header is ignored).
   static List<CatalogModel> parse(String stdout) {
     final lines = stdout.split('\n');
-    final start = lines.indexWhere((l) => l.trim() == 'Recommended catalog:');
+    final start = lines.indexWhere((l) => l.trim() == 'Grid can pull:');
     if (start < 0) return const [];
 
     final models = <CatalogModel>[];
     for (final raw in lines.skip(start + 1)) {
-      if (raw.trim().isEmpty) continue;
+      final line = raw.trim();
+      if (line.isEmpty || line.startsWith('Also:')) break;
       final entry = _parseEntry(raw);
       if (entry != null) models.add(entry);
     }

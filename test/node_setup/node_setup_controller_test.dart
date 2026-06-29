@@ -19,7 +19,7 @@ const _llamaStep = SetupStep(
   action: SetupAction.installLlama,
   title: 'Install llama.cpp',
   detail: '',
-  args: ['llama.cpp', 'install'],
+  args: ['engine', 'install', 'llama.cpp'],
   isDownload: false,
 );
 
@@ -27,7 +27,7 @@ const _modelStep = SetupStep(
   action: SetupAction.pullModel,
   title: 'Download model',
   detail: '',
-  args: ['models', 'pull', 'm'],
+  args: ['pull', 'm'],
   isDownload: true,
 );
 
@@ -43,11 +43,11 @@ ProviderContainer _container(GridCliService? fake) {
 void main() {
   test('runs an install then a download to completion', () async {
     final fake = FakeGridCliService()
-      ..stubStart(['llama.cpp', 'install'],
+      ..stubStart(['engine', 'install', 'llama.cpp'],
           exitCode: 0,
           exitDelay: const Duration(milliseconds: 5),
           lines: const [CliLine(isStderr: false, text: 'Linked llama-server')])
-      ..stubPull(['models', 'pull', 'm'], const [
+      ..stubPull(['pull', 'm'], const [
         DownloadProgress(doneMb: 50, totalMb: 100, pct: 50),
         DownloadProgress(doneMb: 100, totalMb: 100, pct: 100),
       ]);
@@ -72,7 +72,7 @@ void main() {
 
   test('stops at the first failed step', () async {
     final fake = FakeGridCliService()
-      ..stubStart(['llama.cpp', 'install'],
+      ..stubStart(['engine', 'install', 'llama.cpp'],
           exitCode: 1,
           lines: const [CliLine(isStderr: true, text: 'brew: not found')]);
     final container = _container(fake);
@@ -117,7 +117,7 @@ void main() {
 
   test('autoStart runs once, then is a no-op', () async {
     final fake = FakeGridCliService()
-      ..stubStart(['llama.cpp', 'install'],
+      ..stubStart(['engine', 'install', 'llama.cpp'],
           exitCode: 0, lines: const [CliLine(isStderr: false, text: 'ok')]);
     final container = _container(fake);
     final notifier = container.read(nodeSetupControllerProvider.notifier);

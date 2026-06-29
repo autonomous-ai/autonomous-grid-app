@@ -50,9 +50,9 @@ class CreateNetworkFailed extends CreateNetworkState {
   final String message;
 }
 
-/// Creates a managed (hosted) grid via the control-plane API, then pulls it
-/// into `~/.grid` with `grid network join` so it shows up in the list — the
-/// same create-then-refresh shape as [EnableProviderController].
+/// Creates a managed (hosted) grid via the control-plane API, then refreshes the
+/// local grid list with `grid sync` and makes the new grid active with
+/// `grid use` — the same create-then-refresh shape as [EnableProviderController].
 class CreateNetworkController extends Notifier<CreateNetworkState> {
   @override
   CreateNetworkState build() => const CreateNetworkIdle();
@@ -96,8 +96,7 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
       return;
     }
 
-    final joinWarning = await _joinLocally(network.networkId);
-    await _sync();
+    final joinWarning = await _syncAndSelect(network.networkId);
     ref.invalidate(sessionProvider);
     state = CreateNetworkDone(network, joinWarning: joinWarning);
   }
@@ -117,27 +116,28 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
 
   void reset() => state = const CreateNetworkIdle();
 
-  /// Best-effort `grid sync` so the new grid's full state lands in `~/.grid`
-  /// before we refresh the session. Failures are non-fatal (logged in Debug),
-  /// except an expired session — flag that so the app prompts a re-login.
-  Future<void> _sync() async {
-    final result = await ref.read(gridCliServiceProvider)?.run(['sync']);
-    if (result != null && result.sessionExpired) {
-      await ref.read(sessionExpiryProvider.notifier).onExpired();
-    }
-  }
-
-  /// Best-effort `grid network join` so the new grid lands in the local list.
-  /// Returns a warning when it couldn't run — the grid still exists server-side.
-  Future<String?> _joinLocally(String networkId) async {
+  /// Pull the freshly-created grid into `~/.grid` and make it the active one.
+  ///
+  /// `grid sync` re-fetches the grid list + per-grid tokens from the saved
+  /// session (no browser), so the new grid lands locally; `grid use` then points
+  /// the active selection at it. Returns a warning when the grid exists
+  /// server-side but couldn't be synced locally; an expired session is flagged
+  /// to the app instead (so it prompts a re-login) rather than surfaced here.
+  Future<String?> _syncAndSelect(String networkId) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       return 'Created, but the grid CLI was not found to add it to your list.';
     }
-    final join = await service.run(['network', 'join', networkId]);
-    if (!join.ok) {
-      return 'Created, but joining locally failed: ${join.errorMessage}';
+    final sync = await service.run(['sync']);
+    if (sync.sessionExpired) {
+      await ref.read(sessionExpiryProvider.notifier).onExpired();
+      return null;
     }
+    if (!sync.ok) {
+      return 'Created, but refreshing your grid list failed: ${sync.errorMessage}';
+    }
+    // Best-effort: point the active selection at the grid we just made.
+    await service.run(['use', networkId]);
     return null;
   }
 }

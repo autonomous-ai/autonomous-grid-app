@@ -24,6 +24,11 @@ class GridPaths {
 
   static File get credentialsFile => File('${home.path}/credentials.toml');
 
+  /// The merged CLI's mode pointer + per-mode active grid
+  /// (`{"mode": …, "active": {"lan": …, "cloud": …}}`). New in dual-mode: the
+  /// active selection moved here out of `credentials.toml` (CLI shared/state.py).
+  static File get stateFile => File('${home.path}/state.json');
+
   static Directory get networksDir => Directory('${home.path}/networks');
 
   static Directory networkDir(String networkId) =>

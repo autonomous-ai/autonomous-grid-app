@@ -17,7 +17,7 @@ class DetectedBackend {
   final BackendKind kind;
   final String label;
 
-  /// OpenAI-compatible base URL to pass to `grid provider start --at`.
+  /// OpenAI-compatible base URL to pass to `grid join --at`.
   /// Empty for llama.cpp (it has no running server until a provider starts it).
   final String baseUrl;
   final List<String> models;
