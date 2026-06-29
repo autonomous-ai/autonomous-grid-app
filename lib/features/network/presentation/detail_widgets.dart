@@ -150,17 +150,17 @@ class RoleBadge extends StatelessWidget {
   }
 
   Color _roleColor(NetworkRole role) => switch (role) {
-        NetworkRole.admin => AppPalette.online,
+        NetworkRole.admin => AppPalette.teal,
         NetworkRole.provider => AppPalette.accent,
         NetworkRole.consumer => _visibilityColor(true), // "Public"
         NetworkRole.member => _visibilityColor(false), // "Private"
       };
 }
 
-/// Public grids read as "open" (accent); private ones stay muted — so the two
-/// are visually distinct wherever they appear.
+/// Public grids read as "open" (green); private ones stay muted (grey). Green is
+/// used over the accent blue so the badge survives on the blue selected row.
 Color _visibilityColor(bool isPublic) =>
-    isPublic ? AppPalette.accent : AppPalette.textSecondary;
+    isPublic ? AppPalette.online : AppPalette.textSecondary;
 
 /// One rounded, tinted pill — the shared shape for role and visibility badges.
 class _BadgePill extends StatelessWidget {
