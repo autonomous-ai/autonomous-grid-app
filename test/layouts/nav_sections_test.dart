@@ -75,10 +75,15 @@ void main() {
   test('consumer network hides the provider-only sections', () {
     final container = containerWith('grid-con');
     final sections = container.read(visibleNavSectionsProvider);
-    // Provider/Models are hidden; Debug is dev-only, so it shows here because
-    // tests run in debug mode (kDebugMode) — it's gone in release builds.
-    expect(sections,
-        [NavSection.networks, NavSection.playground, NavSection.debug]);
+    // Provider/Models are hidden; Overlord is always visible; Debug is dev-only,
+    // so it shows here because tests run in debug mode (kDebugMode) — it's gone
+    // in release builds.
+    expect(sections, [
+      NavSection.networks,
+      NavSection.overlord,
+      NavSection.playground,
+      NavSection.debug,
+    ]);
   });
 
   test('provider network shows every section', () {

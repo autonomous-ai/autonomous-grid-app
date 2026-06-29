@@ -10,6 +10,7 @@ import '../../features/network/presentation/networks_pane.dart';
 import '../../features/node_setup/logic/node_capabilities.dart';
 import '../../features/node_setup/logic/node_setup_controller.dart';
 import '../../features/node_setup/logic/node_setup_plan.dart';
+import '../../features/overlord/presentation/overlord_view.dart';
 import '../../features/playground/presentation/playground_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
 import '../theme/app_theme.dart';
@@ -81,6 +82,7 @@ class _Content extends ConsumerWidget {
         section.providerOnly && !canManage ? NavSection.networks : section;
     return switch (effective) {
       NavSection.networks => const NetworksPane(),
+      NavSection.overlord => const OverlordView(),
       NavSection.playground => const PlaygroundView(),
       NavSection.provider => const ProviderView(),
       NavSection.models => const ModelsView(),
