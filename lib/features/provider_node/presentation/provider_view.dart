@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -126,44 +128,125 @@ class _ServeSection extends ConsumerWidget {
           starting: run.starting, log: run.log, logHeight: 420);
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (run is ProviderRunFailed)
-          Padding(
+    final failedNote = run is ProviderRunFailed
+        ? Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text("Couldn't start last time: ${run.message}",
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.error)),
-          ),
-        // Set this computer up as a node — installs llama.cpp and anything else
-        // missing. Lives here (not in the model manager) so the engine prereqs
-        // are visible up front.
+          )
+        : null;
+
+    // The "bring your own server" path — the same on every platform, and the
+    // only host option on Windows (no built-in engine there yet).
+    final externalBlock = _EngineBlock(
+      icon: Icons.lan_outlined,
+      title: 'Connect your own server',
+      subtitle:
+          'Optional — only if you already run your own OpenAI-compatible server',
+      child: _ExternalRunForm(
+        network: network,
+        endpoint: endpoint,
+        model: model,
+        advertise: advertise,
+        suggestedModels: suggestedModels,
+        onUse: onUse,
+        onStart: onStart,
+      ),
+    );
+
+    // Windows can't host the built-in (llama.cpp) engine yet — don't show the
+    // node-setup/serve path there; it would only dead-end. Offer BYO instead.
+    if (Platform.isWindows) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (failedNote != null) failedNote,
+          const _BuiltInUnavailableNote(),
+          const SizedBox(height: 16),
+          externalBlock,
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (failedNote != null) failedNote,
+        const _ServeIntro(),
+        const SizedBox(height: 16),
+        // Step 1 — set this computer up as a node (installs llama.cpp + anything
+        // else missing). Lives here so the engine prerequisites are visible up
+        // front, not buried in the model manager.
         const NodeSetupCard(),
         const SizedBox(height: 16),
+        // Steps 2 & 3 — download a model, then start serving it.
         _EngineBlock(
           icon: Icons.dns_outlined,
-          title: 'llama.cpp',
-          subtitle: 'Built-in engine — serve a local model from this computer',
+          title: 'Serve a model',
+          subtitle: 'Download a model, then start the built-in engine',
           child: ServeLocalCard(network: network),
         ),
         const SizedBox(height: 16),
-        _EngineBlock(
-          icon: Icons.lan_outlined,
-          title: 'Connect your own server',
-          subtitle:
-              'Use a framework running on this machine, or any OpenAI-compatible endpoint',
-          child: _ExternalRunForm(
-            network: network,
-            endpoint: endpoint,
-            model: model,
-            advertise: advertise,
-            suggestedModels: suggestedModels,
-            onUse: onUse,
-            onStart: onStart,
-          ),
-        ),
+        externalBlock,
       ],
+    );
+  }
+}
+
+/// A one-line "here's the path" intro above the engine blocks, so a first-time
+/// user knows the three things happen in order.
+class _ServeIntro extends StatelessWidget {
+  const _ServeIntro();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      "Share this computer's AI with your grid in three steps: "
+      '1) set it up, 2) download a model, 3) start serving.',
+      style: theme.textTheme.bodyMedium
+          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    );
+  }
+}
+
+/// Shown on Windows in place of the built-in engine path, which isn't supported
+/// there yet — so the user understands why and where to go instead.
+class _BuiltInUnavailableNote extends StatelessWidget {
+  const _BuiltInUnavailableNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.info_outline, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Built-in engine not available on Windows yet',
+                      style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    "Running a model directly on this Windows computer isn't "
+                    'supported yet. You can still connect your own AI server below, '
+                    'or use models other people share on the grid from the Playground.',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

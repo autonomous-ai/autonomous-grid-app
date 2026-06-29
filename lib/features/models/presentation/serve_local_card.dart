@@ -68,19 +68,33 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (selected == null)
-          Text(
-            llamaInstalled
-                ? 'No models on this computer yet — download one from "Manage models".'
-                : 'Set this computer up as a node above, then download a model to serve.',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          )
-        else
+        if (selected == null) ...[
+          // No models yet. If the engine is installed, downloading one is the
+          // next step — make it a primary action, not a tucked-away link. Until
+          // the engine is installed, the node setup above is the next step.
+          if (llamaInstalled) ...[
+            Text(
+              'No models on this computer yet. Download one to start serving.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: () => showModelManager(context),
+                icon: const Icon(Icons.download_outlined, size: 18),
+                label: const Text('Download a model'),
+              ),
+            ),
+          ] else
+            Text(
+              'Set this computer up as a node above, then download a model to serve.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+        ] else ...[
           ..._serveControls(names, selected),
-        // Downloading / managing models only makes sense once llama.cpp is
-        // installed — until then the node setup above is the next step.
-        if (llamaInstalled) ...[
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,

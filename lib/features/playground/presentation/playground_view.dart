@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
@@ -90,6 +91,20 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
     final models = ref.watch(networkModelsProvider).asData?.value;
     if (models != null) _syncDefaultModel(models);
 
+    // Nothing can answer yet: no model advertised on the grid and no local
+    // engine serving. Guide the user to start one instead of presenting a chat
+    // box that would just fail on send. (While models is null we're still
+    // loading — keep the normal UI to avoid a flash of this state.)
+    final hasUsableModel =
+        (models != null && models.isNotEmpty) || localEndpoint != null;
+    if (models != null && !hasUsableModel) {
+      return SectionScaffold(
+        title: 'Playground',
+        subtitle: network.name,
+        child: _NoModelYet(canManage: network.canManageProvider),
+      );
+    }
+
     return SectionScaffold(
       title: 'Playground',
       subtitle: network.name,
@@ -163,6 +178,53 @@ class _ModelPicker extends ConsumerWidget {
       onSelected: (value) {
         if (value != null) controller.text = value;
       },
+    );
+  }
+}
+
+/// Blocked state when no model can answer yet. Points provider-capable users to
+/// the Engines tab to start one; pure consumers are told to wait for a provider.
+class _NoModelYet extends ConsumerWidget {
+  const _NoModelYet({required this.canManage});
+  final bool canManage;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.smart_toy_outlined,
+                size: 40, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 16),
+            Text('No model is running yet',
+                style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            Text(
+              canManage
+                  ? 'Start an engine on this grid to chat with a model.'
+                  : 'Wait for someone on this grid to bring a model online, or '
+                      'ask the grid owner to run one.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            if (canManage) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => ref
+                    .read(navSectionProvider.notifier)
+                    .select(NavSection.provider),
+                icon: const Icon(Icons.dns_outlined, size: 18),
+                label: const Text('Go to Engines'),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
