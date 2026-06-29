@@ -99,7 +99,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
           child: FilledButton.icon(
             onPressed: () => _start(selected),
             icon: const Icon(Icons.play_arrow),
-            label: const Text('Start sharing'),
+            label: const Text('Start engine'),
           ),
         ),
       ],

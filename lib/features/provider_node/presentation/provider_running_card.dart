@@ -35,9 +35,9 @@ class ProviderRunningCard extends ConsumerWidget {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
                 else
-                  const Icon(Icons.podcasts, color: Colors.green, size: 18),
+                  const Icon(Icons.dns, color: Colors.green, size: 18),
                 const SizedBox(width: 10),
-                Text(starting ? 'Starting…' : 'Sharing now'),
+                Text(starting ? 'Starting…' : 'Engine running'),
                 const Spacer(),
                 OutlinedButton.icon(
                   onPressed: () =>

@@ -52,7 +52,7 @@ class ProviderRunIdle extends ProviderRunState {
 
 /// Provider process is up, serving [grid]; [log] holds the latest streamed
 /// lines. [starting] is true until the first line arrives. [grid] lets the UI
-/// show "Sharing now" only on the network actually being served.
+/// show "Engine running" only on the network actually being served.
 class ProviderRunActive extends ProviderRunState {
   const ProviderRunActive({
     required this.grid,
@@ -73,7 +73,7 @@ class ProviderRunFailed extends ProviderRunState {
   final String message;
 }
 
-/// Shares a model to a grid with `grid join`, streaming its startup log.
+/// Runs an engine on a grid with `grid join`, streaming its startup log.
 ///
 /// Unlike the old foreground `provider start`, `grid join` spawns the engine as a
 /// **detached** background process and returns once it's launched — so a clean
@@ -108,8 +108,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }
 
   /// Adopt an engine that's still serving [gridId] — e.g. one whose detached
-  /// `grid join` process outlived an app restart — so the UI shows "Sharing now"
-  /// with a working Stop, instead of an idle start form whose join would fail
+  /// `grid join` process outlived an app restart — so the UI shows "Engine
+  /// running" with a working Stop, instead of an idle start form whose join fails
   /// with "already joined". Reads the CLI's own run record under `~/.grid`; only
   /// adopts a record whose process is still alive. Idempotent per grid, and never
   /// clobbers an in-session run.
@@ -132,7 +132,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       starting: false,
       log: log.isNotEmpty
           ? List.unmodifiable(log)
-          : ['Resumed — sharing ${record.models.join(', ')} to this grid.'],
+          : ['Resumed — engine serving ${record.models.join(', ')} on this grid.'],
     );
   }
 
@@ -218,7 +218,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }
 
     final failure =
-        log.isNotEmpty ? log.last : 'sharing failed to start (exit $exitCode).';
+        log.isNotEmpty ? log.last : 'engine failed to start (exit $exitCode).';
     // A leftover engine from a previous session blocks the join with the same
     // `--name`. Drop it with `grid leave` and retry once, so the user isn't
     // stuck unable to start (and unable to stop a run the app never tracked).
@@ -243,7 +243,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }
   }
 
-  /// Stop sharing: `grid leave` unregisters and kills the detached engine.
+  /// Stop the engine: `grid leave` unregisters and kills the detached engine.
   Future<void> stop() async {
     _stopping = true;
     _process?.kill();

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'grid_cli_service.dart';
+import 'host_environment.dart';
 import 'parsers/download_progress.dart';
 
 /// Real implementation that spawns the `grid` binary. Always argv form
@@ -25,7 +26,8 @@ class GridCliServiceImpl implements GridCliService {
   ///   joining an engine, etc. with exit 1.
   /// - an augmented `PATH` (+ a UTF-8 `LANG`) so `grid`'s own children (brew,
   ///   docker, cmake, llama-server) resolve and also emit UTF-8 — a GUI app
-  ///   inherits only a minimal environment.
+  ///   inherits only a minimal environment. The `PATH` comes from
+  ///   [HostEnvironment], shared with the app's own tool detection so they agree.
   final Map<String, String> _env;
 
   static Map<String, String> _buildEnv() {
@@ -35,17 +37,7 @@ class GridCliServiceImpl implements GridCliService {
       'PYTHONIOENCODING': 'utf-8',
     };
     if (!Platform.isWindows) {
-      final home = Platform.environment['HOME'] ?? '';
-      final inherited = Platform.environment['PATH'] ?? '';
-      env['PATH'] = <String>[
-        if (home.isNotEmpty) '$home/.local/bin',
-        '/opt/homebrew/bin',
-        '/usr/bin',
-        '/bin',
-        '/usr/sbin',
-        '/sbin',
-        if (inherited.isNotEmpty) inherited,
-      ].join(':');
+      env['PATH'] = HostEnvironment.path();
       // Keep the user's locale when present; otherwise give children a sane
       // UTF-8 default instead of the C/POSIX (ASCII) locale.
       final lang = Platform.environment['LANG'];

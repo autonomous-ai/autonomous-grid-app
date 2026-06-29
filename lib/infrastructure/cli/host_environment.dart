@@ -1,0 +1,88 @@
+import 'dart:io';
+
+/// The `PATH` (and spawn environment) a Finder/`open`-launched GUI app must use
+/// to find user-installed command-line tools.
+///
+/// macOS/Linux GUI apps inherit only a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:
+/// /sbin`) — not the shell's. So tools the user clearly has (Homebrew at
+/// `/usr/local/bin` on Intel or `/opt/homebrew/bin` on Apple Silicon, Docker,
+/// cmake, `grid`'s own children) are invisible. The CLI then fails with bogus
+/// "Homebrew is required" / "X not installed" errors, and our own `which` probes
+/// (container engine detection) come back empty — even though everything is
+/// installed. Run from `flutter run` it all works, because the terminal's `PATH`
+/// is inherited; only the packaged app trips on this.
+///
+/// We rebuild `PATH` from three sources, de-duplicated, order-preserving:
+///   1. well-known tool dirs a GUI `PATH` usually omits (both Homebrew prefixes),
+///   2. the user's real login-shell `PATH` (asdf/nvm/pyenv/custom installs),
+///   3. the inherited `PATH` as a final fallback.
+class HostEnvironment {
+  HostEnvironment._();
+
+  static String? _cachedPath;
+
+  /// The augmented `PATH`, computed once per session (the login-shell probe
+  /// spawns a process, so it's cached).
+  static String path() => _cachedPath ??= _buildPath();
+
+  static final String _sep = Platform.isWindows ? ';' : ':';
+
+  static String _buildPath() {
+    final dirs = <String>[];
+    final seen = <String>{};
+    void add(String dir) {
+      final d = dir.trim();
+      if (d.isEmpty || !seen.add(d)) return;
+      dirs.add(d);
+    }
+
+    final home = Platform.environment['HOME'] ?? '';
+    if (home.isNotEmpty) add('$home/.local/bin'); // uv tool / pipx (where `grid` lives)
+
+    if (!Platform.isWindows) {
+      // Both Homebrew prefixes plus the standard system dirs — the set a GUI
+      // PATH most often lacks. Listed explicitly so detection works even if the
+      // login-shell probe below fails.
+      const wellKnown = [
+        '/opt/homebrew/bin', '/opt/homebrew/sbin', // Apple Silicon Homebrew
+        '/usr/local/bin', '/usr/local/sbin', // Intel Homebrew + many tools
+        '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+      ];
+      for (final dir in wellKnown) {
+        add(dir);
+      }
+    }
+
+    for (final dir in _loginShellPath()) {
+      add(dir);
+    }
+    for (final dir in _split(Platform.environment['PATH'])) {
+      add(dir);
+    }
+    return dirs.join(_sep);
+  }
+
+  /// The user's `PATH` as their login shell sees it (profile loaded). `-lc`
+  /// (login, non-interactive) mirrors [GridResolver] and avoids interactive
+  /// hangs. Best-effort: empty on any failure.
+  static List<String> _loginShellPath() {
+    if (Platform.isWindows) return const [];
+    final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+    try {
+      final result = Process.runSync(shell, ['-lc', r'printf %s "$PATH"']);
+      if (result.exitCode != 0) return const [];
+      // Take the last non-empty line so any profile banner output is ignored.
+      final lines = (result.stdout as String)
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      return lines.isEmpty ? const [] : _split(lines.last);
+    } on ProcessException {
+      return const [];
+    }
+  }
+
+  static List<String> _split(String? path) =>
+      (path == null || path.isEmpty) ? const [] : path.split(_sep);
+}

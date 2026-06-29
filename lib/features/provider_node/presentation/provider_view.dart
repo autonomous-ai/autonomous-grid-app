@@ -67,7 +67,7 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
     }
 
     return SectionScaffold(
-      title: 'Share a Model',
+      title: 'Engines',
       subtitle: network?.name,
       child: ListView(
         children: [
@@ -131,7 +131,7 @@ class _ServeSection extends ConsumerWidget {
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.error)),
           ),
-        _subheading(theme, 'Share a model from this computer'),
+        _subheading(theme, 'Run an engine on this computer'),
         ServeLocalCard(network: network),
         const SizedBox(height: 20),
         _subheading(theme, 'Or connect your own server'),
@@ -237,7 +237,7 @@ class _ExternalRunForm extends ConsumerWidget {
               return FilledButton.icon(
                 onPressed: canStart ? () => onStart(network) : null,
                 icon: const Icon(Icons.play_arrow),
-                label: const Text('Start sharing'),
+                label: const Text('Start engine'),
               );
             },
           ),

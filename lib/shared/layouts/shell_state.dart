@@ -9,7 +9,7 @@ enum NavSection {
   networks(Icons.lan_outlined, 'Grids'),
   overlord(Icons.monitor_heart_outlined, 'Overlord', hidden: true),
   playground(Icons.chat_bubble_outline, 'Playground'),
-  provider(Icons.podcasts_outlined, 'Share a Model', providerOnly: true),
+  provider(Icons.dns_outlined, 'Engines', providerOnly: true),
   models(Icons.memory_outlined, 'Models', providerOnly: true),
   debug(Icons.bug_report_outlined, 'Debug', devOnly: true);
 

@@ -21,7 +21,7 @@ class EnableProviderCard extends ConsumerWidget {
 
     if (network.role != NetworkRole.admin) {
       return Text(
-        "You don't have permission to share a model on this grid yet. "
+        "You don't have permission to run an engine on this grid yet. "
         "Ask the grid's owner to allow it.",
         style: theme.textTheme.bodyMedium
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -63,11 +63,11 @@ class _Idle extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("You own this grid, but model sharing isn't turned on for your "
-            'account yet.'),
+        Text("You own this grid, but running an engine isn't turned on for "
+            'your account yet.'),
         const SizedBox(height: 4),
         Text(
-          'Turn it on to start sharing a model from this computer below.',
+          'Turn it on to run an engine from this computer below.',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -85,7 +85,7 @@ class _Idle extends ConsumerWidget {
                     email: network.email,
                   ),
           icon: const Icon(Icons.verified_user_outlined, size: 16),
-          label: Text(error != null ? 'Try again' : 'Turn on sharing'),
+          label: Text(error != null ? 'Try again' : 'Turn on engines'),
         ),
       ],
     );
@@ -109,7 +109,7 @@ class _Running extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2)),
             SizedBox(width: 12),
-            Text('Turning on sharing…'),
+            Text('Turning on engines…'),
           ],
         ),
         const SizedBox(height: 12),

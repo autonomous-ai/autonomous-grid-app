@@ -158,8 +158,8 @@ class _Actions extends ConsumerWidget {
             onPressed: () => ref
                 .read(navSectionProvider.notifier)
                 .select(NavSection.provider),
-            icon: const Icon(Icons.podcasts_outlined, size: 16),
-            label: const Text('Share a model'),
+            icon: const Icon(Icons.dns_outlined, size: 16),
+            label: const Text('Run an engine'),
           ),
       ],
     );

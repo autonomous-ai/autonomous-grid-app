@@ -1,18 +1,13 @@
-import 'dart:io';
-
 import '../../infrastructure/cli/cli_diagnostics.dart';
 import '../../infrastructure/cli/grid_cli_service.dart';
 import 'preflight_report.dart';
 
-/// Probes the host for the things the app depends on: a working `grid` binary
-/// and (optionally) a container engine. Injectable so it can run against
-/// [FakeGridCliService] and a stubbed executable check in tests.
+/// Probes the host for the one thing the app depends on: a working `grid`
+/// binary. Injectable so it can run against [FakeGridCliService] in tests.
 class PreflightService {
-  PreflightService(this._service, {bool Function(String exe)? hasExecutable})
-      : _hasExecutable = hasExecutable ?? _whichExists;
+  PreflightService(this._service);
 
   final GridCliService? _service;
-  final bool Function(String exe) _hasExecutable;
 
   Future<PreflightReport> check() async {
     String? version;
@@ -34,20 +29,6 @@ class PreflightService {
       gridAvailable: version != null,
       gridVersion: version,
       gridError: version == null ? gridError : null,
-      containerEngine: _hasExecutable('docker')
-          ? 'docker'
-          : _hasExecutable('podman')
-              ? 'podman'
-              : null,
     );
-  }
-
-  static bool _whichExists(String exe) {
-    final locator = Platform.isWindows ? 'where' : 'which';
-    try {
-      return Process.runSync(locator, [exe]).exitCode == 0;
-    } on ProcessException {
-      return false;
-    }
   }
 }

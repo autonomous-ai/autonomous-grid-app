@@ -37,12 +37,6 @@ class PreflightScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               _CheckRow(label: 'Grid core', ok: report.gridAvailable),
-              _CheckRow(
-                label: 'Docker or Podman (needed to create your own grid)',
-                ok: report.hasContainerEngine,
-                optional: true,
-                detail: report.containerEngine,
-              ),
               if (report.gridError != null) ...[
                 const SizedBox(height: 16),
                 ErrorBox(message: report.gridError!),
@@ -62,32 +56,21 @@ class PreflightScreen extends ConsumerWidget {
 }
 
 class _CheckRow extends StatelessWidget {
-  const _CheckRow({
-    required this.label,
-    required this.ok,
-    this.optional = false,
-    this.detail,
-  });
+  const _CheckRow({required this.label, required this.ok});
 
   final String label;
   final bool ok;
-  final bool optional;
-  final String? detail;
 
   @override
   Widget build(BuildContext context) {
-    final color = ok
-        ? Colors.green
-        : optional
-            ? Colors.orange
-            : Theme.of(context).colorScheme.error;
+    final color = ok ? Colors.green : Theme.of(context).colorScheme.error;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(ok ? Icons.check_circle : Icons.cancel, size: 18, color: color),
           const SizedBox(width: 8),
-          Expanded(child: Text(detail != null ? '$label — $detail' : label)),
+          Expanded(child: Text(label)),
         ],
       ),
     );
