@@ -92,7 +92,7 @@ class _FailedBanner extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Node setup stopped at "${state.step.title}". Open Models to retry.',
+                'Node setup stopped at "${state.step.title}". Open Engines to retry.',
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.onErrorContainer),
@@ -101,7 +101,7 @@ class _FailedBanner extends ConsumerWidget {
             TextButton(
               onPressed: () => ref
                   .read(navSectionProvider.notifier)
-                  .select(NavSection.models),
+                  .select(NavSection.provider),
               child: const Text('View'),
             ),
             TextButton(

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../models/logic/advertise_name.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../network/presentation/enable_provider_card.dart';
 import '../logic/backend_detector.dart';
@@ -12,8 +13,8 @@ import 'provider_running_card.dart';
 
 /// Provider lifecycle. Enables the provider role when missing, then serves a
 /// model — from a local GGUF (the main flow) or an external OpenAI-compatible
-/// endpoint (`--at`) — and monitors the running provider. Model management
-/// (backends, pull, local files) lives on the Models tab.
+/// endpoint (`--at`) — and monitors the running provider. Downloading and
+/// managing local models lives inline in the local engine block.
 class ProviderView extends ConsumerStatefulWidget {
   const ProviderView({super.key});
 
@@ -35,12 +36,15 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
     super.dispose();
   }
 
+  /// Pick a detected framework and pre-fill every field — address, model (the
+  /// first one it reports) and a derived display name — so it's one tap to start.
   void _use(DetectedBackend backend) {
-    setState(() {
-      _endpoint.text = backend.baseUrl;
-      _suggestedModels = backend.models;
-      if (backend.models.length == 1) _model.text = backend.models.first;
-    });
+    final model = backend.models.isEmpty ? '' : backend.models.first;
+    _endpoint.text = backend.baseUrl;
+    _model.text = model;
+    _advertise.text =
+        model.isEmpty ? backend.label : deriveAdvertiseName(model);
+    setState(() => _suggestedModels = backend.models);
   }
 
   void _startExternal(NetworkCredential network) {
@@ -131,29 +135,81 @@ class _ServeSection extends ConsumerWidget {
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.error)),
           ),
-        _subheading(theme, 'Run an engine on this computer'),
-        ServeLocalCard(network: network),
-        const SizedBox(height: 20),
-        _subheading(theme, 'Or connect your own server'),
-        _ExternalRunForm(
-          network: network,
-          endpoint: endpoint,
-          model: model,
-          advertise: advertise,
-          suggestedModels: suggestedModels,
-          onUse: onUse,
-          onStart: onStart,
+        _EngineBlock(
+          icon: Icons.dns_outlined,
+          title: 'llama.cpp',
+          subtitle: 'Built-in engine — serve a local model from this computer',
+          child: ServeLocalCard(network: network),
+        ),
+        const SizedBox(height: 16),
+        _EngineBlock(
+          icon: Icons.lan_outlined,
+          title: 'Connect your own server',
+          subtitle:
+              'Use a framework running on this machine, or any OpenAI-compatible endpoint',
+          child: _ExternalRunForm(
+            network: network,
+            endpoint: endpoint,
+            model: model,
+            advertise: advertise,
+            suggestedModels: suggestedModels,
+            onUse: onUse,
+            onStart: onStart,
+          ),
         ),
       ],
     );
   }
+}
 
-  Widget _subheading(ThemeData theme, String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(text,
-            style: theme.textTheme.titleSmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-      );
+/// A titled engine block — a card with an icon + title header so the two serve
+/// paths (built-in llama.cpp vs. your own server) are easy to tell apart.
+class _EngineBlock extends StatelessWidget {
+  const _EngineBlock({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.titleMedium),
+                      Text(subtitle,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// The BYO external OpenAI-compatible endpoint form (`provider start --at`).
@@ -176,6 +232,43 @@ class _ExternalRunForm extends ConsumerWidget {
   final void Function(DetectedBackend) onUse;
   final void Function(NetworkCredential) onStart;
 
+  /// Model is a dropdown when the chosen framework reports models (pick one of
+  /// many), and a free-text field otherwise (manual base URL → type the name).
+  /// The [model] controller stays the source of truth so [onStart] reads it.
+  Widget _modelField() {
+    if (suggestedModels.isEmpty) {
+      return TextField(
+        controller: model,
+        decoration: const InputDecoration(
+          labelText: 'Model',
+          hintText: 'gemma4-31b',
+          border: OutlineInputBorder(),
+        ),
+      );
+    }
+    return ListenableBuilder(
+      listenable: model,
+      builder: (context, _) {
+        final value = suggestedModels.contains(model.text) ? model.text : null;
+        return DropdownButtonFormField<String>(
+          initialValue: value,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Model',
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            for (final m in suggestedModels)
+              DropdownMenuItem(value: m, child: Text(m)),
+          ],
+          onChanged: (v) {
+            if (v != null) model.text = v;
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final backends = ref.watch(backendsProvider).asData?.value ?? const [];
@@ -184,39 +277,20 @@ class _ExternalRunForm extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (external.isNotEmpty)
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final backend in external)
-                ActionChip(
-                  avatar: const Icon(Icons.dns_outlined, size: 16),
-                  label: Text('Use ${backend.label}'),
-                  onPressed: () => onUse(backend),
-                ),
-            ],
-          ),
-        const SizedBox(height: 12),
+        if (external.isNotEmpty) ...[
+          _DetectedFrameworkList(backends: external, onUse: onUse),
+          const SizedBox(height: 16),
+        ],
         TextField(
           controller: endpoint,
           decoration: const InputDecoration(
-            labelText: 'Server address',
+            labelText: 'Base URL',
             hintText: 'http://192.168.1.10:8080/v1',
             border: OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: model,
-          decoration: InputDecoration(
-            labelText: 'Model',
-            hintText: 'gemma4-31b',
-            border: const OutlineInputBorder(),
-            helperText: suggestedModels.isEmpty
-                ? null
-                : 'Found: ${suggestedModels.take(5).join(', ')}',
-          ),
-        ),
+        _modelField(),
         const SizedBox(height: 12),
         TextField(
           controller: advertise,
@@ -244,5 +318,48 @@ class _ExternalRunForm extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+/// Frameworks detected running on this machine (Ollama, LM Studio, …), shown as
+/// a pick list. Tapping one fills the address, model and display name below.
+class _DetectedFrameworkList extends StatelessWidget {
+  const _DetectedFrameworkList({required this.backends, required this.onUse});
+
+  final List<DetectedBackend> backends;
+  final void Function(DetectedBackend) onUse;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Detected on this machine',
+            style: theme.textTheme.titleSmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 8),
+        for (final backend in backends)
+          Card.outlined(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ListTile(
+              leading: const Icon(Icons.dns_outlined),
+              title: Text(backend.label),
+              subtitle: Text(_subtitle(backend)),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => onUse(backend),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// e.g. `localhost:11434/v1 · 3 models`.
+  String _subtitle(DetectedBackend backend) {
+    final host = backend.baseUrl.replaceFirst(RegExp(r'^https?://'), '');
+    final count = backend.models.length;
+    final models =
+        count == 0 ? 'no models reported' : '$count model${count == 1 ? '' : 's'}';
+    return '$host · $models';
   }
 }

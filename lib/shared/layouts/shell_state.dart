@@ -10,7 +10,6 @@ enum NavSection {
   overlord(Icons.monitor_heart_outlined, 'Overlord', hidden: true),
   playground(Icons.chat_bubble_outline, 'Playground'),
   provider(Icons.dns_outlined, 'Engines', providerOnly: true),
-  models(Icons.memory_outlined, 'Models', providerOnly: true),
   debug(Icons.bug_report_outlined, 'Debug', devOnly: true);
 
   const NavSection(this.icon, this.label,
@@ -29,9 +28,9 @@ enum NavSection {
   final bool hidden;
 }
 
-/// Sections visible for the currently selected network. Provider/Models are
-/// hidden on consumer-only networks; admins and providers see them. Dev-only
-/// sections (Debug) are hidden outside debug builds.
+/// Sections visible for the currently selected network. Engines is hidden on
+/// consumer-only networks; admins and providers see it. Dev-only sections
+/// (Debug) are hidden outside debug builds.
 final visibleNavSectionsProvider = Provider<List<NavSection>>((ref) {
   final canManage =
       ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;

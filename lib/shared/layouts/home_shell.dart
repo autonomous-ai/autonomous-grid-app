@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/debug/presentation/debug_view.dart';
-import '../../features/models/presentation/models_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
 import '../../features/node_setup/logic/node_capabilities.dart';
 import '../../features/node_setup/logic/node_setup_controller.dart';
@@ -87,7 +86,6 @@ class _Content extends ConsumerWidget {
       NavSection.overlord => const OverlordView(),
       NavSection.playground => const PlaygroundView(),
       NavSection.provider => const ProviderView(),
-      NavSection.models => const ModelsView(),
       NavSection.debug => const DebugView(),
     };
   }

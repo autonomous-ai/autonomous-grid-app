@@ -5,9 +5,12 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
 import '../logic/models_providers.dart';
+import 'model_manager_dialog.dart';
+import 'model_pull_card.dart';
 
-/// Step 4 (the main provider action): serve a locally pulled GGUF model via
-/// `grid join <grid> --serve <gguf> --advertise-as <name>`.
+/// The built-in llama.cpp engine block: serve a locally pulled GGUF model via
+/// `grid join <grid> --serve <gguf> --advertise-as <name>`. Downloading a model
+/// and managing existing ones both live here (there's no separate Models tab).
 class ServeLocalCard extends ConsumerStatefulWidget {
   const ServeLocalCard({super.key, required this.network});
 
@@ -55,22 +58,32 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     final theme = Theme.of(context);
     final models = ref.watch(localModelsProvider);
 
-    if (models.isEmpty) {
-      return Text(
-        'No models on this computer yet — download one above first.',
-        style: theme.textTheme.bodyMedium
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-      );
-    }
-
     // Default to the first model; keep selection valid if the list changes.
     final names = models.map((m) => m.name).toList();
-    final selected = names.contains(_model) ? _model! : names.first;
-    _syncAdvertiseFor(selected);
+    final selected =
+        names.contains(_model) ? _model! : (names.isEmpty ? null : names.first);
+    if (selected != null) _syncAdvertiseFor(selected);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (selected == null)
+          Text(
+            'No models on this computer yet — download one below.',
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          )
+        else
+          ..._serveControls(names, selected),
+        const SizedBox(height: 20),
+        const Divider(height: 1),
+        const SizedBox(height: 16),
+        const _DownloadModelSection(),
+      ],
+    );
+  }
+
+  List<Widget> _serveControls(List<String> names, String selected) => [
         DropdownButtonFormField<String>(
           initialValue: selected,
           decoration: const InputDecoration(
@@ -102,6 +115,36 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
             label: const Text('Start engine'),
           ),
         ),
+      ];
+}
+
+/// "Download a model" with the inline pull form, plus a button into the model
+/// manager (this computer's node setup + the list of downloaded models).
+class _DownloadModelSection extends StatelessWidget {
+  const _DownloadModelSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Download a model',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ),
+            TextButton.icon(
+              onPressed: () => showModelManager(context),
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text('Manage models'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        const ModelPullCard(),
       ],
     );
   }
