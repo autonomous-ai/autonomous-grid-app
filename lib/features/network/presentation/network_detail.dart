@@ -9,9 +9,11 @@ import '../logic/network_status.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
 import 'grid_overview_card.dart';
+import 'members_tab.dart';
 
 /// Right-hand detail pane for the selected network — Tailscale device-detail
-/// style: a status header, an endpoints card, and a details card.
+/// style: a status header over the grid's content. Admins get a tabbed view
+/// (Overview / Members) so they can manage who's on the grid.
 class NetworkDetail extends ConsumerWidget {
   const NetworkDetail({super.key, required this.network});
 
@@ -19,14 +21,58 @@ class NetworkDetail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final now = DateTime.now();
-    final conn = networkConn(network, now);
+    final conn = networkConn(network, DateTime.now());
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
+      child: _Header(network: network, conn: conn),
+    );
 
+    // Member management is owner-only — gate the tab on the admin role.
+    if (network.role != NetworkRole.admin) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [header, Expanded(child: _OverviewTab(network: network))],
+      );
+    }
+
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            dividerColor: Colors.transparent,
+            tabs: [Tab(text: 'Overview'), Tab(text: 'Members')],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _OverviewTab(network: network),
+                MembersTab(network: network),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The grid's overview content (stats, connection, role-specific cards, and
+/// actions) — the default tab, also shown on its own for non-admins.
+class _OverviewTab extends StatelessWidget {
+  const _OverviewTab({required this.network});
+
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 6, 24, 24),
       children: [
-        _Header(network: network, conn: conn),
-        const SizedBox(height: 22),
         const GridOverviewView(),
         const SizedBox(height: 22),
         DetailSection(

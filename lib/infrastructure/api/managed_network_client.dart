@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'models/managed_network.dart';
+import 'models/managed_network_member.dart';
 
 /// Control-plane call to `POST /v1/grid/managed-networks`, authenticated with
 /// the GridSession bearer (the `session_token` from `~/.grid/credentials.toml`).
@@ -50,12 +51,140 @@ class ManagedNetworkClient {
     }
   }
 
+  /// Lists active members of [networkId] via
+  /// `GET /v1/grid/managed-networks/{network_id}/members`. Owner-only on the
+  /// server (403 otherwise). Tolerates either a `{"members": [...]}` envelope or
+  /// a bare list, since the endpoint is loosely typed.
+  static Future<(List<ManagedNetworkMember>?, String?)> listMembers({
+    required String apiUrl,
+    required String sessionToken,
+    required String networkId,
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.getUrl(membersEndpoint(apiUrl, networkId));
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (null, _memberErrorFor(response.statusCode, body));
+      }
+      final decoded = jsonDecode(body);
+      final rawList = decoded is Map ? decoded['members'] : decoded;
+      if (rawList is! List) {
+        return (null, 'The server returned an unexpected members response.');
+      }
+      final members = rawList
+          .whereType<Map>()
+          .map((m) => ManagedNetworkMember.fromJson(m.cast<String, dynamic>()))
+          .toList(growable: false);
+      return (members, null);
+    } on TimeoutException {
+      return (null, "The server didn't respond in time. Try again.");
+    } on SocketException catch (e) {
+      return (null, "Couldn't reach the Grid control plane: ${e.message}");
+    } on Object catch (e) {
+      return (null, "Couldn't load members: $e");
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Adds (invites) a member to [networkId] via
+  /// `POST /v1/grid/managed-networks/{network_id}/members`. [roles] are wire
+  /// values from [ManagedMemberRole]; `admin` is rejected server-side.
+  static Future<(ManagedNetworkMember?, String?)> addMember({
+    required String apiUrl,
+    required String sessionToken,
+    required String networkId,
+    required String email,
+    required List<String> roles,
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.postUrl(membersEndpoint(apiUrl, networkId));
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+      request.add(utf8.encode(jsonEncode({
+        'email': email,
+        'roles': roles,
+      })));
+
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (null, _memberErrorFor(response.statusCode, body));
+      }
+      return (
+        ManagedNetworkMember.fromJson(jsonDecode(body) as Map<String, dynamic>),
+        null
+      );
+    } on TimeoutException {
+      return (null, "The server didn't respond in time. Try again.");
+    } on SocketException catch (e) {
+      return (null, "Couldn't reach the Grid control plane: ${e.message}");
+    } on Object catch (e) {
+      return (null, "Couldn't add the member: $e");
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Removes [email] from [networkId] via
+  /// `DELETE /v1/grid/managed-networks/{network_id}/members/{email}`. Returns
+  /// `(true, null)` on success.
+  static Future<(bool, String?)> removeMember({
+    required String apiUrl,
+    required String sessionToken,
+    required String networkId,
+    required String email,
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request =
+          await client.deleteUrl(memberEndpoint(apiUrl, networkId, email));
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (false, _memberErrorFor(response.statusCode, body));
+      }
+      return (true, null);
+    } on TimeoutException {
+      return (false, "The server didn't respond in time. Try again.");
+    } on SocketException catch (e) {
+      return (false, "Couldn't reach the Grid control plane: ${e.message}");
+    } on Object catch (e) {
+      return (false, "Couldn't remove the member: $e");
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// The full create-managed-network URL for [apiUrl] (which may or may not end
   /// in `/`). Public so callers can log the same URL the request hits.
   static Uri endpoint(String apiUrl) {
     final base = apiUrl.endsWith('/') ? apiUrl : '$apiUrl/';
     return Uri.parse('$base$_path');
   }
+
+  /// The members collection URL for [networkId]. Public so callers can log the
+  /// same URL the request hits.
+  static Uri membersEndpoint(String apiUrl, String networkId) =>
+      Uri.parse('${endpoint(apiUrl)}/$networkId/members');
+
+  /// The single-member URL for a DELETE. [email] is path-encoded.
+  static Uri memberEndpoint(String apiUrl, String networkId, String email) =>
+      Uri.parse('${membersEndpoint(apiUrl, networkId)}'
+          '/${Uri.encodeComponent(email)}');
 
   /// Turns a non-2xx response into a user-facing message, preferring the
   /// server's own `detail`/`message`, with friendlier text for known codes.
@@ -66,6 +195,23 @@ class ManagedNetworkClient {
       402 => detail ?? "You've reached your plan's network limit.",
       409 => detail ?? 'You already own a network with this name.',
       422 => detail ?? 'Invalid name or network type.',
+      _ => detail ?? 'Error $status.',
+    };
+  }
+
+  /// Member-endpoint variant of [_errorFor] — same `detail`-first strategy with
+  /// messages tuned to the add/remove/list flow (owner-only, seat caps, etc.).
+  static String _memberErrorFor(int status, String body) {
+    final detail = _detailOf(body);
+    return switch (status) {
+      400 => detail ?? 'Invalid email or role for this grid.',
+      401 => 'Your session has expired. Sign in again.',
+      402 => detail ?? "You've reached your plan's member limit.",
+      403 => detail ?? 'Only the grid owner can manage members.',
+      404 => detail ?? 'This grid is no longer available.',
+      422 => detail ?? 'Invalid email or role.',
+      502 => detail ?? 'The grid service is busy right now. Try again.',
+      503 => detail ?? 'Member management is unavailable right now.',
       _ => detail ?? 'Error $status.',
     };
   }
