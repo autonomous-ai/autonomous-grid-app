@@ -7,14 +7,14 @@ import '../../features/auth/logic/session_controller.dart';
 /// Primary nav sections shown in the left sidebar (Tailscale-style).
 enum NavSection {
   networks(Icons.lan_outlined, 'Grids'),
-  overlord(Icons.monitor_heart_outlined, 'Overlord'),
+  overlord(Icons.monitor_heart_outlined, 'Overlord', hidden: true),
   playground(Icons.chat_bubble_outline, 'Playground'),
   provider(Icons.podcasts_outlined, 'Share a Model', providerOnly: true),
   models(Icons.memory_outlined, 'Models', providerOnly: true),
   debug(Icons.bug_report_outlined, 'Debug', devOnly: true);
 
   const NavSection(this.icon, this.label,
-      {this.providerOnly = false, this.devOnly = false});
+      {this.providerOnly = false, this.devOnly = false, this.hidden = false});
   final IconData icon;
   final String label;
 
@@ -23,6 +23,10 @@ enum NavSection {
 
   /// Only available in dev (debug) builds — hidden in release/production.
   final bool devOnly;
+
+  /// Kept wired (routed + built) but not shown in the sidebar — for sections
+  /// still in progress. Flip to re-list it; no other change needed.
+  final bool hidden;
 }
 
 /// Sections visible for the currently selected network. Provider/Models are
@@ -33,7 +37,8 @@ final visibleNavSectionsProvider = Provider<List<NavSection>>((ref) {
       ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
   return [
     for (final section in NavSection.values)
-      if ((!section.providerOnly || canManage) &&
+      if (!section.hidden &&
+          (!section.providerOnly || canManage) &&
           (!section.devOnly || kDebugMode))
         section,
   ];
