@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/local_files.dart';
-import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/models_providers.dart';
+import 'model_pull_card.dart';
 
-/// "Manage models" — the model hub that used to be its own tab: this computer's
-/// node-setup status plus every GGUF already downloaded under `~/.grid/models`.
-/// Opened from the local engine block; downloading new models lives there.
+/// "Manage models" — the model hub that used to be its own tab: download a GGUF
+/// and see every model already under `~/.grid/models`. Opened from the local
+/// engine block. (Node setup / installing llama.cpp lives in the Engines tab.)
 Future<void> showModelManager(BuildContext context) => showDialog<void>(
       context: context,
       builder: (_) => const _ModelManagerDialog(),
@@ -48,8 +48,11 @@ class _ModelManagerDialog extends ConsumerWidget {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    const NodeSetupCard(),
+                    Text('Download a model',
+                        style: theme.textTheme.titleMedium),
                     const SizedBox(height: 16),
+                    const ModelPullCard(),
+                    const SizedBox(height: 20),
                     Text('Downloaded models',
                         style: theme.textTheme.titleMedium),
                     const SizedBox(height: 8),
@@ -69,8 +72,7 @@ class _ModelManagerDialog extends ConsumerWidget {
       return const [
         Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
-          child:
-              Text('No models downloaded yet — download one from the engine.'),
+          child: Text('No models downloaded yet — download one above.'),
         ),
       ];
     }

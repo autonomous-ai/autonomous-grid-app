@@ -7,6 +7,7 @@ import '../../auth/logic/session_controller.dart';
 import '../../models/logic/advertise_name.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../network/presentation/enable_provider_card.dart';
+import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/backend_detector.dart';
 import '../logic/provider_run_controller.dart';
 import 'provider_running_card.dart';
@@ -135,6 +136,11 @@ class _ServeSection extends ConsumerWidget {
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.error)),
           ),
+        // Set this computer up as a node — installs llama.cpp and anything else
+        // missing. Lives here (not in the model manager) so the engine prereqs
+        // are visible up front.
+        const NodeSetupCard(),
+        const SizedBox(height: 16),
         _EngineBlock(
           icon: Icons.dns_outlined,
           title: 'llama.cpp',

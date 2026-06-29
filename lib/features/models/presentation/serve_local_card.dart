@@ -4,13 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
+import '../logic/llama_install_controller.dart';
 import '../logic/models_providers.dart';
 import 'model_manager_dialog.dart';
-import 'model_pull_card.dart';
 
 /// The built-in llama.cpp engine block: serve a locally pulled GGUF model via
-/// `grid join <grid> --serve <gguf> --advertise-as <name>`. Downloading a model
-/// and managing existing ones both live here (there's no separate Models tab).
+/// `grid join <grid> --serve <gguf> --advertise-as <name>`. Downloading and
+/// managing models lives in the model manager ("Manage models"), opened here.
 class ServeLocalCard extends ConsumerStatefulWidget {
   const ServeLocalCard({super.key, required this.network});
 
@@ -57,6 +57,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final models = ref.watch(localModelsProvider);
+    final llamaInstalled = ref.watch(engineStatusProvider).llamaInstalled;
 
     // Default to the first model; keep selection valid if the list changes.
     final names = models.map((m) => m.name).toList();
@@ -69,16 +70,27 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
       children: [
         if (selected == null)
           Text(
-            'No models on this computer yet — download one below.',
+            llamaInstalled
+                ? 'No models on this computer yet — download one from "Manage models".'
+                : 'Set this computer up as a node above, then download a model to serve.',
             style: theme.textTheme.bodyMedium
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           )
         else
           ..._serveControls(names, selected),
-        const SizedBox(height: 20),
-        const Divider(height: 1),
-        const SizedBox(height: 16),
-        const _DownloadModelSection(),
+        // Downloading / managing models only makes sense once llama.cpp is
+        // installed — until then the node setup above is the next step.
+        if (llamaInstalled) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => showModelManager(context),
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text('Manage models'),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -116,36 +128,4 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
           ),
         ),
       ];
-}
-
-/// "Download a model" with the inline pull form, plus a button into the model
-/// manager (this computer's node setup + the list of downloaded models).
-class _DownloadModelSection extends StatelessWidget {
-  const _DownloadModelSection();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text('Download a model',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            ),
-            TextButton.icon(
-              onPressed: () => showModelManager(context),
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('Manage models'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        const ModelPullCard(),
-      ],
-    );
-  }
 }

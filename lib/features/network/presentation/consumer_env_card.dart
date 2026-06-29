@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -63,80 +62,100 @@ class ConsumerEnvCard extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => _copyEnvBlock(context),
-            icon: const Icon(Icons.terminal_rounded, size: 15),
-            label: const Text('Copy'),
-          ),
-        ),
+        // const SizedBox(height: 8),
+        // Align(
+        //   alignment: Alignment.centerLeft,
+        //   child: TextButton.icon(
+        //     onPressed: () => _copyEnvBlock(context),
+        //     icon: const Icon(Icons.terminal_rounded, size: 15),
+        //     label: const Text('Copy'),
+        //   ),
+        // ),
       ],
     );
   }
 
-  /// Copies the two `export …` lines verbatim — paste into a shell to use any
-  /// OpenAI-compatible client against this grid's relay.
-  void _copyEnvBlock(BuildContext context) {
-    final env = 'export BASE_URL="${network.relayBaseUrl}"\n'
-        'export API_KEY="${network.relayApiKey}"';
-    Clipboard.setData(ClipboardData(text: env));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('Copied'), duration: Duration(seconds: 1)),
-    );
-  }
-
-  /// Explains how to point an OpenAI-compatible agent at this grid, with the
-  /// grid's real BASE_URL / API_KEY pre-filled into copy-ready snippets.
+  /// Explains how to point any OpenAI-compatible app at this grid. Mirrors the
+  /// README's "Point your apps at the grid" — the same `OPENAI_*` pair (as
+  /// `grid info --env` prints) wired into OpenClaw, Hermes and a plain SDK, with
+  /// this grid's real BASE_URL / API_KEY pre-filled into copy-ready snippets.
   void _showAgentGuide(BuildContext context) {
-    final envSnippet = 'export OPENAI_BASE_URL="${network.relayBaseUrl}"\n'
-        'export OPENAI_API_KEY="${network.relayApiKey}"';
+    final base = network.relayBaseUrl;
+    final key = network.relayApiKey;
+
+    final envSnippet = 'export OPENAI_BASE_URL="$base"\n'
+        'export OPENAI_API_KEY="$key"';
+
+    final openClawSnippet = '{\n'
+        '  "agents": { "defaults": { "model": { "primary": "grid/qwen3-coder" } } },\n'
+        '  "models": {\n'
+        '    "providers": {\n'
+        '      "grid": {\n'
+        '        "baseUrl": "$base",\n'
+        '        "apiKey": "$key",\n'
+        '        "api": "openai-completions",\n'
+        '        "models": [{ "id": "qwen3-coder", "name": "Qwen3 Coder (via Grid)" }]\n'
+        '      }\n'
+        '    }\n'
+        '  }\n'
+        '}';
+
+    final hermesSnippet = 'model:\n'
+        '  provider: custom\n'
+        '  default: qwen3-coder\n'
+        '  base_url: $base';
+    final hermesEnvSnippet = "echo 'OPENAI_API_KEY=$key' >> ~/.hermes/.env";
+
     final pySnippet = 'from openai import OpenAI\n'
         '\n'
-        'client = OpenAI(\n'
-        '    base_url="${network.relayBaseUrl}",\n'
-        '    api_key="${network.relayApiKey}",\n'
-        ')\n'
-        '\n'
-        'resp = client.chat.completions.create(\n'
-        '    model="<model>",  # any model this grid serves (see Models tab)\n'
-        '    messages=[{"role": "user", "content": "Hello"}],\n'
-        ')\n'
-        'print(resp.choices[0].message.content)';
+        'client = OpenAI(base_url="$base", api_key="$key")\n'
+        'client.chat.completions.create(\n'
+        '    model="qwen3-coder",                # routed to a matching engine automatically\n'
+        '    messages=[{"role": "user", "content": "hello"}],\n'
+        ')';
 
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppPalette.panelBg,
-        title: const Text('Configure an agent'),
+        title: const Text('Point your apps at the grid'),
         content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
+          constraints: const BoxConstraints(maxWidth: 540),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'This grid exposes an OpenAI-compatible endpoint. Point any '
-                  'agent or SDK (OpenAI SDK, LangChain, Cursor, …) at the '
-                  'BASE_URL and API_KEY below — no other changes needed.',
+                  'This grid is one OpenAI-compatible endpoint. Wire these two '
+                  'values — OPENAI_BASE_URL and OPENAI_API_KEY (the same pair '
+                  '`grid info --env` prints) — into any OpenAI-compatible client.',
                   style: TextStyle(
-                      color: AppPalette.textSecondary, fontSize: 13, height: 1.4),
+                      color: AppPalette.textSecondary, fontSize: 13, height: 1.45),
                 ),
                 const SizedBox(height: 18),
-                const _GuideLabel('1 · Set the environment variables'),
+                const _GuideLabel('Environment variables'),
                 _CodeBlock(code: envSnippet),
                 const SizedBox(height: 18),
-                const _GuideLabel('2 · Or pass them directly (Python)'),
+                const _GuideLabel('OpenClaw',
+                    caption: 'add Grid as a provider in ~/.openclaw/openclaw.json'),
+                _CodeBlock(code: openClawSnippet),
+                const SizedBox(height: 18),
+                const _GuideLabel('Hermes',
+                    caption: 'set the endpoint in ~/.hermes/config.yaml'),
+                _CodeBlock(code: hermesSnippet),
+                const SizedBox(height: 8),
+                _CodeBlock(code: hermesEnvSnippet),
+                const SizedBox(height: 18),
+                const _GuideLabel('Your own app',
+                    caption: 'point any OpenAI SDK at the values above'),
                 _CodeBlock(code: pySnippet),
                 const SizedBox(height: 14),
                 const Text(
-                  'Pick any model your grid serves from the Models tab and use '
-                  'its name as the "model" value.',
+                  'Replace qwen3-coder with a model your grid serves. Every model '
+                  'on every machine answers at this one endpoint.',
                   style: TextStyle(
-                      color: AppPalette.textFaint, fontSize: 12, height: 1.4),
+                      color: AppPalette.textFaint, fontSize: 12, height: 1.45),
                 ),
               ],
             ),
@@ -153,21 +172,37 @@ class ConsumerEnvCard extends ConsumerWidget {
   }
 }
 
-/// A small heading above a code block in the agent guide.
+/// A heading above a code block in the agent guide, with an optional caption
+/// (e.g. the config file the snippet belongs in).
 class _GuideLabel extends StatelessWidget {
-  const _GuideLabel(this.text);
+  const _GuideLabel(this.text, {this.caption});
   final String text;
+  final String? caption;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: const TextStyle(
-            color: AppPalette.textPrimary,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            text,
+            style: const TextStyle(
+                color: AppPalette.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600),
+          ),
+          if (caption != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                caption!,
+                style: const TextStyle(
+                    color: AppPalette.textFaint, fontSize: 11.5, height: 1.3),
+              ),
+            ),
+        ],
       ),
     );
   }
