@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -49,10 +50,16 @@ class ProviderRunIdle extends ProviderRunState {
   const ProviderRunIdle();
 }
 
-/// Provider process is up; [log] holds the latest streamed lines. [starting]
-/// is true until the first line arrives.
+/// Provider process is up, serving [grid]; [log] holds the latest streamed
+/// lines. [starting] is true until the first line arrives. [grid] lets the UI
+/// show "Sharing now" only on the network actually being served.
 class ProviderRunActive extends ProviderRunState {
-  const ProviderRunActive({required this.log, required this.starting});
+  const ProviderRunActive({
+    required this.grid,
+    required this.log,
+    required this.starting,
+  });
+  final String grid;
   final List<String> log;
   final bool starting;
 }
@@ -90,10 +97,43 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   String? _grid;
   bool _stopping = false;
 
+  /// Grids already reconciled this session, so [reconcile] runs once per grid
+  /// even though the view may call it on every rebuild.
+  final Set<String> _reconciledGrids = {};
+
   @override
   ProviderRunState build() {
     ref.onDispose(_teardown);
     return const ProviderRunIdle();
+  }
+
+  /// Adopt an engine that's still serving [gridId] — e.g. one whose detached
+  /// `grid join` process outlived an app restart — so the UI shows "Sharing now"
+  /// with a working Stop, instead of an idle start form whose join would fail
+  /// with "already joined". Reads the CLI's own run record under `~/.grid`; only
+  /// adopts a record whose process is still alive. Idempotent per grid, and never
+  /// clobbers an in-session run.
+  void reconcile(String gridId) {
+    if (!_reconciledGrids.add(gridId)) return;
+    if (state is! ProviderRunIdle) return;
+
+    final service = ref.read(gridCliServiceProvider);
+    if (service == null) return;
+
+    final store = ref.read(gridHomeStoreProvider);
+    final record = store.readEngineRun(gridId, _engineName);
+    if (record == null || !_pidIsAlive(record.pid)) return;
+
+    _service = service;
+    _grid = gridId;
+    final log = store.readEngineRunLog(gridId, _engineName, maxLines: _maxLogLines);
+    state = ProviderRunActive(
+      grid: gridId,
+      starting: false,
+      log: log.isNotEmpty
+          ? List.unmodifiable(log)
+          : ['Resumed — sharing ${record.models.join(', ')} to this grid.'],
+    );
   }
 
   /// Serve a model already pulled into `~/.grid/models` via the built-in engine
@@ -139,7 +179,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
           ? ['--advertise-as', advertiseAs]
           : const [];
 
-  Future<void> _start(List<String> args, {required String grid}) async {
+  Future<void> _start(List<String> args,
+      {required String grid, bool retried = false}) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
@@ -150,7 +191,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     _grid = grid;
     _stopping = false;
     final log = <String>[];
-    state = const ProviderRunActive(log: [], starting: true);
+    state = ProviderRunActive(grid: grid, log: const [], starting: true);
 
     _process = await service.start(args);
     _process!.lines.listen((line) {
@@ -159,7 +200,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         log.removeRange(0, log.length - _maxLogLines);
       }
       // Still "starting" until `join` exits 0 — the engine serves detached after.
-      state = ProviderRunActive(log: List.unmodifiable(log), starting: true);
+      state =
+          ProviderRunActive(grid: grid, log: List.unmodifiable(log), starting: true);
     });
 
     final exitCode = await _process!.exitCode;
@@ -170,12 +212,35 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }
     if (exitCode == 0) {
       // `grid join` launched the engine in the background; it's serving now.
-      state = ProviderRunActive(log: List.unmodifiable(log), starting: false);
+      state =
+          ProviderRunActive(grid: grid, log: List.unmodifiable(log), starting: false);
       return;
     }
+
+    final failure =
+        log.isNotEmpty ? log.last : 'sharing failed to start (exit $exitCode).';
+    // A leftover engine from a previous session blocks the join with the same
+    // `--name`. Drop it with `grid leave` and retry once, so the user isn't
+    // stuck unable to start (and unable to stop a run the app never tracked).
+    if (!retried && failure.toLowerCase().contains('already joined')) {
+      await service.run(['leave', grid, '--engine', _engineName]);
+      return _start(args, grid: grid, retried: true);
+    }
     _grid = null;
-    state = ProviderRunFailed(
-        log.isNotEmpty ? log.last : 'sharing failed to start (exit $exitCode).');
+    state = ProviderRunFailed(failure);
+  }
+
+  /// True if [pid] names a live process. POSIX `kill -0` probes existence
+  /// without signalling; where it's unavailable we can't tell, so assume alive
+  /// (the Stop path `grid leave`s regardless).
+  static bool _pidIsAlive(int? pid) {
+    if (pid == null) return false;
+    if (Platform.isWindows) return true;
+    try {
+      return Process.runSync('kill', ['-0', '$pid']).exitCode == 0;
+    } on ProcessException {
+      return true;
+    }
   }
 
   /// Stop sharing: `grid leave` unregisters and kills the detached engine.

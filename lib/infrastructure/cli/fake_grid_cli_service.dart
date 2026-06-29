@@ -14,7 +14,7 @@ class FakeGridCliService implements GridCliService {
         _pulls = pulls ?? {};
 
   final Map<String, CliResult> _results;
-  final Map<String, _FakeRun> _runs;
+  final Map<String, List<_FakeRun>> _runs;
   final Map<String, List<DownloadProgress>> _pulls;
 
   static String keyOf(List<String> args) => args.join(' ');
@@ -22,13 +22,16 @@ class FakeGridCliService implements GridCliService {
   void stubResult(List<String> args, CliResult result) =>
       _results[keyOf(args)] = result;
 
+  /// Stub a `start` result. Calling it more than once for the same args queues a
+  /// sequence consumed call-by-call (e.g. fail-then-succeed for retry tests); a
+  /// single stub is reused for every call.
   void stubStart(
     List<String> args, {
     required List<CliLine> lines,
     int exitCode = 0,
     Duration exitDelay = const Duration(milliseconds: 1),
   }) =>
-      _runs[keyOf(args)] = _FakeRun(lines, exitCode, exitDelay);
+      (_runs[keyOf(args)] ??= []).add(_FakeRun(lines, exitCode, exitDelay));
 
   void stubPull(List<String> args, List<DownloadProgress> progress) =>
       _pulls[keyOf(args)] = progress;
@@ -41,7 +44,10 @@ class FakeGridCliService implements GridCliService {
 
   @override
   Future<GridProcess> start(List<String> args) async {
-    final run = _runs[keyOf(args)] ?? const _FakeRun([], 0, Duration.zero);
+    final queue = _runs[keyOf(args)];
+    final run = (queue == null || queue.isEmpty)
+        ? const _FakeRun([], 0, Duration.zero)
+        : (queue.length == 1 ? queue.first : queue.removeAt(0));
     return GridProcess(
       lines: Stream.fromIterable(run.lines),
       // Resolve after lines are delivered so consumers observe output first.

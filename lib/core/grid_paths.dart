@@ -47,4 +47,16 @@ class GridPaths {
   /// Where `grid llama.cpp install` links the engine (provider_runtime
   /// paths.py: `llama_server_bin()`).
   static File get llamaServerBin => File('${home.path}/bin/llama-server');
+
+  /// Run records for detached engines launched by `grid join`, namespaced per
+  /// grid: `~/.grid/run/engines/<grid_id>/<engine_id>.{json,log}`. The app reads
+  /// these to detect an engine that outlived an app restart (its `grid join`
+  /// process keeps serving via the relay until `grid leave`).
+  static Directory get runEnginesDir => Directory('${home.path}/run/engines');
+
+  static File engineRunFile(String gridId, String engineName) =>
+      File('${runEnginesDir.path}/$gridId/$engineName.json');
+
+  static File engineRunLogFile(String gridId, String engineName) =>
+      File('${runEnginesDir.path}/$gridId/$engineName.log');
 }

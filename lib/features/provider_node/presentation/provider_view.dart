@@ -56,6 +56,16 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
   Widget build(BuildContext context) {
     final network = ref.watch(selectedNetworkProvider);
 
+    // Reflect an engine that's still serving this grid (e.g. one that outlived
+    // an app restart). Runs after the frame so it never mutates state mid-build;
+    // the controller dedupes per grid.
+    if (network != null) {
+      final notifier = ref.read(providerRunControllerProvider.notifier);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) notifier.reconcile(network.networkId);
+      });
+    }
+
     return SectionScaffold(
       title: 'Share a Model',
       subtitle: network?.name,
@@ -106,7 +116,7 @@ class _ServeSection extends ConsumerWidget {
     if (!network.isProvider) {
       return EnableProviderCard(network: network);
     }
-    if (run is ProviderRunActive) {
+    if (run is ProviderRunActive && run.grid == network.networkId) {
       return ProviderRunningCard(
           starting: run.starting, log: run.log, logHeight: 420);
     }

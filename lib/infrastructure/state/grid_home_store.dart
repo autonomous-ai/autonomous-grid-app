@@ -5,6 +5,7 @@ import 'package:toml/toml.dart';
 
 import '../../core/grid_paths.dart';
 import 'models/credentials_file.dart';
+import 'models/engine_run.dart';
 import 'models/local_files.dart';
 import 'models/network_config.dart';
 
@@ -83,6 +84,36 @@ class GridHomeStore {
     }
     out.sort((a, b) => b.filename.compareTo(a.filename));
     return out;
+  }
+
+  /// The persisted run record for engine [engineName] serving grid [gridId], or
+  /// null when no record exists (not serving). Lenient: a missing/corrupt file
+  /// reads as "not serving" so a bad record can't brick the provider UI.
+  EngineRunRecord? readEngineRun(String gridId, String engineName) {
+    final file = GridPaths.engineRunFile(gridId, engineName);
+    if (!file.existsSync()) return null;
+    try {
+      final decoded = jsonDecode(file.readAsStringSync());
+      if (decoded is! Map) return null;
+      return EngineRunRecord.fromJson(Map<String, dynamic>.from(decoded));
+    } on Exception {
+      return null;
+    }
+  }
+
+  /// Tail of a resumed engine's log (`<engine>.log`), so the running card can
+  /// show real context after a restart. Empty when missing/unreadable.
+  List<String> readEngineRunLog(String gridId, String engineName,
+      {int maxLines = 400}) {
+    final file = GridPaths.engineRunLogFile(gridId, engineName);
+    if (!file.existsSync()) return const [];
+    try {
+      final lines = file.readAsLinesSync();
+      if (lines.length <= maxLines) return lines;
+      return lines.sublist(lines.length - maxLines);
+    } on Exception {
+      return const [];
+    }
   }
 
   Map<String, dynamic>? _readToml(File file) {

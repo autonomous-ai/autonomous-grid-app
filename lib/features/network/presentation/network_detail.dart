@@ -78,7 +78,7 @@ class _OverviewTab extends StatelessWidget {
         DetailSection(
           title: 'Connection',
           children: [
-            AddressRow(label: 'Server address', value: network.lanSignalingUrl),
+            AddressRow(label: 'Grid address', value: network.lanSignalingUrl),
           ],
         ),
         const SizedBox(height: 20),
