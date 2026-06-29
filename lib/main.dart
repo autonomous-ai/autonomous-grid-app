@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app/grid_app.dart';
@@ -9,6 +10,9 @@ import 'app/single_instance.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Boot the libmpv backend powering inline chat video/audio playback.
+  MediaKit.ensureInitialized();
 
   // Quit instantly if another instance already holds the lock. `flutter run` on
   // macOS exec's the binary then calls `open`, which makes LaunchServices spawn
