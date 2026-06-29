@@ -90,6 +90,14 @@ class NetworkCredential {
         NetworkRole.member => 'Private',
       };
 
+  /// Whether the grid admits public consumers, from its managed network type
+  /// (`permissioned-public`). Everything else is providers-only / private.
+  bool get isPublic => networkType.contains('public');
+
+  /// Visibility label shown to admins (who manage the grid) regardless of their
+  /// own role: `Public` vs `Private`.
+  String get visibilityLabel => isPublic ? 'Public' : 'Private';
+
   /// May the viewer reach the Provider/Models tabs on this network? Admins
   /// manage the network so they always can; otherwise the provider:poll
   /// capability is required. (Pure consumers/members are excluded.)

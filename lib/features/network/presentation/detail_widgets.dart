@@ -118,8 +118,8 @@ class MetaRow extends StatelessWidget {
   }
 }
 
-/// A small pill showing the viewer's role on a network (Provider / Consumer).
-/// Provider is accented; consumer is muted.
+/// Pills showing the viewer's role on a network. Admins also get the grid's
+/// visibility (Public / Private) so they can tell their grids apart at a glance.
 class RoleBadge extends StatelessWidget {
   const RoleBadge({super.key, required this.network, this.compact = false});
 
@@ -128,12 +128,51 @@ class RoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (network.role) {
-      NetworkRole.admin => AppPalette.online,
-      NetworkRole.provider => AppPalette.accent,
-      NetworkRole.consumer => AppPalette.textSecondary,
-      NetworkRole.member => AppPalette.textSecondary,
-    };
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        _BadgePill(
+          label: network.roleLabel,
+          color: _roleColor(network.role),
+          compact: compact,
+        ),
+        // The role pill already says Public/Private for consumers/members, but
+        // an admin's pill says "Admin" — so surface the grid's visibility too.
+        if (network.role == NetworkRole.admin)
+          _BadgePill(
+            label: network.visibilityLabel,
+            color: _visibilityColor(network.isPublic),
+            compact: compact,
+          ),
+      ],
+    );
+  }
+
+  Color _roleColor(NetworkRole role) => switch (role) {
+        NetworkRole.admin => AppPalette.online,
+        NetworkRole.provider => AppPalette.accent,
+        NetworkRole.consumer => _visibilityColor(true), // "Public"
+        NetworkRole.member => _visibilityColor(false), // "Private"
+      };
+}
+
+/// Public grids read as "open" (accent); private ones stay muted — so the two
+/// are visually distinct wherever they appear.
+Color _visibilityColor(bool isPublic) =>
+    isPublic ? AppPalette.accent : AppPalette.textSecondary;
+
+/// One rounded, tinted pill — the shared shape for role and visibility badges.
+class _BadgePill extends StatelessWidget {
+  const _BadgePill(
+      {required this.label, required this.color, this.compact = false});
+
+  final String label;
+  final Color color;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
           horizontal: compact ? 6 : 8, vertical: compact ? 1 : 3),
@@ -143,7 +182,7 @@ class RoleBadge extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.45)),
       ),
       child: Text(
-        network.roleLabel,
+        label,
         style: TextStyle(
             color: color,
             fontSize: compact ? 10 : 11.5,
