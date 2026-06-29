@@ -121,7 +121,20 @@ class _ServeSection extends ConsumerWidget {
       return const Text('Select a grid first from the Grids tab.');
     }
     if (!network.isProvider) {
-      return EnableProviderCard(network: network);
+      // Admins arriving from the grid's "Start engine" land here first. Frame
+      // turning on engines as the opening step of the same guided path, not a
+      // cold gate. Non-admins just get the "ask the owner" note from the card.
+      if (network.role != NetworkRole.admin) {
+        return EnableProviderCard(network: network);
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _ServeIntro(),
+          const SizedBox(height: 16),
+          EnableProviderCard(network: network),
+        ],
+      );
     }
     if (run is ProviderRunActive && run.grid == network.networkId) {
       return ProviderRunningCard(
