@@ -20,6 +20,14 @@ class CliResult {
     final err = stderr.trim();
     return err.isNotEmpty ? err : stdout.trim();
   }
+
+  /// The command failed because the saved Grid session is no longer valid —
+  /// the user must re-run `grid auth login`. The CLI prints
+  /// "Grid session expired or invalid. Run `grid auth login` to sign in again."
+  /// on a 401-equivalent (cli.py). String-matched because the control plane has
+  /// no structured error code; kept in one place so detection stays consistent.
+  bool get sessionExpired =>
+      !ok && errorMessage.toLowerCase().contains('session expired or invalid');
 }
 
 /// One line emitted by a long-running command (provider/install logs, §3.5).

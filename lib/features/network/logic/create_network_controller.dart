@@ -5,6 +5,7 @@ import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/providers.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../auth/logic/session_expiry_controller.dart';
 import 'default_grid_name.dart';
 
 /// The `POST /v1/grid/managed-networks` call, behind a provider so tests can
@@ -117,9 +118,13 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
   void reset() => state = const CreateNetworkIdle();
 
   /// Best-effort `grid sync` so the new grid's full state lands in `~/.grid`
-  /// before we refresh the session. Failures are non-fatal (logged in Debug).
+  /// before we refresh the session. Failures are non-fatal (logged in Debug),
+  /// except an expired session — flag that so the app prompts a re-login.
   Future<void> _sync() async {
-    await ref.read(gridCliServiceProvider)?.run(['sync']);
+    final result = await ref.read(gridCliServiceProvider)?.run(['sync']);
+    if (result != null && result.sessionExpired) {
+      await ref.read(sessionExpiryProvider.notifier).onExpired();
+    }
   }
 
   /// Best-effort `grid network join` so the new grid lands in the local list.

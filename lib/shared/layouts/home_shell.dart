@@ -17,6 +17,7 @@ import '../theme/app_theme.dart';
 import 'shell_state.dart';
 import 'widgets/app_top_bar.dart';
 import 'widgets/node_setup_banner.dart';
+import 'widgets/session_expired_banner.dart';
 import 'widgets/side_nav.dart';
 
 /// The main app frame, Tailscale-style: a full-width title bar on top, a left
@@ -36,6 +37,7 @@ class HomeShell extends ConsumerWidget {
         children: [
           const AppTopBar(),
           const Divider(height: 1),
+          const SessionExpiredBanner(),
           const NodeSetupBanner(),
           Expanded(
             child: Row(

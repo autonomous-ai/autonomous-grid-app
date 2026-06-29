@@ -71,11 +71,10 @@ class AuthController extends Notifier<AuthState> {
     state = const AuthIdle();
   }
 
-  /// Sign out: best-effort `grid auth logout` (if the CLI supports it), then
-  /// clear the local credentials so the app drops back to the login screen.
+  /// Sign out. The CLI has no `grid auth logout` — it only exposes
+  /// `auth {login, refresh}` — and `~/.grid` is the source of truth, so deleting
+  /// the local credentials *is* the sign-out: the app drops to the login screen.
   Future<void> logout() async {
-    final service = ref.read(gridCliServiceProvider);
-    await service?.run(['auth', 'logout']);
     ref.read(gridHomeStoreProvider).clearCredentials();
     ref.invalidate(sessionProvider);
     state = const AuthIdle();
