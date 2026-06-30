@@ -49,14 +49,14 @@ jobs:
 
     steps:
       - name: Checkout app
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: grid-app
 
       # Sidecar source. Cloned as a sibling of grid-app so the existing scripts'
       # default CLI path ("$APP_ROOT/../autonomous-grid-cli") resolves unchanged.
       - name: Checkout grid CLI (sidecar source)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: autonomous-ai/autonomous-grid
           token: ${{ secrets.CLI_REPO_TOKEN }}
@@ -78,7 +78,7 @@ jobs:
           cache: true
 
       - name: Set up Python (sidecar build)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -154,7 +154,7 @@ jobs:
 
       # ───────────────────────── Publish ─────────────────────────
       - name: Publish to GitHub Release (draft)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           name: Grid ${{ github.ref_name }}
