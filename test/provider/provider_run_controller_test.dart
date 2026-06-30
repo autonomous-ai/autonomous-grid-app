@@ -142,8 +142,13 @@ void main() {
 
     // Matched the --serve command (the fake returns its default empty run
     // otherwise, never emitting an active state).
-    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
+    final state = container.read(providerRunControllerProvider);
+    expect(state, isA<ProviderRunActive>());
     expect(seen.whereType<ProviderRunActive>(), isNotEmpty);
+    // The served gguf is recorded so the model manager can guard against
+    // deleting it while it's live.
+    expect((state as ProviderRunActive).model, 'qwen.gguf');
+    expect(container.read(servingModelProvider), 'qwen.gguf');
   });
 
   test('fails fast when grid is absent', () async {

@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/status_dot.dart';
+import '../../provider_node/logic/provider_run_controller.dart';
+import '../logic/model_delete_controller.dart';
 import '../logic/models_providers.dart';
 import 'model_pull_card.dart';
 
@@ -165,17 +168,24 @@ class _DownloadedList extends StatelessWidget {
   }
 }
 
-/// One downloaded model: an icon tile, the file name, and its size on the right.
-class _ModelTile extends StatelessWidget {
+/// One downloaded model: an icon tile, the file name, its size, and a delete
+/// action. A model the running engine is serving can't be deleted — its row
+/// shows a "Running" badge instead, so the file can't be pulled out from under a
+/// live engine.
+class _ModelTile extends ConsumerWidget {
   const _ModelTile({required this.model});
 
   final LocalModel model;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final inUse = isModelInUse(model.name, ref.watch(servingModelProvider));
+    final deleteState = ref.watch(modelDeleteControllerProvider);
+    final deleting = deleteState is ModelDeleting && deleteState.name == model.name;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
       child: Row(
         children: [
           Container(
@@ -202,8 +212,85 @@ class _ModelTile extends StatelessWidget {
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
+          const SizedBox(width: 4),
+          _trailing(context, ref, theme, inUse: inUse, deleting: deleting),
         ],
       ),
     );
+  }
+
+  Widget _trailing(BuildContext context, WidgetRef ref, ThemeData theme,
+      {required bool inUse, required bool deleting}) {
+    if (deleting) {
+      return const SizedBox(
+        width: 40,
+        height: 40,
+        child: Center(
+          child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      );
+    }
+    if (inUse) {
+      return Tooltip(
+        message: 'In use by the running engine — stop it to delete this model.',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const StatusDot(color: AppPalette.online, size: 7),
+              const SizedBox(width: 6),
+              Text('Running',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppPalette.online)),
+            ],
+          ),
+        ),
+      );
+    }
+    return IconButton(
+      icon: const Icon(Icons.delete_outline, size: 18),
+      color: AppPalette.textSecondary,
+      tooltip: 'Delete model',
+      visualDensity: VisualDensity.compact,
+      onPressed: () => _confirmAndDelete(context, ref),
+    );
+  }
+
+  Future<void> _confirmAndDelete(BuildContext context, WidgetRef ref) async {
+    final theme = Theme.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete model?'),
+        content: Text('"${model.name}" will be removed from this computer. '
+            'You can download it again later.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style:
+                FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final ok =
+        await ref.read(modelDeleteControllerProvider.notifier).delete(model.name);
+    if (ok || !context.mounted) return;
+    final state = ref.read(modelDeleteControllerProvider);
+    final message = state is ModelDeleteFailed
+        ? state.message
+        : "Couldn't delete this model. Please try again.";
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 }

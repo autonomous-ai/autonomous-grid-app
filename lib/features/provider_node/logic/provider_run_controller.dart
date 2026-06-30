@@ -15,6 +15,13 @@ final providerRunControllerProvider =
     NotifierProvider<ProviderRunController, ProviderRunState>(
         ProviderRunController.new);
 
+/// What the running engine is serving (gguf or remote model id), or null when
+/// nothing is serving. Lets the model manager refuse to delete a model in use.
+final servingModelProvider = Provider<String?>((ref) {
+  final state = ref.watch(providerRunControllerProvider);
+  return state is ProviderRunActive ? state.model : null;
+});
+
 /// Base URL of the locally-running provider's OpenAI-compatible server, parsed
 /// from its run log (e.g. `http://localhost:8081`). Null when no local provider
 /// is serving or the port can't be read yet. Lets the Playground hit the local
@@ -52,16 +59,22 @@ class ProviderRunIdle extends ProviderRunState {
 
 /// Provider process is up, serving [grid]; [log] holds the latest streamed
 /// lines. [starting] is true until the first line arrives. [grid] lets the UI
-/// show "Engine running" only on the network actually being served.
+/// show "Engine running" only on the network actually being served. [model] is
+/// what's being served — the `--serve` gguf for the built-in engine, the remote
+/// model id for an external one — so the model manager can refuse to delete a
+/// gguf that's in use. Null when unknown (e.g. an engine adopted on restart
+/// whose run record carried no model).
 class ProviderRunActive extends ProviderRunState {
   const ProviderRunActive({
     required this.grid,
     required this.log,
     required this.starting,
+    this.model,
   });
   final String grid;
   final List<String> log;
   final bool starting;
+  final String? model;
 }
 
 class ProviderRunStopped extends ProviderRunState {
@@ -130,6 +143,9 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     state = ProviderRunActive(
       grid: gridId,
       starting: false,
+      // The record stores the advertised model name(s); good enough for the
+      // model manager's in-use guard (lenient match against the gguf).
+      model: record.models.isEmpty ? null : record.models.join(', '),
       log: log.isNotEmpty
           ? List.unmodifiable(log)
           : ['Resumed — engine serving ${record.models.join(', ')} on this grid.'],
@@ -151,6 +167,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '--name', _engineName,
       ],
       grid: network,
+      model: model,
     );
   }
 
@@ -171,6 +188,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '--name', _engineName,
       ],
       grid: network,
+      model: model,
     );
   }
 
@@ -180,7 +198,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
           : const [];
 
   Future<void> _start(List<String> args,
-      {required String grid, bool retried = false}) async {
+      {required String grid, String? model, bool retried = false}) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
@@ -199,7 +217,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     _grid = grid;
     _stopping = false;
     final log = <String>[];
-    state = ProviderRunActive(grid: grid, log: const [], starting: true);
+    state =
+        ProviderRunActive(grid: grid, log: const [], starting: true, model: model);
 
     _process = await service.start(args);
     _process!.lines.listen((line) {
@@ -208,8 +227,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         log.removeRange(0, log.length - _maxLogLines);
       }
       // Still "starting" until `join` exits 0 — the engine serves detached after.
-      state =
-          ProviderRunActive(grid: grid, log: List.unmodifiable(log), starting: true);
+      state = ProviderRunActive(
+          grid: grid, log: List.unmodifiable(log), starting: true, model: model);
     });
 
     final exitCode = await _process!.exitCode;
@@ -220,8 +239,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }
     if (exitCode == 0) {
       // `grid join` launched the engine in the background; it's serving now.
-      state =
-          ProviderRunActive(grid: grid, log: List.unmodifiable(log), starting: false);
+      state = ProviderRunActive(
+          grid: grid, log: List.unmodifiable(log), starting: false, model: model);
       return;
     }
 
@@ -232,7 +251,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     // stuck unable to start (and unable to stop a run the app never tracked).
     if (!retried && failure.toLowerCase().contains('already joined')) {
       await _leaveEngine(service, grid);
-      return _start(args, grid: grid, retried: true);
+      return _start(args, grid: grid, model: model, retried: true);
     }
     _grid = null;
     state = ProviderRunFailed(failure);
