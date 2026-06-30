@@ -10,8 +10,9 @@ import 'package:grid_app/infrastructure/state/grid_home_store.dart';
 import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
 
 class _FakeStore extends GridHomeStore {
-  _FakeStore(this._creds);
+  _FakeStore(this._creds, {this.serving = const []});
   CredentialsFile _creds;
+  final List<String> serving;
   bool cleared = false;
 
   @override
@@ -22,6 +23,10 @@ class _FakeStore extends GridHomeStore {
     cleared = true;
     _creds = CredentialsFile.empty;
   }
+
+  // Keep sign-out offline: never scan the real `~/.grid/run/engines`.
+  @override
+  List<String> listServingGrids(String engineName) => serving;
 }
 
 class _RecordingCli extends FakeGridCliService {
@@ -100,12 +105,39 @@ void main() {
   test('logout runs `grid logout` and resets to idle', () async {
     final cli = _RecordingCli();
     final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(cli)],
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(cli),
+        gridHomeStoreProvider.overrideWithValue(_FakeStore(CredentialsFile.empty)),
+      ],
     );
     addTearDown(container.dispose);
 
     await container.read(authControllerProvider.notifier).logout();
 
+    expect(cli.runs, contains(equals(const ['logout'])));
+    expect(container.read(authControllerProvider), isA<AuthIdle>());
+  });
+
+  test('logout stops a running engine before clearing the session', () async {
+    // A run record exists under `~/.grid` (stubbed): sign-out must `grid leave`
+    // it first so no engine keeps serving on the relay after logout.
+    final cli = _RecordingCli();
+    final store = _FakeStore(
+      const CredentialsFile(networks: [], sessionToken: 'tok'),
+      serving: const ['net'],
+    );
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(cli),
+        gridHomeStoreProvider.overrideWithValue(store),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(authControllerProvider.notifier).logout();
+
+    expect(cli.runs,
+        contains(equals(const ['leave', 'net', '--engine', 'grid-app'])));
     expect(cli.runs, contains(equals(const ['logout'])));
     expect(container.read(authControllerProvider), isA<AuthIdle>());
   });

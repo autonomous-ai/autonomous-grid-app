@@ -110,7 +110,9 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
       return;
     }
     if (key == _kQuit) {
-      windowManager.destroy();
+      // Route through the close handler (preventClose is on) so a running engine
+      // is stopped first, instead of destroying the window outright.
+      windowManager.close();
       return;
     }
     if (key.startsWith(_gridPrefix)) {

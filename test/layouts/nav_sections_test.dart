@@ -63,12 +63,12 @@ void main() {
     expect(consumer.isProvider, isFalse);
     expect(provider.isProvider, isTrue);
 
-    // An admin keeps the Admin label even without provider:poll (the bug:
+    // An admin keeps the Owner label even without provider:poll (the bug:
     // it used to fall back to "Consumer" because it read scopes, not roles).
     final admin = _network('grid-adm', 'admin',
         roles: const ['admin'], scopes: const ['network:sync']);
     expect(admin.role, NetworkRole.admin);
-    expect(admin.roleLabel, 'Admin');
+    expect(admin.roleLabel, 'Owner');
     expect(admin.isProvider, isFalse);
 
     final consumerRole = _network('grid-c2', 'c2',

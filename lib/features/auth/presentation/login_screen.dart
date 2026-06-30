@@ -40,9 +40,8 @@ class LoginScreen extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: switch (state) {
-              AuthAwaitingApproval(:final url, :final userCode) => _ApprovalView(
+              AuthAwaitingApproval(:final url) => _ApprovalView(
                   url: url,
-                  userCode: userCode,
                   onCancel: controller.cancel,
                 ),
               AuthStarting() || AuthSuccess() =>
@@ -108,12 +107,10 @@ class _SignIn extends StatelessWidget {
 class _ApprovalView extends StatelessWidget {
   const _ApprovalView({
     required this.url,
-    required this.userCode,
     required this.onCancel,
   });
 
   final String url;
-  final String userCode;
   final VoidCallback onCancel;
 
   @override
@@ -126,30 +123,10 @@ class _ApprovalView extends StatelessWidget {
         Text('Finish signing in', style: theme.textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
-          'We opened Grid sign-in in your browser. Check that it shows this '
-          'code, then approve there to continue:',
+          'We opened Grid sign-in in your browser. Approve the sign-in there '
+          'to continue.',
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 16),
-        // The code is the hero — it's what the user must match in the browser.
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: theme.colorScheme.outline),
-          ),
-          child: Center(
-            child: SelectableText(
-              userCode,
-              style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2),
-            ),
-          ),
         ),
         const SizedBox(height: 20),
         const Row(

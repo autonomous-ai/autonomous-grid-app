@@ -43,7 +43,6 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
 
     return SectionScaffold(
       title: 'Engines',
-      subtitle: network?.name,
       child: ListView(children: const [_ServeSection()]),
     );
   }
@@ -79,6 +78,12 @@ class _ServeSection extends ConsumerWidget {
         ],
       );
     }
+    // One engine at a time: if one is already serving another grid, say so and
+    // let the user stop it here first — don't show a Start form that would
+    // silently leave the running engine to start a new one.
+    if (run is ProviderRunActive && run.grid != network.networkId) {
+      return _EngineBusyElsewhere(runningGridId: run.grid);
+    }
     if (run is ProviderRunActive && run.grid == network.networkId) {
       return ProviderRunningCard(
           starting: run.starting, log: run.log, logHeight: 420);
@@ -112,21 +117,17 @@ class _ServeSection extends ConsumerWidget {
       children: [
         if (failedNote != null) failedNote,
         const _ServeIntro(),
-        const SizedBox(height: 16),
-        // Step 1 — set this computer up as a node (installs llama.cpp + anything
-        // else missing). Lives here so the engine prerequisites are visible up
-        // front, not buried in the model manager.
-        const NodeSetupCard(),
-        const SizedBox(height: 16),
-        // Steps 2 & 3 — download a model, then start serving it.
         _EngineBlock(
           icon: Icons.dns_outlined,
-          title: 'Serve a model',
+          title: 'LLama.cpp',
           subtitle: 'Download a model, then start the built-in engine',
           child: ServeLocalCard(network: network),
         ),
         const SizedBox(height: 16),
         _ExternalServers(network: network),
+        const SizedBox(height: 16),
+        const NodeSetupCard(),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -185,6 +186,65 @@ class _BuiltInUnavailableNote extends StatelessWidget {
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown when an engine is already serving a *different* grid. Only one engine
+/// runs at a time, so rather than a Start form that would silently stop it, this
+/// names the busy grid and offers a single Stop so the user is in control.
+class _EngineBusyElsewhere extends ConsumerWidget {
+  const _EngineBusyElsewhere({required this.runningGridId});
+
+  final String runningGridId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final runningName =
+        ref.watch(sessionProvider).byName(runningGridId)?.name ?? 'another grid';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.dns, color: Colors.green, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('An engine is already running on $runningName',
+                          style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 4),
+                      Text(
+                        'You can run an engine on only one grid at a time. Stop '
+                        'it to start one on this grid.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: () =>
+                    ref.read(providerRunControllerProvider.notifier).stop(),
+                icon: const Icon(Icons.stop),
+                label: Text('Stop engine on $runningName'),
               ),
             ),
           ],

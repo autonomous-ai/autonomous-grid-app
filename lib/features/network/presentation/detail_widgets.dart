@@ -128,49 +128,24 @@ class MetaRow extends StatelessWidget {
   }
 }
 
-/// Pills showing the viewer's role on a network. Admins also get the grid's
-/// visibility (Public / Private) so they can tell their grids apart at a glance.
-class RoleBadge extends StatelessWidget {
-  const RoleBadge({super.key, required this.network, this.compact = false});
+/// A single "Owner" pill for grids the viewer owns, shown next to the grid name
+/// in both the list and the detail header. Members/consumers get no badge —
+/// owning a grid is the only distinction worth surfacing here.
+class OwnerBadge extends StatelessWidget {
+  const OwnerBadge({super.key, required this.network});
 
   final NetworkCredential network;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 4,
-      children: [
-        _BadgePill(
-          label: network.roleLabel,
-          color: _roleColor(network.role),
-          compact: compact,
-        ),
-        // The role pill already says Public/Private for consumers/members, but
-        // an admin's pill says "Admin" — so surface the grid's visibility too.
-        if (network.role == NetworkRole.admin)
-          _BadgePill(
-            label: network.visibilityLabel,
-            color: _visibilityColor(network.isPublic),
-            compact: compact,
-          ),
-      ],
+    if (network.role != NetworkRole.admin) return const SizedBox.shrink();
+    return _BadgePill(
+      label: network.roleLabel, // 'Owner'
+      color: AppPalette.teal,
+      compact: true,
     );
   }
-
-  Color _roleColor(NetworkRole role) => switch (role) {
-        NetworkRole.admin => AppPalette.teal,
-        NetworkRole.provider => AppPalette.accent,
-        NetworkRole.consumer => _visibilityColor(true), // "Using" (green)
-        NetworkRole.member => _visibilityColor(false), // "Member" (muted)
-      };
 }
-
-/// Public grids read as "open" (green); private ones stay muted (grey). Green is
-/// used over the accent blue so the badge survives on the blue selected row.
-Color _visibilityColor(bool isPublic) =>
-    isPublic ? AppPalette.online : AppPalette.textSecondary;
 
 /// One rounded, tinted pill — the shared shape for role and visibility badges.
 class _BadgePill extends StatelessWidget {

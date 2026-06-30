@@ -100,14 +100,12 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
     if (models != null && !hasUsableModel) {
       return SectionScaffold(
         title: 'Playground',
-        subtitle: network.name,
         child: _NoModelYet(canManage: network.canManageProvider),
       );
     }
 
     return SectionScaffold(
       title: 'Playground',
-      subtitle: network.name,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

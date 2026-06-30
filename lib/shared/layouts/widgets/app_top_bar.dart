@@ -6,6 +6,9 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
+import '../../../features/network/logic/grid_overview_provider.dart';
+import '../../../features/provider_node/logic/provider_run_controller.dart';
+import '../../../infrastructure/state/models/network_credential.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
 
@@ -40,13 +43,14 @@ class AppTopBar extends ConsumerWidget {
   }
 }
 
-class _Account extends StatelessWidget {
+class _Account extends ConsumerWidget {
   const _Account({required this.email});
   final String email;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final grid = ref.watch(selectedNetworkProvider);
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,15 +58,33 @@ class _Account extends StatelessWidget {
         Text(email,
             style: theme.textTheme.bodyMedium?.copyWith(
                 color: AppPalette.textPrimary, fontWeight: FontWeight.w500)),
-        Row(
-          children: [
-            const StatusDot(color: AppPalette.online, size: 7),
-            const SizedBox(width: 6),
-            Text('Connected',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppPalette.textSecondary)),
-          ],
-        ),
+        if (grid != null) _GridLine(grid: grid),
+      ],
+    );
+  }
+}
+
+/// The selected grid shown under the account email — its name with a live
+/// Running / Stopped dot (shared cache with the list + detail), so the line says
+/// something true instead of a blanket "Connected".
+class _GridLine extends ConsumerWidget {
+  const _GridLine({required this.grid});
+  final NetworkCredential grid;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final state =
+        ref.watch(gridOverviewForProvider(grid.networkId)).asData?.value.state;
+    final running = state?.toLowerCase() == 'running';
+    return Row(
+      children: [
+        StatusDot(
+            color: running ? AppPalette.online : AppPalette.offline, size: 7),
+        const SizedBox(width: 6),
+        Text(grid.name,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: AppPalette.textSecondary)),
       ],
     );
   }
@@ -81,7 +103,10 @@ class _AccountMenu extends ConsumerWidget {
       tooltip: name,
       offset: const Offset(0, 42),
       onSelected: (value) async {
-        if (value == 'logout' && await _confirmSignOut(context)) {
+        if (value != 'logout') return;
+        final engineRunning =
+            ref.read(providerRunControllerProvider) is ProviderRunActive;
+        if (await _confirmSignOut(context, engineRunning: engineRunning)) {
           await ref.read(authControllerProvider.notifier).logout();
         }
       },
@@ -114,13 +139,16 @@ class _AccountMenu extends ConsumerWidget {
     );
   }
 
-  Future<bool> _confirmSignOut(BuildContext context) async {
+  Future<bool> _confirmSignOut(BuildContext context,
+      {required bool engineRunning}) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Sign out?'),
-        content: const Text(
-            "You'll be signed out and need to sign in again."),
+        content: Text(engineRunning
+            ? "You'll be signed out and need to sign in again. Your running "
+                'engine will be stopped.'
+            : "You'll be signed out and need to sign in again."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

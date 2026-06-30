@@ -10,7 +10,8 @@ import 'default_grid_name.dart';
 
 /// The `POST /v1/grid/managed-networks` call, behind a provider so tests can
 /// swap in a fake without a real HTTP round-trip. Defaults to the live client.
-typedef ManagedNetworkCreateFn = Future<(ManagedNetwork?, String?)> Function({
+typedef ManagedNetworkCreateFn
+    = Future<(ManagedNetwork?, ManagedNetworkError?)> Function({
   required String apiUrl,
   required String sessionToken,
   required String name,
@@ -89,10 +90,16 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
       name: trimmed,
       type: type,
     );
-    log.finish(logId, exitCode: error == null ? 200 : null, error: error);
+    // Debug tab gets the HTTP status + raw server body (debugDetail); the dialog
+    // shows only the friendly message.
+    log.finish(
+      logId,
+      exitCode: error?.statusCode ?? (network != null ? 200 : null),
+      error: error?.debugDetail,
+    );
 
     if (network == null) {
-      state = CreateNetworkFailed(error ?? 'Could not create the grid.');
+      state = CreateNetworkFailed(error?.message ?? 'Could not create the grid.');
       return;
     }
 

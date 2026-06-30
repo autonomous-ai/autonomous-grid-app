@@ -16,13 +16,15 @@ const _args = [
   '--name', 'grid-app',
 ];
 
-/// Stubs the run-state reads so [ProviderRunController.reconcile] can be driven
-/// without touching `~/.grid`.
+/// Stubs the run-state reads so [ProviderRunController.reconcile] and
+/// [ProviderRunController.shutdownServing] can be driven without touching
+/// `~/.grid`.
 class _StubHomeStore extends GridHomeStore {
-  _StubHomeStore({this.record, this.log = const []});
+  _StubHomeStore({this.record, this.log = const [], this.serving = const []});
 
   final EngineRunRecord? record;
   final List<String> log;
+  final List<String> serving;
 
   @override
   EngineRunRecord? readEngineRun(String gridId, String engineName) => record;
@@ -31,6 +33,21 @@ class _StubHomeStore extends GridHomeStore {
   List<String> readEngineRunLog(String gridId, String engineName,
           {int maxLines = 400}) =>
       log;
+
+  @override
+  List<String> listServingGrids(String engineName) => serving;
+}
+
+/// A fake CLI that records every `run` call so tests can assert which engines
+/// were left (`grid leave …`).
+class _RecordingCli extends FakeGridCliService {
+  final List<List<String>> runs = [];
+
+  @override
+  Future<CliResult> run(List<String> args) {
+    runs.add(args);
+    return super.run(args);
+  }
 }
 
 ProviderContainer _containerWith(GridCliService? cli, {GridHomeStore? store}) {
@@ -215,6 +232,86 @@ void main() {
 
     await notifier.stop();
     expect(container.read(providerRunControllerProvider), isA<ProviderRunStopped>());
+  });
+
+  test('starting on a new grid leaves the engine on the previous grid',
+      () async {
+    // Only one engine at a time: starting on gridB must `grid leave` gridA
+    // first, so the detached gridA engine isn't orphaned (untracked, still
+    // serving via the relay).
+    const argsB = [
+      'join', 'gridB',
+      '--at', 'http://x/v1',
+      '-m', 'm',
+      '--name', 'grid-app',
+    ];
+    final cli = _RecordingCli()
+      ..stubStart(
+        argsB,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Joining engine grid-app...')],
+      );
+    final container = _containerWith(
+      cli,
+      store: _StubHomeStore(
+        record: EngineRunRecord(
+            engineId: 'grid-app', gridId: 'gridA', models: const ['m'], pid: io.pid),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(providerRunControllerProvider.notifier);
+    notifier.reconcile('gridA');
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
+
+    await notifier.startExternal(
+        network: 'gridB', endpoint: 'http://x/v1', model: 'm');
+
+    expect(cli.runs,
+        contains(equals(const ['leave', 'gridA', '--engine', 'grid-app'])));
+    final state = container.read(providerRunControllerProvider);
+    expect(state, isA<ProviderRunActive>());
+    expect((state as ProviderRunActive).grid, 'gridB');
+  });
+
+  test('shutdownServing leaves the in-session engine and goes idle', () async {
+    final cli = _RecordingCli();
+    final container = _containerWith(
+      cli,
+      store: _StubHomeStore(
+        record: EngineRunRecord(
+            engineId: 'grid-app', gridId: 'net', models: const ['m'], pid: io.pid),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(providerRunControllerProvider.notifier);
+    notifier.reconcile('net');
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
+
+    await notifier.shutdownServing();
+
+    expect(
+        cli.runs, contains(equals(const ['leave', 'net', '--engine', 'grid-app'])));
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunIdle>());
+  });
+
+  test('shutdownServing leaves a leftover engine found under ~/.grid', () async {
+    // No engine started this session, but a run record exists on disk (e.g. a
+    // prior session we never reconciled). Sign-out/close must still leave it.
+    final cli = _RecordingCli();
+    final container = _containerWith(
+      cli,
+      store: _StubHomeStore(serving: const ['ghost']),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(providerRunControllerProvider.notifier).shutdownServing();
+
+    expect(cli.runs,
+        contains(equals(const ['leave', 'ghost', '--engine', 'grid-app'])));
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunIdle>());
   });
 
   test('start self-heals when a stale engine blocks the join', () async {

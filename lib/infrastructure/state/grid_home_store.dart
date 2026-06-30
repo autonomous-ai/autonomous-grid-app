@@ -101,6 +101,24 @@ class GridHomeStore {
     }
   }
 
+  /// Grid ids that currently have a run record for engine [engineName] under
+  /// `~/.grid/run/engines/<grid_id>/<engine>.json`. Read before sign-out / app
+  /// close so we can `grid leave` anything still serving — even an engine
+  /// adopted from a prior session the app never reconciled this run. Lenient: a
+  /// missing dir or an unreadable record is skipped, never thrown.
+  List<String> listServingGrids(String engineName) {
+    final dir = GridPaths.runEnginesDir;
+    if (!dir.existsSync()) return const [];
+    final out = <String>[];
+    for (final entity in dir.listSync()) {
+      if (entity is! Directory) continue;
+      final gridId = entity.path.split(Platform.pathSeparator).last;
+      if (gridId.isEmpty) continue;
+      if (readEngineRun(gridId, engineName) != null) out.add(gridId);
+    }
+    return out;
+  }
+
   /// Tail of a resumed engine's log (`<engine>.log`), so the running card can
   /// show real context after a restart. Empty when missing/unreadable.
   List<String> readEngineRunLog(String gridId, String engineName,

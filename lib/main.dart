@@ -23,6 +23,11 @@ Future<void> main() async {
 
   await windowManager.ensureInitialized();
 
+  // Intercept the close button so a running engine can be stopped first (see
+  // WindowLifecycleScope.onWindowClose). Without this the window closes
+  // immediately and the detached engine is left serving on the relay.
+  await windowManager.setPreventClose(true);
+
   const options = WindowOptions(
     size: Size(1100, 720),
     minimumSize: Size(880, 560),

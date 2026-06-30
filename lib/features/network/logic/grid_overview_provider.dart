@@ -13,13 +13,29 @@ import '../../auth/logic/session_controller.dart';
 ///
 /// Throws [GridOverviewUnavailable] (never a raw socket error) so the detail
 /// pane can render a clean "offline" state instead of a stack trace.
+/// Overview for one specific grid, keyed by network id. A family so the grids
+/// list can probe each grid's live state in parallel — independent of which one
+/// is selected. The selected grid shares this exact cache via
+/// [gridOverviewProvider], so the list dot and the detail header never disagree.
+final gridOverviewForProvider = FutureProvider.autoDispose
+    .family<GridOverview, String>((ref, networkId) async {
+  final match =
+      ref.watch(sessionProvider).networks.where((n) => n.networkId == networkId);
+  if (match.isEmpty) {
+    throw const GridOverviewUnavailable('Grid not found.');
+  }
+  return _fetchOverview(match.first);
+});
+
+/// Overview for the currently selected grid — the detail pane's convenience view
+/// over [gridOverviewForProvider].
 final gridOverviewProvider =
     FutureProvider.autoDispose<GridOverview>((ref) async {
   final network = ref.watch(selectedNetworkProvider);
   if (network == null) {
     throw const GridOverviewUnavailable('No grid selected.');
   }
-  return _fetchOverview(network);
+  return ref.watch(gridOverviewForProvider(network.networkId).future);
 });
 
 class GridOverviewUnavailable implements Exception {

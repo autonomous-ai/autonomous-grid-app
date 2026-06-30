@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../shared/layouts/tray_controller.dart';
 import '../shared/theme/app_theme.dart';
 import 'root_view.dart';
+import 'window_lifecycle_scope.dart';
 
 class GridApp extends StatelessWidget {
   const GridApp({super.key});
@@ -15,7 +16,7 @@ class GridApp extends StatelessWidget {
       themeMode: ThemeMode.dark,
       theme: buildAppTheme(),
       darkTheme: buildAppTheme(),
-      home: const TrayScope(child: RootView()),
+      home: const WindowLifecycleScope(child: TrayScope(child: RootView())),
     );
   }
 }

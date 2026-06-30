@@ -187,6 +187,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       return;
     }
 
+    // Only one engine at a time: an engine still serving a *different* grid
+    // would be orphaned (it keeps serving via the relay, untracked) once we
+    // rebind to the new grid below — so leave it first. Skipped on the retry
+    // pass (same grid) so the "already joined" self-heal isn't double-handled.
+    if (!retried && _grid != null && _grid != grid) {
+      await _leaveEngine(service, _grid!);
+    }
+
     _service = service;
     _grid = grid;
     _stopping = false;
@@ -223,7 +231,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     // `--name`. Drop it with `grid leave` and retry once, so the user isn't
     // stuck unable to start (and unable to stop a run the app never tracked).
     if (!retried && failure.toLowerCase().contains('already joined')) {
-      await service.run(['leave', grid, '--engine', _engineName]);
+      await _leaveEngine(service, grid);
       return _start(args, grid: grid, retried: true);
     }
     _grid = null;
@@ -251,9 +259,40 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     final grid = _grid;
     _grid = null;
     if (service != null && grid != null) {
-      await service.run(['leave', grid, '--engine', _engineName]);
+      await _leaveEngine(service, grid);
     }
     state = const ProviderRunStopped();
+  }
+
+  /// Stop every engine this app may be serving — the one launched/adopted this
+  /// session plus any detached engine still recorded under `~/.grid` (e.g. from
+  /// a prior session we never reconciled) — then settle back to idle. Called
+  /// before sign-out and on app close so no engine keeps serving on the relay
+  /// without the app to manage it. Best-effort and time-boxed: a hung or failed
+  /// `grid leave` can't block quitting or signing out.
+  Future<void> shutdownServing() async {
+    _stopping = true;
+    _process?.kill();
+    _process = null;
+
+    final service = ref.read(gridCliServiceProvider);
+    if (service != null) {
+      final grids = <String>{
+        if (_grid != null) _grid!,
+        ...ref.read(gridHomeStoreProvider).listServingGrids(_engineName),
+      };
+      for (final grid in grids) {
+        try {
+          await _leaveEngine(service, grid).timeout(const Duration(seconds: 6));
+        } on Object {
+          // Best-effort: a failed/slow leave must not block the caller.
+        }
+      }
+    }
+
+    _grid = null;
+    _reconciledGrids.clear();
+    state = const ProviderRunIdle();
   }
 
   /// On dispose, leave any still-serving detached engine so none is left behind
@@ -264,7 +303,12 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     final grid = _grid;
     _grid = null;
     if (service != null && grid != null) {
-      unawaited(service.run(['leave', grid, '--engine', _engineName]));
+      unawaited(_leaveEngine(service, grid));
     }
   }
+
+  /// `grid leave <grid> --engine grid-app` — unregisters and kills the detached
+  /// engine serving [grid]. One place so every stop path stays consistent.
+  Future<void> _leaveEngine(GridCliService service, String grid) =>
+      service.run(['leave', grid, '--engine', _engineName]);
 }

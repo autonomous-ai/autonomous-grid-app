@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/create_network_controller.dart';
+import 'package:grid_app/infrastructure/api/managed_network_client.dart';
 import 'package:grid_app/infrastructure/api/models/managed_network.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
@@ -23,7 +24,7 @@ const _created = ManagedNetwork(
   plan: 'free',
 );
 
-ManagedNetworkCreateFn _stubCreate((ManagedNetwork?, String?) result) {
+ManagedNetworkCreateFn _stubCreate((ManagedNetwork?, ManagedNetworkError?) result) {
   return ({
     required String apiUrl,
     required String sessionToken,
@@ -36,7 +37,7 @@ ManagedNetworkCreateFn _stubCreate((ManagedNetwork?, String?) result) {
 /// Like [_stubCreate] but records the name passed to the create call.
 ManagedNetworkCreateFn _recordCreate(
   List<String> names,
-  (ManagedNetwork?, String?) result,
+  (ManagedNetwork?, ManagedNetworkError?) result,
 ) {
   return ({
     required String apiUrl,
@@ -119,7 +120,8 @@ void main() {
 
   test('surfaces the API error and stays failed', () async {
     final container = _container(
-      create: _stubCreate((null, 'You already own a network with this name.')),
+      create: _stubCreate(
+          (null, const ManagedNetworkError('You already own a network with this name.'))),
       cli: FakeGridCliService(),
     );
 

@@ -111,8 +111,8 @@ class _LogTile extends StatelessWidget {
               padding: const EdgeInsets.only(left: 26),
               child: SelectableText(
                 log.error!,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error, fontFamily: 'monospace'),
               ),
             ),
           ],

@@ -86,7 +86,7 @@ class NetworkCredential {
   /// avoids the words Public/Private, which are reserved for grid *visibility*
   /// ([visibilityLabel]) — reusing them for roles read as a settings collision.
   String get roleLabel => switch (role) {
-        NetworkRole.admin => 'Admin',
+        NetworkRole.admin => 'Owner',
         NetworkRole.provider => 'Sharing',
         NetworkRole.consumer => 'Using',
         NetworkRole.member => 'Member',

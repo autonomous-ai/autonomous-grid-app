@@ -5,6 +5,33 @@ import 'dart:io';
 import 'models/managed_network.dart';
 import 'models/managed_network_member.dart';
 
+/// A failed managed-network call. [message] is the friendly, plain-language line
+/// for the UI; [statusCode] and [body] carry the raw detail the Debug tab shows,
+/// so an opaque failure (e.g. a 502) isn't just "Error 502." with nothing to go on.
+class ManagedNetworkError {
+  const ManagedNetworkError(this.message, {this.statusCode, this.body});
+
+  /// User-facing reason, shown in the create dialog.
+  final String message;
+
+  /// HTTP status when the server answered; null for transport failures
+  /// (timeout, unreachable host) where there was no response.
+  final int? statusCode;
+
+  /// Raw response body when the server sent one — often the only clue for a
+  /// gateway error. Null/empty for transport failures.
+  final String? body;
+
+  /// The Debug-tab line: the friendly message plus any raw server body (clipped),
+  /// so the log shows exactly what came back rather than a one-word code.
+  String get debugDetail {
+    final raw = body?.trim();
+    if (raw == null || raw.isEmpty || raw == message) return message;
+    final clipped = raw.length > 1000 ? '${raw.substring(0, 1000)}…' : raw;
+    return '$message\n$clipped';
+  }
+}
+
 /// Control-plane call to `POST /v1/grid/managed-networks`, authenticated with
 /// the GridSession bearer (the `session_token` from `~/.grid/credentials.toml`).
 ///
@@ -16,7 +43,7 @@ class ManagedNetworkClient {
   /// The endpoint path appended to the control-plane base URL.
   static const String _path = 'v1/grid/managed-networks';
 
-  static Future<(ManagedNetwork?, String?)> create({
+  static Future<(ManagedNetwork?, ManagedNetworkError?)> create({
     required String apiUrl,
     required String sessionToken,
     required String name,
@@ -37,15 +64,28 @@ class ManagedNetworkClient {
           await request.close().timeout(const Duration(seconds: 30));
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return (null, _errorFor(response.statusCode, body));
+        return (
+          null,
+          ManagedNetworkError(
+            _errorFor(response.statusCode, body),
+            statusCode: response.statusCode,
+            body: body,
+          ),
+        );
       }
       return (ManagedNetwork.fromJson(jsonDecode(body) as Map<String, dynamic>), null);
     } on TimeoutException {
-      return (null, "The server didn't respond in time. Try again.");
+      return (
+        null,
+        const ManagedNetworkError("The server didn't respond in time. Try again.")
+      );
     } on SocketException catch (e) {
-      return (null, "Couldn't reach the Grid control plane: ${e.message}");
+      return (
+        null,
+        ManagedNetworkError("Couldn't reach the Grid control plane: ${e.message}")
+      );
     } on Object catch (e) {
-      return (null, "Couldn't create the network: $e");
+      return (null, ManagedNetworkError("Couldn't create the network: $e"));
     } finally {
       client.close(force: true);
     }
@@ -195,6 +235,7 @@ class ManagedNetworkClient {
       402 => detail ?? "You've reached your plan's network limit.",
       409 => detail ?? 'You already own a network with this name.',
       422 => detail ?? 'Invalid name or network type.',
+      502 || 503 => detail ?? 'The grid service is busy right now. Try again.',
       _ => detail ?? 'Error $status.',
     };
   }

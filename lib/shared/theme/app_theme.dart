@@ -11,7 +11,7 @@ abstract final class AppPalette {
 
   static const accent = Color(0xFF4C6EF5); // toggle / selected row (blue)
   static const accentMuted = Color(0xFF2F4FB8);
-  // "Admin" badge — a teal that stays legible on the blue selected row, where
+  // "Owner" badge — a teal that stays legible on the blue selected row, where
   // the accent blue would vanish into the background.
   static const teal = Color(0xFF2DD4BF);
   static const online = Color(0xFF34C759); // green "connected" dot

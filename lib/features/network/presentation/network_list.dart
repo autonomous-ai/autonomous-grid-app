@@ -5,7 +5,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../auth/logic/session_controller.dart';
-import '../logic/network_status.dart';
+import '../logic/grid_overview_provider.dart';
 import 'create_network_dialog.dart';
 import 'detail_widgets.dart';
 
@@ -130,7 +130,7 @@ class _GroupHeader extends StatelessWidget {
   }
 }
 
-class _NetworkTile extends StatelessWidget {
+class _NetworkTile extends ConsumerWidget {
   const _NetworkTile({
     required this.network,
     required this.selected,
@@ -142,20 +142,17 @@ class _NetworkTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final conn = networkConn(network, DateTime.now());
-    final dotColor = switch (conn) {
-      NetworkConn.connected => AppPalette.online,
-      NetworkConn.expiringSoon => AppPalette.warn,
-      NetworkConn.expired => AppPalette.offline,
-    };
-    // A plain-language status, not the raw signaling host — beginners don't need
-    // (or want) infra URLs in the list.
-    final subtitle = switch (conn) {
-      NetworkConn.connected => 'Active',
-      NetworkConn.expiringSoon => 'Access expiring soon',
-      NetworkConn.expired => 'Access expired',
-    };
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Same operational state the detail header shows (shared provider cache):
+    // green when a node is serving the grid, muted otherwise — stopped, still
+    // loading, or unreachable. Keeps the list dot honest with Running / Stopped.
+    final state = ref
+        .watch(gridOverviewForProvider(network.networkId))
+        .asData
+        ?.value
+        .state;
+    final running = state?.toLowerCase() == 'running';
+    final dotColor = running ? AppPalette.online : AppPalette.offline;
     final fg = selected ? Colors.white : AppPalette.textPrimary;
 
     return Padding(
@@ -173,28 +170,15 @@ class _NetworkTile extends StatelessWidget {
                 StatusDot(color: dotColor),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(network.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: fg,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500)),
-                      const SizedBox(height: 2),
-                      Text(subtitle,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: selected
-                                  ? Colors.white70
-                                  : AppPalette.textSecondary,
-                              fontSize: 12)),
-                    ],
-                  ),
+                  child: Text(network.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: fg,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
                 ),
                 const SizedBox(width: 8),
-                RoleBadge(network: network, compact: true),
+                OwnerBadge(network: network),
               ],
             ),
           ),

@@ -5,7 +5,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
-import '../logic/network_status.dart';
+import '../logic/grid_overview_provider.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
 import 'grid_overview_card.dart';
@@ -21,10 +21,9 @@ class NetworkDetail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final conn = networkConn(network, DateTime.now());
     final header = Padding(
       padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
-      child: _Header(network: network, conn: conn),
+      child: _Header(network: network),
     );
 
     // Member management is owner-only — gate the tab on the admin role.
@@ -92,15 +91,20 @@ class _OverviewTab extends StatelessWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.network, required this.conn});
+class _Header extends ConsumerWidget {
+  const _Header({required this.network});
   final NetworkCredential network;
-  final NetworkConn conn;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final (label, color) = _status(conn);
+    // The grid's live operational state from its API: "running" when a node is
+    // serving it, anything else (stopped, still loading, or unreachable) reads
+    // as Stopped. One operational vocabulary — never the access-token state.
+    final state = ref.watch(gridOverviewProvider).asData?.value.state;
+    final running = state?.toLowerCase() == 'running';
+    final label = running ? 'Running' : 'Stopped';
+    final color = running ? AppPalette.online : AppPalette.offline;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -112,7 +116,7 @@ class _Header extends StatelessWidget {
                       ?.copyWith(fontWeight: FontWeight.w600, fontSize: 22)),
             ),
             const SizedBox(width: 12),
-            RoleBadge(network: network),
+            OwnerBadge(network: network),
           ],
         ),
         const SizedBox(height: 8),
@@ -126,14 +130,6 @@ class _Header extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  (String, Color) _status(NetworkConn conn) {
-    return switch (conn) {
-      NetworkConn.connected => ('Connected', AppPalette.online),
-      NetworkConn.expiringSoon => ('Expiring soon', AppPalette.warn),
-      NetworkConn.expired => ('Access expired', AppPalette.offline),
-    };
   }
 }
 

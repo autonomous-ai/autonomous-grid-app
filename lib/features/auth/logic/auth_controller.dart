@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
 import '../../network/logic/create_network_controller.dart';
+import '../../provider_node/logic/provider_run_controller.dart';
 import 'auth_state.dart';
 import 'device_login_parser.dart';
 import 'session_controller.dart';
@@ -94,6 +95,11 @@ class AuthController extends Notifier<AuthState> {
   /// credentials directly when the CLI is unavailable — `~/.grid` is the app's
   /// source of truth either way, so the app drops to the login screen.
   Future<void> logout() async {
+    // Stop any engine first so signing out never leaves one serving on the
+    // relay with no account behind it. Best-effort and time-boxed inside the
+    // controller, so it can't block sign-out.
+    await ref.read(providerRunControllerProvider.notifier).shutdownServing();
+
     final service = ref.read(gridCliServiceProvider);
     if (service != null) {
       await service.run(['logout']);
