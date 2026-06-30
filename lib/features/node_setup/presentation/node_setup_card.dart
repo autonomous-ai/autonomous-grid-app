@@ -8,8 +8,8 @@ import '../logic/node_setup_config.dart';
 import '../logic/node_setup_controller.dart';
 import '../logic/node_setup_plan.dart';
 
-/// "This computer as a node" — detects what inference this machine can already
-/// do, previews the gap-filling install/download plan, and runs it on one click
+/// "Set up this computer to run AI" — detects what inference this machine can
+/// already do, previews the gap-filling install/download plan, and runs it on one click
 /// with a live log. The idle view is driven by detected capabilities; once
 /// started, the [NodeSetupController] state takes over.
 class NodeSetupCard extends ConsumerWidget {
@@ -28,9 +28,7 @@ class NodeSetupCard extends ConsumerWidget {
 
     return Card(
       child: Padding(
-        // Flush horizontal inset — content runs to the card's edges for a
-        // tighter, edge-aligned look; vertical padding keeps top/bottom air.
-        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -38,7 +36,7 @@ class NodeSetupCard extends ConsumerWidget {
               children: [
                 const Icon(Icons.hub_outlined),
                 const SizedBox(width: 8),
-                Text('This computer as a node',
+                Text('Set up this computer to run AI',
                     style: Theme.of(context).textTheme.titleMedium),
               ],
             ),

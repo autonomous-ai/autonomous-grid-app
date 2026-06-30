@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/widgets/advertise_as_field.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
 import '../logic/llama_install_controller.dart';
@@ -95,15 +96,6 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
             ),
         ] else ...[
           ..._serveControls(names, selected),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => showModelManager(context),
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('Manage models'),
-            ),
-          ),
         ],
       ],
     );
@@ -123,22 +115,29 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
           onChanged: (value) => setState(() => _model = value),
         ),
         const SizedBox(height: 12),
-        TextField(
+        AdvertiseAsField(
           controller: _advertise,
-          decoration: const InputDecoration(
-            labelText: 'Display name',
-            helperText: 'The name others on the grid will see. Edit if you like.',
-            hintText: 'Qwen3.6-35B-A3B',
-            border: OutlineInputBorder(),
-          ),
+          hintText: 'Qwen3.6-35B-A3B',
         ),
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: () => _start(selected),
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Start engine'),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: () => _start(selected),
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Start engine'),
+              ),
+              TextButton.icon(
+                onPressed: () => showModelManager(context),
+                icon: const Icon(Icons.tune, size: 18),
+                label: const Text('Manage models'),
+              ),
+            ],
           ),
         ),
       ];

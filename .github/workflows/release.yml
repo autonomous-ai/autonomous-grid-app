@@ -12,7 +12,7 @@ name: release
 #   git tag v0.1.2 && git push origin v0.1.2
 #
 # Required repo secrets (Settings -> Secrets and variables -> Actions):
-#   CLI_REPO_TOKEN              PAT with read access to autonomous-ai/autonomous-grid-cli
+#   CLI_REPO_TOKEN              PAT with read access to kelvin6868/super-grid-tmp
 #   APPLE_CERTIFICATE_BASE64    base64 of the "Developer ID Application" .p12
 #   APPLE_CERTIFICATE_PASSWORD  password used when exporting that .p12
 #   APPLE_SIGNING_IDENTITY      "Developer ID Application: <Name> (TEAMID)"
@@ -58,7 +58,7 @@ jobs:
       - name: Checkout grid CLI (sidecar source)
         uses: actions/checkout@v4
         with:
-          repository: autonomous-ai/autonomous-grid-cli
+          repository: kelvin6868/super-grid-tmp
           token: ${{ secrets.CLI_REPO_TOKEN }}
           path: autonomous-grid-cli
 

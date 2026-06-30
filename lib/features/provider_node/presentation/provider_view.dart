@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../models/logic/advertise_name.dart';
@@ -139,11 +140,16 @@ class _ServeIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Text(
-      "Share this computer's AI with your grid in three steps: "
-      '1) set it up, 2) download a model, 3) start serving.',
-      style: theme.textTheme.bodyMedium
-          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Text(
+          "Share this computer's AI with your grid in three steps: "
+          '1) set it up, 2) download a model, 3) start serving.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      ),
     );
   }
 }
@@ -199,12 +205,18 @@ class _ExternalServers extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final backends = ref.watch(backendsProvider).asData?.value ?? const [];
-    final detected = backends.where((b) => b.isExternal).toList();
+    final backendsAsync = ref.watch(backendsProvider);
+    final detected =
+        backendsAsync.asData?.value.where((b) => b.isExternal).toList() ??
+            const <DetectedBackend>[];
+    // No data yet means we're still probing the machine — show that we're
+    // looking so the empty list doesn't read as "nothing here".
+    final isScanning = backendsAsync.isLoading && !backendsAsync.hasValue;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (isScanning) const _ScanningForServersNote(),
         for (final backend in detected) ...[
           _ExternalServerBlock(
             // Keyed by kind so each framework keeps its own form state across
@@ -213,7 +225,7 @@ class _ExternalServers extends ConsumerWidget {
             network: network,
             icon: Icons.dns_outlined,
             title: backend.label,
-            subtitle: 'Detected on this machine · ${_backendSubtitle(backend)}',
+            subtitle: _backendSubtitle(backend),
             initialEndpoint: backend.baseUrl,
             initialModel: backend.models.isEmpty ? '' : backend.models.first,
             initialAdvertise: backend.models.isEmpty
@@ -229,8 +241,8 @@ class _ExternalServers extends ConsumerWidget {
           icon: Icons.lan_outlined,
           title: 'Connect your own server',
           subtitle: detected.isEmpty
-              ? 'Optional — only if you already run your own OpenAI-compatible server'
-              : 'Or point at an OpenAI-compatible server running on another machine',
+              ? 'Optional — only if you already run your own AI server (OpenAI-compatible)'
+              : 'Or point at an AI server running on another computer (OpenAI-compatible)',
         ),
       ],
     );
@@ -244,6 +256,36 @@ String _backendSubtitle(DetectedBackend backend) {
   final models =
       count == 0 ? 'no models reported' : '$count model${count == 1 ? '' : 's'}';
   return '$host · $models';
+}
+
+/// A quiet "still looking" line shown while we probe this computer for running
+/// AI engines (Ollama, LM Studio, …), so the not-yet-populated list doesn't read
+/// as "nothing found" in the first second or two.
+class _ScanningForServersNote extends StatelessWidget {
+  const _ScanningForServersNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Looking for AI engines on this computer…',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// A titled engine block — a card with an icon + title header so the serve paths
@@ -267,7 +309,7 @@ class _EngineBlock extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -370,9 +412,9 @@ class _ExternalServerBlockState extends ConsumerState<_ExternalServerBlock> {
   }
 }
 
-/// The external OpenAI-compatible endpoint form body: Base URL, Model and
-/// Display name fields over a Start button. The controllers stay the source of
-/// truth so [onStart] reads them; [suggestedModels] picks the Model field shape.
+/// The external server form body: Server address, Model and Advertise-as fields
+/// over a Start button. The controllers stay the source of truth so [onStart]
+/// reads them; [suggestedModels] picks the Model field shape.
 class _ServerForm extends StatelessWidget {
   const _ServerForm({
     required this.endpoint,
@@ -396,7 +438,7 @@ class _ServerForm extends StatelessWidget {
         TextField(
           controller: endpoint,
           decoration: const InputDecoration(
-            labelText: 'Base URL',
+            labelText: 'Server address',
             hintText: 'http://192.168.1.10:8080/v1',
             border: OutlineInputBorder(),
           ),
@@ -404,13 +446,10 @@ class _ServerForm extends StatelessWidget {
         const SizedBox(height: 12),
         _ModelField(model: model, suggestedModels: suggestedModels),
         const SizedBox(height: 12),
-        TextField(
+        AdvertiseAsField(
           controller: advertise,
-          decoration: const InputDecoration(
-            labelText: 'Display name (optional)',
-            hintText: 'mac-studio',
-            border: OutlineInputBorder(),
-          ),
+          hintText: 'qwen3-7b',
+          optional: true,
         ),
         const SizedBox(height: 16),
         Align(
