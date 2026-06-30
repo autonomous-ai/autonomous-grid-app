@@ -33,7 +33,7 @@ class AppTopBar extends ConsumerWidget {
         padding: EdgeInsets.only(left: leftInset, right: 12),
         child: Row(
           children: [
-            _Account(email: email),
+            const _Account(),
             const Spacer(),
             _AccountMenu(name: session.user['name'] as String? ?? email, email: email),
           ],
@@ -43,32 +43,25 @@ class AppTopBar extends ConsumerWidget {
   }
 }
 
+/// The active grid shown at the left of the title bar — name + live
+/// Running / Stopped dot. The account email lives in the avatar menu now, so the
+/// bar stays uncluttered while still saying which grid you're working in.
 class _Account extends ConsumerWidget {
-  const _Account({required this.email});
-  final String email;
+  const _Account();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final grid = ref.watch(selectedNetworkProvider);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(email,
-            style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppPalette.textPrimary, fontWeight: FontWeight.w500)),
-        if (grid != null) _GridLine(grid: grid),
-      ],
-    );
+    if (grid == null) return const SizedBox.shrink();
+    return _CurrentGridChip(grid: grid);
   }
 }
 
-/// The selected grid shown under the account email — its name with a live
-/// Running / Stopped dot (shared cache with the list + detail), so the line says
-/// something true instead of a blanket "Connected".
-class _GridLine extends ConsumerWidget {
-  const _GridLine({required this.grid});
+/// The active grid as a prominent pill in the title bar — a live Running /
+/// Stopped dot beside the grid name (shared cache with the list + detail), so
+/// you always see which grid you're working in, and whether it's serving.
+class _CurrentGridChip extends ConsumerWidget {
+  const _CurrentGridChip({required this.grid});
   final NetworkCredential grid;
 
   @override
@@ -77,15 +70,28 @@ class _GridLine extends ConsumerWidget {
     final state =
         ref.watch(gridOverviewForProvider(grid.networkId)).asData?.value.state;
     final running = state?.toLowerCase() == 'running';
-    return Row(
-      children: [
-        StatusDot(
-            color: running ? AppPalette.online : AppPalette.offline, size: 7),
-        const SizedBox(width: 6),
-        Text(grid.name,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: AppPalette.textSecondary)),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppPalette.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StatusDot(
+              color: running ? AppPalette.online : AppPalette.offline, size: 8),
+          const SizedBox(width: 8),
+          Text(
+            grid.name,
+            style: theme.textTheme.titleSmall?.copyWith(
+                color: AppPalette.textPrimary,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.1),
+          ),
+        ],
+      ),
     );
   }
 }

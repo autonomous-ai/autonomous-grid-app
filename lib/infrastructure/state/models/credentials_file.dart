@@ -47,6 +47,8 @@ class CredentialsFile {
 
   String? get userEmail => user['email'] as String?;
 
+  String? get userName => user['name'] as String?;
+
   /// Fallback selection: the legacy `active_network` if present, else the first
   /// grid. The primary active grid now comes from `state.json` (see
   /// `activeCloudGridProvider` / [SelectedNetwork]).

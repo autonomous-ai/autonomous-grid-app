@@ -27,7 +27,6 @@ class _NetworkListState extends ConsumerState<NetworkList> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final selected = ref.watch(selectedNetworkProvider);
-    final owner = session.user['name'] as String? ?? session.userEmail ?? 'My grids';
 
     // Show every grid the user belongs to — including ones they own/administer
     // (e.g. a grid just created via "+") — so nothing is silently hidden.
@@ -57,9 +56,8 @@ class _NetworkListState extends ConsumerState<NetworkList> {
             child: networks.isEmpty
                 ? _Empty(hasGrids: visible.isNotEmpty)
                 : ListView(
-                    padding: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.only(top: 4, bottom: 12),
                     children: [
-                      _GroupHeader(label: owner),
                       for (final n in networks)
                         _NetworkTile(
                           network: n,
@@ -113,23 +111,6 @@ class _ListHeader extends StatelessWidget {
   }
 }
 
-class _GroupHeader extends StatelessWidget {
-  const _GroupHeader({required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 6, 16, 6),
-      child: Text(label,
-          style: const TextStyle(
-              color: AppPalette.textFaint,
-              fontSize: 12,
-              fontWeight: FontWeight.w600)),
-    );
-  }
-}
-
 class _NetworkTile extends ConsumerWidget {
   const _NetworkTile({
     required this.network,
@@ -158,7 +139,7 @@ class _NetworkTile extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       child: Material(
-        color: selected ? AppPalette.accent : Colors.transparent,
+        color: selected ? AppPalette.accentMuted : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
@@ -178,7 +159,7 @@ class _NetworkTile extends ConsumerWidget {
                           fontWeight: FontWeight.w500)),
                 ),
                 const SizedBox(width: 8),
-                OwnerBadge(network: network),
+                OwnerBadge(network: network, onAccent: selected),
               ],
             ),
           ),

@@ -72,7 +72,6 @@ class _ServeSection extends ConsumerWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _ServeIntro(),
           const SizedBox(height: 16),
           EnableProviderCard(network: network),
         ],
@@ -116,7 +115,6 @@ class _ServeSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (failedNote != null) failedNote,
-        const _ServeIntro(),
         _EngineBlock(
           icon: Icons.dns_outlined,
           title: 'LLama.cpp',
@@ -129,28 +127,6 @@ class _ServeSection extends ConsumerWidget {
         const NodeSetupCard(),
         const SizedBox(height: 16),
       ],
-    );
-  }
-}
-
-/// A one-line "here's the path" intro above the engine blocks, so a first-time
-/// user knows the three things happen in order.
-class _ServeIntro extends StatelessWidget {
-  const _ServeIntro();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Text(
-          "Share this computer's AI with your grid in three steps: "
-          '1) set it up, 2) download a model, 3) start serving.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-      ),
     );
   }
 }
@@ -254,10 +230,10 @@ class _EngineBusyElsewhere extends ConsumerWidget {
   }
 }
 
-/// The "bring your own server" section. Each external framework detected on this
+/// The "bring your own engine" section. Each external framework detected on this
 /// machine (Ollama, LM Studio, …) gets its own card, pre-filled and ready to
-/// start in one tap; a blank "Connect your own server" card follows for a server
-/// running on another machine.
+/// start in one tap; a collapsed "Connect your own engine" expander follows for
+/// any other OpenAI-compatible engine you run on this computer.
 class _ExternalServers extends ConsumerWidget {
   const _ExternalServers({required this.network});
 
@@ -298,11 +274,12 @@ class _ExternalServers extends ConsumerWidget {
         _ExternalServerBlock(
           key: const ValueKey('manual'),
           network: network,
-          icon: Icons.lan_outlined,
-          title: 'Connect your own server',
-          subtitle: detected.isEmpty
-              ? 'Optional — only if you already run your own AI server (OpenAI-compatible)'
-              : 'Or point at an AI server running on another computer (OpenAI-compatible)',
+          collapsible: true,
+          icon: Icons.computer_outlined,
+          title: 'Connect your own engine',
+          subtitle:
+              'Advanced — point Grid at an OpenAI-compatible engine you run on '
+              'this computer.',
         ),
       ],
     );
@@ -399,10 +376,10 @@ class _EngineBlock extends StatelessWidget {
   }
 }
 
-/// One "Connect your own server" card — a self-contained external endpoint form
+/// One "connect an engine" card — a self-contained external endpoint form
 /// (`grid join --at`). Detected frameworks (Ollama, LM Studio, …) pass their
 /// address/model in as initial values so it's pre-filled; the manual card starts
-/// blank for a server running elsewhere.
+/// blank and is [collapsible] (hidden behind a tap) since it's the advanced path.
 class _ExternalServerBlock extends ConsumerStatefulWidget {
   const _ExternalServerBlock({
     super.key,
@@ -414,6 +391,7 @@ class _ExternalServerBlock extends ConsumerStatefulWidget {
     this.initialModel = '',
     this.initialAdvertise = '',
     this.suggestedModels = const [],
+    this.collapsible = false,
   });
 
   final NetworkCredential network;
@@ -427,6 +405,10 @@ class _ExternalServerBlock extends ConsumerStatefulWidget {
   /// Models the framework reported; non-empty turns the Model field into a
   /// dropdown (pick one of many) instead of a free-text box.
   final List<String> suggestedModels;
+
+  /// Show the form collapsed behind a tappable header (the advanced manual
+  /// card), instead of always-open like the detected-framework cards.
+  final bool collapsible;
 
   @override
   ConsumerState<_ExternalServerBlock> createState() =>
@@ -457,24 +439,73 @@ class _ExternalServerBlockState extends ConsumerState<_ExternalServerBlock> {
 
   @override
   Widget build(BuildContext context) {
+    final form = _ServerForm(
+      endpoint: _endpoint,
+      model: _model,
+      advertise: _advertise,
+      suggestedModels: widget.suggestedModels,
+      onStart: _start,
+    );
+    if (widget.collapsible) {
+      return _CollapsibleEngineBlock(
+        icon: widget.icon,
+        title: widget.title,
+        subtitle: widget.subtitle,
+        child: form,
+      );
+    }
     return _EngineBlock(
       icon: widget.icon,
       title: widget.title,
       subtitle: widget.subtitle,
-      child: _ServerForm(
-        endpoint: _endpoint,
-        model: _model,
-        advertise: _advertise,
-        suggestedModels: widget.suggestedModels,
-        onStart: _start,
+      child: form,
+    );
+  }
+}
+
+/// Like [_EngineBlock] but collapsed by default — the header is tappable and the
+/// form is revealed on demand. Keeps the advanced "connect your own engine" path
+/// out of the way until the user wants it.
+class _CollapsibleEngineBlock extends StatelessWidget {
+  const _CollapsibleEngineBlock({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        // Drop ExpansionTile's default divider lines so it reads as one card.
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: Icon(icon, size: 20),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+          title: Text(title, style: theme.textTheme.titleMedium),
+          subtitle: Text(subtitle,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          children: [child],
+        ),
       ),
     );
   }
 }
 
-/// The external server form body: Server address, Model and Advertise-as fields
-/// over a Start button. The controllers stay the source of truth so [onStart]
-/// reads them; [suggestedModels] picks the Model field shape.
+/// The external engine form body: Base URI, Model and Advertise-as fields over a
+/// Start button. The controllers stay the source of truth so [onStart] reads
+/// them; [suggestedModels] picks the Model field shape.
 class _ServerForm extends StatelessWidget {
   const _ServerForm({
     required this.endpoint,
@@ -498,8 +529,8 @@ class _ServerForm extends StatelessWidget {
         TextField(
           controller: endpoint,
           decoration: const InputDecoration(
-            labelText: 'Server address',
-            hintText: 'http://192.168.1.10:8080/v1',
+            labelText: 'Base URI',
+            hintText: 'http://localhost:8080/v1',
             border: OutlineInputBorder(),
           ),
         ),
@@ -508,7 +539,7 @@ class _ServerForm extends StatelessWidget {
         const SizedBox(height: 12),
         AdvertiseAsField(
           controller: advertise,
-          hintText: 'qwen3-7b',
+          hintText: 'qwen3-31b.gguf',
           optional: true,
         ),
         const SizedBox(height: 16),
@@ -548,7 +579,7 @@ class _ModelField extends StatelessWidget {
         controller: model,
         decoration: const InputDecoration(
           labelText: 'Model',
-          hintText: 'gemma4-31b',
+          hintText: 'gemma4-31b.gguf',
           border: OutlineInputBorder(),
         ),
       );

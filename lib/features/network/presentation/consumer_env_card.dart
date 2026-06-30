@@ -42,12 +42,22 @@ class ConsumerEnvCard extends ConsumerWidget {
       children: [
         DetailSection(
           title: 'API access (for developers)',
-          trailing: IconButton(
-            icon: const Icon(Icons.help_outline_rounded, size: 16),
-            color: AppPalette.textSecondary,
-            tooltip: 'How to configure an agent',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _showAgentGuide(context),
+          // A bare "?" didn't read as clickable — a labelled button does, and
+          // says plainly what tapping it gives you.
+          trailing: Tooltip(
+            message: 'See how to connect your apps to this grid',
+            child: TextButton.icon(
+              icon: const Icon(Icons.help_outline_rounded, size: 16),
+              label: const Text('How to use'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppPalette.textSecondary,
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                textStyle:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              onPressed: () => _showAgentGuide(context),
+            ),
           ),
           children: [
             EnvVarRow(name: 'OPENAI_BASE_URL', value: network.relayBaseUrl),

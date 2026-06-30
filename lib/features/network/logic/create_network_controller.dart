@@ -109,14 +109,15 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
   }
 
   /// Provision the user's very first grid right after sign-in, named after them
-  /// ("Huy Grid" for huy@gmail.com). No-op once they already have a grid, so it
-  /// only ever fires for a brand-new account. Delegates to [submit] for the
-  /// actual create + local join + session refresh.
+  /// ("Đức Grid" from the profile name, else "Huy Grid" from huy@gmail.com).
+  /// No-op once they already have a grid, so it only ever fires for a brand-new
+  /// account. Delegates to [submit] for the actual create + local join + session
+  /// refresh.
   Future<void> createFirstGridIfNeeded() async {
     final session = ref.read(sessionProvider);
     if (session.networks.isNotEmpty) return;
     await submit(
-      name: defaultGridName(session.userEmail),
+      name: defaultGridName(name: session.userName, email: session.userEmail),
       type: ManagedNetworkType.fallback,
     );
   }

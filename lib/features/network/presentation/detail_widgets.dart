@@ -132,16 +132,20 @@ class MetaRow extends StatelessWidget {
 /// in both the list and the detail header. Members/consumers get no badge —
 /// owning a grid is the only distinction worth surfacing here.
 class OwnerBadge extends StatelessWidget {
-  const OwnerBadge({super.key, required this.network});
+  const OwnerBadge({super.key, required this.network, this.onAccent = false});
 
   final NetworkCredential network;
+
+  /// Render for an accent-filled (selected) row — swaps the teal pill for a
+  /// white one that stays legible on the blue background, where teal muddies.
+  final bool onAccent;
 
   @override
   Widget build(BuildContext context) {
     if (network.role != NetworkRole.admin) return const SizedBox.shrink();
     return _BadgePill(
       label: network.roleLabel, // 'Owner'
-      color: AppPalette.teal,
+      color: onAccent ? Colors.white : AppPalette.teal,
       compact: true,
     );
   }

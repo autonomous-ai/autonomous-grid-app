@@ -19,6 +19,17 @@ class NodeSetupCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final setup = ref.watch(nodeSetupControllerProvider);
 
+    // Once the computer is fully set up (engine installed + a model ready), this
+    // card would only repeat "ready to serve as a node" — redundant, so hide it.
+    // Still shown while a setup is running/just-finished/failed, and whenever
+    // there's a real gap left to fill.
+    if (setup is NodeSetupIdle) {
+      final caps = ref.watch(nodeCapabilitiesProvider).asData?.value;
+      if (caps != null && buildSetupPlan(caps).isEmpty) {
+        return const SizedBox.shrink();
+      }
+    }
+
     final Widget body = switch (setup) {
       NodeSetupRunning() => _RunningBody(state: setup),
       NodeSetupFailed() => _FailedBody(state: setup),
@@ -73,7 +84,8 @@ class _IdleBody extends ConsumerWidget {
 }
 
 /// Detected capabilities + the minimal plan to fill the gaps, with a single
-/// button to run it. When nothing is missing, just confirms the node is ready.
+/// button to run it. Only reached when there's a gap to fill — a fully set-up
+/// node hides the whole card (see [NodeSetupCard.build]).
 class _PlanPreview extends ConsumerWidget {
   const _PlanPreview({required this.caps});
   final NodeCapabilities caps;
@@ -88,35 +100,24 @@ class _PlanPreview extends ConsumerWidget {
       children: [
         _CapabilitySummary(caps: caps),
         const SizedBox(height: 16),
-        if (plan.isEmpty)
-          const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 18),
-              SizedBox(width: 8),
-              Expanded(
-                  child: Text('This computer is ready to serve as a node.')),
-            ],
-          )
-        else ...[
-          Text('Setting up automatically — installing what\'s missing:',
-              style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
-          for (final step in plan) _StepTile(step: step),
-          const SizedBox(height: 8),
-          Text('Downloads can be several GB; they run while the app stays open.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: () =>
-                  ref.read(nodeSetupControllerProvider.notifier).run(plan),
-              icon: const Icon(Icons.rocket_launch_outlined),
-              label: const Text('Set up now'),
-            ),
+        Text('Setting up automatically — installing what\'s missing:',
+            style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        for (final step in plan) _StepTile(step: step),
+        const SizedBox(height: 8),
+        Text('Downloads can be several GB; they run while the app stays open.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: () =>
+                ref.read(nodeSetupControllerProvider.notifier).run(plan),
+            icon: const Icon(Icons.rocket_launch_outlined),
+            label: const Text('Set up now'),
           ),
-        ],
+        ),
       ],
     );
   }
