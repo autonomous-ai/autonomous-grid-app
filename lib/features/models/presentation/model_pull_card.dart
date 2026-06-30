@@ -52,7 +52,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
             border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
@@ -66,6 +66,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
                 textStyle: const TextStyle(fontSize: 12.5)),
           ),
         ),
+        const SizedBox(height: 4),
         Text(
           'Models are large — often several GB — and download in the background.',
           style: theme.textTheme.bodySmall
@@ -93,7 +94,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.error)),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,
           child: ListenableBuilder(

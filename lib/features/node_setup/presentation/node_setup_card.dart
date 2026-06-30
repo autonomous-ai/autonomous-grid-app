@@ -28,7 +28,9 @@ class NodeSetupCard extends ConsumerWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        // Flush horizontal inset — content runs to the card's edges for a
+        // tighter, edge-aligned look; vertical padding keeps top/bottom air.
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

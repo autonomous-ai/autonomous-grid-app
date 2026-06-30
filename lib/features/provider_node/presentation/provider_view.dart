@@ -26,39 +26,6 @@ class ProviderView extends ConsumerStatefulWidget {
 }
 
 class _ProviderViewState extends ConsumerState<ProviderView> {
-  final _endpoint = TextEditingController();
-  final _model = TextEditingController();
-  final _advertise = TextEditingController();
-  List<String> _suggestedModels = const [];
-
-  @override
-  void dispose() {
-    _endpoint.dispose();
-    _model.dispose();
-    _advertise.dispose();
-    super.dispose();
-  }
-
-  /// Pick a detected framework and pre-fill every field — address, model (the
-  /// first one it reports) and a derived display name — so it's one tap to start.
-  void _use(DetectedBackend backend) {
-    final model = backend.models.isEmpty ? '' : backend.models.first;
-    _endpoint.text = backend.baseUrl;
-    _model.text = model;
-    _advertise.text =
-        model.isEmpty ? backend.label : deriveAdvertiseName(model);
-    setState(() => _suggestedModels = backend.models);
-  }
-
-  void _startExternal(NetworkCredential network) {
-    ref.read(providerRunControllerProvider.notifier).startExternal(
-          network: network.networkId,
-          endpoint: _endpoint.text.trim(),
-          model: _model.text.trim(),
-          advertiseAs: _advertise.text.trim(),
-        );
-  }
-
   @override
   Widget build(BuildContext context) {
     final network = ref.watch(selectedNetworkProvider);
@@ -76,18 +43,7 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
     return SectionScaffold(
       title: 'Engines',
       subtitle: network?.name,
-      child: ListView(
-        children: [
-          _ServeSection(
-            endpoint: _endpoint,
-            model: _model,
-            advertise: _advertise,
-            suggestedModels: _suggestedModels,
-            onUse: _use,
-            onStart: _startExternal,
-          ),
-        ],
-      ),
+      child: ListView(children: const [_ServeSection()]),
     );
   }
 }
@@ -95,21 +51,7 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
 /// Gates on network/provider/run-state, then offers the local-model serve (the
 /// main flow) with the BYO external `--at` form as a secondary option.
 class _ServeSection extends ConsumerWidget {
-  const _ServeSection({
-    required this.endpoint,
-    required this.model,
-    required this.advertise,
-    required this.suggestedModels,
-    required this.onUse,
-    required this.onStart,
-  });
-
-  final TextEditingController endpoint;
-  final TextEditingController model;
-  final TextEditingController advertise;
-  final List<String> suggestedModels;
-  final void Function(DetectedBackend) onUse;
-  final void Function(NetworkCredential) onStart;
+  const _ServeSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -150,24 +92,6 @@ class _ServeSection extends ConsumerWidget {
           )
         : null;
 
-    // The "bring your own server" path — the same on every platform, and the
-    // only host option on Windows (no built-in engine there yet).
-    final externalBlock = _EngineBlock(
-      icon: Icons.lan_outlined,
-      title: 'Connect your own server',
-      subtitle:
-          'Optional — only if you already run your own OpenAI-compatible server',
-      child: _ExternalRunForm(
-        network: network,
-        endpoint: endpoint,
-        model: model,
-        advertise: advertise,
-        suggestedModels: suggestedModels,
-        onUse: onUse,
-        onStart: onStart,
-      ),
-    );
-
     // Windows can't host the built-in (llama.cpp) engine yet — don't show the
     // node-setup/serve path there; it would only dead-end. Offer BYO instead.
     if (Platform.isWindows) {
@@ -177,7 +101,7 @@ class _ServeSection extends ConsumerWidget {
           if (failedNote != null) failedNote,
           const _BuiltInUnavailableNote(),
           const SizedBox(height: 16),
-          externalBlock,
+          _ExternalServers(network: network),
         ],
       );
     }
@@ -201,7 +125,7 @@ class _ServeSection extends ConsumerWidget {
           child: ServeLocalCard(network: network),
         ),
         const SizedBox(height: 16),
-        externalBlock,
+        _ExternalServers(network: network),
       ],
     );
   }
@@ -264,8 +188,67 @@ class _BuiltInUnavailableNote extends StatelessWidget {
   }
 }
 
-/// A titled engine block — a card with an icon + title header so the two serve
-/// paths (built-in llama.cpp vs. your own server) are easy to tell apart.
+/// The "bring your own server" section. Each external framework detected on this
+/// machine (Ollama, LM Studio, …) gets its own card, pre-filled and ready to
+/// start in one tap; a blank "Connect your own server" card follows for a server
+/// running on another machine.
+class _ExternalServers extends ConsumerWidget {
+  const _ExternalServers({required this.network});
+
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final backends = ref.watch(backendsProvider).asData?.value ?? const [];
+    final detected = backends.where((b) => b.isExternal).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final backend in detected) ...[
+          _ExternalServerBlock(
+            // Keyed by kind so each framework keeps its own form state across
+            // rescans (and the user's edits aren't swapped between cards).
+            key: ValueKey(backend.kind),
+            network: network,
+            icon: Icons.dns_outlined,
+            title: backend.label,
+            subtitle: 'Detected on this machine · ${_backendSubtitle(backend)}',
+            initialEndpoint: backend.baseUrl,
+            initialModel: backend.models.isEmpty ? '' : backend.models.first,
+            initialAdvertise: backend.models.isEmpty
+                ? backend.label
+                : deriveAdvertiseName(backend.models.first),
+            suggestedModels: backend.models,
+          ),
+          const SizedBox(height: 16),
+        ],
+        _ExternalServerBlock(
+          key: const ValueKey('manual'),
+          network: network,
+          icon: Icons.lan_outlined,
+          title: 'Connect your own server',
+          subtitle: detected.isEmpty
+              ? 'Optional — only if you already run your own OpenAI-compatible server'
+              : 'Or point at an OpenAI-compatible server running on another machine',
+        ),
+      ],
+    );
+  }
+}
+
+/// e.g. `localhost:11434/v1 · 3 models`.
+String _backendSubtitle(DetectedBackend backend) {
+  final host = backend.baseUrl.replaceFirst(RegExp(r'^https?://'), '');
+  final count = backend.models.length;
+  final models =
+      count == 0 ? 'no models reported' : '$count model${count == 1 ? '' : 's'}';
+  return '$host · $models';
+}
+
+/// A titled engine block — a card with an icon + title header so the serve paths
+/// (built-in llama.cpp, each detected framework, your own server) are easy to
+/// tell apart.
 class _EngineBlock extends StatelessWidget {
   const _EngineBlock({
     required this.icon,
@@ -284,7 +267,7 @@ class _EngineBlock extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -314,30 +297,153 @@ class _EngineBlock extends StatelessWidget {
   }
 }
 
-/// The BYO external OpenAI-compatible endpoint form (`provider start --at`).
-class _ExternalRunForm extends ConsumerWidget {
-  const _ExternalRunForm({
+/// One "Connect your own server" card — a self-contained external endpoint form
+/// (`grid join --at`). Detected frameworks (Ollama, LM Studio, …) pass their
+/// address/model in as initial values so it's pre-filled; the manual card starts
+/// blank for a server running elsewhere.
+class _ExternalServerBlock extends ConsumerStatefulWidget {
+  const _ExternalServerBlock({
+    super.key,
     required this.network,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.initialEndpoint = '',
+    this.initialModel = '',
+    this.initialAdvertise = '',
+    this.suggestedModels = const [],
+  });
+
+  final NetworkCredential network;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String initialEndpoint;
+  final String initialModel;
+  final String initialAdvertise;
+
+  /// Models the framework reported; non-empty turns the Model field into a
+  /// dropdown (pick one of many) instead of a free-text box.
+  final List<String> suggestedModels;
+
+  @override
+  ConsumerState<_ExternalServerBlock> createState() =>
+      _ExternalServerBlockState();
+}
+
+class _ExternalServerBlockState extends ConsumerState<_ExternalServerBlock> {
+  late final _endpoint = TextEditingController(text: widget.initialEndpoint);
+  late final _model = TextEditingController(text: widget.initialModel);
+  late final _advertise = TextEditingController(text: widget.initialAdvertise);
+
+  @override
+  void dispose() {
+    _endpoint.dispose();
+    _model.dispose();
+    _advertise.dispose();
+    super.dispose();
+  }
+
+  void _start() {
+    ref.read(providerRunControllerProvider.notifier).startExternal(
+          network: widget.network.networkId,
+          endpoint: _endpoint.text.trim(),
+          model: _model.text.trim(),
+          advertiseAs: _advertise.text.trim(),
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _EngineBlock(
+      icon: widget.icon,
+      title: widget.title,
+      subtitle: widget.subtitle,
+      child: _ServerForm(
+        endpoint: _endpoint,
+        model: _model,
+        advertise: _advertise,
+        suggestedModels: widget.suggestedModels,
+        onStart: _start,
+      ),
+    );
+  }
+}
+
+/// The external OpenAI-compatible endpoint form body: Base URL, Model and
+/// Display name fields over a Start button. The controllers stay the source of
+/// truth so [onStart] reads them; [suggestedModels] picks the Model field shape.
+class _ServerForm extends StatelessWidget {
+  const _ServerForm({
     required this.endpoint,
     required this.model,
     required this.advertise,
     required this.suggestedModels,
-    required this.onUse,
     required this.onStart,
   });
 
-  final NetworkCredential network;
   final TextEditingController endpoint;
   final TextEditingController model;
   final TextEditingController advertise;
   final List<String> suggestedModels;
-  final void Function(DetectedBackend) onUse;
-  final void Function(NetworkCredential) onStart;
+  final VoidCallback onStart;
 
-  /// Model is a dropdown when the chosen framework reports models (pick one of
-  /// many), and a free-text field otherwise (manual base URL → type the name).
-  /// The [model] controller stays the source of truth so [onStart] reads it.
-  Widget _modelField() {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: endpoint,
+          decoration: const InputDecoration(
+            labelText: 'Base URL',
+            hintText: 'http://192.168.1.10:8080/v1',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _ModelField(model: model, suggestedModels: suggestedModels),
+        const SizedBox(height: 12),
+        TextField(
+          controller: advertise,
+          decoration: const InputDecoration(
+            labelText: 'Display name (optional)',
+            hintText: 'mac-studio',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ListenableBuilder(
+            listenable: Listenable.merge([endpoint, model]),
+            builder: (context, _) {
+              final canStart = endpoint.text.trim().isNotEmpty &&
+                  model.text.trim().isNotEmpty;
+              return FilledButton.icon(
+                onPressed: canStart ? onStart : null,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Start engine'),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Model is a dropdown when the framework reports models (pick one of many), and
+/// a free-text field otherwise (manual base URL → type the name). The [model]
+/// controller stays the source of truth either way.
+class _ModelField extends StatelessWidget {
+  const _ModelField({required this.model, required this.suggestedModels});
+
+  final TextEditingController model;
+  final List<String> suggestedModels;
+
+  @override
+  Widget build(BuildContext context) {
     if (suggestedModels.isEmpty) {
       return TextField(
         controller: model,
@@ -369,99 +475,5 @@ class _ExternalRunForm extends ConsumerWidget {
         );
       },
     );
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final backends = ref.watch(backendsProvider).asData?.value ?? const [];
-    final external = backends.where((b) => b.isExternal).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (external.isNotEmpty) ...[
-          _DetectedFrameworkList(backends: external, onUse: onUse),
-          const SizedBox(height: 16),
-        ],
-        TextField(
-          controller: endpoint,
-          decoration: const InputDecoration(
-            labelText: 'Base URL',
-            hintText: 'http://192.168.1.10:8080/v1',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _modelField(),
-        const SizedBox(height: 12),
-        TextField(
-          controller: advertise,
-          decoration: const InputDecoration(
-            labelText: 'Display name (optional)',
-            hintText: 'mac-studio',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ListenableBuilder(
-            listenable: Listenable.merge([endpoint, model]),
-            builder: (context, _) {
-              final canStart = endpoint.text.trim().isNotEmpty &&
-                  model.text.trim().isNotEmpty;
-              return FilledButton.icon(
-                onPressed: canStart ? () => onStart(network) : null,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Start engine'),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Frameworks detected running on this machine (Ollama, LM Studio, …), shown as
-/// a pick list. Tapping one fills the address, model and display name below.
-class _DetectedFrameworkList extends StatelessWidget {
-  const _DetectedFrameworkList({required this.backends, required this.onUse});
-
-  final List<DetectedBackend> backends;
-  final void Function(DetectedBackend) onUse;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Detected on this machine',
-            style: theme.textTheme.titleSmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 8),
-        for (final backend in backends)
-          Card.outlined(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              leading: const Icon(Icons.dns_outlined),
-              title: Text(backend.label),
-              subtitle: Text(_subtitle(backend)),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => onUse(backend),
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// e.g. `localhost:11434/v1 · 3 models`.
-  String _subtitle(DetectedBackend backend) {
-    final host = backend.baseUrl.replaceFirst(RegExp(r'^https?://'), '');
-    final count = backend.models.length;
-    final models =
-        count == 0 ? 'no models reported' : '$count model${count == 1 ? '' : 's'}';
-    return '$host · $models';
   }
 }
