@@ -33,8 +33,12 @@ class AppTopBar extends ConsumerWidget {
         padding: EdgeInsets.only(left: leftInset, right: 12),
         child: Row(
           children: [
-            const _Account(),
+            // Grouped on the right next to the avatar — keeps the left clear of
+            // the macOS traffic-light buttons instead of sitting awkwardly beside
+            // them.
             const Spacer(),
+            const _Account(),
+            const SizedBox(width: 12),
             _AccountMenu(name: session.user['name'] as String? ?? email, email: email),
           ],
         ),
@@ -53,15 +57,16 @@ class _Account extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final grid = ref.watch(selectedNetworkProvider);
     if (grid == null) return const SizedBox.shrink();
-    return _CurrentGridChip(grid: grid);
+    return _CurrentGridLabel(grid: grid);
   }
 }
 
-/// The active grid as a prominent pill in the title bar — a live Running /
-/// Stopped dot beside the grid name (shared cache with the list + detail), so
-/// you always see which grid you're working in, and whether it's serving.
-class _CurrentGridChip extends ConsumerWidget {
-  const _CurrentGridChip({required this.grid});
+/// The active grid at the left of the title bar — a live Running / Stopped dot,
+/// a faint "Grid ·" caption, then the grid name (shared cache with the list +
+/// detail). No box: it reads as a label, so you always know which grid you're
+/// working in without it competing with the window chrome.
+class _CurrentGridLabel extends ConsumerWidget {
+  const _CurrentGridLabel({required this.grid});
   final NetworkCredential grid;
 
   @override
@@ -70,28 +75,27 @@ class _CurrentGridChip extends ConsumerWidget {
     final state =
         ref.watch(gridOverviewForProvider(grid.networkId)).asData?.value.state;
     final running = state?.toLowerCase() == 'running';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppPalette.divider),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          StatusDot(
-              color: running ? AppPalette.online : AppPalette.offline, size: 8),
-          const SizedBox(width: 8),
-          Text(
-            grid.name,
-            style: theme.textTheme.titleSmall?.copyWith(
-                color: AppPalette.textPrimary,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.1),
-          ),
-        ],
-      ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        StatusDot(
+            color: running ? AppPalette.online : AppPalette.offline, size: 8),
+        const SizedBox(width: 8),
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(
+              text: 'Grid · ',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: AppPalette.textSecondary),
+            ),
+            TextSpan(
+              text: grid.name,
+              style: theme.textTheme.titleSmall?.copyWith(
+                  color: AppPalette.textPrimary, fontWeight: FontWeight.w600),
+            ),
+          ]),
+        ),
+      ],
     );
   }
 }
