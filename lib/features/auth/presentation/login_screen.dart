@@ -69,7 +69,11 @@ class _SignIn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.hub_outlined, size: 56, color: theme.colorScheme.primary),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child:
+              Image.asset('assets/tray/tray_icon.png', width: 64, height: 64),
+        ),
         const SizedBox(height: 16),
         Text('Grid', style: theme.textTheme.headlineMedium),
         const SizedBox(height: 8),
@@ -84,13 +88,6 @@ class _SignIn extends StatelessWidget {
           onPressed: onSignIn,
           icon: const Icon(Icons.login),
           label: const Text('Sign in with Google'),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'First time? Signing in creates your account automatically.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
