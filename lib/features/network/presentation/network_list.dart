@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../auth/logic/session_controller.dart';
 import '../logic/grid_overview_provider.dart';
+import '../logic/grid_sync_controller.dart';
 import 'create_network_dialog.dart';
 import 'detail_widgets.dart';
 
@@ -94,6 +95,8 @@ class _ListHeader extends StatelessWidget {
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: AppPalette.textFaint)),
           const Spacer(),
+          const _SyncButton(),
+          const SizedBox(width: 4),
           FilledButton.icon(
             onPressed: () => CreateNetworkDialog.show(context),
             icon: const Icon(Icons.add, size: 18),
@@ -107,6 +110,51 @@ class _ListHeader extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Pulls the latest grids from the cloud (`grid sync`) and refreshes the list —
+/// the manual counterpart to the automatic sync after create/login. Shows a
+/// spinner while running and a one-shot toast on success/failure.
+class _SyncButton extends ConsumerWidget {
+  const _SyncButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<GridSyncState>(gridSyncControllerProvider, (_, next) {
+      final messenger = ScaffoldMessenger.of(context);
+      switch (next) {
+        case GridSyncDone():
+          messenger.showSnackBar(
+              const SnackBar(content: Text('Grids up to date.')));
+        case GridSyncFailed(:final message):
+          messenger.showSnackBar(SnackBar(content: Text(message)));
+        case GridSyncIdle():
+        case GridSyncRunning():
+          break;
+      }
+    });
+
+    final running = ref.watch(gridSyncControllerProvider) is GridSyncRunning;
+    if (running) {
+      return const SizedBox(
+        width: 40,
+        height: 40,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    return IconButton(
+      tooltip: 'Sync grids',
+      visualDensity: VisualDensity.compact,
+      icon: const Icon(Icons.sync, size: 20),
+      onPressed: () => ref.read(gridSyncControllerProvider.notifier).sync(),
     );
   }
 }

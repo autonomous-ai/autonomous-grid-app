@@ -24,15 +24,15 @@ NetworkCredential _network(String id, String name) => NetworkCredential(
     );
 
 class _FakeStore extends GridHomeStore {
-  const _FakeStore(this.credentials, {this.activeCloud});
+  const _FakeStore(this.credentials, {this.activeRemote});
   final CredentialsFile credentials;
-  final String? activeCloud;
+  final String? activeRemote;
 
   @override
   CredentialsFile readCredentials() => credentials;
 
   @override
-  String? readActiveCloudGrid() => activeCloud;
+  String? readActiveRemoteGrid() => activeRemote;
 }
 
 void main() {
@@ -60,7 +60,7 @@ void main() {
         gridHomeStoreProvider.overrideWithValue(
           _FakeStore(
             CredentialsFile(networks: [foo, bar], activeNetwork: 'grid-foo'),
-            activeCloud: 'grid-bar',
+            activeRemote: 'grid-bar',
           ),
         ),
       ],

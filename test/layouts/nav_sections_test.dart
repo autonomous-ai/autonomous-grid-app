@@ -40,7 +40,7 @@ class _FakeStore extends GridHomeStore {
   // No state.json in tests — fall back to the legacy active_network so the
   // active selection stays deterministic (not the dev machine's ~/.grid).
   @override
-  String? readActiveCloudGrid() => null;
+  String? readActiveRemoteGrid() => null;
 }
 
 void main() {

@@ -17,7 +17,7 @@ class CredentialsFile {
   /// Legacy `active_network` from the single-mode CLI. The dual-mode CLI moved
   /// the active selection to `state.json`; kept here only as a fallback for a
   /// pre-migration `credentials.toml`. New code reads the active grid via
-  /// `activeCloudGridProvider`.
+  /// `activeRemoteGridProvider`.
   final String? activeNetwork;
   final Map<String, dynamic> user;
   final List<NetworkCredential> networks;
@@ -51,7 +51,7 @@ class CredentialsFile {
 
   /// Fallback selection: the legacy `active_network` if present, else the first
   /// grid. The primary active grid now comes from `state.json` (see
-  /// `activeCloudGridProvider` / [SelectedNetwork]).
+  /// `activeRemoteGridProvider` / [SelectedNetwork]).
   NetworkCredential? get active {
     if (networks.isEmpty) return null;
     for (final n in networks) {

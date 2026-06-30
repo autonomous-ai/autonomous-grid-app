@@ -33,12 +33,12 @@ class GridHomeStore {
     return map == null ? null : NetworkConfig.fromToml(map);
   }
 
-  /// The active cloud grid (name or network_id) the user picked with
-  /// `grid use`, read from `~/.grid/state.json` (`active.cloud`). Null when the
+  /// The active remote grid (name or network_id) the user picked with
+  /// `grid use`, read from `~/.grid/state.json` (`active.remote`). Null when the
   /// file is missing/unreadable or nothing is selected — callers fall back to a
   /// default grid. Lenient like the CLI: a corrupt state file must never brick
   /// the app. See [GridPaths.stateFile].
-  String? readActiveCloudGrid() {
+  String? readActiveRemoteGrid() {
     final file = GridPaths.stateFile;
     if (!file.existsSync()) return null;
     try {
@@ -46,8 +46,8 @@ class GridHomeStore {
       if (decoded is! Map) return null;
       final active = decoded['active'];
       if (active is! Map) return null;
-      final cloud = active['cloud'];
-      return cloud is String && cloud.isNotEmpty ? cloud : null;
+      final remote = active['remote'];
+      return remote is String && remote.isNotEmpty ? remote : null;
     } on Exception {
       return null;
     }

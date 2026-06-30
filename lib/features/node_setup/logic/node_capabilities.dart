@@ -61,7 +61,7 @@ class NodeCapabilities {
 
 /// Probes every node capability of this machine, running the text-backend and
 /// media-engine checks concurrently. Re-detected (invalidated) after a setup run.
-/// The host's recommended model from `grid models list --catalog`. The catalog
+/// The host's recommended model from `grid catalog`. The catalog
 /// is static for the session, so this runs the command exactly once and caches
 /// it — re-detecting capabilities never re-spawns the catalog lookup.
 final recommendedModelProvider = FutureProvider<CatalogModel?>((ref) {

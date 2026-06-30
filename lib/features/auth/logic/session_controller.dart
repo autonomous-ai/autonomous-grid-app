@@ -10,11 +10,11 @@ final sessionProvider = Provider<CredentialsFile>((ref) {
   return ref.watch(gridHomeStoreProvider).readCredentials();
 });
 
-/// The active cloud grid the user picked with `grid use`, read from
+/// The active remote grid the user picked with `grid use`, read from
 /// `~/.grid/state.json`. In the dual-mode CLI this replaced the old
 /// `active_network` field in `credentials.toml`. Invalidate after a `grid use`.
-final activeCloudGridProvider = Provider<String?>((ref) {
-  return ref.watch(gridHomeStoreProvider).readActiveCloudGrid();
+final activeRemoteGridProvider = Provider<String?>((ref) {
+  return ref.watch(gridHomeStoreProvider).readActiveRemoteGrid();
 });
 
 /// The network selected in the UI. Defaults to the `grid use` active grid from
@@ -27,7 +27,7 @@ class SelectedNetwork extends Notifier<NetworkCredential?> {
   @override
   NetworkCredential? build() {
     final creds = ref.watch(sessionProvider);
-    final active = ref.watch(activeCloudGridProvider);
+    final active = ref.watch(activeRemoteGridProvider);
     if (active != null) {
       final match = creds.byName(active);
       if (match != null) return match;
