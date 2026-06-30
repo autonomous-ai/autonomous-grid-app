@@ -145,13 +145,15 @@ class _Actions extends ConsumerWidget {
       spacing: 10,
       runSpacing: 10,
       children: [
-        // Start engine is the main action for provider-capable grids; pure
-        // consumers can't run one, so Playground is their primary action.
+        // Setting up an engine is the main action for provider-capable grids;
+        // pure consumers can't run one, so Playground is their primary action.
+        // This opens the Engines tab (the real "Start engine" lives there once a
+        // model is ready) — so it's labelled "Set up engine", not "Start".
         if (canProvide)
           FilledButton.icon(
             onPressed: () => nav.select(NavSection.provider),
-            icon: const Icon(Icons.play_arrow, size: 18),
-            label: const Text('Start engine'),
+            icon: const Icon(Icons.dns_outlined, size: 18),
+            label: const Text('Set up engine'),
           ),
         _playgroundButton(nav, primary: !canProvide),
       ],

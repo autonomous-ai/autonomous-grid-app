@@ -147,6 +147,11 @@ class OwnerBadge extends StatelessWidget {
       label: network.roleLabel, // 'Owner'
       color: onAccent ? Colors.white : AppPalette.teal,
       compact: true,
+      // On the blue selected row a faint white pill blends into the row and its
+      // white text into the grid name — fill/outline it more so it stays a
+      // distinct badge.
+      fillAlpha: onAccent ? 0.24 : 0.16,
+      borderAlpha: onAccent ? 0.7 : 0.45,
     );
   }
 }
@@ -154,11 +159,17 @@ class OwnerBadge extends StatelessWidget {
 /// One rounded, tinted pill — the shared shape for role and visibility badges.
 class _BadgePill extends StatelessWidget {
   const _BadgePill(
-      {required this.label, required this.color, this.compact = false});
+      {required this.label,
+      required this.color,
+      this.compact = false,
+      this.fillAlpha = 0.16,
+      this.borderAlpha = 0.45});
 
   final String label;
   final Color color;
   final bool compact;
+  final double fillAlpha;
+  final double borderAlpha;
 
   @override
   Widget build(BuildContext context) {
@@ -166,9 +177,9 @@ class _BadgePill extends StatelessWidget {
       padding: EdgeInsets.symmetric(
           horizontal: compact ? 6 : 8, vertical: compact ? 1 : 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.16),
+        color: color.withValues(alpha: fillAlpha),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.45)),
+        border: Border.all(color: color.withValues(alpha: borderAlpha)),
       ),
       child: Text(
         label,

@@ -72,15 +72,6 @@ class ConsumerEnvCard extends ConsumerWidget {
             ),
           ],
         ),
-        // const SizedBox(height: 8),
-        // Align(
-        //   alignment: Alignment.centerLeft,
-        //   child: TextButton.icon(
-        //     onPressed: () => _copyEnvBlock(context),
-        //     icon: const Icon(Icons.terminal_rounded, size: 15),
-        //     label: const Text('Copy'),
-        //   ),
-        // ),
       ],
     );
   }

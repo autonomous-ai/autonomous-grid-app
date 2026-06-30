@@ -12,8 +12,9 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
 
-/// The Tailscale-style title bar: account on the left, quick actions + avatar
-/// on the right. Doubles as the window drag handle.
+/// The Tailscale-style title bar: the active grid + account avatar sit on the
+/// right, leaving the left clear for the macOS window controls. Doubles as the
+/// window drag handle.
 class AppTopBar extends ConsumerWidget {
   const AppTopBar({super.key});
 
@@ -47,7 +48,7 @@ class AppTopBar extends ConsumerWidget {
   }
 }
 
-/// The active grid shown at the left of the title bar — name + live
+/// The active grid shown at the right of the title bar — name + live
 /// Running / Stopped dot. The account email lives in the avatar menu now, so the
 /// bar stays uncluttered while still saying which grid you're working in.
 class _Account extends ConsumerWidget {
@@ -61,7 +62,7 @@ class _Account extends ConsumerWidget {
   }
 }
 
-/// The active grid at the left of the title bar — a live Running / Stopped dot,
+/// The active grid at the right of the title bar — a live Running / Stopped dot,
 /// a faint "Grid ·" caption, then the grid name (shared cache with the list +
 /// detail). No box: it reads as a label, so you always know which grid you're
 /// working in without it competing with the window chrome.
@@ -75,27 +76,37 @@ class _CurrentGridLabel extends ConsumerWidget {
     final state =
         ref.watch(gridOverviewForProvider(grid.networkId)).asData?.value.state;
     final running = state?.toLowerCase() == 'running';
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        StatusDot(
-            color: running ? AppPalette.online : AppPalette.offline, size: 8),
-        const SizedBox(width: 8),
-        Text.rich(
-          TextSpan(children: [
-            TextSpan(
-              text: 'Grid · ',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: AppPalette.textSecondary),
+    return ConstrainedBox(
+      // Cap the width and ellipsize so a long grid name can't overflow into the
+      // avatar or off the bar on a narrow window.
+      constraints: const BoxConstraints(maxWidth: 280),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StatusDot(
+              color: running ? AppPalette.online : AppPalette.offline, size: 8),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                  text: 'Grid · ',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: AppPalette.textSecondary),
+                ),
+                TextSpan(
+                  text: grid.name,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                      color: AppPalette.textPrimary,
+                      fontWeight: FontWeight.w600),
+                ),
+              ]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            TextSpan(
-              text: grid.name,
-              style: theme.textTheme.titleSmall?.copyWith(
-                  color: AppPalette.textPrimary, fontWeight: FontWeight.w600),
-            ),
-          ]),
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }

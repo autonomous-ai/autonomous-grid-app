@@ -559,7 +559,7 @@ class _CollapsibleEngineBlock extends StatelessWidget {
   }
 }
 
-/// The external engine form body: Base URI, Model and Advertise-as fields over a
+/// The external engine form body: Base URL, Model and Advertise-as fields over a
 /// Start button. The controllers stay the source of truth so [onStart] reads
 /// them; [suggestedModels] picks the Model field shape.
 class _ServerForm extends StatelessWidget {
@@ -585,7 +585,7 @@ class _ServerForm extends StatelessWidget {
         TextField(
           controller: endpoint,
           decoration: const InputDecoration(
-            labelText: 'Base URI',
+            labelText: 'Base URL',
             hintText: 'http://localhost:8080/v1',
             border: OutlineInputBorder(),
           ),
