@@ -3,11 +3,11 @@ name: release
 # Tag-triggered release for the Grid desktop app (Flutter).
 #
 # Pushing a tag like `v0.1.2` builds the app on each target, bundles the `grid`
-# CLI sidecar (Nuitka onefile, built from the autonomous-grid-cli repo), and
-# publishes a DRAFT GitHub Release with the installers:
+# CLI sidecar (Nuitka onefile, compiled from the grid CLI source by grid-app's own
+# scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
-#   Grid-<ver>-Windows-x64.zip           (PAUSED — see the matrix below)
+#   Grid-<ver>-Windows-x64.zip           (unsigned; SmartScreen may warn)
 #
 #   git tag v0.1.2 && git push origin v0.1.2
 #
@@ -38,13 +38,9 @@ jobs:
           - platform: macos-latest      # Apple Silicon, native build
             arch: arm64
             label: macOS-Apple-Silicon
-          # Windows is PAUSED: the grid CLI repo (autonomous-ai/autonomous-grid) has no
-          # Windows build yet — packaging/build_binary.sh is bash and Linux/macOS-only.
-          # Re-enable by uncommenting this entry once that repo ships a Windows build and
-          # the "Build grid sidecar (Windows)" step below is pointed at it.
-          # - platform: windows-latest
-          #   arch: x64
-          #   label: Windows-x64
+          - platform: windows-latest
+            arch: x64
+            label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
     # The Nuitka sidecar build is slow (macOS ~45m; Windows >56m), and macOS adds
@@ -94,11 +90,11 @@ jobs:
       # ───────────────────────── macOS ─────────────────────────
       - name: Build grid sidecar (macOS arm64)
         if: runner.os == 'macOS' && matrix.arch == 'arm64'
-        working-directory: autonomous-grid-cli
-        # Nuitka onefile for the host (arm64) -> dist/grid. Not executable in the
-        # repo, so invoke via bash. The sidecar is signed (Developer ID, hardened
+        working-directory: grid-app
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid
+        # (native arm64 on this runner). The sidecar is signed (Developer ID, hardened
         # runtime) + notarized downstream, so it isn't SIGKILL'd like an ad-hoc build.
-        run: bash packaging/build_binary.sh
+        run: bash scripts/cli/build_sidecar.sh "$GITHUB_WORKSPACE/autonomous-grid-cli"
 
       - name: Build macOS app + inject sidecar
         if: runner.os == 'macOS'
@@ -139,13 +135,11 @@ jobs:
           scripts/notarize_macos.sh
 
       # ───────────────────────── Windows ─────────────────────────
-      # Kept for when Windows is re-enabled (matrix entry above is commented out, so
-      # this never runs today). TODO(CLI): the new grid CLI repo has no Windows build —
-      # update this to its Windows build path before uncommenting the matrix entry.
       - name: Build grid sidecar (Windows)
         if: runner.os == 'Windows'
-        working-directory: autonomous-grid-cli
-        run: powershell -ExecutionPolicy Bypass -File build\build_windows.ps1
+        working-directory: grid-app
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli\dist\grid.exe.
+        run: powershell -ExecutionPolicy Bypass -File scripts\cli\build_sidecar.ps1 -CliSrc "${{ github.workspace }}\autonomous-grid-cli"
 
       - name: Build Windows app + package zip
         if: runner.os == 'Windows'

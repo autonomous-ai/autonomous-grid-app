@@ -1,28 +1,34 @@
 #!/usr/bin/env bash
 # Bundle the standalone `grid` CLI into the macOS app as a sidecar.
 #
-# Builds the Nuitka onefile binary from the CLI repo, then drops it into
-# `Grid.app/Contents/Resources/grid` where GridResolver looks for it first.
+# Builds the Nuitka onefile binary via scripts/cli/build_sidecar.sh, then drops it
+# into `Grid.app/Contents/Resources/grid` where GridResolver looks for it first.
 #
 # Nuitka cannot cross-compile: run this on the target arch (Apple Silicon).
 # For real distribution, replace the ad-hoc signing below with a Developer ID
 # signature + notarization (a bundled, unsigned binary trips Gatekeeper).
 #
-# Usage:  ./scripts/bundle_grid_macos.sh [path-to-cli-repo]
+# Usage:  ./scripts/bundle_grid_macos.sh [path-to-cli-source]
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLI_REPO="${1:-$APP_ROOT/../autonomous-grid-cli}"
-GRID_BIN="$CLI_REPO/dist/grid"
 
-if [ ! -d "$CLI_REPO" ]; then
-  echo "ERROR: CLI repo not found at $CLI_REPO" >&2
+# CLI source: explicit arg wins; else the first sibling that looks like the CLI repo.
+CLI_REPO="${1:-}"
+if [ -z "$CLI_REPO" ]; then
+  for c in "$APP_ROOT/../autonomous-grid" "$APP_ROOT/../autonomous-grid-cli"; do
+    [ -d "$c" ] && { CLI_REPO="$c"; break; }
+  done
+fi
+if [ -z "$CLI_REPO" ] || [ ! -d "$CLI_REPO" ]; then
+  echo "ERROR: CLI source not found (pass it as arg 1)" >&2
   exit 1
 fi
+GRID_BIN="$CLI_REPO/dist/grid"
 
 if [ ! -x "$GRID_BIN" ] || [ "${REBUILD:-0}" = "1" ]; then
   echo ">>> Building standalone grid binary (Nuitka)…"
-  (cd "$CLI_REPO" && ./build/build_macos.sh)
+  "$APP_ROOT/scripts/cli/build_sidecar.sh" "$CLI_REPO"
 fi
 
 echo ">>> Building macOS app (flutter build macos --release)…"
