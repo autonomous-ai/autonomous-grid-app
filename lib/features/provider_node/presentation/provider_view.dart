@@ -12,6 +12,7 @@ import '../../models/presentation/serve_local_card.dart';
 import '../../network/presentation/enable_provider_card.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/backend_detector.dart';
+import '../logic/ollama_launch_controller.dart';
 import '../logic/provider_run_controller.dart';
 import 'provider_running_card.dart';
 
@@ -254,21 +255,27 @@ class _ExternalServers extends ConsumerWidget {
       children: [
         if (isScanning) const _ScanningForServersNote(),
         for (final backend in detected) ...[
-          _ExternalServerBlock(
-            // Keyed by kind so each framework keeps its own form state across
-            // rescans (and the user's edits aren't swapped between cards).
-            key: ValueKey(backend.kind),
-            network: network,
-            icon: Icons.dns_outlined,
-            title: backend.label,
-            subtitle: _backendSubtitle(backend),
-            initialEndpoint: backend.baseUrl,
-            initialModel: backend.models.isEmpty ? '' : backend.models.first,
-            initialAdvertise: backend.models.isEmpty
-                ? backend.label
-                : deriveAdvertiseName(backend.models.first),
-            suggestedModels: backend.models,
-          ),
+          if (backend.running)
+            _ExternalServerBlock(
+              // Keyed by kind so each framework keeps its own form state across
+              // rescans (and the user's edits aren't swapped between cards).
+              key: ValueKey(backend.kind),
+              network: network,
+              icon: Icons.dns_outlined,
+              title: backend.label,
+              subtitle: _backendSubtitle(backend),
+              initialEndpoint: backend.baseUrl,
+              initialModel: backend.models.isEmpty ? '' : backend.models.first,
+              initialAdvertise: backend.models.isEmpty
+                  ? backend.label
+                  : deriveAdvertiseName(backend.models.first),
+              suggestedModels: backend.models,
+            )
+          else
+            // Installed but not serving — offer to start it instead of a serve
+            // form that would fail. The list refreshes once it's up.
+            _NotRunningBackendBlock(
+                key: ValueKey(backend.kind), backend: backend),
           const SizedBox(height: 16),
         ],
         _ExternalServerBlock(
@@ -325,8 +332,57 @@ class _ScanningForServersNote extends StatelessWidget {
   }
 }
 
+/// A detected backend that's installed but not serving (today: Ollama). Rather
+/// than a serve form that would fail, it says so plainly and offers to start it
+/// in place — on success the list refreshes and the normal serve card takes over.
+class _NotRunningBackendBlock extends ConsumerWidget {
+  const _NotRunningBackendBlock({super.key, required this.backend});
+
+  final DetectedBackend backend;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final launch = ref.watch(ollamaLaunchControllerProvider);
+    final starting = launch is OllamaLaunchStarting;
+    return _EngineBlock(
+      icon: Icons.dns_outlined,
+      title: backend.label,
+      subtitle: 'Installed on this computer, but not running yet',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (launch is OllamaLaunchFailed) ...[
+            Text(launch.message,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error)),
+            const SizedBox(height: 12),
+          ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: starting
+                  ? null
+                  : () =>
+                      ref.read(ollamaLaunchControllerProvider.notifier).start(),
+              icon: starting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.play_arrow),
+              label: Text(
+                  starting ? 'Starting ${backend.label}…' : 'Run ${backend.label}'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A titled engine block — a card with an icon + title header so the serve paths
-/// (built-in llama.cpp, each detected framework, your own server) are easy to
+/// (built-in llama.cpp, each detected framework, your own engine) are easy to
 /// tell apart.
 class _EngineBlock extends StatelessWidget {
   const _EngineBlock({

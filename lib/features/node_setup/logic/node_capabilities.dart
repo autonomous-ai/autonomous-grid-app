@@ -31,9 +31,12 @@ class NodeCapabilities {
   /// recommends none for this machine (then no model is pulled).
   final CatalogModel? recommendedModel;
 
-  /// External OpenAI-compatible servers already running (Ollama, LM Studio).
+  /// External OpenAI-compatible servers already running (Ollama, LM Studio). A
+  /// backend detected on disk but not serving (e.g. installed-but-stopped Ollama)
+  /// is excluded — it can't serve until started, so node setup shouldn't treat it
+  /// as text inference already in place.
   List<DetectedBackend> get externalBackends =>
-      textBackends.where((b) => b.isExternal).toList();
+      textBackends.where((b) => b.isExternal && b.running).toList();
 
   /// An external backend that already advertises at least one model — this node
   /// can serve through it (`grid join --at`) without a local GGUF.

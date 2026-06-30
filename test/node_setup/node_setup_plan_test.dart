@@ -29,12 +29,14 @@ NodeCapabilities _caps({
       recommendedModel: recommended,
     );
 
-DetectedBackend _ollama({List<String> models = const ['gemma']}) =>
+DetectedBackend _ollama(
+        {List<String> models = const ['gemma'], bool running = true}) =>
     DetectedBackend(
       kind: BackendKind.ollama,
       label: 'Ollama',
       baseUrl: 'http://localhost:11434/v1',
       models: models,
+      running: running,
     );
 
 const _completeMedia = MediaStatus(
@@ -67,6 +69,13 @@ void main() {
   test('an existing Ollama with models needs nothing (media off)', () {
     final plan = buildSetupPlan(_caps(backends: [_ollama()]));
     expect(plan, isEmpty);
+  });
+
+  test('an installed-but-not-running Ollama still needs the built-in engine', () {
+    // A detected-but-stopped backend can't serve, so node setup must still
+    // install llama.cpp and pull a model rather than assume text is covered.
+    final plan = buildSetupPlan(_caps(backends: [_ollama(running: false)]));
+    expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
   });
 
   test('with media enabled, an existing Ollama still installs ComfyUI', () {
