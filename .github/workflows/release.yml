@@ -29,6 +29,12 @@ on:
 permissions:
   contents: write
 
+# grid CLI release the sidecar is built from. Pinned to a published release (never
+# `main`) so every grid-app release compiles a known-good, reproducible CLI. Bump this
+# one line to ship a newer CLI: https://github.com/autonomous-ai/autonomous-grid/releases
+env:
+  CLI_VERSION: v0.1.2
+
 jobs:
   build:
     strategy:
@@ -53,12 +59,14 @@ jobs:
         with:
           path: grid-app
 
-      # Sidecar source. Cloned as a sibling of grid-app so the existing scripts'
-      # default CLI path ("$APP_ROOT/../autonomous-grid-cli") resolves unchanged.
+      # Sidecar source, pinned to the CLI_VERSION release (not main) for reproducible
+      # builds. Cloned as a sibling of grid-app so the scripts' default CLI path
+      # ("$APP_ROOT/../autonomous-grid-cli") resolves unchanged.
       - name: Checkout grid CLI (sidecar source)
         uses: actions/checkout@v5
         with:
           repository: autonomous-ai/autonomous-grid
+          ref: ${{ env.CLI_VERSION }}
           token: ${{ secrets.CLI_REPO_TOKEN }}
           path: autonomous-grid-cli
 
