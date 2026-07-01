@@ -112,9 +112,10 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// `grid leave --engine`. Namespaced per grid by the CLI's run records.
   static const _engineName = 'grid-app';
 
-  /// Context window advertised to the grid for this engine, passed via
-  /// `--ctx-size`. 200k tokens so long conversations aren't truncated.
-  static const _ctxSize = 200000;
+  /// Context window for an external (`--at`) engine, passed via `--ctx-size`.
+  /// There's no local GGUF to inspect for the real maximum, so we send a fixed
+  /// 200k — the local `--serve` path derives its own from `grid ctx` instead.
+  static const _externalCtxSize = 200000;
 
   GridProcess? _process;
   GridCliService? _service;
@@ -175,12 +176,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     required String network,
     required String model,
     String? advertiseAs,
+    int? ctxSize,
   }) async {
     Future<List<String>> buildArgs() async => [
           'join', network,
           '--serve', model,
           '--endpoint-port', '${await ref.read(freePortFinderProvider)()}',
           ..._advertiseArgs(advertiseAs),
+          ..._ctxArgs(ctxSize),
           '--name', _engineName,
         ];
     return _start(
@@ -205,7 +208,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '--at', endpoint,
         '-m', model,
         ..._advertiseArgs(advertiseAs),
-        '--ctx-size', '$_ctxSize',
+        ..._ctxArgs(_externalCtxSize),
         '--name', _engineName,
       ],
       grid: network,
@@ -217,6 +220,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       (advertiseAs != null && advertiseAs.isNotEmpty)
           ? ['--advertise-as', advertiseAs]
           : const [];
+
+  /// `--ctx-size <n>` when a context length is set, else nothing (the engine
+  /// uses its own default). Shared by the local and external join paths.
+  List<String> _ctxArgs(int? ctxSize) =>
+      ctxSize != null ? ['--ctx-size', '$ctxSize'] : const [];
 
   /// [rebuildForPortConflict] (local engine only) rebuilds the join args with a
   /// freshly-picked port, so a "port already in use" abort self-heals on a
