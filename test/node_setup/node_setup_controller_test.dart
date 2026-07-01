@@ -5,6 +5,7 @@ import 'package:grid_app/features/node_setup/logic/node_setup_plan.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/parsers/download_progress.dart';
+import 'package:grid_app/infrastructure/logging/node_setup_log.dart';
 import 'package:grid_app/infrastructure/providers.dart';
 import 'package:grid_app/infrastructure/state/grid_home_store.dart';
 import 'package:grid_app/infrastructure/state/models/local_files.dart';
@@ -13,6 +14,23 @@ class _EmptyStore extends GridHomeStore {
   const _EmptyStore();
   @override
   List<LocalModel> listLocalModels() => const [];
+}
+
+/// In-memory [NodeSetupLog] so tests never touch the real `~/.grid/logs`.
+/// Records the run boundaries and every mirrored line for assertions.
+class _RecordingLog implements NodeSetupLog {
+  final List<String> lines = [];
+  String? runSummary;
+  String? runOutcome;
+
+  @override
+  void startRun(String summary) => runSummary = summary;
+
+  @override
+  void write(String line) => lines.add(line);
+
+  @override
+  void endRun(String outcome) => runOutcome = outcome;
 }
 
 const _llamaStep = SetupStep(
@@ -31,10 +49,12 @@ const _modelStep = SetupStep(
   isDownload: true,
 );
 
-ProviderContainer _container(GridCliService? fake) {
+ProviderContainer _container(GridCliService? fake, {NodeSetupLog? log}) {
   final container = ProviderContainer(overrides: [
     gridCliServiceProvider.overrideWithValue(fake),
     gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
+    // Always override so no test ever writes to the real ~/.grid/logs.
+    nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
   ]);
   addTearDown(container.dispose);
   return container;
@@ -105,6 +125,57 @@ void main() {
         .run([_llamaStep]);
 
     expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
+  });
+
+  test('mirrors the full transcript and a success footer to the log file',
+      () async {
+    final fake = FakeGridCliService()
+      ..stubStart(['engine', 'install', 'llama.cpp'],
+          exitCode: 0,
+          lines: const [CliLine(isStderr: false, text: 'Linked llama-server')])
+      ..stubPull(['pull', 'm'], const [
+        DownloadProgress(doneMb: 100, totalMb: 100, pct: 100),
+      ]);
+    final log = _RecordingLog();
+    final container = _container(fake, log: log);
+
+    await container
+        .read(nodeSetupControllerProvider.notifier)
+        .run([_llamaStep, _modelStep]);
+
+    expect(log.runSummary, contains('Install llama.cpp'));
+    expect(log.lines, contains('▸ Install llama.cpp'));
+    expect(log.lines, contains('Linked llama-server')); // streamed CLI output
+    expect(log.runOutcome, contains('completed'));
+  });
+
+  test('records the failing step and message in the log footer', () async {
+    final fake = FakeGridCliService()
+      ..stubStart(['engine', 'install', 'llama.cpp'],
+          exitCode: 1,
+          lines: const [CliLine(isStderr: true, text: 'brew: not found')]);
+    final log = _RecordingLog();
+    final container = _container(fake, log: log);
+
+    await container
+        .read(nodeSetupControllerProvider.notifier)
+        .run([_llamaStep, _modelStep]);
+
+    expect(log.lines, contains('brew: not found'));
+    expect(log.runOutcome, contains('FAILED'));
+    expect(log.runOutcome, contains('brew'));
+  });
+
+  test('logs a footer when grid is absent', () async {
+    final log = _RecordingLog();
+    final container = _container(null, log: log);
+
+    await container
+        .read(nodeSetupControllerProvider.notifier)
+        .run([_llamaStep]);
+
+    expect(log.runOutcome, contains('FAILED'));
+    expect(log.runOutcome, contains('grid executable not found'));
   });
 
   test('autoStart with an empty plan stays idle', () async {

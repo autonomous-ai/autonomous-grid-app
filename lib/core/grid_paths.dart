@@ -46,6 +46,17 @@ class GridPaths {
 
   static Directory get outputsDir => Directory('${home.path}/outputs');
 
+  /// The CLI's own log directory (`~/.grid/logs`, e.g. `llama_llm_*.log`). The
+  /// app drops its own diagnostic logs here too so everything a user might send
+  /// us to debug lives in one place.
+  static Directory get logsDir => Directory('${home.path}/logs');
+
+  /// Durable transcript of the background node-setup / auto-install run, written
+  /// by the app itself (not the CLI). The in-app log is in-memory only and gone
+  /// once the app closes; this file survives a failed silent install so it can
+  /// be debugged after the fact.
+  static File get nodeSetupLog => File('${logsDir.path}/app_node_setup.log');
+
   /// Where `grid llama.cpp install` links the engine (provider_runtime
   /// paths.py: `llama_server_bin()`).
   static File get llamaServerBin => File('${home.path}/bin/llama-server');

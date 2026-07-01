@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
+import '../../../infrastructure/logging/node_setup_log.dart';
 import '../../../infrastructure/providers.dart';
 import '../../models/logic/llama_install_controller.dart';
 import '../../models/logic/models_providers.dart';
@@ -65,9 +66,11 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   GridProcess? _process;
   bool _cancelled = false;
   bool _autoStarted = false;
+  late final NodeSetupLog _logFile;
 
   @override
   NodeSetupState build() {
+    _logFile = ref.read(nodeSetupLogProvider);
     ref.onDispose(() => _process?.kill());
     return const NodeSetupIdle();
   }
@@ -89,11 +92,15 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       return;
     }
 
+    _logFile.startRun(steps.map((s) => s.title).join(' → '));
+
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
+      const message = 'grid executable not found.';
+      _logFile.endRun('FAILED — $message');
       state = NodeSetupFailed(
         step: steps.first,
-        message: 'grid executable not found.',
+        message: message,
         log: const [],
       );
       return;
@@ -103,7 +110,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     final log = <String>[];
 
     for (var i = 0; i < steps.length; i++) {
-      if (_cancelled) return;
+      if (_cancelled) return; // cancel() writes its own footer
       _append(log, '▸ ${steps[i].title}');
       state = NodeSetupRunning(
           steps: steps, index: i, log: List.unmodifiable(log));
@@ -111,11 +118,19 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       final ok = steps[i].isDownload
           ? await _runDownload(service, steps, i, log)
           : await _runStreaming(service, steps, i, log);
-      if (!ok) return; // failure state already set
+      if (_cancelled) return; // cancel() writes its own footer
+      if (!ok) {
+        final failure = state;
+        _logFile.endRun(failure is NodeSetupFailed
+            ? 'FAILED — ${failure.step.title}: ${failure.message}'
+            : 'stopped');
+        return; // failure state already set
+      }
     }
 
     if (_cancelled) return;
     _refresh();
+    _logFile.endRun('completed — ${steps.length} step(s)');
     state = NodeSetupDone(steps);
   }
 
@@ -185,6 +200,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     _cancelled = true;
     _process?.kill();
     _process = null;
+    if (state is NodeSetupRunning) _logFile.endRun('cancelled by user');
     _refresh(); // partial steps may have installed something — rescan.
     state = const NodeSetupIdle();
   }
@@ -196,6 +212,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   }
 
   void _append(List<String> log, String text) {
+    _logFile.write(text); // mirror to the durable file, uncapped by _maxLogLines
     log.add(text);
     if (log.length > _maxLogLines) log.removeRange(0, log.length - _maxLogLines);
   }
