@@ -112,6 +112,10 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// `grid leave --engine`. Namespaced per grid by the CLI's run records.
   static const _engineName = 'grid-app';
 
+  /// Context window advertised to the grid for this engine, passed via
+  /// `--ctx-size`. 200k tokens so long conversations aren't truncated.
+  static const _ctxSize = 200000;
+
   GridProcess? _process;
   GridCliService? _service;
   String? _grid;
@@ -188,7 +192,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }
 
   /// Serve from an external OpenAI-compatible endpoint
-  /// (`grid join <grid> --at <url> -m <model>`).
+  /// (`grid join <grid> --at <url> -m <model> --ctx-size <n>`).
   Future<void> startExternal({
     required String network,
     required String endpoint,
@@ -201,6 +205,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '--at', endpoint,
         '-m', model,
         ..._advertiseArgs(advertiseAs),
+        '--ctx-size', '$_ctxSize',
         '--name', _engineName,
       ],
       grid: network,

@@ -33,7 +33,7 @@ permissions:
 # `main`) so every grid-app release compiles a known-good, reproducible CLI. Bump this
 # one line to ship a newer CLI: https://github.com/autonomous-ai/autonomous-grid/releases
 env:
-  CLI_VERSION: v0.1.2
+  CLI_VERSION: v0.1.4
 
 jobs:
   build:
