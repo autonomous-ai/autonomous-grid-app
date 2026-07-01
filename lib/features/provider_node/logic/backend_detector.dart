@@ -100,17 +100,9 @@ class BackendDetector {
       (await _httpProbeModels(baseUrl)) != null;
 
   /// Absolute path to executable [name] on the augmented host PATH, or null when
-  /// it isn't installed. Uses [HostEnvironment.path] so a packaged GUI app finds
-  /// Homebrew/login-shell tools its minimal PATH would otherwise miss.
-  static String? findOnPath(String name) {
-    final exe = Platform.isWindows ? '$name.exe' : name;
-    for (final dir in HostEnvironment.path().split(Platform.isWindows ? ';' : ':')) {
-      if (dir.isEmpty) continue;
-      final file = File('$dir${Platform.pathSeparator}$exe');
-      if (file.existsSync()) return file.path;
-    }
-    return null;
-  }
+  /// it isn't installed. Delegates to [HostEnvironment.findExecutable] so the
+  /// packaged GUI app finds Homebrew/login-shell tools its minimal PATH misses.
+  static String? findOnPath(String name) => HostEnvironment.findExecutable(name);
 
   /// GET `{baseUrl}/models` and return the model ids, or null if unreachable.
   static Future<List<String>?> _httpProbeModels(String baseUrl) async {

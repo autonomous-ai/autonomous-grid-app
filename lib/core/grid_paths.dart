@@ -8,7 +8,9 @@ import 'dart:io';
 class GridPaths {
   const GridPaths._();
 
-  static String get _userHome =>
+  /// The OS home directory (`$HOME` / `%USERPROFILE%`). Config for *other* tools
+  /// the app points at a grid (OpenClaw, Hermes) lives here, outside `~/.grid`.
+  static String get userHome =>
       Platform.environment['HOME'] ??
       Platform.environment['USERPROFILE'] ??
       Directory.current.path;
@@ -17,7 +19,7 @@ class GridPaths {
     final override = Platform.environment['GRID_HOME'];
     return Directory(override != null && override.isNotEmpty
         ? override
-        : '$_userHome/.grid');
+        : '$userHome/.grid');
   }
 
   static File get deviceFile => File('${home.path}/device.toml');

@@ -25,6 +25,19 @@ class HostEnvironment {
   /// spawns a process, so it's cached).
   static String path() => _cachedPath ??= _buildPath();
 
+  /// Absolute path to executable [name] on the augmented [path], or null when it
+  /// isn't installed. Rebuilding `PATH` first means a packaged GUI app finds
+  /// Homebrew / login-shell tools its minimal inherited `PATH` would miss.
+  static String? findExecutable(String name) {
+    final exe = Platform.isWindows ? '$name.exe' : name;
+    for (final dir in path().split(_sep)) {
+      if (dir.isEmpty) continue;
+      final file = File('$dir${Platform.pathSeparator}$exe');
+      if (file.existsSync()) return file.path;
+    }
+    return null;
+  }
+
   static final String _sep = Platform.isWindows ? ';' : ':';
 
   static String _buildPath() {

@@ -116,7 +116,7 @@ class _Header extends ConsumerWidget {
                       ?.copyWith(fontWeight: FontWeight.w600, fontSize: 22)),
             ),
             const SizedBox(width: 12),
-            OwnerBadge(network: network),
+            GridBadges(network: network),
           ],
         ),
         const SizedBox(height: 8),

@@ -128,31 +128,62 @@ class MetaRow extends StatelessWidget {
   }
 }
 
-/// A single "Owner" pill for grids the viewer owns, shown next to the grid name
-/// in both the list and the detail header. Members/consumers get no badge —
-/// owning a grid is the only distinction worth surfacing here.
-class OwnerBadge extends StatelessWidget {
-  const OwnerBadge({super.key, required this.network, this.onAccent = false});
+/// One grid pill in the shared compact shape, with the accent-row legibility
+/// swap: white on the blue selected row (where the tint muddies), the tint
+/// colour otherwise. One place so every grid badge looks identical.
+Widget _gridPill(String label, Color color, {required bool onAccent}) =>
+    _BadgePill(
+      label: label,
+      color: onAccent ? Colors.white : color,
+      compact: true,
+      fillAlpha: onAccent ? 0.24 : 0.16,
+      borderAlpha: onAccent ? 0.7 : 0.45,
+    );
+
+/// The list badge: a single pill so the sidebar row stays compact — "Owner" if
+/// the viewer owns the grid, else "Public" for a public grid they merely joined
+/// (otherwise a grid the user doesn't own looks like it appeared for no reason),
+/// else nothing. The detail header shows both at once via [GridBadges].
+class GridBadge extends StatelessWidget {
+  const GridBadge({super.key, required this.network, this.onAccent = false});
 
   final NetworkCredential network;
 
-  /// Render for an accent-filled (selected) row — swaps the teal pill for a
-  /// white one that stays legible on the blue background, where teal muddies.
+  /// Render for an accent-filled (selected) row — see [_gridPill].
   final bool onAccent;
 
   @override
   Widget build(BuildContext context) {
-    if (network.role != NetworkRole.admin) return const SizedBox.shrink();
-    return _BadgePill(
-      label: network.roleLabel, // 'Owner'
-      color: onAccent ? Colors.white : AppPalette.teal,
-      compact: true,
-      // On the blue selected row a faint white pill blends into the row and its
-      // white text into the grid name — fill/outline it more so it stays a
-      // distinct badge.
-      fillAlpha: onAccent ? 0.24 : 0.16,
-      borderAlpha: onAccent ? 0.7 : 0.45,
-    );
+    if (network.role == NetworkRole.admin) {
+      return _gridPill(network.roleLabel, AppPalette.teal, onAccent: onAccent);
+    }
+    if (network.isPublic) {
+      return _gridPill(network.visibilityLabel, AppPalette.accent,
+          onAccent: onAccent);
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+/// The detail-header badges: the role pill ("Owner" for admins) plus, for a
+/// public grid, a "Public" visibility pill beside it — so an owned public grid
+/// reads "Owner  Public" and the visibility is clear at a glance. The header has
+/// the room the compact list row lacks. Renders only the pills that apply.
+class GridBadges extends StatelessWidget {
+  const GridBadges({super.key, required this.network});
+
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context) {
+    final pills = <Widget>[
+      if (network.role == NetworkRole.admin)
+        _gridPill(network.roleLabel, AppPalette.teal, onAccent: false),
+      if (network.isPublic)
+        _gridPill(network.visibilityLabel, AppPalette.accent, onAccent: false),
+    ];
+    if (pills.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: 6, runSpacing: 6, children: pills);
   }
 }
 
@@ -211,6 +242,77 @@ class CopyIconButton extends StatelessWidget {
           const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
         );
       },
+    );
+  }
+}
+
+/// A heading above a code block, with an optional caption (e.g. the file the
+/// snippet belongs in). Shared by the app-connection guide.
+class GuideLabel extends StatelessWidget {
+  const GuideLabel(this.text, {super.key, this.caption});
+  final String text;
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            text,
+            style: const TextStyle(
+                color: AppPalette.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600),
+          ),
+          if (caption != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                caption!,
+                style: const TextStyle(
+                    color: AppPalette.textFaint, fontSize: 11.5, height: 1.3),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A monospace, selectable code panel with a copy button in the corner. Shared
+/// by the app-connection guide.
+class CodeBlock extends StatelessWidget {
+  const CodeBlock({super.key, required this.code});
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: AppPalette.windowBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
+            child: SelectableText(
+              code,
+              style: const TextStyle(
+                  color: AppPalette.textPrimary,
+                  fontFamily: 'monospace',
+                  fontSize: 12.5,
+                  height: 1.45),
+            ),
+          ),
+          Positioned(top: 2, right: 2, child: CopyIconButton(value: code)),
+        ],
+      ),
     );
   }
 }

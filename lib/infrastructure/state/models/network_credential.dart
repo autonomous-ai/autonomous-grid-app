@@ -96,8 +96,8 @@ class NetworkCredential {
   /// (`permissioned-public`). Everything else is providers-only / private.
   bool get isPublic => networkType.contains('public');
 
-  /// Visibility label shown to admins (who manage the grid) regardless of their
-  /// own role: `Public` vs `Private`.
+  /// The grid's visibility: `Public` vs `Private`. Surfaced on the grid badge
+  /// (a public grid the viewer merely joined) and in admin settings.
   String get visibilityLabel => isPublic ? 'Public' : 'Private';
 
   /// May the viewer reach the Provider/Models tabs on this network? Admins

@@ -207,7 +207,7 @@ class _NetworkTile extends ConsumerWidget {
                           fontWeight: FontWeight.w500)),
                 ),
                 const SizedBox(width: 8),
-                OwnerBadge(network: network, onAccent: selected),
+                GridBadge(network: network, onAccent: selected),
               ],
             ),
           ),
