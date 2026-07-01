@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
+import '../../network/logic/grid_sync_controller.dart';
 import 'backend_detector.dart';
 import 'free_port.dart';
 
@@ -262,6 +263,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       // `grid join` launched the engine in the background; it's serving now.
       state = ProviderRunActive(
           grid: grid, log: List.unmodifiable(log), starting: false, model: model);
+      _syncGridAfterJoin();
       return;
     }
 
@@ -285,6 +287,21 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }
     _grid = null;
     state = ProviderRunFailed(failure);
+  }
+
+  /// After a successful join the engine is now advertised on the grid, so
+  /// re-run `grid sync` to pull the refreshed grid list/tokens (mirrors the
+  /// auto-sync after create/login). Fire-and-forget and best-effort: a sync
+  /// hiccup must never disturb a start that already succeeded, and the sync
+  /// controller surfaces its own status/expiry handling.
+  void _syncGridAfterJoin() {
+    unawaited(() async {
+      try {
+        await ref.read(gridSyncControllerProvider.notifier).sync();
+      } on Object {
+        // Best-effort refresh; ignore failures here.
+      }
+    }());
   }
 
   /// True if [pid] names a live process. POSIX `kill -0` probes existence

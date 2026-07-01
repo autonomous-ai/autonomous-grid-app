@@ -89,6 +89,31 @@ void main() {
     expect(seen.whereType<ProviderRunActive>(), isNotEmpty);
   });
 
+  test('a successful join re-runs grid sync to refresh the grid list',
+      () async {
+    // After the engine joins it's advertised on the grid, so the controller
+    // kicks off a `grid sync` to pull the refreshed list/tokens.
+    final cli = _RecordingCli()
+      ..stubStart(
+        _args,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Joining engine grid-app...')],
+      );
+    final container = _containerWith(cli);
+    addTearDown(container.dispose);
+
+    await container.read(providerRunControllerProvider.notifier).startExternal(
+          network: 'net',
+          endpoint: 'http://x/v1',
+          model: 'm',
+        );
+    // The post-join sync is fire-and-forget; let it reach the CLI.
+    await Future<void>.delayed(Duration.zero);
+
+    expect(cli.runs, contains(equals(const ['sync'])));
+  });
+
   test('non-zero exit surfaces a failure', () async {
     final fake = FakeGridCliService()
       ..stubStart(

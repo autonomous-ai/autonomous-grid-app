@@ -1,13 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
+import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
 import '../logic/llama_install_controller.dart';
+import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
 import 'model_manager_dialog.dart';
+
+/// A model download in flight — from the node-setup auto-download (its
+/// "Download a model" step) or a manual pull in the model manager — reduced to
+/// what the engine block needs. Outer null means nothing is downloading; a null
+/// [pct] means "downloading, percent not known yet".
+({int? pct})? _modelDownloadStatus(ModelPullState pull, NodeSetupState setup) {
+  if (pull is ModelPulling) return (pct: _pctOf(pull.progress));
+  if (setup is NodeSetupRunning && setup.current.isDownload) {
+    return (pct: _pctOf(setup.progress));
+  }
+  return null;
+}
+
+int? _pctOf(DownloadProgress? p) =>
+    (p != null && !p.isIndeterminate) ? p.pct!.round() : null;
 
 /// The built-in llama.cpp engine block: serve a locally pulled GGUF model via
 /// `grid join <grid> --serve <gguf> --advertise-as <name>`. Downloading and
@@ -59,6 +77,10 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     final theme = Theme.of(context);
     final models = ref.watch(localModelsProvider);
     final llamaInstalled = ref.watch(engineStatusProvider).llamaInstalled;
+    final download = _modelDownloadStatus(
+      ref.watch(modelPullControllerProvider),
+      ref.watch(nodeSetupControllerProvider),
+    );
 
     // Default to the first model; keep selection valid if the list changes.
     final names = models.map((m) => m.name).toList();
@@ -68,38 +90,72 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (selected == null) ...[
-          // No models yet. If the engine is installed, downloading one is the
-          // next step — make it a primary action, not a tucked-away link. Until
-          // the engine is installed, the node setup above is the next step.
-          if (llamaInstalled) ...[
-            Text(
-              'No models on this computer yet. Download one to start serving.',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: () => showModelManager(context),
-                icon: const Icon(Icons.download_outlined, size: 18),
-                label: const Text('Download a model'),
-              ),
-            ),
-          ] else
-            Text(
-              'Set this computer up as a node above, then download a model to serve.',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-        ] else ...[
-          ..._serveControls(names, selected),
-        ],
-      ],
+      children: selected == null
+          ? _noModelSection(context, theme,
+              llamaInstalled: llamaInstalled, download: download)
+          : _serveControls(names, selected),
     );
   }
+
+  /// What to show when no model is downloaded yet. A live download takes
+  /// priority — the redundant "Download a model" button would sit right above
+  /// the progress bar and confuse — so it's replaced with a progress indicator.
+  List<Widget> _noModelSection(BuildContext context, ThemeData theme,
+      {required bool llamaInstalled, required ({int? pct})? download}) {
+    if (download != null) return _downloadingSection(theme, download.pct);
+    // No models yet. If the engine is installed, downloading one is the next
+    // step — make it a primary action, not a tucked-away link. Until the engine
+    // is installed, the node setup above is the next step.
+    if (llamaInstalled) return _downloadPromptSection(context, theme);
+    return [
+      Text(
+        'Set this computer up as a node above, then download a model to serve.',
+        style: theme.textTheme.bodyMedium
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      ),
+    ];
+  }
+
+  /// A model is downloading (node setup or a manual pull): show progress in
+  /// place of the download button, since the live bar + Cancel are below.
+  List<Widget> _downloadingSection(ThemeData theme, int? pct) => [
+        Text(
+          'Downloading a model — this can take a few minutes.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            // Not tappable — it reflects the download already running below.
+            onPressed: null,
+            icon: const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            label: Text(pct != null ? 'Downloading… $pct%' : 'Downloading…'),
+          ),
+        ),
+      ];
+
+  List<Widget> _downloadPromptSection(BuildContext context, ThemeData theme) => [
+        Text(
+          'No models on this computer yet. Download one to start serving.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: () => showModelManager(context),
+            icon: const Icon(Icons.download_outlined, size: 18),
+            label: const Text('Download a model'),
+          ),
+        ),
+      ];
 
   List<Widget> _serveControls(List<String> names, String selected) => [
         DropdownButtonFormField<String>(
