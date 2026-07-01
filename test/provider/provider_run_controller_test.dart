@@ -13,6 +13,7 @@ const _args = [
   'join', 'net',
   '--at', 'http://x/v1',
   '-m', 'm',
+  '--ctx-size', '200000',
   '--name', 'grid-app',
 ];
 
@@ -100,7 +101,11 @@ void main() {
         exitDelay: const Duration(milliseconds: 15),
         lines: const [CliLine(isStderr: false, text: 'Joining engine grid-app...')],
       );
-    final container = _containerWith(cli);
+    // Drop the post-join sync delay so the fire-and-forget sync runs at once.
+    final container = ProviderContainer(overrides: [
+      gridCliServiceProvider.overrideWithValue(cli),
+      syncDelayAfterJoinProvider.overrideWithValue(Duration.zero),
+    ]);
     addTearDown(container.dispose);
 
     await container.read(providerRunControllerProvider.notifier).startExternal(
@@ -180,6 +185,44 @@ void main() {
     // deleting it while it's live.
     expect((state as ProviderRunActive).model, 'qwen.gguf');
     expect(container.read(servingModelProvider), 'qwen.gguf');
+  });
+
+  test('startLocal passes the chosen context length via --ctx-size', () async {
+    // The context-length slider hands startLocal a token count; it must reach
+    // the join as `--ctx-size <n>` so the engine caps the model's context.
+    const localArgs = [
+      'join', 'net',
+      '--serve', 'qwen.gguf',
+      '--endpoint-port', '54321',
+      '--advertise-as', 'qwen',
+      '--ctx-size', '131072',
+      '--name', 'grid-app',
+    ];
+    final fake = FakeGridCliService()
+      ..stubStart(
+        localArgs,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Serving qwen.gguf…')],
+      );
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        freePortFinderProvider.overrideWithValue(() async => 54321),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(providerRunControllerProvider.notifier).startLocal(
+          network: 'net',
+          model: 'qwen.gguf',
+          advertiseAs: 'qwen',
+          ctxSize: 131072,
+        );
+
+    // Matched the --ctx-size command (the fake returns its default empty run
+    // otherwise, never emitting an active state).
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
   });
 
   test('startLocal self-heals when the chosen port is already in use', () async {
@@ -329,6 +372,7 @@ void main() {
       'join', 'gridB',
       '--at', 'http://x/v1',
       '-m', 'm',
+      '--ctx-size', '200000',
       '--name', 'grid-app',
     ];
     final cli = _RecordingCli()

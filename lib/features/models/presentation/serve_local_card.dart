@@ -7,9 +7,11 @@ import '../../../shared/widgets/advertise_as_field.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
+import '../logic/context_length.dart';
 import '../logic/llama_install_controller.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
+import 'context_length_field.dart';
 import 'model_manager_dialog.dart';
 
 /// A model download in flight — from the node-setup auto-download (its
@@ -44,6 +46,11 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   String? _model;
   String? _advertiseFilledFor;
 
+  /// The user's chosen context length in tokens. Null means "use the model's
+  /// maximum" — resolved from [modelMaxContextProvider] at start time. Reset on
+  /// every model change so the slider defaults to the new model's own maximum.
+  int? _ctxSize;
+
   @override
   void dispose() {
     _advertise.dispose();
@@ -63,12 +70,19 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
   void _start(String model) {
     final advertise = _advertise.text.trim();
+    // Fall back to the model's default (200k, capped to its max) when the user
+    // hasn't moved the slider; if the max isn't read yet, leave --ctx-size off
+    // so the engine uses its own default.
+    final max = ref.read(modelMaxContextProvider(model)).asData?.value;
+    final ctxSize =
+        _ctxSize ?? (max != null ? defaultContextLength(max) : null);
     // --advertise-as is always sent; derive from the model name if left blank.
     ref.read(providerRunControllerProvider.notifier).startLocal(
           network: widget.network.networkId,
           model: model,
           advertiseAs:
               advertise.isEmpty ? deriveAdvertiseName(model) : advertise,
+          ctxSize: ctxSize,
         );
   }
 
@@ -168,12 +182,23 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
             for (final name in names)
               DropdownMenuItem(value: name, child: Text(name)),
           ],
-          onChanged: (value) => setState(() => _model = value),
+          // Reset the context choice so the slider falls back to the new
+          // model's own maximum instead of carrying over the previous one.
+          onChanged: (value) => setState(() {
+            _model = value;
+            _ctxSize = null;
+          }),
         ),
         const SizedBox(height: 12),
         AdvertiseAsField(
           controller: _advertise,
           hintText: 'Qwen3.6-35B-A3B',
+        ),
+        const SizedBox(height: 12),
+        ContextLengthField(
+          model: selected,
+          value: _ctxSize,
+          onChanged: (tokens) => setState(() => _ctxSize = tokens),
         ),
         const SizedBox(height: 16),
         Align(

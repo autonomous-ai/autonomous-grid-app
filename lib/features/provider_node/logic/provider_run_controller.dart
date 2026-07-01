@@ -18,6 +18,12 @@ final backendsProvider =
 /// the CLI's fixed 8081 default.
 final freePortFinderProvider = Provider<FreePortFinder>((_) => findFreePort);
 
+/// How long to wait after a successful join before re-syncing the grid list.
+/// Gives the just-joined engine a moment to register on the grid so the sync
+/// reflects it; overridable in tests to run without the real delay.
+final syncDelayAfterJoinProvider =
+    Provider<Duration>((_) => const Duration(seconds: 5));
+
 final providerRunControllerProvider =
     NotifierProvider<ProviderRunController, ProviderRunState>(
         ProviderRunController.new);
@@ -112,6 +118,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// `grid leave --engine`. Namespaced per grid by the CLI's run records.
   static const _engineName = 'grid-app';
 
+  /// Context window for an external (`--at`) engine, passed via `--ctx-size`.
+  /// There's no local GGUF to inspect for the real maximum, so we send a fixed
+  /// 200k — the local `--serve` path derives its own from `grid ctx` instead.
+  static const _externalCtxSize = 200000;
+
   GridProcess? _process;
   GridCliService? _service;
   String? _grid;
@@ -171,12 +182,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     required String network,
     required String model,
     String? advertiseAs,
+    int? ctxSize,
   }) async {
     Future<List<String>> buildArgs() async => [
           'join', network,
           '--serve', model,
           '--endpoint-port', '${await ref.read(freePortFinderProvider)()}',
           ..._advertiseArgs(advertiseAs),
+          ..._ctxArgs(ctxSize),
           '--name', _engineName,
         ];
     return _start(
@@ -188,7 +201,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }
 
   /// Serve from an external OpenAI-compatible endpoint
-  /// (`grid join <grid> --at <url> -m <model>`).
+  /// (`grid join <grid> --at <url> -m <model> --ctx-size <n>`).
   Future<void> startExternal({
     required String network,
     required String endpoint,
@@ -201,6 +214,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '--at', endpoint,
         '-m', model,
         ..._advertiseArgs(advertiseAs),
+        ..._ctxArgs(_externalCtxSize),
         '--name', _engineName,
       ],
       grid: network,
@@ -212,6 +226,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       (advertiseAs != null && advertiseAs.isNotEmpty)
           ? ['--advertise-as', advertiseAs]
           : const [];
+
+  /// `--ctx-size <n>` when a context length is set, else nothing (the engine
+  /// uses its own default). Shared by the local and external join paths.
+  List<String> _ctxArgs(int? ctxSize) =>
+      ctxSize != null ? ['--ctx-size', '$ctxSize'] : const [];
 
   /// [rebuildForPortConflict] (local engine only) rebuilds the join args with a
   /// freshly-picked port, so a "port already in use" abort self-heals on a
@@ -295,11 +314,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// hiccup must never disturb a start that already succeeded, and the sync
   /// controller surfaces its own status/expiry handling.
   void _syncGridAfterJoin() {
+    final delay = ref.read(syncDelayAfterJoinProvider);
     unawaited(() async {
+      await Future<void>.delayed(delay);
       try {
         await ref.read(gridSyncControllerProvider.notifier).sync();
       } on Object {
-        // Best-effort refresh; ignore failures here.
+        // Best-effort refresh; ignore failures here (incl. a disposed ref if the
+        // controller was torn down during the delay).
       }
     }());
   }

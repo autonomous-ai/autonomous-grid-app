@@ -24,10 +24,22 @@ final selectedNetworkProvider =
     NotifierProvider<SelectedNetwork, NetworkCredential?>(SelectedNetwork.new);
 
 class SelectedNetwork extends Notifier<NetworkCredential?> {
+  /// The grid the user explicitly picked this session, remembered by id. A
+  /// background refresh (e.g. the `grid sync` after starting an engine)
+  /// invalidates [sessionProvider] and re-runs [build]; without this we'd snap
+  /// back to the default/first grid and strand the user — resetting their view
+  /// and bouncing them off the Engines tab. Re-resolving the same id keeps the
+  /// selection put as long as the grid still exists in the refreshed list.
+  String? _selectedId;
+
   @override
   NetworkCredential? build() {
     final creds = ref.watch(sessionProvider);
     final active = ref.watch(activeRemoteGridProvider);
+    // A live selection wins over the on-disk default, so a refresh doesn't move
+    // the user — unless that grid vanished from the synced list.
+    final picked = _selectedId == null ? null : creds.byName(_selectedId!);
+    if (picked != null) return picked;
     if (active != null) {
       final match = creds.byName(active);
       if (match != null) return match;
@@ -35,5 +47,8 @@ class SelectedNetwork extends Notifier<NetworkCredential?> {
     return creds.active;
   }
 
-  void select(NetworkCredential network) => state = network;
+  void select(NetworkCredential network) {
+    _selectedId = network.networkId;
+    state = network;
+  }
 }
