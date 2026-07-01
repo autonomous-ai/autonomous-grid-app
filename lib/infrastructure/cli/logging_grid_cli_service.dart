@@ -49,12 +49,24 @@ class LoggingGridCliService implements GridCliService {
   @override
   Stream<DownloadProgress> pull(List<String> args) async* {
     final id = _log.begin(CliCallKind.pull, 'grid ${args.join(' ')}');
+    var finished = false;
+    void finish({int? exitCode, String? error}) {
+      if (finished) return;
+      finished = true;
+      _log.finish(id, exitCode: exitCode, error: error);
+    }
+
     try {
       yield* _inner.pull(args);
+      finish(exitCode: 0);
     } catch (e) {
-      _log.finish(id, error: e.toString());
+      finish(error: e.toString());
       rethrow;
+    } finally {
+      // Cancelled mid-stream (user hit Cancel): neither branch above ran, so
+      // close the entry here — otherwise the Debug tab shows the pull stuck at
+      // "running" forever.
+      finish(exitCode: 0);
     }
-    _log.finish(id, exitCode: 0);
   }
 }

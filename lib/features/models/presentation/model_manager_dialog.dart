@@ -7,6 +7,7 @@ import '../../../shared/widgets/status_dot.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
 import '../logic/models_providers.dart';
+import 'catalog_download_list.dart';
 import 'model_pull_card.dart';
 
 /// "Manage models" — the model hub that used to be its own tab: download a GGUF
@@ -23,33 +24,39 @@ class _ModelManagerDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final models = ref.watch(localModelsProvider);
+    // Grow with the window (desktop app) so three stacked sections don't feel
+    // cramped, but stay clear of the screen edges on smaller displays.
+    final screen = MediaQuery.sizeOf(context);
+    final maxWidth = screen.width < 800 ? screen.width - 96 : 720.0;
+    final maxHeight = screen.height < 860 ? screen.height * 0.9 : 780.0;
 
     return Dialog(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
+        constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(32, 28, 32, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
               const _DialogHeader(),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
               const SizedBox(height: 20),
+              const Divider(height: 1),
+              const SizedBox(height: 24),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
                   children: [
                     const _SectionLabel('Download a model'),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                     const ModelPullCard(),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 32),
+                    const CatalogDownloadSection(),
                     _SectionLabel(
                       'Downloaded models',
                       trailing: models.isEmpty ? null : '${models.length}',
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                     _DownloadedList(models: models),
                   ],
                 ),

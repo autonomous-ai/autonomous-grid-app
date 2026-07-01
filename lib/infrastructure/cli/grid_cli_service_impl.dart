@@ -88,23 +88,46 @@ class GridCliServiceImpl implements GridCliService {
   }
 
   @override
-  Stream<DownloadProgress> pull(List<String> args) async* {
-    final process =
-        await Process.start(executable, args,
-        runInShell: false, environment: _env);
-    // Progress is written with `\r`, so decode bytes and split on it ourselves
-    // rather than using a line splitter (which only breaks on `\n`).
-    final controller = StreamController<DownloadProgress>();
+  Stream<DownloadProgress> pull(List<String> args) {
+    // Built around a StreamController so cancelling the subscription (the user
+    // hitting "Cancel") can SIGTERM the `grid pull` process — the transfer
+    // actually stops instead of running on in the background.
+    Process? process;
+    StreamSubscription<String>? stderrSub;
+    late final StreamController<DownloadProgress> controller;
 
-    process.stderr.transform(utf8.decoder).listen(
-      (chunk) {
-        final progress = DownloadProgress.latest(chunk);
-        if (progress != null) controller.add(progress);
+    Future<void> begin() async {
+      try {
+        process = await Process.start(executable, args,
+            runInShell: false, environment: _env);
+      } catch (e, st) {
+        if (!controller.isClosed) controller.addError(e, st);
+        if (!controller.isClosed) await controller.close();
+        return;
+      }
+      // Progress is written with `\r`, so decode bytes and split on it ourselves
+      // rather than using a line splitter (which only breaks on `\n`).
+      stderrSub = process!.stderr.transform(utf8.decoder).listen(
+        (chunk) {
+          final progress = DownloadProgress.latest(chunk);
+          if (progress != null && !controller.isClosed) controller.add(progress);
+        },
+        onError: (Object e, StackTrace st) {
+          if (!controller.isClosed) controller.addError(e, st);
+        },
+      );
+      unawaited(process!.exitCode.whenComplete(() {
+        if (!controller.isClosed) controller.close();
+      }));
+    }
+
+    controller = StreamController<DownloadProgress>(
+      onListen: () => unawaited(begin()),
+      onCancel: () async {
+        process?.kill(ProcessSignal.sigterm);
+        await stderrSub?.cancel();
       },
-      onError: controller.addError,
     );
-
-    unawaited(process.exitCode.then((_) => controller.close()));
-    yield* controller.stream;
+    return controller.stream;
   }
 }

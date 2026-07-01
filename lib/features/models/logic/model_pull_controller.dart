@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/parsers/download_progress.dart';
@@ -38,8 +40,23 @@ class ModelPullFailed extends ModelPullState {
 /// `pull()` doesn't surface an exit code, so success is confirmed by re-scanning
 /// `~/.grid/models` for the target file afterwards.
 class ModelPullController extends Notifier<ModelPullState> {
+  /// Live download subscription, so [cancel] can tear it down (which SIGTERMs
+  /// the `grid pull` process via the stream's onCancel). Null when idle.
+  StreamSubscription<DownloadProgress>? _sub;
+
+  /// Completes when the current download stream ends — by finishing, erroring,
+  /// or being [cancel]led — so [pull] can await one terminal outcome.
+  Completer<void>? _completer;
+
+  /// True while a [cancel] is being honoured, so [pull] skips its
+  /// success/failure handling and leaves the idle state cancel set.
+  bool _cancelled = false;
+
   @override
-  ModelPullState build() => const ModelPullIdle();
+  ModelPullState build() {
+    ref.onDispose(() => _sub?.cancel());
+    return const ModelPullIdle();
+  }
 
   Future<void> pull(String spec) async {
     final trimmed = spec.trim();
@@ -52,12 +69,34 @@ class ModelPullController extends Notifier<ModelPullState> {
       return;
     }
 
+    _cancelled = false;
     state = ModelPulling(spec: trimmed);
-    try {
-      await for (final progress in service.pull(['pull', trimmed])) {
-        state = ModelPulling(spec: trimmed, progress: progress);
-      }
-    } catch (_) {
+
+    final completer = Completer<void>();
+    _completer = completer;
+    var failed = false;
+    void settle() {
+      if (!completer.isCompleted) completer.complete();
+    }
+
+    _sub = service.pull(['pull', trimmed]).listen(
+      (progress) => state = ModelPulling(spec: trimmed, progress: progress),
+      onError: (Object _) {
+        failed = true;
+        settle();
+      },
+      onDone: settle,
+      cancelOnError: true,
+    );
+
+    await completer.future;
+    await _sub?.cancel();
+    _sub = null;
+    _completer = null;
+
+    // [cancel] already reset the state to idle; don't clobber it.
+    if (_cancelled) return;
+    if (failed) {
       state = const ModelPullFailed(
           "Couldn't download the model — check your internet connection and "
           'that the model name is correct, then try again.');
@@ -85,6 +124,19 @@ class ModelPullController extends Notifier<ModelPullState> {
           "The download finished but the model couldn't be found afterwards. "
           'Check the model name and try again.');
     }
+  }
+
+  /// Stop an in-progress download and return to idle. Cancels the stream, which
+  /// SIGTERMs the `grid pull` process so the transfer actually stops rather than
+  /// finishing in the background. No-op when nothing is downloading.
+  Future<void> cancel() async {
+    if (state is! ModelPulling) return;
+    _cancelled = true;
+    final sub = _sub;
+    _sub = null;
+    await sub?.cancel();
+    if (!(_completer?.isCompleted ?? true)) _completer!.complete();
+    state = const ModelPullIdle();
   }
 
   void reset() => state = const ModelPullIdle();

@@ -111,12 +111,12 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
   }
 }
 
-class _ProgressView extends StatelessWidget {
+class _ProgressView extends ConsumerWidget {
   const _ProgressView({required this.state});
   final ModelPulling state;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final progress = state.progress;
     final fraction =
@@ -134,9 +134,25 @@ class _ProgressView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Downloading ${state.spec}',
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium),
+        Row(
+          children: [
+            Expanded(
+              child: Text('Downloading ${state.spec}',
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: () =>
+                  ref.read(modelPullControllerProvider.notifier).cancel(),
+              icon: const Icon(Icons.close, size: 16),
+              label: const Text('Cancel'),
+              style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: theme.colorScheme.error),
+            ),
+          ],
+        ),
         const SizedBox(height: 10),
         LinearProgressIndicator(value: fraction),
         const SizedBox(height: 6),
