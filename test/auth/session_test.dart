@@ -35,6 +35,19 @@ class _FakeStore extends GridHomeStore {
   String? readActiveRemoteGrid() => activeRemote;
 }
 
+/// Like [_FakeStore] but its credentials can change between reads, so a test can
+/// simulate what `grid sync` writes to disk and then invalidate [sessionProvider].
+class _MutableStore extends GridHomeStore {
+  _MutableStore(this.credentials);
+  CredentialsFile credentials;
+
+  @override
+  CredentialsFile readCredentials() => credentials;
+
+  @override
+  String? readActiveRemoteGrid() => null;
+}
+
 void main() {
   final foo = _network('grid-foo', 'foo');
   final bar = _network('grid-bar', 'bar');
@@ -82,5 +95,37 @@ void main() {
     final container = containerWith(CredentialsFile.empty);
     expect(container.read(sessionProvider).isLoggedIn, isFalse);
     expect(container.read(selectedNetworkProvider), isNull);
+  });
+
+  test('keeps the user selection across a session refresh (grid sync)', () {
+    // The user picks bar; the post-join `grid sync` invalidates the session.
+    // Selection must stay on bar, not snap back to the default (foo) — that
+    // reset is what bounced the user off the Engines tab onto Grids.
+    final container = containerWith(
+      CredentialsFile(networks: [foo, bar], activeNetwork: 'grid-foo'),
+    );
+    container.read(selectedNetworkProvider.notifier).select(bar);
+    expect(container.read(selectedNetworkProvider)!.networkId, 'grid-bar');
+
+    container.invalidate(sessionProvider); // re-read after `grid sync`
+    expect(container.read(selectedNetworkProvider)!.networkId, 'grid-bar');
+  });
+
+  test('falls back to the default when the selected grid vanishes after sync',
+      () {
+    final store =
+        _MutableStore(CredentialsFile(networks: [foo, bar], activeNetwork: 'grid-foo'));
+    final container = ProviderContainer(
+      overrides: [gridHomeStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+
+    container.read(selectedNetworkProvider.notifier).select(bar);
+    expect(container.read(selectedNetworkProvider)!.networkId, 'grid-bar');
+
+    // A sync drops bar from the account; selection falls back gracefully.
+    store.credentials = CredentialsFile(networks: [foo], activeNetwork: 'grid-foo');
+    container.invalidate(sessionProvider);
+    expect(container.read(selectedNetworkProvider)!.networkId, 'grid-foo');
   });
 }

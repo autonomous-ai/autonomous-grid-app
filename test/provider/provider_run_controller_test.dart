@@ -101,7 +101,11 @@ void main() {
         exitDelay: const Duration(milliseconds: 15),
         lines: const [CliLine(isStderr: false, text: 'Joining engine grid-app...')],
       );
-    final container = _containerWith(cli);
+    // Drop the post-join sync delay so the fire-and-forget sync runs at once.
+    final container = ProviderContainer(overrides: [
+      gridCliServiceProvider.overrideWithValue(cli),
+      syncDelayAfterJoinProvider.overrideWithValue(Duration.zero),
+    ]);
     addTearDown(container.dispose);
 
     await container.read(providerRunControllerProvider.notifier).startExternal(

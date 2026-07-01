@@ -18,6 +18,12 @@ final backendsProvider =
 /// the CLI's fixed 8081 default.
 final freePortFinderProvider = Provider<FreePortFinder>((_) => findFreePort);
 
+/// How long to wait after a successful join before re-syncing the grid list.
+/// Gives the just-joined engine a moment to register on the grid so the sync
+/// reflects it; overridable in tests to run without the real delay.
+final syncDelayAfterJoinProvider =
+    Provider<Duration>((_) => const Duration(seconds: 5));
+
 final providerRunControllerProvider =
     NotifierProvider<ProviderRunController, ProviderRunState>(
         ProviderRunController.new);
@@ -308,11 +314,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// hiccup must never disturb a start that already succeeded, and the sync
   /// controller surfaces its own status/expiry handling.
   void _syncGridAfterJoin() {
+    final delay = ref.read(syncDelayAfterJoinProvider);
     unawaited(() async {
+      await Future<void>.delayed(delay);
       try {
         await ref.read(gridSyncControllerProvider.notifier).sync();
       } on Object {
-        // Best-effort refresh; ignore failures here.
+        // Best-effort refresh; ignore failures here (incl. a disposed ref if the
+        // controller was torn down during the delay).
       }
     }());
   }
