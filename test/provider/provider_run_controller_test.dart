@@ -113,9 +113,12 @@ void main() {
   });
 
   test('startLocal serves a local model via --serve (built-in engine)', () async {
+    // A free port is picked and passed via --endpoint-port so the join never
+    // collides with a common default (8081) another app may already hold.
     const localArgs = [
       'join', 'net',
       '--serve', 'qwen.gguf',
+      '--endpoint-port', '54321',
       '--advertise-as', 'qwen',
       '--name', 'grid-app',
     ];
@@ -127,7 +130,10 @@ void main() {
         lines: const [CliLine(isStderr: false, text: 'Serving qwen.gguf…')],
       );
     final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        freePortFinderProvider.overrideWithValue(() async => 54321),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -149,6 +155,56 @@ void main() {
     // deleting it while it's live.
     expect((state as ProviderRunActive).model, 'qwen.gguf');
     expect(container.read(servingModelProvider), 'qwen.gguf');
+  });
+
+  test('startLocal self-heals when the chosen port is already in use', () async {
+    // First join loses the race for port 5000; the controller picks a fresh
+    // port (5001) and retries, which succeeds.
+    const argsPortA = [
+      'join', 'net',
+      '--serve', 'qwen.gguf',
+      '--endpoint-port', '5000',
+      '--advertise-as', 'qwen',
+      '--name', 'grid-app',
+    ];
+    const argsPortB = [
+      'join', 'net',
+      '--serve', 'qwen.gguf',
+      '--endpoint-port', '5001',
+      '--advertise-as', 'qwen',
+      '--name', 'grid-app',
+    ];
+    final fake = FakeGridCliService()
+      ..stubStart(argsPortA, exitCode: 1, lines: const [
+        CliLine(isStderr: true, text: 'Port 5000 already in use; aborting.'),
+      ])
+      ..stubStart(
+        argsPortB,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Serving qwen.gguf…')],
+      );
+    // Hand out a distinct port on each pick so the retry lands on a new one.
+    final ports = <int>[5000, 5001];
+    var pick = 0;
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        freePortFinderProvider.overrideWithValue(() async => ports[pick++]),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(providerRunControllerProvider.notifier).startLocal(
+          network: 'net',
+          model: 'qwen.gguf',
+          advertiseAs: 'qwen',
+        );
+
+    final state = container.read(providerRunControllerProvider);
+    expect(state, isA<ProviderRunActive>());
+    expect((state as ProviderRunActive).starting, isFalse);
+    expect(pick, 2); // picked twice: initial + one retry
   });
 
   test('fails fast when grid is absent', () async {

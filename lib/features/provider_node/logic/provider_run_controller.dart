@@ -6,10 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import 'backend_detector.dart';
+import 'free_port.dart';
 
 /// Inference backends found on the machine (Ollama, LM Studio, llama.cpp).
 final backendsProvider =
     FutureProvider<List<DetectedBackend>>((ref) => BackendDetector().detect());
+
+/// How the built-in engine's local port is chosen — a free OS-assigned port by
+/// default, overridable in tests. See [findFreePort] for why we don't rely on
+/// the CLI's fixed 8081 default.
+final freePortFinderProvider = Provider<FreePortFinder>((_) => findFreePort);
 
 final providerRunControllerProvider =
     NotifierProvider<ProviderRunController, ProviderRunState>(
@@ -153,21 +159,30 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }
 
   /// Serve a model already pulled into `~/.grid/models` via the built-in engine
-  /// (`grid join <grid> --serve <gguf> [--advertise-as]`).
+  /// (`grid join <grid> --serve <gguf> --endpoint-port <free> [--advertise-as]`).
+  ///
+  /// Picks a free local port for the engine's server instead of the CLI's fixed
+  /// 8081 default, which another app on the user's machine may already hold —
+  /// otherwise the join aborts with "Port 8081 already in use". [buildArgs] picks
+  /// a *fresh* free port each call so [_start] can retry on a new port if it
+  /// loses the race for the first one.
   Future<void> startLocal({
     required String network,
     required String model,
     String? advertiseAs,
-  }) {
+  }) async {
+    Future<List<String>> buildArgs() async => [
+          'join', network,
+          '--serve', model,
+          '--endpoint-port', '${await ref.read(freePortFinderProvider)()}',
+          ..._advertiseArgs(advertiseAs),
+          '--name', _engineName,
+        ];
     return _start(
-      [
-        'join', network,
-        '--serve', model,
-        ..._advertiseArgs(advertiseAs),
-        '--name', _engineName,
-      ],
+      await buildArgs(),
       grid: network,
       model: model,
+      rebuildForPortConflict: buildArgs,
     );
   }
 
@@ -197,8 +212,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
           ? ['--advertise-as', advertiseAs]
           : const [];
 
+  /// [rebuildForPortConflict] (local engine only) rebuilds the join args with a
+  /// freshly-picked port, so a "port already in use" abort self-heals on a
+  /// second port instead of failing.
   Future<void> _start(List<String> args,
-      {required String grid, String? model, bool retried = false}) async {
+      {required String grid,
+      String? model,
+      bool retried = false,
+      Future<List<String>> Function()? rebuildForPortConflict}) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
@@ -246,12 +267,21 @@ class ProviderRunController extends Notifier<ProviderRunState> {
 
     final failure =
         log.isNotEmpty ? log.last : 'engine failed to start (exit $exitCode).';
+    final lowerFailure = failure.toLowerCase();
     // A leftover engine from a previous session blocks the join with the same
     // `--name`. Drop it with `grid leave` and retry once, so the user isn't
     // stuck unable to start (and unable to stop a run the app never tracked).
-    if (!retried && failure.toLowerCase().contains('already joined')) {
+    if (!retried && lowerFailure.contains('already joined')) {
       await _leaveEngine(service, grid);
       return _start(args, grid: grid, model: model, retried: true);
+    }
+    // Another process grabbed the chosen port between picking it and the engine
+    // binding it. Rebuild the args with a fresh free port and retry once.
+    if (!retried &&
+        rebuildForPortConflict != null &&
+        lowerFailure.contains('already in use')) {
+      return _start(await rebuildForPortConflict(),
+          grid: grid, model: model, retried: true);
     }
     _grid = null;
     state = ProviderRunFailed(failure);
