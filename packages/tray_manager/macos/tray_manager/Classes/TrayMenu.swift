@@ -76,6 +76,20 @@ public class TrayMenu: NSMenu, NSMenuDelegate {
                     menuItem.state = checked! ? .on : .off
                 }
                 break
+            case "switch":
+                // A Control Center-style switch row (e.g. the "Grid" master
+                // toggle). Needs NSSwitch (macOS 10.15+); older systems fall back
+                // to a plain checkmark toggle so the item still works.
+                if #available(macOS 11.0, *) {
+                    let switchView = TrayMenuItemSwitchView(title: label, isOn: checked == true)
+                    switchView.onToggle = { [weak self] in
+                        self?.statusItemMenuButtonClicked(menuItem)
+                    }
+                    menuItem.view = switchView
+                } else {
+                    menuItem.state = (checked == true) ? .on : .off
+                }
+                break
             default:
                 break
             }

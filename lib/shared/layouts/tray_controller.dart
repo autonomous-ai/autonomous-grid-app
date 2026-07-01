@@ -6,12 +6,16 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../features/auth/logic/session_controller.dart';
+import '../../features/provider_node/logic/provider_run_controller.dart';
 import '../../infrastructure/state/models/network_credential.dart';
 import 'shell_state.dart';
 
-/// Installs a macOS menu-bar (system tray) icon whose menu mirrors the joined
-/// grids — so you can switch the active grid and reopen the window without
-/// leaving whatever you're doing. No-op off macOS; renders [child] unchanged.
+/// Installs a macOS menu-bar (system tray) icon that reads like the Wi-Fi /
+/// Bluetooth menus: a master **Grid** on/off toggle on top, the joined grids as
+/// a checkable list in the middle, and **Grid Settings** (opens the app) at the
+/// bottom. The toggle mirrors whether an engine is serving — so you can stop
+/// sharing or reopen the window without leaving whatever you're doing.
+/// No-op off macOS; renders [child] unchanged.
 class TrayScope extends ConsumerStatefulWidget {
   const TrayScope({super.key, required this.child});
 
@@ -22,8 +26,8 @@ class TrayScope extends ConsumerStatefulWidget {
 }
 
 class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
-  static const _kOpen = 'open';
-  static const _kQuit = 'quit';
+  static const _kToggle = 'toggle';
+  static const _kSettings = 'settings';
   static const _gridPrefix = 'grid:';
 
   // SF Symbol names drawn as tinted icons by our vendored tray_manager patch
@@ -63,21 +67,30 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
     }
   }
 
-  /// Rebuilds the context menu so it reads like the macOS Wi-Fi list: the joined
-  /// grids as a flat, checkable list under a section header, with the window
-  /// actions grouped at the bottom.
+  /// Rebuilds the context menu so it reads like the macOS Wi-Fi / Bluetooth
+  /// menu: a master **Grid** toggle on top (checked while an engine is serving),
+  /// the joined grids as a flat, checkable list in the middle, and **Grid
+  /// Settings** (opens the app) at the bottom.
   Future<void> _rebuildMenu() async {
     if (!_ready) return;
     final networks = ref.read(sessionProvider).networks;
     final activeId = ref.read(selectedNetworkProvider)?.networkId;
 
     await trayManager.setContextMenu(Menu(items: [
+      // A Control Center-style switch row rendered natively (see the vendored
+      // tray_manager's TrayMenuItemSwitchView); `checked` drives the switch.
+      MenuItem(key: _kToggle, type: 'switch', label: 'Grid', checked: _isServing),
+      MenuItem.separator(),
       ..._gridItems(networks, activeId),
       MenuItem.separator(),
-      MenuItem(key: _kOpen, label: 'Open Grid'),
-      MenuItem(key: _kQuit, label: 'Quit Grid'),
+      MenuItem(key: _kSettings, label: 'Grid Settings'),
     ]));
   }
+
+  /// True while an engine is actively serving a grid — the "Grid is on" signal
+  /// the top toggle reflects, mirroring Wi-Fi's connected state.
+  bool get _isServing =>
+      ref.read(providerRunControllerProvider) is ProviderRunActive;
 
   /// The grids section: a greyed header (like "Known Networks") followed by one
   /// Wi-Fi-style row per grid. The active grid gets a blue Wi-Fi icon, the rest
@@ -104,6 +117,25 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
     await windowManager.focus();
   }
 
+  /// The master toggle. Turning it **off** stops every engine we're serving
+  /// (`shutdownServing`) — the honest "leave the grid" action. Turning it **on**
+  /// can't happen silently (starting an engine needs a model choice), so we open
+  /// the app on the Engines screen where the user picks one — like tapping Wi-Fi
+  /// on lands you in its settings. Consumer-only grids have no Engines tab, so we
+  /// just reopen the window there.
+  Future<void> _toggleGrid() async {
+    if (_isServing) {
+      await ref.read(providerRunControllerProvider.notifier).shutdownServing();
+      return;
+    }
+    final canManage =
+        ref.read(selectedNetworkProvider)?.canManageProvider ?? false;
+    if (canManage) {
+      ref.read(navSectionProvider.notifier).select(NavSection.provider);
+    }
+    await _showWindow();
+  }
+
   void _selectGrid(String networkId) {
     final match = ref.read(sessionProvider).byName(networkId);
     if (match == null) return;
@@ -123,14 +155,12 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   void onTrayMenuItemClick(MenuItem menuItem) {
     final key = menuItem.key;
     if (key == null) return;
-    if (key == _kOpen) {
-      _showWindow();
+    if (key == _kToggle) {
+      _toggleGrid();
       return;
     }
-    if (key == _kQuit) {
-      // Route through the close handler (preventClose is on) so a running engine
-      // is stopped first, instead of destroying the window outright.
-      windowManager.close();
+    if (key == _kSettings) {
+      _showWindow();
       return;
     }
     if (key.startsWith(_gridPrefix)) {
@@ -140,10 +170,12 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
 
   @override
   Widget build(BuildContext context) {
-    // Keep the tray menu in step with the grids list and the active grid.
+    // Keep the tray menu in step with the grids list, the active grid, and the
+    // serving state the top toggle reflects.
     if (Platform.isMacOS) {
       ref.listen(sessionProvider, (_, __) => _rebuildMenu());
       ref.listen(selectedNetworkProvider, (_, __) => _rebuildMenu());
+      ref.listen(providerRunControllerProvider, (_, __) => _rebuildMenu());
     }
     return widget.child;
   }
