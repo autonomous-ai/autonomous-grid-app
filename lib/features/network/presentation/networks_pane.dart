@@ -39,7 +39,7 @@ class _NoSelection extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.lan_outlined, size: 40, color: AppPalette.textFaint),
+          Icon(Icons.bolt, size: 40, color: AppPalette.textFaint),
           SizedBox(height: 12),
           Text('Select a grid to see its details.',
               style: TextStyle(color: AppPalette.textSecondary)),

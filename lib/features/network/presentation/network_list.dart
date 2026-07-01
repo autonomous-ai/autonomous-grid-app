@@ -244,7 +244,7 @@ class _Empty extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.hub_outlined,
+            Icon(Icons.bolt,
                 size: 36, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(height: 14),
             Text("You don't have any grids yet",
