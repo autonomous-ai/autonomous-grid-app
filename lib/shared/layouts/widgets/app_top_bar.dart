@@ -10,6 +10,7 @@ import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/provider_node/logic/provider_run_controller.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/glass_surface.dart';
 import '../../widgets/status_dot.dart';
 
 /// The Tailscale-style title bar: the active grid + account avatar sit on the
@@ -28,20 +29,24 @@ class AppTopBar extends ConsumerWidget {
     final leftInset = Platform.isMacOS ? 78.0 : 16.0;
 
     return DragToMoveArea(
-      child: Container(
-        height: height,
-        color: AppPalette.panelBg,
+      child: GlassSurface(
+        borderRadius: BorderRadius.zero,
+        border: const Border(bottom: BorderSide(color: AppGlass.border)),
         padding: EdgeInsets.only(left: leftInset, right: 12),
-        child: Row(
-          children: [
-            // Grouped on the right next to the avatar — keeps the left clear of
-            // the macOS traffic-light buttons instead of sitting awkwardly beside
-            // them.
-            const Spacer(),
-            const _Account(),
-            const SizedBox(width: 12),
-            _AccountMenu(name: session.user['name'] as String? ?? email, email: email),
-          ],
+        child: SizedBox(
+          height: height,
+          child: Row(
+            children: [
+              // Grouped on the right next to the avatar — keeps the left clear of
+              // the macOS traffic-light buttons instead of sitting awkwardly
+              // beside them.
+              const Spacer(),
+              const _Account(),
+              const SizedBox(width: 12),
+              _AccountMenu(
+                  name: session.user['name'] as String? ?? email, email: email),
+            ],
+          ),
         ),
       ),
     );

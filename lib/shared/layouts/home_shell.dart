@@ -13,7 +13,9 @@ import '../../features/overlord/presentation/overlord_view.dart';
 import '../../features/playground/presentation/playground_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
 import '../theme/app_theme.dart';
+import '../widgets/glass_surface.dart';
 import 'shell_state.dart';
+import 'widgets/ambient_background.dart';
 import 'widgets/app_top_bar.dart';
 import 'widgets/node_setup_banner.dart';
 import 'widgets/session_expired_banner.dart';
@@ -30,23 +32,41 @@ class HomeShell extends ConsumerWidget {
     final section = ref.watch(navSectionProvider);
     _autoStartNodeSetup(ref);
 
+    // A lit backdrop behind everything, then floating glass panels over it
+    // (macOS Tahoe-style): a translucent sidebar and a near-opaque content
+    // panel that both lift off the wallpaper with a margin and a shadow.
     return Scaffold(
       backgroundColor: AppPalette.windowBg,
-      body: Column(
+      body: Stack(
         children: [
-          const AppTopBar(),
-          const Divider(height: 1),
-          const SessionExpiredBanner(),
-          const NodeSetupBanner(),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SideNav(),
-                const VerticalDivider(width: 1),
-                Expanded(child: _Content(section: section)),
-              ],
-            ),
+          const Positioned.fill(child: AmbientBackground()),
+          Column(
+            children: [
+              const AppTopBar(),
+              const SessionExpiredBanner(),
+              const NodeSetupBanner(),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SideNav(),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GlassSurface(
+                          borderRadius: BorderRadius.circular(20),
+                          blurred: false,
+                          fill: AppGlass.panelFill,
+                          boxShadow: AppGlass.shadow,
+                          child: _Content(section: section),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

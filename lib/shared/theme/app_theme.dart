@@ -23,6 +23,54 @@ abstract final class AppPalette {
   static const textFaint = Color(0xFF6E6E76);
 }
 
+/// "Liquid glass" tokens — the translucent frost the chrome and panels wear on
+/// top of [AmbientBackground]. Kept neutral-white (like Apple's glass) so the
+/// color comes from the lit backdrop behind the panel, not the panel itself.
+/// Centralized so every glass surface shares one recipe instead of re-typing
+/// BackdropFilter opacities.
+abstract final class AppGlass {
+  static const double blur = 30; // BackdropFilter sigma for floating glass
+
+  // Frosted body — a top-lit vertical gradient over the blur.
+  static const fillTop = Color(0x2EFFFFFF); // ~18% white — catches the light
+  static const fillBottom = Color(0x0FFFFFFF); // ~6% white — fades downward
+  static const border = Color(0x33FFFFFF); // ~20% white rim
+
+  // Specular highlight — the bright lens edge + soft sheen that makes glass
+  // read as glass. Runs along the top of every surface.
+  static const edge = Color(0x66FFFFFF); // ~40% crisp top hairline
+  static const sheen = Color(0x24FFFFFF); // ~14% soft downward glow
+
+  static const selected = Color(0x38FFFFFF); // selected nav item glass fill
+  static const selectedBorder = Color(0x4DFFFFFF); // its brighter rim
+
+  // Content panel — nearly opaque so dense UI stays readable, yet still lets a
+  // whisper of the backdrop bleed through at the edges.
+  static const panelTop = Color(0xF01F1F26);
+  static const panelBottom = Color(0xF014141A);
+
+  static const panelFill = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [panelTop, panelBottom],
+  );
+
+  /// Soft drop shadow that lifts a floating panel off the backdrop.
+  static const shadow = <BoxShadow>[
+    BoxShadow(
+      color: Color(0x40000000),
+      blurRadius: 28,
+      offset: Offset(0, 14),
+      spreadRadius: -8,
+    ),
+    BoxShadow(
+      color: Color(0x1F000000),
+      blurRadius: 8,
+      offset: Offset(0, 2),
+    ),
+  ];
+}
+
 /// The single dark theme the app ships with — Tailscale-style.
 ThemeData buildAppTheme() {
   const scheme = ColorScheme.dark(
