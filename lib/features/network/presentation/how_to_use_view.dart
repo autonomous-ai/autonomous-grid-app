@@ -6,8 +6,8 @@ import '../../auth/logic/session_controller.dart';
 import 'app_guide_content.dart';
 
 /// Full-page "How to use" — the primary consumer action. For the selected grid,
-/// it shows how to connect a real app to it: the same guide as [AppGuideDialog],
-/// but as a dedicated section rather than a popup.
+/// it shows how to connect a real app to it, wrapping the shared
+/// [AppGuideContent] in a section frame.
 class HowToUseView extends ConsumerWidget {
   const HowToUseView({super.key});
 

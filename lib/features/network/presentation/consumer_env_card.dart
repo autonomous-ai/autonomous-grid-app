@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
-import 'app_guide_dialog.dart';
 import 'detail_widgets.dart';
 
 /// The set of grids whose API key is currently revealed. Kept in a provider
@@ -28,8 +28,8 @@ class _RevealedKeysNotifier extends Notifier<Set<String>> {
 /// `grid info --env` prints (OPENAI_BASE_URL + OPENAI_API_KEY). Both are
 /// derived from the already-loaded credential ([NetworkCredential.relayBaseUrl]
 /// / [NetworkCredential.relayApiKey]), so this needs no subprocess. The key is
-/// masked until the viewer reveals it, and "How to use" opens the app guide that
-/// wires these values into a real client for them.
+/// masked until the viewer reveals it, and "How to use" jumps to the full How to
+/// use section that wires these values into a real client for them.
 class ConsumerEnvCard extends ConsumerWidget {
   const ConsumerEnvCard({super.key, required this.network});
 
@@ -58,13 +58,9 @@ class ConsumerEnvCard extends ConsumerWidget {
                 textStyle:
                     const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (_) => AppGuideDialog(
-                  baseUrl: network.relayBaseUrl,
-                  apiKey: network.relayApiKey,
-                ),
-              ),
+              onPressed: () => ref
+                  .read(navSectionProvider.notifier)
+                  .select(NavSection.howToUse),
             ),
           ),
           children: [

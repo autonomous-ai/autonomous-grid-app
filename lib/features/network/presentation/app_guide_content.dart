@@ -9,10 +9,8 @@ import 'app_guide_panels.dart';
 
 /// The shared body of the "connect an app to this grid" guide: the app picker
 /// plus the selected app's setup (or the raw OpenAI values for "Other app").
-/// Rendered both as a popup ([AppGuideDialog]) and as a full page
-/// ([HowToUseView]); it owns the selection + "Apply for me" state so both
-/// surfaces behave identically. Takes the grid's real relay BASE_URL / API_KEY,
-/// pre-filled everywhere.
+/// Rendered full-page by [HowToUseView]; it owns the selection + "Apply for me"
+/// state. Takes the grid's real relay BASE_URL / API_KEY, pre-filled everywhere.
 class AppGuideContent extends ConsumerStatefulWidget {
   const AppGuideContent({super.key, required this.baseUrl, required this.apiKey});
 
