@@ -6,6 +6,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../features/auth/logic/session_controller.dart';
+import '../../infrastructure/state/models/network_credential.dart';
 import 'shell_state.dart';
 
 /// Installs a macOS menu-bar (system tray) icon whose menu mirrors the joined
@@ -24,6 +25,13 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   static const _kOpen = 'open';
   static const _kQuit = 'quit';
   static const _gridPrefix = 'grid:';
+
+  // SF Symbol names drawn as tinted icons by our vendored tray_manager patch
+  // (packages/tray_manager) — blue for the active grid, grey for the rest, like
+  // the macOS Wi-Fi list. The `checked` flag we pass doubles as the tint
+  // selector on the native side. Degrades to just the label on macOS < 11.
+  static const _wifiSymbol = 'wifi';
+  static const _gridsSymbol = 'point.3.connected.trianglepath.dotted';
 
   bool _ready = false;
 
@@ -55,30 +63,40 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
     }
   }
 
-  /// Rebuilds the context menu from the current grids + active selection.
+  /// Rebuilds the context menu so it reads like the macOS Wi-Fi list: the joined
+  /// grids as a flat, checkable list under a section header, with the window
+  /// actions grouped at the bottom.
   Future<void> _rebuildMenu() async {
     if (!_ready) return;
     final networks = ref.read(sessionProvider).networks;
     final activeId = ref.read(selectedNetworkProvider)?.networkId;
 
-    final gridItems = networks.isEmpty
-        ? [MenuItem(key: 'none', label: 'No grids yet', disabled: true)]
-        : [
-            for (final n in networks)
-              MenuItem.checkbox(
-                key: '$_gridPrefix${n.networkId}',
-                label: n.name,
-                checked: n.networkId == activeId,
-              ),
-          ];
-
     await trayManager.setContextMenu(Menu(items: [
+      ..._gridItems(networks, activeId),
+      MenuItem.separator(),
       MenuItem(key: _kOpen, label: 'Open Grid'),
-      MenuItem.separator(),
-      MenuItem.submenu(label: 'Switch grid', submenu: Menu(items: gridItems)),
-      MenuItem.separator(),
       MenuItem(key: _kQuit, label: 'Quit Grid'),
     ]));
+  }
+
+  /// The grids section: a greyed header (like "Known Networks") followed by one
+  /// Wi-Fi-style row per grid. The active grid gets a blue Wi-Fi icon, the rest
+  /// a grey one — exactly like the connected vs. available networks in the macOS
+  /// Wi-Fi list. Falls back to a hint when no grid is joined.
+  List<MenuItem> _gridItems(List<NetworkCredential> networks, String? activeId) {
+    if (networks.isEmpty) {
+      return [MenuItem(key: 'none', label: 'No grids yet', disabled: true)];
+    }
+    return [
+      MenuItem(key: 'header', label: 'Grids', icon: _gridsSymbol, disabled: true),
+      for (final n in networks)
+        MenuItem(
+          key: '$_gridPrefix${n.networkId}',
+          label: n.name,
+          icon: _wifiSymbol,
+          checked: n.networkId == activeId,
+        ),
+    ];
   }
 
   Future<void> _showWindow() async {

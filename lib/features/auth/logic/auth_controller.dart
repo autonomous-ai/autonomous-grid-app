@@ -9,6 +9,7 @@ import '../../provider_node/logic/provider_run_controller.dart';
 import 'auth_state.dart';
 import 'device_login_parser.dart';
 import 'session_controller.dart';
+import 'session_expiry_controller.dart';
 
 final authControllerProvider =
     NotifierProvider<AuthController, AuthState>(AuthController.new);
@@ -59,6 +60,9 @@ class AuthController extends Notifier<AuthState> {
     }
     if (exitCode == 0) {
       ref.invalidate(sessionProvider);
+      // Clear any lingering "session expired" flag so RootView, which now treats
+      // needsLogin as signed-out, lets the freshly authenticated user back in.
+      ref.read(sessionExpiryProvider.notifier).reset();
       state = const AuthSuccess();
       // Brand-new accounts land with no grids — give them a starter one named
       // after them. Runs in the background; the list refreshes when it lands.

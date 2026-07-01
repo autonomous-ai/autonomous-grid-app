@@ -26,6 +26,13 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
 
+# Vendored fork of tray_manager: its upstream macOS menu can't render per-item
+# icons, so packages/tray_manager patches TrayMenu.swift to draw tinted SF
+# Symbol icons (blue = active grid, grey = others) in the menu-bar menu.
+dependency_overrides:
+  tray_manager:
+    path: packages/tray_manager
+
 flutter:
   uses-material-design: true
   assets:

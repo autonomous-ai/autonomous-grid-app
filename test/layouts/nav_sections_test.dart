@@ -85,7 +85,7 @@ void main() {
     // so it shows here because tests run in debug mode (kDebugMode) — it's gone
     // in release builds.
     expect(sections,
-        [NavSection.networks, NavSection.playground, NavSection.debug]);
+        [NavSection.networks, NavSection.howToUse, NavSection.debug]);
   });
 
   test('provider network shows every listed section', () {

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
+import '../logic/session_expiry_controller.dart';
 
 /// Opens [url] in the user's default browser. Returns false if it could not be
 /// launched (malformed URL or no handler) so callers can fall back to copy.
@@ -32,6 +33,10 @@ class LoginScreen extends ConsumerWidget {
 
     final state = ref.watch(authControllerProvider);
     final controller = ref.read(authControllerProvider.notifier);
+    // We land here from an expired session (RootView routes needsLogin -> login),
+    // so tell the user why they're back at sign-in instead of the app.
+    final sessionExpired =
+        ref.watch(sessionExpiryProvider) == SessionExpiry.needsLogin;
 
     return Scaffold(
       body: Center(
@@ -46,9 +51,15 @@ class LoginScreen extends ConsumerWidget {
                 ),
               AuthStarting() || AuthSuccess() =>
                 const _Busy(label: 'Signing in…'),
-              AuthFailure(:final message) =>
-                _SignIn(onSignIn: controller.login, error: message),
-              AuthIdle() => _SignIn(onSignIn: controller.login),
+              AuthFailure(:final message) => _SignIn(
+                  onSignIn: controller.login,
+                  error: message,
+                  sessionExpired: sessionExpired,
+                ),
+              AuthIdle() => _SignIn(
+                  onSignIn: controller.login,
+                  sessionExpired: sessionExpired,
+                ),
             },
           ),
         ),
@@ -58,10 +69,18 @@ class LoginScreen extends ConsumerWidget {
 }
 
 class _SignIn extends StatelessWidget {
-  const _SignIn({required this.onSignIn, this.error});
+  const _SignIn({
+    required this.onSignIn,
+    this.error,
+    this.sessionExpired = false,
+  });
 
   final VoidCallback onSignIn;
   final String? error;
+
+  /// True when the user was routed here because their session expired, so the
+  /// subtitle explains the bounce instead of showing the product tagline.
+  final bool sessionExpired;
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +97,9 @@ class _SignIn extends StatelessWidget {
         Text('Grid', style: theme.textTheme.headlineMedium),
         const SizedBox(height: 8),
         Text(
-          'One private endpoint for the AI models you run.',
+          sessionExpired
+              ? 'Your session expired. Sign in again to continue.'
+              : 'One private endpoint for the AI models you run.',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),

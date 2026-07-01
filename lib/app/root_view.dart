@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/logic/session_controller.dart';
+import '../features/auth/logic/session_expiry_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/onboarding/preflight_providers.dart';
 import '../features/onboarding/preflight_screen.dart';
@@ -23,7 +24,15 @@ class RootView extends ConsumerWidget {
           data: (report) {
             if (!report.canProceed) return PreflightScreen(report: report);
             final loggedIn = ref.watch(sessionProvider).isLoggedIn;
-            return loggedIn ? const HomeShell() : const LoginScreen();
+            // A dead session token still sits in `credentials.toml`, so
+            // `isLoggedIn` stays true even after it expires. Treat "couldn't
+            // refresh" as signed-out and route straight to login instead of
+            // stranding the user in the app behind a banner.
+            final needsLogin =
+                ref.watch(sessionExpiryProvider) == SessionExpiry.needsLogin;
+            return loggedIn && !needsLogin
+                ? const HomeShell()
+                : const LoginScreen();
           },
         );
   }

@@ -5,6 +5,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
+import '../../playground/presentation/playground_dialog.dart';
 import '../logic/grid_overview_provider.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
@@ -139,31 +140,40 @@ class _Actions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final nav = ref.read(navSectionProvider.notifier);
     final canProvide = network.canManageProvider;
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       children: [
-        // Setting up an engine is the main action for provider-capable grids;
-        // pure consumers can't run one, so Playground is their primary action.
+        // Setting up an engine is the main action for provider-capable grids.
         // This opens the Engines tab (the real "Start engine" lives there once a
         // model is ready) — so it's labelled "Set up engine", not "Start".
         if (canProvide)
           FilledButton.icon(
-            onPressed: () => nav.select(NavSection.provider),
+            onPressed: () =>
+                ref.read(navSectionProvider.notifier).select(NavSection.provider),
             icon: const Icon(Icons.dns_outlined, size: 18),
             label: const Text('Set up engine'),
           ),
-        _playgroundButton(nav, primary: !canProvide),
+        // Quick smoke test — opens the throwaway chat dialog. It's the primary
+        // action for pure consumers, who can't run an engine of their own.
+        _TestModelButton(primary: !canProvide),
       ],
     );
   }
+}
 
-  Widget _playgroundButton(NavSectionNotifier nav, {required bool primary}) {
-    void open() => nav.select(NavSection.playground);
+/// Opens the quick model-test dialog. Emphasised (filled) when it's the grid's
+/// primary action — i.e. for pure consumers who can't set up an engine.
+class _TestModelButton extends ConsumerWidget {
+  const _TestModelButton({required this.primary});
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void open() => openPlaygroundDialog(context, ref);
     const icon = Icon(Icons.chat_bubble_outline, size: 16);
-    const label = Text('Open in Playground');
+    const label = Text('Test a model');
     return primary
         ? FilledButton.icon(onPressed: open, icon: icon, label: label)
         : OutlinedButton.icon(onPressed: open, icon: icon, label: label);

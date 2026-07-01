@@ -8,7 +8,7 @@ import '../../features/auth/logic/session_controller.dart';
 enum NavSection {
   networks(Icons.lan_outlined, 'Grids'),
   overlord(Icons.monitor_heart_outlined, 'Overlord', hidden: true),
-  playground(Icons.chat_bubble_outline, 'Playground'),
+  howToUse(Icons.help_outline_rounded, 'How to use'),
   provider(Icons.dns_outlined, 'Engines', providerOnly: true),
   debug(Icons.bug_report_outlined, 'Debug', devOnly: true);
 

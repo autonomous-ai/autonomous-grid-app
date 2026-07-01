@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/widgets/log_view.dart';
+import '../../playground/presentation/playground_dialog.dart';
 import '../logic/provider_run_controller.dart';
 
 /// Status + streamed log + Stop for a running provider. Bounded height so it
@@ -52,9 +52,10 @@ class ProviderRunningCard extends ConsumerWidget {
             ),
             if (!starting) ...[
               const SizedBox(height: 12),
-              _LiveBanner(theme: theme, onOpenPlayground: () {
-                ref.read(navSectionProvider.notifier).select(NavSection.playground);
-              }),
+              _LiveBanner(
+                theme: theme,
+                onOpenPlayground: () => openPlaygroundDialog(context, ref),
+              ),
             ],
             const SizedBox(height: 12),
             SizedBox(height: logHeight, child: LogView(lines: log)),

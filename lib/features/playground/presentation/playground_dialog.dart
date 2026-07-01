@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
@@ -11,17 +12,31 @@ import '../logic/local_test_state.dart';
 import '../logic/network_models_provider.dart';
 import 'message_content.dart';
 
-/// Consumer chat playground — the main consumer action. Sends a message via
-/// `grid request chat --network <net> --model <model> --message "<msg>"` and
-/// shows the reply. Single-turn (the CLI keeps no history); transcript is local.
-class PlaygroundView extends ConsumerStatefulWidget {
-  const PlaygroundView({super.key});
-
-  @override
-  ConsumerState<PlaygroundView> createState() => _PlaygroundViewState();
+/// Opens the quick model-test dialog for the selected grid and wipes the
+/// transcript once it closes — the playground is a throwaway smoke test, not a
+/// saved conversation, so every open starts from a clean slate. The notifier is
+/// captured before the await so we never touch [ref] across the async gap.
+Future<void> openPlaygroundDialog(BuildContext context, WidgetRef ref) async {
+  final chat = ref.read(chatControllerProvider.notifier);
+  await showDialog<void>(
+    context: context,
+    builder: (_) => const PlaygroundDialog(),
+  );
+  chat.clear();
 }
 
-class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
+/// Consumer chat playground as a dialog — a quick way to check a model responds.
+/// Sends a single-turn message via the relay (or a direct call to a local engine
+/// when one is serving) and shows the reply. The transcript is local UI state
+/// and is cleared when the dialog closes (see [openPlaygroundDialog]).
+class PlaygroundDialog extends ConsumerStatefulWidget {
+  const PlaygroundDialog({super.key});
+
+  @override
+  ConsumerState<PlaygroundDialog> createState() => _PlaygroundDialogState();
+}
+
+class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   final _model = TextEditingController();
   final _message = TextEditingController();
   final _scroll = ScrollController();
@@ -70,78 +85,135 @@ class _PlaygroundViewState extends ConsumerState<PlaygroundView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final network = ref.watch(selectedNetworkProvider);
-    final chat = ref.watch(chatControllerProvider);
-    final localEndpoint = ref.watch(localProviderEndpointProvider);
-    final useLocal = ref.watch(useLocalTestProvider);
 
     // Keep the transcript pinned to the latest message.
     ref.listen(chatControllerProvider, (_, __) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     });
 
+    return Dialog(
+      backgroundColor: AppPalette.panelBg,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 660),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _DialogHeader(network: network),
+              const Divider(height: 24),
+              Expanded(child: _buildBody(context, network)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The chat area, or a guiding placeholder when there's no grid / no model
+  /// that could answer yet.
+  Widget _buildBody(BuildContext context, NetworkCredential? network) {
     if (network == null) {
-      return const SectionScaffold(
-        title: 'Playground',
-        child: ComingSoon(message: 'Select a grid first to start chatting.'),
-      );
+      return const ComingSoon(message: 'Select a grid first to start chatting.');
     }
 
+    final theme = Theme.of(context);
     final models = ref.watch(networkModelsProvider).asData?.value;
     if (models != null) _syncDefaultModel(models);
+    final localEndpoint = ref.watch(localProviderEndpointProvider);
+    final useLocal = ref.watch(useLocalTestProvider);
+    final chat = ref.watch(chatControllerProvider);
 
     // Nothing can answer yet: no model advertised on the grid and no local
-    // engine serving. Guide the user to start one instead of presenting a chat
-    // box that would just fail on send. (While models is null we're still
-    // loading — keep the normal UI to avoid a flash of this state.)
+    // engine serving. Guide the user to start one instead of a chat box that
+    // would just fail. (While models is null we're still loading.)
     final hasUsableModel =
         (models != null && models.isNotEmpty) || localEndpoint != null;
     if (models != null && !hasUsableModel) {
-      return SectionScaffold(
-        title: 'Playground',
-        child: _NoModelYet(canManage: network.canManageProvider),
+      return _NoModelYet(
+        canManage: network.canManageProvider,
+        onGoToEngines: () {
+          Navigator.of(context).pop();
+          ref.read(navSectionProvider.notifier).select(NavSection.provider);
+        },
       );
     }
 
-    return SectionScaffold(
-      title: 'Playground',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (localEndpoint != null) ...[
-            _LocalTestToggle(
-              value: useLocal,
-              endpoint: localEndpoint,
-              onChanged: (v) => ref.read(useLocalTestProvider.notifier).set(v),
-            ),
-            const SizedBox(height: 12),
-          ],
-          _ModelPicker(controller: _model),
-          const SizedBox(height: 12),
-          Expanded(
-            child: chat.messages.isEmpty
-                ? const ComingSoon(message: 'Send a message to start chatting.')
-                : ListView.builder(
-                    controller: _scroll,
-                    itemCount: chat.messages.length,
-                    itemBuilder: (context, i) => _Bubble(message: chat.messages[i]),
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (localEndpoint != null) ...[
+          _LocalTestToggle(
+            value: useLocal,
+            endpoint: localEndpoint,
+            onChanged: (v) => ref.read(useLocalTestProvider.notifier).set(v),
           ),
-          if (chat.error != null) ...[
-            const SizedBox(height: 8),
-            Text(chat.error!,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error)),
-          ],
           const SizedBox(height: 12),
-          _InputBar(
-            controller: _message,
-            sending: chat.sending,
-            onSend: () => _send(network.networkId),
-          ),
         ],
-      ),
+        _ModelPicker(controller: _model),
+        const SizedBox(height: 12),
+        Expanded(
+          child: chat.messages.isEmpty
+              ? const ComingSoon(message: 'Send a message to start chatting.')
+              : ListView.builder(
+                  controller: _scroll,
+                  itemCount: chat.messages.length,
+                  itemBuilder: (context, i) => _Bubble(message: chat.messages[i]),
+                ),
+        ),
+        if (chat.error != null) ...[
+          const SizedBox(height: 8),
+          Text(chat.error!,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error)),
+        ],
+        const SizedBox(height: 12),
+        _InputBar(
+          controller: _message,
+          sending: chat.sending,
+          onSend: () => _send(network.networkId),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog title with the grid it targets, plus a Close button.
+class _DialogHeader extends StatelessWidget {
+  const _DialogHeader({required this.network});
+  final NetworkCredential? network;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Test a model', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 2),
+              Text(
+                network == null
+                    ? 'A quick chat to check a model responds.'
+                    : 'A quick chat to check a model on ${network!.name} '
+                        'responds.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          tooltip: 'Close',
+          icon: const Icon(Icons.close_rounded, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
     );
   }
 }
@@ -182,12 +254,13 @@ class _ModelPicker extends ConsumerWidget {
 
 /// Blocked state when no model can answer yet. Points provider-capable users to
 /// the Engines tab to start one; pure consumers are told to wait for a provider.
-class _NoModelYet extends ConsumerWidget {
-  const _NoModelYet({required this.canManage});
+class _NoModelYet extends StatelessWidget {
+  const _NoModelYet({required this.canManage, required this.onGoToEngines});
   final bool canManage;
+  final VoidCallback onGoToEngines;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
       child: ConstrainedBox(
@@ -213,9 +286,7 @@ class _NoModelYet extends ConsumerWidget {
             if (canManage) ...[
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: () => ref
-                    .read(navSectionProvider.notifier)
-                    .select(NavSection.provider),
+                onPressed: onGoToEngines,
                 icon: const Icon(Icons.dns_outlined, size: 18),
                 label: const Text('Go to Engines'),
               ),
@@ -227,8 +298,8 @@ class _NoModelYet extends ConsumerWidget {
   }
 }
 
-/// Shown only while a local provider is serving — flips the Playground from the
-/// relay to a direct HTTP call against the local server (the curl smoke test).
+/// Shown only while a local provider is serving — flips the chat from the relay
+/// to a direct HTTP call against the local server (the curl smoke test).
 class _LocalTestToggle extends StatelessWidget {
   const _LocalTestToggle({
     required this.value,
@@ -261,7 +332,8 @@ class _LocalTestToggle extends StatelessWidget {
                 Text('Test your own model',
                     style: theme.textTheme.bodyMedium
                         ?.copyWith(fontWeight: FontWeight.w500)),
-                Text('Chat with your model directly, without going through the grid',
+                Text(
+                    'Chat with your model directly, without going through the grid',
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
               ],

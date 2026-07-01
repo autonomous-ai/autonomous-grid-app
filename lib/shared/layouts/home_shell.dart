@@ -7,12 +7,12 @@ import '../../features/app_update/logic/app_update_controller.dart';
 import '../../features/app_update/presentation/app_update_banner.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/debug/presentation/debug_view.dart';
+import '../../features/network/presentation/how_to_use_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
 import '../../features/node_setup/logic/node_capabilities.dart';
 import '../../features/node_setup/logic/node_setup_controller.dart';
 import '../../features/node_setup/logic/node_setup_plan.dart';
 import '../../features/overlord/presentation/overlord_view.dart';
-import '../../features/playground/presentation/playground_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
 import '../../shared/app_info.dart';
 import '../theme/app_theme.dart';
@@ -118,7 +118,7 @@ class _Content extends ConsumerWidget {
     return switch (effective) {
       NavSection.networks => const NetworksPane(),
       NavSection.overlord => const OverlordView(),
-      NavSection.playground => const PlaygroundView(),
+      NavSection.howToUse => const HowToUseView(),
       NavSection.provider => const ProviderView(),
       NavSection.debug => const DebugView(),
     };

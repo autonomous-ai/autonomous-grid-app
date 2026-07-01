@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/auth_controller.dart';
 import 'package:grid_app/features/auth/logic/auth_state.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
+import 'package:grid_app/features/auth/logic/session_expiry_controller.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/providers.dart';
@@ -66,6 +67,28 @@ void main() {
     final awaiting = seen.whereType<AuthAwaitingApproval>();
     expect(awaiting, isNotEmpty);
     expect(awaiting.first.userCode, 'AB-12');
+  });
+
+  test('successful login clears a lingering "session expired" flag', () async {
+    // A dead refresh leaves the app in needsLogin; without a reset on login,
+    // RootView (which treats needsLogin as signed-out) would keep the freshly
+    // authenticated user stuck on the login screen.
+    final fake = FakeGridCliService()
+      ..stubStart(['login', '--no-browser'], lines: const [], exitCode: 0)
+      ..stubResult(const ['sync'],
+          const CliResult(exitCode: 1, stdout: '', stderr: 'session expired'));
+    final container = ProviderContainer(
+      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(sessionExpiryProvider.notifier).onExpired();
+    expect(container.read(sessionExpiryProvider), SessionExpiry.needsLogin);
+
+    await container.read(authControllerProvider.notifier).login();
+
+    expect(container.read(authControllerProvider), isA<AuthSuccess>());
+    expect(container.read(sessionExpiryProvider), SessionExpiry.healthy);
   });
 
   test('login shows a friendly message on non-zero exit (no raw stderr)',
