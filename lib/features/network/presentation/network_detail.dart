@@ -77,8 +77,12 @@ class _OverviewTab extends StatelessWidget {
         const SizedBox(height: 22),
         // API access shown directly (as before — no developer expander).
         ConsumerEnvCard(network: network),
-        const SizedBox(height: 20),
-        _Actions(network: network),
+        // "Set up engine" is provider-only; the quick "Test" action now lives in
+        // the header. Consumers have no body action, so skip the spacing too.
+        if (network.canManageProvider) ...[
+          const SizedBox(height: 20),
+          const _Actions(),
+        ],
         // Connection block (grid address) temporarily hidden per request:
         // const SizedBox(height: 20),
         // DetailSection(
@@ -111,13 +115,23 @@ class _Header extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Flexible(
-              child: Text(network.name,
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w600, fontSize: 22)),
+            // Title + badges take the remaining width (name ellipsizes) so the
+            // Test action pins to the top-right, like a page-level action.
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(network.name,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600, fontSize: 22)),
+                  ),
+                  const SizedBox(width: 12),
+                  GridBadges(network: network),
+                ],
+              ),
             ),
             const SizedBox(width: 12),
-            GridBadges(network: network),
+            const _TestModelButton(),
           ],
         ),
         const SizedBox(height: 8),
@@ -134,48 +148,40 @@ class _Header extends ConsumerWidget {
   }
 }
 
+/// Provider-only body action: jump to the Engines tab to set up an engine (the
+/// real "Start engine" lives there once a model is ready — hence "Set up", not
+/// "Start"). Gated on the provider role by its call site.
 class _Actions extends ConsumerWidget {
-  const _Actions({required this.network});
-  final NetworkCredential network;
+  const _Actions();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final canProvide = network.canManageProvider;
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       children: [
-        // Setting up an engine is the main action for provider-capable grids.
-        // This opens the Engines tab (the real "Start engine" lives there once a
-        // model is ready) — so it's labelled "Set up engine", not "Start".
-        if (canProvide)
-          FilledButton.icon(
-            onPressed: () =>
-                ref.read(navSectionProvider.notifier).select(NavSection.provider),
-            icon: const Icon(Icons.dns_outlined, size: 18),
-            label: const Text('Set up engine'),
-          ),
-        // Quick smoke test — opens the throwaway chat dialog. It's the primary
-        // action for pure consumers, who can't run an engine of their own.
-        _TestModelButton(primary: !canProvide),
+        FilledButton.icon(
+          onPressed: () =>
+              ref.read(navSectionProvider.notifier).select(NavSection.provider),
+          icon: const Icon(Icons.dns_outlined, size: 18),
+          label: const Text('Set up engine'),
+        ),
       ],
     );
   }
 }
 
-/// Opens the quick model-test dialog. Emphasised (filled) when it's the grid's
-/// primary action — i.e. for pure consumers who can't set up an engine.
+/// The grid's header action: opens the quick model-test chat dialog. Lives
+/// top-right so it's always within reach whichever tab you're on.
 class _TestModelButton extends ConsumerWidget {
-  const _TestModelButton({required this.primary});
-  final bool primary;
+  const _TestModelButton();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    void open() => openPlaygroundDialog(context, ref);
-    const icon = Icon(Icons.chat_bubble_outline, size: 16);
-    const label = Text('Test a model');
-    return primary
-        ? FilledButton.icon(onPressed: open, icon: icon, label: label)
-        : OutlinedButton.icon(onPressed: open, icon: icon, label: label);
+    return FilledButton.icon(
+      onPressed: () => openPlaygroundDialog(context, ref),
+      icon: const Icon(Icons.chat_bubble_outline, size: 16),
+      label: const Text('Test'),
+    );
   }
 }
