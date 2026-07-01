@@ -104,14 +104,36 @@ class ChatController extends Notifier<ChatState> {
   }
 
   /// Maps a failed relay `chat` call to one plain-language line for the user;
-  /// the raw CLI output is still captured in the Debug tab's command log.
+  /// the raw CLI output is still captured in the Debug tab's command log. We
+  /// surface the CLI's *actual* reason rather than a blanket "is a model
+  /// running?" guess, which is misleading when the real cause is something else
+  /// (e.g. an empty balance).
   static String _friendlyChatError(CliResult result) {
     if (result.sessionExpired) {
       return 'Your session expired — please sign in again.';
     }
-    return "Couldn't get a reply. Make sure a model is running on this grid, "
-        'then try again.';
+
+    final detail = _errorDetail(result);
+    if (detail.toLowerCase().contains('insufficient balance')) {
+      return "You're out of credit on this grid — top up your balance, then "
+          'try again.';
+    }
+    if (detail.isEmpty) {
+      return "Couldn't get a reply. Make sure a model is running on this grid, "
+          'then try again.';
+    }
+    return "Couldn't get a reply: $detail";
   }
+
+  /// The CLI's own error reason, unwrapped from the relay's JSON error body
+  /// (`{"detail": "..."}`) when present so we show the message, not the braces.
+  static String _errorDetail(CliResult result) {
+    final json = _jsonDetail(result.stderr) ?? _jsonDetail(result.stdout);
+    return (json ?? result.errorMessage).trim();
+  }
+
+  static String? _jsonDetail(String text) =>
+      RegExp(r'"detail"\s*:\s*"([^"]+)"').firstMatch(text)?.group(1);
 
   Future<(String?, String?)> _sendLocal(
     String baseUrl,

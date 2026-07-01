@@ -53,6 +53,31 @@ void main() {
     expect(state.messages.single.role, ChatRole.user);
   });
 
+  test('maps an insufficient-balance error to a top-up message', () async {
+    final fake = FakeGridCliService()
+      ..stubResult(
+          _args,
+          const CliResult(
+            exitCode: 1,
+            // With --json the relay prints its error body to stdout.
+            stdout:
+                '{"detail":"Insufficient balance. Balance: 0.0000, minimum: 0.50"}',
+            stderr: '',
+          ));
+    final container = ProviderContainer(
+      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+
+    await _send(container);
+
+    final state = container.read(chatControllerProvider);
+    expect(state.error, contains('credit'));
+    // The raw balance figures stay in the Debug log, not the chat error.
+    expect(state.error, isNot(contains('Insufficient balance')));
+    expect(state.messages, hasLength(1));
+  });
+
   test('fails fast when grid is absent', () async {
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(null)],

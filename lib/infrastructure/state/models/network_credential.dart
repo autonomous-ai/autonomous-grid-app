@@ -92,9 +92,14 @@ class NetworkCredential {
         NetworkRole.member => 'Member',
       };
 
-  /// Whether the grid admits public consumers, from its managed network type
-  /// (`permissioned-public`). Everything else is providers-only / private.
-  bool get isPublic => networkType.contains('public');
+  /// Whether the grid is publicly visible. Heads-up: the wire values read
+  /// backwards, so this is deliberately checked against `providers`, not
+  /// `public`. A `permissioned-providers` grid is the *public* one — anyone it's
+  /// shared with can also share their models onto it — whereas
+  /// `permissioned-public` is actually *private*: visible only to people it has
+  /// been shared with. Do NOT "fix" this to `contains('public')`; that inverts
+  /// the product meaning.
+  bool get isPublic => networkType.contains('providers');
 
   /// The grid's visibility: `Public` vs `Private`. Surfaced on the grid badge
   /// (a public grid the viewer merely joined) and in admin settings.

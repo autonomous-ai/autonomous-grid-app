@@ -56,7 +56,6 @@ class HomeShell extends ConsumerWidget {
                       Expanded(
                         child: GlassSurface(
                           borderRadius: BorderRadius.circular(20),
-                          blurred: false,
                           fill: AppGlass.panelFill,
                           boxShadow: AppGlass.shadow,
                           child: _Content(section: section),

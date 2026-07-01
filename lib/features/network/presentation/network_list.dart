@@ -38,7 +38,9 @@ class _NetworkListState extends ConsumerState<NetworkList> {
 
     return Container(
       width: NetworkList.width,
-      color: AppPalette.windowBg,
+      // A recessed glass well, not an opaque slab — the blurred wallpaper still
+      // reads through it so the list column looks "trong trong" like iOS.
+      color: AppGlass.recess,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

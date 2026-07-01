@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 abstract final class AppPalette {
   static const windowBg = Color(0xFF1B1B1D); // app background (near-black)
   static const panelBg = Color(0xFF202023); // sidebar / list column
-  static const cardBg = Color(0xFF26262A); // detail cards, search field
-  static const cardBgHover = Color(0xFF2E2E33);
+  static const cardBg = Color(0xB328282F); // detail cards, search field (glass)
+  static const cardBgHover = Color(0xC22F2F38);
   static const divider = Color(0xFF313136);
 
   static const accent = Color(0xFF4C6EF5); // toggle / selected row (blue)
@@ -44,16 +44,22 @@ abstract final class AppGlass {
   static const selected = Color(0x38FFFFFF); // selected nav item glass fill
   static const selectedBorder = Color(0x4DFFFFFF); // its brighter rim
 
-  // Content panel — nearly opaque so dense UI stays readable, yet still lets a
-  // whisper of the backdrop bleed through at the edges.
-  static const panelTop = Color(0xF01F1F26);
-  static const panelBottom = Color(0xF014141A);
+  // Content panel — a real frosted pane: translucent enough that the blurred
+  // wallpaper shows through ("trong trong"), dark enough that dense text on top
+  // stays readable. Slightly darker at the bottom for depth.
+  static const panelTop = Color(0x8C181820); // ~55%
+  static const panelBottom = Color(0x9E121219); // ~62%
 
   static const panelFill = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [panelTop, panelBottom],
   );
+
+  /// A recessed well inside a glass panel (e.g. the grid list column) — a faint
+  /// darken that sets the column back without turning it into an opaque slab, so
+  /// it still reads as frosted glass over the wallpaper.
+  static const recess = Color(0x14000000); // ~8% black over the panel glass
 
   /// Soft drop shadow that lifts a floating panel off the backdrop.
   static const shadow = <BoxShadow>[
