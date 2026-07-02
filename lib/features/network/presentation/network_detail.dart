@@ -201,26 +201,35 @@ class _DeleteGridButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final deleting =
         ref.watch(deleteNetworkControllerProvider) is DeleteNetworkDeleting;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: OutlinedButton.icon(
-        onPressed: deleting ? null : () => _confirmAndDelete(context, ref),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: theme.colorScheme.error,
-          side:
-              BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
+    // Its own block: a divider sets it apart, and the affordance stays small +
+    // muted so it doesn't compete with the primary content — it only reads as
+    // "danger" once tapped (the confirm dialog).
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 1, color: AppPalette.divider),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: deleting ? null : () => _confirmAndDelete(context, ref),
+          style: TextButton.styleFrom(
+            foregroundColor: AppPalette.textFaint,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(fontSize: 12),
+          ),
+          icon: deleting
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.delete_outline, size: 14),
+          label: Text(deleting ? 'Deleting…' : 'Delete grid'),
         ),
-        icon: deleting
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.delete_outline, size: 18),
-        label: Text(deleting ? 'Deleting…' : 'Delete grid'),
-      ),
+      ],
     );
   }
 

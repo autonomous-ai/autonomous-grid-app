@@ -94,7 +94,6 @@ void main() {
       expect(editor.parseAt(['model', 'base_url']).value, _base);
       expect(editor.parseAt(['model', 'api_key']).value, _key);
       expect(editor.parseAt(['model', 'default']).value, _model);
-      expect(editor.parseAt(['model', 'max_tokens']).value, kHermesMaxTokens);
     });
 
     test('repoints an existing model block, keeping other settings and a backup',
@@ -121,7 +120,6 @@ void main() {
       expect(editor.parseAt(['model', 'base_url']).value, _base);
       expect(editor.parseAt(['model', 'api_key']).value, _key);
       expect(editor.parseAt(['model', 'default']).value, _model);
-      expect(editor.parseAt(['model', 'max_tokens']).value, kHermesMaxTokens);
       // Unrelated settings + the comment survive the surgical edit.
       expect(editor.parseAt(['user_profile_enabled']).value, true);
       expect(readConfig(), contains('# my hermes config'));

@@ -112,8 +112,6 @@ class ClientAppConfigurator {
         'base_url': base,
         'api_key': key,
         'default': model,
-        // Keep Hermes under the relay's max_tokens cap (see the snippet doc).
-        'max_tokens': kHermesMaxTokens,
       };
       final existingModel =
           editor.parseAt(['model'], orElse: () => wrapAsYamlNode(null));

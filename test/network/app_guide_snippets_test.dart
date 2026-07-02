@@ -33,8 +33,6 @@ void main() {
     expect(config, contains('base_url: $_base'));
     expect(config, contains('api_key: $_key'));
     expect(config, contains('default: $_model'));
-    // Pinned so Hermes stays under the relay's max_tokens cap.
-    expect(config, contains('max_tokens: $kHermesMaxTokens'));
   });
 
   test('Python snippet points the SDK at the pair', () {
