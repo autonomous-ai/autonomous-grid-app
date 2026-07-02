@@ -3,14 +3,14 @@
 /// `network_type`; the label/description drive the create form.
 enum ManagedNetworkType {
   permissionedPublic(
-    'permissioned-public',
+    'permissioned-providers',
     'Public',
-    'People you invite can both use models and run their own on this grid.',
+    'Whitelist providers only — consumers can join freely.',
   ),
   permissionedProviders(
-    'permissioned-providers',
+    'permissioned-public',
     'Private',
-    'Only people who run a model can join — there are no use-only members.',
+    'Whitelist both providers and consumers.',
   );
 
   const ManagedNetworkType(this.wire, this.label, this.description);
@@ -21,7 +21,7 @@ enum ManagedNetworkType {
   /// Human-readable name shown in the picker.
   final String label;
 
-  /// One-line explanation under the picker.
+  /// One-line explanation shown under the picker.
   final String description;
 
   /// The API default when `network_type` is omitted.
