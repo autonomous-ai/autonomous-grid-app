@@ -10,7 +10,7 @@ library;
 const kGuideDefaultModel = 'qwen3-coder';
 
 /// Output-token cap written into Hermes's `model.max_tokens` (Hermes reads it
-/// there; `custom_providers` ignores the field). 128K = 128×1024.
+/// there; `custom_providers` ignores the field). 64K = 64×1024.
 const kHermesMaxTokens = 64000;
 
 /// Shell exports of the OpenAI-compatible pair — the generic form any client

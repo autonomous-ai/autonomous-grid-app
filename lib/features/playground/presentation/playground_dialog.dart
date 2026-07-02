@@ -9,7 +9,7 @@ import '../../auth/logic/session_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/chat_controller.dart';
 import '../logic/local_test_state.dart';
-import '../logic/network_models_provider.dart';
+import '../../network/logic/network_models_provider.dart';
 import 'message_content.dart';
 
 /// Opens the quick model-test dialog for the selected grid and wipes the

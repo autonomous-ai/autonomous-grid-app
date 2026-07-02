@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../playground/logic/network_models_provider.dart';
+import '../logic/network_models_provider.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
+import 'network_models_provider.dart';
 
 /// Live overview of the selected grid, via `GET {relayBaseUrl}/grid/overview`
 /// authorized with that grid's `access_token`. Auto-disposes and refetches
@@ -36,6 +37,19 @@ final gridOverviewProvider =
     throw const GridOverviewUnavailable('No grid selected.');
   }
   return ref.watch(gridOverviewForProvider(network.networkId).future);
+});
+
+/// The grid's models to surface in the UI, richest source first: the relay
+/// overview's detailed list (id + modality + pricing) when it has one, otherwise
+/// plain ids from the OpenAI-style `/models`. Both the Models section (tiles) and
+/// each node's "serving N" count read this one derived list, so the count and the
+/// list can never disagree. Empty while loading or when the grid advertises none.
+final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
+  final rich = ref.watch(gridOverviewProvider).asData?.value.models ??
+      const <OverviewModel>[];
+  if (rich.isNotEmpty) return rich;
+  final ids = ref.watch(networkModelsProvider).asData?.value ?? const [];
+  return [for (final id in ids) OverviewModel(id: id)];
 });
 
 class GridOverviewUnavailable implements Exception {

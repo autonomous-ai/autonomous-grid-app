@@ -9,8 +9,9 @@ import '../../auth/logic/session_controller.dart';
 /// `GET {relayBaseUrl}/models` (the `inference:models` scope).
 ///
 /// Returns empty — never throws — when no provider is online, the token lacks
-/// the inference scope, or the relay is unreachable. The Playground keeps an
-/// editable field in those cases so the user can still type a model name.
+/// the inference scope, or the relay is unreachable. Callers (the Playground's
+/// model picker, the grid overview's node list) keep a graceful fallback in
+/// those cases so the UI never blanks out.
 final networkModelsProvider =
     FutureProvider.autoDispose<List<String>>((ref) async {
   final network = ref.watch(selectedNetworkProvider);

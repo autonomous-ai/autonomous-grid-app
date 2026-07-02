@@ -5,10 +5,10 @@ import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/member_providers.dart';
-import 'add_member_dialog.dart';
 
-/// The "Members" tab of a managed grid's detail pane — admin-only. Lists active
-/// members and lets the owner invite or remove them via the control-plane API.
+/// The "Members" tab of a managed grid's detail pane — shown to admins and
+/// providers. Lists active members and lets them invite or remove people via
+/// the control-plane API.
 class MembersTab extends ConsumerStatefulWidget {
   const MembersTab({super.key, required this.network});
 
@@ -80,7 +80,6 @@ class _MembersTabState extends ConsumerState<MembersTab> {
       children: [
         _Header(
           count: count,
-          onAdd: () => AddMemberDialog.show(context, _networkId),
           onRefresh: () => ref.invalidate(networkMembersProvider(_networkId)),
         ),
         const SizedBox(height: 16),
@@ -113,14 +112,15 @@ class _MembersTabState extends ConsumerState<MembersTab> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.count, required this.onAdd, required this.onRefresh});
+  const _Header({required this.count, required this.onRefresh});
 
   final int? count;
-  final VoidCallback onAdd;
   final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
+    // "Add member" now lives in the detail header beside Test — this row just
+    // shows the count and a refresh.
     return Row(
       children: [
         Text(
@@ -137,12 +137,6 @@ class _Header extends StatelessWidget {
           tooltip: 'Refresh',
           visualDensity: VisualDensity.compact,
           onPressed: onRefresh,
-        ),
-        const SizedBox(width: 4),
-        FilledButton.icon(
-          onPressed: onAdd,
-          icon: const Icon(Icons.person_add_alt_1, size: 18),
-          label: const Text('Add member'),
         ),
       ],
     );

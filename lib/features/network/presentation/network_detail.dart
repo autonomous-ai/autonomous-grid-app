@@ -8,14 +8,15 @@ import '../../../shared/widgets/status_dot.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/delete_network_controller.dart';
 import '../logic/grid_overview_provider.dart';
+import 'add_member_dialog.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
 import 'grid_overview_card.dart';
 import 'members_tab.dart';
 
 /// Right-hand detail pane for the selected network — Tailscale device-detail
-/// style: a status header over the grid's content. Admins get a tabbed view
-/// (Overview / Members) so they can manage who's on the grid.
+/// style: a status header over the grid's content. Admins and providers get a
+/// tabbed view (Overview / Members) so they can manage who's on the grid.
 class NetworkDetail extends ConsumerWidget {
   const NetworkDetail({super.key, required this.network});
 
@@ -28,8 +29,10 @@ class NetworkDetail extends ConsumerWidget {
       child: _Header(network: network),
     );
 
-    // Member management is owner-only — gate the tab on the admin role.
-    if (network.role != NetworkRole.admin) {
+    // Member management is open to admins and providers — gate the tab on the
+    // same capability as the Provider/Models tabs. Pure consumers/members only
+    // see the overview.
+    if (!network.canManageProvider) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [header, Expanded(child: _OverviewTab(network: network))],
@@ -122,7 +125,7 @@ class _Header extends ConsumerWidget {
         Row(
           children: [
             // Title + badges take the remaining width (name ellipsizes) so the
-            // Test action pins to the top-right, like a page-level action.
+            // header actions pin to the top-right, like page-level actions.
             Expanded(
               child: Row(
                 children: [
@@ -137,6 +140,12 @@ class _Header extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
+            // Add member sits beside Test for admins/providers, so member
+            // management is reachable from any tab.
+            if (network.canManageProvider) ...[
+              _AddMemberButton(network: network),
+              const SizedBox(width: 8),
+            ],
             const _TestModelButton(),
           ],
         ),
@@ -188,6 +197,22 @@ class _TestModelButton extends ConsumerWidget {
       onPressed: () => openPlaygroundDialog(context, ref),
       icon: const Icon(Icons.chat_bubble_outline, size: 16),
       label: const Text('Test'),
+    );
+  }
+}
+
+/// Admin/provider header action: opens the invite-member dialog. Sits beside
+/// Test so member management is reachable from any tab, not just Members.
+class _AddMemberButton extends StatelessWidget {
+  const _AddMemberButton({required this.network});
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: () => AddMemberDialog.show(context, network.networkId),
+      icon: const Icon(Icons.person_add_alt_1, size: 16),
+      label: const Text('Add member'),
     );
   }
 }

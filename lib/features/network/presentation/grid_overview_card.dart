@@ -36,16 +36,7 @@ class _OverviewBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _StatsBar(stats: overview.stats),
-        if (overview.models.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          const _SectionHeading(
-              title: 'Models', subtitle: 'Pick a model by its id.'),
-          const SizedBox(height: 14),
-          for (final m in overview.models) ...[
-            _ModelTile(model: m),
-            const SizedBox(height: 10),
-          ],
-        ],
+        const _ModelsSection(),
         if (overview.nodes.isNotEmpty) ...[
           const SizedBox(height: 14),
           const _SectionHeading(
@@ -169,6 +160,32 @@ class _Card extends StatelessWidget {
   }
 }
 
+/// The grid's Models section — one copyable tile per model the grid serves.
+/// Rich tiles (modality + example price) when the relay overview details them,
+/// otherwise plain id tiles from `/models`. Hidden when the grid serves none.
+class _ModelsSection extends ConsumerWidget {
+  const _ModelsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final models = ref.watch(gridModelsProvider);
+    if (models.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        const _SectionHeading(
+            title: 'Models', subtitle: 'Pick a model by its id.'),
+        const SizedBox(height: 14),
+        for (final m in models) ...[
+          _ModelTile(model: m),
+          const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
 class _ModelTile extends StatelessWidget {
   const _ModelTile({required this.model});
   final OverviewModel model;
@@ -224,23 +241,26 @@ class _ModelTile extends StatelessWidget {
             ),
           ],
           const SizedBox(width: 12),
-          _CopyIdChip(id: model.id),
+          _CopyChip(id: model.id),
         ],
       ),
     );
   }
 }
 
-class _NodeTile extends StatelessWidget {
+class _NodeTile extends ConsumerWidget {
   const _NodeTile({required this.node});
   final OverviewNode node;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Models live in their own grid-level section now; a node only notes how many
+    // it helps serve (grid-wide — every node pools compute for the same set).
+    final count = ref.watch(gridModelsProvider).length;
     final spec = [
       if (node.device != null) node.device!,
       if (node.memoryGb != null) '${node.memoryGb} GB',
-      if (node.model != null) node.model!,
+      if (count > 0) 'Serving $count ${count == 1 ? 'model' : 'models'}',
     ].join(' · ');
     return _Card(
       child: Row(
@@ -328,8 +348,10 @@ class _Pill extends StatelessWidget {
   }
 }
 
-class _CopyIdChip extends StatelessWidget {
-  const _CopyIdChip({required this.id});
+/// Small "Copy" pill on a model tile — copies the model's exact id (the id is
+/// already the tile's title, so the pill stays a lean action, not a repeat).
+class _CopyChip extends StatelessWidget {
+  const _CopyChip({required this.id});
   final String id;
 
   @override
@@ -339,25 +361,15 @@ class _CopyIdChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          Clipboard.setData(ClipboardData(text: id));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Copied'), duration: Duration(seconds: 1)),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        onTap: () => _copyToClipboard(context, id),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(id,
-                  style: const TextStyle(
-                      fontFamily: _mono,
-                      fontSize: 12.5,
-                      color: AppPalette.textPrimary)),
-              const SizedBox(width: 8),
-              const Text('COPY',
+              Icon(Icons.copy_rounded, size: 13, color: AppPalette.accent),
+              SizedBox(width: 6),
+              Text('Copy',
                   style: TextStyle(
                       fontFamily: _mono,
                       fontSize: 11,
@@ -401,6 +413,15 @@ class _OverviewMessage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Copy [text] to the clipboard and confirm with a brief snackbar. Shared by the
+/// model-id chip and the per-node model list so the "copy + toast" is defined once.
+void _copyToClipboard(BuildContext context, String text) {
+  Clipboard.setData(ClipboardData(text: text));
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+  );
 }
 
 String _cap(String s) =>
