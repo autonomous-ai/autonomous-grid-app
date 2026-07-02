@@ -58,14 +58,6 @@ class _OverviewBody extends StatelessWidget {
             const SizedBox(height: 10),
           ],
         ],
-        const SizedBox(height: 8),
-        const Center(
-          child: Text(
-            "Pricing and stats are examples for now — you're not being billed.",
-            style: TextStyle(
-                fontFamily: _mono, fontSize: 12, color: AppPalette.textFaint),
-          ),
-        ),
       ],
     );
   }
@@ -276,10 +268,6 @@ class _NodeTile extends StatelessWidget {
               ],
             ),
           ),
-          if (node.engine != null) ...[
-            const SizedBox(width: 10),
-            _Pill(text: node.engine!, accent: true),
-          ],
           if (node.throughputTokS != null) ...[
             const SizedBox(width: 12),
             Text('~${node.throughputTokS!.round()} tok/s',
@@ -319,25 +307,23 @@ class _TileIcon extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({required this.text, this.accent = false});
+  const _Pill({required this.text});
   final String text;
-  final bool accent;
 
   @override
   Widget build(BuildContext context) {
-    final color = accent ? AppPalette.accent : AppPalette.textSecondary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: accent ? color.withValues(alpha: 0.16) : AppPalette.cardBgHover,
+        color: AppPalette.cardBgHover,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(text,
-          style: TextStyle(
+          style: const TextStyle(
               fontFamily: _mono,
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
-              color: color)),
+              color: AppPalette.textSecondary)),
     );
   }
 }
