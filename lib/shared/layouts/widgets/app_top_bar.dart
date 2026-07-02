@@ -13,9 +13,9 @@ import '../../theme/app_theme.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/status_dot.dart';
 
-/// The Tailscale-style title bar: the active grid + account avatar sit on the
-/// right, leaving the left clear for the macOS window controls. Doubles as the
-/// window drag handle.
+/// The Tailscale-style title bar: the Grid logo anchors the left (just past the
+/// macOS window controls), while the active grid + account avatar sit on the
+/// right. Doubles as the window drag handle.
 class AppTopBar extends ConsumerWidget {
   const AppTopBar({super.key});
 
@@ -37,6 +37,7 @@ class AppTopBar extends ConsumerWidget {
           height: height,
           child: Row(
             children: [
+              const _BrandLogo(),
               // Grouped on the right next to the avatar — keeps the left clear of
               // the macOS traffic-light buttons instead of sitting awkwardly
               // beside them.
@@ -49,6 +50,24 @@ class AppTopBar extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The Grid lightning mark at the left of the title bar (past the macOS
+/// traffic-light inset) — a small brand anchor so every screen reads as "Grid".
+/// A transparent bolt with its own glow (no tile), so it reads cleanly on the
+/// dark glass bar; shown raw since there's no background to round.
+class _BrandLogo extends StatelessWidget {
+  const _BrandLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/brand/grid_logo_topbar.png',
+      width: 30,
+      height: 30,
+      filterQuality: FilterQuality.medium,
     );
   }
 }

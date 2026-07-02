@@ -88,11 +88,10 @@ class _SignIn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child:
-              Image.asset('assets/tray/tray_icon.png', width: 64, height: 64),
-        ),
+        // Self-contained icon (own rounded corners + transparent margin), so it
+        // needs no ClipRRect — showing it raw keeps the glow edges intact.
+        Image.asset('assets/brand/grid_logo_bg.png',
+            width: 72, height: 72, filterQuality: FilterQuality.medium),
         const SizedBox(height: 16),
         Text('Grid', style: theme.textTheme.headlineMedium),
         const SizedBox(height: 8),

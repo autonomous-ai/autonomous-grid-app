@@ -38,3 +38,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/tray/tray_icon.png
+    - assets/brand/grid_logo_topbar.png
+    - assets/brand/grid_logo_bg.png
