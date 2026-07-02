@@ -54,13 +54,18 @@ class _OverviewBody extends StatelessWidget {
   }
 }
 
-class _StatsBar extends StatelessWidget {
+class _StatsBar extends ConsumerWidget {
   const _StatsBar({required this.stats});
   final GridStats stats;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final uptime = stats.uptimePct == null ? '—' : '${_trim(stats.uptimePct!)}%';
+    // The overview's own `stats.models` can lag at 0 when the relay doesn't
+    // detail its models — trust the list we actually resolved (overview or
+    // `/models`) whenever it has entries, so the headline matches the section.
+    final resolved = ref.watch(gridModelsProvider).length;
+    final models = resolved > 0 ? resolved : stats.models;
     return Container(
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
@@ -70,7 +75,7 @@ class _StatsBar extends StatelessWidget {
       child: IntrinsicHeight(
         child: Row(
           children: [
-            _StatCell(label: 'MODELS', value: '${stats.models}'),
+            _StatCell(label: 'MODELS', value: '$models'),
             const VerticalDivider(width: 1),
             _StatCell(label: 'NODES', value: '${stats.nodes}'),
             const VerticalDivider(width: 1),

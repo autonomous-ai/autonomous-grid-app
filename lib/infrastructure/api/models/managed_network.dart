@@ -4,12 +4,12 @@
 enum ManagedNetworkType {
   permissionedPublic(
     'permissioned-public',
-    'Use and share models',
+    'Public',
     'People you invite can both use models and run their own on this grid.',
   ),
   permissionedProviders(
     'permissioned-providers',
-    'Share models only',
+    'Private',
     'Only people who run a model can join — there are no use-only members.',
   );
 
