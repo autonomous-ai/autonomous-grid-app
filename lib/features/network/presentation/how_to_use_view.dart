@@ -26,15 +26,13 @@ class HowToUseView extends ConsumerWidget {
       title: 'How to use',
       subtitle: 'Connect your apps to “${network.name}”.',
       child: SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          // Re-key per grid so switching grids resets the guide (app choice and
-          // any "Applied" result) instead of showing the previous grid's state.
-          child: AppGuideContent(
-            key: ValueKey(network.networkId),
-            baseUrl: network.relayBaseUrl,
-            apiKey: network.relayApiKey,
-          ),
+        // Fill the section width (SectionScaffold already pads the frame).
+        // Re-key per grid so switching grids resets the guide (app choice and
+        // any "Applied" result) instead of showing the previous grid's state.
+        child: AppGuideContent(
+          key: ValueKey(network.networkId),
+          baseUrl: network.relayBaseUrl,
+          apiKey: network.relayApiKey,
         ),
       ),
     );

@@ -48,19 +48,21 @@ class ClientAppPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Lead with the single next step in one card — Download when the app is
+    // missing, Apply for me once it's installed — then the config below as a
+    // reference (also the "copy it yourself" fallback the apply-error points at).
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!installed) ...[
-          _NotInstalledBanner(name: info.name, onDownload: onDownload),
-          const SizedBox(height: 14),
-        ],
+        _AppActionBlock(
+          name: info.name,
+          installed: installed,
+          phase: phase,
+          onApply: onApply,
+          onDownload: onDownload,
+        ),
+        const SizedBox(height: 16),
         ..._configBlocks(),
-        if (installed) ...[
-          const SizedBox(height: 12),
-          _ApplyRow(name: info.name, phase: phase, onApply: onApply),
-          _ApplyStatus(phase: phase),
-        ],
       ],
     );
   }
@@ -116,78 +118,78 @@ class OtherAppPanel extends StatelessWidget {
   }
 }
 
-/// The "you don't have this yet" prompt with a Download button.
-class _NotInstalledBanner extends StatelessWidget {
-  const _NotInstalledBanner({required this.name, required this.onDownload});
+/// The one-click setup card for a known client. It leads the guide with the
+/// single next step and keeps the same card either way: **Download** while the
+/// app is missing, **Apply for me** (with its spinner + result) once installed.
+class _AppActionBlock extends StatelessWidget {
+  const _AppActionBlock({
+    required this.name,
+    required this.installed,
+    required this.phase,
+    required this.onApply,
+    required this.onDownload,
+  });
 
   final String name;
+  final bool installed;
+  final ApplyPhase phase;
+  final VoidCallback onApply;
   final VoidCallback onDownload;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppPalette.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "You don't have $name yet. Install it, then Grid can set it up.",
-            style: const TextStyle(
-                color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.tonalIcon(
-            onPressed: onDownload,
-            icon: const Icon(Icons.download_rounded, size: 16),
-            label: Text('Download $name'),
-          ),
-        ],
+        children: installed ? _applyContent() : _downloadContent(),
       ),
     );
   }
-}
 
-/// The "Apply for me" action — writes the config so the user doesn't touch a
-/// file. Shows a spinner while writing.
-class _ApplyRow extends StatelessWidget {
-  const _ApplyRow(
-      {required this.name, required this.phase, required this.onApply});
-
-  final String name;
-  final ApplyPhase phase;
-  final VoidCallback onApply;
-
-  @override
-  Widget build(BuildContext context) {
-    final running = phase is ApplyRunning;
-    return Row(
-      children: [
+  List<Widget> _downloadContent() => [
+        Text(
+          "You don't have $name yet. Install it, then Grid can set it up.",
+          style: const TextStyle(
+              color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+        ),
+        const SizedBox(height: 12),
         FilledButton.icon(
-          onPressed: running ? null : onApply,
-          icon: running
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.auto_fix_high_rounded, size: 16),
-          label: Text(running ? 'Applying…' : 'Apply for me'),
+          onPressed: onDownload,
+          icon: const Icon(Icons.download_rounded, size: 16),
+          label: Text('Download $name'),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            'Writes it into $name for you (a backup is kept).',
-            style: const TextStyle(color: AppPalette.textFaint, fontSize: 11.5),
-          ),
-        ),
-      ],
-    );
+      ];
+
+  List<Widget> _applyContent() {
+    final running = phase is ApplyRunning;
+    return [
+      Text(
+        'Grid can write the connection into $name for you — no files to edit '
+        '(a backup is kept).',
+        style: const TextStyle(
+            color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+      ),
+      const SizedBox(height: 12),
+      FilledButton.icon(
+        onPressed: running ? null : onApply,
+        icon: running
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.auto_fix_high_rounded, size: 16),
+        label: Text(running ? 'Applying…' : 'Apply for me'),
+      ),
+      _ApplyStatus(phase: phase),
+    ];
   }
 }
 

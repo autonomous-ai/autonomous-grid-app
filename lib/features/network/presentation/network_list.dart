@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/status_dot.dart';
 import '../../auth/logic/session_controller.dart';
 import '../logic/grid_overview_provider.dart';
 import '../logic/grid_sync_controller.dart';
@@ -176,14 +175,14 @@ class _NetworkTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Same operational state the detail header shows (shared provider cache):
     // green when a node is serving the grid, muted otherwise — stopped, still
-    // loading, or unreachable. Keeps the list dot honest with Running / Stopped.
+    // loading, or unreachable. Keeps the ⚡ mark honest with Running / Stopped.
     final state = ref
         .watch(gridOverviewForProvider(network.networkId))
         .asData
         ?.value
         .state;
     final running = state?.toLowerCase() == 'running';
-    final dotColor = running ? AppPalette.online : AppPalette.offline;
+    final markColor = running ? AppPalette.online : AppPalette.offline;
     final fg = selected ? Colors.white : AppPalette.textPrimary;
 
     return Padding(
@@ -198,8 +197,8 @@ class _NetworkTile extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             child: Row(
               children: [
-                StatusDot(color: dotColor),
-                const SizedBox(width: 12),
+                Icon(Icons.bolt, size: 18, color: markColor),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(network.name,
                       overflow: TextOverflow.ellipsis,

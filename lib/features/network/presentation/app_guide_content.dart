@@ -36,9 +36,17 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
 
   Future<void> _apply(ClientApp app) async {
     setState(() => _phase = const ApplyRunning());
-    final result = await ref
-        .read(clientAppConfiguratorProvider)
-        .apply(app, widget.baseUrl, widget.apiKey);
+    // The write is near-instant, so hold the spinner for a beat — otherwise the
+    // button snaps straight to the result and the click feels like it did
+    // nothing (especially on a repeat click already showing success).
+    final (result, _) = await (
+      ref.read(clientAppConfiguratorProvider).apply(
+            app,
+            widget.baseUrl,
+            widget.apiKey,
+          ),
+      Future<void>.delayed(const Duration(milliseconds: 450)),
+    ).wait;
     if (!mounted) return;
     setState(() => _phase = ApplyDone(result));
   }
