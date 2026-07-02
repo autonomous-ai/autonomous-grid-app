@@ -5,20 +5,19 @@ import '../../../shared/widgets/log_view.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/provider_run_controller.dart';
 
-/// Status + streamed log + Stop for a running provider. Bounded height so it
-/// embeds inside scrolling screens. Once serving (not [starting]) it confirms
+/// Status + streamed log + Stop for a running provider. Fills the height it's
+/// given so the header/banner pin and only the log scrolls (one scrollbar, not a
+/// page scroll stacked on the log's). Once serving (not [starting]) it confirms
 /// the model is live and links to the Playground to try it.
 class ProviderRunningCard extends ConsumerWidget {
   const ProviderRunningCard({
     super.key,
     required this.starting,
     required this.log,
-    this.logHeight = 320,
   });
 
   final bool starting;
   final List<String> log;
-  final double logHeight;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,7 +27,6 @@ class ProviderRunningCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
@@ -58,7 +56,7 @@ class ProviderRunningCard extends ConsumerWidget {
               ),
             ],
             const SizedBox(height: 12),
-            SizedBox(height: logHeight, child: LogView(lines: log)),
+            Expanded(child: LogView(lines: log)),
           ],
         ),
       ),

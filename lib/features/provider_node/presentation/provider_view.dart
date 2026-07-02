@@ -42,9 +42,11 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
       });
     }
 
-    return SectionScaffold(
+    return const SectionScaffold(
       title: 'Engines',
-      child: ListView(children: const [_ServeSection()]),
+      // _ServeSection owns its own scrolling: the running engine fills the
+      // height (only its log scrolls), other states scroll as a page.
+      child: _ServeSection(),
     );
   }
 }
@@ -63,30 +65,39 @@ class _ServeSection extends ConsumerWidget {
     if (network == null) {
       return const Text('Select a grid first from the Grids tab.');
     }
+
+    // Engine running on THIS grid: hand the card the full section height so the
+    // header/banner pin and only the log scrolls (fixes the double scrollbar).
+    if (run is ProviderRunActive && run.grid == network.networkId) {
+      return ProviderRunningCard(starting: run.starting, log: run.log);
+    }
+
+    // Every other state scrolls as a page.
+    return ListView(children: _bodyChildren(context, theme, network, run));
+  }
+
+  /// The scrollable body for the non-running states — enable-provider gate,
+  /// "engine busy on another grid", or the serve forms (built-in + BYO).
+  List<Widget> _bodyChildren(
+    BuildContext context,
+    ThemeData theme,
+    NetworkCredential network,
+    ProviderRunState run,
+  ) {
     if (!network.isProvider) {
       // Admins arriving from the grid's "Start engine" land here first. Frame
       // turning on engines as the opening step of the same guided path, not a
       // cold gate. Non-admins just get the "ask the owner" note from the card.
-      if (network.role != NetworkRole.admin) {
-        return EnableProviderCard(network: network);
-      }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 16),
-          EnableProviderCard(network: network),
-        ],
-      );
+      return [
+        if (network.role == NetworkRole.admin) const SizedBox(height: 16),
+        EnableProviderCard(network: network),
+      ];
     }
     // One engine at a time: if one is already serving another grid, say so and
     // let the user stop it here first — don't show a Start form that would
     // silently leave the running engine to start a new one.
     if (run is ProviderRunActive && run.grid != network.networkId) {
-      return _EngineBusyElsewhere(runningGridId: run.grid);
-    }
-    if (run is ProviderRunActive && run.grid == network.networkId) {
-      return ProviderRunningCard(
-          starting: run.starting, log: run.log, logHeight: 420);
+      return [_EngineBusyElsewhere(runningGridId: run.grid)];
     }
 
     final failedNote = run is ProviderRunFailed
@@ -101,34 +112,28 @@ class _ServeSection extends ConsumerWidget {
     // Windows can't host the built-in (llama.cpp) engine yet — don't show the
     // node-setup/serve path there; it would only dead-end. Offer BYO instead.
     if (Platform.isWindows) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (failedNote != null) failedNote,
-          const _BuiltInUnavailableNote(),
-          const SizedBox(height: 16),
-          _ExternalServers(network: network),
-        ],
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+      return [
         if (failedNote != null) failedNote,
-        _EngineBlock(
-          icon: Icons.dns_outlined,
-          title: 'LLama.cpp',
-          subtitle: 'Download a model, then start the built-in engine',
-          child: ServeLocalCard(network: network),
-        ),
+        const _BuiltInUnavailableNote(),
         const SizedBox(height: 16),
         _ExternalServers(network: network),
-        const SizedBox(height: 16),
-        const NodeSetupCard(),
-        const SizedBox(height: 16),
-      ],
-    );
+      ];
+    }
+
+    return [
+      if (failedNote != null) failedNote,
+      _EngineBlock(
+        icon: Icons.dns_outlined,
+        title: 'LLama.cpp',
+        subtitle: 'Download a model, then start the built-in engine',
+        child: ServeLocalCard(network: network),
+      ),
+      const SizedBox(height: 16),
+      _ExternalServers(network: network),
+      const SizedBox(height: 16),
+      const NodeSetupCard(),
+      const SizedBox(height: 16),
+    ];
   }
 }
 
