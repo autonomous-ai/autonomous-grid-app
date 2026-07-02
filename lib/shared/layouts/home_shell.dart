@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/host_arch.dart';
 import '../../features/app_update/logic/app_update_controller.dart';
 import '../../features/app_update/presentation/app_update_banner.dart';
 import '../../features/auth/logic/session_controller.dart';
@@ -78,10 +77,11 @@ class HomeShell extends ConsumerWidget {
   }
 
   /// Once capabilities are known, start filling the gaps in the background — no
-  /// prompt. Only on provider-capable hosts (macOS / Linux); Windows is
-  /// consumer-only, so there's nothing to install there.
+  /// prompt. Only on Apple Silicon Macs: the built-in engine (llama.cpp + Metal)
+  /// is supported there, so Intel Macs, Linux and Windows run as consumers and
+  /// never auto-provision an engine.
   void _autoStartNodeSetup(WidgetRef ref) {
-    if (!Platform.isMacOS && !Platform.isLinux) return;
+    if (!isAppleSiliconMac) return;
     ref.listen(nodeCapabilitiesProvider, (_, next) {
       final caps = next.asData?.value;
       if (caps == null) return;

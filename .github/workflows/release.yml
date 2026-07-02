@@ -41,9 +41,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest      # Apple Silicon, native build
+          - platform: macos-latest      # Apple Silicon, native arm64 build
             arch: arm64
             label: macOS-Apple-Silicon
+          - platform: macos-13          # Intel, native x86_64 build (macos-14+ are arm64)
+            arch: x64
+            label: macOS-Intel
           - platform: windows-latest
             arch: x64
             label: Windows-x64
@@ -96,12 +99,13 @@ jobs:
         run: flutter pub get
 
       # ───────────────────────── macOS ─────────────────────────
-      - name: Build grid sidecar (macOS arm64)
-        if: runner.os == 'macOS' && matrix.arch == 'arm64'
+      - name: Build grid sidecar (macOS)
+        if: runner.os == 'macOS'
         working-directory: grid-app
-        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid
-        # (native arm64 on this runner). The sidecar is signed (Developer ID, hardened
-        # runtime) + notarized downstream, so it isn't SIGKILL'd like an ad-hoc build.
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid,
+        # native to this runner's arch (arm64 on macos-latest, x86_64 on macos-13) since
+        # Nuitka can't cross-compile. The sidecar is signed (Developer ID, hardened runtime)
+        # + notarized downstream, so it isn't SIGKILL'd like an ad-hoc build.
         run: bash scripts/cli/build_sidecar.sh "$GITHUB_WORKSPACE/autonomous-grid-cli"
 
       - name: Build macOS app + inject sidecar
