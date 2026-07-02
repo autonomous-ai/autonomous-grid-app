@@ -1,6 +1,13 @@
-/// The two network types the control plane accepts when creating a managed
-/// (hosted) network. The wire value is exactly what the API expects in
-/// `network_type`; the label/description drive the create form.
+/// The managed-network access types accepted when creating a hosted grid. The
+/// [wire] value is sent as `network_type` on `POST /managed-networks` and sets
+/// who must be whitelisted:
+///   - `permissioned-public`    → whitelist providers AND consumers (invite-only)
+///   - `permissioned-providers` → whitelist providers only (consumers open)
+///
+/// User-facing, that maps "Public" to `permissioned-providers` (consumers join
+/// freely) and "Private" to `permissioned-public` (everyone whitelisted). The
+/// [label]/[description] drive the create form. NOTE: the enum constant names do
+/// not track [wire] after that swap — trust [wire]/[label], not the name.
 enum ManagedNetworkType {
   permissionedPublic(
     'permissioned-providers',

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
+import '../../../shared/widgets/log_view.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
@@ -119,15 +120,10 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     if (download != null) return _downloadingSection(theme, download.pct);
     // No models yet. If the engine is installed, downloading one is the next
     // step — make it a primary action, not a tucked-away link. Until the engine
-    // is installed, the node setup above is the next step.
+    // is installed, offer to install it right here (the node-setup card hides
+    // once another engine already covers text inference, so this can't dead-end).
     if (llamaInstalled) return _downloadPromptSection(context, theme);
-    return [
-      Text(
-        'Set this computer up as a node above, then download a model to serve.',
-        style: theme.textTheme.bodyMedium
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-      ),
-    ];
+    return const [_LlamaInstallSection()];
   }
 
   /// A model is downloading (node setup or a manual pull): show progress in
@@ -222,4 +218,68 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
           ),
         ),
       ];
+}
+
+/// Shown in the built-in engine block when llama.cpp isn't installed on this
+/// computer (e.g. the user removed it). Installs it in place via
+/// `grid engine install llama.cpp` with a live log, so the block is
+/// self-sufficient — it never points at the node-setup card, which hides itself
+/// once another engine (Ollama, …) already covers text inference.
+class _LlamaInstallSection extends ConsumerWidget {
+  const _LlamaInstallSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final state = ref.watch(llamaInstallControllerProvider);
+    final installing = state is LlamaInstalling;
+    final failed = state is LlamaInstallFailed;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          installing
+              ? 'Setting up the built-in engine — this can take a few minutes.'
+              : "The built-in engine (llama.cpp) isn't installed on this "
+                  'computer. Set it up to download and run a model here.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        if (state is LlamaInstallFailed) ...[
+          const SizedBox(height: 6),
+          Text(state.message,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error)),
+        ],
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: installing
+                ? null
+                : () => ref
+                    .read(llamaInstallControllerProvider.notifier)
+                    .install(),
+            icon: installing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(failed ? Icons.refresh : Icons.download_outlined,
+                    size: 18),
+            label: Text(installing
+                ? 'Setting up…'
+                : failed
+                    ? 'Try again'
+                    : 'Set up built-in engine'),
+          ),
+        ),
+        if (state is LlamaInstalling && state.log.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SizedBox(height: 160, child: LogView(lines: state.log)),
+        ],
+      ],
+    );
+  }
 }
