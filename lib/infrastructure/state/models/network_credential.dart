@@ -110,6 +110,12 @@ class NetworkCredential {
   /// capability is required. (Pure consumers/members are excluded.)
   bool get canManageProvider => role == NetworkRole.admin || isProvider;
 
+  /// Whether the viewer owns/administers this grid — the only role the control
+  /// plane lets manage membership (invite / remove members, delete the grid)
+  /// today. Providers can serve a model but can't manage members yet (BE support
+  /// pending), so member-admin UI must gate on this, not [canManageProvider].
+  bool get isOwner => role == NetworkRole.admin;
+
   bool isExpired(DateTime now) =>
       now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
 

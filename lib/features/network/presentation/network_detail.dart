@@ -29,10 +29,10 @@ class NetworkDetail extends ConsumerWidget {
       child: _Header(network: network),
     );
 
-    // Member management is open to admins and providers — gate the tab on the
-    // same capability as the Provider/Models tabs. Pure consumers/members only
-    // see the overview.
-    if (!network.canManageProvider) {
+    // Member management (the Members tab) is owner-only — the control plane
+    // doesn't support member admin for providers yet. Everyone else, providers
+    // included, gets just the overview.
+    if (!network.isOwner) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [header, Expanded(child: _OverviewTab(network: network))],
@@ -88,7 +88,7 @@ class _OverviewTab extends StatelessWidget {
           const _Actions(),
         ],
         // Owner-only, pinned to the bottom: permanently delete this grid.
-        if (network.role == NetworkRole.admin) ...[
+        if (network.isOwner) ...[
           const SizedBox(height: 28),
           _DeleteGridButton(network: network),
         ],
@@ -140,9 +140,9 @@ class _Header extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            // Add member sits beside Test for admins/providers, so member
-            // management is reachable from any tab.
-            if (network.canManageProvider) ...[
+            // Add member is owner-only (BE doesn't support member admin for
+            // providers yet); it sits beside Test so it's reachable from any tab.
+            if (network.isOwner) ...[
               _AddMemberButton(network: network),
               const SizedBox(width: 8),
             ],
