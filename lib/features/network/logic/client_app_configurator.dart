@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
 import 'app_guide_snippets.dart';
@@ -39,16 +40,18 @@ class ClientAppConfigurator {
 
   final String _home;
 
-  Future<ApplyResult> apply(ClientApp app, String base, String key) {
+  Future<ApplyResult> apply(
+      ClientApp app, String base, String key, String model) {
     switch (app) {
       case ClientApp.openClaw:
-        return _applyOpenClaw(base, key);
+        return _applyOpenClaw(base, key, model);
       case ClientApp.hermes:
-        return _applyHermes(base, key);
+        return _applyHermes(base, key, model);
     }
   }
 
-  Future<ApplyResult> _applyOpenClaw(String base, String key) async {
+  Future<ApplyResult> _applyOpenClaw(
+      String base, String key, String model) async {
     final file = File('$_home/.openclaw/openclaw.json');
     try {
       final root = await _readJsonObject(file);
@@ -64,16 +67,16 @@ class ClientAppConfigurator {
         'apiKey': key,
         'api': 'openai-completions',
         'models': [
-          {'id': kGuideDefaultModel, 'name': 'Qwen3 Coder (via Grid)'},
+          {'id': model, 'name': '$model (via Grid)'},
         ],
       };
 
       // Give a fresh install a working default, but never override a model the
       // user already chose.
-      final model =
+      final modelCfg =
           _childMap(_childMap(_childMap(root, 'agents'), 'defaults'), 'model');
-      final setDefault = model['primary'] == null;
-      if (setDefault) model['primary'] = 'grid/$kGuideDefaultModel';
+      final setDefault = modelCfg['primary'] == null;
+      if (setDefault) modelCfg['primary'] = 'grid/$model';
 
       await _backupThenWrite(
           file, const JsonEncoder.withIndent('  ').convert(root));
@@ -81,30 +84,46 @@ class ClientAppConfigurator {
         'Added Grid to ${_display(file)}.',
         note: setDefault
             ? null
-            : 'Set your model to grid/$kGuideDefaultModel in OpenClaw to use it.',
+            : 'Set your model to grid/$model in OpenClaw to use it.',
       );
     } on Object catch (e) {
       return ApplyError('Couldn\'t update ${_display(file)}: ${_reason(e)}');
     }
   }
 
-  Future<ApplyResult> _applyHermes(String base, String key) async {
-    final env = File('$_home/.hermes/.env');
+  Future<ApplyResult> _applyHermes(
+      String base, String key, String model) async {
     final config = File('$_home/.hermes/config.yaml');
     try {
-      await _upsertEnv(env, {'OPENAI_BASE_URL': base, 'OPENAI_API_KEY': key});
+      final text = (await config.exists()) ? await config.readAsString() : '';
 
-      // A YAML config we can't safely merge is left to the user — we only create
-      // one when Hermes has none yet.
-      if (await config.exists()) {
-        return ApplyOk(
-          'Saved your key to ${_display(env)}.',
-          note: 'Set base_url to $base in ${_display(config)} (Copy above).',
-        );
+      // No config yet → write a fresh one straight from the snippet.
+      if (text.trim().isEmpty) {
+        await config.parent.create(recursive: true);
+        await _backupThenWrite(config, hermesConfigSnippet(base, key, model));
+        return ApplyOk('Configured Hermes in ${_display(config)}.');
       }
-      await config.parent.create(recursive: true);
-      await config.writeAsString('${hermesConfigSnippet(base)}\n');
-      return ApplyOk('Configured Hermes in ${_display(config)}.');
+
+      // Existing config → surgically repoint its `model:` block at the grid,
+      // preserving every other setting and comment (yaml_edit edits in place).
+      final editor = YamlEditor(text);
+      final connection = <String, Object>{
+        'provider': 'custom',
+        'base_url': base,
+        'api_key': key,
+        'default': model,
+        // Keep Hermes under the relay's max_tokens cap (see the snippet doc).
+        'max_tokens': kHermesMaxTokens,
+      };
+      final existingModel =
+          editor.parseAt(['model'], orElse: () => wrapAsYamlNode(null));
+      if (existingModel.value is Map) {
+        connection.forEach((k, v) => editor.update(['model', k], v));
+      } else {
+        editor.update(['model'], connection);
+      }
+      await _backupThenWrite(config, editor.toString().trimRight());
+      return ApplyOk('Pointed Hermes at this grid in ${_display(config)}.');
     } on Object catch (e) {
       return ApplyError('Couldn\'t update Hermes config: ${_reason(e)}');
     }
@@ -129,30 +148,6 @@ class ClientAppConfigurator {
         existing is Map ? Map<String, dynamic>.from(existing) : <String, dynamic>{};
     parent[key] = map;
     return map;
-  }
-
-  /// Sets each `NAME=value` in [vars], replacing an existing line for the same
-  /// name and appending the rest — so we never duplicate keys.
-  Future<void> _upsertEnv(File file, Map<String, String> vars) async {
-    final lines =
-        (await file.exists()) ? (await file.readAsString()).split('\n') : <String>[];
-    final remaining = Map<String, String>.from(vars);
-    final out = <String>[];
-    for (final line in lines) {
-      final eq = line.indexOf('=');
-      final name = eq > 0 ? line.substring(0, eq).trim() : '';
-      if (name.isNotEmpty && remaining.containsKey(name)) {
-        out.add('$name=${remaining.remove(name)}');
-        continue;
-      }
-      out.add(line);
-    }
-    while (out.isNotEmpty && out.last.trim().isEmpty) {
-      out.removeLast();
-    }
-    remaining.forEach((name, value) => out.add('$name=$value'));
-    await file.parent.create(recursive: true);
-    await file.writeAsString('${out.join('\n')}\n');
   }
 
   Future<void> _backupThenWrite(File file, String contents) async {

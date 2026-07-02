@@ -33,6 +33,7 @@ class ClientAppPanel extends StatelessWidget {
     required this.installed,
     required this.baseUrl,
     required this.apiKey,
+    required this.model,
     required this.phase,
     required this.onApply,
     required this.onDownload,
@@ -42,6 +43,10 @@ class ClientAppPanel extends StatelessWidget {
   final bool installed;
   final String baseUrl;
   final String apiKey;
+
+  /// The model the grid actually serves (or the fallback default), wired into
+  /// the snippets so copy/apply names a model the grid can answer.
+  final String model;
   final ApplyPhase phase;
   final VoidCallback onApply;
   final VoidCallback onDownload;
@@ -72,15 +77,12 @@ class ClientAppPanel extends StatelessWidget {
       case ClientApp.openClaw:
         return [
           GuideLabel(info.name, caption: 'Add to ${info.configPath}'),
-          CodeBlock(code: openClawSnippet(baseUrl, apiKey)),
+          CodeBlock(code: openClawSnippet(baseUrl, apiKey, model)),
         ];
       case ClientApp.hermes:
         return [
           const GuideLabel('Endpoint', caption: 'In ~/.hermes/config.yaml'),
-          CodeBlock(code: hermesConfigSnippet(baseUrl)),
-          const SizedBox(height: 10),
-          const GuideLabel('API key', caption: 'Add to ~/.hermes/.env'),
-          CodeBlock(code: hermesEnvSnippet(apiKey)),
+          CodeBlock(code: hermesConfigSnippet(baseUrl, apiKey, model)),
         ];
     }
   }
@@ -89,10 +91,16 @@ class ClientAppPanel extends StatelessWidget {
 /// Fallback for any app we don't detect: the raw OpenAI-compatible pair plus a
 /// tiny SDK example — enough to wire up anything by hand.
 class OtherAppPanel extends StatelessWidget {
-  const OtherAppPanel({super.key, required this.baseUrl, required this.apiKey});
+  const OtherAppPanel({
+    super.key,
+    required this.baseUrl,
+    required this.apiKey,
+    required this.model,
+  });
 
   final String baseUrl;
   final String apiKey;
+  final String model;
 
   @override
   Widget build(BuildContext context) {
@@ -105,11 +113,11 @@ class OtherAppPanel extends StatelessWidget {
         const SizedBox(height: 14),
         const GuideLabel('Example (Python)',
             caption: 'works with any OpenAI SDK'),
-        CodeBlock(code: pythonSnippet(baseUrl, apiKey)),
+        CodeBlock(code: pythonSnippet(baseUrl, apiKey, model)),
         const SizedBox(height: 14),
         Text(
-          'Replace $kGuideDefaultModel with a model your grid serves. Every '
-          'model on every machine answers at this one endpoint.',
+          'Use a model your grid serves (e.g. $model). Every model on every '
+          'machine answers at this one endpoint.',
           style: const TextStyle(
               color: AppPalette.textFaint, fontSize: 12, height: 1.45),
         ),

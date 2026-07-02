@@ -481,8 +481,40 @@ class _ExternalServerBlockState extends ConsumerState<_ExternalServerBlock> {
   late final _model = TextEditingController(text: widget.initialModel);
   late final _advertise = TextEditingController(text: widget.initialAdvertise);
 
+  /// Once the user types their own "Advertise as", stop auto-filling it — don't
+  /// clobber a name they chose.
+  bool _advertiseEdited = false;
+
+  /// Guards the programmatic write below so it isn't mistaken for a user edit.
+  bool _syncingAdvertise = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _model.addListener(_syncAdvertiseToModel);
+    _advertise.addListener(_markAdvertiseEdited);
+  }
+
+  /// Mirror the chosen model into "Advertise as" (via [deriveAdvertiseName]) so
+  /// switching models keeps the advertised name in step — until the user
+  /// overrides it by hand.
+  void _syncAdvertiseToModel() {
+    if (_advertiseEdited) return;
+    final derived = deriveAdvertiseName(_model.text.trim());
+    if (derived == _advertise.text) return;
+    _syncingAdvertise = true;
+    _advertise.text = derived;
+    _syncingAdvertise = false;
+  }
+
+  void _markAdvertiseEdited() {
+    if (!_syncingAdvertise) _advertiseEdited = true;
+  }
+
   @override
   void dispose() {
+    _model.removeListener(_syncAdvertiseToModel);
+    _advertise.removeListener(_markAdvertiseEdited);
     _endpoint.dispose();
     _model.dispose();
     _advertise.dispose();

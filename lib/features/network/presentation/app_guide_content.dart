@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../playground/logic/network_models_provider.dart';
+import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
 import 'app_guide_panels.dart';
@@ -34,7 +36,7 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         _phase = const ApplyIdle();
       });
 
-  Future<void> _apply(ClientApp app) async {
+  Future<void> _apply(ClientApp app, String model) async {
     setState(() => _phase = const ApplyRunning());
     // The write is near-instant, so hold the spinner for a beat — otherwise the
     // button snaps straight to the result and the click feels like it did
@@ -44,6 +46,7 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
             app,
             widget.baseUrl,
             widget.apiKey,
+            model,
           ),
       Future<void>.delayed(const Duration(milliseconds: 450)),
     ).wait;
@@ -64,6 +67,11 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         : ClientApp.values
             .firstWhere(installed.contains, orElse: () => ClientApp.openClaw);
 
+    // Name a model the grid actually serves in every snippet/apply. Falls back
+    // to the default only while the list is loading or the grid advertises none.
+    final models = ref.watch(networkModelsProvider).asData?.value ?? const [];
+    final model = models.isNotEmpty ? models.first : kGuideDefaultModel;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,15 +90,17 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         ),
         const SizedBox(height: 18),
         if (selected == null)
-          OtherAppPanel(baseUrl: widget.baseUrl, apiKey: widget.apiKey)
+          OtherAppPanel(
+              baseUrl: widget.baseUrl, apiKey: widget.apiKey, model: model)
         else
           ClientAppPanel(
             info: kClientApps[selected]!,
             installed: installed.contains(selected),
             baseUrl: widget.baseUrl,
             apiKey: widget.apiKey,
+            model: model,
             phase: _phase,
-            onApply: () => _apply(selected),
+            onApply: () => _apply(selected, model),
             onDownload: () => _download(kClientApps[selected]!.downloadUrl),
           ),
       ],

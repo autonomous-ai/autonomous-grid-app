@@ -5,9 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/network/logic/client_app_detector.dart';
+import 'package:yaml_edit/yaml_edit.dart';
 
 const _base = 'https://grid.example/relay/v1';
 const _key = 'sk-test-123';
+const _model = 'qwen3.5:0.8b';
 
 void main() {
   late Directory home;
@@ -28,7 +30,7 @@ void main() {
 
   group('OpenClaw', () {
     test('creates config with the Grid provider and a default model', () async {
-      final result = await sut.apply(ClientApp.openClaw, _base, _key);
+      final result = await sut.apply(ClientApp.openClaw, _base, _key, _model);
 
       expect(result, isA<ApplyOk>());
       expect((result as ApplyOk).note, isNull);
@@ -37,8 +39,8 @@ void main() {
       final grid = (json['models']['providers'] as Map)['grid'] as Map;
       expect(grid['baseUrl'], _base);
       expect(grid['apiKey'], _key);
-      expect(json['agents']['defaults']['model']['primary'],
-          'grid/$kGuideDefaultModel');
+      expect((grid['models'] as List).first['id'], _model);
+      expect(json['agents']['defaults']['model']['primary'], 'grid/$_model');
     });
 
     test('merges without clobbering other providers or the chosen model',
@@ -58,7 +60,7 @@ void main() {
         },
       }));
 
-      final result = await sut.apply(ClientApp.openClaw, _base, _key);
+      final result = await sut.apply(ClientApp.openClaw, _base, _key, _model);
 
       expect((result as ApplyOk).note, isNotNull); // model kept ⇒ follow-up note
       final json = readJson('.openclaw/openclaw.json');
@@ -74,50 +76,61 @@ void main() {
       await file.create(recursive: true);
       await file.writeAsString('not json at all');
 
-      final result = await sut.apply(ClientApp.openClaw, _base, _key);
+      final result = await sut.apply(ClientApp.openClaw, _base, _key, _model);
       expect(result, isA<ApplyError>());
     });
   });
 
   group('Hermes', () {
-    test('writes the key to .env and creates a fresh config.yaml', () async {
-      final result = await sut.apply(ClientApp.hermes, _base, _key);
+    String readConfig() =>
+        File('${home.path}/.hermes/config.yaml').readAsStringSync();
+
+    test('creates a fresh config.yaml pointing at the grid', () async {
+      final result = await sut.apply(ClientApp.hermes, _base, _key, _model);
 
       expect(result, isA<ApplyOk>());
-      final env = File('${home.path}/.hermes/.env').readAsStringSync();
-      expect(env, contains('OPENAI_API_KEY=$_key'));
-      expect(env, contains('OPENAI_BASE_URL=$_base'));
-      final config = File('${home.path}/.hermes/config.yaml').readAsStringSync();
-      expect(config, contains('base_url: $_base'));
+      final editor = YamlEditor(readConfig());
+      expect(editor.parseAt(['model', 'provider']).value, 'custom');
+      expect(editor.parseAt(['model', 'base_url']).value, _base);
+      expect(editor.parseAt(['model', 'api_key']).value, _key);
+      expect(editor.parseAt(['model', 'default']).value, _model);
+      expect(editor.parseAt(['model', 'max_tokens']).value, kHermesMaxTokens);
     });
 
-    test('leaves an existing config.yaml untouched and flags a follow-up',
+    test('repoints an existing model block, keeping other settings and a backup',
         () async {
       final config = File('${home.path}/.hermes/config.yaml');
       await config.create(recursive: true);
-      await config.writeAsString('model:\n  default: keep-me\n');
+      // Mirrors a real ollama-launch config: a comment, an unrelated top-level
+      // key, and a populated model block we must repoint (not clobber).
+      await config.writeAsString(
+        '# my hermes config\n'
+        'user_profile_enabled: true\n'
+        'model:\n'
+        '  api_key: ollama\n'
+        '  base_url: http://127.0.0.1:11434/v1\n'
+        '  default: qwen3.5:0.8b\n'
+        '  provider: ollama-launch\n',
+      );
 
-      final result = await sut.apply(ClientApp.hermes, _base, _key);
+      final result = await sut.apply(ClientApp.hermes, _base, _key, _model);
 
-      expect((result as ApplyOk).note, isNotNull);
-      expect(config.readAsStringSync(), 'model:\n  default: keep-me\n');
+      expect(result, isA<ApplyOk>());
+      final editor = YamlEditor(readConfig());
+      expect(editor.parseAt(['model', 'provider']).value, 'custom');
+      expect(editor.parseAt(['model', 'base_url']).value, _base);
+      expect(editor.parseAt(['model', 'api_key']).value, _key);
+      expect(editor.parseAt(['model', 'default']).value, _model);
+      expect(editor.parseAt(['model', 'max_tokens']).value, kHermesMaxTokens);
+      // Unrelated settings + the comment survive the surgical edit.
+      expect(editor.parseAt(['user_profile_enabled']).value, true);
+      expect(readConfig(), contains('# my hermes config'));
+      expect(File('${config.path}.bak').existsSync(), isTrue);
     });
 
-    test('.env upsert replaces the key without duplicating others', () async {
-      final env = File('${home.path}/.hermes/.env');
-      await env.create(recursive: true);
-      await env.writeAsString('OTHER=x\nOPENAI_API_KEY=old\n');
-
-      await sut.apply(ClientApp.hermes, _base, _key);
-
-      final lines = env
-          .readAsStringSync()
-          .split('\n')
-          .where((l) => l.trim().isNotEmpty)
-          .toList();
-      expect(lines.where((l) => l.startsWith('OPENAI_API_KEY=')).length, 1);
-      expect(lines, contains('OPENAI_API_KEY=$_key'));
-      expect(lines, contains('OTHER=x'));
+    test('does not create a .env file', () async {
+      await sut.apply(ClientApp.hermes, _base, _key, _model);
+      expect(File('${home.path}/.hermes/.env').existsSync(), isFalse);
     });
   });
 }
