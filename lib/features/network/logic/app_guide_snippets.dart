@@ -9,6 +9,10 @@ library;
 /// `networkModelsProvider`; this is just so the snippets are never blank.
 const kGuideDefaultModel = 'qwen3-coder';
 
+/// Output-token cap written into Hermes's `model.max_tokens` (Hermes reads it
+/// there; `custom_providers` ignores the field). 128K = 128×1024.
+const kHermesMaxTokens = 64000;
+
 /// Shell exports of the OpenAI-compatible pair — the generic form any client
 /// reads from the environment.
 String envSnippet(String base, String key) =>
@@ -34,15 +38,28 @@ String openClawSnippet(String base, String key, String model) => '{\n'
     '  }\n'
     '}';
 
-/// The `~/.hermes/config.yaml` `model:` block that points Hermes at a grid.
-/// `provider: custom` + `base_url`/`api_key` route it at the grid's
-/// OpenAI-compatible relay and `default` names [model] as the model to request.
-/// `max_tokens` is pinned so Hermes stays under the relay's output cap. Hermes reads it all here — no `.env`.
+/// The Hermes `custom_providers` name for a grid — its relay host (e.g.
+/// `grid.autonomous.ai`), so the grid registers as a named provider in Hermes's
+/// model picker. Falls back to the brand host if [base] can't be parsed.
+String hermesProviderName(String base) =>
+    Uri.tryParse(base)?.host ?? 'grid.autonomous.ai';
+
+/// The `~/.hermes/config.yaml` blocks that point Hermes at a grid: the active
+/// `model:` selection (`provider: custom` + `base_url`/`api_key`, the `default`
+/// model, and a `max_tokens` cap — see [kHermesMaxTokens]) plus a
+/// `custom_providers` entry registering the grid as a named provider. Hermes
+/// reads it all here — no `.env`.
 String hermesConfigSnippet(String base, String key, String model) => 'model:\n'
-    '  provider: custom\n'
+    '  provider: custom:${hermesProviderName(base)}\n'
     '  base_url: $base\n'
     '  api_key: $key\n'
-    '  default: $model\n';
+    '  default: $model\n'
+    '  max_tokens: $kHermesMaxTokens\n'
+    'custom_providers:\n'
+    '  - name: ${hermesProviderName(base)}\n'
+    '    base_url: $base\n'
+    '    api_key: $key\n'
+    '    model: $model';
 
 /// A minimal OpenAI-SDK example for "any app of your own".
 String pythonSnippet(String base, String key, String model) =>

@@ -29,10 +29,15 @@ void main() {
 
   test('Hermes config block carries the full grid connection', () {
     final config = hermesConfigSnippet(_base, _key, _model);
-    expect(config, contains('provider: custom'));
+    expect(config, contains('provider: custom:Grid.autonomous.ai'));
     expect(config, contains('base_url: $_base'));
     expect(config, contains('api_key: $_key'));
     expect(config, contains('default: $_model'));
+    expect(config, contains('max_tokens: $kHermesMaxTokens'));
+    // Also registers the grid as a named custom provider.
+    expect(config, contains('custom_providers:'));
+    expect(config, contains('name: ${hermesProviderName(_base)}'));
+    expect(config, contains('model: $_model'));
   });
 
   test('Python snippet points the SDK at the pair', () {

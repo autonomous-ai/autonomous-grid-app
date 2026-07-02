@@ -94,6 +94,13 @@ void main() {
       expect(editor.parseAt(['model', 'base_url']).value, _base);
       expect(editor.parseAt(['model', 'api_key']).value, _key);
       expect(editor.parseAt(['model', 'default']).value, _model);
+      expect(editor.parseAt(['model', 'max_tokens']).value, kHermesMaxTokens);
+      // Registers the grid as a named custom provider.
+      expect(editor.parseAt(['custom_providers', 0, 'name']).value,
+          'grid.example');
+      expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
+      expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
+      expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
     });
 
     test('repoints an existing model block, keeping other settings and a backup',
@@ -120,10 +127,36 @@ void main() {
       expect(editor.parseAt(['model', 'base_url']).value, _base);
       expect(editor.parseAt(['model', 'api_key']).value, _key);
       expect(editor.parseAt(['model', 'default']).value, _model);
+      // Registers the grid as a named custom provider (list created fresh).
+      expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
+      expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
       // Unrelated settings + the comment survive the surgical edit.
       expect(editor.parseAt(['user_profile_enabled']).value, true);
       expect(readConfig(), contains('# my hermes config'));
       expect(File('${config.path}.bak').existsSync(), isTrue);
+    });
+
+    test('upserts custom_providers without duplicating or dropping others',
+        () async {
+      final config = File('${home.path}/.hermes/config.yaml');
+      await config.create(recursive: true);
+      await config.writeAsString(
+        'model:\n'
+        '  provider: custom\n'
+        'custom_providers:\n'
+        '  - name: other\n'
+        '    base_url: https://other.example/v1\n'
+        '    model: some-model\n',
+      );
+
+      await sut.apply(ClientApp.hermes, _base, _key, _model);
+      await sut.apply(ClientApp.hermes, _base, _key, _model); // re-apply
+
+      final editor = YamlEditor(readConfig());
+      final list = editor.parseAt(['custom_providers']).value as List;
+      expect(list.length, 2); // the other + ours; re-apply doesn't duplicate
+      expect(editor.parseAt(['custom_providers', 0, 'name']).value, 'other');
+      expect(editor.parseAt(['custom_providers', 1, 'base_url']).value, _base);
     });
 
     test('does not create a .env file', () async {

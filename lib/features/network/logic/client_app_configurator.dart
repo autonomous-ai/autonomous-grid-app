@@ -112,6 +112,7 @@ class ClientAppConfigurator {
         'base_url': base,
         'api_key': key,
         'default': model,
+        'max_tokens': kHermesMaxTokens,
       };
       final existingModel =
           editor.parseAt(['model'], orElse: () => wrapAsYamlNode(null));
@@ -120,11 +121,43 @@ class ClientAppConfigurator {
       } else {
         editor.update(['model'], connection);
       }
+      _upsertCustomProvider(editor, base: base, key: key, model: model);
       await _backupThenWrite(config, editor.toString().trimRight());
       return ApplyOk('Pointed Hermes at this grid in ${_display(config)}.');
     } on Object catch (e) {
       return ApplyError('Couldn\'t update Hermes config: ${_reason(e)}');
     }
+  }
+
+  /// Registers this grid as a Hermes named provider under `custom_providers`,
+  /// upserting by relay base_url so re-applying never duplicates it and any other
+  /// providers the user set stay intact. Creates the list when it's absent.
+  void _upsertCustomProvider(YamlEditor editor,
+      {required String base, required String key, required String model}) {
+    final entry = <String, String>{
+      'name': hermesProviderName(base),
+      'base_url': base,
+      'api_key': key,
+      'model': model,
+    };
+    final existing =
+        editor.parseAt(['custom_providers'], orElse: () => wrapAsYamlNode(null))
+            .value;
+    if (existing is! List) {
+      editor.update(['custom_providers'], [entry]);
+      return;
+    }
+    final normBase = base.replaceFirst(RegExp(r'/+$'), '');
+    for (var i = 0; i < existing.length; i++) {
+      final e = existing[i];
+      if (e is! Map) continue;
+      final eBase = '${e['base_url'] ?? ''}'.replaceFirst(RegExp(r'/+$'), '');
+      if (eBase == normBase) {
+        editor.update(['custom_providers', i], entry);
+        return;
+      }
+    }
+    editor.appendToList(['custom_providers'], entry);
   }
 
   Future<Map<String, dynamic>> _readJsonObject(File file) async {
