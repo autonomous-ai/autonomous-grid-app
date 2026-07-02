@@ -209,6 +209,51 @@ class ManagedNetworkClient {
     }
   }
 
+  /// Deletes the managed network [networkId] via
+  /// `DELETE /v1/grid/managed-networks/{network_id}`. Owner-only on the server
+  /// (403 otherwise). Returns `(true, null)` on success.
+  static Future<(bool, ManagedNetworkError?)> delete({
+    required String apiUrl,
+    required String sessionToken,
+    required String networkId,
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.deleteUrl(networkEndpoint(apiUrl, networkId));
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (
+          false,
+          ManagedNetworkError(
+            _deleteErrorFor(response.statusCode, body),
+            statusCode: response.statusCode,
+            body: body,
+          ),
+        );
+      }
+      return (true, null);
+    } on TimeoutException {
+      return (
+        false,
+        const ManagedNetworkError("The server didn't respond in time. Try again.")
+      );
+    } on SocketException catch (e) {
+      return (
+        false,
+        ManagedNetworkError("Couldn't reach the Grid control plane: ${e.message}")
+      );
+    } on Object catch (e) {
+      return (false, ManagedNetworkError("Couldn't delete the grid: $e"));
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// The full create-managed-network URL for [apiUrl] (which may or may not end
   /// in `/`). Public so callers can log the same URL the request hits.
   static Uri endpoint(String apiUrl) {
@@ -216,10 +261,15 @@ class ManagedNetworkClient {
     return Uri.parse('$base$_path');
   }
 
+  /// The single-network URL for [networkId] (GET/DELETE). Public so callers can
+  /// log the same URL the request hits.
+  static Uri networkEndpoint(String apiUrl, String networkId) =>
+      Uri.parse('${endpoint(apiUrl)}/$networkId');
+
   /// The members collection URL for [networkId]. Public so callers can log the
   /// same URL the request hits.
   static Uri membersEndpoint(String apiUrl, String networkId) =>
-      Uri.parse('${endpoint(apiUrl)}/$networkId/members');
+      Uri.parse('${networkEndpoint(apiUrl, networkId)}/members');
 
   /// The single-member URL for a DELETE. [email] is path-encoded.
   static Uri memberEndpoint(String apiUrl, String networkId, String email) =>
@@ -235,6 +285,20 @@ class ManagedNetworkClient {
       402 => detail ?? "You've reached your plan's network limit.",
       409 => detail ?? 'You already own a network with this name.',
       422 => detail ?? 'Invalid name or network type.',
+      502 || 503 => detail ?? 'The grid service is busy right now. Try again.',
+      _ => detail ?? 'Error $status.',
+    };
+  }
+
+  /// Delete-endpoint variant of [_errorFor] — owner-only, and the grid may
+  /// already be gone (404) on a double-delete.
+  static String _deleteErrorFor(int status, String body) {
+    final detail = _detailOf(body);
+    return switch (status) {
+      401 => 'Your session has expired. Sign in again.',
+      403 => detail ?? 'Only the grid owner can delete this grid.',
+      404 => detail ?? 'This grid is no longer available.',
+      409 => detail ?? "This grid can't be deleted right now.",
       502 || 503 => detail ?? 'The grid service is busy right now. Try again.',
       _ => detail ?? 'Error $status.',
     };

@@ -6,6 +6,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../playground/presentation/playground_dialog.dart';
+import '../logic/delete_network_controller.dart';
 import '../logic/grid_overview_provider.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
@@ -82,6 +83,11 @@ class _OverviewTab extends StatelessWidget {
         if (network.canManageProvider) ...[
           const SizedBox(height: 20),
           const _Actions(),
+        ],
+        // Owner-only, pinned to the bottom: permanently delete this grid.
+        if (network.role == NetworkRole.admin) ...[
+          const SizedBox(height: 28),
+          _DeleteGridButton(network: network),
         ],
         // Connection block (grid address) temporarily hidden per request:
         // const SizedBox(height: 20),
@@ -182,6 +188,76 @@ class _TestModelButton extends ConsumerWidget {
       onPressed: () => openPlaygroundDialog(context, ref),
       icon: const Icon(Icons.chat_bubble_outline, size: 16),
       label: const Text('Test'),
+    );
+  }
+}
+
+/// Owner-only destructive action at the bottom of the detail: permanently
+/// deletes the grid via the control plane (after a confirm). On success the
+/// synced list drops it and the selection falls back to another grid.
+class _DeleteGridButton extends ConsumerWidget {
+  const _DeleteGridButton({required this.network});
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final deleting =
+        ref.watch(deleteNetworkControllerProvider) is DeleteNetworkDeleting;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        onPressed: deleting ? null : () => _confirmAndDelete(context, ref),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: theme.colorScheme.error,
+          side:
+              BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
+        ),
+        icon: deleting
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.delete_outline, size: 18),
+        label: Text(deleting ? 'Deleting…' : 'Delete grid'),
+      ),
+    );
+  }
+
+  Future<void> _confirmAndDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          title: const Text('Delete this grid?'),
+          content: Text(
+            'This permanently deletes "${network.name}" and removes everyone '
+            "on it. This can't be undone.",
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.error),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final name = network.name;
+    final error = await ref
+        .read(deleteNetworkControllerProvider.notifier)
+        .delete(network.networkId);
+    messenger.showSnackBar(
+      SnackBar(content: Text(error ?? 'Deleted "$name".')),
     );
   }
 }

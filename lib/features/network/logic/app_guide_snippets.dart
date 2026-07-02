@@ -9,13 +9,6 @@ library;
 /// `networkModelsProvider`; this is just so the snippets are never blank.
 const kGuideDefaultModel = 'qwen3-coder';
 
-/// Output-token cap written into Hermes's config. The grid relay rejects any
-/// request whose `max_tokens` exceeds 64000; left unset, Hermes derives a far
-/// larger value from the model's advertised context and the request 400s — then
-/// death-loops into context compression (NousResearch/hermes-agent#55546). Pin
-/// it well under the cap. Read by Hermes at `model.max_tokens` (agent_init.py).
-const kHermesMaxTokens = 32768;
-
 /// Shell exports of the OpenAI-compatible pair — the generic form any client
 /// reads from the environment.
 String envSnippet(String base, String key) =>
@@ -44,14 +37,12 @@ String openClawSnippet(String base, String key, String model) => '{\n'
 /// The `~/.hermes/config.yaml` `model:` block that points Hermes at a grid.
 /// `provider: custom` + `base_url`/`api_key` route it at the grid's
 /// OpenAI-compatible relay and `default` names [model] as the model to request.
-/// `max_tokens` is pinned so Hermes stays under the relay's output cap (see
-/// [kHermesMaxTokens]). Hermes reads it all here — no `.env`.
+/// `max_tokens` is pinned so Hermes stays under the relay's output cap. Hermes reads it all here — no `.env`.
 String hermesConfigSnippet(String base, String key, String model) => 'model:\n'
     '  provider: custom\n'
     '  base_url: $base\n'
     '  api_key: $key\n'
-    '  default: $model\n'
-    '  max_tokens: $kHermesMaxTokens';
+    '  default: $model\n';
 
 /// A minimal OpenAI-SDK example for "any app of your own".
 String pythonSnippet(String base, String key, String model) =>
