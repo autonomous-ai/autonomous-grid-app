@@ -174,15 +174,16 @@ class _NetworkTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Same operational state the detail header shows (shared provider cache):
-    // green when a node is serving the grid, muted otherwise — stopped, still
-    // loading, or unreachable. Keeps the ⚡ mark honest with Running / Stopped.
+    // brand gold when a node is serving the grid, muted grey otherwise —
+    // stopped, still loading, or unreachable. Keeps the ⚡ mark honest with
+    // Running / Stopped, matching the gold/grey bolt in the menu-bar tray list.
     final state = ref
         .watch(gridOverviewForProvider(network.networkId))
         .asData
         ?.value
         .state;
     final running = state?.toLowerCase() == 'running';
-    final markColor = running ? AppPalette.online : AppPalette.offline;
+    final markColor = running ? AppPalette.brandBolt : AppPalette.offline;
     final fg = selected ? Colors.white : AppPalette.textPrimary;
 
     return Padding(

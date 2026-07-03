@@ -47,8 +47,8 @@ public class TrayMenu: NSMenu, NSMenuDelegate {
             menuItem.target = self
 
             // Render an SF Symbol icon per item when the Dart side passes one in
-            // `icon`. The `checked` flag doubles as the tint selector (blue when
-            // checked/active, grey otherwise) so a coloured icon — not a
+            // `icon`. The `checked` flag doubles as the tint selector (brand gold
+            // when checked/active, grey otherwise) so a coloured icon — not a
             // checkmark — can signal the current selection, like the macOS
             // Wi-Fi list. Falls back to no icon on macOS < 11 (no SF Symbols).
             if let iconName = itemDict["icon"] as? String, !iconName.isEmpty,
@@ -98,7 +98,14 @@ public class TrayMenu: NSMenu, NSMenuDelegate {
         self.delegate = self
     }
     
-    /// Builds a menu-sized SF Symbol image tinted for its state: system blue for
+    /// The Grid brand gold used for the active grid's bolt — matches the menu-bar
+    /// icon and the in-app top-bar bolt (SVG gradient centre ~#FEC303) so the
+    /// active grid reads as the *same* lightning mark everywhere, not a generic
+    /// system blue.
+    private static let activeTint = NSColor(
+        srgbRed: 0xFE / 255.0, green: 0xC3 / 255.0, blue: 0x03 / 255.0, alpha: 1.0)
+
+    /// Builds a menu-sized SF Symbol image tinted for its state: brand gold for
     /// the active item, system grey for the rest. Returns nil on macOS < 11 (no
     /// SF Symbols) or when the symbol name is unknown, so the item keeps its
     /// label without an icon.
@@ -109,7 +116,7 @@ public class TrayMenu: NSMenu, NSMenuDelegate {
         }
         let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
         let sized = base.withSymbolConfiguration(config) ?? base
-        let tint: NSColor = selected ? .systemBlue : .systemGray
+        let tint: NSColor = selected ? activeTint : .systemGray
         let image = NSImage(size: sized.size, flipped: false) { rect in
             sized.draw(in: rect)
             tint.set()

@@ -17,6 +17,9 @@ abstract final class AppPalette {
   static const online = Color(0xFF34C759); // green "connected" dot
   static const warn = Color(0xFFFFB020); // expiring soon
   static const offline = Color(0xFF6B6B72); // grey dot
+  // Grid brand lightning gold — the live/active ⚡ mark, matching the menu-bar
+  // icon and tray bolt (SVG gradient centre) so the same bolt reads everywhere.
+  static const brandBolt = Color(0xFFFEC303);
 
   static const textPrimary = Color(0xFFE6E6EA);
   static const textSecondary = Color(0xFF9A9AA3);

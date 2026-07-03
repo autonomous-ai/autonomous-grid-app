@@ -31,8 +31,8 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   static const _gridPrefix = 'grid:';
 
   // SF Symbol names drawn as tinted icons by our vendored tray_manager patch
-  // (packages/tray_manager) — blue for the active grid, grey for the rest, like
-  // the macOS Wi-Fi list. The `checked` flag we pass doubles as the tint
+  // (packages/tray_manager) — brand gold for the active grid, grey for the rest,
+  // like the macOS Wi-Fi list. The `checked` flag we pass doubles as the tint
   // selector on the native side. Degrades to just the label on macOS < 11.
   // A lightning bolt (matching the in-app grids list) marks each grid row.
   static const _gridSymbol = 'bolt.fill';
@@ -94,7 +94,7 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
       ref.read(providerRunControllerProvider) is ProviderRunActive;
 
   /// The grids section: a greyed header (like "Known Networks") followed by one
-  /// row per grid. The active grid gets a blue lightning bolt, the rest a grey
+  /// row per grid. The active grid gets a gold lightning bolt, the rest a grey
   /// one — mirroring the connected vs. available split in the macOS Wi-Fi list,
   /// and matching the in-app grids list. Falls back to a hint when no grid is
   /// joined.
