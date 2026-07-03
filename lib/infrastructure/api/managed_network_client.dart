@@ -35,8 +35,8 @@ class ManagedNetworkError {
 /// Control-plane call to `POST /v1/grid/managed-networks`, authenticated with
 /// the GridSession bearer (the `session_token` from `~/.grid/credentials.toml`).
 ///
-/// Mirrors [LocalChatClient]: a thin [HttpClient] wrapper that returns
-/// `(network, null)` on success or `(null, error)` on failure — it never throws.
+/// A thin [HttpClient] wrapper that returns `(network, null)` on success or
+/// `(null, error)` on failure — it never throws.
 class ManagedNetworkClient {
   const ManagedNetworkClient._();
 

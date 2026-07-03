@@ -116,7 +116,9 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       state = NodeSetupRunning(
           steps: steps, index: i, log: List.unmodifiable(log));
 
-      final ok = await _runStep(service, steps, i, log);
+      final ok = steps[i].isDownload
+          ? await _runDownload(service, steps, i, log)
+          : await _runStreaming(service, steps, i, log);
       if (_cancelled) return; // cancel() writes its own footer
       if (!ok) {
         _logFile.endStep('failed');
@@ -135,48 +137,16 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     state = NodeSetupDone(steps);
   }
 
-  /// Routes a step to its runner: Homebrew through the [HomebrewInstaller],
-  /// downloads through the progress path, everything else through the CLI.
-  Future<bool> _runStep(
+  /// Streaming lifecycle step (`llama.cpp install`, `media install`): success is
+  /// `exitCode == 0`, failure surfaces a humanized message ([_humanizeFailure]).
+  Future<bool> _runStreaming(
     GridCliService service,
     List<SetupStep> steps,
     int i,
     List<String> log,
-  ) {
-    final step = steps[i];
-    return switch (step.action) {
-      SetupAction.installHomebrew => _runProcess(
-          steps,
-          i,
-          log,
-          () => ref.read(homebrewInstallerProvider).install(),
-          _friendlyHomebrewError,
-        ),
-      _ => step.isDownload
-          ? _runDownload(service, steps, i, log)
-          : _runProcess(
-              steps,
-              i,
-              log,
-              () => service.start(step.args),
-              (exit, lines) =>
-                  lines.isNotEmpty ? lines.last : '${step.title} failed (exit $exit).',
-            ),
-    };
-  }
-
-  /// Shared runner for streaming, process-backed steps (CLI install, Homebrew
-  /// install): mirror each line, then succeed on `exitCode == 0` or fail with a
-  /// message built by [onFailure]. [spawn] defers process start so the owned
-  /// [_process] handle is set right before we listen.
-  Future<bool> _runProcess(
-    List<SetupStep> steps,
-    int i,
-    List<String> log,
-    Future<GridProcess> Function() spawn,
-    String Function(int exit, List<String> log) onFailure,
   ) async {
-    final process = await spawn();
+    final step = steps[i];
+    final process = await service.start(step.args);
     _process = process;
     process.lines.listen((line) {
       _output(log, line);
@@ -190,25 +160,26 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     if (exit == 0) return true;
 
     state = NodeSetupFailed(
-      step: steps[i],
-      message: onFailure(exit, log),
+      step: step,
+      message: _humanizeFailure(step, log, exit),
       log: List.unmodifiable(log),
     );
     return false;
   }
 
-  /// Humanize a Homebrew-install failure — the raw script output stays in the
-  /// log; the user sees a plain, actionable line.
-  static String _friendlyHomebrewError(int exit, List<String> log) {
-    final joined = log.join('\n').toLowerCase();
-    if (joined.contains('administrator permission was declined') ||
-        joined.contains('user cancelled') ||
-        joined.contains('user canceled')) {
-      return 'Setup needs your Mac administrator password to install the engine '
-          'tools. Try again and enter your password when macOS asks for it.';
+  /// Map a raw CLI failure to plain language at the controller boundary (§6).
+  /// The built-in engine install needs Homebrew, which a non-technical user's
+  /// Mac often lacks — turn that jargon into an actionable next step instead of
+  /// dead-ending. Everything else keeps the CLI's own last line.
+  static String _humanizeFailure(SetupStep step, List<String> log, int exit) {
+    final raw = log.isNotEmpty ? log.last : '';
+    if (raw.toLowerCase().contains('homebrew is required')) {
+      return "This computer can't run the built-in engine yet: it needs "
+          'Homebrew, which isn\'t installed. Install it from https://brew.sh '
+          'and run setup again — or use an engine shared by another computer on '
+          'your grid.';
     }
-    return "Couldn't install the setup tools (Homebrew). Check your internet "
-        'connection and try again.';
+    return raw.isNotEmpty ? raw : '${step.title} failed (exit $exit).';
   }
 
   /// Download step (`models pull`, `media pull`): success is the progress stream

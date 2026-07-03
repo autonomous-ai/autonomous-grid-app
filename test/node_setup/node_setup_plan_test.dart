@@ -17,7 +17,6 @@ NodeCapabilities _caps({
   bool engineInstalled = false,
   MediaStatus media = MediaStatus.notInstalled,
   int models = 0,
-  bool hasHomebrew = true,
   CatalogModel? recommended = _model,
 }) =>
     NodeCapabilities(
@@ -27,7 +26,6 @@ NodeCapabilities _caps({
           : EngineStatus.notInstalled,
       media: media,
       localModelCount: models,
-      hasHomebrew: hasHomebrew,
       recommendedModel: recommended,
     );
 
@@ -56,31 +54,6 @@ void main() {
   test('media is off by default — a fresh machine sets up text only', () {
     final plan = buildSetupPlan(_caps());
     expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
-  });
-
-  test('on macOS without Homebrew, setup installs it before the engine', () {
-    final plan = buildSetupPlan(_caps(hasHomebrew: false), isMacOS: true);
-    expect(_actions(plan), [
-      SetupAction.installHomebrew,
-      SetupAction.installLlama,
-      SetupAction.pullModel,
-    ]);
-    // The Homebrew step runs via the installer, not the CLI — no grid args.
-    expect(plan.first.args, isEmpty);
-  });
-
-  test('the Homebrew step is macOS-only', () {
-    final plan = buildSetupPlan(_caps(hasHomebrew: false), isMacOS: false);
-    expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
-  });
-
-  test('no Homebrew step when the built-in engine is not being installed', () {
-    // Text inference already covered by a running Ollama → no llama, so no brew.
-    final plan = buildSetupPlan(
-      _caps(backends: [_ollama()], hasHomebrew: false),
-      isMacOS: true,
-    );
-    expect(plan, isEmpty);
   });
 
   test('with media enabled, a fresh machine installs both engines', () {

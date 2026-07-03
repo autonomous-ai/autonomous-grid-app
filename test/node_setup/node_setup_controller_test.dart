@@ -9,7 +9,6 @@ import 'package:grid_app/infrastructure/logging/node_setup_log.dart';
 import 'package:grid_app/infrastructure/providers.dart';
 import 'package:grid_app/infrastructure/state/grid_home_store.dart';
 import 'package:grid_app/infrastructure/state/models/local_files.dart';
-import 'package:grid_app/infrastructure/system/homebrew_installer.dart';
 
 class _EmptyStore extends GridHomeStore {
   const _EmptyStore();
@@ -42,39 +41,6 @@ class _RecordingLog implements NodeSetupLog {
   void endRun(String outcome) => runOutcome = outcome;
 }
 
-/// In-memory [HomebrewInstaller]: reports missing/installed and streams a canned
-/// install, flipping to installed on a zero exit — no real Homebrew touched.
-class _FakeHomebrew implements HomebrewInstaller {
-  _FakeHomebrew({
-    this.exitCode = 0,
-    this.lines = const [],
-  });
-
-  bool installed = false;
-  final int exitCode;
-  final List<CliLine> lines;
-  int installCalls = 0;
-
-  @override
-  bool get isSupported => true;
-
-  @override
-  bool get isInstalled => installed;
-
-  @override
-  Future<GridProcess> install() async {
-    installCalls++;
-    return GridProcess(
-      lines: Stream.fromIterable(lines),
-      exitCode: Future.delayed(const Duration(milliseconds: 5), () {
-        if (exitCode == 0) installed = true;
-        return exitCode;
-      }),
-      kill: () {},
-    );
-  }
-}
-
 const _llamaStep = SetupStep(
   action: SetupAction.installLlama,
   title: 'Install llama.cpp',
@@ -91,25 +57,12 @@ const _modelStep = SetupStep(
   isDownload: true,
 );
 
-const _brewStep = SetupStep(
-  action: SetupAction.installHomebrew,
-  title: 'Install setup tools',
-  detail: '',
-  args: [],
-  isDownload: false,
-);
-
-ProviderContainer _container(
-  GridCliService? fake, {
-  NodeSetupLog? log,
-  HomebrewInstaller? brew,
-}) {
+ProviderContainer _container(GridCliService? fake, {NodeSetupLog? log}) {
   final container = ProviderContainer(overrides: [
     gridCliServiceProvider.overrideWithValue(fake),
     gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
     // Always override so no test ever writes to the real ~/.grid/logs.
     nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
-    if (brew != null) homebrewInstallerProvider.overrideWithValue(brew),
   ]);
   addTearDown(container.dispose);
   return container;
@@ -257,39 +210,26 @@ void main() {
     expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
   });
 
-  test('installs Homebrew through the installer before the engine step',
-      () async {
-    final brew = _FakeHomebrew(lines: const [
-      CliLine(isStderr: false, text: 'Homebrew installed successfully'),
-    ]);
+  test('humanizes a missing-Homebrew engine-install failure', () async {
+    // The CLI dead-ends with this raw line when Homebrew is absent; the user
+    // should see a plain, actionable message instead — we no longer auto-install.
     final fake = FakeGridCliService()
-      ..stubStart(['engine', 'install', 'llama.cpp'],
-          exitCode: 0,
-          lines: const [CliLine(isStderr: false, text: 'Linked llama-server')]);
-    final container = _container(fake, brew: brew);
+      ..stubStart(['engine', 'install', 'llama.cpp'], exitCode: 1, lines: const [
+        CliLine(
+          isStderr: true,
+          text: 'Homebrew is required for the Apple Silicon prebuilt '
+              'llama.cpp install. Install Homebrew from https://brew.sh/ ...',
+        ),
+      ]);
+    final container = _container(fake);
 
     await container
         .read(nodeSetupControllerProvider.notifier)
-        .run([_brewStep, _llamaStep]);
-
-    expect(brew.installCalls, 1);
-    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
-  });
-
-  test('a failed Homebrew step stops setup with a friendly message', () async {
-    final brew = _FakeHomebrew(exitCode: 1, lines: const [
-      CliLine(isStderr: true, text: 'Administrator permission was declined.'),
-    ]);
-    final container = _container(FakeGridCliService(), brew: brew);
-
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_brewStep, _llamaStep]);
+        .run([_llamaStep, _modelStep]);
 
     final state = container.read(nodeSetupControllerProvider);
     expect(state, isA<NodeSetupFailed>());
-    expect((state as NodeSetupFailed).step.action, SetupAction.installHomebrew);
-    // Humanized, not the raw script line, and never the wrong internet/disk hint.
-    expect(state.message, contains('administrator password'));
+    expect((state as NodeSetupFailed).message, contains('brew.sh'));
+    expect(state.message, contains("can't run the built-in engine"));
   });
 }

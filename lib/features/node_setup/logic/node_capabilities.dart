@@ -19,7 +19,6 @@ class NodeCapabilities {
     required this.engine,
     required this.media,
     required this.localModelCount,
-    this.hasHomebrew = true,
     this.recommendedModel,
   });
 
@@ -27,12 +26,6 @@ class NodeCapabilities {
   final EngineStatus engine;
   final MediaStatus media;
   final int localModelCount;
-
-  /// Whether Homebrew is already installed. The Apple-Silicon built-in engine
-  /// install depends on it, so [buildSetupPlan] prepends an install-Homebrew
-  /// step when it's missing. Defaults to `true` so non-macOS plans (which never
-  /// touch Homebrew) and older call sites don't spuriously add the step.
-  final bool hasHomebrew;
 
   /// Default model to auto-download, from `grid catalog`. Null when the CLI
   /// recommends none for this machine (then no model is pulled).
@@ -97,7 +90,6 @@ final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
     engine: EngineDetector().detect(),
     media: await mediaFuture,
     localModelCount: modelCount,
-    hasHomebrew: ref.read(homebrewInstallerProvider).isInstalled,
     recommendedModel: recommended,
   );
 });
