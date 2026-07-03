@@ -79,6 +79,9 @@ class _OverviewTab extends StatelessWidget {
       children: [
         // Headline stats stay pinned under the running status.
         const GridStatsSection(),
+        // What the grid can actually do (Chat / Images / Video) — the only place
+        // a media capability shows, since it isn't a listed model.
+        const GridCapabilitiesSection(),
         const SizedBox(height: 22),
         // API access first: the credentials a developer needs to call this grid.
         ConsumerEnvCard(network: network),

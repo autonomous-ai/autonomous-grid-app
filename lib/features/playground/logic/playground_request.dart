@@ -22,9 +22,9 @@ PlaygroundModality modalityFromString(String? modality) =>
 /// the path first, falling back to the request body's `capability`
 /// (relay.py:1422) — we send both so the request matches the documented API.
 enum MediaOperation {
-  imageGenerate('media/image/generate', 'comfyui:image_generation'),
-  imageEdit('media/image/edit', 'comfyui:image_editing'),
-  i2v('media/video/i2v', 'comfyui:i2v');
+  imageGenerate('media/image/generate', kCapImageGenerate),
+  imageEdit('media/image/edit', kCapImageEdit),
+  i2v('media/video/i2v', kCapI2V);
 
   const MediaOperation(this.path, this.capability);
 

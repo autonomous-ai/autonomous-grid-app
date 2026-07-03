@@ -1,5 +1,13 @@
 import 'dart:convert';
 
+/// Relay media provider capabilities — what a `comfyui` node advertises and how
+/// the relay routes a media request (relay.py:1319). Defined once here so the
+/// request builders (which send them) and the grid overview (which reads them
+/// off nodes to show what a grid can generate) never drift apart.
+const String kCapImageGenerate = 'comfyui:image_generation';
+const String kCapImageEdit = 'comfyui:image_editing';
+const String kCapI2V = 'comfyui:i2v';
+
 /// SSE events from the relay media endpoints — `media/image/generate`,
 /// `media/image/edit`, `media/video/i2v` (cli.py:958). See
 /// CLI_Integration_Contract §4.2.

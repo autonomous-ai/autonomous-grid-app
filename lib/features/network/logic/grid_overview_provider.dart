@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
+import '../../../infrastructure/api/models/media_event.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
 import 'network_models_provider.dart';
@@ -50,6 +51,36 @@ final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
   if (rich.isNotEmpty) return rich;
   final ids = ref.watch(networkModelsProvider).asData?.value ?? const [];
   return [for (final id in ids) OverviewModel(id: id)];
+});
+
+/// What a grid can generate, read off its providers. Media (image/video) is a
+/// node *capability* — it never appears in the model list — so this is the only
+/// place the app learns a grid can make images. Used by the overview (to show
+/// it) and the Playground (to offer it).
+class GridMediaCapabilities {
+  const GridMediaCapabilities({this.image = false, this.video = false});
+  final bool image;
+  final bool video;
+  bool get any => image || video;
+}
+
+/// Derives media capabilities from the `comfyui:*` capabilities a grid's nodes
+/// advertise. Generate and edit both count as "image".
+GridMediaCapabilities gridMediaCapabilitiesFrom(Iterable<String> capabilities) {
+  final caps = capabilities.toSet();
+  return GridMediaCapabilities(
+    image: caps.contains(kCapImageGenerate) || caps.contains(kCapImageEdit),
+    video: caps.contains(kCapI2V),
+  );
+}
+
+/// The selected grid's media capabilities, from its live overview nodes. Empty
+/// (no image/video) while loading or when no media provider is online.
+final gridMediaCapabilitiesProvider =
+    Provider.autoDispose<GridMediaCapabilities>((ref) {
+  final nodes = ref.watch(gridOverviewProvider).asData?.value.nodes ??
+      const <OverviewNode>[];
+  return gridMediaCapabilitiesFrom([for (final node in nodes) ...node.models]);
 });
 
 class GridOverviewUnavailable implements Exception {

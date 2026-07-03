@@ -6,6 +6,7 @@ import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/grid_overview_provider.dart';
+import '../logic/node_display.dart';
 
 const _mono = 'monospace';
 
@@ -25,6 +26,75 @@ class GridStatsSection extends ConsumerWidget {
               _OverviewMessage(icon: Icons.cloud_off_outlined, text: '$err'),
           data: (overview) => _StatsBar(stats: overview.stats),
         );
+  }
+}
+
+/// At-a-glance chips for what the grid can actually do — Chat when it serves
+/// text models, Images / Video when a media (comfyui) provider is online. This
+/// is the only place a media capability surfaces in the overview, since it never
+/// appears in the Models list. Hidden until at least one capability resolves.
+class GridCapabilitiesSection extends ConsumerWidget {
+  const GridCapabilitiesSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasChat = ref.watch(gridModelsProvider).isNotEmpty;
+    final media = ref.watch(gridMediaCapabilitiesProvider);
+    final chips = <Widget>[
+      if (hasChat)
+        const _CapabilityChip(icon: Icons.chat_bubble_outline, label: 'Chat'),
+      if (media.image)
+        const _CapabilityChip(icon: Icons.image_outlined, label: 'Images'),
+      if (media.video)
+        const _CapabilityChip(icon: Icons.movie_outlined, label: 'Video'),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text('This grid can',
+              style: TextStyle(
+                  fontFamily: _mono, fontSize: 12.5, color: AppPalette.textFaint)),
+          ...chips,
+        ],
+      ),
+    );
+  }
+}
+
+/// A single capability chip: an accent icon plus its label.
+class _CapabilityChip extends StatelessWidget {
+  const _CapabilityChip({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppPalette.cardBgHover,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppPalette.accent),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  fontFamily: _mono,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.textPrimary)),
+        ],
+      ),
+    );
   }
 }
 
@@ -151,13 +221,15 @@ class _SectionHeading extends StatelessWidget {
 }
 
 class _Card extends StatelessWidget {
-  const _Card({required this.child});
+  const _Card({required this.child, this.padding});
   final Widget child;
+  final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
         borderRadius: BorderRadius.circular(12),
@@ -195,6 +267,9 @@ class GridModelsSection extends ConsumerWidget {
   }
 }
 
+/// One compact model row: a small chat glyph, the copyable id, an optional
+/// price, and the Copy action. Kept dense so a grid's models read as a tight
+/// list, not a stack of oversized cards.
 class _ModelTile extends StatelessWidget {
   const _ModelTile({required this.model});
   final OverviewModel model;
@@ -206,50 +281,35 @@ class _ModelTile extends StatelessWidget {
         ? null
         : '\$${_trim(p.inputPer1m ?? 0)} / \$${_trim(p.outputPer1m ?? 0)}';
     return _Card(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
         children: [
-          const _TileIcon(icon: Icons.chat_bubble_outline, accent: true),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Row(
-              children: [
-                Flexible(
-                  child: Text(model.id,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontFamily: _mono,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppPalette.textPrimary)),
-                ),
-                if (model.modality != null) ...[
-                  const SizedBox(width: 10),
-                  _Pill(text: _cap(model.modality!)),
-                ],
-              ],
-            ),
-          ),
-          if (price != null) ...[
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(price,
-                    style: const TextStyle(
-                        fontFamily: _mono,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppPalette.textPrimary)),
-                const SizedBox(height: 2),
-                const Text('example · per 1M in / out',
-                    style: TextStyle(
-                        fontFamily: _mono,
-                        fontSize: 11.5,
-                        color: AppPalette.textFaint)),
-              ],
-            ),
-          ],
+          const _TileIcon(
+              icon: Icons.chat_bubble_outline, accent: true, size: 28),
           const SizedBox(width: 12),
+          Expanded(
+            child: Text(model.id,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontFamily: _mono,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppPalette.textPrimary)),
+          ),
+          if (model.modality != null) ...[
+            const SizedBox(width: 10),
+            _Pill(text: _cap(model.modality!)),
+          ],
+          if (price != null) ...[
+            const SizedBox(width: 10),
+            Text('$price / 1M',
+                style: const TextStyle(
+                    fontFamily: _mono,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppPalette.textSecondary)),
+          ],
+          const SizedBox(width: 10),
           _CopyChip(id: model.id),
         ],
       ),
@@ -257,80 +317,103 @@ class _ModelTile extends StatelessWidget {
   }
 }
 
-class _NodeTile extends ConsumerWidget {
+/// One node row — what each machine actually contributes. Unlike the old tile
+/// (which mislabelled every node "Serving N models" grid-wide), this reads the
+/// node's own fields: its engine, what it does (chat vs image/video), how much
+/// it hardware it brings, and how many requests it runs in parallel.
+class _NodeTile extends StatelessWidget {
   const _NodeTile({required this.node});
   final OverviewNode node;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Models live in their own grid-level section now; a node only notes how many
-    // it helps serve (grid-wide — every node pools compute for the same set).
-    final count = ref.watch(gridModelsProvider).length;
-    final spec = [
-      if (node.device != null) node.device!,
-      if (node.memoryGb != null) '${node.memoryGb} GB',
-      if (count > 0) 'Serving $count ${count == 1 ? 'model' : 'models'}',
-    ].join(' · ');
+  Widget build(BuildContext context) {
+    final media = nodeIsMedia(node);
+    final specs = <String>[
+      nodeEngineLabel(node.engine),
+      if ((node.deviceClass ?? '').isNotEmpty) node.deviceClass!.toUpperCase(),
+      nodeRoleSummary(node),
+      if ((node.maxConcurrency ?? 0) > 1) '${node.maxConcurrency} parallel',
+      if (node.throughputTokS != null) '~${node.throughputTokS!.round()} tok/s',
+    ];
     return _Card(
       child: Row(
         children: [
-          const _TileIcon(icon: Icons.dns_outlined, accent: false),
-          const SizedBox(width: 14),
+          _TileIcon(
+            icon: media ? Icons.auto_awesome_outlined : Icons.dns_outlined,
+            accent: false,
+            size: 34,
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(node.name,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontFamily: _mono,
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: AppPalette.textPrimary)),
-                if (spec.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(spec,
-                      style: const TextStyle(
-                          fontFamily: _mono,
-                          fontSize: 12.5,
-                          color: AppPalette.textSecondary)),
-                ],
+                const SizedBox(height: 3),
+                Text(specs.join('  ·  '),
+                    style: const TextStyle(
+                        fontFamily: _mono,
+                        fontSize: 12,
+                        color: AppPalette.textSecondary)),
               ],
             ),
           ),
-          if (node.throughputTokS != null) ...[
-            const SizedBox(width: 12),
-            Text('~${node.throughputTokS!.round()} tok/s',
-                style: const TextStyle(
-                    fontFamily: _mono,
-                    fontSize: 13,
-                    color: AppPalette.textSecondary)),
-          ],
-          const SizedBox(width: 10),
-          StatusDot(
-              color: node.online ? AppPalette.online : AppPalette.offline,
-              size: 9),
+          const SizedBox(width: 12),
+          _OnlineTag(online: node.online),
         ],
       ),
     );
   }
 }
 
+/// Compact online/offline status, dot plus word, on a node row.
+class _OnlineTag extends StatelessWidget {
+  const _OnlineTag({required this.online});
+  final bool online;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = online ? AppPalette.online : AppPalette.offline;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        StatusDot(color: color, size: 8),
+        const SizedBox(width: 6),
+        Text(online ? 'Online' : 'Offline',
+            style: TextStyle(
+                fontFamily: _mono,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color)),
+      ],
+    );
+  }
+}
+
 class _TileIcon extends StatelessWidget {
-  const _TileIcon({required this.icon, required this.accent});
+  const _TileIcon({required this.icon, required this.accent, this.size = 32});
   final IconData icon;
   final bool accent;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 44,
-      height: 44,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: accent ? AppPalette.accent : AppPalette.cardBgHover,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(9),
       ),
       child: Icon(icon,
-          size: 20, color: accent ? Colors.white : AppPalette.textSecondary),
+          size: size * 0.5,
+          color: accent ? Colors.white : AppPalette.textSecondary),
     );
   }
 }

@@ -30,24 +30,21 @@ const String kVideoModeLabel = 'Image → video';
 /// the nodes). Image generate and edit share one "Image" mode (attaching source
 /// images switches generate→edit); i2v is the "Video" mode.
 List<PlaygroundModelOption> mediaModeOptions(Iterable<String> capabilities) {
-  final caps = capabilities.toSet();
-  final options = <PlaygroundModelOption>[];
-  if (caps.contains(MediaOperation.imageGenerate.capability) ||
-      caps.contains(MediaOperation.imageEdit.capability)) {
-    options.add(const PlaygroundModelOption(
-      id: kImageModeLabel,
-      label: kImageModeLabel,
-      modality: PlaygroundModality.image,
-    ));
-  }
-  if (caps.contains(MediaOperation.i2v.capability)) {
-    options.add(const PlaygroundModelOption(
-      id: kVideoModeLabel,
-      label: kVideoModeLabel,
-      modality: PlaygroundModality.video,
-    ));
-  }
-  return options;
+  final caps = gridMediaCapabilitiesFrom(capabilities);
+  return [
+    if (caps.image)
+      const PlaygroundModelOption(
+        id: kImageModeLabel,
+        label: kImageModeLabel,
+        modality: PlaygroundModality.image,
+      ),
+    if (caps.video)
+      const PlaygroundModelOption(
+        id: kVideoModeLabel,
+        label: kVideoModeLabel,
+        modality: PlaygroundModality.video,
+      ),
+  ];
 }
 
 /// Everything the Playground can target on the selected grid: its text models
