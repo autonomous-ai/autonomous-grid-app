@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -13,6 +12,7 @@ import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/chat_controller.dart';
 import '../logic/chat_message.dart';
 import '../logic/local_test_state.dart';
+import '../logic/playground_models.dart';
 import '../logic/playground_request.dart';
 import 'attachment_bar.dart';
 import 'message_content.dart';
@@ -50,7 +50,21 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   String _autoModel = '';
 
   @override
+  void initState() {
+    super.initState();
+    // The picker is a plain TextEditingController, not a provider, so selecting a
+    // model won't rebuild the dialog on its own. Refresh on change so the
+    // modality-driven UI (attach bar, hints, send gating) tracks the selection.
+    _model.addListener(_onModelChanged);
+  }
+
+  void _onModelChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _model.removeListener(_onModelChanged);
     _model.dispose();
     _message.dispose();
     _scroll.dispose();
@@ -71,24 +85,30 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     });
   }
 
-  /// The modality of the currently-typed model id, from the grid overview.
-  /// Unknown / hand-typed ids fall back to text.
-  PlaygroundModality _modalityFor(List<OverviewModel> models) {
+  /// The modality of the currently-selected option. Unknown / hand-typed ids
+  /// fall back to text (a plain chat model).
+  PlaygroundModality _modalityFor(List<PlaygroundModelOption> options) {
     final id = _model.text.trim();
-    final match = models.where((m) => m.id == id);
-    return modalityFromString(match.isEmpty ? null : match.first.modality);
+    final match = options.where((o) => o.id == id);
+    return match.isEmpty ? PlaygroundModality.text : match.first.modality;
   }
 
-  void _send(NetworkCredential network, PlaygroundModality modality) {
+  void _send(NetworkCredential network) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
     final useLocal = ref.read(useLocalTestProvider);
     final localEndpoint = ref.read(localProviderEndpointProvider);
+    // Resolve the modality from the *current* selection, not a build-time
+    // capture — the picker can change without a rebuild, so reading it here is
+    // what keeps an image selection from being sent to the chat endpoint.
+    final modality = useLocal
+        ? PlaygroundModality.text
+        : _modalityFor(ref.read(playgroundModelsProvider));
     ref.read(chatControllerProvider.notifier).send(
           network: network,
           model: _model.text.trim(),
           message: message,
-          modality: useLocal ? PlaygroundModality.text : modality,
+          modality: modality,
           attachments: useLocal ? const [] : List.of(_attachments),
           localBaseUrl: useLocal ? localEndpoint : null,
         );
@@ -138,11 +158,11 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     }
 
     final theme = Theme.of(context);
-    final models = ref.watch(gridModelsProvider);
+    final options = ref.watch(playgroundModelsProvider);
     final loadingModels = ref.watch(gridOverviewProvider).isLoading &&
         ref.watch(networkModelsProvider).isLoading;
-    if (models.isNotEmpty) {
-      _syncDefaultModel([for (final m in models) m.id]);
+    if (options.isNotEmpty) {
+      _syncDefaultModel([for (final o in options) o.id]);
     }
     final localEndpoint = ref.watch(localProviderEndpointProvider);
     final useLocal = ref.watch(useLocalTestProvider);
@@ -150,7 +170,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
 
     // Nothing can answer yet: no model advertised on the grid and no local
     // engine serving. Guide the user to start one instead of a dead input box.
-    final hasUsableModel = models.isNotEmpty || localEndpoint != null;
+    final hasUsableModel = options.isNotEmpty || localEndpoint != null;
     if (!loadingModels && !hasUsableModel) {
       return _NoModelYet(
         canManage: network.canManageProvider,
@@ -162,7 +182,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     }
 
     final modality =
-        useLocal ? PlaygroundModality.text : _modalityFor(models);
+        useLocal ? PlaygroundModality.text : _modalityFor(options);
     final needsImage = modality == PlaygroundModality.video;
     final canSend = !chat.sending && (!needsImage || _attachments.isNotEmpty);
 
@@ -179,7 +199,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         ],
         _ModelPicker(
           controller: _model,
-          models: models,
+          options: options,
           networkName: network.name,
         ),
         const SizedBox(height: 12),
@@ -219,7 +239,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
           sending: chat.sending,
           canSend: canSend,
           hint: _inputHint(modality),
-          onSend: () => _send(network, modality),
+          onSend: () => _send(network),
         ),
       ],
     );
@@ -275,18 +295,18 @@ class _DialogHeader extends StatelessWidget {
   }
 }
 
-/// Editable model dropdown — lists the models the grid advertises (with an icon
-/// for text / image / video), yet stays typeable so it still works when none can
-/// be fetched (no provider online, missing scope, or relay down).
+/// Editable model dropdown — lists what the grid can do (chat models plus any
+/// image / video generation modes, each with its own icon), yet stays typeable
+/// so it still works when nothing can be fetched (no provider online, relay down).
 class _ModelPicker extends StatelessWidget {
   const _ModelPicker({
     required this.controller,
-    required this.models,
+    required this.options,
     required this.networkName,
   });
 
   final TextEditingController controller;
-  final List<OverviewModel> models;
+  final List<PlaygroundModelOption> options;
   final String networkName;
 
   @override
@@ -299,15 +319,15 @@ class _ModelPicker extends StatelessWidget {
       label: const Text('Model'),
       hintText: 'Qwen3.6-35B-A3B',
       leadingIcon: const Icon(Icons.smart_toy_outlined, size: 18),
-      helperText: models.isEmpty
+      helperText: options.isEmpty
           ? 'No models available yet — type a name'
-          : '${models.length} model(s) on $networkName',
+          : '${options.length} option(s) on $networkName',
       dropdownMenuEntries: [
-        for (final model in models)
+        for (final option in options)
           DropdownMenuEntry(
-            value: model.id,
-            label: model.id,
-            leadingIcon: Icon(_modalityIcon(model.modality), size: 18),
+            value: option.id,
+            label: option.label,
+            leadingIcon: Icon(_modalityIcon(option.modality), size: 18),
           ),
       ],
       onSelected: (value) {
@@ -316,8 +336,7 @@ class _ModelPicker extends StatelessWidget {
     );
   }
 
-  static IconData _modalityIcon(String? modality) =>
-      switch (modalityFromString(modality)) {
+  static IconData _modalityIcon(PlaygroundModality modality) => switch (modality) {
         PlaygroundModality.image => Icons.image_outlined,
         PlaygroundModality.video => Icons.movie_outlined,
         PlaygroundModality.text => Icons.smart_toy_outlined,

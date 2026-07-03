@@ -109,6 +109,7 @@ class OverviewNode {
     this.memoryGb,
     this.deviceClass,
     this.model,
+    this.models = const [],
     this.engine,
     this.throughputTokS,
     this.maxConcurrency,
@@ -120,7 +121,15 @@ class OverviewNode {
   final String? chip;
   final int? memoryGb;
   final String? deviceClass;
+
+  /// The node's primary served model/capability.
   final String? model;
+
+  /// Every model or capability this node advertises — for a `comfyui` engine
+  /// these are media capabilities like `comfyui:image_generation`. The media
+  /// picker reads these since media capabilities never appear in the model list.
+  final List<String> models;
+
   final String? engine;
   final double? throughputTokS;
   final int? maxConcurrency;
@@ -133,6 +142,9 @@ class OverviewNode {
         memoryGb: (j['memory_gb'] as num?)?.toInt(),
         deviceClass: j['device_class'] as String?,
         model: j['model'] as String?,
+        models: j['models'] is List
+            ? [for (final m in j['models'] as List) '$m']
+            : const [],
         engine: j['engine'] as String?,
         throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
         maxConcurrency: (j['max_concurrency'] as num?)?.toInt(),
