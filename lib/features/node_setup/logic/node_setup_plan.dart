@@ -4,11 +4,19 @@ import 'node_capabilities.dart';
 import 'node_setup_config.dart';
 
 /// One install/download action in the node-setup sequence.
-enum SetupAction { installLlama, pullModel, installComfy, pullMediaBundle }
+enum SetupAction {
+  installHomebrew,
+  installLlama,
+  pullModel,
+  installComfy,
+  pullMediaBundle,
+}
 
 /// A single planned step: what to run, why, and how to run it. [args] is the
-/// exact `grid` argument vector; [isDownload] routes long downloads through the
-/// progress-streaming `pull` path instead of plain `start`.
+/// exact `grid` argument vector (empty for [SetupAction.installHomebrew], which
+/// the controller runs through the [HomebrewInstaller], not the CLI);
+/// [isDownload] routes long downloads through the progress-streaming `pull` path
+/// instead of plain `start`.
 class SetupStep {
   const SetupStep({
     required this.action,
@@ -49,8 +57,21 @@ List<SetupStep> buildSetupPlan(
   bool? isMacOS,
 }) {
   final steps = <SetupStep>[];
+  final onMacOS = isMacOS ?? Platform.isMacOS;
 
   if (!caps.hasTextInference) {
+    // The Apple-Silicon built-in engine install needs Homebrew; install it
+    // first when it's missing so that step doesn't dead-end with a raw
+    // "Homebrew is required" error a non-technical user can't act on.
+    if (onMacOS && !caps.hasHomebrew) {
+      steps.add(const SetupStep(
+        action: SetupAction.installHomebrew,
+        title: 'Install setup tools',
+        detail: 'A one-time helper (Homebrew) needed to set up the engine.',
+        args: [],
+        isDownload: false,
+      ));
+    }
     steps.add(const SetupStep(
       action: SetupAction.installLlama,
       title: 'Install the built-in engine',

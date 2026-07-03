@@ -7,6 +7,7 @@ import 'cli/grid_resolver.dart';
 import 'cli/logging_grid_cli_service.dart';
 import 'cli/remote_mode_grid_cli_service.dart';
 import 'state/grid_home_store.dart';
+import 'system/homebrew_installer.dart';
 
 /// Locates the `grid` binary (sidecar → GRID_BIN → PATH). A user-configured
 /// path from settings gets threaded in here later.
@@ -29,6 +30,11 @@ final gridCliServiceProvider = Provider<GridCliService?>((ref) {
     LoggingGridCliService(GridCliServiceImpl(path), recorder),
   );
 });
+
+/// Installs Homebrew when the built-in engine needs it and the user's Mac
+/// lacks it. Override with a fake in tests. See [HomebrewInstaller].
+final homebrewInstallerProvider =
+    Provider<HomebrewInstaller>((ref) => const SystemHomebrewInstaller());
 
 /// Reads state from `~/.grid` (nguồn 1). Read-only; mutations go through the CLI.
 final gridHomeStoreProvider =

@@ -10,15 +10,25 @@ import '../../core/grid_paths.dart';
 /// Why: [NodeSetupController]'s in-app log lives only in memory (capped at 400
 /// lines) and is gone the moment the app closes — so when auto-install silently
 /// fails on a user's machine there is nothing left to debug. This leaves a file
-/// we can ask the user to send us.
+/// we can ask the user to send us. The format is deliberately plain ASCII with
+/// numbered steps, clock stamps and per-step timing so a non-technical user (or
+/// us) can skim it in any text viewer without mojibake.
 abstract interface class NodeSetupLog {
-  /// Opens a new run section with a timestamped header describing [summary].
-  void startRun(String summary);
+  /// Opens a new run section: a header listing the numbered [stepTitles].
+  void startRun(List<String> stepTitles);
 
-  /// Appends one transcript line (a step boundary or streamed CLI output).
-  void write(String line);
+  /// Marks the start of step [number] of [total] (both 1-based).
+  void startStep(int number, int total, String title);
 
-  /// Closes the current run with a timestamped [outcome] footer.
+  /// Appends one line of streamed output for the current step. [isError] tags
+  /// stderr so failures stand out in the transcript.
+  void write(String line, {bool isError = false});
+
+  /// Marks the current step finished with a short [result] (e.g. `done`,
+  /// `failed`, `cancelled`); the elapsed time is appended automatically.
+  void endStep(String result);
+
+  /// Closes the current run with a final [outcome] footer.
   void endRun(String outcome);
 }
 
@@ -34,31 +44,85 @@ class FileNodeSetupLog implements NodeSetupLog {
   /// Keep the log bounded: rotate to a single `.old` sibling once it grows past
   /// this. Each run is a few KB, so this holds many runs before rotating.
   static const _maxBytes = 512 * 1024;
+  static const _rule = '================================================';
+
+  DateTime? _runStart;
+  DateTime? _stepStart;
+  int _stepNumber = 0;
+  int _stepTotal = 0;
+  String _stepTitle = '';
 
   @override
-  void startRun(String summary) {
+  void startRun(List<String> stepTitles) {
     _rotateIfLarge();
-    _emit('===== run start: $summary =====');
+    final start = DateTime.now();
+    _runStart = start;
+    final plan = StringBuffer();
+    for (var i = 0; i < stepTitles.length; i++) {
+      plan.write('\n   ${i + 1}. ${stepTitles[i]}');
+    }
+    _raw('\n$_rule\n'
+        ' Grid node setup\n'
+        ' Started ${_stamp(start)}\n'
+        ' Plan:$plan\n'
+        '$_rule');
   }
 
   @override
-  void write(String line) => _emit(line);
+  void startStep(int number, int total, String title) {
+    _stepStart = DateTime.now();
+    _stepNumber = number;
+    _stepTotal = total;
+    _stepTitle = title;
+    _line('-- Step $number/$total: $title --');
+  }
 
   @override
-  void endRun(String outcome) => _emit('===== run end: $outcome =====');
+  void write(String line, {bool isError = false}) =>
+      _line(isError ? '!! $line' : '   $line');
 
-  void _emit(String line) {
+  @override
+  void endStep(String result) {
+    final took = _stepStart == null
+        ? ''
+        : ' (${_dur(DateTime.now().difference(_stepStart!))})';
+    _line('-- Step $_stepNumber/$_stepTotal $result$took: $_stepTitle --');
+    _stepStart = null;
+  }
+
+  @override
+  void endRun(String outcome) {
+    final total = _runStart == null
+        ? ''
+        : ' (total ${_dur(DateTime.now().difference(_runStart!))})';
+    _raw(' Result: $outcome\n Ended ${_stamp(DateTime.now())}$total\n$_rule\n');
+    _runStart = null;
+  }
+
+  /// Emit a clock-stamped transcript line.
+  void _line(String text) => _raw('[${_clock(DateTime.now())}] $text');
+
+  void _raw(String block) {
     try {
       _file.parent.createSync(recursive: true);
-      _file.writeAsStringSync(
-        '${DateTime.now().toIso8601String()}  $line\n',
-        mode: FileMode.append,
-        flush: true,
-      );
+      _file.writeAsStringSync('$block\n', mode: FileMode.append, flush: true);
     } catch (_) {
       // Best-effort logging; never surface an IO failure into the setup flow.
     }
   }
+
+  String _stamp(DateTime t) =>
+      '${t.year}-${_pad2(t.month)}-${_pad2(t.day)} ${_clock(t)}';
+
+  String _clock(DateTime t) =>
+      '${_pad2(t.hour)}:${_pad2(t.minute)}:${_pad2(t.second)}';
+
+  String _dur(Duration d) {
+    final s = d.inSeconds;
+    return s >= 60 ? '${s ~/ 60}m${s % 60}s' : '${s}s';
+  }
+
+  String _pad2(int n) => n.toString().padLeft(2, '0');
 
   void _rotateIfLarge() {
     try {

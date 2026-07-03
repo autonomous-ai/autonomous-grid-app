@@ -92,7 +92,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       return;
     }
 
-    _logFile.startRun(steps.map((s) => s.title).join(' → '));
+    _logFile.startRun(steps.map((s) => s.title).toList());
 
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
@@ -111,21 +111,22 @@ class NodeSetupController extends Notifier<NodeSetupState> {
 
     for (var i = 0; i < steps.length; i++) {
       if (_cancelled) return; // cancel() writes its own footer
-      _append(log, '▸ ${steps[i].title}');
+      _logFile.startStep(i + 1, steps.length, steps[i].title);
+      _memo(log, '▸ ${steps[i].title}');
       state = NodeSetupRunning(
           steps: steps, index: i, log: List.unmodifiable(log));
 
-      final ok = steps[i].isDownload
-          ? await _runDownload(service, steps, i, log)
-          : await _runStreaming(service, steps, i, log);
+      final ok = await _runStep(service, steps, i, log);
       if (_cancelled) return; // cancel() writes its own footer
       if (!ok) {
+        _logFile.endStep('failed');
         final failure = state;
         _logFile.endRun(failure is NodeSetupFailed
             ? 'FAILED — ${failure.step.title}: ${failure.message}'
             : 'stopped');
         return; // failure state already set
       }
+      _logFile.endStep('done');
     }
 
     if (_cancelled) return;
@@ -134,19 +135,51 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     state = NodeSetupDone(steps);
   }
 
-  /// Streaming lifecycle step (`llama.cpp install`, `media install`): success is
-  /// `exitCode == 0`, failure surfaces the last log line.
-  Future<bool> _runStreaming(
+  /// Routes a step to its runner: Homebrew through the [HomebrewInstaller],
+  /// downloads through the progress path, everything else through the CLI.
+  Future<bool> _runStep(
     GridCliService service,
     List<SetupStep> steps,
     int i,
     List<String> log,
-  ) async {
+  ) {
     final step = steps[i];
-    final process = await service.start(step.args);
+    return switch (step.action) {
+      SetupAction.installHomebrew => _runProcess(
+          steps,
+          i,
+          log,
+          () => ref.read(homebrewInstallerProvider).install(),
+          _friendlyHomebrewError,
+        ),
+      _ => step.isDownload
+          ? _runDownload(service, steps, i, log)
+          : _runProcess(
+              steps,
+              i,
+              log,
+              () => service.start(step.args),
+              (exit, lines) =>
+                  lines.isNotEmpty ? lines.last : '${step.title} failed (exit $exit).',
+            ),
+    };
+  }
+
+  /// Shared runner for streaming, process-backed steps (CLI install, Homebrew
+  /// install): mirror each line, then succeed on `exitCode == 0` or fail with a
+  /// message built by [onFailure]. [spawn] defers process start so the owned
+  /// [_process] handle is set right before we listen.
+  Future<bool> _runProcess(
+    List<SetupStep> steps,
+    int i,
+    List<String> log,
+    Future<GridProcess> Function() spawn,
+    String Function(int exit, List<String> log) onFailure,
+  ) async {
+    final process = await spawn();
     _process = process;
     process.lines.listen((line) {
-      _append(log, line.text);
+      _output(log, line);
       state = NodeSetupRunning(
           steps: steps, index: i, log: List.unmodifiable(log));
     });
@@ -157,11 +190,25 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     if (exit == 0) return true;
 
     state = NodeSetupFailed(
-      step: step,
-      message: log.isNotEmpty ? log.last : '${step.title} failed (exit $exit).',
+      step: steps[i],
+      message: onFailure(exit, log),
       log: List.unmodifiable(log),
     );
     return false;
+  }
+
+  /// Humanize a Homebrew-install failure — the raw script output stays in the
+  /// log; the user sees a plain, actionable line.
+  static String _friendlyHomebrewError(int exit, List<String> log) {
+    final joined = log.join('\n').toLowerCase();
+    if (joined.contains('administrator permission was declined') ||
+        joined.contains('user cancelled') ||
+        joined.contains('user canceled')) {
+      return 'Setup needs your Mac administrator password to install the engine '
+          'tools. Try again and enter your password when macOS asks for it.';
+    }
+    return "Couldn't install the setup tools (Homebrew). Check your internet "
+        'connection and try again.';
   }
 
   /// Download step (`models pull`, `media pull`): success is the progress stream
@@ -192,7 +239,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       return false;
     }
     if (_cancelled) return false;
-    _append(log, '✓ ${step.title}');
+    _memo(log, '✓ ${step.title}');
     return true;
   }
 
@@ -200,7 +247,10 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     _cancelled = true;
     _process?.kill();
     _process = null;
-    if (state is NodeSetupRunning) _logFile.endRun('cancelled by user');
+    if (state is NodeSetupRunning) {
+      _logFile.endStep('cancelled');
+      _logFile.endRun('cancelled by user');
+    }
     _refresh(); // partial steps may have installed something — rescan.
     state = const NodeSetupIdle();
   }
@@ -211,8 +261,15 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     state = const NodeSetupIdle();
   }
 
-  void _append(List<String> log, String text) {
-    _logFile.write(text); // mirror to the durable file, uncapped by _maxLogLines
+  /// Mirror one streamed line to both the durable file (tagging stderr) and the
+  /// in-memory UI log.
+  void _output(List<String> log, CliLine line) {
+    _logFile.write(line.text, isError: line.isStderr);
+    _memo(log, line.text);
+  }
+
+  /// Append to the in-memory UI log only, capped at [_maxLogLines].
+  void _memo(List<String> log, String text) {
     log.add(text);
     if (log.length > _maxLogLines) log.removeRange(0, log.length - _maxLogLines);
   }

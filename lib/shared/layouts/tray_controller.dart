@@ -36,7 +36,6 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   // selector on the native side. Degrades to just the label on macOS < 11.
   // A lightning bolt (matching the in-app grids list) marks each grid row.
   static const _gridSymbol = 'bolt.fill';
-  static const _gridsSymbol = 'point.3.connected.trianglepath.dotted';
 
   bool _ready = false;
 
@@ -93,17 +92,15 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   bool get _isServing =>
       ref.read(providerRunControllerProvider) is ProviderRunActive;
 
-  /// The grids section: a greyed header (like "Known Networks") followed by one
-  /// row per grid. The active grid gets a gold lightning bolt, the rest a grey
-  /// one — mirroring the connected vs. available split in the macOS Wi-Fi list,
-  /// and matching the in-app grids list. Falls back to a hint when no grid is
-  /// joined.
+  /// The grids section: one row per grid. The active grid gets a gold lightning
+  /// bolt, the rest a grey one — mirroring the connected vs. available split in
+  /// the macOS Wi-Fi list, and matching the in-app grids list. Falls back to a
+  /// hint when no grid is joined.
   List<MenuItem> _gridItems(List<NetworkCredential> networks, String? activeId) {
     if (networks.isEmpty) {
       return [MenuItem(key: 'none', label: 'No grids yet', disabled: true)];
     }
     return [
-      MenuItem(key: 'header', label: 'Grids', icon: _gridsSymbol, disabled: true),
       for (final n in networks)
         MenuItem(
           key: '$_gridPrefix${n.networkId}',

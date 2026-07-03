@@ -9,6 +9,7 @@ import 'package:grid_app/infrastructure/logging/node_setup_log.dart';
 import 'package:grid_app/infrastructure/providers.dart';
 import 'package:grid_app/infrastructure/state/grid_home_store.dart';
 import 'package:grid_app/infrastructure/state/models/local_files.dart';
+import 'package:grid_app/infrastructure/system/homebrew_installer.dart';
 
 class _EmptyStore extends GridHomeStore {
   const _EmptyStore();
@@ -19,18 +20,59 @@ class _EmptyStore extends GridHomeStore {
 /// In-memory [NodeSetupLog] so tests never touch the real `~/.grid/logs`.
 /// Records the run boundaries and every mirrored line for assertions.
 class _RecordingLog implements NodeSetupLog {
-  final List<String> lines = [];
-  String? runSummary;
+  final List<String> lines = []; // streamed output lines
+  final List<String> stepTitles = []; // titles of started steps
+  final List<String> stepResults = []; // done/failed/cancelled per step
+  List<String>? runPlan;
   String? runOutcome;
 
   @override
-  void startRun(String summary) => runSummary = summary;
+  void startRun(List<String> stepTitles) => runPlan = stepTitles;
 
   @override
-  void write(String line) => lines.add(line);
+  void startStep(int number, int total, String title) => stepTitles.add(title);
+
+  @override
+  void write(String line, {bool isError = false}) => lines.add(line);
+
+  @override
+  void endStep(String result) => stepResults.add(result);
 
   @override
   void endRun(String outcome) => runOutcome = outcome;
+}
+
+/// In-memory [HomebrewInstaller]: reports missing/installed and streams a canned
+/// install, flipping to installed on a zero exit — no real Homebrew touched.
+class _FakeHomebrew implements HomebrewInstaller {
+  _FakeHomebrew({
+    this.exitCode = 0,
+    this.lines = const [],
+  });
+
+  bool installed = false;
+  final int exitCode;
+  final List<CliLine> lines;
+  int installCalls = 0;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  bool get isInstalled => installed;
+
+  @override
+  Future<GridProcess> install() async {
+    installCalls++;
+    return GridProcess(
+      lines: Stream.fromIterable(lines),
+      exitCode: Future.delayed(const Duration(milliseconds: 5), () {
+        if (exitCode == 0) installed = true;
+        return exitCode;
+      }),
+      kill: () {},
+    );
+  }
 }
 
 const _llamaStep = SetupStep(
@@ -49,12 +91,25 @@ const _modelStep = SetupStep(
   isDownload: true,
 );
 
-ProviderContainer _container(GridCliService? fake, {NodeSetupLog? log}) {
+const _brewStep = SetupStep(
+  action: SetupAction.installHomebrew,
+  title: 'Install setup tools',
+  detail: '',
+  args: [],
+  isDownload: false,
+);
+
+ProviderContainer _container(
+  GridCliService? fake, {
+  NodeSetupLog? log,
+  HomebrewInstaller? brew,
+}) {
   final container = ProviderContainer(overrides: [
     gridCliServiceProvider.overrideWithValue(fake),
     gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
     // Always override so no test ever writes to the real ~/.grid/logs.
     nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
+    if (brew != null) homebrewInstallerProvider.overrideWithValue(brew),
   ]);
   addTearDown(container.dispose);
   return container;
@@ -143,9 +198,10 @@ void main() {
         .read(nodeSetupControllerProvider.notifier)
         .run([_llamaStep, _modelStep]);
 
-    expect(log.runSummary, contains('Install llama.cpp'));
-    expect(log.lines, contains('▸ Install llama.cpp'));
+    expect(log.runPlan, contains('Install llama.cpp'));
+    expect(log.stepTitles, contains('Install llama.cpp'));
     expect(log.lines, contains('Linked llama-server')); // streamed CLI output
+    expect(log.stepResults, everyElement('done'));
     expect(log.runOutcome, contains('completed'));
   });
 
@@ -199,5 +255,41 @@ void main() {
     // A second auto-start (e.g. after capabilities re-detect) must not re-run.
     await notifier.autoStart([_llamaStep]);
     expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
+  });
+
+  test('installs Homebrew through the installer before the engine step',
+      () async {
+    final brew = _FakeHomebrew(lines: const [
+      CliLine(isStderr: false, text: 'Homebrew installed successfully'),
+    ]);
+    final fake = FakeGridCliService()
+      ..stubStart(['engine', 'install', 'llama.cpp'],
+          exitCode: 0,
+          lines: const [CliLine(isStderr: false, text: 'Linked llama-server')]);
+    final container = _container(fake, brew: brew);
+
+    await container
+        .read(nodeSetupControllerProvider.notifier)
+        .run([_brewStep, _llamaStep]);
+
+    expect(brew.installCalls, 1);
+    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
+  });
+
+  test('a failed Homebrew step stops setup with a friendly message', () async {
+    final brew = _FakeHomebrew(exitCode: 1, lines: const [
+      CliLine(isStderr: true, text: 'Administrator permission was declined.'),
+    ]);
+    final container = _container(FakeGridCliService(), brew: brew);
+
+    await container
+        .read(nodeSetupControllerProvider.notifier)
+        .run([_brewStep, _llamaStep]);
+
+    final state = container.read(nodeSetupControllerProvider);
+    expect(state, isA<NodeSetupFailed>());
+    expect((state as NodeSetupFailed).step.action, SetupAction.installHomebrew);
+    // Humanized, not the raw script line, and never the wrong internet/disk hint.
+    expect(state.message, contains('administrator password'));
   });
 }

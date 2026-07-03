@@ -277,13 +277,17 @@ class _FailedBody extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         // Plain-language guidance first; the raw CLI line stays below (and in the
-        // log) for anyone who needs the technical detail.
-        Text(
-          'Check your internet connection and that you have enough free disk '
-          'space, then try again.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 6),
+        // log) for anyone who needs the technical detail. The Homebrew step
+        // already produces an actionable message, so we skip the generic
+        // internet/disk hint there (it would be misleading).
+        if (state.step.action != SetupAction.installHomebrew) ...[
+          Text(
+            'Check your internet connection and that you have enough free disk '
+            'space, then try again.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 6),
+        ],
         Text(state.message,
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
