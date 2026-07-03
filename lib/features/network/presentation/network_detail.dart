@@ -32,7 +32,7 @@ class NetworkDetail extends ConsumerWidget {
     // Member management (the Members tab) is owner-only — the control plane
     // doesn't support member admin for providers yet. Everyone else, providers
     // included, gets just the overview.
-    if (!network.isOwner) {
+    if (!network.canManageProvider) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [header, Expanded(child: _OverviewTab(network: network))],
@@ -142,7 +142,7 @@ class _Header extends ConsumerWidget {
             const SizedBox(width: 12),
             // Add member is owner-only (BE doesn't support member admin for
             // providers yet); it sits beside Test so it's reachable from any tab.
-            if (network.isOwner) ...[
+            if (network.canManageProvider) ...[
               _AddMemberButton(network: network),
               const SizedBox(width: 8),
             ],
