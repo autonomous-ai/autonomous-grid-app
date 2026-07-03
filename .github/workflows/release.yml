@@ -7,6 +7,7 @@ name: release
 # scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
+#   Grid-<ver>-macOS-Intel.dmg           (signed + notarized; consumer-only, no engine)
 #   Grid-<ver>-Windows-x64.zip           (unsigned; SmartScreen may warn)
 #
 #   git tag v0.1.2 && git push origin v0.1.2
@@ -44,6 +45,9 @@ jobs:
           - platform: macos-latest      # Apple Silicon, native arm64 build
             arch: arm64
             label: macOS-Apple-Silicon
+          - platform: macos-latest      # Intel x86_64 build, compiled under Rosetta 2
+            arch: x64                    # on the same arm64 runner (no free Intel image
+            label: macOS-Intel           # since macos-13 retired). Consumer-only.
           - platform: windows-latest
             arch: x64
             label: Windows-x64
@@ -85,10 +89,16 @@ jobs:
           channel: stable
           cache: true
 
+      # architecture pins the interpreter's arch to the matrix arch. On the Intel
+      # macOS job this installs an x86_64 python (runs under Rosetta 2 on the arm64
+      # runner); Nuitka then emits a native x86_64 sidecar. arm64/Windows use their
+      # native arch.
       - name: Set up Python (sidecar build)
+        id: setup_python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          architecture: ${{ matrix.arch }}
 
       - name: Flutter dependencies
         shell: bash
@@ -99,11 +109,18 @@ jobs:
       - name: Build grid sidecar (macOS)
         if: runner.os == 'macOS'
         working-directory: grid-app
-        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid,
-        # native arm64 (Nuitka can't cross-compile, and GitHub-hosted macOS runners are
-        # Apple Silicon only — no Intel image since macos-13 was retired). The sidecar is
-        # signed (Developer ID, hardened runtime) + notarized downstream, so it isn't
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid.
+        # Nuitka can't cross-compile, so the sidecar's arch follows the build python's arch:
+        # setup-python installed an arm64 python for the Apple Silicon job and an x86_64
+        # (Rosetta 2) python for the Intel job, so each job emits a native binary for its
+        # target — the Intel slice is built under Rosetta on the same arm64 runner (GitHub
+        # retired the free macos-13 Intel image; this avoids a paid `-large` runner).
+        # TODO(release): the Intel build runs Nuitka under Rosetta (~1.5-2x slower); watch
+        # the 120m timeout on the first tagged release and bump if it gets close.
+        # Signed (Developer ID, hardened runtime) + notarized downstream, so it isn't
         # SIGKILL'd like an ad-hoc build.
+        env:
+          GRID_BUILD_PYTHON: ${{ steps.setup_python.outputs.python-path }}
         run: bash scripts/cli/build_sidecar.sh "$GITHUB_WORKSPACE/autonomous-grid-cli"
 
       - name: Build macOS app + inject sidecar

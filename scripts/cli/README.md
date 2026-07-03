@@ -12,8 +12,12 @@ modifying the CLI repo** (`autonomous-ai/autonomous-grid`).
 | `build_sidecar.ps1` | Windows x64   | `<cli-src>\dist\grid.exe` |
 | `grid_entry.py`     | (shared)      | Nuitka entry — mirrors the CLI's `cli/__main__.py` |
 
-Nuitka **cannot cross-compile** — each target is built on its own arch/OS (that's why
-the release matrix runs one job per platform).
+Nuitka **cannot cross-compile** — the output arch follows the *build python's* arch, so
+each target is built with a matching interpreter. The macOS Intel (x86_64) slice is built
+on the Apple Silicon runner by feeding `build_sidecar.sh` an x86_64 python (via
+`GRID_BUILD_PYTHON`), which runs under **Rosetta 2** — GitHub retired the free `macos-13`
+Intel image, and this avoids a paid `-large` runner. That's why the release matrix has a
+second `macos-latest` job (`arch: x64`).
 
 ## How it works
 
