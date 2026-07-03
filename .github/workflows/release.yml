@@ -34,6 +34,12 @@ permissions:
 # one line to ship a newer CLI: https://github.com/autonomous-ai/autonomous-grid/releases
 env:
   CLI_VERSION: v0.1.5
+  # PUBLIC repo that hosts client-facing release binaries (.dmg) + the Sparkle
+  # appcast. Kept separate from this private source repo so the auto-update feed
+  # is reachable without auth (a private repo's release assets 404 for anyone
+  # without repo access — including the client's Sparkle). Must be a public repo
+  # with at least one commit; CI cross-publishes to it with GRID_DOWNLOADS_TOKEN.
+  DOWNLOADS_REPO: autonomous-ecm/autonomous-grid-app-downloads
 
 jobs:
   build:
@@ -120,11 +126,11 @@ jobs:
         run: |
           set -euxo pipefail
           flutter config --enable-macos-desktop
-          # Bake the Sparkle appcast feed the app polls at runtime. Stable URL:
-          # GitHub always serves the newest *published* (non-draft) release's
-          # appcast.xml here. Swap for a bucket/Pages URL if the repo stays private.
+          # Bake the Sparkle appcast feed the app polls at runtime. Stable public
+          # URL on the downloads repo: GitHub always serves the newest *published*
+          # (non-draft) release's appcast.xml here.
           flutter build macos --release \
-            --dart-define=GRID_APPCAST_URL="https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml"
+            --dart-define=GRID_APPCAST_URL="https://github.com/${{ env.DOWNLOADS_REPO }}/releases/latest/download/appcast.xml"
           APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n1)"
           [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
           cp ../autonomous-grid-cli/dist/grid "$APP/Contents/Resources/grid"
@@ -165,7 +171,7 @@ jobs:
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
           DMG: ${{ github.workspace }}/grid-app/dist/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
-          DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
+          DOWNLOAD_URL: https://github.com/${{ env.DOWNLOADS_REPO }}/releases/download/${{ github.ref_name }}/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
           SHORT_VERSION: ${{ env.VERSION }}
           BUNDLE_VERSION: ${{ env.BUILD }}
           APPCAST_OUT: ${{ github.workspace }}/grid-app/dist/appcast.xml
@@ -190,9 +196,16 @@ jobs:
             -OutZip  "${{ github.workspace }}\grid-app\dist\Grid-${{ env.VERSION }}-Windows-x64.zip"
 
       # ───────────────────────── Publish ─────────────────────────
-      - name: Publish to GitHub Release (draft)
+      # Cross-publish to the PUBLIC downloads repo (not this private one) so the
+      # appcast + dmg are fetchable without auth. Needs GRID_DOWNLOADS_TOKEN — a
+      # PAT with contents:write on DOWNLOADS_REPO (GITHUB_TOKEN only scopes to the
+      # current repo). Draft: a human un-drafts to release it, which is also what
+      # makes `releases/latest` (the feed URL) resolve to it.
+      - name: Publish to downloads repo (draft)
         uses: softprops/action-gh-release@v3
         with:
+          repository: ${{ env.DOWNLOADS_REPO }}
+          token: ${{ secrets.GRID_DOWNLOADS_TOKEN }}
           draft: true
           name: Grid ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}

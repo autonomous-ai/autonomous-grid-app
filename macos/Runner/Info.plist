@@ -28,12 +28,12 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<!-- Sparkle auto-update (auto_updater). SUPublicEDKey MUST be replaced with the
-	     public key printed by `dart run auto_updater:generate_keys` before shipping;
-	     the matching private key signs releases in CI. The feed URL is set at
-	     runtime via setFeedURL (see AppUpdaterService). -->
+	<!-- Sparkle auto-update (auto_updater). SUPublicEDKey is the EdDSA public key
+	     from `generate_keys`; its private half signs releases in CI (secret
+	     SPARKLE_ED_PRIVATE_KEY). Rotating this key breaks auto-update for builds
+	     already shipped. Feed URL is set at runtime via setFeedURL (AppUpdaterService). -->
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_PUBLIC_ED_KEY</string>
+	<string>7EtSIyC2ck4GeLVGKl8jMp7cD8nFhQo/qGm9lodjP6Y=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 </dict>
