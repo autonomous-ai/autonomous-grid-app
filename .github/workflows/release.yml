@@ -72,12 +72,20 @@ jobs:
 
       - name: Resolve version
         shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          # Monotonic CFBundleVersion for Sparkle's "is there a newer build?"
+          # comparison: 0.2.0 -> 2000, 0.3.0 -> 3000, 1.0.0 -> 1000000. Without a
+          # per-release build number Flutter reuses the same CFBundleVersion and
+          # Sparkle never offers the update.
+          IFS=. read -r MA MI PA <<< "${V%%+*}"
+          echo "BUILD=$((10#$MA * 1000000 + 10#$MI * 1000 + 10#$PA))" >> "$GITHUB_ENV"
 
       - name: Stamp version from tag
         shell: bash
         working-directory: grid-app
-        run: scripts/build/set-version.sh "${GITHUB_REF_NAME}"
+        run: scripts/build/set-version.sh "${VERSION}+${BUILD}"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -112,7 +120,11 @@ jobs:
         run: |
           set -euxo pipefail
           flutter config --enable-macos-desktop
-          flutter build macos --release
+          # Bake the Sparkle appcast feed the app polls at runtime. Stable URL:
+          # GitHub always serves the newest *published* (non-draft) release's
+          # appcast.xml here. Swap for a bucket/Pages URL if the repo stays private.
+          flutter build macos --release \
+            --dart-define=GRID_APPCAST_URL="https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml"
           APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n1)"
           [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
           cp ../autonomous-grid-cli/dist/grid "$APP/Contents/Resources/grid"
@@ -144,6 +156,21 @@ jobs:
           mkdir -p dist
           scripts/notarize_macos.sh
 
+      # Sign the DMG with the Sparkle EdDSA key and write dist/appcast.xml next to
+      # it (both get uploaded by the publish step). Skipped with a warning until
+      # the SPARKLE_ED_PRIVATE_KEY secret is provisioned, so releases still build.
+      - name: Generate Sparkle appcast (macOS)
+        if: runner.os == 'macOS'
+        working-directory: grid-app
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          DMG: ${{ github.workspace }}/grid-app/dist/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
+          DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
+          SHORT_VERSION: ${{ env.VERSION }}
+          BUNDLE_VERSION: ${{ env.BUILD }}
+          APPCAST_OUT: ${{ github.workspace }}/grid-app/dist/appcast.xml
+        run: bash scripts/ci/generate_appcast_macos.sh
+
       # ───────────────────────── Windows ─────────────────────────
       - name: Build grid sidecar (Windows)
         if: runner.os == 'Windows'
@@ -169,7 +196,7 @@ jobs:
           draft: true
           name: Grid ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          # One glob: each runner's dist/ holds only its own artifact (mac -> .dmg,
-          # Windows -> .zip), so this stays strict without cross-platform misses.
+          # One glob per runner's dist/: mac -> .dmg + appcast.xml (Sparkle feed),
+          # Windows -> .zip. Strict, without cross-platform misses.
           fail_on_unmatched_files: true
           files: grid-app/dist/*
