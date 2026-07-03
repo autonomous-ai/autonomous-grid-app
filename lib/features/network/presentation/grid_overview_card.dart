@@ -9,45 +9,48 @@ import '../logic/grid_overview_provider.dart';
 
 const _mono = 'monospace';
 
-/// Live `GET {relayBaseUrl}/grid/overview` snapshot for the open grid: headline
-/// stats, the models it serves, and the nodes backing them.
-class GridOverviewView extends ConsumerWidget {
-  const GridOverviewView({super.key});
+/// Live `GET {relayBaseUrl}/grid/overview` headline stats for the open grid.
+/// Owns the single loading/error indicator for the overview — the Models and
+/// Nodes sections stay quiet until the data resolves, so the pane never shows
+/// two spinners at once.
+class GridStatsSection extends ConsumerWidget {
+  const GridStatsSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ref.watch(gridOverviewProvider).when(
           loading: () => const _OverviewMessage(
               icon: Icons.cloud_sync_outlined, text: 'Loading grid overview…'),
-          error: (err, _) => _OverviewMessage(
-              icon: Icons.cloud_off_outlined, text: '$err'),
-          data: (overview) => _OverviewBody(overview: overview),
+          error: (err, _) =>
+              _OverviewMessage(icon: Icons.cloud_off_outlined, text: '$err'),
+          data: (overview) => _StatsBar(stats: overview.stats),
         );
   }
 }
 
-class _OverviewBody extends StatelessWidget {
-  const _OverviewBody({required this.overview});
-  final GridOverview overview;
+/// The grid's Nodes section — the machines pooling compute to serve it. Renders
+/// only once the overview resolves with at least one node; [GridStatsSection]
+/// above owns the shared loading/error state, so this stays silent until then.
+class GridNodesSection extends ConsumerWidget {
+  const GridNodesSection({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nodes = ref.watch(gridOverviewProvider).asData?.value.nodes ??
+        const <OverviewNode>[];
+    if (nodes.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _StatsBar(stats: overview.stats),
-        const _ModelsSection(),
-        if (overview.nodes.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          const _SectionHeading(
-              title: 'Nodes',
-              subtitle:
-                  'Independent machines pooling their compute to serve this grid.'),
-          const SizedBox(height: 14),
-          for (final n in overview.nodes) ...[
-            _NodeTile(node: n),
-            const SizedBox(height: 10),
-          ],
+        const SizedBox(height: 14),
+        const _SectionHeading(
+            title: 'Nodes',
+            subtitle:
+                'Independent machines pooling their compute to serve this grid.'),
+        const SizedBox(height: 14),
+        for (final n in nodes) ...[
+          _NodeTile(node: n),
+          const SizedBox(height: 10),
         ],
       ],
     );
@@ -168,8 +171,8 @@ class _Card extends StatelessWidget {
 /// The grid's Models section — one copyable tile per model the grid serves.
 /// Rich tiles (modality + example price) when the relay overview details them,
 /// otherwise plain id tiles from `/models`. Hidden when the grid serves none.
-class _ModelsSection extends ConsumerWidget {
-  const _ModelsSection();
+class GridModelsSection extends ConsumerWidget {
+  const GridModelsSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -180,7 +183,8 @@ class _ModelsSection extends ConsumerWidget {
       children: [
         const SizedBox(height: 24),
         const _SectionHeading(
-            title: 'Models', subtitle: 'Pick a model by its id.'),
+            title: 'Models',
+            subtitle: 'Copy a model ID to use it with the API above.'),
         const SizedBox(height: 14),
         for (final m in models) ...[
           _ModelTile(model: m),

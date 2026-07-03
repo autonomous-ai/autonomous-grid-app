@@ -77,10 +77,15 @@ class _OverviewTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 6, 24, 24),
       children: [
-        const GridOverviewView(),
+        // Headline stats stay pinned under the running status.
+        const GridStatsSection(),
         const SizedBox(height: 22),
-        // API access shown directly (as before — no developer expander).
+        // API access first: the credentials a developer needs to call this grid.
         ConsumerEnvCard(network: network),
+        // Then the models they can call, and the nodes serving them. Each adds
+        // its own leading gap and collapses to nothing when empty.
+        const GridModelsSection(),
+        const GridNodesSection(),
         // "Set up engine" is provider-only; the quick "Test" action now lives in
         // the header. Consumers have no body action, so skip the spacing too.
         if (network.canManageProvider) ...[
@@ -92,14 +97,6 @@ class _OverviewTab extends StatelessWidget {
           const SizedBox(height: 28),
           _DeleteGridButton(network: network),
         ],
-        // Connection block (grid address) temporarily hidden per request:
-        // const SizedBox(height: 20),
-        // DetailSection(
-        //   title: 'Connection',
-        //   children: [
-        //     AddressRow(label: 'Grid address', value: network.lanSignalingUrl),
-        //   ],
-        // ),
       ],
     );
   }
