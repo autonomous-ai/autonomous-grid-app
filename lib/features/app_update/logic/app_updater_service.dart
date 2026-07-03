@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:auto_updater/auto_updater.dart';
@@ -19,29 +20,37 @@ const String kAppcastFeedUrl = String.fromEnvironment('GRID_APPCAST_URL');
 class AppUpdaterService {
   const AppUpdaterService();
 
-  /// Sparkle's minimum check interval is 3600s; once a day is plenty for a
-  /// desktop app that also checks shortly after launch.
+  /// Sparkle's minimum check interval is 3600s; once a day is plenty for the
+  /// scheduled timer since we also check silently on launch and on demand.
   static const int _dailySeconds = 86400;
 
   /// True when a feed is configured on a platform the updater supports. Gates
-  /// both the background schedule and the manual "Check for updates" action.
+  /// every action so callers don't branch on the platform.
   bool get isEnabled => Platform.isMacOS && kAppcastFeedUrl.isNotEmpty;
 
-  /// Points Sparkle at the feed and enables silent, scheduled background checks.
-  /// Sparkle surfaces its native prompt only when a newer build is actually
-  /// found, so a routine check never nags an up-to-date user. Safe to call on
-  /// every launch; a no-op when the updater isn't enabled.
+  /// Points Sparkle at the feed, schedules periodic background checks, and fires
+  /// one silent check now so a newer build is surfaced on launch without the user
+  /// asking. A no-op when the updater isn't enabled.
   Future<void> init() async {
     if (!isEnabled) return;
     await autoUpdater.setFeedURL(kAppcastFeedUrl);
     await autoUpdater.setScheduledCheckInterval(_dailySeconds);
+    unawaited(checkInBackground());
   }
 
-  /// User-initiated check. Unlike the background schedule this shows Sparkle's UI
-  /// even when already up to date, so it's wired to an explicit button only.
+  /// Silent check — Sparkle surfaces its update prompt only when a newer build
+  /// exists (no "you're up to date" dialog). Used on launch and whenever the
+  /// account menu opens.
+  Future<void> checkInBackground() async {
+    if (!isEnabled) return;
+    await autoUpdater.checkForUpdates(inBackground: true);
+  }
+
+  /// User-initiated check — shows Sparkle's UI even when already up to date, so
+  /// an explicit "Check for updates" tap always gives feedback.
   Future<void> checkForUpdates() async {
     if (!isEnabled) return;
-    await autoUpdater.checkForUpdates();
+    await autoUpdater.checkForUpdates(inBackground: false);
   }
 }
 

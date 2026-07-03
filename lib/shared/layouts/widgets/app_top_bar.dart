@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/app_update/logic/app_updater_service.dart';
 import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/provider_node/logic/provider_run_controller.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/status_dot.dart';
@@ -115,7 +117,9 @@ class _CurrentGridLabel extends ConsumerWidget {
   }
 }
 
-/// Avatar that opens an account menu (email header + Sign out).
+/// Avatar that opens an account menu: email, "Check for updates", the app
+/// version, and Sign out. Opening the menu also kicks off a silent update check,
+/// so a newer build surfaces just from viewing the version — no separate tap.
 class _AccountMenu extends ConsumerWidget {
   const _AccountMenu({required this.name, required this.email});
   final String name;
@@ -124,10 +128,17 @@ class _AccountMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
+    final updater = ref.read(appUpdaterServiceProvider);
+    final version = ref.watch(appVersionProvider).asData?.value;
     return PopupMenuButton<String>(
       tooltip: name,
       offset: const Offset(0, 42),
+      onOpened: updater.isEnabled ? updater.checkInBackground : null,
       onSelected: (value) async {
+        if (value == 'check_updates') {
+          await updater.checkForUpdates();
+          return;
+        }
         if (value != 'logout') return;
         final engineRunning =
             ref.read(providerRunControllerProvider) is ProviderRunActive;
@@ -140,6 +151,26 @@ class _AccountMenu extends ConsumerWidget {
           enabled: false,
           child: Text(email, style: const TextStyle(fontSize: 12.5)),
         ),
+        const PopupMenuDivider(),
+        if (updater.isEnabled)
+          const PopupMenuItem(
+            value: 'check_updates',
+            child: Row(
+              children: [
+                Icon(Icons.system_update_alt, size: 18),
+                SizedBox(width: 10),
+                Text('Check for updates'),
+              ],
+            ),
+          ),
+        if (version != null)
+          PopupMenuItem(
+            enabled: false,
+            height: 32,
+            child: Text('Version $version',
+                style: const TextStyle(
+                    fontSize: 11.5, color: AppPalette.textFaint)),
+          ),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: 'logout',

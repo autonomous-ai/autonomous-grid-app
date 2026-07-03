@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../features/app_update/logic/app_updater_service.dart';
-import '../../app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass_surface.dart';
 import '../shell_state.dart';
@@ -34,59 +32,7 @@ class SideNav extends ConsumerWidget {
                 onTap: () =>
                     ref.read(navSectionProvider.notifier).select(section),
               ),
-            const Spacer(),
-            const _VersionFooter(),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// App version pinned to the bottom of the sidebar — quiet, for support/QA.
-class _VersionFooter extends ConsumerWidget {
-  const _VersionFooter();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final version = ref.watch(appVersionProvider).asData?.value;
-    if (version == null) return const SizedBox.shrink();
-    final updater = ref.read(appUpdaterServiceProvider);
-    return Padding(
-      padding: const EdgeInsets.only(left: 10, top: 8, bottom: 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('v$version',
-              style:
-                  const TextStyle(color: AppPalette.textFaint, fontSize: 11.5)),
-          if (updater.isEnabled)
-            _CheckForUpdatesLink(onTap: updater.checkForUpdates),
-        ],
-      ),
-    );
-  }
-}
-
-/// Quiet "Check for updates" affordance under the version — a user-initiated
-/// Sparkle check that shows its native dialog even when already up to date.
-class _CheckForUpdatesLink extends StatelessWidget {
-  const _CheckForUpdatesLink({required this.onTap});
-
-  final Future<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: const Padding(
-          padding: EdgeInsets.only(top: 3),
-          child: Text('Check for updates',
-              style:
-                  TextStyle(color: AppPalette.textSecondary, fontSize: 11.5)),
         ),
       ),
     );
