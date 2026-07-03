@@ -7,7 +7,9 @@ name: release
 # scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
-#   Grid-<ver>-Windows-x64.zip           (unsigned; SmartScreen may warn)
+#
+# Windows builds are disabled for now (deferred) — only macOS Apple Silicon is
+# produced. See the commented-out `windows-latest` matrix entry below to re-enable.
 #
 #   git tag v0.1.2 && git push origin v0.1.2
 #
@@ -50,9 +52,12 @@ jobs:
           - platform: macos-latest      # Apple Silicon, native arm64 build
             arch: arm64
             label: macOS-Apple-Silicon
-          - platform: windows-latest
-            arch: x64
-            label: Windows-x64
+          # Windows build disabled for now — deferred until Windows code-signing +
+          # a WinSparkle key exist. Uncomment to re-enable; the `if: runner.os ==
+          # 'Windows'` build steps below stay in place, dormant, ready for it.
+          # - platform: windows-latest
+          #   arch: x64
+          #   label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
     # The Nuitka sidecar build is slow (macOS ~45m; Windows >56m), and macOS adds
