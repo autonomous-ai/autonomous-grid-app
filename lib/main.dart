@@ -44,7 +44,11 @@ Future<void> main() async {
   // Configure macOS auto-update (Sparkle) before the UI shows: silent, scheduled
   // background checks that surface a prompt only when a newer signed build is
   // published. A no-op off macOS or when no appcast feed is configured.
-  await const AppUpdaterService().init();
+  // `bindNativeMenu` links the "Grid ▸ Check for Updates…" app-menu item to the
+  // same updater.
+  const updater = AppUpdaterService();
+  await updater.init();
+  updater.bindNativeMenu();
 
   runApp(const ProviderScope(child: GridApp()));
 }

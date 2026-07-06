@@ -10,6 +10,10 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // Let the "Grid ▸ Check for Updates…" menu action reach the Flutter updater.
+    (NSApp.delegate as? AppDelegate)?
+      .setUpUpdaterChannel(messenger: flutterViewController.engine.binaryMessenger)
+
     super.awakeFromNib()
   }
 }

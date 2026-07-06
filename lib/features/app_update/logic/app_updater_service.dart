@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:auto_updater/auto_updater.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Public Sparkle appcast the macOS build polls for a newer signed release.
@@ -23,6 +24,11 @@ class AppUpdaterService {
   /// Sparkle's minimum check interval is 3600s; once a day is plenty for the
   /// scheduled timer since we also check silently on launch and on demand.
   static const int _dailySeconds = 86400;
+
+  /// Bridge to the native macOS app-menu "Check for Updates…" item. The Swift
+  /// side (see `AppDelegate.checkForUpdatesFromMenu`) invokes `checkForUpdates`
+  /// on this channel so the menu and the in-app account menu share one updater.
+  static const MethodChannel _menuChannel = MethodChannel('grid/app_updater');
 
   /// True when a feed is configured on a platform the updater supports. Gates
   /// every action so callers don't branch on the platform.
@@ -51,6 +57,17 @@ class AppUpdaterService {
   Future<void> checkForUpdates() async {
     if (!isEnabled) return;
     await autoUpdater.checkForUpdates(inBackground: false);
+  }
+
+  /// Wire the native macOS "Grid ▸ Check for Updates…" menu item to
+  /// [checkForUpdates]. Only macOS ships that menu item, so this is a no-op
+  /// elsewhere; [checkForUpdates] itself still guards on [isEnabled], so an
+  /// unconfigured dev build (no appcast feed) simply does nothing.
+  void bindNativeMenu() {
+    if (!Platform.isMacOS) return;
+    _menuChannel.setMethodCallHandler((call) async {
+      if (call.method == 'checkForUpdates') await checkForUpdates();
+    });
   }
 }
 
