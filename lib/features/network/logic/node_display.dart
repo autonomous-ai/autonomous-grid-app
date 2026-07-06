@@ -43,3 +43,14 @@ String nodeRoleSummary(OverviewNode node) {
 bool nodeIsMedia(OverviewNode node) =>
     (node.engine ?? '').toLowerCase() == 'comfyui' ||
     node.models.any(_capabilityLabels.containsKey);
+
+/// The media label for a model id when it's actually a comfyui media capability
+/// that leaked into the model list (e.g. `comfyui:image_generation` → "Image
+/// generation"), else null for a normal text model. One source so the node
+/// summary and the model tile label media the same way instead of showing it as
+/// a "Chat" model. See [kCapImageGenerate].
+String? mediaCapabilityLabel(String id) => _capabilityLabels[id];
+
+/// Whether a model id is the image→video media capability — lets the model tile
+/// pick a video glyph over the image one without re-parsing the id.
+bool isVideoCapability(String id) => id == kCapI2V;

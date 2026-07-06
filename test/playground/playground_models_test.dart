@@ -38,6 +38,46 @@ void main() {
     });
   });
 
+  group('playgroundOptionsFrom', () {
+    test('hides raw comfyui:* models, keeps text models + the coded Image mode',
+        () {
+      // Mirrors the "Art" grid: the relay leaks the comfyui capabilities into
+      // the model list. They can't be tested directly, so only the coded Image
+      // mode should be selectable alongside real text models.
+      final options = playgroundOptionsFrom(
+        const [
+          OverviewModel(id: 'comfyui:image_generation'),
+          OverviewModel(id: 'comfyui:image_editing'),
+          OverviewModel(id: 'qwen3-coder'),
+        ],
+        const ['comfyui:image_generation', 'comfyui:image_editing'],
+      );
+      final ids = options.map((o) => o.id).toList();
+      expect(ids, isNot(contains('comfyui:image_generation')));
+      expect(ids, isNot(contains('comfyui:image_editing')));
+      expect(ids, ['qwen3-coder', kImageModeLabel]);
+    });
+
+    test('a media-only grid offers just the coded mode, no comfyui:i2v row', () {
+      // Mirrors the "Hollywood" grid: only i2v. The picker should show the coded
+      // Video mode alone.
+      final options = playgroundOptionsFrom(
+        const [OverviewModel(id: 'comfyui:i2v')],
+        const ['comfyui:i2v'],
+      );
+      expect(options.map((o) => o.id).toList(), [kVideoModeLabel]);
+      expect(options.single.modality, PlaygroundModality.video);
+    });
+
+    test('passes plain text models straight through', () {
+      final options = playgroundOptionsFrom(
+        const [OverviewModel(id: 'a'), OverviewModel(id: 'b')],
+        const [],
+      );
+      expect(options.map((o) => o.id).toList(), ['a', 'b']);
+    });
+  });
+
   test('OverviewNode parses the capability list beside the primary model', () {
     final node = OverviewNode.fromJson(const {
       'name': 'engine-57d44159',

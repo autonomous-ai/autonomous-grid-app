@@ -38,7 +38,12 @@ class GridCapabilitiesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hasChat = ref.watch(gridModelsProvider).isNotEmpty;
+    // Chat only when a real text model is served — a comfyui media capability
+    // can surface in the model list, so counting it as "Chat" would mislabel a
+    // media-only grid. See [mediaCapabilityLabel].
+    final hasChat = ref
+        .watch(gridModelsProvider)
+        .any((m) => mediaCapabilityLabel(m.id) == null);
     final media = ref.watch(gridMediaCapabilitiesProvider);
     final chips = <Widget>[
       if (hasChat)
@@ -241,7 +246,7 @@ class _Card extends StatelessWidget {
 }
 
 /// The grid's Models section — one copyable tile per model the grid serves.
-/// Rich tiles (modality + example price) when the relay overview details them,
+/// Rich tiles (with a Chat/media kind) when the relay overview details them,
 /// otherwise plain id tiles from `/models`. Hidden when the grid serves none.
 class GridModelsSection extends ConsumerWidget {
   const GridModelsSection({super.key});
@@ -267,25 +272,33 @@ class GridModelsSection extends ConsumerWidget {
   }
 }
 
-/// One compact model row: a small chat glyph, the copyable id, an optional
-/// price, and the Copy action. Kept dense so a grid's models read as a tight
-/// list, not a stack of oversized cards.
+/// One compact model row: a modality-aware glyph, the copyable id, its kind
+/// (Chat, or the media label when a comfyui capability surfaces in the list),
+/// and the Copy action. Kept dense so a grid's models read as a tight list, not
+/// a stack of oversized cards. No token price — grids are usually free and it
+/// reads as noise ($0 / $0 / 1M); media has no per-token price at all.
 class _ModelTile extends StatelessWidget {
   const _ModelTile({required this.model});
   final OverviewModel model;
 
   @override
   Widget build(BuildContext context) {
-    final p = model.pricing;
-    final price = p == null
-        ? null
-        : '\$${_trim(p.inputPer1m ?? 0)} / \$${_trim(p.outputPer1m ?? 0)}';
+    // A comfyui media capability (image/video) can surface in the model list —
+    // label it as media with an image/video glyph instead of the default
+    // "Chat". See [mediaCapabilityLabel].
+    final mediaLabel = mediaCapabilityLabel(model.id);
+    final pill =
+        mediaLabel ?? (model.modality == null ? null : _cap(model.modality!));
+    final icon = mediaLabel == null
+        ? Icons.chat_bubble_outline
+        : isVideoCapability(model.id)
+            ? Icons.movie_outlined
+            : Icons.image_outlined;
     return _Card(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
         children: [
-          const _TileIcon(
-              icon: Icons.chat_bubble_outline, accent: true, size: 28),
+          _TileIcon(icon: icon, accent: true, size: 28),
           const SizedBox(width: 12),
           Expanded(
             child: Text(model.id,
@@ -296,18 +309,9 @@ class _ModelTile extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppPalette.textPrimary)),
           ),
-          if (model.modality != null) ...[
+          if (pill != null) ...[
             const SizedBox(width: 10),
-            _Pill(text: _cap(model.modality!)),
-          ],
-          if (price != null) ...[
-            const SizedBox(width: 10),
-            Text('$price / 1M',
-                style: const TextStyle(
-                    fontFamily: _mono,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppPalette.textSecondary)),
+            _Pill(text: pill),
           ],
           const SizedBox(width: 10),
           _CopyChip(id: model.id),

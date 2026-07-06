@@ -13,12 +13,6 @@ const kGuideDefaultModel = 'qwen3-coder';
 /// there; `custom_providers` ignores the field). 64K = 64×1024.
 const kHermesMaxTokens = 64000;
 
-/// Shell exports of the OpenAI-compatible pair — the generic form any client
-/// reads from the environment.
-String envSnippet(String base, String key) =>
-    'export OPENAI_BASE_URL="$base"\n'
-    'export OPENAI_API_KEY="$key"';
-
 /// The `~/.openclaw/openclaw.json` provider block wiring Grid in as a model
 /// provider (and [model] as the default for a fresh install). `models.mode:
 /// "merge"` appends Grid to OpenClaw's built-in providers instead of replacing
@@ -50,7 +44,7 @@ String hermesProviderName(String base) =>
 /// `custom_providers` entry registering the grid as a named provider. Hermes
 /// reads it all here — no `.env`.
 String hermesConfigSnippet(String base, String key, String model) => 'model:\n'
-    '  provider: custom:${hermesProviderName(base)}\n'
+    '  provider: custom\n'
     '  base_url: $base\n'
     '  api_key: $key\n'
     '  default: $model\n'

@@ -2,30 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../logic/app_guide_snippets.dart';
-import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
 import 'detail_widgets.dart';
 
-/// Where the "Apply for me" write is in its lifecycle for the selected app.
-sealed class ApplyPhase {
-  const ApplyPhase();
-}
-
-class ApplyIdle extends ApplyPhase {
-  const ApplyIdle();
-}
-
-class ApplyRunning extends ApplyPhase {
-  const ApplyRunning();
-}
-
-class ApplyDone extends ApplyPhase {
-  const ApplyDone(this.result);
-  final ApplyResult result;
-}
-
-/// Setup for one known client: a Download prompt when it's missing, the config
-/// snippet(s), and — when installed — an "Apply for me" button with its result.
+/// Read-only setup for one known client: the grid's Base URL + Token as copyable
+/// fields, the exact config block to paste, short steps, and a Download prompt
+/// when the app is missing. Grid never writes the user's config — they paste it
+/// themselves, so nothing on disk is touched and the copy stays honest.
 class ClientAppPanel extends StatelessWidget {
   const ClientAppPanel({
     super.key,
@@ -34,9 +17,7 @@ class ClientAppPanel extends StatelessWidget {
     required this.baseUrl,
     required this.apiKey,
     required this.model,
-    required this.phase,
-    required this.onApply,
-    required this.onDownload,
+    required this.onOpenSite,
   });
 
   final ClientAppInfo info;
@@ -45,50 +26,41 @@ class ClientAppPanel extends StatelessWidget {
   final String apiKey;
 
   /// The model the grid actually serves (or the fallback default), wired into
-  /// the snippets so copy/apply names a model the grid can answer.
+  /// the snippet so it names a model the grid can answer.
   final String model;
-  final ApplyPhase phase;
-  final VoidCallback onApply;
-  final VoidCallback onDownload;
+
+  /// Opens the app's official site — the Download target when missing, and the
+  /// "docs" affordance otherwise.
+  final VoidCallback onOpenSite;
 
   @override
   Widget build(BuildContext context) {
-    // Lead with the single next step in one card — Download when the app is
-    // missing, Apply for me once it's installed — then the config below as a
-    // reference (also the "copy it yourself" fallback the apply-error points at).
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _AppActionBlock(
-          name: info.name,
-          installed: installed,
-          phase: phase,
-          onApply: onApply,
-          onDownload: onDownload,
-        ),
+        if (!installed) ...[
+          _MissingAppNote(name: info.name, onDownload: onOpenSite),
+          const SizedBox(height: 16),
+        ],
+        ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
         const SizedBox(height: 16),
-        ..._configBlocks(),
+        GuideLabel(info.name, caption: 'Paste into ${info.configPath}'),
+        CodeBlock(code: _snippet()),
+        const SizedBox(height: 12),
+        _SetupSteps(configPath: info.configPath, appName: info.name),
+        const SizedBox(height: 6),
+        _DocsLink(appName: info.name, onOpen: onOpenSite),
       ],
     );
   }
 
-  List<Widget> _configBlocks() {
-    switch (info.app) {
-      case ClientApp.openClaw:
-        return [
-          GuideLabel(info.name, caption: 'Add to ${info.configPath}'),
-          CodeBlock(code: openClawSnippet(baseUrl, apiKey, model)),
-        ];
-      case ClientApp.hermes:
-        return [
-          const GuideLabel('Endpoint', caption: 'In ~/.hermes/config.yaml'),
-          CodeBlock(code: hermesConfigSnippet(baseUrl, apiKey, model)),
-        ];
-    }
-  }
+  String _snippet() => switch (info.app) {
+        ClientApp.openClaw => openClawSnippet(baseUrl, apiKey, model),
+        ClientApp.hermes => hermesConfigSnippet(baseUrl, apiKey, model),
+      };
 }
 
-/// Fallback for any app we don't detect: the raw OpenAI-compatible pair plus a
+/// Fallback for any app we don't detect: the same two copyable values plus a
 /// tiny SDK example — enough to wire up anything by hand.
 class OtherAppPanel extends StatelessWidget {
   const OtherAppPanel({
@@ -107,14 +79,12 @@ class OtherAppPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const GuideLabel('Any OpenAI-compatible app',
-            caption: 'point it at these two values'),
-        CodeBlock(code: envSnippet(baseUrl, apiKey)),
-        const SizedBox(height: 14),
+        ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
+        const SizedBox(height: 16),
         const GuideLabel('Example (Python)',
             caption: 'works with any OpenAI SDK'),
         CodeBlock(code: pythonSnippet(baseUrl, apiKey, model)),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         Text(
           'Use a model your grid serves (e.g. $model). Every model on every '
           'machine answers at this one endpoint.',
@@ -126,22 +96,33 @@ class OtherAppPanel extends StatelessWidget {
   }
 }
 
-/// The one-click setup card for a known client. It leads the guide with the
-/// single next step and keeps the same card either way: **Download** while the
-/// app is missing, **Apply for me** (with its spinner + result) once installed.
-class _AppActionBlock extends StatelessWidget {
-  const _AppActionBlock({
-    required this.name,
-    required this.installed,
-    required this.phase,
-    required this.onApply,
-    required this.onDownload,
-  });
+/// The grid's OpenAI-compatible pair as two copyable fields — the two values any
+/// client needs. The Token is clamped to one line since it's an opaque string
+/// the user copies, not reads.
+class ConnectionFields extends StatelessWidget {
+  const ConnectionFields(
+      {super.key, required this.baseUrl, required this.apiKey});
+
+  final String baseUrl;
+  final String apiKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return DetailSection(
+      title: 'Connection',
+      children: [
+        AddressRow(label: 'Base URL', value: baseUrl),
+        AddressRow(label: 'Token', value: apiKey, maxLines: 1),
+      ],
+    );
+  }
+}
+
+/// A one-line note + Download button shown when the client isn't installed yet.
+class _MissingAppNote extends StatelessWidget {
+  const _MissingAppNote({required this.name, required this.onDownload});
 
   final String name;
-  final bool installed;
-  final ApplyPhase phase;
-  final VoidCallback onApply;
   final VoidCallback onDownload;
 
   @override
@@ -156,102 +137,85 @@ class _AppActionBlock extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: installed ? _applyContent() : _downloadContent(),
+        children: [
+          Text(
+            "You don't have $name yet. Install it first, then paste the "
+            'connection below.',
+            style: const TextStyle(
+                color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: onDownload,
+            icon: const Icon(Icons.download_rounded, size: 16),
+            label: Text('Download $name'),
+          ),
+        ],
       ),
     );
   }
+}
 
-  List<Widget> _downloadContent() => [
-        Text(
-          "You don't have $name yet. Install it, then Grid can set it up.",
-          style: const TextStyle(
-              color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: onDownload,
-          icon: const Icon(Icons.download_rounded, size: 16),
-          label: Text('Download $name'),
-        ),
-      ];
+/// The three manual steps to finish setup, in plain language.
+class _SetupSteps extends StatelessWidget {
+  const _SetupSteps({required this.configPath, required this.appName});
 
-  List<Widget> _applyContent() {
-    final running = phase is ApplyRunning;
-    return [
-      Text(
-        'Grid can write the connection into $name for you — no files to edit '
-        '(a backup is kept).',
-        style: const TextStyle(
-            color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
-      ),
-      const SizedBox(height: 12),
-      FilledButton.icon(
-        onPressed: running ? null : onApply,
-        icon: running
-            ? const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.auto_fix_high_rounded, size: 16),
-        label: Text(running ? 'Applying…' : 'Apply for me'),
-      ),
-      _ApplyStatus(phase: phase),
+  final String configPath;
+  final String appName;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = [
+      'Open $configPath',
+      'Paste the block above (or fill Base URL + Token yourself)',
+      'Restart $appName',
     ];
-  }
-}
-
-/// The result line after "Apply for me": success (green) with any follow-up
-/// note, or a failure (red) telling the user to Copy the config instead.
-class _ApplyStatus extends StatelessWidget {
-  const _ApplyStatus({required this.phase});
-
-  final ApplyPhase phase;
-
-  @override
-  Widget build(BuildContext context) {
-    final phase = this.phase;
-    if (phase is! ApplyDone) return const SizedBox.shrink();
-    return switch (phase.result) {
-      ApplyOk(:final message, :final note) => _StatusLine(
-          icon: Icons.check_circle_rounded,
-          color: AppPalette.online,
-          text: note == null ? message : '$message $note',
-        ),
-      ApplyError(:final message) => _StatusLine(
-          icon: Icons.error_outline_rounded,
-          color: Theme.of(context).colorScheme.error,
-          text: '$message Copy the config above and paste it in yourself.',
-        ),
-    };
-  }
-}
-
-/// One icon + wrapped message line, used for the apply result.
-class _StatusLine extends StatelessWidget {
-  const _StatusLine(
-      {required this.icon, required this.color, required this.text});
-
-  final IconData icon;
-  final Color color;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < steps.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
             child: Text(
-              text,
-              style: TextStyle(color: color, fontSize: 12, height: 1.4),
+              '${i + 1}.  ${steps[i]}',
+              style: const TextStyle(
+                  color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
             ),
           ),
-        ],
+      ],
+    );
+  }
+}
+
+/// A subtle link to the app's official site for deeper setup docs.
+class _DocsLink extends StatelessWidget {
+  const _DocsLink({required this.appName, required this.onOpen});
+
+  final String appName;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$appName docs',
+              style: const TextStyle(
+                  color: AppPalette.accent,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 3),
+            const Icon(Icons.open_in_new_rounded,
+                size: 13, color: AppPalette.accent),
+          ],
+        ),
       ),
     );
   }

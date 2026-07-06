@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/network_models_provider.dart';
 import '../logic/app_guide_snippets.dart';
-import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
 import 'app_guide_panels.dart';
 
@@ -28,33 +27,13 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
   /// so the default can follow detection.
   ClientApp? _selected;
   bool _touched = false;
-  ApplyPhase _phase = const ApplyIdle();
 
   void _select(ClientApp? app) => setState(() {
         _touched = true;
         _selected = app;
-        _phase = const ApplyIdle();
       });
 
-  Future<void> _apply(ClientApp app, String model) async {
-    setState(() => _phase = const ApplyRunning());
-    // The write is near-instant, so hold the spinner for a beat — otherwise the
-    // button snaps straight to the result and the click feels like it did
-    // nothing (especially on a repeat click already showing success).
-    final (result, _) = await (
-      ref.read(clientAppConfiguratorProvider).apply(
-            app,
-            widget.baseUrl,
-            widget.apiKey,
-            model,
-          ),
-      Future<void>.delayed(const Duration(milliseconds: 450)),
-    ).wait;
-    if (!mounted) return;
-    setState(() => _phase = ApplyDone(result));
-  }
-
-  Future<void> _download(String url) async {
+  Future<void> _openSite(String url) async {
     final uri = Uri.tryParse(url);
     if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
@@ -99,9 +78,7 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
             baseUrl: widget.baseUrl,
             apiKey: widget.apiKey,
             model: model,
-            phase: _phase,
-            onApply: () => _apply(selected, model),
-            onDownload: () => _download(kClientApps[selected]!.downloadUrl),
+            onOpenSite: () => _openSite(kClientApps[selected]!.downloadUrl),
           ),
       ],
     );

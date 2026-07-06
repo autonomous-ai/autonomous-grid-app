@@ -60,4 +60,19 @@ void main() {
     expect(nodeIsMedia(_node(models: ['comfyui:image_generation'])), isTrue);
     expect(nodeIsMedia(_node(engine: 'external', models: ['some/model'])), isFalse);
   });
+
+  group('mediaCapabilityLabel', () {
+    test('labels comfyui media ids, null for a text model', () {
+      expect(mediaCapabilityLabel('comfyui:image_generation'), 'Image generation');
+      expect(mediaCapabilityLabel('comfyui:image_editing'), 'Image editing');
+      expect(mediaCapabilityLabel('comfyui:i2v'), 'Video');
+      expect(mediaCapabilityLabel('qwen3-coder'), isNull);
+    });
+  });
+
+  test('isVideoCapability is true only for the i2v capability', () {
+    expect(isVideoCapability('comfyui:i2v'), isTrue);
+    expect(isVideoCapability('comfyui:image_generation'), isFalse);
+    expect(isVideoCapability('qwen3-coder'), isFalse);
+  });
 }

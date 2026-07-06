@@ -8,12 +8,6 @@ const _key = 'sk-test-123';
 const _model = 'qwen3.5:0.8b';
 
 void main() {
-  test('env snippet exports both OpenAI values', () {
-    final out = envSnippet(_base, _key);
-    expect(out, contains('OPENAI_BASE_URL="$_base"'));
-    expect(out, contains('OPENAI_API_KEY="$_key"'));
-  });
-
   test('OpenClaw snippet is valid JSON wiring Grid as a merged provider', () {
     final decoded = jsonDecode(openClawSnippet(_base, _key, _model)) as Map;
     final models = decoded['models'] as Map;
@@ -29,7 +23,11 @@ void main() {
 
   test('Hermes config block carries the full grid connection', () {
     final config = hermesConfigSnippet(_base, _key, _model);
-    expect(config, contains('provider: custom:Grid.autonomous.ai'));
+    // Must be the bare `custom` provider — Hermes reads base_url/api_key straight
+    // from the model block. A `custom:<host>` value is rejected as an unknown
+    // provider ("agent init failed"), so pin the exact line (trailing newline
+    // guards against a `custom:...` regression slipping past a substring match).
+    expect(config, contains('provider: custom\n'));
     expect(config, contains('base_url: $_base'));
     expect(config, contains('api_key: $_key'));
     expect(config, contains('default: $_model'));
