@@ -64,28 +64,29 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
 /// Custom endpoint), so we walk that GUI; a file-based client is wired by pasting
 /// the config block. Either way the user drops the Base URL + Token (shown as
 /// copyable fields in the panel) into the blanks — so the steps name those two.
-({String title, List<String> steps}) appSetupGuide(ClientAppInfo info) =>
-    switch (info.app) {
-      ClientApp.hermes => (
-          title: 'Set it up in Hermes Agent',
-          steps: const [
-            'Open Hermes Agent, then Settings (gear icon, top-right)',
-            'Under Model, choose "Custom endpoint", then "Set up Custom endpoint"',
-            'Pick "Local / custom endpoint"',
-            'Paste the Base URL above into the endpoint field',
-            'Paste the Token into the "API key" field',
-            'Click Connect',
-          ],
-        ),
-      ClientApp.openClaw => (
-          title: 'Add it to ${info.name}',
-          steps: [
-            'Open ${info.configPath}',
-            'Paste the block below (or fill Base URL + Token yourself)',
-            'Restart ${info.name}',
-          ],
-        ),
-    };
+({String title, List<String> steps}) appSetupGuide(
+  ClientAppInfo info,
+) => switch (info.app) {
+  ClientApp.hermes => (
+    title: 'Set it up in Hermes Agent',
+    steps: const [
+      'Open Hermes Agent, then Settings (gear icon, top-right)',
+      'Under Model, choose "Custom endpoint", then "Set up Custom endpoint"',
+      'Pick "Local / custom endpoint"',
+      'Paste the Base URL above into the endpoint field',
+      'Paste the API key into the "API key" field',
+      'Click Connect',
+    ],
+  ),
+  ClientApp.openClaw => (
+    title: 'Add it to ${info.name}',
+    steps: [
+      'Open ${info.configPath}',
+      'Paste the block below (or fill Base URL + API key yourself)',
+      'Restart ${info.name}',
+    ],
+  ),
+};
 
 /// Detects which known client apps look installed on this machine. "Installed" =
 /// the app's config directory exists under `$HOME`, **or** its CLI is on the
@@ -98,9 +99,9 @@ class ClientAppDetector {
     String? home,
     bool Function(String path)? dirExists,
     String? Function(String name)? findExecutable,
-  })  : _home = home ?? GridPaths.userHome,
-        _dirExists = dirExists ?? _defaultDirExists,
-        _findExecutable = findExecutable ?? HostEnvironment.findExecutable;
+  }) : _home = home ?? GridPaths.userHome,
+       _dirExists = dirExists ?? _defaultDirExists,
+       _findExecutable = findExecutable ?? HostEnvironment.findExecutable;
 
   final String _home;
   final bool Function(String path) _dirExists;
@@ -118,8 +119,10 @@ class ClientAppDetector {
   }
 
   /// The installed apps, in [ClientApp.values] order.
-  Set<ClientApp> detect() =>
-      {for (final app in ClientApp.values) if (isInstalled(app)) app};
+  Set<ClientApp> detect() => {
+    for (final app in ClientApp.values)
+      if (isInstalled(app)) app,
+  };
 
   static bool _defaultDirExists(String path) => Directory(path).existsSync();
 }
