@@ -8,6 +8,7 @@ import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../network/logic/grid_sync_controller.dart';
 import 'backend_detector.dart';
 import 'free_port.dart';
+import 'node_name.dart';
 
 /// Inference backends found on the machine (Ollama, LM Studio, llama.cpp).
 final backendsProvider =
@@ -23,6 +24,13 @@ final freePortFinderProvider = Provider<FreePortFinder>((_) => findFreePort);
 /// reflects it; overridable in tests to run without the real delay.
 final syncDelayAfterJoinProvider =
     Provider<Duration>((_) => const Duration(seconds: 5));
+
+/// The name this machine joins a grid under (the node name on the grid page and
+/// the stable engine id for stop/reconcile) — the machine's own name via
+/// [deriveNodeName], so two machines don't both show as "grid-app". Overridable
+/// in tests for a deterministic id. See [deriveNodeName].
+final nodeNameProvider =
+    Provider<String>((_) => deriveNodeName(Platform.localHostname));
 
 final providerRunControllerProvider =
     NotifierProvider<ProviderRunController, ProviderRunState>(
@@ -115,8 +123,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   static const _maxLogLines = 400;
 
   /// Stable engine id passed via `--name`, so [stop] can target it with
-  /// `grid leave --engine`. Namespaced per grid by the CLI's run records.
-  static const _engineName = 'grid-app';
+  /// `grid leave --engine`. Namespaced per grid by the CLI's run records. The
+  /// machine's own name (via [nodeNameProvider]) rather than a fixed literal, so
+  /// each host appears as itself on the grid page instead of a shared
+  /// "grid-app". Read once — it's stable for the app's lifetime.
+  late final String _engineName = ref.read(nodeNameProvider);
 
   /// Context window for an external (`--at`) engine, passed via `--ctx-size`.
   /// There's no local GGUF to inspect for the real maximum, so we send a fixed
