@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
@@ -47,6 +49,23 @@ ManagedNetworkCreateFn _recordCreate(
   }) async {
     names.add(name);
     return result;
+  };
+}
+
+/// Records the create name and returns [future], so a test can hold the create
+/// open (state stays [CreateNetworkSubmitting]) and probe re-entrancy.
+ManagedNetworkCreateFn _hangingCreate(
+  List<String> names,
+  Future<(ManagedNetwork?, ManagedNetworkError?)> future,
+) {
+  return ({
+    required String apiUrl,
+    required String sessionToken,
+    required String name,
+    required ManagedNetworkType type,
+  }) {
+    names.add(name);
+    return future;
   };
 }
 
@@ -190,9 +209,33 @@ void main() {
         .read(createNetworkControllerProvider.notifier)
         .createFirstGridIfNeeded();
 
-    expect(names, ['Huy Grid']);
+    expect(names, ['Huy AI Grid']);
     expect(container.read(createNetworkControllerProvider),
         isA<CreateNetworkDone>());
+  });
+
+  test('createFirstGridIfNeeded skips a second call while a create is in flight',
+      () async {
+    final names = <String>[];
+    final gate = Completer<(ManagedNetwork?, ManagedNetworkError?)>();
+    final container = _container(
+      create: _hangingCreate(names, gate.future),
+      cli: FakeGridCliService(),
+      email: 'huy@gmail.com',
+    );
+    final notifier = container.read(createNetworkControllerProvider.notifier);
+
+    // First call kicks off a create that hasn't resolved — state is Submitting.
+    final first = notifier.createFirstGridIfNeeded();
+    expect(container.read(createNetworkControllerProvider),
+        isA<CreateNetworkSubmitting>());
+
+    // A second call while it's in flight must not fire another create.
+    await notifier.createFirstGridIfNeeded();
+    expect(names, ['Huy AI Grid']);
+
+    gate.complete((_created, null));
+    await first;
   });
 
   test('createFirstGridIfNeeded is a no-op when a grid already exists',

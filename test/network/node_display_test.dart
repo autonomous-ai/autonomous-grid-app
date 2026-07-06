@@ -7,6 +7,8 @@ OverviewNode _node({
   String? model,
   List<String> models = const [],
   int? concurrency,
+  double? vramGb,
+  double? vramTotalMb,
 }) =>
     OverviewNode.fromJson({
       'name': 'n',
@@ -14,6 +16,8 @@ OverviewNode _node({
       if (model != null) 'model': model,
       'models': models,
       if (concurrency != null) 'max_concurrency': concurrency,
+      if (vramGb != null) 'vram_gb': vramGb,
+      if (vramTotalMb != null) 'vram_total_mb': vramTotalMb,
       'online': true,
     });
 
@@ -21,7 +25,7 @@ void main() {
   group('nodeEngineLabel', () {
     test('tidies known engines, passes others through', () {
       expect(nodeEngineLabel('comfyui'), 'ComfyUI');
-      expect(nodeEngineLabel('external'), 'External');
+      expect(nodeEngineLabel('external'), ''); // dropped from the spec line
       expect(nodeEngineLabel(''), 'Engine');
       expect(nodeEngineLabel(null), 'Engine');
       expect(nodeEngineLabel('MLX'), 'MLX');
@@ -74,5 +78,21 @@ void main() {
     expect(isVideoCapability('comfyui:i2v'), isTrue);
     expect(isVideoCapability('comfyui:image_generation'), isFalse);
     expect(isVideoCapability('qwen3-coder'), isFalse);
+  });
+
+  group('nodeVramLabel', () {
+    test('formats vram_gb, dropping a trailing .0', () {
+      expect(nodeVramLabel(_node(vramGb: 48.0)), '48 GB VRAM');
+      expect(nodeVramLabel(_node(vramGb: 47.5)), '47.5 GB VRAM');
+    });
+
+    test('falls back to vram_total_mb when vram_gb is absent', () {
+      expect(nodeVramLabel(_node(vramTotalMb: 4096.0)), '4 GB VRAM');
+    });
+
+    test('null when the node reports no usable VRAM', () {
+      expect(nodeVramLabel(_node()), isNull);
+      expect(nodeVramLabel(_node(vramGb: 0.0)), isNull);
+    });
   });
 }

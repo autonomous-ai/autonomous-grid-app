@@ -107,6 +107,8 @@ class OverviewNode {
     this.device,
     this.chip,
     this.memoryGb,
+    this.vramGb,
+    this.vramTotalMb,
     this.deviceClass,
     this.model,
     this.models = const [],
@@ -120,6 +122,13 @@ class OverviewNode {
   final String? device;
   final String? chip;
   final int? memoryGb;
+
+  /// GPU memory the node brings, in GB. The relay's `vram_gb`; `vram_total_mb`
+  /// is the raw fallback. Null on CPU-only nodes or providers that don't report
+  /// it. Surfaced per node via `nodeVramLabel`.
+  final double? vramGb;
+  final double? vramTotalMb;
+
   final String? deviceClass;
 
   /// The node's primary served model/capability.
@@ -140,6 +149,8 @@ class OverviewNode {
         device: j['device'] as String?,
         chip: j['chip'] as String?,
         memoryGb: (j['memory_gb'] as num?)?.toInt(),
+        vramGb: (j['vram_gb'] as num?)?.toDouble(),
+        vramTotalMb: (j['vram_total_mb'] as num?)?.toDouble(),
         deviceClass: j['device_class'] as String?,
         model: j['model'] as String?,
         models: j['models'] is List

@@ -332,13 +332,15 @@ class _NodeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final media = nodeIsMedia(node);
+    final vram = nodeVramLabel(node);
     final specs = <String>[
       nodeEngineLabel(node.engine),
       if ((node.deviceClass ?? '').isNotEmpty) node.deviceClass!.toUpperCase(),
+      if (vram != null) vram,
       nodeRoleSummary(node),
       if ((node.maxConcurrency ?? 0) > 1) '${node.maxConcurrency} parallel',
       if (node.throughputTokS != null) '~${node.throughputTokS!.round()} tok/s',
-    ];
+    ].where((s) => s.isNotEmpty).toList();
     return _Card(
       child: Row(
         children: [

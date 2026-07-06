@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/host_arch.dart';
 import '../../features/auth/logic/session_controller.dart';
+import '../../features/network/logic/create_network_controller.dart';
 import '../../features/debug/presentation/debug_view.dart';
 import '../../features/network/presentation/how_to_use_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
@@ -23,13 +24,33 @@ import 'widgets/side_nav.dart';
 /// The main app frame, Tailscale-style: a full-width title bar on top, a left
 /// nav sidebar, and the active section to its right. Also kicks off the
 /// hands-off node setup in the background and surfaces it via [NodeSetupBanner].
-class HomeShell extends ConsumerWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends ConsumerState<HomeShell> {
+  @override
+  void initState() {
+    super.initState();
+    // The signed-in shell is the one spot guaranteed to appear both after a
+    // fresh sign-in and when simply re-opening the app — so a grid-less account
+    // gets its starter grid provisioned here. Post-frame so we never mutate
+    // state during the first build; the controller no-ops once a grid exists.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(createNetworkControllerProvider.notifier)
+          .createFirstGridIfNeeded();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final section = ref.watch(navSectionProvider);
-    _autoStartNodeSetup(ref);
+    _autoStartNodeSetup();
 
     // A lit backdrop behind everything, then floating glass panels over it
     // (macOS Tahoe-style): a translucent sidebar and a near-opaque content
@@ -75,7 +96,7 @@ class HomeShell extends ConsumerWidget {
   /// prompt. Only on Apple Silicon Macs: the built-in engine (llama.cpp + Metal)
   /// is supported there, so Intel Macs, Linux and Windows run as consumers and
   /// never auto-provision an engine.
-  void _autoStartNodeSetup(WidgetRef ref) {
+  void _autoStartNodeSetup() {
     if (!isAppleSiliconMac) return;
     ref.listen(nodeCapabilitiesProvider, (_, next) {
       final caps = next.asData?.value;

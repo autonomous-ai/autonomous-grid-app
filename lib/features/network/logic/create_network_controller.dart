@@ -108,12 +108,15 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
     state = CreateNetworkDone(network, joinWarning: joinWarning);
   }
 
-  /// Provision the user's very first grid right after sign-in, named after them
-  /// ("Đức Grid" from the profile name, else "Huy Grid" from huy@gmail.com).
-  /// No-op once they already have a grid, so it only ever fires for a brand-new
-  /// account. Delegates to [submit] for the actual create + local join + session
-  /// refresh.
+  /// Provision the user's very first grid, named after them ("Đức AI Grid" from
+  /// the profile name, else "Huy AI Grid" from huy@gmail.com). Fired when the
+  /// signed-in shell appears (see `HomeShell`), so it covers both a fresh login
+  /// and simply re-opening the app on a grid-less account. No-ops once a grid
+  /// exists, and while a create is already in flight, so it's safe to call more
+  /// than once and never races a manual create. Delegates to [submit] for the
+  /// actual create + local join + session refresh.
   Future<void> createFirstGridIfNeeded() async {
+    if (state is CreateNetworkSubmitting) return;
     final session = ref.read(sessionProvider);
     if (session.networks.isNotEmpty) return;
     await submit(
