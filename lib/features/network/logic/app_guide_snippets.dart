@@ -133,14 +133,21 @@ String mediaSkillPrompt(
     ..writeln('  - lines look like `data: <json>`')
     ..writeln('  - {"type":"progress","progress":<0-100>,"status":"..."} — show progress')
     ..writeln('  - {"type":"result","output_files":[{"filename":"...",'
-        '"content_base64":"..."}]} — base64-decode each file and save it under '
-        'its filename')
+        '"content_base64":"..."}]} — base64-decode each file to get the media')
     ..writeln('  - {"error":"..."} — it failed; show me the message')
     ..writeln('  - `data: [DONE]` — the stream is finished')
     ..writeln()
-    ..write('Generation can take a few minutes, so use a read timeout of at '
-        'least 5 minutes. Save results to ~/Downloads. Before you tell me it '
-        'works, run the skill once end-to-end and confirm a file was written.');
+    ..writeln("Make the HTTPS call with `curl` (via a subprocess), not Python's "
+        'urllib — urllib fails on macOS with CERTIFICATE_VERIFY_FAILED. '
+        'Generation can take a few minutes, so allow a timeout of at least 5 '
+        'minutes.')
+    ..writeln('Save results to ~/Downloads with a unique, timestamped filename '
+        'so repeat runs never overwrite each other.')
+    ..writeln('After saving, show me the result inline — open or display the '
+        "file, don't just print its path. If your vision tool can't read the "
+        'file, open it in a browser/viewer instead.')
+    ..write('Before you tell me it works, run the skill once end-to-end and '
+        'confirm a non-empty file was written.');
   return out.toString();
 }
 

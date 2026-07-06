@@ -55,6 +55,12 @@ void main() {
       expect(out, contains('images'));
       // No model name — the relay routes media by capability.
       expect(out, contains("Don't send a model name"));
+      // Lessons folded in from the real working Hermes skill (docs/hermes-skill.md):
+      // curl over urllib, timestamped filenames, show the result inline.
+      expect(out, contains('CERTIFICATE_VERIFY_FAILED'));
+      expect(out, contains('curl'));
+      expect(out, contains('timestamped'));
+      expect(out, contains('show me the result'));
       expect(out, isNot(contains('media/video/i2v')));
     });
 
