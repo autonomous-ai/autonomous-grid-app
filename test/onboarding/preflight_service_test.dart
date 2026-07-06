@@ -16,6 +16,22 @@ void main() {
     expect(report.canProceed, isTrue);
   });
 
+  test('grid available on exit 0 even when --version prints nothing', () async {
+    // Regression: a clean exit already proves `grid` runs. Requiring non-empty
+    // stdout falsely blocked the app with "did not run (exit 0)" — a version
+    // string is display-only and some builds exit 0 without printing one.
+    final fake = FakeGridCliService()
+      ..stubResult(['--version'],
+          const CliResult(exitCode: 0, stdout: '', stderr: ''));
+
+    final report = await PreflightService(fake).check();
+
+    expect(report.gridAvailable, isTrue);
+    expect(report.canProceed, isTrue);
+    expect(report.gridVersion, isNull);
+    expect(report.gridError, isNull);
+  });
+
   test('grid absent when the service is null', () async {
     final report = await PreflightService(null).check();
 

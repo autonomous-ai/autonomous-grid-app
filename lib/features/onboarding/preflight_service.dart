@@ -10,25 +10,38 @@ class PreflightService {
   final GridCliService? _service;
 
   Future<PreflightReport> check() async {
-    String? version;
-    String? gridError;
-    if (_service != null) {
-      final result = await _service.run(['--version']);
-      if (result.ok && result.stdout.trim().isNotEmpty) {
-        version = result.stdout.trim();
-      } else {
-        // `grid` is present but didn't run — capture *why*, clearly, so the
-        // onboarding screen can explain it instead of "couldn't find grid".
-        gridError = diagnoseCliFailure(
-          '${result.stdout}\n${result.stderr}'.split('\n'),
-          headline: 'The grid CLI did not run (exit ${result.exitCode}).',
-        );
-      }
+    // No resolved binary at all — `grid` is simply not installed.
+    if (_service == null) {
+      return const PreflightReport(gridAvailable: false, gridVersion: null);
     }
+
+    final result = await _service.run(['--version']);
+
+    // A clean exit means `grid` was found, launched, and ran to completion —
+    // which is all preflight gates on. The printed version is best-effort
+    // *display* only: some builds (e.g. a source checkout with no package
+    // metadata) exit 0 without printing one, and that must never read as
+    // "broken" — gating on non-empty stdout used to false-alarm with the
+    // self-contradictory "did not run (exit 0)" after a CLI upgrade.
+    if (result.ok) {
+      final version = result.stdout.trim();
+      return PreflightReport(
+        gridAvailable: true,
+        gridVersion: version.isNotEmpty ? version : null,
+      );
+    }
+
+    // Non-zero exit: `grid` is present but couldn't run (e.g. a missing Python
+    // dependency). Capture *why*, clearly, so onboarding can explain it instead
+    // of a generic "couldn't find grid".
+    final gridError = diagnoseCliFailure(
+      '${result.stdout}\n${result.stderr}'.split('\n'),
+      headline: "The grid CLI couldn't start (exit ${result.exitCode}).",
+    );
     return PreflightReport(
-      gridAvailable: version != null,
-      gridVersion: version,
-      gridError: version == null ? gridError : null,
+      gridAvailable: false,
+      gridVersion: null,
+      gridError: gridError,
     );
   }
 }
