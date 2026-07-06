@@ -5,7 +5,7 @@ import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_detector.dart';
 import 'detail_widgets.dart';
 
-/// Read-only setup for one known client: the grid's Base URL + Token as copyable
+/// Read-only setup for one known client: the grid's Base URL + API Key as copyable
 /// fields, the exact config block to paste, short steps, and a Download prompt
 /// when the app is missing. Grid never writes the user's config — they paste it
 /// themselves, so nothing on disk is touched and the copy stays honest.
@@ -63,9 +63,9 @@ class ClientAppPanel extends StatelessWidget {
   }
 
   String _snippet() => switch (info.app) {
-        ClientApp.openClaw => openClawSnippet(baseUrl, apiKey, model),
-        ClientApp.hermes => hermesConfigSnippet(baseUrl, apiKey, model),
-      };
+    ClientApp.openClaw => openClawSnippet(baseUrl, apiKey, model),
+    ClientApp.hermes => hermesConfigSnippet(baseUrl, apiKey, model),
+  };
 }
 
 /// Fallback for any app we don't detect: the same two copyable values plus a
@@ -89,15 +89,20 @@ class OtherAppPanel extends StatelessWidget {
       children: [
         ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
         const SizedBox(height: 16),
-        const GuideLabel('Example (Python)',
-            caption: 'works with any OpenAI SDK'),
+        const GuideLabel(
+          'Example (Python)',
+          caption: 'works with any OpenAI SDK',
+        ),
         CodeBlock(code: pythonSnippet(baseUrl, apiKey, model)),
         const SizedBox(height: 12),
         Text(
           'Use a model your grid serves (e.g. $model). Every model on every '
           'machine answers at this one endpoint.',
           style: const TextStyle(
-              color: AppPalette.textFaint, fontSize: 12, height: 1.45),
+            color: AppPalette.textFaint,
+            fontSize: 12,
+            height: 1.45,
+          ),
         ),
       ],
     );
@@ -105,11 +110,14 @@ class OtherAppPanel extends StatelessWidget {
 }
 
 /// The grid's OpenAI-compatible pair as two copyable fields — the two values any
-/// client needs. The Token is clamped to one line since it's an opaque string
+/// client needs. The API Key is clamped to one line since it's an opaque string
 /// the user copies, not reads.
 class ConnectionFields extends StatelessWidget {
-  const ConnectionFields(
-      {super.key, required this.baseUrl, required this.apiKey});
+  const ConnectionFields({
+    super.key,
+    required this.baseUrl,
+    required this.apiKey,
+  });
 
   final String baseUrl;
   final String apiKey;
@@ -120,7 +128,7 @@ class ConnectionFields extends StatelessWidget {
       title: 'Connection',
       children: [
         AddressRow(label: 'Base URL', value: baseUrl),
-        AddressRow(label: 'Token', value: apiKey, maxLines: 1),
+        AddressRow(label: 'API Key', value: apiKey, maxLines: 1),
       ],
     );
   }
@@ -150,7 +158,10 @@ class _MissingAppNote extends StatelessWidget {
             "You don't have $name yet. Install it first, then paste the "
             'connection below.',
             style: const TextStyle(
-                color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+              color: AppPalette.textSecondary,
+              fontSize: 12.5,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
@@ -185,7 +196,10 @@ class _SetupSteps extends StatelessWidget {
             child: Text(
               '${i + 1}.  ${steps[i]}',
               style: const TextStyle(
-                  color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+                color: AppPalette.textSecondary,
+                fontSize: 12.5,
+                height: 1.4,
+              ),
             ),
           ),
       ],
@@ -213,13 +227,17 @@ class _DocsLink extends StatelessWidget {
             Text(
               '$appName docs',
               style: const TextStyle(
-                  color: AppPalette.accent,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600),
+                color: AppPalette.accent,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(width: 3),
-            const Icon(Icons.open_in_new_rounded,
-                size: 13, color: AppPalette.accent),
+            const Icon(
+              Icons.open_in_new_rounded,
+              size: 13,
+              color: AppPalette.accent,
+            ),
           ],
         ),
       ),
