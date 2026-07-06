@@ -44,4 +44,58 @@ void main() {
     expect(out, contains('api_key="$_key"'));
     expect(out, contains('model="$_model"'));
   });
+
+  group('media skill prompt', () {
+    test('image grid carries the generate endpoint + connection, no i2v', () {
+      final out = mediaSkillPrompt(_base, _key, image: true, video: false);
+      expect(out, contains('Base URL: $_base'));
+      expect(out, contains('API key: $_key'));
+      expect(out, contains('POST $_base/media/image/generate'));
+      expect(out, contains('"capability":"comfyui:image_generation"'));
+      expect(out, contains('images'));
+      // No model name — the relay routes media by capability.
+      expect(out, contains("Don't send a model name"));
+      expect(out, isNot(contains('media/video/i2v')));
+    });
+
+    test('video grid carries i2v + the "you need not see the image" rule', () {
+      final out = mediaSkillPrompt(_base, _key, image: false, video: true);
+      expect(out, contains('POST $_base/media/video/i2v'));
+      expect(out, contains('"capability":"comfyui:i2v"'));
+      expect(out, contains('videos'));
+      // The agent must not try to visually read the source image — that's what
+      // broke the first skill. It only base64-encodes the bytes.
+      expect(out, contains('NOT need to open, view, or understand the image'));
+      expect(out, contains("Never stop with \"I can't see the image\""));
+      expect(out, isNot(contains('media/image/generate')));
+      // No chaining note when the grid can't generate a starting image.
+      expect(out, isNot(contains('first call the image/generate')));
+    });
+
+    test('image + video grid includes both calls and the chain-to-video note', () {
+      final out = mediaSkillPrompt(_base, _key, image: true, video: true);
+      expect(out, contains('media/image/generate'));
+      expect(out, contains('media/video/i2v'));
+      expect(out, contains('images and videos'));
+      expect(out, contains('first call the image/generate endpoint above'));
+    });
+  });
+
+  group('media API curl', () {
+    test('image grid emits a generate curl only', () {
+      final out = mediaApiCurl(_base, _key, image: true, video: false);
+      expect(out, contains('curl -N $_base/media/image/generate'));
+      expect(out, contains('Authorization: Bearer $_key'));
+      expect(out, contains('Accept: text/event-stream'));
+      expect(out, contains('"capability":"comfyui:image_generation"'));
+      expect(out, isNot(contains('media/video/i2v')));
+    });
+
+    test('video grid emits an i2v curl only', () {
+      final out = mediaApiCurl(_base, _key, image: false, video: true);
+      expect(out, contains('curl -N $_base/media/video/i2v'));
+      expect(out, contains('"capability":"comfyui:i2v"'));
+      expect(out, isNot(contains('media/image/generate')));
+    });
+  });
 }

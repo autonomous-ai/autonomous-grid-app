@@ -3,12 +3,18 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_detector.dart';
+import '../logic/grid_overview_provider.dart';
 import 'detail_widgets.dart';
 
 /// Read-only setup for one known client: the grid's Base URL + API Key as copyable
 /// fields, the exact config block to paste, short steps, and a Download prompt
 /// when the app is missing. Grid never writes the user's config — they paste it
 /// themselves, so nothing on disk is touched and the copy stays honest.
+///
+/// A media grid (image/video) can't be wired as a chat "custom endpoint", so its
+/// chat setup is dropped in favour of a "build a skill" prompt the agent runs —
+/// see [media] / [hasChat]. A grid that serves both keeps the chat setup and
+/// appends the media prompt.
 class ClientAppPanel extends StatelessWidget {
   const ClientAppPanel({
     super.key,
@@ -17,6 +23,8 @@ class ClientAppPanel extends StatelessWidget {
     required this.baseUrl,
     required this.apiKey,
     required this.model,
+    required this.media,
+    required this.hasChat,
     required this.onOpenSite,
   });
 
@@ -29,17 +37,22 @@ class ClientAppPanel extends StatelessWidget {
   /// the snippet so it names a model the grid can answer.
   final String model;
 
+  /// What the grid can generate — drives the "build a skill" media prompt.
+  final GridMediaCapabilities media;
+
+  /// Whether the grid serves a real chat model. False + [media] present means a
+  /// media-only grid, where the chat "custom endpoint" setup doesn't apply.
+  final bool hasChat;
+
   /// Opens the app's official site — the Download target when missing, and the
   /// "docs" affordance otherwise.
   final VoidCallback onOpenSite;
 
   @override
   Widget build(BuildContext context) {
-    final guide = appSetupGuide(info);
-    // Hermes has a one-click in-app flow, so its GUI steps lead and the config
-    // file drops to a "prefer editing files?" alternative. A file-based client
-    // leads with the block it pastes (its steps reference "the block below").
-    final fileFirst = info.app != ClientApp.hermes;
+    // Show chat setup for a chat grid, or while the overview still loads (media
+    // resolves to none first) — so a chat grid never flashes without its steps.
+    final showChat = hasChat || !media.any;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -49,17 +62,39 @@ class ClientAppPanel extends StatelessWidget {
         ],
         ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
         const SizedBox(height: 16),
-        _SetupSteps(title: guide.title, steps: guide.steps),
-        const SizedBox(height: 16),
-        if (fileFirst)
-          GuideLabel(info.name, caption: 'Paste into ${info.configPath}')
-        else
-          GuideLabel('Prefer editing files?', caption: info.configPath),
-        CodeBlock(code: _snippet()),
-        const SizedBox(height: 10),
+        if (showChat) ...[
+          ..._chatSetup(),
+          const SizedBox(height: 16),
+        ],
+        if (media.any) ...[
+          _MediaSkillPrompt(
+            appName: info.name,
+            prompt: mediaSkillPrompt(baseUrl, apiKey,
+                image: media.image, video: media.video),
+          ),
+          const SizedBox(height: 10),
+        ],
         _DocsLink(appName: info.name, onOpen: onOpenSite),
       ],
     );
+  }
+
+  /// The chat-provider walkthrough: the app's setup steps and the exact config
+  /// block to paste. Hermes has a one-click in-app flow, so its GUI steps lead
+  /// and the config file drops to a "prefer editing files?" alternative; a
+  /// file-based client leads with the block its steps reference.
+  List<Widget> _chatSetup() {
+    final guide = appSetupGuide(info);
+    final fileFirst = info.app != ClientApp.hermes;
+    return [
+      _SetupSteps(title: guide.title, steps: guide.steps),
+      const SizedBox(height: 16),
+      if (fileFirst)
+        GuideLabel(info.name, caption: 'Paste into ${info.configPath}')
+      else
+        GuideLabel('Prefer editing files?', caption: info.configPath),
+      CodeBlock(code: _snippet()),
+    ];
   }
 
   String _snippet() => switch (info.app) {
@@ -69,41 +104,102 @@ class ClientAppPanel extends StatelessWidget {
 }
 
 /// Fallback for any app we don't detect: the same two copyable values plus a
-/// tiny SDK example — enough to wire up anything by hand.
+/// tiny SDK example — enough to wire up anything by hand. For a media grid the
+/// chat example gives way to a `curl` call against the image/video API.
 class OtherAppPanel extends StatelessWidget {
   const OtherAppPanel({
     super.key,
     required this.baseUrl,
     required this.apiKey,
     required this.model,
+    required this.media,
+    required this.hasChat,
   });
 
   final String baseUrl;
   final String apiKey;
   final String model;
+  final GridMediaCapabilities media;
+  final bool hasChat;
+
+  @override
+  Widget build(BuildContext context) {
+    final showChat = hasChat || !media.any;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
+        const SizedBox(height: 16),
+        if (showChat) ...[
+          const GuideLabel(
+            'Example (Python)',
+            caption: 'works with any OpenAI SDK',
+          ),
+          CodeBlock(code: pythonSnippet(baseUrl, apiKey, model)),
+          const SizedBox(height: 12),
+          Text(
+            'Use a model your grid serves (e.g. $model). Every model on every '
+            'machine answers at this one endpoint.',
+            style: const TextStyle(
+              color: AppPalette.textFaint,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+          if (media.any) const SizedBox(height: 16),
+        ],
+        if (media.any)
+          _MediaApiCall(
+            curl: mediaApiCurl(baseUrl, apiKey,
+                image: media.image, video: media.video),
+          ),
+      ],
+    );
+  }
+}
+
+/// The media "build a skill" block for an agent client: paste this prompt and
+/// the agent writes a reusable skill that calls the grid's image/video API. What
+/// a media grid needs instead of a chat config, since it isn't a chat provider.
+class _MediaSkillPrompt extends StatelessWidget {
+  const _MediaSkillPrompt({required this.appName, required this.prompt});
+
+  final String appName;
+  final String prompt;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
-        const SizedBox(height: 16),
+        GuideLabel(
+          'Have $appName build a skill',
+          caption: "This grid makes images or video, not chat — so paste this "
+              "into $appName and it'll create a reusable skill for it.",
+        ),
+        CodeBlock(code: prompt),
+      ],
+    );
+  }
+}
+
+/// The media block for "Other app": a copy-run `curl` against the grid's
+/// image/video API, for any tool that can make an HTTP request.
+class _MediaApiCall extends StatelessWidget {
+  const _MediaApiCall({required this.curl});
+
+  final String curl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         const GuideLabel(
-          'Example (Python)',
-          caption: 'works with any OpenAI SDK',
+          'Generate media',
+          caption: 'Call the grid from any HTTP client (it streams SSE).',
         ),
-        CodeBlock(code: pythonSnippet(baseUrl, apiKey, model)),
-        const SizedBox(height: 12),
-        Text(
-          'Use a model your grid serves (e.g. $model). Every model on every '
-          'machine answers at this one endpoint.',
-          style: const TextStyle(
-            color: AppPalette.textFaint,
-            fontSize: 12,
-            height: 1.45,
-          ),
-        ),
+        CodeBlock(code: curl),
       ],
     );
   }

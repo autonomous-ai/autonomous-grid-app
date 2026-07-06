@@ -40,10 +40,8 @@ class GridCapabilitiesSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Chat only when a real text model is served — a comfyui media capability
     // can surface in the model list, so counting it as "Chat" would mislabel a
-    // media-only grid. See [mediaCapabilityLabel].
-    final hasChat = ref
-        .watch(gridModelsProvider)
-        .any((m) => mediaCapabilityLabel(m.id) == null);
+    // media-only grid. See [gridHasChatProvider].
+    final hasChat = ref.watch(gridHasChatProvider);
     final media = ref.watch(gridMediaCapabilitiesProvider);
     final chips = <Widget>[
       if (hasChat)

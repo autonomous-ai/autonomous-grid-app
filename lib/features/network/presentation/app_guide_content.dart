@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../logic/network_models_provider.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_detector.dart';
+import '../logic/grid_overview_provider.dart';
 import 'app_guide_panels.dart';
 
 /// The shared body of the "connect an app to this grid" guide: the app picker
@@ -51,6 +52,13 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
     final models = ref.watch(networkModelsProvider).asData?.value ?? const [];
     final model = models.isNotEmpty ? models.first : kGuideDefaultModel;
 
+    // Media grids (image/video) can't be wired as a chat provider — the panels
+    // swap the chat setup for a "build a skill" prompt / media API call. `hasChat`
+    // stays the default while the overview loads (media resolves to none), so a
+    // chat grid never flashes empty first.
+    final media = ref.watch(gridMediaCapabilitiesProvider);
+    final hasChat = ref.watch(gridHasChatProvider);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -70,7 +78,12 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         const SizedBox(height: 18),
         if (selected == null)
           OtherAppPanel(
-              baseUrl: widget.baseUrl, apiKey: widget.apiKey, model: model)
+            baseUrl: widget.baseUrl,
+            apiKey: widget.apiKey,
+            model: model,
+            media: media,
+            hasChat: hasChat,
+          )
         else
           ClientAppPanel(
             info: kClientApps[selected]!,
@@ -78,6 +91,8 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
             baseUrl: widget.baseUrl,
             apiKey: widget.apiKey,
             model: model,
+            media: media,
+            hasChat: hasChat,
             onOpenSite: () => _openSite(kClientApps[selected]!.downloadUrl),
           ),
       ],

@@ -8,6 +8,7 @@ import '../../../infrastructure/api/models/media_event.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
 import 'network_models_provider.dart';
+import 'node_display.dart';
 
 /// Live overview of the selected grid, via `GET {relayBaseUrl}/grid/overview`
 /// authorized with that grid's `access_token`. Auto-disposes and refetches
@@ -51,6 +52,17 @@ final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
   if (rich.isNotEmpty) return rich;
   final ids = ref.watch(networkModelsProvider).asData?.value ?? const [];
   return [for (final id in ids) OverviewModel(id: id)];
+});
+
+/// Whether the grid serves at least one real chat/text model. A media capability
+/// (`comfyui:*`) can leak into the model list, so those don't count as "chat".
+/// Shared by the overview capability chips and the "How to use" guide so both
+/// decide "is this a chat grid?" the same way (and the guide can hide chat setup
+/// on a media-only grid). See [mediaCapabilityLabel].
+final gridHasChatProvider = Provider.autoDispose<bool>((ref) {
+  return ref
+      .watch(gridModelsProvider)
+      .any((m) => mediaCapabilityLabel(m.id) == null);
 });
 
 /// What a grid can generate, read off its providers. Media (image/video) is a
