@@ -32,6 +32,34 @@ void main() {
     expect(report.gridError, isNull);
   });
 
+  test('macOS SIGKILL (exit -9) reads as a blocked helper, not "exit -9"',
+      () async {
+    // A signed/notarized or quarantined sidecar gets SIGKILL'd on launch; the
+    // raw "-9" is meaningless to users, so surface the security cause + a fix.
+    final fake = FakeGridCliService()
+      ..stubResult(['--version'],
+          const CliResult(exitCode: -9, stdout: '', stderr: ''));
+
+    final report = await PreflightService(fake).check();
+
+    expect(report.gridAvailable, isFalse);
+    expect(report.gridError, isNotNull);
+    expect(report.gridError, contains('blocked'));
+    expect(report.gridError, isNot(contains('-9')));
+  });
+
+  test('other signal kills read as a crash', () async {
+    final fake = FakeGridCliService()
+      ..stubResult(['--version'],
+          const CliResult(exitCode: -11, stdout: '', stderr: ''));
+
+    final report = await PreflightService(fake).check();
+
+    expect(report.gridAvailable, isFalse);
+    expect(report.gridError, contains('crashed'));
+    expect(report.gridError, contains('11'));
+  });
+
   test('grid absent when the service is null', () async {
     final report = await PreflightService(null).check();
 

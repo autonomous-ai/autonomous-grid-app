@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
+import 'log_file.dart';
 
 /// Durable, append-only transcript of the background node-setup / auto-install
 /// run, written next to the CLI's own logs at `~/.grid/logs/app_node_setup.log`.
@@ -37,13 +38,10 @@ abstract interface class NodeSetupLog {
 /// mid-install; any IO error is swallowed — logging must never break the setup
 /// flow it only observes.
 class FileNodeSetupLog implements NodeSetupLog {
-  FileNodeSetupLog(this._file);
+  FileNodeSetupLog(File file) : _file = LogFile(file);
 
-  final File _file;
+  final LogFile _file;
 
-  /// Keep the log bounded: rotate to a single `.old` sibling once it grows past
-  /// this. Each run is a few KB, so this holds many runs before rotating.
-  static const _maxBytes = 512 * 1024;
   static const _rule = '================================================';
 
   DateTime? _runStart;
@@ -54,16 +52,16 @@ class FileNodeSetupLog implements NodeSetupLog {
 
   @override
   void startRun(List<String> stepTitles) {
-    _rotateIfLarge();
+    _file.rotateIfLarge();
     final start = DateTime.now();
     _runStart = start;
     final plan = StringBuffer();
     for (var i = 0; i < stepTitles.length; i++) {
       plan.write('\n   ${i + 1}. ${stepTitles[i]}');
     }
-    _raw('\n$_rule\n'
+    _file.append('\n$_rule\n'
         ' Grid node setup\n'
-        ' Started ${_stamp(start)}\n'
+        ' Started ${logStamp(start)}\n'
         ' Plan:$plan\n'
         '$_rule');
   }
@@ -85,7 +83,7 @@ class FileNodeSetupLog implements NodeSetupLog {
   void endStep(String result) {
     final took = _stepStart == null
         ? ''
-        : ' (${_dur(DateTime.now().difference(_stepStart!))})';
+        : ' (${logDuration(DateTime.now().difference(_stepStart!))})';
     _line('-- Step $_stepNumber/$_stepTotal $result$took: $_stepTitle --');
     _stepStart = null;
   }
@@ -94,46 +92,14 @@ class FileNodeSetupLog implements NodeSetupLog {
   void endRun(String outcome) {
     final total = _runStart == null
         ? ''
-        : ' (total ${_dur(DateTime.now().difference(_runStart!))})';
-    _raw(' Result: $outcome\n Ended ${_stamp(DateTime.now())}$total\n$_rule\n');
+        : ' (total ${logDuration(DateTime.now().difference(_runStart!))})';
+    _file.append(
+        ' Result: $outcome\n Ended ${logStamp(DateTime.now())}$total\n$_rule\n');
     _runStart = null;
   }
 
   /// Emit a clock-stamped transcript line.
-  void _line(String text) => _raw('[${_clock(DateTime.now())}] $text');
-
-  void _raw(String block) {
-    try {
-      _file.parent.createSync(recursive: true);
-      _file.writeAsStringSync('$block\n', mode: FileMode.append, flush: true);
-    } catch (_) {
-      // Best-effort logging; never surface an IO failure into the setup flow.
-    }
-  }
-
-  String _stamp(DateTime t) =>
-      '${t.year}-${_pad2(t.month)}-${_pad2(t.day)} ${_clock(t)}';
-
-  String _clock(DateTime t) =>
-      '${_pad2(t.hour)}:${_pad2(t.minute)}:${_pad2(t.second)}';
-
-  String _dur(Duration d) {
-    final s = d.inSeconds;
-    return s >= 60 ? '${s ~/ 60}m${s % 60}s' : '${s}s';
-  }
-
-  String _pad2(int n) => n.toString().padLeft(2, '0');
-
-  void _rotateIfLarge() {
-    try {
-      if (!_file.existsSync() || _file.lengthSync() < _maxBytes) return;
-      final old = File('${_file.path}.old');
-      if (old.existsSync()) old.deleteSync();
-      _file.renameSync(old.path);
-    } catch (_) {
-      // If rotation fails, keep appending to the existing file.
-    }
-  }
+  void _line(String text) => _file.append('[${logClock(DateTime.now())}] $text');
 }
 
 /// The setup transcript sink. A real file by default; override in dev/test with

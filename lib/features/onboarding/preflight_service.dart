@@ -31,17 +31,35 @@ class PreflightService {
       );
     }
 
-    // Non-zero exit: `grid` is present but couldn't run (e.g. a missing Python
-    // dependency). Capture *why*, clearly, so onboarding can explain it instead
-    // of a generic "couldn't find grid".
-    final gridError = diagnoseCliFailure(
-      '${result.stdout}\n${result.stderr}'.split('\n'),
-      headline: "The grid CLI couldn't start (exit ${result.exitCode}).",
-    );
+    // Non-zero exit: `grid` is present but couldn't run. A *negative* exit code
+    // means the OS terminated it with a signal rather than the CLI failing
+    // cleanly — so there's no stderr to show and the fix is different. On macOS
+    // a SIGKILL (exit -9) is almost always Gatekeeper/AMFI blocking a helper
+    // that isn't signed/notarized or still carries the download quarantine flag;
+    // say so in plain terms instead of a cryptic "exit -9".
+    final gridError = _signalError(result.exitCode) ??
+        diagnoseCliFailure(
+          '${result.stdout}\n${result.stderr}'.split('\n'),
+          headline: "The grid CLI couldn't start (exit ${result.exitCode}).",
+        );
     return PreflightReport(
       gridAvailable: false,
       gridVersion: null,
       gridError: gridError,
     );
+  }
+
+  /// A user-facing message when `grid` was killed by a signal (negative exit),
+  /// or null for an ordinary non-zero exit. macOS SIGKILL means the OS blocked
+  /// the helper (unsigned / quarantined); other signals mean it crashed.
+  String? _signalError(int exitCode) {
+    if (exitCode >= 0) return null;
+    if (exitCode == -9) {
+      return 'macOS blocked the Grid helper from starting — it may be '
+          'unsigned or still quarantined. Reinstall Grid from the official '
+          'installer, then check again.';
+    }
+    return 'The Grid helper crashed before it could start (signal '
+        '${-exitCode}). Reinstall Grid, then check again.';
   }
 }

@@ -57,6 +57,18 @@ class GridPaths {
   /// be debugged after the fact.
   static File get nodeSetupLog => File('${logsDir.path}/app_node_setup.log');
 
+  /// Durable transcript of every `grid` CLI call the app makes (command,
+  /// streamed output, outcome). The in-app Debug tab is a capped in-memory ring
+  /// buffer gone once the app closes; this file survives so a user can send it
+  /// to us to debug a failed command after the fact.
+  static File get cliLog => File('${logsDir.path}/app_cli.log');
+
+  /// The app's own narrative timeline: lifecycle milestones, every CLI/HTTP call
+  /// as a one-liner, and every uncaught error with its stack trace. This is the
+  /// first file to read to understand what the app was doing and where it broke;
+  /// [cliLog] holds the deeper per-command CLI output.
+  static File get appLog => File('${logsDir.path}/app.log');
+
   /// Where `grid llama.cpp install` links the engine (provider_runtime
   /// paths.py: `llama_server_bin()`).
   static File get llamaServerBin => File('${home.path}/bin/llama-server');
