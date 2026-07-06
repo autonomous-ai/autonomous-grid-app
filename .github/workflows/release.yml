@@ -3,8 +3,8 @@ name: release
 # Tag-triggered release for the Grid desktop app (Flutter).
 #
 # Pushing a tag like `v0.1.2` builds the app on each target, bundles the `grid`
-# CLI sidecar (Nuitka onefile, compiled from the grid CLI source by grid-app's own
-# scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
+# CLI sidecar (Nuitka standalone/onedir, compiled from the grid CLI source by grid-app's
+# own scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
 #
@@ -118,11 +118,11 @@ jobs:
       - name: Build grid sidecar (macOS)
         if: runner.os == 'macOS'
         working-directory: grid-app
-        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid,
-        # native arm64 (Nuitka can't cross-compile, and GitHub-hosted macOS runners are
-        # Apple Silicon only — no Intel image since macos-13 was retired). The sidecar is
-        # signed (Developer ID, hardened runtime) + notarized downstream, so it isn't
-        # SIGKILL'd like an ad-hoc build.
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid.dist/
+        # (Nuitka standalone/onedir), native arm64 (Nuitka can't cross-compile, and GitHub-hosted
+        # macOS runners are Apple Silicon only — no Intel image since macos-13 was retired). Onedir,
+        # not onefile: the folder is signed (Developer ID, hardened runtime) + notarized downstream,
+        # so nothing is extracted+SIGKILL'd at runtime under download quarantine.
         run: bash scripts/cli/build_sidecar.sh "$GITHUB_WORKSPACE/autonomous-grid-cli"
 
       - name: Build macOS app + inject sidecar
@@ -138,8 +138,10 @@ jobs:
             --dart-define=GRID_APPCAST_URL="https://github.com/${{ env.DOWNLOADS_REPO }}/releases/latest/download/appcast.xml"
           APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n1)"
           [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
-          cp ../autonomous-grid-cli/dist/grid "$APP/Contents/Resources/grid"
-          chmod +x "$APP/Contents/Resources/grid"
+          # onedir sidecar: inject the whole standalone folder (entry at Resources/grid/grid)
+          rm -rf "$APP/Contents/Resources/grid"
+          cp -R ../autonomous-grid-cli/dist/grid.dist "$APP/Contents/Resources/grid"
+          chmod +x "$APP/Contents/Resources/grid/grid"
 
       - name: Set up signing + notarization
         if: runner.os == 'macOS'

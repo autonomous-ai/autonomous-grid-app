@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Bundle the standalone `grid` CLI into the macOS app as a sidecar.
 #
-# Builds the Nuitka onefile binary via scripts/cli/build_sidecar.sh, then drops it
-# into `Grid.app/Contents/Resources/grid` where GridResolver looks for it first.
+# Builds the Nuitka standalone/onedir folder via scripts/cli/build_sidecar.sh, then
+# drops it into `Grid.app/Contents/Resources/grid/` (entry exe Resources/grid/grid)
+# where GridResolver looks for it first. Onedir (not onefile) so nothing is extracted
+# at runtime — an onefile payload is SIGKILL'd by macOS under download quarantine.
 #
 # Nuitka cannot cross-compile: run this on the target arch (Apple Silicon).
 # For real distribution, replace the ad-hoc signing below with a Developer ID
@@ -24,10 +26,10 @@ if [ -z "$CLI_REPO" ] || [ ! -d "$CLI_REPO" ]; then
   echo "ERROR: CLI source not found (pass it as arg 1)" >&2
   exit 1
 fi
-GRID_BIN="$CLI_REPO/dist/grid"
+GRID_DIST="$CLI_REPO/dist/grid.dist"
 
-if [ ! -x "$GRID_BIN" ] || [ "${REBUILD:-0}" = "1" ]; then
-  echo ">>> Building standalone grid binary (Nuitka)…"
+if [ ! -x "$GRID_DIST/grid" ] || [ "${REBUILD:-0}" = "1" ]; then
+  echo ">>> Building standalone grid folder (Nuitka onedir)…"
   "$APP_ROOT/scripts/cli/build_sidecar.sh" "$CLI_REPO"
 fi
 
@@ -41,14 +43,15 @@ if [ -z "$APP_BUNDLE" ]; then
 fi
 
 RES_DIR="$APP_BUNDLE/Contents/Resources"
-echo ">>> Copying grid → $RES_DIR/grid"
-cp "$GRID_BIN" "$RES_DIR/grid"
-chmod +x "$RES_DIR/grid"
+echo ">>> Copying grid.dist/ → $RES_DIR/grid/"
+rm -rf "$RES_DIR/grid"
+cp -R "$GRID_DIST" "$RES_DIR/grid"
+chmod +x "$RES_DIR/grid/grid"
 
 echo ">>> Ad-hoc signing (replace with Developer ID + notarization for release)…"
-codesign --force --sign - "$RES_DIR/grid"
+codesign --force --sign - "$RES_DIR/grid/grid"
 codesign --force --deep --sign - "$APP_BUNDLE"
 
 echo
-echo "Bundled. Sidecar at: $RES_DIR/grid"
+echo "Bundled. Sidecar at: $RES_DIR/grid/grid"
 echo "App: $APP_BUNDLE"
