@@ -35,6 +35,11 @@ class ClientAppPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final guide = appSetupGuide(info);
+    // Hermes has a one-click in-app flow, so its GUI steps lead and the config
+    // file drops to a "prefer editing files?" alternative. A file-based client
+    // leads with the block it pastes (its steps reference "the block below").
+    final fileFirst = info.app != ClientApp.hermes;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -44,11 +49,14 @@ class ClientAppPanel extends StatelessWidget {
         ],
         ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
         const SizedBox(height: 16),
-        GuideLabel(info.name, caption: 'Paste into ${info.configPath}'),
+        _SetupSteps(title: guide.title, steps: guide.steps),
+        const SizedBox(height: 16),
+        if (fileFirst)
+          GuideLabel(info.name, caption: 'Paste into ${info.configPath}')
+        else
+          GuideLabel('Prefer editing files?', caption: info.configPath),
         CodeBlock(code: _snippet()),
-        const SizedBox(height: 12),
-        _SetupSteps(configPath: info.configPath, appName: info.name),
-        const SizedBox(height: 6),
+        const SizedBox(height: 10),
         _DocsLink(appName: info.name, onOpen: onOpenSite),
       ],
     );
@@ -156,23 +164,21 @@ class _MissingAppNote extends StatelessWidget {
   }
 }
 
-/// The three manual steps to finish setup, in plain language.
+/// A titled, numbered walkthrough to finish setup — the app's own [steps] in
+/// plain language (see `appSetupGuide`).
 class _SetupSteps extends StatelessWidget {
-  const _SetupSteps({required this.configPath, required this.appName});
+  const _SetupSteps({required this.title, required this.steps});
 
-  final String configPath;
-  final String appName;
+  final String title;
+  final List<String> steps;
 
   @override
   Widget build(BuildContext context) {
-    final steps = [
-      'Open $configPath',
-      'Paste the block above (or fill Base URL + Token yourself)',
-      'Restart $appName',
-    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        GuideLabel(title),
+        const SizedBox(height: 2),
         for (var i = 0; i < steps.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),

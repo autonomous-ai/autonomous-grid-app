@@ -37,4 +37,28 @@ void main() {
     );
     expect(d.detect().toList(), ClientApp.values);
   });
+
+  group('appSetupGuide', () {
+    test('Hermes walks the in-app Custom endpoint flow', () {
+      final guide = appSetupGuide(kClientApps[ClientApp.hermes]!);
+      expect(guide.title, contains('Hermes'));
+      final joined = guide.steps.join(' | ');
+      // The GUI path, not a config-file edit.
+      expect(joined, contains('Custom endpoint'));
+      expect(joined, contains('Local / custom endpoint'));
+      expect(joined, contains('Connect'));
+      // Names the two copyable fields the user pastes.
+      expect(joined, contains('Base URL'));
+      expect(joined, contains('Token'));
+      expect(joined, isNot(contains('config.yaml')));
+    });
+
+    test('OpenClaw walks the config-file edit, naming its path', () {
+      final info = kClientApps[ClientApp.openClaw]!;
+      final guide = appSetupGuide(info);
+      final joined = guide.steps.join(' | ');
+      expect(joined, contains(info.configPath));
+      expect(joined, contains('Restart ${info.name}'));
+    });
+  });
 }

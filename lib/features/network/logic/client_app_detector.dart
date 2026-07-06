@@ -59,6 +59,34 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
   ),
 };
 
+/// A short, plain-language walkthrough to wire [info]'s app to a grid: a [title]
+/// and numbered [steps]. Hermes has a friendly in-app flow (Settings → Model →
+/// Custom endpoint), so we walk that GUI; a file-based client is wired by pasting
+/// the config block. Either way the user drops the Base URL + Token (shown as
+/// copyable fields in the panel) into the blanks — so the steps name those two.
+({String title, List<String> steps}) appSetupGuide(ClientAppInfo info) =>
+    switch (info.app) {
+      ClientApp.hermes => (
+          title: 'Set it up in Hermes Agent',
+          steps: const [
+            'Open Hermes Agent, then Settings (gear icon, top-right)',
+            'Under Model, choose "Custom endpoint", then "Set up Custom endpoint"',
+            'Pick "Local / custom endpoint"',
+            'Paste the Base URL above into the endpoint field',
+            'Paste the Token into the "API key" field',
+            'Click Connect',
+          ],
+        ),
+      ClientApp.openClaw => (
+          title: 'Add it to ${info.name}',
+          steps: [
+            'Open ${info.configPath}',
+            'Paste the block below (or fill Base URL + Token yourself)',
+            'Restart ${info.name}',
+          ],
+        ),
+    };
+
 /// Detects which known client apps look installed on this machine. "Installed" =
 /// the app's config directory exists under `$HOME`, **or** its CLI is on the
 /// augmented PATH, **or** (macOS) an app bundle of that name sits in
