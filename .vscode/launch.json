@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Grid (prod)",
+      "request": "launch",
+      "type": "dart"
+    },
+    {
+      "name": "Grid (staging)",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": [
+        "--dart-define=GRID_CONTROL_PLANE_URL=https://api-grid.autonomousdev.xyz",
+        "--dart-define=GRID_WEBSITE_URL=https://staging.autonomousdev.xyz"
+      ]
+    }
+  ]
+}

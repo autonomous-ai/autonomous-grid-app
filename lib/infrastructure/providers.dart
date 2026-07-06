@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/app_environment.dart';
 import 'cli/command_log.dart';
 import 'cli/grid_cli_service.dart';
 import 'cli/grid_cli_service_impl.dart';
@@ -36,7 +37,8 @@ final gridHomeStoreProvider =
 
 /// Control-plane base URL for the app's direct HTTP calls (managed-network
 /// create, etc.). The CLI reads its own API URL from `~/.grid`, so this is no
-/// longer threaded into `grid login`. Defaults to prod; override for
-/// staging/local.
+/// longer threaded into `grid login`. Resolves to prod in release builds; in dev
+/// it honours `GRID_CONTROL_PLANE_URL` so you can point the app at staging — see
+/// [AppEnvironment].
 final gridApiUrlProvider =
-    Provider<String>((ref) => 'https://api-grid.autonomous.ai/');
+    Provider<String>((ref) => AppEnvironment.controlPlaneUrl);
