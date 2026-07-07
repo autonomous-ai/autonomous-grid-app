@@ -174,12 +174,17 @@ class ClientAppConfigurator {
   }
 
   /// Registers this grid as a Hermes named provider under `custom_providers`,
-  /// upserting by relay base_url so re-applying never duplicates it and any other
-  /// providers the user set stay intact. Creates the list when it's absent.
+  /// upserting by provider **name** (the grid host, e.g. `grid.autonomous.ai`) so
+  /// a config file only ever holds one Grid entry: re-applying — or repointing at
+  /// a new relay under the same grid — overwrites it in place instead of stacking
+  /// a duplicate. Base_url is a secondary match so a manually-renamed entry still
+  /// gets reused. Other providers the user set stay intact; the list is created
+  /// when it's absent.
   void _upsertCustomProvider(YamlEditor editor,
       {required String base, required String key, required String model}) {
+    final name = hermesProviderName(base);
     final entry = <String, String>{
-      'name': hermesProviderName(base),
+      'name': name,
       'base_url': base,
       'api_key': key,
       'model': model,
@@ -196,7 +201,9 @@ class ClientAppConfigurator {
       final e = existing[i];
       if (e is! Map) continue;
       final eBase = '${e['base_url'] ?? ''}'.replaceFirst(RegExp(r'/+$'), '');
-      if (eBase == normBase) {
+      // Same Grid entry — matched by name, or by the relay it points at → replace
+      // in place so there's only ever one Grid config in the file.
+      if ('${e['name'] ?? ''}' == name || eBase == normBase) {
         editor.update(['custom_providers', i], entry);
         return;
       }
