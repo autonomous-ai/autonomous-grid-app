@@ -49,7 +49,7 @@ void main() {
       expect(joined, contains('Connect'));
       // Names the two copyable fields the user pastes.
       expect(joined, contains('Base URL'));
-      expect(joined, contains('Token'));
+      expect(joined, contains('API key'));
       expect(joined, isNot(contains('config.yaml')));
     });
 

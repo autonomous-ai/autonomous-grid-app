@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/network_models_provider.dart';
 import '../logic/app_guide_snippets.dart';
+import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
 import '../logic/grid_overview_provider.dart';
 import 'app_guide_panels.dart';
@@ -29,10 +30,33 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
   ClientApp? _selected;
   bool _touched = false;
 
+  /// Lifecycle of the one-click "Set up for me" write for the selected app.
+  /// Reset whenever the app changes so one grid's result never lingers on
+  /// another's panel.
+  ApplyPhase _phase = const ApplyIdle();
+
   void _select(ClientApp? app) => setState(() {
         _touched = true;
         _selected = app;
+        _phase = const ApplyIdle();
       });
+
+  /// Writes the grid's connection into the selected client's config
+  /// (`~/.hermes/config.yaml` / `~/.openclaw/openclaw.json`) via
+  /// [ClientAppConfigurator]. Only reached for chat grids, where the grid can be
+  /// the client's model. Holds the spinner briefly so a near-instant write still
+  /// reads as an action.
+  Future<void> _apply(ClientApp app, String model) async {
+    setState(() => _phase = const ApplyRunning());
+    final (result, _) = await (
+      ref
+          .read(clientAppConfiguratorProvider)
+          .apply(app, widget.baseUrl, widget.apiKey, model),
+      Future<void>.delayed(const Duration(milliseconds: 450)),
+    ).wait;
+    if (!mounted) return;
+    setState(() => _phase = ApplyDone(result));
+  }
 
   Future<void> _openSite(String url) async {
     final uri = Uri.tryParse(url);
@@ -93,6 +117,8 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
             model: model,
             media: media,
             hasChat: hasChat,
+            phase: _phase,
+            onApply: () => _apply(selected, model),
             onOpenSite: () => _openSite(kClientApps[selected]!.downloadUrl),
           ),
       ],

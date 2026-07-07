@@ -2,19 +2,39 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../logic/app_guide_snippets.dart';
+import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
 import '../logic/grid_overview_provider.dart';
 import 'detail_widgets.dart';
 
-/// Read-only setup for one known client: the grid's Base URL + API Key as copyable
-/// fields, the exact config block to paste, short steps, and a Download prompt
-/// when the app is missing. Grid never writes the user's config — they paste it
-/// themselves, so nothing on disk is touched and the copy stays honest.
+/// Where the "Set up for me" write is in its lifecycle for the selected app.
+sealed class ApplyPhase {
+  const ApplyPhase();
+}
+
+class ApplyIdle extends ApplyPhase {
+  const ApplyIdle();
+}
+
+class ApplyRunning extends ApplyPhase {
+  const ApplyRunning();
+}
+
+class ApplyDone extends ApplyPhase {
+  const ApplyDone(this.result);
+  final ApplyResult result;
+}
+
+/// Setup for one known client: the grid's Base URL + API Key as copyable fields,
+/// a one-tap "Set up for me" that writes the connection into the app's config
+/// (chat grids only — see [_ApplyBlock]), the exact config block as the manual
+/// fallback, and a Download prompt when the app is missing.
 ///
-/// A media grid (image/video) can't be wired as a chat "custom endpoint", so its
-/// chat setup is dropped in favour of a "build a skill" prompt the agent runs —
-/// see [media] / [hasChat]. A grid that serves both keeps the chat setup and
-/// appends the media prompt.
+/// A media grid (image/video) can't be wired as a chat "custom endpoint" nor be
+/// the app's model, so instead of the chat setup + Apply it shows a "build a
+/// skill" prompt (and a note that the agent needs its own chat model first) —
+/// see [media] / [hasChat]. A grid that serves both keeps the chat setup/Apply
+/// and appends the media prompt.
 class ClientAppPanel extends StatelessWidget {
   const ClientAppPanel({
     super.key,
@@ -25,6 +45,8 @@ class ClientAppPanel extends StatelessWidget {
     required this.model,
     required this.media,
     required this.hasChat,
+    required this.phase,
+    required this.onApply,
     required this.onOpenSite,
   });
 
@@ -44,6 +66,12 @@ class ClientAppPanel extends StatelessWidget {
   /// media-only grid, where the chat "custom endpoint" setup doesn't apply.
   final bool hasChat;
 
+  /// Lifecycle of the "Set up for me" write (idle/running/done result).
+  final ApplyPhase phase;
+
+  /// Writes this grid's connection into the app's config for the user.
+  final VoidCallback onApply;
+
   /// Opens the app's official site — the Download target when missing, and the
   /// "docs" affordance otherwise.
   final VoidCallback onOpenSite;
@@ -53,6 +81,9 @@ class ClientAppPanel extends StatelessWidget {
     // Show chat setup for a chat grid, or while the overview still loads (media
     // resolves to none first) — so a chat grid never flashes without its steps.
     final showChat = hasChat || !media.any;
+    // One-click config write only makes sense when the grid can be the app's
+    // model (a chat grid) and the app is actually installed to write into.
+    final canApply = installed && hasChat;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -62,11 +93,22 @@ class ClientAppPanel extends StatelessWidget {
         ],
         ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
         const SizedBox(height: 16),
+        if (canApply) ...[
+          _ApplyBlock(name: info.name, phase: phase, onApply: onApply),
+          const SizedBox(height: 16),
+        ],
         if (showChat) ...[
           ..._chatSetup(),
           const SizedBox(height: 16),
         ],
         if (media.any) ...[
+          // A media-only grid can't be the app's chat model, so the agent still
+          // needs its own model before it can build the skill — say so plainly.
+          if (!hasChat) ...[
+            _NeedsChatModelNote(
+                appName: info.name, command: info.executable),
+            const SizedBox(height: 12),
+          ],
           _MediaSkillPrompt(
             appName: info.name,
             prompt: mediaSkillPrompt(baseUrl, apiKey,
@@ -226,6 +268,147 @@ class ConnectionFields extends StatelessWidget {
         AddressRow(label: 'Base URL', value: baseUrl),
         AddressRow(label: 'API Key', value: apiKey, maxLines: 1),
       ],
+    );
+  }
+}
+
+/// The one-click setup card for an installed chat client: Grid writes the grid's
+/// connection into the app's config so a non-technical user never edits YAML.
+/// This is the fix for "No inference provider configured" — a backup is kept and
+/// the manual config below stays as the fallback the error result points at.
+class _ApplyBlock extends StatelessWidget {
+  const _ApplyBlock({
+    required this.name,
+    required this.phase,
+    required this.onApply,
+  });
+
+  final String name;
+  final ApplyPhase phase;
+  final VoidCallback onApply;
+
+  @override
+  Widget build(BuildContext context) {
+    final running = phase is ApplyRunning;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppPalette.cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Grid can write this connection into $name for you, so it uses this '
+            'grid as its model — no files to edit (a backup is kept).',
+            style: const TextStyle(
+                color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: running ? null : onApply,
+            icon: running
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_fix_high_rounded, size: 16),
+            label: Text(running ? 'Setting up…' : 'Set up $name for me'),
+          ),
+          _ApplyStatus(phase: phase),
+        ],
+      ),
+    );
+  }
+}
+
+/// The result line after "Set up for me": success (green) with any follow-up
+/// note, or a failure (red) telling the user to paste the config instead.
+class _ApplyStatus extends StatelessWidget {
+  const _ApplyStatus({required this.phase});
+
+  final ApplyPhase phase;
+
+  @override
+  Widget build(BuildContext context) {
+    final phase = this.phase;
+    if (phase is! ApplyDone) return const SizedBox.shrink();
+    return switch (phase.result) {
+      ApplyOk(:final message, :final note) => _StatusLine(
+          icon: Icons.check_circle_rounded,
+          color: AppPalette.online,
+          text: note == null ? message : '$message $note',
+        ),
+      ApplyError(:final message) => _StatusLine(
+          icon: Icons.error_outline_rounded,
+          color: Theme.of(context).colorScheme.error,
+          text: '$message Copy the config below and paste it in yourself.',
+        ),
+    };
+  }
+}
+
+/// One icon + wrapped message line, used for the apply result.
+class _StatusLine extends StatelessWidget {
+  const _StatusLine(
+      {required this.icon, required this.color, required this.text});
+
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: color, fontSize: 12, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown on a media-only grid: the agent needs its own chat model to run and
+/// build the skill, and this grid (images/video) can't be that model. Names the
+/// next step so the user isn't stuck on "No inference provider configured".
+class _NeedsChatModelNote extends StatelessWidget {
+  const _NeedsChatModelNote({required this.appName, required this.command});
+
+  final String appName;
+  final String command;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppPalette.cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Text(
+        '$appName needs its own chat model to run and build this skill. This '
+        "grid only makes images or video, so it can't be that model — set one "
+        'up first (run `$command model`, or add a provider API key in $appName), '
+        'then paste the prompt below.',
+        style: const TextStyle(
+            color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+      ),
     );
   }
 }
