@@ -12,7 +12,10 @@
 # then reports "Grid helper blocked"). A standalone/onedir folder ships all code inside
 # the signed+notarized app bundle, so there's nothing to extract. See scripts/README.md.
 #
-# Nuitka CANNOT cross-compile: run it on the target arch (Apple Silicon for arm64).
+# Nuitka CANNOT cross-compile: the output arch follows the build python's arch. Point
+# GRID_BUILD_PYTHON at an arm64 python for a native Apple Silicon binary, or an x86_64
+# python (runs under Rosetta 2 on Apple Silicon) for an Intel binary — release.yml uses
+# the latter to build the macOS-Intel sidecar without a paid Intel runner.
 # Output: <cli-src>/dist/grid.dist/  (entry exe at dist/grid.dist/grid) — where
 # bundle_grid_macos.sh and release.yml inject from.
 #

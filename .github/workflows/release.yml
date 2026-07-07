@@ -6,10 +6,16 @@ name: release
 # CLI sidecar (Nuitka standalone/onedir, compiled from the grid CLI source by grid-app's
 # own scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
 #
-#   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
+#   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized; arm64 grid sidecar)
+#   Grid-<ver>-macOS-Intel.dmg           (signed + notarized; x86_64 grid sidecar, built under Rosetta 2)
 #
-# Windows builds are disabled for now (deferred) — only macOS Apple Silicon is
-# produced. See the commented-out `windows-latest` matrix entry below to re-enable.
+# Both DMGs carry the same Flutter app — a Release build is universal (arm64 + x86_64),
+# so it launches on either Mac. They differ only in the bundled `grid` sidecar's arch:
+# Nuitka can't emit a universal binary, so we run one macOS job per sidecar arch (see the
+# matrix below), and each job's sidecar is built for that job's target.
+#
+# Windows builds are disabled for now (deferred) — only the two macOS DMGs are produced.
+# See the commented-out `windows-latest` matrix entry below to re-enable.
 #
 #   git tag v0.1.2 && git push origin v0.1.2
 #
@@ -49,9 +55,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest      # Apple Silicon, native arm64 build
+          - platform: macos-latest      # Apple Silicon, native arm64 app + sidecar
             arch: arm64
             label: macOS-Apple-Silicon
+          - platform: macos-latest      # Intel x86_64 sidecar, compiled under Rosetta 2 on
+            arch: x64                    # the same arm64 runner — GitHub retired the free
+            label: macOS-Intel           # macos-13 Intel image, so this avoids a paid runner.
           # Windows build disabled for now — deferred until Windows code-signing +
           # a WinSparkle key exist. Uncomment to re-enable; the `if: runner.os ==
           # 'Windows'` build steps below stay in place, dormant, ready for it.
@@ -104,10 +113,16 @@ jobs:
           channel: stable
           cache: true
 
+      # `architecture` pins the interpreter arch to the matrix arch: an arm64 python for
+      # the Apple Silicon job, an x86_64 python (runs under Rosetta 2 on the arm64 runner)
+      # for the Intel job. Nuitka can't cross-compile, so the sidecar's arch follows this
+      # python — that's how the Intel slice is produced without a paid Intel runner.
       - name: Set up Python (sidecar build)
+        id: setup_python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          architecture: ${{ matrix.arch }}
 
       - name: Flutter dependencies
         shell: bash
@@ -119,10 +134,15 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: grid-app
         # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid.dist/
-        # (Nuitka standalone/onedir), native arm64 (Nuitka can't cross-compile, and GitHub-hosted
-        # macOS runners are Apple Silicon only — no Intel image since macos-13 was retired). Onedir,
-        # not onefile: the folder is signed (Developer ID, hardened runtime) + notarized downstream,
-        # so nothing is extracted+SIGKILL'd at runtime under download quarantine.
+        # (Nuitka standalone/onedir). Nuitka can't cross-compile, so the sidecar's arch follows the
+        # build python's arch: GRID_BUILD_PYTHON is the setup-python interpreter picked for this job
+        # — arm64 for the Apple Silicon DMG, x86_64 (under Rosetta 2) for the Intel DMG. Onedir, not
+        # onefile: the folder is signed (Developer ID, hardened runtime) + notarized downstream, so
+        # nothing is extracted+SIGKILL'd at runtime under download quarantine.
+        # TODO(release): the Intel job runs Nuitka under Rosetta (~1.5-2x slower) — watch the 120m
+        # timeout on the first tagged Intel release and bump it if the compile gets close.
+        env:
+          GRID_BUILD_PYTHON: ${{ steps.setup_python.outputs.python-path }}
         run: bash scripts/cli/build_sidecar.sh "$GITHUB_WORKSPACE/autonomous-grid-cli"
 
       - name: Build macOS app + inject sidecar
@@ -172,8 +192,16 @@ jobs:
       # Sign the DMG with the Sparkle EdDSA key and write dist/appcast.xml next to
       # it (both get uploaded by the publish step). Skipped with a warning until
       # the SPARKLE_ED_PRIVATE_KEY secret is provisioned, so releases still build.
-      - name: Generate Sparkle appcast (macOS)
-        if: runner.os == 'macOS'
+      #
+      # ONLY the Apple Silicon job emits the appcast: the publish step uploads it under
+      # the fixed name appcast.xml, so running it on both macOS jobs would make them
+      # clobber each other's feed. Auto-update therefore tracks the Apple Silicon DMG.
+      # TODO(release): Intel auto-update is NOT wired yet — one appcast.xml can't point at
+      # both DMGs, and Sparkle full-update enclosures aren't arch-filtered, so a shared feed
+      # would offer Intel users the arm64 sidecar. The Intel DMG ships as a manual download
+      # for now; wire an arch-aware feed before relying on Sparkle to update Intel users.
+      - name: Generate Sparkle appcast (macOS Apple Silicon only)
+        if: matrix.label == 'macOS-Apple-Silicon'
         working-directory: grid-app
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
