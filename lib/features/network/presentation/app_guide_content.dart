@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../logic/network_models_provider.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
@@ -46,12 +45,12 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
   /// [ClientAppConfigurator]. Only reached for chat grids, where the grid can be
   /// the client's model. Holds the spinner briefly so a near-instant write still
   /// reads as an action.
-  Future<void> _apply(ClientApp app, String model) async {
+  Future<void> _apply(ClientApp app, List<String> models) async {
     setState(() => _phase = const ApplyRunning());
     final (result, _) = await (
       ref
           .read(clientAppConfiguratorProvider)
-          .apply(app, widget.baseUrl, widget.apiKey, model),
+          .apply(app, widget.baseUrl, widget.apiKey, models),
       Future<void>.delayed(const Duration(milliseconds: 450)),
     ).wait;
     if (!mounted) return;
@@ -71,10 +70,13 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         : ClientApp.values
             .firstWhere(installed.contains, orElse: () => ClientApp.openClaw);
 
-    // Name a model the grid actually serves in every snippet/apply. Falls back
-    // to the default only while the list is loading or the grid advertises none.
-    final models = ref.watch(networkModelsProvider).asData?.value ?? const [];
-    final model = models.isNotEmpty ? models.first : kGuideDefaultModel;
+    // Every chat model the grid serves — OpenClaw lists them all; the first is
+    // the default named in single-model snippets/apply. Falls back to the
+    // default id only while the list loads or the grid advertises none, so a
+    // snippet is never empty.
+    final chatIds = ref.watch(gridChatModelIdsProvider);
+    final models = chatIds.isEmpty ? const [kGuideDefaultModel] : chatIds;
+    final model = models.first;
 
     // Media grids (image/video) can't be wired as a chat provider — the panels
     // swap the chat setup for a "build a skill" prompt / media API call. `hasChat`
@@ -114,11 +116,11 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
             installed: installed.contains(selected),
             baseUrl: widget.baseUrl,
             apiKey: widget.apiKey,
-            model: model,
+            models: models,
             media: media,
             hasChat: hasChat,
             phase: _phase,
-            onApply: () => _apply(selected, model),
+            onApply: () => _apply(selected, models),
             onOpenSite: () => _openSite(kClientApps[selected]!.downloadUrl),
           ),
       ],

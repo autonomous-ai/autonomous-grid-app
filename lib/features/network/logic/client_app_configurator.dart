@@ -41,33 +41,37 @@ class ClientAppConfigurator {
   final String _home;
 
   Future<ApplyResult> apply(
-      ClientApp app, String base, String key, String model) {
+      ClientApp app, String base, String key, List<String> models) {
+    // Guarantee a non-empty list so every downstream write has a default.
+    final ids = models.isEmpty ? const [kGuideDefaultModel] : models;
     switch (app) {
       case ClientApp.openClaw:
-        return _applyOpenClaw(base, key, model);
+        return _applyOpenClaw(base, key, ids);
       case ClientApp.hermes:
-        return _applyHermes(base, key, model);
+        // Hermes carries one default and discovers the rest from the endpoint.
+        return _applyHermes(base, key, ids.first);
     }
   }
 
   Future<ApplyResult> _applyOpenClaw(
-      String base, String key, String model) async {
+      String base, String key, List<String> models) async {
     final file = File('$_home/.openclaw/openclaw.json');
     try {
       final root = await _readJsonObject(file);
 
       // Add our provider without disturbing the user's other providers.
       // `mode: merge` keeps OpenClaw's built-in providers instead of replacing
-      // them (per the OpenClaw model-providers docs).
-      final models = _childMap(root, 'models');
-      models['mode'] = 'merge';
-      final providers = _childMap(models, 'providers');
+      // them (per the OpenClaw model-providers docs). List every grid model so
+      // the user can pick any of them, not just the default.
+      final modelsNode = _childMap(root, 'models');
+      modelsNode['mode'] = 'merge';
+      final providers = _childMap(modelsNode, 'providers');
       providers['grid'] = {
         'baseUrl': base,
         'apiKey': key,
         'api': 'openai-completions',
         'models': [
-          {'id': model, 'name': '$model (via Grid)'},
+          for (final m in models) {'id': m, 'name': '$m (via Grid)'},
         ],
       };
 
@@ -76,7 +80,7 @@ class ClientAppConfigurator {
       final modelCfg =
           _childMap(_childMap(_childMap(root, 'agents'), 'defaults'), 'model');
       final setDefault = modelCfg['primary'] == null;
-      if (setDefault) modelCfg['primary'] = 'grid/$model';
+      if (setDefault) modelCfg['primary'] = 'grid/${models.first}';
 
       await _backupThenWrite(
           file, const JsonEncoder.withIndent('  ').convert(root));
@@ -84,7 +88,7 @@ class ClientAppConfigurator {
         'Added Grid to ${_display(file)}.',
         note: setDefault
             ? null
-            : 'Set your model to grid/$model in OpenClaw to use it.',
+            : 'Set your model to grid/${models.first} in OpenClaw to use it.',
       );
     } on Object catch (e) {
       return ApplyError('Couldn\'t update ${_display(file)}: ${_reason(e)}');

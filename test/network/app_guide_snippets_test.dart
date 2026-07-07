@@ -9,7 +9,7 @@ const _model = 'qwen3.5:0.8b';
 
 void main() {
   test('OpenClaw snippet is valid JSON wiring Grid as a merged provider', () {
-    final decoded = jsonDecode(openClawSnippet(_base, _key, _model)) as Map;
+    final decoded = jsonDecode(openClawSnippet(_base, _key, [_model])) as Map;
     final models = decoded['models'] as Map;
     // merge appends Grid to OpenClaw's built-ins instead of replacing them.
     expect(models['mode'], 'merge');
@@ -19,6 +19,22 @@ void main() {
     expect(grid['api'], 'openai-completions');
     expect((grid['models'] as List).first['id'], _model);
     expect(decoded['agents']['defaults']['model']['primary'], 'grid/$_model');
+  });
+
+  test('OpenClaw snippet lists every grid model, first as the default', () {
+    const ids = ['a-model', 'b-model', 'c-model'];
+    final decoded = jsonDecode(openClawSnippet(_base, _key, ids)) as Map;
+    final grid = ((decoded['models'] as Map)['providers'] as Map)['grid'] as Map;
+    final listed =
+        (grid['models'] as List).map((m) => (m as Map)['id']).toList();
+    expect(listed, ids); // all three, in order
+    expect(decoded['agents']['defaults']['model']['primary'], 'grid/a-model');
+  });
+
+  test('OpenClaw snippet falls back to the default id for an empty grid', () {
+    final decoded = jsonDecode(openClawSnippet(_base, _key, const [])) as Map;
+    final grid = ((decoded['models'] as Map)['providers'] as Map)['grid'] as Map;
+    expect((grid['models'] as List).single['id'], kGuideDefaultModel);
   });
 
   test('Hermes config block carries the full grid connection', () {

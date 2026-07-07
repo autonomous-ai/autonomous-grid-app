@@ -42,7 +42,7 @@ class ClientAppPanel extends StatelessWidget {
     required this.installed,
     required this.baseUrl,
     required this.apiKey,
-    required this.model,
+    required this.models,
     required this.media,
     required this.hasChat,
     required this.phase,
@@ -55,9 +55,10 @@ class ClientAppPanel extends StatelessWidget {
   final String baseUrl;
   final String apiKey;
 
-  /// The model the grid actually serves (or the fallback default), wired into
-  /// the snippet so it names a model the grid can answer.
-  final String model;
+  /// Every chat model the grid serves (never empty — the caller falls back to a
+  /// default). OpenClaw's config lists them all; Hermes and the copy that name a
+  /// single model use the first.
+  final List<String> models;
 
   /// What the grid can generate — drives the "build a skill" media prompt.
   final GridMediaCapabilities media;
@@ -140,8 +141,8 @@ class ClientAppPanel extends StatelessWidget {
   }
 
   String _snippet() => switch (info.app) {
-    ClientApp.openClaw => openClawSnippet(baseUrl, apiKey, model),
-    ClientApp.hermes => hermesConfigSnippet(baseUrl, apiKey, model),
+    ClientApp.openClaw => openClawSnippet(baseUrl, apiKey, models),
+    ClientApp.hermes => hermesConfigSnippet(baseUrl, apiKey, models.first),
   };
 }
 

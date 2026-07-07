@@ -65,6 +65,17 @@ final gridHasChatProvider = Provider.autoDispose<bool>((ref) {
       .any((m) => mediaCapabilityLabel(m.id) == null);
 });
 
+/// Every chat/text model id the grid serves (media `comfyui:*` capabilities
+/// filtered out). Lets a client list them all instead of just the first — e.g.
+/// OpenClaw enumerates every model in its provider config. Empty while loading
+/// or when the grid serves no chat model. See [mediaCapabilityLabel].
+final gridChatModelIdsProvider = Provider.autoDispose<List<String>>((ref) {
+  return [
+    for (final m in ref.watch(gridModelsProvider))
+      if (mediaCapabilityLabel(m.id) == null) m.id,
+  ];
+});
+
 /// What a grid can generate, read off its providers. Media (image/video) is a
 /// node *capability* — it never appears in the model list — so this is the only
 /// place the app learns a grid can make images. Used by the overview (to show

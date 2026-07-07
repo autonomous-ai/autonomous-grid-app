@@ -14,23 +14,33 @@ const kGuideDefaultModel = 'qwen3-coder';
 const kHermesMaxTokens = 64000;
 
 /// The `~/.openclaw/openclaw.json` provider block wiring Grid in as a model
-/// provider (and [model] as the default for a fresh install). `models.mode:
-/// "merge"` appends Grid to OpenClaw's built-in providers instead of replacing
-/// them — required per the OpenClaw model-providers docs.
-String openClawSnippet(String base, String key, String model) => '{\n'
-    '  "agents": { "defaults": { "model": { "primary": "grid/$model" } } },\n'
-    '  "models": {\n'
-    '    "mode": "merge",\n'
-    '    "providers": {\n'
-    '      "grid": {\n'
-    '        "baseUrl": "$base",\n'
-    '        "apiKey": "$key",\n'
-    '        "api": "openai-completions",\n'
-    '        "models": [{ "id": "$model", "name": "$model (via Grid)" }]\n'
-    '      }\n'
-    '    }\n'
-    '  }\n'
-    '}';
+/// provider, listing **every** model the grid serves ([models]) and the first as
+/// the default for a fresh install. `models.mode: "merge"` appends Grid to
+/// OpenClaw's built-in providers instead of replacing them — required per the
+/// OpenClaw model-providers docs. Falls back to the default model id when the
+/// grid advertises none (so the block is never empty/invalid).
+String openClawSnippet(String base, String key, List<String> models) {
+  final ids = models.isEmpty ? const [kGuideDefaultModel] : models;
+  final entries = ids
+      .map((m) => '          { "id": "$m", "name": "$m (via Grid)" }')
+      .join(',\n');
+  return '{\n'
+      '  "agents": { "defaults": { "model": { "primary": "grid/${ids.first}" } } },\n'
+      '  "models": {\n'
+      '    "mode": "merge",\n'
+      '    "providers": {\n'
+      '      "grid": {\n'
+      '        "baseUrl": "$base",\n'
+      '        "apiKey": "$key",\n'
+      '        "api": "openai-completions",\n'
+      '        "models": [\n'
+      '$entries\n'
+      '        ]\n'
+      '      }\n'
+      '    }\n'
+      '  }\n'
+      '}';
+}
 
 /// The Hermes `custom_providers` name for a grid — its relay host (e.g.
 /// `grid.autonomous.ai`), so the grid registers as a named provider in Hermes's
