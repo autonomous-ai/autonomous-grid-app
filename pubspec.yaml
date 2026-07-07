@@ -1,7 +1,11 @@
 name: grid_app
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.0
+# The +N build number becomes CFBundleVersion, which Sparkle compares to the
+# appcast's <sparkle:version>. It must be a monotonically increasing integer —
+# a dotted "0.2.0" broke that for local builds. CI overrides this with the real
+# build via set-version.sh "<tag>+<build>" (see .github/workflows/release.yml).
+version: 0.2.0+1
 
 environment:
   sdk: ^3.9.2

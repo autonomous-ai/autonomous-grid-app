@@ -130,10 +130,15 @@ class _AccountMenu extends ConsumerWidget {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
     final updater = ref.read(appUpdaterServiceProvider);
     final version = ref.watch(appVersionProvider).asData?.value;
+    // Surface every check outcome as a toast so an explicit "Check for updates"
+    // never silently does nothing — Sparkle only shows its own UI on success.
+    ref.listen(appUpdateStatusProvider, (_, next) {
+      final status = next.asData?.value;
+      if (status != null) _showUpdateToast(context, status);
+    });
     return PopupMenuButton<String>(
       tooltip: name,
       offset: const Offset(0, 42),
-      onOpened: updater.isEnabled ? updater.checkInBackground : null,
       onSelected: (value) async {
         if (value == 'check_updates') {
           await updater.checkForUpdates();
@@ -219,4 +224,21 @@ class _AccountMenu extends ConsumerWidget {
     );
     return ok ?? false;
   }
+}
+
+/// Toasts a "Check for updates" outcome so the tap always resolves to feedback —
+/// Sparkle shows its own dialog only when it succeeds, so this covers the
+/// checking / up-to-date / failed states it stays silent on.
+void _showUpdateToast(BuildContext context, UpdateStatus status) {
+  final message = switch (status) {
+    UpdateChecking() => 'Checking for updates…',
+    UpdateUpToDate() => "You're on the latest version.",
+    UpdateAvailable(:final version) => version == null
+        ? 'An update is available — follow the prompt to install.'
+        : 'Update available: $version — follow the prompt to install.',
+    UpdateFailed(:final message) => "Couldn't check for updates: $message",
+  };
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+  );
 }

@@ -56,15 +56,20 @@ Future<void> main() async {
   // published. A no-op off macOS or when no appcast feed is configured.
   // `bindNativeMenu` links the "Grid ▸ Check for Updates…" app-menu item to the
   // same updater.
-  const updater = AppUpdaterService();
+  final updater = AppUpdaterService(log: appLog);
   await updater.init();
   updater.bindNativeMenu();
 
   appLog.info('app', 'Launching UI');
   runApp(ProviderScope(
     // Share the one file instance with every consumer (e.g. the command log
-    // mirror) so the whole app writes to a single timeline.
-    overrides: [appLogProvider.overrideWithValue(appLog)],
+    // mirror) so the whole app writes to a single timeline. Hand the UI the same
+    // updater instance that owns the Sparkle listener, so its check-outcome
+    // toasts come from the checks the menu triggers.
+    overrides: [
+      appLogProvider.overrideWithValue(appLog),
+      appUpdaterServiceProvider.overrideWithValue(updater),
+    ],
     child: const GridApp(),
   ));
 }
