@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/app_environment.dart';
 import 'grid_cli_service.dart';
 import 'host_environment.dart';
 import 'parsers/download_progress.dart';
@@ -28,6 +29,9 @@ class GridCliServiceImpl implements GridCliService {
   ///   docker, cmake, llama-server) resolve and also emit UTF-8 — a GUI app
   ///   inherits only a minimal environment. The `PATH` comes from
   ///   [HostEnvironment], shared with the app's own tool detection so they agree.
+  /// - in dev only, any `GRID_CONTROL_PLANE_URL`/`GRID_WEBSITE_URL` staging
+  ///   overrides from [AppEnvironment], so the CLI hits the same backend as the
+  ///   app. Empty in release builds (which always use prod).
   final Map<String, String> _env;
 
   static Map<String, String> _buildEnv() {
@@ -43,6 +47,7 @@ class GridCliServiceImpl implements GridCliService {
       final lang = Platform.environment['LANG'];
       env['LANG'] = (lang != null && lang.isNotEmpty) ? lang : 'en_US.UTF-8';
     }
+    env.addAll(AppEnvironment.cliEnvOverrides());
     return env;
   }
 

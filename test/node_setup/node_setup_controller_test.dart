@@ -19,15 +19,23 @@ class _EmptyStore extends GridHomeStore {
 /// In-memory [NodeSetupLog] so tests never touch the real `~/.grid/logs`.
 /// Records the run boundaries and every mirrored line for assertions.
 class _RecordingLog implements NodeSetupLog {
-  final List<String> lines = [];
-  String? runSummary;
+  final List<String> lines = []; // streamed output lines
+  final List<String> stepTitles = []; // titles of started steps
+  final List<String> stepResults = []; // done/failed/cancelled per step
+  List<String>? runPlan;
   String? runOutcome;
 
   @override
-  void startRun(String summary) => runSummary = summary;
+  void startRun(List<String> stepTitles) => runPlan = stepTitles;
 
   @override
-  void write(String line) => lines.add(line);
+  void startStep(int number, int total, String title) => stepTitles.add(title);
+
+  @override
+  void write(String line, {bool isError = false}) => lines.add(line);
+
+  @override
+  void endStep(String result) => stepResults.add(result);
 
   @override
   void endRun(String outcome) => runOutcome = outcome;
@@ -143,9 +151,10 @@ void main() {
         .read(nodeSetupControllerProvider.notifier)
         .run([_llamaStep, _modelStep]);
 
-    expect(log.runSummary, contains('Install llama.cpp'));
-    expect(log.lines, contains('▸ Install llama.cpp'));
+    expect(log.runPlan, contains('Install llama.cpp'));
+    expect(log.stepTitles, contains('Install llama.cpp'));
     expect(log.lines, contains('Linked llama-server')); // streamed CLI output
+    expect(log.stepResults, everyElement('done'));
     expect(log.runOutcome, contains('completed'));
   });
 
@@ -199,5 +208,28 @@ void main() {
     // A second auto-start (e.g. after capabilities re-detect) must not re-run.
     await notifier.autoStart([_llamaStep]);
     expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
+  });
+
+  test('humanizes a missing-Homebrew engine-install failure', () async {
+    // The CLI dead-ends with this raw line when Homebrew is absent; the user
+    // should see a plain, actionable message instead — we no longer auto-install.
+    final fake = FakeGridCliService()
+      ..stubStart(['engine', 'install', 'llama.cpp'], exitCode: 1, lines: const [
+        CliLine(
+          isStderr: true,
+          text: 'Homebrew is required for the Apple Silicon prebuilt '
+              'llama.cpp install. Install Homebrew from https://brew.sh/ ...',
+        ),
+      ]);
+    final container = _container(fake);
+
+    await container
+        .read(nodeSetupControllerProvider.notifier)
+        .run([_llamaStep, _modelStep]);
+
+    final state = container.read(nodeSetupControllerProvider);
+    expect(state, isA<NodeSetupFailed>());
+    expect((state as NodeSetupFailed).message, contains('brew.sh'));
+    expect(state.message, contains("can't run the built-in engine"));
   });
 }

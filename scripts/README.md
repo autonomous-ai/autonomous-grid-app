@@ -3,9 +3,9 @@
 The app drives the `grid` CLI as a subprocess. `GridResolver` finds it in this
 order: **configured path → `GRID_BIN` env → bundled sidecar → `$PATH`**.
 
-The CLI is a Python package, so we ship a **Nuitka onefile binary** (built by our own
-`scripts/cli/build_sidecar.{sh,ps1}` from the cloned CLI source) rather than the source.
-The binary is **not committed** to this repo (it's ~tens of MB and per-platform) —
+The CLI is a Python package, so we ship a **Nuitka standalone (onedir) folder** (built by
+our own `scripts/cli/build_sidecar.{sh,ps1}` from the cloned CLI source) rather than the
+source. It is **not committed** to this repo (it's ~tens of MB and per-platform) —
 CI builds it and injects it at packaging time.
 
 ## Dev (`flutter run`)
@@ -17,8 +17,8 @@ No bundling. Use one of:
 cd ../autonomous-grid && uv tool install -e . --force
 
 # Option B — point at a built binary without installing:
-./scripts/cli/build_sidecar.sh ../autonomous-grid     # → ../autonomous-grid/dist/grid
-export GRID_BIN="$PWD/../autonomous-grid/dist/grid"
+./scripts/cli/build_sidecar.sh ../autonomous-grid     # → ../autonomous-grid/dist/grid.dist/grid
+export GRID_BIN="$PWD/../autonomous-grid/dist/grid.dist/grid"
 flutter run -d macos
 ```
 
@@ -32,8 +32,9 @@ shows "Grid CLI not found".
 # REBUILD=1 ./scripts/bundle_grid_macos.sh   # force-rebuild the CLI binary
 ```
 
-This drops `grid` into `Grid.app/Contents/Resources/grid`, where the resolver's
-macOS bundled candidate (`…/Contents/MacOS/../Resources/grid`) picks it up.
+This drops the `grid.dist/` folder into `Grid.app/Contents/Resources/grid/` (entry
+`Resources/grid/grid`), where the resolver's macOS bundled candidate
+(`…/Contents/MacOS/../Resources/grid/grid`) picks it up.
 
 > Nuitka can't cross-compile — build each target on its own arch/OS. Windows uses
 > `scripts/cli/build_sidecar.ps1` (→ `grid.exe`) and injects next to the executable;
@@ -69,10 +70,11 @@ submits to Apple's notary service, and staples the ticket. **Prerequisites (one
    `xcrun notarytool store-credentials grid-notary …` (App Store Connect API key,
    or Apple ID + team id + app-specific password).
 
-> The bundled `grid` sidecar is a Nuitka onefile that unpacks + execs at run time;
-> under hardened runtime it may need extra entitlements
-> (`allow-unsigned-executable-memory` / `allow-jit`) to pass notarization — see
-> the comments in `notarize_macos.sh`.
+> The bundled `grid` sidecar is a Nuitka **standalone/onedir** folder — every Mach-O in
+> `Resources/grid/` is signed (Developer ID, hardened runtime) so notarization covers it
+> and nothing is extracted at runtime. This is deliberate: an `--onefile` sidecar's
+> runtime-extracted payload is SIGKILL'd by macOS under download quarantine, which the
+> app's preflight surfaces as "Grid helper blocked". See `notarize_macos.sh`.
 
 ## What bundling does NOT remove
 

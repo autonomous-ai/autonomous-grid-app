@@ -255,14 +255,16 @@ class _WhichGridCard extends ConsumerWidget {
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.error)),
       data: (report) {
-        final version = report.gridVersion;
-        if (version != null) {
+        // Health is the exit-0 signal (`gridAvailable`), not the presence of a
+        // version string — a working `grid` can exit 0 without printing one.
+        if (report.gridAvailable) {
           return Row(
             children: [
               const Icon(Icons.check_circle, size: 14, color: AppPalette.online),
               const SizedBox(width: 8),
               Expanded(
-                child: SelectableText(version,
+                child: SelectableText(
+                    report.gridVersion ?? 'installed (version unknown)',
                     style: theme.textTheme.bodySmall
                         ?.copyWith(fontFamily: 'monospace')),
               ),
@@ -275,7 +277,7 @@ class _WhichGridCard extends ConsumerWidget {
             Icon(Icons.error, size: 14, color: theme.colorScheme.error),
             const SizedBox(width: 8),
             Expanded(
-              child: SelectableText(report.gridError ?? 'grid did not run',
+              child: SelectableText(report.gridError ?? 'grid not found',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.error)),
             ),

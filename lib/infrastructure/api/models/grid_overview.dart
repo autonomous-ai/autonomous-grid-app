@@ -107,8 +107,11 @@ class OverviewNode {
     this.device,
     this.chip,
     this.memoryGb,
+    this.vramGb,
+    this.vramTotalMb,
     this.deviceClass,
     this.model,
+    this.models = const [],
     this.engine,
     this.throughputTokS,
     this.maxConcurrency,
@@ -119,8 +122,23 @@ class OverviewNode {
   final String? device;
   final String? chip;
   final int? memoryGb;
+
+  /// GPU memory the node brings, in GB. The relay's `vram_gb`; `vram_total_mb`
+  /// is the raw fallback. Null on CPU-only nodes or providers that don't report
+  /// it. Surfaced per node via `nodeVramLabel`.
+  final double? vramGb;
+  final double? vramTotalMb;
+
   final String? deviceClass;
+
+  /// The node's primary served model/capability.
   final String? model;
+
+  /// Every model or capability this node advertises — for a `comfyui` engine
+  /// these are media capabilities like `comfyui:image_generation`. The media
+  /// picker reads these since media capabilities never appear in the model list.
+  final List<String> models;
+
   final String? engine;
   final double? throughputTokS;
   final int? maxConcurrency;
@@ -131,8 +149,13 @@ class OverviewNode {
         device: j['device'] as String?,
         chip: j['chip'] as String?,
         memoryGb: (j['memory_gb'] as num?)?.toInt(),
+        vramGb: (j['vram_gb'] as num?)?.toDouble(),
+        vramTotalMb: (j['vram_total_mb'] as num?)?.toDouble(),
         deviceClass: j['device_class'] as String?,
         model: j['model'] as String?,
+        models: j['models'] is List
+            ? [for (final m in j['models'] as List) '$m']
+            : const [],
         engine: j['engine'] as String?,
         throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
         maxConcurrency: (j['max_concurrency'] as num?)?.toInt(),

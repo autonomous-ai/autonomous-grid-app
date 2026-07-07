@@ -4,6 +4,7 @@ import 'package:grid_app/features/auth/logic/auth_controller.dart';
 import 'package:grid_app/features/auth/logic/auth_state.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/auth/logic/session_expiry_controller.dart';
+import 'package:grid_app/features/provider_node/logic/provider_run_controller.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/providers.dart';
@@ -153,6 +154,7 @@ void main() {
       overrides: [
         gridCliServiceProvider.overrideWithValue(cli),
         gridHomeStoreProvider.overrideWithValue(store),
+        nodeNameProvider.overrideWithValue('grid-app'),
       ],
     );
     addTearDown(container.dispose);

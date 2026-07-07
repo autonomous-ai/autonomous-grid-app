@@ -92,7 +92,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       return;
     }
 
-    _logFile.startRun(steps.map((s) => s.title).join(' → '));
+    _logFile.startRun(steps.map((s) => s.title).toList());
 
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
@@ -111,7 +111,8 @@ class NodeSetupController extends Notifier<NodeSetupState> {
 
     for (var i = 0; i < steps.length; i++) {
       if (_cancelled) return; // cancel() writes its own footer
-      _append(log, '▸ ${steps[i].title}');
+      _logFile.startStep(i + 1, steps.length, steps[i].title);
+      _memo(log, '▸ ${steps[i].title}');
       state = NodeSetupRunning(
           steps: steps, index: i, log: List.unmodifiable(log));
 
@@ -120,12 +121,14 @@ class NodeSetupController extends Notifier<NodeSetupState> {
           : await _runStreaming(service, steps, i, log);
       if (_cancelled) return; // cancel() writes its own footer
       if (!ok) {
+        _logFile.endStep('failed');
         final failure = state;
         _logFile.endRun(failure is NodeSetupFailed
             ? 'FAILED — ${failure.step.title}: ${failure.message}'
             : 'stopped');
         return; // failure state already set
       }
+      _logFile.endStep('done');
     }
 
     if (_cancelled) return;
@@ -135,7 +138,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   }
 
   /// Streaming lifecycle step (`llama.cpp install`, `media install`): success is
-  /// `exitCode == 0`, failure surfaces the last log line.
+  /// `exitCode == 0`, failure surfaces a humanized message ([_humanizeFailure]).
   Future<bool> _runStreaming(
     GridCliService service,
     List<SetupStep> steps,
@@ -146,7 +149,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     final process = await service.start(step.args);
     _process = process;
     process.lines.listen((line) {
-      _append(log, line.text);
+      _output(log, line);
       state = NodeSetupRunning(
           steps: steps, index: i, log: List.unmodifiable(log));
     });
@@ -158,10 +161,25 @@ class NodeSetupController extends Notifier<NodeSetupState> {
 
     state = NodeSetupFailed(
       step: step,
-      message: log.isNotEmpty ? log.last : '${step.title} failed (exit $exit).',
+      message: _humanizeFailure(step, log, exit),
       log: List.unmodifiable(log),
     );
     return false;
+  }
+
+  /// Map a raw CLI failure to plain language at the controller boundary (§6).
+  /// The built-in engine install needs Homebrew, which a non-technical user's
+  /// Mac often lacks — turn that jargon into an actionable next step instead of
+  /// dead-ending. Everything else keeps the CLI's own last line.
+  static String _humanizeFailure(SetupStep step, List<String> log, int exit) {
+    final raw = log.isNotEmpty ? log.last : '';
+    if (raw.toLowerCase().contains('homebrew is required')) {
+      return "This computer can't run the built-in engine yet: it needs "
+          'Homebrew, which isn\'t installed. Install it from https://brew.sh '
+          'and run setup again — or use an engine shared by another computer on '
+          'your grid.';
+    }
+    return raw.isNotEmpty ? raw : '${step.title} failed (exit $exit).';
   }
 
   /// Download step (`models pull`, `media pull`): success is the progress stream
@@ -192,7 +210,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       return false;
     }
     if (_cancelled) return false;
-    _append(log, '✓ ${step.title}');
+    _memo(log, '✓ ${step.title}');
     return true;
   }
 
@@ -200,7 +218,10 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     _cancelled = true;
     _process?.kill();
     _process = null;
-    if (state is NodeSetupRunning) _logFile.endRun('cancelled by user');
+    if (state is NodeSetupRunning) {
+      _logFile.endStep('cancelled');
+      _logFile.endRun('cancelled by user');
+    }
     _refresh(); // partial steps may have installed something — rescan.
     state = const NodeSetupIdle();
   }
@@ -211,8 +232,15 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     state = const NodeSetupIdle();
   }
 
-  void _append(List<String> log, String text) {
-    _logFile.write(text); // mirror to the durable file, uncapped by _maxLogLines
+  /// Mirror one streamed line to both the durable file (tagging stderr) and the
+  /// in-memory UI log.
+  void _output(List<String> log, CliLine line) {
+    _logFile.write(line.text, isError: line.isStderr);
+    _memo(log, line.text);
+  }
+
+  /// Append to the in-memory UI log only, capped at [_maxLogLines].
+  void _memo(List<String> log, String text) {
     log.add(text);
     if (log.length > _maxLogLines) log.removeRange(0, log.length - _maxLogLines);
   }

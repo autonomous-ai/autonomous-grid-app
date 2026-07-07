@@ -71,9 +71,6 @@ class _MembersTabState extends ConsumerState<MembersTab> {
   Widget build(BuildContext context) {
     final membersAsync = ref.watch(networkMembersProvider(_networkId));
     final count = membersAsync.asData?.value.length;
-    // The grid owner is the admin viewing this tab — their email is the one on
-    // this network's credentials. The owner can't be removed (API rejects it).
-    final ownerEmail = widget.network.email.toLowerCase();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
@@ -97,7 +94,7 @@ class _MembersTabState extends ConsumerState<MembersTab> {
                     for (final m in members) ...[
                       _MemberTile(
                         member: m,
-                        isOwner: m.email.toLowerCase() == ownerEmail,
+                        isOwner: m.isOwner,
                         removing: _removing.contains(m.email),
                         onRemove: () => _confirmRemove(m),
                       ),

@@ -30,19 +30,33 @@ APP="${1:-$(find "$APP_ROOT/build/macos/Build/Products/Release" -maxdepth 1 -nam
 NOTARY_PROFILE="${NOTARY_PROFILE:-grid-notary}"
 ENTITLEMENTS="$APP_ROOT/macos/Runner/Release.entitlements"
 OUT_DMG="${OUT_DMG:-$HOME/Desktop/grid_app-0.1.0-macos.dmg}"
-SIDECAR="$APP/Contents/Resources/grid"
+SIDECAR_DIR="$APP/Contents/Resources/grid"   # Nuitka standalone (onedir) folder
 
 [ -d "$APP" ] || { echo "App not found: $APP — build it first." >&2; exit 1; }
 
 # Sign inside-out: nested binaries first, then the app bundle. Hardened runtime
 # (--options runtime) + a secure timestamp are mandatory for notarization.
-if [ -f "$SIDECAR" ]; then
-  echo ">>> Signing bundled grid sidecar…"
-  # The grid sidecar is a Nuitka onefile: it unpacks + execs a payload at run
-  # time, so under hardened runtime it needs these relaxations. If notarization
-  # still flags it, add allow-unsigned-executable-memory / allow-jit here.
+#
+# The grid sidecar ships as a Nuitka *standalone/onedir* folder (Resources/grid/,
+# entry at Resources/grid/grid). Sign EVERY Mach-O in it — libraries first, the
+# entry exe last — so nothing is unsigned when notarytool inspects it. Onedir
+# replaces the old --onefile sidecar whose runtime-extracted payload macOS
+# SIGKILL'd under download quarantine (the app's preflight then reported the
+# helper as blocked). The app --deep pass below re-seals these into CodeResources.
+if [ -d "$SIDECAR_DIR" ]; then
+  echo ">>> Signing bundled grid sidecar (Nuitka onedir)…"
+  # Every Mach-O gets the same Developer ID, so onedir's sibling .so/.dylib all
+  # satisfy library validation — no need for disable-library-validation/JIT
+  # entitlements (those were only for the old onefile's extracted payload).
+  while IFS= read -r -d '' f; do
+    [ "$f" = "$SIDECAR_DIR/grid" ] && continue          # entry exe signed last
+    file -b "$f" | grep -q 'Mach-O' || continue          # skip data/text files
+    codesign --force --options runtime --timestamp \
+      --entitlements "$ENTITLEMENTS" --sign "$DEV_ID" "$f"
+  done < <(find "$SIDECAR_DIR" -type f -print0)
   codesign --force --options runtime --timestamp \
-    --entitlements "$ENTITLEMENTS" --sign "$DEV_ID" "$SIDECAR"
+    --entitlements "$ENTITLEMENTS" --sign "$DEV_ID" "$SIDECAR_DIR/grid"
+  codesign --verify --verbose=2 "$SIDECAR_DIR/grid" || { echo "ERROR: sidecar signature invalid" >&2; exit 1; }
 fi
 
 echo ">>> Signing app bundle (hardened runtime)…"

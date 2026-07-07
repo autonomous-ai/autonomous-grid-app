@@ -62,12 +62,12 @@ List<MessageSegment> parseMessageSegments(String text) {
 
     final imageUrl = match.group(1);
     if (imageUrl != null) {
-      addMedia(imageUrl, _kindFromUrl(imageUrl) ?? MediaKind.image);
+      addMedia(imageUrl, mediaKindForPath(imageUrl) ?? MediaKind.image);
       continue;
     }
 
     final bareUrl = match.group(2);
-    final kind = bareUrl == null ? null : _kindFromUrl(bareUrl);
+    final kind = bareUrl == null ? null : mediaKindForPath(bareUrl);
     if (bareUrl != null && kind != null) {
       addMedia(bareUrl, kind);
       continue;
@@ -83,8 +83,11 @@ List<MessageSegment> parseMessageSegments(String text) {
   return segments;
 }
 
-MediaKind? _kindFromUrl(String url) {
-  final ext = _extensionOf(_trimTrailingPunctuation(url));
+/// The [MediaKind] a URL or filename names by its extension, or null if the
+/// extension isn't a known media type. Shared by the message parser and the
+/// saved-output renderer so both classify files the same way.
+MediaKind? mediaKindForPath(String pathOrUrl) {
+  final ext = _extensionOf(_trimTrailingPunctuation(pathOrUrl));
   if (ext == null) return null;
   if (_imageExt.contains(ext)) return MediaKind.image;
   if (_videoExt.contains(ext)) return MediaKind.video;

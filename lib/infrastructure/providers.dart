@@ -1,11 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/app_environment.dart';
 import 'cli/command_log.dart';
+import 'cli/file_logging_grid_cli_service.dart';
 import 'cli/grid_cli_service.dart';
 import 'cli/grid_cli_service_impl.dart';
 import 'cli/grid_resolver.dart';
 import 'cli/logging_grid_cli_service.dart';
 import 'cli/remote_mode_grid_cli_service.dart';
+import 'logging/cli_log.dart';
 import 'state/grid_home_store.dart';
 
 /// Locates the `grid` binary (sidecar → GRID_BIN → PATH). A user-configured
@@ -19,14 +22,19 @@ final gridPathProvider =
 /// The CLI seam. Null when `grid` is absent — preflight gates the rest of the
 /// app on this being non-null. Override with [FakeGridCliService] in dev/test.
 /// Pinned to remote mode via [RemoteModeGridCliService] (the app is a
-/// remote-only client) and wrapped in [LoggingGridCliService] so every command
-/// shows up in the Debug tab.
+/// remote-only client), wrapped in [LoggingGridCliService] so every command
+/// shows up in the Debug tab, and in [FileLoggingGridCliService] so it is also
+/// appended to a durable transcript (`~/.grid/logs/app_cli.log`).
 final gridCliServiceProvider = Provider<GridCliService?>((ref) {
   final path = ref.watch(gridPathProvider);
   if (path == null) return null;
   final recorder = ref.read(commandLogProvider.notifier);
+  final fileLog = ref.read(cliLogProvider);
   return RemoteModeGridCliService(
-    LoggingGridCliService(GridCliServiceImpl(path), recorder),
+    LoggingGridCliService(
+      FileLoggingGridCliService(GridCliServiceImpl(path), fileLog),
+      recorder,
+    ),
   );
 });
 
@@ -36,7 +44,8 @@ final gridHomeStoreProvider =
 
 /// Control-plane base URL for the app's direct HTTP calls (managed-network
 /// create, etc.). The CLI reads its own API URL from `~/.grid`, so this is no
-/// longer threaded into `grid login`. Defaults to prod; override for
-/// staging/local.
+/// longer threaded into `grid login`. Resolves to prod in release builds; in dev
+/// it honours `GRID_CONTROL_PLANE_URL` so you can point the app at staging — see
+/// [AppEnvironment].
 final gridApiUrlProvider =
-    Provider<String>((ref) => 'https://api-grid.autonomous.ai/');
+    Provider<String>((ref) => AppEnvironment.controlPlaneUrl);

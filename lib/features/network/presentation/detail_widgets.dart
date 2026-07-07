@@ -64,10 +64,16 @@ class DetailSection extends StatelessWidget {
 
 /// A monospace value row with a copy button — for URLs / IDs.
 class AddressRow extends StatelessWidget {
-  const AddressRow({super.key, required this.label, required this.value});
+  const AddressRow(
+      {super.key, required this.label, required this.value, this.maxLines});
 
   final String label;
   final String value;
+
+  /// When set, clamp the value to this many lines with an ellipsis — for long
+  /// opaque values (e.g. an access token) the user copies rather than reads.
+  /// `null` keeps the full value wrapping, the default for short URLs/IDs.
+  final int? maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -80,6 +86,9 @@ class AddressRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(value,
+                    maxLines: maxLines,
+                    overflow:
+                        maxLines == null ? null : TextOverflow.ellipsis,
                     style: const TextStyle(
                         color: AppPalette.textPrimary,
                         fontFamily: 'monospace',

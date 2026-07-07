@@ -3,14 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/app_environment.dart';
 import '../../shared/widgets/error_box.dart';
 import 'preflight_providers.dart';
 import 'preflight_report.dart';
 
-/// Where users go to install or get help with the `grid` background helper.
-const _helpUrl = 'https://grid.autonomous.ai';
-const _installCommand =
-    'curl -fsSL https://grid.autonomous.ai/install.sh | bash';
+/// Where users go to install or get help with the `grid` background helper —
+/// prod in release, the staging site in dev (see [AppEnvironment.websiteUrl]).
+String get _helpUrl => AppEnvironment.websiteUrl;
+String get _installCommand =>
+    'curl -fsSL ${AppEnvironment.websiteUrl}/install.sh | bash';
 
 /// Shown when `grid` cannot be found. Explains the gap and offers a re-check.
 class PreflightScreen extends ConsumerWidget {

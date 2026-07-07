@@ -11,8 +11,8 @@ import 'dart:io';
 /// via a bare `which`. So step 4 probes the usual install dirs directly and, as
 /// a last resort, asks a login shell (which loads the user's profile).
 ///
-/// The bundled sidecar is a Nuitka onefile binary built by the CLI repo's
-/// `build/build_{macos,linux,windows}` scripts and injected next to the app at
+/// The bundled sidecar is a Nuitka standalone (onedir) folder built by grid-app's
+/// own `scripts/cli/build_sidecar.{sh,ps1}` and injected into the app bundle at
 /// packaging time; we compute where it sits from [Platform.resolvedExecutable].
 class GridResolver {
   GridResolver({this.configuredPath, String? Function()? pathLookup})
@@ -58,9 +58,15 @@ class GridResolver {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
     final exe = Platform.isWindows ? 'grid.exe' : 'grid';
     if (Platform.isMacOS) {
-      // Grid.app/Contents/MacOS/Grid → Contents/Resources/grid. Stop here: never
-      // probe Contents/MacOS — the app binary "Grid" matches "grid" on a
+      // Grid.app/Contents/MacOS/Grid → the sidecar under Contents/Resources. We
+      // ship it as a Nuitka **standalone (onedir)** folder at Resources/grid/grid
+      // so macOS never extracts unsigned code at runtime — an --onefile sidecar's
+      // extracted payload is SIGKILL'd by Gatekeeper under download quarantine
+      // (preflight then shows "Grid helper blocked"). The bare Resources/grid
+      // path stays as a fallback for older onefile bundles.
+      // Never probe Contents/MacOS — the app binary "Grid" matches "grid" on a
       // case-insensitive filesystem, so we'd resolve (and spawn) the app itself.
+      yield '$exeDir/../Resources/grid/$exe';
       yield '$exeDir/../Resources/$exe';
       return;
     }

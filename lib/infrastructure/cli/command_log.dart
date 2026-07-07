@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../logging/app_log.dart';
+import '../logging/log_file.dart';
+
 /// How the command was issued: a `grid` CLI call (run/start/pull) or a direct
 /// HTTP request (e.g. the Playground's local-provider smoke test).
 enum CliCallKind { run, start, pull, http }
@@ -83,14 +86,16 @@ class CommandLogNotifier extends Notifier<List<GridCommandLog>> {
   }
 
   /// Marks a started command as finished. Failure = an [error], a non-zero exit
-  /// (CLI), or a non-2xx status (HTTP).
+  /// (CLI), or a non-2xx status (HTTP). Also mirrors the completed call to the
+  /// durable [appLogProvider] timeline so the same event survives an app close.
   void finish(int id, {int? exitCode, String? error}) {
     final endedAt = DateTime.now();
     _schedule(() {
+      GridCommandLog? finished;
       state = [
         for (final e in state)
           if (e.id == id)
-            e.copyWith(
+            finished = e.copyWith(
               status: _failed(e.kind, exitCode, error)
                   ? CliCallStatus.failed
                   : CliCallStatus.success,
@@ -101,7 +106,27 @@ class CommandLogNotifier extends Notifier<List<GridCommandLog>> {
           else
             e,
       ];
+      if (finished != null) _mirrorToAppLog(finished);
     });
+  }
+
+  /// Append a one-line summary of a completed command to the app-log timeline:
+  /// `grid --remote login → ok exit=0 (4s)` (CLI) or a `FAILED` line at error
+  /// level. HTTP calls are tagged `api`, everything else `cli`.
+  void _mirrorToAppLog(GridCommandLog e) {
+    final appLog = ref.read(appLogProvider);
+    final isHttp = e.kind == CliCallKind.http;
+    final failed = e.status == CliCallStatus.failed;
+    final code = e.exitCode == null
+        ? ''
+        : isHttp
+            ? ' status=${e.exitCode}'
+            : ' exit=${e.exitCode}';
+    final dur = e.duration == null ? '' : ' (${logDuration(e.duration!)})';
+    final err = e.error == null ? '' : ': ${e.error}';
+    final message = '${e.command} → ${failed ? 'FAILED' : 'ok'}$code$dur$err';
+    final category = isHttp ? 'api' : 'cli';
+    failed ? appLog.failure(category, message) : appLog.info(category, message);
   }
 
   static bool _failed(CliCallKind kind, int? code, String? error) {

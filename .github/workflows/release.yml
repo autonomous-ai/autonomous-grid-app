@@ -3,12 +3,13 @@ name: release
 # Tag-triggered release for the Grid desktop app (Flutter).
 #
 # Pushing a tag like `v0.1.2` builds the app on each target, bundles the `grid`
-# CLI sidecar (Nuitka onefile, compiled from the grid CLI source by grid-app's own
-# scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
+# CLI sidecar (Nuitka standalone/onedir, compiled from the grid CLI source by grid-app's
+# own scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
-#   Grid-<ver>-macOS-Intel.dmg           (signed + notarized; consumer-only, no engine)
-#   Grid-<ver>-Windows-x64.zip           (unsigned; SmartScreen may warn)
+#
+# Windows builds are disabled for now (deferred) — only macOS Apple Silicon is
+# produced. See the commented-out `windows-latest` matrix entry below to re-enable.
 #
 #   git tag v0.1.2 && git push origin v0.1.2
 #
@@ -34,7 +35,13 @@ permissions:
 # `main`) so every grid-app release compiles a known-good, reproducible CLI. Bump this
 # one line to ship a newer CLI: https://github.com/autonomous-ai/autonomous-grid/releases
 env:
-  CLI_VERSION: v0.1.5
+  CLI_VERSION: v0.1.13
+  # PUBLIC repo that hosts client-facing release binaries (.dmg) + the Sparkle
+  # appcast. Kept separate from this private source repo so the auto-update feed
+  # is reachable without auth (a private repo's release assets 404 for anyone
+  # without repo access — including the client's Sparkle). Must be a public repo
+  # with at least one commit; CI cross-publishes to it with GRID_DOWNLOADS_TOKEN.
+  DOWNLOADS_REPO: autonomous-ecm/autonomous-grid-app-downloads
 
 jobs:
   build:
@@ -45,12 +52,12 @@ jobs:
           - platform: macos-latest      # Apple Silicon, native arm64 build
             arch: arm64
             label: macOS-Apple-Silicon
-          - platform: macos-latest      # Intel x86_64 build, compiled under Rosetta 2
-            arch: x64                    # on the same arm64 runner (no free Intel image
-            label: macOS-Intel           # since macos-13 retired). Consumer-only.
-          - platform: windows-latest
-            arch: x64
-            label: Windows-x64
+          # Windows build disabled for now — deferred until Windows code-signing +
+          # a WinSparkle key exist. Uncomment to re-enable; the `if: runner.os ==
+          # 'Windows'` build steps below stay in place, dormant, ready for it.
+          # - platform: windows-latest
+          #   arch: x64
+          #   label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
     # The Nuitka sidecar build is slow (macOS ~45m; Windows >56m), and macOS adds
@@ -76,12 +83,20 @@ jobs:
 
       - name: Resolve version
         shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          # Monotonic CFBundleVersion for Sparkle's "is there a newer build?"
+          # comparison: 0.2.0 -> 2000, 0.3.0 -> 3000, 1.0.0 -> 1000000. Without a
+          # per-release build number Flutter reuses the same CFBundleVersion and
+          # Sparkle never offers the update.
+          IFS=. read -r MA MI PA <<< "${V%%+*}"
+          echo "BUILD=$((10#$MA * 1000000 + 10#$MI * 1000 + 10#$PA))" >> "$GITHUB_ENV"
 
       - name: Stamp version from tag
         shell: bash
         working-directory: grid-app
-        run: scripts/build/set-version.sh "${GITHUB_REF_NAME}"
+        run: scripts/build/set-version.sh "${VERSION}+${BUILD}"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -89,16 +104,10 @@ jobs:
           channel: stable
           cache: true
 
-      # architecture pins the interpreter's arch to the matrix arch. On the Intel
-      # macOS job this installs an x86_64 python (runs under Rosetta 2 on the arm64
-      # runner); Nuitka then emits a native x86_64 sidecar. arm64/Windows use their
-      # native arch.
       - name: Set up Python (sidecar build)
-        id: setup_python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          architecture: ${{ matrix.arch }}
 
       - name: Flutter dependencies
         shell: bash
@@ -109,18 +118,11 @@ jobs:
       - name: Build grid sidecar (macOS)
         if: runner.os == 'macOS'
         working-directory: grid-app
-        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid.
-        # Nuitka can't cross-compile, so the sidecar's arch follows the build python's arch:
-        # setup-python installed an arm64 python for the Apple Silicon job and an x86_64
-        # (Rosetta 2) python for the Intel job, so each job emits a native binary for its
-        # target — the Intel slice is built under Rosetta on the same arm64 runner (GitHub
-        # retired the free macos-13 Intel image; this avoids a paid `-large` runner).
-        # TODO(release): the Intel build runs Nuitka under Rosetta (~1.5-2x slower); watch
-        # the 120m timeout on the first tagged release and bump if it gets close.
-        # Signed (Developer ID, hardened runtime) + notarized downstream, so it isn't
-        # SIGKILL'd like an ad-hoc build.
-        env:
-          GRID_BUILD_PYTHON: ${{ steps.setup_python.outputs.python-path }}
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid.dist/
+        # (Nuitka standalone/onedir), native arm64 (Nuitka can't cross-compile, and GitHub-hosted
+        # macOS runners are Apple Silicon only — no Intel image since macos-13 was retired). Onedir,
+        # not onefile: the folder is signed (Developer ID, hardened runtime) + notarized downstream,
+        # so nothing is extracted+SIGKILL'd at runtime under download quarantine.
         run: bash scripts/cli/build_sidecar.sh "$GITHUB_WORKSPACE/autonomous-grid-cli"
 
       - name: Build macOS app + inject sidecar
@@ -129,11 +131,17 @@ jobs:
         run: |
           set -euxo pipefail
           flutter config --enable-macos-desktop
-          flutter build macos --release
+          # Bake the Sparkle appcast feed the app polls at runtime. Stable public
+          # URL on the downloads repo: GitHub always serves the newest *published*
+          # (non-draft) release's appcast.xml here.
+          flutter build macos --release \
+            --dart-define=GRID_APPCAST_URL="https://github.com/${{ env.DOWNLOADS_REPO }}/releases/latest/download/appcast.xml"
           APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n1)"
           [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
-          cp ../autonomous-grid-cli/dist/grid "$APP/Contents/Resources/grid"
-          chmod +x "$APP/Contents/Resources/grid"
+          # onedir sidecar: inject the whole standalone folder (entry at Resources/grid/grid)
+          rm -rf "$APP/Contents/Resources/grid"
+          cp -R ../autonomous-grid-cli/dist/grid.dist "$APP/Contents/Resources/grid"
+          chmod +x "$APP/Contents/Resources/grid/grid"
 
       - name: Set up signing + notarization
         if: runner.os == 'macOS'
@@ -161,6 +169,21 @@ jobs:
           mkdir -p dist
           scripts/notarize_macos.sh
 
+      # Sign the DMG with the Sparkle EdDSA key and write dist/appcast.xml next to
+      # it (both get uploaded by the publish step). Skipped with a warning until
+      # the SPARKLE_ED_PRIVATE_KEY secret is provisioned, so releases still build.
+      - name: Generate Sparkle appcast (macOS)
+        if: runner.os == 'macOS'
+        working-directory: grid-app
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          DMG: ${{ github.workspace }}/grid-app/dist/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
+          DOWNLOAD_URL: https://github.com/${{ env.DOWNLOADS_REPO }}/releases/download/${{ github.ref_name }}/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
+          SHORT_VERSION: ${{ env.VERSION }}
+          BUNDLE_VERSION: ${{ env.BUILD }}
+          APPCAST_OUT: ${{ github.workspace }}/grid-app/dist/appcast.xml
+        run: bash scripts/ci/generate_appcast_macos.sh
+
       # ───────────────────────── Windows ─────────────────────────
       - name: Build grid sidecar (Windows)
         if: runner.os == 'Windows'
@@ -180,13 +203,20 @@ jobs:
             -OutZip  "${{ github.workspace }}\grid-app\dist\Grid-${{ env.VERSION }}-Windows-x64.zip"
 
       # ───────────────────────── Publish ─────────────────────────
-      - name: Publish to GitHub Release (draft)
+      # Cross-publish to the PUBLIC downloads repo (not this private one) so the
+      # appcast + dmg are fetchable without auth. Needs GRID_DOWNLOADS_TOKEN — a
+      # PAT with contents:write on DOWNLOADS_REPO (GITHUB_TOKEN only scopes to the
+      # current repo). Draft: a human un-drafts to release it, which is also what
+      # makes `releases/latest` (the feed URL) resolve to it.
+      - name: Publish to downloads repo (draft)
         uses: softprops/action-gh-release@v3
         with:
+          repository: ${{ env.DOWNLOADS_REPO }}
+          token: ${{ secrets.GRID_DOWNLOADS_TOKEN }}
           draft: true
           name: Grid ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          # One glob: each runner's dist/ holds only its own artifact (mac -> .dmg,
-          # Windows -> .zip), so this stays strict without cross-platform misses.
+          # One glob per runner's dist/: mac -> .dmg + appcast.xml (Sparkle feed),
+          # Windows -> .zip. Strict, without cross-platform misses.
           fail_on_unmatched_files: true
           files: grid-app/dist/*

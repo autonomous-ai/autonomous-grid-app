@@ -29,6 +29,22 @@ void main() {
     });
   });
 
+  group('ManagedNetworkMember.isOwner', () {
+    test('is true only when the member carries the admin role', () {
+      const owner = ManagedNetworkMember(
+          email: 'owner@example.com', roles: ['admin']);
+      const provider = ManagedNetworkMember(
+          email: 'me@example.com', roles: ['provider', 'consumer']);
+      const noRoles = ManagedNetworkMember(email: 'x@example.com', roles: []);
+
+      expect(owner.isOwner, isTrue);
+      // Regression: a provider viewing the list must not read as the owner just
+      // because they're the one looking at it.
+      expect(provider.isOwner, isFalse);
+      expect(noRoles.isOwner, isFalse);
+    });
+  });
+
   group('ManagedMemberRole', () {
     test('wire values match the API contract, without admin', () {
       expect(ManagedMemberRole.values.map((r) => r.wire),

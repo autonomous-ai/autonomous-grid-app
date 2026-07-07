@@ -19,7 +19,8 @@ void main() {
       "nodes": [
         {"name": "pro60002",
          "device": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition ×4",
-         "chip": null, "memory_gb": 96, "device_class": "server",
+         "chip": null, "memory_gb": 96, "vram_gb": 48.0, "vram_total_mb": 49152.0,
+         "device_class": "server",
          "model": "glm-5.2", "engine": "External",
          "throughput_tok_s": 52.8, "max_concurrency": 8, "online": true}
       ]
@@ -43,6 +44,8 @@ void main() {
       final n = o.nodes.single;
       expect(n.name, 'pro60002');
       expect(n.memoryGb, 96);
+      expect(n.vramGb, 48.0);
+      expect(n.vramTotalMb, 49152.0);
       expect(n.engine, 'External');
       expect(n.throughputTokS, 52.8);
       expect(n.online, isTrue);

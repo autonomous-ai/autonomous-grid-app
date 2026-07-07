@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass_surface.dart';
 import '../shell_state.dart';
@@ -33,27 +32,9 @@ class SideNav extends ConsumerWidget {
                 onTap: () =>
                     ref.read(navSectionProvider.notifier).select(section),
               ),
-            const Spacer(),
-            const _VersionFooter(),
           ],
         ),
       ),
-    );
-  }
-}
-
-/// App version pinned to the bottom of the sidebar — quiet, for support/QA.
-class _VersionFooter extends ConsumerWidget {
-  const _VersionFooter();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final version = ref.watch(appVersionProvider).asData?.value;
-    if (version == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(left: 10, top: 8, bottom: 2),
-      child: Text('v$version',
-          style: const TextStyle(color: AppPalette.textFaint, fontSize: 11.5)),
     );
   }
 }

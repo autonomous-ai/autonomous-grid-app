@@ -88,8 +88,8 @@ class _SignIn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Self-contained icon (own rounded corners + transparent margin), so it
-        // needs no ClipRRect — showing it raw keeps the glow edges intact.
+        // Full-bleed square icon (the purple glow reaches every edge), shown raw
+        // so the border isn't clipped.
         Image.asset('assets/brand/grid_logo_bg.png',
             width: 72, height: 72, filterQuality: FilterQuality.medium),
         const SizedBox(height: 16),

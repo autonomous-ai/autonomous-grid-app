@@ -1,14 +1,19 @@
 # `grid` CLI sidecar build drivers
 
 grid-app drives the `grid` CLI as a subprocess. The CLI is a Python package, so we
-ship a **Nuitka onefile binary** rather than the source. These scripts are grid-app's
-**own** build drivers — they compile the CLI *source* (cloned separately) into a single
-self-contained binary, so we control the build (including the Windows target) **without
-modifying the CLI repo** (`autonomous-ai/autonomous-grid`).
+ship a **Nuitka standalone (onedir) folder** rather than the source. These scripts are
+grid-app's **own** build drivers — they compile the CLI *source* (cloned separately)
+into a self-contained folder, so we control the build (including the Windows target)
+**without modifying the CLI repo** (`autonomous-ai/autonomous-grid`).
+
+Onedir, not `--onefile`: an onefile binary extracts an unsigned payload to a temp dir
+at runtime, which macOS SIGKILLs under download quarantine (the app's preflight then
+reports the helper as blocked). A onedir folder ships all code inside the signed +
+notarized app bundle, so there's nothing to extract.
 
 | Script | Platform | Output |
 |--------|----------|--------|
-| `build_sidecar.sh`  | macOS / Linux | `<cli-src>/dist/grid` |
+| `build_sidecar.sh`  | macOS / Linux | `<cli-src>/dist/grid.dist/` (entry `dist/grid.dist/grid`) |
 | `build_sidecar.ps1` | Windows x64   | `<cli-src>\dist\grid.exe` |
 | `grid_entry.py`     | (shared)      | Nuitka entry — mirrors the CLI's `cli/__main__.py` |
 
@@ -26,14 +31,15 @@ second `macos-latest` job (`arch: x64`).
 3. Discover the CLI's first-party packages (top-level dirs with `__init__.py`) and
    force-follow them — the CLI imports heavy deps lazily, so this avoids missing modules.
    New upstream packages are picked up automatically (no hardcoded list to drift).
-4. Compile `grid_entry.py` into a onefile binary.
+4. Compile `grid_entry.py` into a standalone (onedir) folder, normalised to
+   `dist/grid.dist/` with the entry exe at `dist/grid.dist/grid`.
 
 ## Local use
 
 ```bash
 # macOS — native arm64 needs an arm64 python (e.g. the python.org universal2 build):
 GRID_BUILD_PYTHON=/usr/local/bin/python3.13 scripts/cli/build_sidecar.sh ../autonomous-grid
-# -> ../autonomous-grid/dist/grid   (point the app at it with GRID_BIN, see ../README.md)
+# -> ../autonomous-grid/dist/grid.dist/grid   (point the app at it with GRID_BIN, see ../README.md)
 ```
 
 ```powershell

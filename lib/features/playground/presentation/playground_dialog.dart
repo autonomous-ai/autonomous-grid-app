@@ -6,10 +6,15 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../network/logic/grid_overview_provider.dart';
+import '../../network/logic/network_models_provider.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/chat_controller.dart';
+import '../logic/chat_message.dart';
 import '../logic/local_test_state.dart';
-import '../../network/logic/network_models_provider.dart';
+import '../logic/playground_models.dart';
+import '../logic/playground_request.dart';
+import 'attachment_bar.dart';
 import 'message_content.dart';
 
 /// Opens the quick model-test dialog for the selected grid and wipes the
@@ -25,10 +30,11 @@ Future<void> openPlaygroundDialog(BuildContext context, WidgetRef ref) async {
   chat.clear();
 }
 
-/// Consumer chat playground as a dialog — a quick way to check a model responds.
-/// Sends a single-turn message via the relay (or a direct call to a local engine
-/// when one is serving) and shows the reply. The transcript is local UI state
-/// and is cleared when the dialog closes (see [openPlaygroundDialog]).
+/// Model-test playground as a dialog — a quick way to check a model responds.
+/// Routes by the selected model's modality: text chats via the relay's
+/// `chat/completions`, image/video models generate through the media endpoints.
+/// Everything is a single-turn smoke test over HTTP; the transcript is local UI
+/// state, cleared when the dialog closes (see [openPlaygroundDialog]).
 class PlaygroundDialog extends ConsumerStatefulWidget {
   const PlaygroundDialog({super.key});
 
@@ -40,10 +46,25 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   final _model = TextEditingController();
   final _message = TextEditingController();
   final _scroll = ScrollController();
+  final List<MediaAttachment> _attachments = [];
   String _autoModel = '';
 
   @override
+  void initState() {
+    super.initState();
+    // The picker is a plain TextEditingController, not a provider, so selecting a
+    // model won't rebuild the dialog on its own. Refresh on change so the
+    // modality-driven UI (attach bar, hints, send gating) tracks the selection.
+    _model.addListener(_onModelChanged);
+  }
+
+  void _onModelChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _model.removeListener(_onModelChanged);
     _model.dispose();
     _message.dispose();
     _scroll.dispose();
@@ -64,18 +85,35 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     });
   }
 
-  void _send(String networkId) {
+  /// The modality of the currently-selected option. Unknown / hand-typed ids
+  /// fall back to text (a plain chat model).
+  PlaygroundModality _modalityFor(List<PlaygroundModelOption> options) {
+    final id = _model.text.trim();
+    final match = options.where((o) => o.id == id);
+    return match.isEmpty ? PlaygroundModality.text : match.first.modality;
+  }
+
+  void _send(NetworkCredential network) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
     final useLocal = ref.read(useLocalTestProvider);
     final localEndpoint = ref.read(localProviderEndpointProvider);
+    // Resolve the modality from the *current* selection, not a build-time
+    // capture — the picker can change without a rebuild, so reading it here is
+    // what keeps an image selection from being sent to the chat endpoint.
+    final modality = useLocal
+        ? PlaygroundModality.text
+        : _modalityFor(ref.read(playgroundModelsProvider));
     ref.read(chatControllerProvider.notifier).send(
-          network: networkId,
+          network: network,
           model: _model.text.trim(),
           message: message,
+          modality: modality,
+          attachments: useLocal ? const [] : List.of(_attachments),
           localBaseUrl: useLocal ? localEndpoint : null,
         );
     _message.clear();
+    if (_attachments.isNotEmpty) setState(_attachments.clear);
   }
 
   void _scrollToBottom() {
@@ -120,18 +158,20 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     }
 
     final theme = Theme.of(context);
-    final models = ref.watch(networkModelsProvider).asData?.value;
-    if (models != null) _syncDefaultModel(models);
+    final options = ref.watch(playgroundModelsProvider);
+    final loadingModels = ref.watch(gridOverviewProvider).isLoading &&
+        ref.watch(networkModelsProvider).isLoading;
+    if (options.isNotEmpty) {
+      _syncDefaultModel([for (final o in options) o.id]);
+    }
     final localEndpoint = ref.watch(localProviderEndpointProvider);
     final useLocal = ref.watch(useLocalTestProvider);
     final chat = ref.watch(chatControllerProvider);
 
     // Nothing can answer yet: no model advertised on the grid and no local
-    // engine serving. Guide the user to start one instead of a chat box that
-    // would just fail. (While models is null we're still loading.)
-    final hasUsableModel =
-        (models != null && models.isNotEmpty) || localEndpoint != null;
-    if (models != null && !hasUsableModel) {
+    // engine serving. Guide the user to start one instead of a dead input box.
+    final hasUsableModel = options.isNotEmpty || localEndpoint != null;
+    if (!loadingModels && !hasUsableModel) {
       return _NoModelYet(
         canManage: network.canManageProvider,
         onGoToEngines: () {
@@ -140,6 +180,11 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         },
       );
     }
+
+    final modality =
+        useLocal ? PlaygroundModality.text : _modalityFor(options);
+    final needsImage = modality == PlaygroundModality.video;
+    final canSend = !chat.sending && (!needsImage || _attachments.isNotEmpty);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -152,15 +197,34 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
           ),
           const SizedBox(height: 12),
         ],
-        _ModelPicker(controller: _model),
+        _ModelPicker(
+          controller: _model,
+          options: options,
+          networkName: network.name,
+        ),
         const SizedBox(height: 12),
+        if (!useLocal && modality != PlaygroundModality.text) ...[
+          AttachmentBar(
+            attachments: _attachments,
+            maxCount: needsImage ? 1 : 3,
+            hint: needsImage
+                ? 'Video needs a starting image to animate.'
+                : 'Optional: attach up to 3 images to edit instead of generate.',
+            onAdd: (a) => setState(() => _attachments.add(a)),
+            onRemoveAt: (i) => setState(() => _attachments.removeAt(i)),
+          ),
+          const SizedBox(height: 12),
+        ],
         Expanded(
           child: chat.messages.isEmpty
-              ? const ComingSoon(message: 'Send a message to start chatting.')
+              ? ComingSoon(message: _emptyHint(modality))
               : ListView.builder(
                   controller: _scroll,
-                  itemCount: chat.messages.length,
-                  itemBuilder: (context, i) => _Bubble(message: chat.messages[i]),
+                  itemCount: chat.messages.length +
+                      (chat.phase is SendGenerating ? 1 : 0),
+                  itemBuilder: (context, i) => i < chat.messages.length
+                      ? _Bubble(message: chat.messages[i])
+                      : _GeneratingBubble(phase: chat.phase as SendGenerating),
                 ),
         ),
         if (chat.error != null) ...[
@@ -173,11 +237,25 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         _InputBar(
           controller: _message,
           sending: chat.sending,
-          onSend: () => _send(network.networkId),
+          canSend: canSend,
+          hint: _inputHint(modality),
+          onSend: () => _send(network),
         ),
       ],
     );
   }
+
+  String _emptyHint(PlaygroundModality modality) => switch (modality) {
+        PlaygroundModality.image => 'Describe an image to generate.',
+        PlaygroundModality.video => 'Attach an image, then describe the motion.',
+        PlaygroundModality.text => 'Send a message to start chatting.',
+      };
+
+  String _inputHint(PlaygroundModality modality) => switch (modality) {
+        PlaygroundModality.image => 'Describe the image…',
+        PlaygroundModality.video => 'Describe the motion…',
+        PlaygroundModality.text => 'Message…',
+      };
 }
 
 /// Dialog title with the grid it targets, plus a Close button.
@@ -199,9 +277,8 @@ class _DialogHeader extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 network == null
-                    ? 'A quick chat to check a model responds.'
-                    : 'A quick chat to check a model on ${network!.name} '
-                        'responds.',
+                    ? 'Chat with a model, or generate images and video.'
+                    : 'Chat, or generate images and video, on ${network!.name}.',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
@@ -218,18 +295,22 @@ class _DialogHeader extends StatelessWidget {
   }
 }
 
-/// Editable model dropdown — lists models advertised on the network (relay
-/// `/models`), yet stays typeable so it still works when none can be fetched
-/// (no provider online, missing inference scope, or relay down).
-class _ModelPicker extends ConsumerWidget {
-  const _ModelPicker({required this.controller});
+/// Editable model dropdown — lists what the grid can do (chat models plus any
+/// image / video generation modes, each with its own icon), yet stays typeable
+/// so it still works when nothing can be fetched (no provider online, relay down).
+class _ModelPicker extends StatelessWidget {
+  const _ModelPicker({
+    required this.controller,
+    required this.options,
+    required this.networkName,
+  });
+
   final TextEditingController controller;
+  final List<PlaygroundModelOption> options;
+  final String networkName;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final network = ref.watch(selectedNetworkProvider);
-    final models = ref.watch(networkModelsProvider).asData?.value ?? const [];
-
+  Widget build(BuildContext context) {
     return DropdownMenu<String>(
       controller: controller,
       enableFilter: true,
@@ -238,18 +319,28 @@ class _ModelPicker extends ConsumerWidget {
       label: const Text('Model'),
       hintText: 'Qwen3.6-35B-A3B',
       leadingIcon: const Icon(Icons.smart_toy_outlined, size: 18),
-      helperText: models.isEmpty
+      helperText: options.isEmpty
           ? 'No models available yet — type a name'
-          : '${models.length} model(s) on ${network?.name ?? 'grid'}',
+          : '${options.length} option(s) on $networkName',
       dropdownMenuEntries: [
-        for (final model in models)
-          DropdownMenuEntry(value: model, label: model),
+        for (final option in options)
+          DropdownMenuEntry(
+            value: option.id,
+            label: option.label,
+            leadingIcon: Icon(_modalityIcon(option.modality), size: 18),
+          ),
       ],
       onSelected: (value) {
         if (value != null) controller.text = value;
       },
     );
   }
+
+  static IconData _modalityIcon(PlaygroundModality modality) => switch (modality) {
+        PlaygroundModality.image => Icons.image_outlined,
+        PlaygroundModality.video => Icons.movie_outlined,
+        PlaygroundModality.text => Icons.smart_toy_outlined,
+      };
 }
 
 /// Blocked state when no model can answer yet. Points provider-capable users to
@@ -346,6 +437,52 @@ class _LocalTestToggle extends StatelessWidget {
   }
 }
 
+/// A live progress bubble while a media generation streams — percent plus the
+/// relay's short status label, with an indeterminate bar until the first update.
+class _GeneratingBubble extends StatelessWidget {
+  const _GeneratingBubble({required this.phase});
+  final SendGenerating phase;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final pct = (phase.progress * 100).round();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        constraints: const BoxConstraints(maxWidth: 320),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome_outlined, size: 16),
+                const SizedBox(width: 8),
+                Text('Generating… $pct%', style: theme.textTheme.bodyMedium),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: phase.progress <= 0 ? null : phase.progress,
+                minHeight: 4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Bubble extends StatelessWidget {
   const _Bubble({required this.message});
   final ChatMessage message;
@@ -368,6 +505,7 @@ class _Bubble extends StatelessWidget {
         ),
         child: MessageContent(
           text: message.text,
+          media: message.media,
           color: isUser
               ? theme.colorScheme.onPrimary
               : theme.colorScheme.onSurface,
@@ -381,11 +519,15 @@ class _InputBar extends StatelessWidget {
   const _InputBar({
     required this.controller,
     required this.sending,
+    required this.canSend,
+    required this.hint,
     required this.onSend,
   });
 
   final TextEditingController controller;
   final bool sending;
+  final bool canSend;
+  final String hint;
   final VoidCallback onSend;
 
   @override
@@ -400,9 +542,11 @@ class _InputBar extends StatelessWidget {
             maxLines: 5,
             enabled: !sending,
             textInputAction: TextInputAction.send,
-            onSubmitted: (_) => onSend(),
+            onSubmitted: (_) {
+              if (canSend) onSend();
+            },
             decoration: InputDecoration(
-              hintText: 'Message…',
+              hintText: hint,
               filled: true,
               fillColor: AppPalette.cardBg,
               contentPadding:
@@ -418,7 +562,7 @@ class _InputBar extends StatelessWidget {
           width: 48,
           height: 48,
           child: FilledButton(
-            onPressed: sending ? null : onSend,
+            onPressed: canSend ? onSend : null,
             style: FilledButton.styleFrom(
               shape: const CircleBorder(),
               padding: EdgeInsets.zero,

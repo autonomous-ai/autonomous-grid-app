@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
-# Build the standalone `grid` CLI sidecar (Nuitka onefile) for the CURRENT OS+arch.
+# Build the standalone `grid` CLI sidecar (Nuitka standalone/onedir) for the CURRENT OS+arch.
 #
 # This is grid-app's OWN build driver: it compiles the grid CLI *source* (cloned
-# separately, e.g. ../autonomous-grid) into one self-contained binary so the app can
+# separately, e.g. ../autonomous-grid) into a self-contained folder so the app can
 # ship `grid` without the user installing Python/uv. Keeping the driver here — not in
 # the CLI repo — lets us add a Windows path and tune Nuitka flags without touching the
 # CLI repo (the Windows counterpart is scripts/cli/build_sidecar.ps1).
 #
-# Nuitka CANNOT cross-compile: the output arch follows the build python's arch. Point
-# GRID_BUILD_PYTHON at an arm64 python for a native Apple Silicon binary, or an x86_64
-# python (runs under Rosetta 2 on Apple Silicon) for an Intel binary — release.yml uses
-# the latter to build the macOS-Intel sidecar without a paid Intel runner.
-# Output: <cli-src>/dist/grid — where bundle_grid_macos.sh and release.yml inject from.
+# ONEDIR, not --onefile: an onefile binary extracts an unsigned payload to a temp
+# dir at runtime, which macOS SIGKILLs under download quarantine (the app's preflight
+# then reports "Grid helper blocked"). A standalone/onedir folder ships all code inside
+# the signed+notarized app bundle, so there's nothing to extract. See scripts/README.md.
+#
+# Nuitka CANNOT cross-compile: run it on the target arch (Apple Silicon for arm64).
+# Output: <cli-src>/dist/grid.dist/  (entry exe at dist/grid.dist/grid) — where
+# bundle_grid_macos.sh and release.yml inject from.
 #
 # Usage:
 #   scripts/cli/build_sidecar.sh [path-to-cli-source]      # arg, or sibling autodetect
@@ -90,12 +93,13 @@ done
 [ ${#INCLUDES[@]} -gt 0 ] || { echo "ERROR: no first-party packages found in $CLI_SRC" >&2; exit 1; }
 INCLUDES+=("--include-package=uvicorn")
 
-echo ">>> Compiling with Nuitka (standalone onefile, $OS_SUFFIX): ${INCLUDES[*]}"
+echo ">>> Compiling with Nuitka (standalone onedir, $OS_SUFFIX): ${INCLUDES[*]}"
 # --include-package-data bundles shared/media/workflows/*.json + shared/engine/*.txt;
 # certifi ships the CA bundle httpx needs for TLS to the relay/control plane.
+# NOTE: --standalone WITHOUT --onefile → a `<entry>.dist/` folder (no runtime
+# extraction), so it survives macOS download quarantine once notarized.
 ( cd "$CLI_SRC" && "$PY" -m nuitka \
   --standalone \
-  --onefile \
   --deployment \
   --output-dir="$CLI_SRC/dist" \
   --output-filename=grid \
@@ -107,8 +111,13 @@ echo ">>> Compiling with Nuitka (standalone onefile, $OS_SUFFIX): ${INCLUDES[*]}
   "${INCLUDES[@]}" \
   --include-package-data=shared \
   --include-package-data=certifi \
-  --onefile-tempdir-spec="{CACHE_DIR}/localagi-grid/{VERSION}-${OS_SUFFIX}" \
   "$ENTRY" )
 
+# Nuitka names the standalone folder after the entry module (grid_entry.dist).
+# Normalise to a stable dist/grid.dist/ with the entry exe at dist/grid.dist/grid,
+# so bundle_grid_macos.sh and release.yml can inject from a predictable path.
+rm -rf "$CLI_SRC/dist/grid.dist"
+mv "$CLI_SRC/dist/grid_entry.dist" "$CLI_SRC/dist/grid.dist"
+
 echo
-echo "Built: $CLI_SRC/dist/grid"
+echo "Built: $CLI_SRC/dist/grid.dist/  (entry exe: dist/grid.dist/grid)"

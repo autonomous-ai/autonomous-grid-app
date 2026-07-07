@@ -1,93 +1,251 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/playground/logic/chat_controller.dart';
-import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
-import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
-import 'package:grid_app/infrastructure/providers.dart';
+import 'package:grid_app/features/playground/logic/chat_transport.dart';
+import 'package:grid_app/features/playground/logic/media_outputs.dart';
+import 'package:grid_app/features/playground/logic/media_transport.dart';
+import 'package:grid_app/features/playground/logic/message_media.dart';
+import 'package:grid_app/features/playground/logic/playground_request.dart';
+import 'package:grid_app/infrastructure/api/models/media_event.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
-const _args = [
-  'chat',
-  '-m', 'm',
-  '--grid', 'net',
-  '--json',
-  'hi',
-];
+/// A stub relay signalling URL, so `relayBaseUrl` is `.../relay/v1`.
+NetworkCredential _credential() => const NetworkCredential(
+      networkId: 'net',
+      name: 'Test grid',
+      networkType: 'permissioned',
+      lanSignalingUrl: 'https://grid.example/g1',
+      accessToken: 'tok',
+      refreshToken: '',
+      email: '',
+      nodeId: '',
+      deviceId: '',
+      roles: [],
+      scopes: [],
+      memberEpoch: 1,
+      networkEpoch: 1,
+      expiresAt: 0,
+    );
 
-Future<void> _send(ProviderContainer c) =>
-    c.read(chatControllerProvider.notifier).send(network: 'net', model: 'm', message: 'hi');
+class _FakeChatTransport implements ChatTransport {
+  _FakeChatTransport(this.reply, this.error);
+  final String? reply;
+  final ChatTransportError? error;
+  String? endpoint;
+  List<Map<String, String>>? messages;
+
+  @override
+  Future<(String?, ChatTransportError?)> complete({
+    required String endpoint,
+    required String apiKey,
+    required String model,
+    required List<Map<String, String>> messages,
+  }) async {
+    this.endpoint = endpoint;
+    this.messages = messages;
+    return (reply, error);
+  }
+}
+
+class _FakeMediaTransport implements MediaTransport {
+  _FakeMediaTransport(this.events);
+  final List<MediaEvent> events;
+  String? url;
+  Map<String, dynamic>? payload;
+
+  @override
+  Stream<MediaEvent> stream({
+    required String url,
+    required String apiKey,
+    required Map<String, dynamic> payload,
+  }) {
+    this.url = url;
+    this.payload = payload;
+    return Stream.fromIterable(events);
+  }
+}
+
+ProviderContainer _container({
+  ChatTransport? chat,
+  MediaTransport? media,
+  Directory? outputs,
+}) {
+  final container = ProviderContainer(overrides: [
+    if (chat != null) chatTransportProvider.overrideWithValue(chat),
+    if (media != null) mediaTransportProvider.overrideWithValue(media),
+    if (outputs != null) mediaOutputsDirProvider.overrideWithValue(outputs),
+  ]);
+  addTearDown(container.dispose);
+  return container;
+}
+
+MediaFile _file(String name, List<int> bytes) =>
+    MediaFile(filename: name, contentBase64: base64.encode(bytes));
 
 void main() {
-  test('appends the user message then the assistant reply on success', () async {
-    final fake = FakeGridCliService()
-      ..stubResult(_args,
-          const CliResult(exitCode: 0, stdout: 'hello there', stderr: ''));
-    final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
-    );
-    addTearDown(container.dispose);
+  group('text chat over HTTP', () {
+    test('appends the reply and hits {relayBaseUrl}/chat/completions', () async {
+      final chat = _FakeChatTransport('hello there', null);
+      final container = _container(chat: chat);
 
-    await _send(container);
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'm',
+            message: 'hi',
+          );
 
-    final state = container.read(chatControllerProvider);
-    expect(state.sending, isFalse);
-    expect(state.error, isNull);
-    expect(state.messages.map((m) => m.role).toList(),
-        [ChatRole.user, ChatRole.assistant]);
-    expect(state.messages.last.text, 'hello there');
+      final state = container.read(chatControllerProvider);
+      expect(state.sending, isFalse);
+      expect(state.error, isNull);
+      expect(state.messages.map((m) => m.role).toList(),
+          [ChatRole.user, ChatRole.assistant]);
+      expect(state.messages.last.text, 'hello there');
+      expect(chat.endpoint, 'https://grid.example/g1/relay/v1/chat/completions');
+    });
+
+    test('surfaces a transport error and keeps the user message', () async {
+      final chat = _FakeChatTransport(
+          null, const ChatTransportError('no provider available', statusCode: 503));
+      final container = _container(chat: chat);
+
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'm',
+            message: 'hi',
+          );
+
+      final state = container.read(chatControllerProvider);
+      expect(state.error, contains('no provider'));
+      expect(state.messages, hasLength(1));
+      expect(state.messages.single.role, ChatRole.user);
+    });
+
+    test('maps insufficient balance to a top-up message', () async {
+      final chat = _FakeChatTransport(
+          null,
+          const ChatTransportError('Insufficient balance. Balance: 0.0',
+              statusCode: 402));
+      final container = _container(chat: chat);
+
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'm',
+            message: 'hi',
+          );
+
+      final state = container.read(chatControllerProvider);
+      expect(state.error, contains('credit'));
+      expect(state.error, isNot(contains('Insufficient balance')));
+    });
+
+    test('maps a 401 to a sign-in prompt', () async {
+      final chat = _FakeChatTransport(
+          null, const ChatTransportError('unauthorized', statusCode: 401));
+      final container = _container(chat: chat);
+
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'm',
+            message: 'hi',
+          );
+
+      expect(container.read(chatControllerProvider).error, contains('sign in'));
+    });
   });
 
-  test('surfaces stderr as an error and keeps the user message', () async {
-    final fake = FakeGridCliService()
-      ..stubResult(_args,
-          const CliResult(exitCode: 1, stdout: '', stderr: 'no provider available'));
-    final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
-    );
-    addTearDown(container.dispose);
+  group('media generation over HTTP', () {
+    test('image: streams to media/image/generate and saves the result',
+        () async {
+      final tmp = await Directory.systemTemp.createTemp('grid_media_test');
+      addTearDown(() => tmp.delete(recursive: true));
+      final media = _FakeMediaTransport([
+        const MediaProgress(progress: 50, status: 'running'),
+        MediaResult([_file('out.png', [1, 2, 3])]),
+      ]);
+      final container = _container(media: media, outputs: tmp);
 
-    await _send(container);
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'sdxl',
+            message: 'a mug',
+            modality: PlaygroundModality.image,
+          );
 
-    final state = container.read(chatControllerProvider);
-    expect(state.error, contains('no provider'));
-    expect(state.messages, hasLength(1));
-    expect(state.messages.single.role, ChatRole.user);
-  });
+      final state = container.read(chatControllerProvider);
+      expect(state.error, isNull);
+      expect(state.sending, isFalse);
+      final assistant = state.messages.last;
+      expect(assistant.role, ChatRole.assistant);
+      expect(assistant.media, hasLength(1));
+      expect(assistant.media.single.kind, MediaKind.image);
+      expect(File(assistant.media.single.path).existsSync(), isTrue);
+      expect(media.url, 'https://grid.example/g1/relay/v1/media/image/generate');
+      expect(media.payload!['capability'], 'comfyui:image_generation');
+      expect(media.payload!['prompt'], 'a mug');
+    });
 
-  test('maps an insufficient-balance error to a top-up message', () async {
-    final fake = FakeGridCliService()
-      ..stubResult(
-          _args,
-          const CliResult(
-            exitCode: 1,
-            // With --json the relay prints its error body to stdout.
-            stdout:
-                '{"detail":"Insufficient balance. Balance: 0.0000, minimum: 0.50"}',
-            stderr: '',
-          ));
-    final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
-    );
-    addTearDown(container.dispose);
+    test('video without a starting image is blocked with guidance', () async {
+      final media = _FakeMediaTransport(const []);
+      final container = _container(media: media);
 
-    await _send(container);
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'i2v',
+            message: 'pan slowly',
+            modality: PlaygroundModality.video,
+          );
 
-    final state = container.read(chatControllerProvider);
-    expect(state.error, contains('credit'));
-    // The raw balance figures stay in the Debug log, not the chat error.
-    expect(state.error, isNot(contains('Insufficient balance')));
-    expect(state.messages, hasLength(1));
-  });
+      final state = container.read(chatControllerProvider);
+      expect(state.error, contains('starting image'));
+      expect(state.messages, hasLength(1));
+      expect(media.url, isNull); // never dispatched
+    });
 
-  test('fails fast when grid is absent', () async {
-    final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(null)],
-    );
-    addTearDown(container.dispose);
+    test('video with an attachment streams to media/video/i2v', () async {
+      final tmp = await Directory.systemTemp.createTemp('grid_media_test');
+      addTearDown(() => tmp.delete(recursive: true));
+      final media = _FakeMediaTransport([
+        MediaResult([_file('clip.mp4', [4, 5, 6])]),
+      ]);
+      final container = _container(media: media, outputs: tmp);
 
-    await _send(container);
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'i2v',
+            message: 'pan slowly',
+            modality: PlaygroundModality.video,
+            attachments: [
+              MediaAttachment(
+                  filename: 'seed.png', bytes: Uint8List.fromList([7, 8])),
+            ],
+          );
 
-    final state = container.read(chatControllerProvider);
-    expect(state.error, isNotNull);
-    expect(state.messages, hasLength(1));
+      final state = container.read(chatControllerProvider);
+      expect(state.error, isNull);
+      expect(state.messages.last.media.single.kind, MediaKind.video);
+      expect(media.url, 'https://grid.example/g1/relay/v1/media/video/i2v');
+      expect(media.payload!['capability'], 'comfyui:i2v');
+      expect((media.payload!['input_image'] as Map)['filename'], 'seed.png');
+    });
+
+    test('a media error is surfaced and the user message is kept', () async {
+      final media = _FakeMediaTransport([const MediaError('provider offline')]);
+      final container = _container(media: media);
+
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'sdxl',
+            message: 'a mug',
+            modality: PlaygroundModality.image,
+          );
+
+      final state = container.read(chatControllerProvider);
+      expect(state.error, contains('provider offline'));
+      expect(state.messages, hasLength(1));
+    });
   });
 }

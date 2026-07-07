@@ -34,6 +34,13 @@ class ManagedNetworkMember {
   /// Plan/billing state for the seat (e.g. `paid`, `trialing`), when present.
   final String? paymentStatus;
 
+  /// Whether this member is the grid owner. The control plane marks the owner
+  /// with the `admin` role (same vocabulary as the credential's roles claim),
+  /// and the owner can never be removed — so this drives the "Owner" badge and
+  /// hides the remove button. Derived from the member itself, never from who is
+  /// currently viewing the list.
+  bool get isOwner => roles.contains('admin');
+
   factory ManagedNetworkMember.fromJson(Map<String, dynamic> json) {
     final rawRoles = json['roles'];
     return ManagedNetworkMember(

@@ -1,5 +1,13 @@
 import 'dart:convert';
 
+/// Relay media provider capabilities — what a `comfyui` node advertises and how
+/// the relay routes a media request (relay.py:1319). Defined once here so the
+/// request builders (which send them) and the grid overview (which reads them
+/// off nodes to show what a grid can generate) never drift apart.
+const String kCapImageGenerate = 'comfyui:image_generation';
+const String kCapImageEdit = 'comfyui:image_editing';
+const String kCapI2V = 'comfyui:i2v';
+
 /// SSE events from the relay media endpoints — `media/image/generate`,
 /// `media/image/edit`, `media/video/i2v` (cli.py:958). See
 /// CLI_Integration_Contract §4.2.
@@ -58,12 +66,22 @@ class MediaError extends MediaEvent {
   final String message;
 }
 
-/// A returned media file. Decode [contentBase64] and write under
-/// `~/.grid/outputs` (cli.py:1007).
+/// A media file crossing the relay: either returned in a [MediaResult] (decode
+/// [contentBase64] and write under `~/.grid/outputs`, cli.py:1007) or sent as an
+/// input image for `media/image/edit` / `media/video/i2v` (cli.py:1115).
 class MediaFile {
   const MediaFile({required this.filename, required this.contentBase64});
+
+  /// Wrap raw [bytes] (e.g. a picked image) as a base64 input file.
+  factory MediaFile.fromBytes(String filename, List<int> bytes) =>
+      MediaFile(filename: filename, contentBase64: base64.encode(bytes));
+
   final String filename;
   final String contentBase64;
 
   List<int> decodeBytes() => base64.decode(contentBase64);
+
+  /// Wire shape the relay expects for an input file: `{filename, content_base64}`.
+  Map<String, String> toJson() =>
+      {'filename': filename, 'content_base64': contentBase64};
 }

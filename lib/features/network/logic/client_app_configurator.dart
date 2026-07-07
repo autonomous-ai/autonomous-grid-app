@@ -41,33 +41,37 @@ class ClientAppConfigurator {
   final String _home;
 
   Future<ApplyResult> apply(
-      ClientApp app, String base, String key, String model) {
+      ClientApp app, String base, String key, List<String> models) {
+    // Guarantee a non-empty list so every downstream write has a default.
+    final ids = models.isEmpty ? const [kGuideDefaultModel] : models;
     switch (app) {
       case ClientApp.openClaw:
-        return _applyOpenClaw(base, key, model);
+        return _applyOpenClaw(base, key, ids);
       case ClientApp.hermes:
-        return _applyHermes(base, key, model);
+        // Hermes carries one default and discovers the rest from the endpoint.
+        return _applyHermes(base, key, ids.first);
     }
   }
 
   Future<ApplyResult> _applyOpenClaw(
-      String base, String key, String model) async {
+      String base, String key, List<String> models) async {
     final file = File('$_home/.openclaw/openclaw.json');
     try {
       final root = await _readJsonObject(file);
 
       // Add our provider without disturbing the user's other providers.
       // `mode: merge` keeps OpenClaw's built-in providers instead of replacing
-      // them (per the OpenClaw model-providers docs).
-      final models = _childMap(root, 'models');
-      models['mode'] = 'merge';
-      final providers = _childMap(models, 'providers');
+      // them (per the OpenClaw model-providers docs). List every grid model so
+      // the user can pick any of them, not just the default.
+      final modelsNode = _childMap(root, 'models');
+      modelsNode['mode'] = 'merge';
+      final providers = _childMap(modelsNode, 'providers');
       providers['grid'] = {
         'baseUrl': base,
         'apiKey': key,
         'api': 'openai-completions',
         'models': [
-          {'id': model, 'name': '$model (via Grid)'},
+          for (final m in models) {'id': m, 'name': '$m (via Grid)'},
         ],
       };
 
@@ -76,7 +80,7 @@ class ClientAppConfigurator {
       final modelCfg =
           _childMap(_childMap(_childMap(root, 'agents'), 'defaults'), 'model');
       final setDefault = modelCfg['primary'] == null;
-      if (setDefault) modelCfg['primary'] = 'grid/$model';
+      if (setDefault) modelCfg['primary'] = 'grid/${models.first}';
 
       await _backupThenWrite(
           file, const JsonEncoder.withIndent('  ').convert(root));
@@ -84,7 +88,7 @@ class ClientAppConfigurator {
         'Added Grid to ${_display(file)}.',
         note: setDefault
             ? null
-            : 'Set your model to grid/$model in OpenClaw to use it.',
+            : 'Set your model to grid/${models.first} in OpenClaw to use it.',
       );
     } on Object catch (e) {
       return ApplyError('Couldn\'t update ${_display(file)}: ${_reason(e)}');
@@ -94,39 +98,79 @@ class ClientAppConfigurator {
   Future<ApplyResult> _applyHermes(
       String base, String key, String model) async {
     final config = File('$_home/.hermes/config.yaml');
+    final env = File('$_home/.hermes/.env');
     try {
       final text = (await config.exists()) ? await config.readAsString() : '';
 
-      // No config yet → write a fresh one straight from the snippet.
+      // No config yet → write a fresh one straight from the snippet. Otherwise
+      // surgically repoint the existing `model:` block at the grid, preserving
+      // every other setting and comment (yaml_edit edits in place).
       if (text.trim().isEmpty) {
         await config.parent.create(recursive: true);
         await _backupThenWrite(config, hermesConfigSnippet(base, key, model));
-        return ApplyOk('Configured Hermes in ${_display(config)}.');
+      } else {
+        final editor = YamlEditor(text);
+        final connection = <String, Object>{
+          'provider': 'custom',
+          'base_url': base,
+          'api_key': key,
+          'default': model,
+          'max_tokens': kHermesMaxTokens,
+        };
+        final existingModel =
+            editor.parseAt(['model'], orElse: () => wrapAsYamlNode(null));
+        if (existingModel.value is Map) {
+          connection.forEach((k, v) => editor.update(['model', k], v));
+        } else {
+          editor.update(['model'], connection);
+        }
+        _upsertCustomProvider(editor, base: base, key: key, model: model);
+        await _backupThenWrite(config, editor.toString().trimRight());
       }
 
-      // Existing config → surgically repoint its `model:` block at the grid,
-      // preserving every other setting and comment (yaml_edit edits in place).
-      final editor = YamlEditor(text);
-      final connection = <String, Object>{
-        'provider': 'custom',
-        'base_url': base,
-        'api_key': key,
-        'default': model,
-        'max_tokens': kHermesMaxTokens,
-      };
-      final existingModel =
-          editor.parseAt(['model'], orElse: () => wrapAsYamlNode(null));
-      if (existingModel.value is Map) {
-        connection.forEach((k, v) => editor.update(['model', k], v));
-      } else {
-        editor.update(['model'], connection);
-      }
-      _upsertCustomProvider(editor, base: base, key: key, model: model);
-      await _backupThenWrite(config, editor.toString().trimRight());
-      return ApplyOk('Pointed Hermes at this grid in ${_display(config)}.');
+      // Also drop the pair into `.env`: Hermes reads OPENAI_BASE_URL +
+      // OPENAI_API_KEY as a direct custom endpoint (docs: "when base_url is set,
+      // Hermes ignores the provider and calls that endpoint directly"), and its
+      // convention is that secrets live in `.env`. config.yaml (higher
+      // precedence) still carries the model, so the grid resolves either way.
+      await _upsertEnvVars(env, {
+        'OPENAI_BASE_URL': base,
+        'OPENAI_API_KEY': key,
+      });
+      return ApplyOk(
+          'Pointed Hermes at this grid (${_display(config)} + ${_display(env)}).');
     } on Object catch (e) {
       return ApplyError('Couldn\'t update Hermes config: ${_reason(e)}');
     }
+  }
+
+  /// Upserts `KEY=value` lines in a dotenv file, replacing an existing
+  /// uncommented assignment in place (commented `# KEY=` template lines are left
+  /// alone) and appending any that are new under a Grid header. Preserves every
+  /// other line/comment and backs an existing file up to `<file>.bak` first.
+  Future<void> _upsertEnvVars(File env, Map<String, String> vars) async {
+    final lines = (await env.exists()) ? await env.readAsLines() : <String>[];
+    final remaining = Map<String, String>.from(vars);
+    final out = <String>[];
+    for (final line in lines) {
+      final key = remaining.keys.firstWhere(
+        (k) => RegExp('^\\s*${RegExp.escape(k)}\\s*=').hasMatch(line),
+        orElse: () => '',
+      );
+      if (key.isEmpty) {
+        out.add(line);
+        continue;
+      }
+      out.add('$key=${remaining.remove(key)}');
+    }
+    if (remaining.isNotEmpty) {
+      if (out.isNotEmpty && out.last.trim().isNotEmpty) out.add('');
+      out.add('# Added by Grid — points Hermes at this grid');
+      remaining.forEach((k, v) => out.add('$k=$v'));
+    }
+    await env.parent.create(recursive: true);
+    if (await env.exists()) await env.copy('${env.path}.bak');
+    await env.writeAsString('${out.join('\n')}\n');
   }
 
   /// Registers this grid as a Hermes named provider under `custom_providers`,

@@ -32,7 +32,7 @@ class NetworkDetail extends ConsumerWidget {
     // Member management (the Members tab) is owner-only — the control plane
     // doesn't support member admin for providers yet. Everyone else, providers
     // included, gets just the overview.
-    if (!network.isOwner) {
+    if (!network.canManageProvider) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [header, Expanded(child: _OverviewTab(network: network))],
@@ -77,10 +77,18 @@ class _OverviewTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 6, 24, 24),
       children: [
-        const GridOverviewView(),
+        // Headline stats stay pinned under the running status.
+        const GridStatsSection(),
+        // What the grid can actually do (Chat / Images / Video) — the only place
+        // a media capability shows, since it isn't a listed model.
+        const GridCapabilitiesSection(),
         const SizedBox(height: 22),
-        // API access shown directly (as before — no developer expander).
+        // API access first: the credentials a developer needs to call this grid.
         ConsumerEnvCard(network: network),
+        // Then the models they can call, and the nodes serving them. Each adds
+        // its own leading gap and collapses to nothing when empty.
+        const GridModelsSection(),
+        const GridNodesSection(),
         // "Set up engine" is provider-only; the quick "Test" action now lives in
         // the header. Consumers have no body action, so skip the spacing too.
         if (network.canManageProvider) ...[
@@ -92,14 +100,6 @@ class _OverviewTab extends StatelessWidget {
           const SizedBox(height: 28),
           _DeleteGridButton(network: network),
         ],
-        // Connection block (grid address) temporarily hidden per request:
-        // const SizedBox(height: 20),
-        // DetailSection(
-        //   title: 'Connection',
-        //   children: [
-        //     AddressRow(label: 'Grid address', value: network.lanSignalingUrl),
-        //   ],
-        // ),
       ],
     );
   }
@@ -142,7 +142,7 @@ class _Header extends ConsumerWidget {
             const SizedBox(width: 12),
             // Add member is owner-only (BE doesn't support member admin for
             // providers yet); it sits beside Test so it's reachable from any tab.
-            if (network.isOwner) ...[
+            if (network.canManageProvider) ...[
               _AddMemberButton(network: network),
               const SizedBox(width: 8),
             ],

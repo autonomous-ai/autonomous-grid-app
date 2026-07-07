@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../logic/network_models_provider.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
+import '../logic/grid_overview_provider.dart';
 import 'app_guide_panels.dart';
 
 /// The shared body of the "connect an app to this grid" guide: the app picker
@@ -28,6 +28,10 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
   /// so the default can follow detection.
   ClientApp? _selected;
   bool _touched = false;
+
+  /// Lifecycle of the one-click "Set up for me" write for the selected app.
+  /// Reset whenever the app changes so one grid's result never lingers on
+  /// another's panel.
   ApplyPhase _phase = const ApplyIdle();
 
   void _select(ClientApp? app) => setState(() {
@@ -36,25 +40,24 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         _phase = const ApplyIdle();
       });
 
-  Future<void> _apply(ClientApp app, String model) async {
+  /// Writes the grid's connection into the selected client's config
+  /// (`~/.hermes/config.yaml` / `~/.openclaw/openclaw.json`) via
+  /// [ClientAppConfigurator]. Only reached for chat grids, where the grid can be
+  /// the client's model. Holds the spinner briefly so a near-instant write still
+  /// reads as an action.
+  Future<void> _apply(ClientApp app, List<String> models) async {
     setState(() => _phase = const ApplyRunning());
-    // The write is near-instant, so hold the spinner for a beat — otherwise the
-    // button snaps straight to the result and the click feels like it did
-    // nothing (especially on a repeat click already showing success).
     final (result, _) = await (
-      ref.read(clientAppConfiguratorProvider).apply(
-            app,
-            widget.baseUrl,
-            widget.apiKey,
-            model,
-          ),
+      ref
+          .read(clientAppConfiguratorProvider)
+          .apply(app, widget.baseUrl, widget.apiKey, models),
       Future<void>.delayed(const Duration(milliseconds: 450)),
     ).wait;
     if (!mounted) return;
     setState(() => _phase = ApplyDone(result));
   }
 
-  Future<void> _download(String url) async {
+  Future<void> _openSite(String url) async {
     final uri = Uri.tryParse(url);
     if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
@@ -67,10 +70,20 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         : ClientApp.values
             .firstWhere(installed.contains, orElse: () => ClientApp.openClaw);
 
-    // Name a model the grid actually serves in every snippet/apply. Falls back
-    // to the default only while the list is loading or the grid advertises none.
-    final models = ref.watch(networkModelsProvider).asData?.value ?? const [];
-    final model = models.isNotEmpty ? models.first : kGuideDefaultModel;
+    // Every chat model the grid serves — OpenClaw lists them all; the first is
+    // the default named in single-model snippets/apply. Falls back to the
+    // default id only while the list loads or the grid advertises none, so a
+    // snippet is never empty.
+    final chatIds = ref.watch(gridChatModelIdsProvider);
+    final models = chatIds.isEmpty ? const [kGuideDefaultModel] : chatIds;
+    final model = models.first;
+
+    // Media grids (image/video) can't be wired as a chat provider — the panels
+    // swap the chat setup for a "build a skill" prompt / media API call. `hasChat`
+    // stays the default while the overview loads (media resolves to none), so a
+    // chat grid never flashes empty first.
+    final media = ref.watch(gridMediaCapabilitiesProvider);
+    final hasChat = ref.watch(gridHasChatProvider);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -91,17 +104,24 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
         const SizedBox(height: 18),
         if (selected == null)
           OtherAppPanel(
-              baseUrl: widget.baseUrl, apiKey: widget.apiKey, model: model)
+            baseUrl: widget.baseUrl,
+            apiKey: widget.apiKey,
+            model: model,
+            media: media,
+            hasChat: hasChat,
+          )
         else
           ClientAppPanel(
             info: kClientApps[selected]!,
             installed: installed.contains(selected),
             baseUrl: widget.baseUrl,
             apiKey: widget.apiKey,
-            model: model,
+            models: models,
+            media: media,
+            hasChat: hasChat,
             phase: _phase,
-            onApply: () => _apply(selected, model),
-            onDownload: () => _download(kClientApps[selected]!.downloadUrl),
+            onApply: () => _apply(selected, models),
+            onOpenSite: () => _openSite(kClientApps[selected]!.downloadUrl),
           ),
       ],
     );

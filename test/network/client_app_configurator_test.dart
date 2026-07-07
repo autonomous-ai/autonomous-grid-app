@@ -30,7 +30,7 @@ void main() {
 
   group('OpenClaw', () {
     test('creates config with the Grid provider and a default model', () async {
-      final result = await sut.apply(ClientApp.openClaw, _base, _key, _model);
+      final result = await sut.apply(ClientApp.openClaw, _base, _key, [_model]);
 
       expect(result, isA<ApplyOk>());
       expect((result as ApplyOk).note, isNull);
@@ -41,6 +41,18 @@ void main() {
       expect(grid['apiKey'], _key);
       expect((grid['models'] as List).first['id'], _model);
       expect(json['agents']['defaults']['model']['primary'], 'grid/$_model');
+    });
+
+    test('writes every grid model to the provider, first as the default',
+        () async {
+      const ids = ['m-one', 'm-two', 'm-three'];
+      await sut.apply(ClientApp.openClaw, _base, _key, ids);
+
+      final json = readJson('.openclaw/openclaw.json');
+      final grid = (json['models']['providers'] as Map)['grid'] as Map;
+      final listed = (grid['models'] as List).map((m) => m['id']).toList();
+      expect(listed, ids); // all of them, not just the first
+      expect(json['agents']['defaults']['model']['primary'], 'grid/m-one');
     });
 
     test('merges without clobbering other providers or the chosen model',
@@ -60,7 +72,7 @@ void main() {
         },
       }));
 
-      final result = await sut.apply(ClientApp.openClaw, _base, _key, _model);
+      final result = await sut.apply(ClientApp.openClaw, _base, _key, [_model]);
 
       expect((result as ApplyOk).note, isNotNull); // model kept ⇒ follow-up note
       final json = readJson('.openclaw/openclaw.json');
@@ -76,7 +88,7 @@ void main() {
       await file.create(recursive: true);
       await file.writeAsString('not json at all');
 
-      final result = await sut.apply(ClientApp.openClaw, _base, _key, _model);
+      final result = await sut.apply(ClientApp.openClaw, _base, _key, [_model]);
       expect(result, isA<ApplyError>());
     });
   });
@@ -86,7 +98,7 @@ void main() {
         File('${home.path}/.hermes/config.yaml').readAsStringSync();
 
     test('creates a fresh config.yaml pointing at the grid', () async {
-      final result = await sut.apply(ClientApp.hermes, _base, _key, _model);
+      final result = await sut.apply(ClientApp.hermes, _base, _key, [_model]);
 
       expect(result, isA<ApplyOk>());
       final editor = YamlEditor(readConfig());
@@ -119,7 +131,7 @@ void main() {
         '  provider: ollama-launch\n',
       );
 
-      final result = await sut.apply(ClientApp.hermes, _base, _key, _model);
+      final result = await sut.apply(ClientApp.hermes, _base, _key, [_model]);
 
       expect(result, isA<ApplyOk>());
       final editor = YamlEditor(readConfig());
@@ -149,8 +161,8 @@ void main() {
         '    model: some-model\n',
       );
 
-      await sut.apply(ClientApp.hermes, _base, _key, _model);
-      await sut.apply(ClientApp.hermes, _base, _key, _model); // re-apply
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]); // re-apply
 
       final editor = YamlEditor(readConfig());
       final list = editor.parseAt(['custom_providers']).value as List;
@@ -159,9 +171,50 @@ void main() {
       expect(editor.parseAt(['custom_providers', 1, 'base_url']).value, _base);
     });
 
-    test('does not create a .env file', () async {
-      await sut.apply(ClientApp.hermes, _base, _key, _model);
-      expect(File('${home.path}/.hermes/.env').existsSync(), isFalse);
+    test('writes OPENAI_BASE_URL + OPENAI_API_KEY into .env, keeping the rest',
+        () async {
+      final env = File('${home.path}/.hermes/.env');
+      await env.create(recursive: true);
+      await env.writeAsString('# my env\nTELEGRAM_BOT_TOKEN=abc\n');
+
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+
+      final lines = env.readAsLinesSync();
+      expect(lines, contains('OPENAI_BASE_URL=$_base'));
+      expect(lines, contains('OPENAI_API_KEY=$_key'));
+      // Unrelated vars + comments survive, and the old file is backed up.
+      expect(lines, contains('TELEGRAM_BOT_TOKEN=abc'));
+      expect(lines, contains('# my env'));
+      expect(File('${env.path}.bak').existsSync(), isTrue);
+    });
+
+    test('upserts an existing OPENAI_API_KEY line instead of duplicating it',
+        () async {
+      final env = File('${home.path}/.hermes/.env');
+      await env.create(recursive: true);
+      await env.writeAsString('OPENAI_API_KEY=old\nOTHER=keep\n');
+
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+
+      final content = env.readAsStringSync();
+      expect('OPENAI_API_KEY='.allMatches(content).length, 1); // no duplicate
+      expect(content, contains('OPENAI_API_KEY=$_key'));
+      expect(content, contains('OTHER=keep'));
+    });
+
+    test('leaves commented template lines alone and appends a real one',
+        () async {
+      final env = File('${home.path}/.hermes/.env');
+      await env.create(recursive: true);
+      await env.writeAsString('# OPENAI_API_KEY=sk-example\n');
+
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+
+      final lines = env.readAsLinesSync();
+      // The template comment is preserved…
+      expect(lines, contains('# OPENAI_API_KEY=sk-example'));
+      // …and a real, uncommented assignment is appended.
+      expect(lines, contains('OPENAI_API_KEY=$_key'));
     });
   });
 }

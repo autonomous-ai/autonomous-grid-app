@@ -276,14 +276,17 @@ class _FailedBody extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 8),
-        // Plain-language guidance first; the raw CLI line stays below (and in the
-        // log) for anyone who needs the technical detail.
-        Text(
-          'Check your internet connection and that you have enough free disk '
-          'space, then try again.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 6),
+        // The internet/disk hint fits download failures; install failures carry
+        // their own humanized, actionable message (see _humanizeFailure), so
+        // we show that alone rather than a misleading generic line.
+        if (state.step.isDownload) ...[
+          Text(
+            'Check your internet connection and that you have enough free disk '
+            'space, then try again.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 6),
+        ],
         Text(state.message,
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),

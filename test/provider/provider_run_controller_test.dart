@@ -54,6 +54,7 @@ class _RecordingCli extends FakeGridCliService {
 ProviderContainer _containerWith(GridCliService? cli, {GridHomeStore? store}) {
   final container = ProviderContainer(overrides: [
     gridCliServiceProvider.overrideWithValue(cli),
+    nodeNameProvider.overrideWithValue('grid-app'),
     if (store != null) gridHomeStoreProvider.overrideWithValue(store),
   ]);
   return container;
@@ -71,7 +72,10 @@ void main() {
         lines: const [CliLine(isStderr: false, text: 'Joining engine grid-app...')],
       );
     final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        nodeNameProvider.overrideWithValue('grid-app'),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -104,6 +108,7 @@ void main() {
     // Drop the post-join sync delay so the fire-and-forget sync runs at once.
     final container = ProviderContainer(overrides: [
       gridCliServiceProvider.overrideWithValue(cli),
+      nodeNameProvider.overrideWithValue('grid-app'),
       syncDelayAfterJoinProvider.overrideWithValue(Duration.zero),
     ]);
     addTearDown(container.dispose);
@@ -127,7 +132,10 @@ void main() {
         lines: const [CliLine(isStderr: true, text: 'token has no provider scope')],
       );
     final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        nodeNameProvider.overrideWithValue('grid-app'),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -162,6 +170,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         gridCliServiceProvider.overrideWithValue(fake),
+        nodeNameProvider.overrideWithValue('grid-app'),
         freePortFinderProvider.overrideWithValue(() async => 54321),
       ],
     );
@@ -208,6 +217,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         gridCliServiceProvider.overrideWithValue(fake),
+        nodeNameProvider.overrideWithValue('grid-app'),
         freePortFinderProvider.overrideWithValue(() async => 54321),
       ],
     );
@@ -258,6 +268,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         gridCliServiceProvider.overrideWithValue(fake),
+        nodeNameProvider.overrideWithValue('grid-app'),
         freePortFinderProvider.overrideWithValue(() async => ports[pick++]),
       ],
     );
