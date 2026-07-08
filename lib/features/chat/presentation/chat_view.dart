@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../playground/logic/playground_models.dart';
@@ -38,10 +39,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   final _scroll = ScrollController();
   final List<MediaAttachment> _attachments = [];
 
-  /// The conversation the model field was last synced to (its id, or null for a
-  /// new compose), so switching chats restores that chat's model without
-  /// clobbering a model the user is mid-typing in the current one.
-  String? _syncedId;
+  /// The `conversationId|gridId` the model field was last synced to, so
+  /// switching chats restores that chat's model and switching grids drops to the
+  /// new grid's first model — without clobbering a model being mid-typed.
+  String? _syncedKey;
   bool _synced = false;
 
   @override
@@ -66,21 +67,24 @@ class _ChatViewState extends ConsumerState<ChatView> {
     super.dispose();
   }
 
-  /// Keep the model field in step with the open conversation: on a switch,
-  /// restore that chat's saved model (or the first advertised one); within the
-  /// same chat, default to the first option until the user picks their own.
+  /// Keep the model field in step with the open conversation and selected grid:
+  /// on a switch, restore that chat's saved model when the current grid still
+  /// offers it, otherwise drop to the grid's first model; within the same
+  /// chat+grid, default to the first option until the user picks their own.
   void _syncModelField(
     Conversation? active,
     List<PlaygroundModelOption> options,
+    String gridId,
   ) {
-    final key = active?.id;
-    if (!_synced || key != _syncedId) {
+    final key = '${active?.id}|$gridId';
+    if (!_synced || key != _syncedKey) {
       _synced = true;
-      _syncedId = key;
+      _syncedKey = key;
       final stored = active?.model ?? '';
-      _setModelText(stored.isNotEmpty
-          ? stored
-          : (options.isEmpty ? '' : options.first.id));
+      final hasStored = options.any((o) => o.id == stored);
+      _setModelText(
+        hasStored ? stored : (options.isEmpty ? '' : options.first.id),
+      );
       return;
     }
     if (_model.text.isEmpty && options.isNotEmpty) {
@@ -138,7 +142,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final loadingModels = ref.watch(gridOverviewProvider).isLoading &&
         ref.watch(networkModelsProvider).isLoading;
 
-    _syncModelField(sessions.active, options);
+    _syncModelField(sessions.active, options, widget.network.networkId);
 
     // Keep the transcript pinned to the latest message.
     ref.listen(chatSessionsProvider, (_, __) {
@@ -163,8 +167,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ModelBar(
-          controller: _model,
+        _ChatHeader(
+          modelController: _model,
           options: options,
           networkName: widget.network.name,
         ),
@@ -206,34 +210,100 @@ class _ChatViewState extends ConsumerState<ChatView> {
       };
 }
 
-/// The model picker, capped to a comfortable width and left-aligned in a slim
-/// header above the transcript.
-class _ModelBar extends StatelessWidget {
-  const _ModelBar({
-    required this.controller,
+/// The slim header above the transcript: a grid switcher (only when the account
+/// has more than one grid) beside the model picker, so you never have to leave
+/// Chat to change either. Left-aligned and width-capped so the two pickers stay
+/// a comfortable size on a wide window.
+class _ChatHeader extends ConsumerWidget {
+  const _ChatHeader({
+    required this.modelController,
     required this.options,
     required this.networkName,
   });
 
-  final TextEditingController controller;
+  final TextEditingController modelController;
   final List<PlaygroundModelOption> options;
   final String networkName;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final grids = ref.watch(sessionProvider).networks;
+    final selectedId = ref.watch(selectedNetworkProvider)?.networkId;
+    final showGrid = grids.length >= 2;
+
+    final modelPicker = ModelPicker(
+      controller: modelController,
+      options: options,
+      networkName: networkName,
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
       child: Align(
         alignment: Alignment.centerLeft,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: ModelPicker(
-            controller: controller,
-            options: options,
-            networkName: networkName,
-          ),
+          constraints: BoxConstraints(maxWidth: showGrid ? 740 : 360),
+          child: showGrid
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _GridDropdown(
+                        grids: grids,
+                        selectedId: selectedId,
+                        onSelect: (grid) => ref
+                            .read(selectedNetworkProvider.notifier)
+                            .select(grid),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: modelPicker),
+                  ],
+                )
+              : modelPicker,
         ),
       ),
+    );
+  }
+}
+
+/// A non-editable dropdown that switches the active grid in place. Keyed on the
+/// selection so an external change (e.g. from the Grids tab) re-syncs its label.
+class _GridDropdown extends StatelessWidget {
+  const _GridDropdown({
+    required this.grids,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final List<NetworkCredential> grids;
+  final String? selectedId;
+  final ValueChanged<NetworkCredential> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownMenu<String>(
+      key: ValueKey(selectedId),
+      initialSelection: selectedId,
+      requestFocusOnTap: false,
+      enableFilter: false,
+      expandedInsets: EdgeInsets.zero,
+      label: const Text('Grid'),
+      leadingIcon: const Icon(Icons.bolt, size: 18),
+      helperText: '${grids.length} grids',
+      dropdownMenuEntries: [
+        for (final grid in grids)
+          DropdownMenuEntry(value: grid.networkId, label: grid.name),
+      ],
+      onSelected: (id) {
+        if (id == null) return;
+        for (final grid in grids) {
+          if (grid.networkId == id) {
+            onSelect(grid);
+            return;
+          }
+        }
+      },
     );
   }
 }
