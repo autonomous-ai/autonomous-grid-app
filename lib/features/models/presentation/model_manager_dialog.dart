@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
+import '../logic/model_group.dart';
 import '../logic/models_providers.dart';
 import 'catalog_download_list.dart';
 import 'model_pull_card.dart';
@@ -24,7 +24,7 @@ class _ModelManagerDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final models = ref.watch(localModelsProvider);
+    final groups = ref.watch(modelGroupsProvider);
     // Grow with the window (desktop app) so three stacked sections don't feel
     // cramped, but stay clear of the screen edges on smaller displays.
     final screen = MediaQuery.sizeOf(context);
@@ -55,10 +55,10 @@ class _ModelManagerDialog extends ConsumerWidget {
                     const CatalogDownloadSection(),
                     _SectionLabel(
                       'Downloaded models',
-                      trailing: models.isEmpty ? null : '${models.length}',
+                      trailing: groups.isEmpty ? null : '${groups.length}',
                     ),
                     const SizedBox(height: 14),
-                    _DownloadedList(models: models),
+                    _DownloadedList(groups: groups),
                   ],
                 ),
               ),
@@ -140,15 +140,15 @@ class _SectionLabel extends StatelessWidget {
 /// divided rows so the list reads as a finished panel rather than loose lines.
 /// Mirrors the detail-pane grouping (see `DetailSection`).
 class _DownloadedList extends StatelessWidget {
-  const _DownloadedList({required this.models});
+  const _DownloadedList({required this.groups});
 
-  final List<LocalModel> models;
+  final List<ModelGroup> groups;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GlassCard(
-      child: models.isEmpty
+      child: groups.isEmpty
           ? Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
               child: Text(
@@ -164,9 +164,9 @@ class _DownloadedList extends StatelessWidget {
 
   List<Widget> _rows() {
     final rows = <Widget>[];
-    for (var i = 0; i < models.length; i++) {
-      rows.add(_ModelTile(model: models[i]));
-      if (i != models.length - 1) {
+    for (var i = 0; i < groups.length; i++) {
+      rows.add(_ModelTile(group: groups[i]));
+      if (i != groups.length - 1) {
         rows.add(const Divider(height: 1, indent: 14, endIndent: 14));
       }
     }
@@ -174,22 +174,23 @@ class _DownloadedList extends StatelessWidget {
   }
 }
 
-/// One downloaded model: an icon tile, the file name, its size, and a delete
-/// action. A model the running engine is serving can't be deleted — its row
-/// shows a "Running" badge instead, so the file can't be pulled out from under a
-/// live engine.
+/// One downloaded model: an icon tile, the model name, its size, and a delete
+/// action. A split GGUF's parts read as one row ("5 parts") and delete as one.
+/// A model the running engine is serving can't be deleted — its row shows a
+/// "Running" badge instead, so files can't be pulled out from under a live engine.
 class _ModelTile extends ConsumerWidget {
-  const _ModelTile({required this.model});
+  const _ModelTile({required this.group});
 
-  final LocalModel model;
+  final ModelGroup group;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final inUse = isModelInUse(model.name, ref.watch(servingModelProvider));
+    final serving = ref.watch(servingModelProvider);
+    final inUse = group.fileNames.any((name) => isModelInUse(name, serving));
     final deleteState = ref.watch(modelDeleteControllerProvider);
-    final deleting =
-        deleteState is ModelDeleting && deleteState.name == model.name;
+    final deleting = deleteState is ModelDeleting &&
+        deleteState.label == group.displayName;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
@@ -207,15 +208,31 @@ class _ModelTile extends ConsumerWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              model.name,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group.displayName,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                if (group.isSplit) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    _partsLabel(group),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: group.isComplete
+                          ? theme.colorScheme.onSurfaceVariant
+                          : theme.colorScheme.error,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: 12),
           Text(
-            '${model.sizeGb.toStringAsFixed(2)} GB',
+            '${group.sizeGb.toStringAsFixed(2)} GB',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -225,6 +242,16 @@ class _ModelTile extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// "5 parts" for a complete split set, or "3 of 5 parts — incomplete" when a
+  /// part is missing (the engine can't serve it until every part is present).
+  static String _partsLabel(ModelGroup group) {
+    final expected = group.expectedParts;
+    if (expected != null && group.partCount < expected) {
+      return '${group.partCount} of $expected parts — incomplete';
+    }
+    return '${group.partCount} parts';
   }
 
   Widget _trailing(
@@ -279,12 +306,15 @@ class _ModelTile extends ConsumerWidget {
 
   Future<void> _confirmAndDelete(BuildContext context, WidgetRef ref) async {
     final theme = Theme.of(context);
+    final partsNote = group.isSplit
+        ? ' All ${group.partCount} parts will be removed.'
+        : '';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete model?'),
         content: Text(
-          '"${model.name}" will be removed from this computer. '
+          '"${group.displayName}" will be removed from this computer.$partsNote '
           'You can download it again later.',
         ),
         actions: [
@@ -306,7 +336,7 @@ class _ModelTile extends ConsumerWidget {
 
     final ok = await ref
         .read(modelDeleteControllerProvider.notifier)
-        .delete(model.name);
+        .delete(group.fileNames, label: group.displayName);
     if (ok || !context.mounted) return;
     final state = ref.read(modelDeleteControllerProvider);
     final message = state is ModelDeleteFailed

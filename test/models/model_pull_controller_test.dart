@@ -78,6 +78,60 @@ void main() {
     );
   });
 
+  test('pulls every line of a split model and reports the shared name', () async {
+    const part1 = 'repo:MiniMax-M3-UD-IQ3_XXS-00001-of-00002.gguf';
+    const part2 = 'repo:MiniMax-M3-UD-IQ3_XXS-00002-of-00002.gguf';
+    final fake = FakeGridCliService()
+      ..stubPull(['pull', part1],
+          const [DownloadProgress(doneMb: 100, totalMb: 100, pct: 100)])
+      ..stubPull(['pull', part2],
+          const [DownloadProgress(doneMb: 100, totalMb: 100, pct: 100)]);
+    final container = _container(fake, [
+      _model('MiniMax-M3-UD-IQ3_XXS-00001-of-00002.gguf'),
+      _model('MiniMax-M3-UD-IQ3_XXS-00002-of-00002.gguf'),
+    ]);
+
+    final seen = <ModelPullState>[];
+    container.listen(modelPullControllerProvider, (_, next) => seen.add(next));
+
+    await container
+        .read(modelPullControllerProvider.notifier)
+        .pull('$part1\n$part2');
+
+    final state = container.read(modelPullControllerProvider);
+    expect(state, isA<ModelPullDone>());
+    expect((state as ModelPullDone).file, 'MiniMax-M3-UD-IQ3_XXS (2 parts)');
+    // The batch reported a "part 2 of 2" step, so the UI can show progress.
+    expect(
+      seen.whereType<ModelPulling>().where((s) => s.current == 2 && s.total == 2),
+      isNotEmpty,
+    );
+  });
+
+  test('stops the batch and reports the failing line', () async {
+    const part1 = 'repo:a-00001-of-00002.gguf';
+    const part2 = 'repo:a-00002-of-00002.gguf';
+    // Only part 1 is on disk — part 2's download "finished" but left no file.
+    final fake = FakeGridCliService()
+      ..stubPull(['pull', part1], const [])
+      ..stubPull(['pull', part2], const []);
+    final container = _container(fake, [_model('a-00001-of-00002.gguf')]);
+
+    await container
+        .read(modelPullControllerProvider.notifier)
+        .pull('$part1\n$part2');
+
+    expect(container.read(modelPullControllerProvider), isA<ModelPullFailed>());
+  });
+
+  test('parsePullSpecs splits lines, trims, drops blanks and duplicates', () {
+    expect(
+      parsePullSpecs('  repo:a.gguf \n\n repo:b.gguf\nrepo:a.gguf\n'),
+      ['repo:a.gguf', 'repo:b.gguf'],
+    );
+    expect(parsePullSpecs('   \n  \n'), isEmpty);
+  });
+
   test('fails when the target file never appears', () async {
     final fake = FakeGridCliService()
       ..stubPull(['pull', 'repo:missing.gguf'], const []);
