@@ -149,16 +149,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     });
 
-    // Nothing can answer yet: no model advertised on the grid. Guide the user to
-    // start one instead of showing a dead input box.
-    if (!loadingModels && options.isEmpty) {
-      return NoModelYet(
-        canManage: widget.network.canManageProvider,
-        onGoToEngines: () =>
-            ref.read(navSectionProvider.notifier).select(NavSection.provider),
-      );
-    }
-
+    // Nothing can answer yet: no model advertised on the grid. Keep the header
+    // (grid + model pickers) so the user can switch to a grid that has a model,
+    // rather than being stranded on a dead screen with only "Go to Engines".
+    final hasModel = loadingModels || options.isNotEmpty;
     final modality = _modalityFor(options);
     final needsImage = modality == PlaygroundModality.video;
     final canSend = !sessions.sending && (!needsImage || _attachments.isNotEmpty);
@@ -173,32 +167,44 @@ class _ChatViewState extends ConsumerState<ChatView> {
           networkName: widget.network.name,
         ),
         const Divider(height: 1),
-        Expanded(
-          child: messages.isEmpty
-              ? _EmptyChat(hint: _emptyHint(modality))
-              : ListView.builder(
-                  controller: _scroll,
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  itemCount:
-                      messages.length + (sessions.phase is SendGenerating ? 1 : 0),
-                  itemBuilder: (context, i) => i < messages.length
-                      ? ChatBubble(message: messages[i])
-                      : GeneratingBubble(phase: sessions.phase as SendGenerating),
-                ),
-        ),
-        _Composer(
-          messageController: _message,
-          attachments: _attachments,
-          modality: modality,
-          needsImage: needsImage,
-          sending: sessions.sending,
-          canSend: canSend,
-          error: sessions.error,
-          onAddAttachment: (a) => setState(() => _attachments.add(a)),
-          onPickImage: _pickImage,
-          onRemoveAttachment: (i) => setState(() => _attachments.removeAt(i)),
-          onSend: () => _send(modality),
-        ),
+        if (!hasModel)
+          Expanded(
+            child: NoModelYet(
+              canManage: widget.network.canManageProvider,
+              onGoToEngines: () => ref
+                  .read(navSectionProvider.notifier)
+                  .select(NavSection.provider),
+            ),
+          )
+        else ...[
+          Expanded(
+            child: messages.isEmpty
+                ? _EmptyChat(hint: _emptyHint(modality))
+                : ListView.builder(
+                    controller: _scroll,
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    itemCount: messages.length +
+                        (sessions.phase is SendGenerating ? 1 : 0),
+                    itemBuilder: (context, i) => i < messages.length
+                        ? ChatBubble(message: messages[i])
+                        : GeneratingBubble(
+                            phase: sessions.phase as SendGenerating),
+                  ),
+          ),
+          _Composer(
+            messageController: _message,
+            attachments: _attachments,
+            modality: modality,
+            needsImage: needsImage,
+            sending: sessions.sending,
+            canSend: canSend,
+            error: sessions.error,
+            onAddAttachment: (a) => setState(() => _attachments.add(a)),
+            onPickImage: _pickImage,
+            onRemoveAttachment: (i) => setState(() => _attachments.removeAt(i)),
+            onSend: () => _send(modality),
+          ),
+        ],
       ],
     );
   }
