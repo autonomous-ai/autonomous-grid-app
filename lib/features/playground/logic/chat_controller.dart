@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import 'chat_message.dart';
 import 'chat_sender.dart';
+import 'media_outputs.dart';
 import 'playground_request.dart';
 
 export 'chat_message.dart' show ChatRole, ChatMessage, ChatMedia, ChatState;
@@ -29,10 +30,13 @@ class ChatController extends Notifier<ChatState> {
     final text = message.trim();
     if (text.isEmpty || state.sending) return;
 
-    final history = [
-      ...state.messages,
-      ChatMessage(role: ChatRole.user, text: text),
-    ];
+    final userTurn = await buildUserTurn(
+      text: text,
+      modality: modality,
+      attachments: attachments,
+      outputsDir: ref.read(mediaOutputsDirProvider),
+    );
+    final history = [...state.messages, userTurn];
     state = ChatState(messages: history, phase: const SendBusy());
 
     final updates = ref.read(chatSenderProvider).send(

@@ -14,6 +14,7 @@ class ChatInputBar extends StatelessWidget {
     required this.canSend,
     required this.hint,
     required this.onSend,
+    this.prefix,
   });
 
   final TextEditingController controller;
@@ -21,6 +22,10 @@ class ChatInputBar extends StatelessWidget {
   final bool canSend;
   final String hint;
   final VoidCallback onSend;
+
+  /// Optional leading action inside the field (e.g. the Chat composer's "+"
+  /// image-attach button). Null in the Playground, which attaches via its bar.
+  final Widget? prefix;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +46,7 @@ class ChatInputBar extends StatelessWidget {
               hintText: hint,
               filled: true,
               fillColor: AppPalette.cardBg,
+              prefixIcon: prefix,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 14,

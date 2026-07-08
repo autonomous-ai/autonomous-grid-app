@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
+import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_request.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
@@ -107,12 +108,19 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
 
     // Append the user turn and persist it up front, so an interrupted reply
     // never loses what the user typed. A new compose becomes a real, saved
-    // conversation here.
+    // conversation here. Attached images (vision) are saved to disk so they
+    // render, persist and can be re-encoded into the request.
+    final userTurn = await buildUserTurn(
+      text: text,
+      modality: modality,
+      attachments: attachments,
+      outputsDir: ref.read(mediaOutputsDirProvider),
+    );
     final base = _activeOrNew(model);
     final withUser = base.copyWith(
       model: model,
       updatedAt: DateTime.now(),
-      messages: [...base.messages, ChatMessage(role: ChatRole.user, text: text)],
+      messages: [...base.messages, userTurn],
     );
     final conversation =
         withUser.copyWith(title: deriveConversationTitle(withUser.messages));

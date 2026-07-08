@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/media_event.dart';
@@ -7,6 +10,7 @@ import 'chat_message.dart';
 import 'chat_transport.dart';
 import 'media_outputs.dart';
 import 'media_transport.dart';
+import 'message_media.dart';
 import 'playground_request.dart';
 
 /// A single step in sending one message, streamed by [ChatSender.send]:
@@ -63,6 +67,27 @@ abstract interface class ChatSender {
 /// fake sender (or fake transports underneath) swaps in without a live relay.
 final chatSenderProvider =
     Provider<ChatSender>((ref) => DefaultChatSender(ref));
+
+/// Builds the user turn to append before sending. A plain text chat with image
+/// attachments (vision) saves each image to [outputsDir] so it renders in the
+/// transcript, persists with the conversation, and can be re-encoded into the
+/// request by [DefaultChatSender]. Media generation uses its attachments as
+/// request inputs — not part of the turn — so the turn stays text-only there.
+Future<ChatMessage> buildUserTurn({
+  required String text,
+  required PlaygroundModality modality,
+  required List<MediaAttachment> attachments,
+  required Directory outputsDir,
+}) async {
+  if (modality != PlaygroundModality.text || attachments.isEmpty) {
+    return ChatMessage(role: ChatRole.user, text: text);
+  }
+  final media = await saveMediaOutputs(
+    [for (final a in attachments) a.toMediaFile()],
+    outputsDir,
+  );
+  return ChatMessage(role: ChatRole.user, text: text, media: media);
+}
 
 /// The real [ChatSender], driving the HTTP chat/media transports.
 class DefaultChatSender implements ChatSender {
@@ -216,17 +241,64 @@ class DefaultChatSender implements ChatSender {
     return '';
   }
 
-  /// Builds the OpenAI messages array from the text turns (media-only turns
-  /// carry no text and are skipped).
-  static List<Map<String, String>> _messagesFor(List<ChatMessage> history) => [
-        {'role': 'system', 'content': 'You are a helpful assistant.'},
-        for (final m in history)
-          if (m.text.isNotEmpty)
+  /// Builds the OpenAI messages array. Text turns carry a plain-string
+  /// `content`; a user turn with attached images becomes a vision `content`
+  /// array (text part + each image as a base64 data URI). Empty turns are
+  /// skipped.
+  static List<Map<String, dynamic>> _messagesFor(List<ChatMessage> history) {
+    final messages = <Map<String, dynamic>>[
+      {'role': 'system', 'content': 'You are a helpful assistant.'},
+    ];
+    for (final m in history) {
+      final role = m.role == ChatRole.user ? 'user' : 'assistant';
+      final images = m.role == ChatRole.user
+          ? [
+              for (final md in m.media)
+                if (md.kind == MediaKind.image) md,
+            ]
+          : const <ChatMedia>[];
+
+      if (images.isEmpty) {
+        if (m.text.isNotEmpty) messages.add({'role': role, 'content': m.text});
+        continue;
+      }
+
+      final content = <Map<String, dynamic>>[
+        if (m.text.isNotEmpty) {'type': 'text', 'text': m.text},
+        for (final img in images)
+          if (_imageDataUri(img.path) case final uri?)
             {
-              'role': m.role == ChatRole.user ? 'user' : 'assistant',
-              'content': m.text,
+              'type': 'image_url',
+              'image_url': {'url': uri},
             },
       ];
+      if (content.isEmpty) continue;
+      messages.add({'role': role, 'content': content});
+    }
+    return messages;
+  }
+
+  /// A `data:` URI for an on-disk image, or null when the file can't be read
+  /// (deleted since it was attached) — the image is then simply dropped.
+  static String? _imageDataUri(String path) {
+    try {
+      final bytes = File(path).readAsBytesSync();
+      return 'data:${_mimeForPath(path)};base64,${base64Encode(bytes)}';
+    } on Object {
+      return null;
+    }
+  }
+
+  static String _mimeForPath(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'webp' => 'image/webp',
+      'gif' => 'image/gif',
+      'bmp' => 'image/bmp',
+      _ => 'image/png',
+    };
+  }
 
   /// Turns a transport failure into one plain line; the raw detail stays in the
   /// Debug log. We surface the relay's actual reason (out of credit, expired

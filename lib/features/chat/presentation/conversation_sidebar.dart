@@ -186,10 +186,16 @@ class _ConversationTileState extends State<_ConversationTile> {
                         ),
                       ),
                     ),
-                    if (_hovered)
-                      _DeleteButton(onDelete: widget.onDelete)
-                    else
-                      const SizedBox(width: 24),
+                    // Reserve the slot at a fixed height whether or not the
+                    // delete button is showing, so hovering never resizes the
+                    // row (which made the list jump).
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: _hovered
+                          ? _DeleteButton(onDelete: widget.onDelete)
+                          : null,
+                    ),
                   ],
                 ),
               ),
@@ -208,18 +214,15 @@ class _DeleteButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 24,
-      height: 24,
-      child: IconButton(
-        tooltip: 'Delete chat',
-        padding: EdgeInsets.zero,
-        iconSize: 15,
-        splashRadius: 14,
-        color: AppPalette.textSecondary,
-        icon: const Icon(Icons.delete_outline_rounded),
-        onPressed: onDelete,
-      ),
+    return IconButton(
+      tooltip: 'Delete chat',
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+      iconSize: 15,
+      splashRadius: 14,
+      color: AppPalette.textSecondary,
+      icon: const Icon(Icons.delete_outline_rounded),
+      onPressed: onDelete,
     );
   }
 }

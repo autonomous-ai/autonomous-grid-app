@@ -4,40 +4,56 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/playground_request.dart';
 
-/// Lets the user attach source image(s) for media requests that need them —
-/// `image/edit` (up to three) and `i2v` (exactly one). Shows thumbnails with a
-/// remove button and an "Add image" tile until [maxCount] is reached. Pure UI:
-/// the attachment list is owned by the parent, mutated through the callbacks.
+/// Opens the system image picker and returns the chosen file as a
+/// [MediaAttachment], or null if the user cancelled. Shared by the media
+/// [AttachmentBar] and the Chat composer's inline attach button.
+Future<MediaAttachment?> pickImageAttachment() async {
+  const group = XTypeGroup(
+    label: 'Images',
+    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'],
+  );
+  final file = await openFile(acceptedTypeGroups: const [group]);
+  if (file == null) return null;
+  final bytes = await file.readAsBytes();
+  return MediaAttachment(filename: file.name, bytes: bytes);
+}
+
+/// Lets the user attach source image(s) — for media requests that need them
+/// (`image/edit` up to three, `i2v` exactly one) and for vision chat. Shows
+/// thumbnails with a remove button and, unless [showAddTile] is false, an
+/// "Add image" tile until [maxCount] is reached. Pure UI: the attachment list
+/// is owned by the parent, mutated through the callbacks.
 class AttachmentBar extends StatelessWidget {
   const AttachmentBar({
     super.key,
     required this.attachments,
     required this.maxCount,
-    required this.hint,
     required this.onAdd,
     required this.onRemoveAt,
+    this.hint,
+    this.showAddTile = true,
   });
 
   final List<MediaAttachment> attachments;
   final int maxCount;
 
-  /// One-line prompt telling the user why an image is needed (e.g. video needs
-  /// a starting image).
-  final String hint;
+  /// Optional one-line prompt telling the user why an image is needed (e.g.
+  /// video needs a starting image). Omitted in the Chat composer, where the
+  /// inline "+" already implies it.
+  final String? hint;
+
+  /// Whether to render the "Add image" tile. False when the caller supplies its
+  /// own add affordance (the Chat composer's inline "+").
+  final bool showAddTile;
+
   final ValueChanged<MediaAttachment> onAdd;
   final ValueChanged<int> onRemoveAt;
 
   static const _thumbSize = 56.0;
 
   Future<void> _pick() async {
-    const group = XTypeGroup(
-      label: 'Images',
-      extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'],
-    );
-    final file = await openFile(acceptedTypeGroups: const [group]);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    onAdd(MediaAttachment(filename: file.name, bytes: bytes));
+    final attachment = await pickImageAttachment();
+    if (attachment != null) onAdd(attachment);
   }
 
   @override
@@ -47,12 +63,14 @@ class AttachmentBar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          hint,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 8),
+        if (hint != null) ...[
+          Text(
+            hint!,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+        ],
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -63,7 +81,7 @@ class AttachmentBar extends StatelessWidget {
                 size: _thumbSize,
                 onRemove: () => onRemoveAt(i),
               ),
-            if (!full)
+            if (!full && showAddTile)
               _AddTile(size: _thumbSize, onTap: _pick),
           ],
         ),

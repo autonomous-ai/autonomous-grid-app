@@ -36,14 +36,14 @@ class _FakeChatTransport implements ChatTransport {
   final String? reply;
   final ChatTransportError? error;
   String? endpoint;
-  List<Map<String, String>>? messages;
+  List<Map<String, dynamic>>? messages;
 
   @override
   Future<(String?, ChatTransportError?)> complete({
     required String endpoint,
     required String apiKey,
     required String model,
-    required List<Map<String, String>> messages,
+    required List<Map<String, dynamic>> messages,
   }) async {
     this.endpoint = endpoint;
     this.messages = messages;
@@ -140,6 +140,42 @@ void main() {
       final state = container.read(chatControllerProvider);
       expect(state.error, contains('credit'));
       expect(state.error, isNot(contains('Insufficient balance')));
+    });
+
+    test('vision: a text chat with an attached image sends image_url content',
+        () async {
+      final tmp = await Directory.systemTemp.createTemp('grid_media_test');
+      addTearDown(() => tmp.delete(recursive: true));
+      final chat = _FakeChatTransport('looks like a cat', null);
+      final container = _container(chat: chat, outputs: tmp);
+
+      await container.read(chatControllerProvider.notifier).send(
+            network: _credential(),
+            model: 'vision',
+            message: 'what is this?',
+            attachments: [
+              MediaAttachment(
+                  filename: 'pic.png', bytes: Uint8List.fromList([1, 2, 3])),
+            ],
+          );
+
+      // The user turn rendered with the saved image, and the reply appended.
+      final state = container.read(chatControllerProvider);
+      expect(state.messages.first.media, hasLength(1));
+      expect(state.messages.first.media.single.kind, MediaKind.image);
+      expect(state.messages.last.text, 'looks like a cat');
+
+      // The transport got OpenAI vision content: a text part + an image_url.
+      final userMsg = chat.messages!.firstWhere((m) => m['role'] == 'user');
+      final content = userMsg['content'] as List;
+      expect(
+        content.any((p) => p['type'] == 'text' && p['text'] == 'what is this?'),
+        isTrue,
+      );
+      final imagePart =
+          content.firstWhere((p) => p['type'] == 'image_url') as Map;
+      expect((imagePart['image_url'] as Map)['url'],
+          startsWith('data:image/png;base64,'));
     });
 
     test('maps a 401 to a sign-in prompt', () async {

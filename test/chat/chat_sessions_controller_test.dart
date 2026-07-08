@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,8 @@ import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
+import 'package:grid_app/features/playground/logic/media_outputs.dart';
+import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
@@ -61,6 +64,8 @@ class _FakeSender implements ChatSender {
   final container = ProviderContainer(overrides: [
     chatStoreProvider.overrideWithValue(store),
     chatSenderProvider.overrideWithValue(sender),
+    // Keep any saved input images in the temp dir, never the real grid home.
+    mediaOutputsDirProvider.overrideWithValue(Directory('${dir.path}/outputs')),
   ]);
   addTearDown(container.dispose);
   return (container: container, store: store, sender: sender);
@@ -126,6 +131,32 @@ void main() {
 
     final reloaded = ChatStore(directory: tmp).loadAll();
     expect(reloaded.single.messages.single.text, 'hi');
+  });
+
+  test('an attached image is saved onto the user turn and persists', () async {
+    final h = _harness(tmp, updates: [
+      const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a cat')),
+    ]);
+
+    await h.container.read(chatSessionsProvider.notifier).send(
+          network: _credential(),
+          model: 'vision',
+          message: 'what is this?',
+          attachments: [
+            MediaAttachment(
+                filename: 'pic.png', bytes: Uint8List.fromList([1, 2, 3])),
+          ],
+        );
+
+    final conv = h.container.read(chatSessionsProvider).conversations.single;
+    final userMsg = conv.messages.first;
+    expect(userMsg.media, hasLength(1));
+    expect(userMsg.media.single.kind, MediaKind.image);
+    expect(File(userMsg.media.single.path).existsSync(), isTrue);
+
+    // The saved image path survives a reload from disk.
+    final reloaded = ChatStore(directory: tmp).loadAll().single;
+    expect(reloaded.messages.first.media.single.path, userMsg.media.single.path);
   });
 
   test('a second turn appends to the same open conversation', () async {

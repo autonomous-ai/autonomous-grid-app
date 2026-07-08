@@ -21,11 +21,14 @@ class ChatTransportError {
 /// completions`) and the local-engine smoke test (`{baseUrl}/v1/chat/
 /// completions`) go through this — the caller passes the full [endpoint] URL.
 abstract interface class ChatTransport {
+  /// [messages] follows the OpenAI schema. `content` is a plain string for text
+  /// turns, or a list of parts (`{type: text}` / `{type: image_url}`) when a
+  /// vision turn carries attached images — hence the `dynamic` value.
   Future<(String?, ChatTransportError?)> complete({
     required String endpoint,
     required String apiKey,
     required String model,
-    required List<Map<String, String>> messages,
+    required List<Map<String, dynamic>> messages,
   });
 }
 
@@ -40,7 +43,7 @@ class HttpChatTransport implements ChatTransport {
     required String endpoint,
     required String apiKey,
     required String model,
-    required List<Map<String, String>> messages,
+    required List<Map<String, dynamic>> messages,
   }) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {

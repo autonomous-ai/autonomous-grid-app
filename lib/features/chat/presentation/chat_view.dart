@@ -16,6 +16,9 @@ import '../../playground/presentation/no_model_yet.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 
+/// How many images may ride along on a single vision chat message.
+const int _maxChatImages = 4;
+
 /// The open conversation: a model picker on top, the scrolling transcript, and
 /// the composer at the foot. Reuses the Playground's shared chat widgets and the
 /// modality routing (text / image / video), but reads and writes the persistent
@@ -113,6 +116,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (_attachments.isNotEmpty) setState(_attachments.clear);
   }
 
+  /// Pick an image to attach to the next message (vision input). Capped at
+  /// [_maxChatImages]; a cancelled picker is a no-op.
+  Future<void> _pickImage() async {
+    if (_attachments.length >= _maxChatImages) return;
+    final attachment = await pickImageAttachment();
+    if (attachment != null && mounted) {
+      setState(() => _attachments.add(attachment));
+    }
+  }
+
   void _scrollToBottom() {
     if (!_scroll.hasClients) return;
     _scroll.jumpTo(_scroll.position.maxScrollExtent);
@@ -178,6 +191,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
           canSend: canSend,
           error: sessions.error,
           onAddAttachment: (a) => setState(() => _attachments.add(a)),
+          onPickImage: _pickImage,
           onRemoveAttachment: (i) => setState(() => _attachments.removeAt(i)),
           onSend: () => _send(modality),
         ),
@@ -224,8 +238,9 @@ class _ModelBar extends StatelessWidget {
   }
 }
 
-/// The composer foot: an optional error line, the attachment bar for media
-/// modes, and the message input.
+/// The composer foot: an optional error line, the attachment thumbnails, and
+/// the message input. Text chat attaches images via the inline "+" for vision
+/// models; media generation uses the full source-image bar.
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.messageController,
@@ -236,6 +251,7 @@ class _Composer extends StatelessWidget {
     required this.canSend,
     required this.error,
     required this.onAddAttachment,
+    required this.onPickImage,
     required this.onRemoveAttachment,
     required this.onSend,
   });
@@ -248,8 +264,11 @@ class _Composer extends StatelessWidget {
   final bool canSend;
   final String? error;
   final ValueChanged<MediaAttachment> onAddAttachment;
+  final VoidCallback onPickImage;
   final ValueChanged<int> onRemoveAttachment;
   final VoidCallback onSend;
+
+  bool get _isText => modality == PlaygroundModality.text;
 
   @override
   Widget build(BuildContext context) {
@@ -267,7 +286,8 @@ class _Composer extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-          if (modality != PlaygroundModality.text) ...[
+          // Media generation: source-image bar with its own add tile + hint.
+          if (!_isText) ...[
             AttachmentBar(
               attachments: attachments,
               maxCount: needsImage ? 1 : 3,
@@ -279,12 +299,29 @@ class _Composer extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
+          // Vision chat: thumbnails of what's attached; add via the inline "+".
+          if (_isText && attachments.isNotEmpty) ...[
+            AttachmentBar(
+              attachments: attachments,
+              maxCount: _maxChatImages,
+              showAddTile: false,
+              onAdd: onAddAttachment,
+              onRemoveAt: onRemoveAttachment,
+            ),
+            const SizedBox(height: 12),
+          ],
           ChatInputBar(
             controller: messageController,
             sending: sending,
             canSend: canSend,
             hint: _inputHint(modality),
             onSend: onSend,
+            prefix: _isText
+                ? _AttachButton(
+                    enabled: !sending && attachments.length < _maxChatImages,
+                    onTap: onPickImage,
+                  )
+                : null,
           ),
         ],
       ),
@@ -296,6 +333,28 @@ class _Composer extends StatelessWidget {
         PlaygroundModality.video => 'Describe the motion…',
         PlaygroundModality.text => 'Send a message…',
       };
+}
+
+/// The inline "+" that attaches an image to a vision chat message. Disabled
+/// while sending or once the per-message image cap is reached.
+class _AttachButton extends StatelessWidget {
+  const _AttachButton({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: enabled ? 'Attach image' : 'Up to $_maxChatImages images',
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      iconSize: 20,
+      color: AppPalette.textSecondary,
+      icon: const Icon(Icons.add_photo_alternate_outlined),
+      onPressed: enabled ? onTap : null,
+    );
+  }
 }
 
 /// The transcript placeholder before the first message — a quiet, centered
