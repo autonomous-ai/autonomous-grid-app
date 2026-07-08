@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_surface.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
@@ -14,9 +15,9 @@ import 'model_pull_card.dart';
 /// and see every model already under `~/.grid/models`. Opened from the local
 /// engine block. (Node setup / installing llama.cpp lives in the Engines tab.)
 Future<void> showModelManager(BuildContext context) => showDialog<void>(
-      context: context,
-      builder: (_) => const _ModelManagerDialog(),
-    );
+  context: context,
+  builder: (_) => const _ModelManagerDialog(),
+);
 
 class _ModelManagerDialog extends ConsumerWidget {
   const _ModelManagerDialog();
@@ -89,8 +90,9 @@ class _DialogHeader extends StatelessWidget {
               Text(
                 'Download a model to serve, or see what\'s already on this '
                 'computer.',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -124,8 +126,9 @@ class _SectionLabel extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             trailing!,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ],
@@ -144,19 +147,16 @@ class _DownloadedList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
-      ),
+    return GlassSurface(
+      borderRadius: BorderRadius.circular(14),
       child: models.isEmpty
           ? Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
               child: Text(
                 'No models downloaded yet — download one above.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           : Column(children: _rows()),
@@ -189,7 +189,8 @@ class _ModelTile extends ConsumerWidget {
     final theme = Theme.of(context);
     final inUse = isModelInUse(model.name, ref.watch(servingModelProvider));
     final deleteState = ref.watch(modelDeleteControllerProvider);
-    final deleting = deleteState is ModelDeleting && deleteState.name == model.name;
+    final deleting =
+        deleteState is ModelDeleting && deleteState.name == model.name;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
@@ -216,8 +217,9 @@ class _ModelTile extends ConsumerWidget {
           const SizedBox(width: 12),
           Text(
             '${model.sizeGb.toStringAsFixed(2)} GB',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(width: 4),
           _trailing(context, ref, theme, inUse: inUse, deleting: deleting),
@@ -226,17 +228,23 @@ class _ModelTile extends ConsumerWidget {
     );
   }
 
-  Widget _trailing(BuildContext context, WidgetRef ref, ThemeData theme,
-      {required bool inUse, required bool deleting}) {
+  Widget _trailing(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeData theme, {
+    required bool inUse,
+    required bool deleting,
+  }) {
     if (deleting) {
       return const SizedBox(
         width: 40,
         height: 40,
         child: Center(
           child: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2)),
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
         ),
       );
     }
@@ -250,9 +258,12 @@ class _ModelTile extends ConsumerWidget {
             children: [
               const StatusDot(color: AppPalette.online, size: 7),
               const SizedBox(width: 6),
-              Text('Running',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppPalette.online)),
+              Text(
+                'Running',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppPalette.online,
+                ),
+              ),
             ],
           ),
         ),
@@ -273,16 +284,19 @@ class _ModelTile extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete model?'),
-        content: Text('"${model.name}" will be removed from this computer. '
-            'You can download it again later.'),
+        content: Text(
+          '"${model.name}" will be removed from this computer. '
+          'You can download it again later.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style:
-                FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
           ),
@@ -291,13 +305,16 @@ class _ModelTile extends ConsumerWidget {
     );
     if (confirmed != true) return;
 
-    final ok =
-        await ref.read(modelDeleteControllerProvider.notifier).delete(model.name);
+    final ok = await ref
+        .read(modelDeleteControllerProvider.notifier)
+        .delete(model.name);
     if (ok || !context.mounted) return;
     final state = ref.read(modelDeleteControllerProvider);
     final message = state is ModelDeleteFailed
         ? state.message
         : "Couldn't delete this model. Please try again.";
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }

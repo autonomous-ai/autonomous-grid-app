@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/glass_surface.dart';
 import '../../data/models/gpu_metrics.dart';
 import '../overlord_tokens.dart';
 import 'gpu_metric_column.dart';
@@ -17,13 +18,10 @@ class GpuCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassSurface(
+      blurred: false,
+      borderRadius: BorderRadius.circular(10),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -196,12 +194,12 @@ class _HostRow extends StatelessWidget {
     return Row(
       children: [
         if (host != null)
-          Text(host!, style: OverlordTokens.meta.copyWith(
-            color: AppPalette.textFaint,
-          )),
+          Text(
+            host!,
+            style: OverlordTokens.meta.copyWith(color: AppPalette.textFaint),
+          ),
         const Spacer(),
-        if (statusNote != null)
-          Text(statusNote!, style: OverlordTokens.meta),
+        if (statusNote != null) Text(statusNote!, style: OverlordTokens.meta),
       ],
     );
   }

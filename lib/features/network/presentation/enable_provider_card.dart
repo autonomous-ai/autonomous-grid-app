@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_surface.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/enable_provider_controller.dart';
 
@@ -23,28 +23,24 @@ class EnableProviderCard extends ConsumerWidget {
       return Text(
         "You don't have permission to run an engine on this grid yet. "
         "Ask the grid's owner to allow it.",
-        style: theme.textTheme.bodyMedium
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       );
     }
 
     final state = ref.watch(enableProviderControllerProvider);
     final running =
         state is EnableRunning && state.networkId == network.networkId
-            ? state
-            : null;
-    final failed =
-        state is EnableFailed && state.networkId == network.networkId
-            ? state
-            : null;
+        ? state
+        : null;
+    final failed = state is EnableFailed && state.networkId == network.networkId
+        ? state
+        : null;
 
-    return Container(
+    return GlassSurface(
+      borderRadius: BorderRadius.circular(10),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: running != null
           ? _Running(log: running.log)
           : _Idle(network: network, error: failed?.message),
@@ -63,27 +59,31 @@ class _Idle extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("You own this grid, but running an engine isn't turned on for "
-            'your account yet.'),
+        Text(
+          "You own this grid, but running an engine isn't turned on for "
+          'your account yet.',
+        ),
         const SizedBox(height: 4),
         Text(
           'Turn it on to run an engine from this computer below.',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         if (error != null) ...[
           const SizedBox(height: 10),
-          Text("Couldn't turn it on: $error",
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error)),
+          Text(
+            "Couldn't turn it on: $error",
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
         ],
         const SizedBox(height: 14),
         FilledButton.icon(
-          onPressed: () =>
-              ref.read(enableProviderControllerProvider.notifier).enable(
-                    networkId: network.networkId,
-                    email: network.email,
-                  ),
+          onPressed: () => ref
+              .read(enableProviderControllerProvider.notifier)
+              .enable(networkId: network.networkId, email: network.email),
           icon: const Icon(Icons.verified_user_outlined, size: 16),
           label: Text(error != null ? 'Try again' : 'Turn on engines'),
         ),
@@ -105,9 +105,10 @@ class _Running extends StatelessWidget {
         Row(
           children: const [
             SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2)),
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             SizedBox(width: 12),
             Text('Turning on engines…'),
           ],
