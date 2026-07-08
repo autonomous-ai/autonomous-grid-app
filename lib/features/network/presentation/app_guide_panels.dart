@@ -82,9 +82,12 @@ class ClientAppPanel extends StatelessWidget {
     // Show chat setup for a chat grid, or while the overview still loads (media
     // resolves to none first) — so a chat grid never flashes without its steps.
     final showChat = hasChat || !media.any;
-    // One-click config write only makes sense when the grid can be the app's
-    // model (a chat grid) and the app is actually installed to write into.
-    final canApply = installed && hasChat;
+    // One-click config write shows wherever the manual chat setup does — a chat
+    // grid, or an as-yet-unknown one (overview/models still loading or the relay
+    // unreachable, so `hasChat` reads false transiently). Only a positively
+    // media-only grid hides it. Mirrors `showChat` so the button and the manual
+    // steps never disagree, and the app must actually be installed to write into.
+    final canApply = installed && showChat;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
