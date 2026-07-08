@@ -262,6 +262,10 @@ void main() {
 
       final state = container.read(chatControllerProvider);
       expect(state.error, isNull);
+      // The source image the user attached shows in their own turn…
+      expect(state.messages.first.role, ChatRole.user);
+      expect(state.messages.first.media.single.kind, MediaKind.image);
+      // …and the generated clip in the assistant's.
       expect(state.messages.last.media.single.kind, MediaKind.video);
       expect(media.url, 'https://grid.example/g1/relay/v1/media/video/i2v');
       expect(media.payload!['capability'], 'comfyui:i2v');

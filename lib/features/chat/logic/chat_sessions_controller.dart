@@ -112,7 +112,6 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // render, persist and can be re-encoded into the request.
     final userTurn = await buildUserTurn(
       text: text,
-      modality: modality,
       attachments: attachments,
       outputsDir: ref.read(mediaOutputsDirProvider),
     );

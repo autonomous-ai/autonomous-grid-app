@@ -68,18 +68,19 @@ abstract interface class ChatSender {
 final chatSenderProvider =
     Provider<ChatSender>((ref) => DefaultChatSender(ref));
 
-/// Builds the user turn to append before sending. A plain text chat with image
-/// attachments (vision) saves each image to [outputsDir] so it renders in the
-/// transcript, persists with the conversation, and can be re-encoded into the
-/// request by [DefaultChatSender]. Media generation uses its attachments as
-/// request inputs — not part of the turn — so the turn stays text-only there.
+/// Builds the user turn to append before sending. Any attached images are saved
+/// to [outputsDir] and carried on the turn so they show in the user's own
+/// bubble and persist with the conversation — both the images sent to a vision
+/// model and the source image(s) for an edit / image-to-video request. For a
+/// text (vision) chat [DefaultChatSender] also re-encodes them into the request;
+/// for media generation the images ride in the media payload instead, so here
+/// they're display-only.
 Future<ChatMessage> buildUserTurn({
   required String text,
-  required PlaygroundModality modality,
   required List<MediaAttachment> attachments,
   required Directory outputsDir,
 }) async {
-  if (modality != PlaygroundModality.text || attachments.isEmpty) {
+  if (attachments.isEmpty) {
     return ChatMessage(role: ChatRole.user, text: text);
   }
   final media = await saveMediaOutputs(

@@ -32,7 +32,6 @@ class ChatController extends Notifier<ChatState> {
 
     final userTurn = await buildUserTurn(
       text: text,
-      modality: modality,
       attachments: attachments,
       outputsDir: ref.read(mediaOutputsDirProvider),
     );
