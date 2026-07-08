@@ -34,6 +34,34 @@ SIDECAR_DIR="$APP/Contents/Resources/grid"   # Nuitka standalone (onedir) folder
 
 [ -d "$APP" ] || { echo "App not found: $APP — build it first." >&2; exit 1; }
 
+# Apple's notary service intermittently 503s ("SlowDown" / serviceUnavailable), most
+# often on the back-to-back app-then-dmg submissions in this script. Retry with backoff
+# so a transient hiccup doesn't sink a whole release (a re-run rebuilds for ~45m). Each
+# retry is a fresh submission — harmless if the prior upload never landed. We only retry
+# TRANSIENT errors: a genuine 'Invalid' rejection must fail fast, not burn 5×5min waits.
+notarize_submit() {
+  local file="$1" try=0 max=5 out rc wait_s
+  while :; do
+    try=$((try + 1))
+    # Capture combined output so we can distinguish a transient 503 from a real rejection.
+    # (--wait's live "In Progress…" dots are buffered until it returns; fine in CI logs.)
+    if out="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1)"; then
+      printf '%s\n' "$out"
+      return 0
+    fi
+    rc=$?
+    printf '%s\n' "$out" >&2
+    case "$out" in
+      *SlowDown*|*"Slow Down"*|*serviceUnavailable*|*503*|*"Could not connect"*|*"timed out"*) : ;;
+      *) echo "notarize: $(basename "$file") failed with a non-transient error — not retrying" >&2; return "$rc" ;;
+    esac
+    [ "$try" -ge "$max" ] && { echo "notarize: gave up on $(basename "$file") after $max attempts" >&2; return "$rc"; }
+    wait_s=$((try * 30))
+    echo "notarize: transient notary error on $(basename "$file") (attempt $try/$max) — retrying in ${wait_s}s…" >&2
+    sleep "$wait_s"
+  done
+}
+
 # Sign inside-out: nested binaries first, then the app bundle. Hardened runtime
 # (--options runtime) + a secure timestamp are mandatory for notarization.
 #
@@ -71,7 +99,7 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 echo ">>> Notarizing the app (a few minutes)…"
 APP_ZIP="$(dirname "$APP")/notarize-app.zip"
 /usr/bin/ditto -c -k --keepParent "$APP" "$APP_ZIP"
-xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+notarize_submit "$APP_ZIP"
 rm -f "$APP_ZIP"
 xcrun stapler staple "$APP"
 
@@ -79,7 +107,7 @@ echo ">>> Building DMG from the stapled app…"
 "$APP_ROOT/scripts/package_dmg_macos.sh" "$APP" "$OUT_DMG"
 
 echo ">>> Notarizing the DMG (a few minutes)…"
-xcrun notarytool submit "$OUT_DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+notarize_submit "$OUT_DMG"
 xcrun stapler staple "$OUT_DMG"
 
 echo ">>> Gatekeeper assessment (app inside the dmg):"
