@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
@@ -147,8 +147,7 @@ class _DownloadedList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GlassSurface(
-      borderRadius: BorderRadius.circular(14),
+    return GlassCard(
       child: models.isEmpty
           ? Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),

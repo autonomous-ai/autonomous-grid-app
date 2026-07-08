@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../onboarding/preflight_providers.dart';
 import '../../onboarding/preflight_report.dart';
@@ -84,10 +84,8 @@ class _LogTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
-      borderRadius: BorderRadius.circular(10),
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,8 +213,7 @@ class _WhichGridCard extends ConsumerWidget {
     final preflight = ref.watch(preflightProvider);
     final gridBin = Platform.environment['GRID_BIN'];
 
-    return GlassSurface(
-      borderRadius: BorderRadius.circular(12),
+    return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

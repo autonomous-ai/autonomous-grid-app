@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/glass_surface.dart';
+import '../../../../shared/widgets/glass_card.dart';
 import '../../data/models/gpu_metrics.dart';
 import '../overlord_tokens.dart';
 import 'gpu_metric_column.dart';
@@ -18,9 +18,7 @@ class GpuCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      blurred: false,
-      borderRadius: BorderRadius.circular(10),
+    return GlassCard(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

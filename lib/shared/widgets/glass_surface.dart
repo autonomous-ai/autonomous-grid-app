@@ -23,8 +23,6 @@ class GlassSurface extends StatelessWidget {
     this.boxShadow,
     this.blurred = true,
     this.sheen = true,
-    this.expand = false,
-    this.width,
   });
 
   final Widget child;
@@ -54,17 +52,6 @@ class GlassSurface extends StatelessWidget {
   /// The specular top highlight. On for real glass, off is rarely needed.
   final bool sheen;
 
-  /// Stretch to fill the height/width the parent gives, so a child with an
-  /// [Expanded] (e.g. a card whose log fills the remaining space) lays out
-  /// against a tight box instead of an unbounded one. Off = shrink-wrap the
-  /// child, the default for content that sizes itself.
-  final bool expand;
-
-  /// Fixed width for the surface — pass `double.infinity` for a card that should
-  /// fill its parent's width (e.g. a full-bleed note). Null shrink-wraps to the
-  /// child, the default.
-  final double? width;
-
   @override
   Widget build(BuildContext context) {
     final effectiveBorder = border ?? Border.all(color: AppGlass.border);
@@ -80,7 +67,6 @@ class GlassSurface extends StatelessWidget {
         : Padding(padding: padding!, child: child);
 
     final body = Stack(
-      fit: expand ? StackFit.expand : StackFit.loose,
       children: [
         Positioned.fill(
           child: DecoratedBox(
@@ -122,9 +108,6 @@ class GlassSurface extends StatelessWidget {
         ),
         child: surface,
       );
-    }
-    if (width != null) {
-      surface = SizedBox(width: width, child: surface);
     }
     return surface;
   }

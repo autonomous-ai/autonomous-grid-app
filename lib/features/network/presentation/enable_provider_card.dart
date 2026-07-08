@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/enable_provider_controller.dart';
 
@@ -38,8 +38,7 @@ class EnableProviderCard extends ConsumerWidget {
         ? state
         : null;
 
-    return GlassSurface(
-      borderRadius: BorderRadius.circular(10),
+    return GlassCard(
       padding: const EdgeInsets.all(16),
       child: running != null
           ? _Running(log: running.log)

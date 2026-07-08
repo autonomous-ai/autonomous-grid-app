@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../logic/member_providers.dart';
 
 /// The "Members" tab of a managed grid's detail pane — shown to admins and
@@ -162,10 +162,8 @@ class _MemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
-      borderRadius: BorderRadius.circular(10),
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
@@ -248,8 +246,7 @@ class _Message extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      borderRadius: BorderRadius.circular(12),
+    return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       child: Row(
         children: [

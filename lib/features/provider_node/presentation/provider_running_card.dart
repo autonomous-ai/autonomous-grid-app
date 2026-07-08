@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/provider_run_controller.dart';
@@ -24,10 +23,9 @@ class ProviderRunningCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    return GlassSurface(
+    return GlassCard(
+      style: GlassCardStyle.hero,
       expand: true,
-      borderRadius: BorderRadius.circular(18),
-      boxShadow: AppGlass.shadow,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -78,10 +76,8 @@ class _LiveBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
-      borderRadius: BorderRadius.circular(10),
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding: const EdgeInsets.all(12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

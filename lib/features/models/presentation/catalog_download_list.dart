@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/parsers/catalog_entry.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
 
@@ -64,10 +64,7 @@ class _CatalogBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        GlassSurface(
-          borderRadius: BorderRadius.circular(14),
-          child: Column(children: _rows()),
-        ),
+        GlassCard(child: Column(children: _rows())),
         // Owned here (not by the dialog) so hiding the section leaves no gap.
         const SizedBox(height: 32),
       ],

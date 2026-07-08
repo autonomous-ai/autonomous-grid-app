@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
@@ -423,10 +423,8 @@ class _LocalTestToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
-      borderRadius: BorderRadius.circular(10),
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
       child: Row(
         children: [

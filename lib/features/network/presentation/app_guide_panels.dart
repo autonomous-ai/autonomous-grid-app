@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
@@ -300,11 +300,8 @@ class _ApplyBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final running = phase is ApplyRunning;
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
+    return GlassCard(
       width: double.infinity,
-      borderRadius: BorderRadius.circular(10),
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,11 +404,9 @@ class _NeedsChatModelNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
+    return GlassCard(
+      style: GlassCardStyle.inset,
       width: double.infinity,
-      borderRadius: BorderRadius.circular(10),
       padding: const EdgeInsets.all(14),
       child: Text(
         '$appName needs its own chat model to run and build this skill. This '
@@ -437,11 +432,9 @@ class _MissingAppNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
+    return GlassCard(
+      style: GlassCardStyle.inset,
       width: double.infinity,
-      borderRadius: BorderRadius.circular(10),
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

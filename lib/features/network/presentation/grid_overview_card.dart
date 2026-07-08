@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/grid_overview_provider.dart';
 import '../logic/node_display.dart';
@@ -159,8 +159,7 @@ class _StatsBar extends ConsumerWidget {
     // `/models`) whenever it has entries, so the headline matches the section.
     final resolved = ref.watch(gridModelsProvider).length;
     final models = resolved > 0 ? resolved : stats.models;
-    return GlassSurface(
-      borderRadius: BorderRadius.circular(12),
+    return GlassCard(
       child: IntrinsicHeight(
         child: Row(
           children: [
@@ -255,10 +254,8 @@ class _Card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      blurred: false,
-      sheen: false,
-      borderRadius: BorderRadius.circular(12),
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding:
           padding ?? const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       child: child,
@@ -528,8 +525,7 @@ class _OverviewMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
-      borderRadius: BorderRadius.circular(12),
+    return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       child: Row(
         children: [
