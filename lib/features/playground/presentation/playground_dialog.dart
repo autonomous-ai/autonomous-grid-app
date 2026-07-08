@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
@@ -104,7 +105,9 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     final modality = useLocal
         ? PlaygroundModality.text
         : _modalityFor(ref.read(playgroundModelsProvider));
-    ref.read(chatControllerProvider.notifier).send(
+    ref
+        .read(chatControllerProvider.notifier)
+        .send(
           network: network,
           model: _model.text.trim(),
           message: message,
@@ -154,12 +157,15 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   /// that could answer yet.
   Widget _buildBody(BuildContext context, NetworkCredential? network) {
     if (network == null) {
-      return const ComingSoon(message: 'Select a grid first to start chatting.');
+      return const ComingSoon(
+        message: 'Select a grid first to start chatting.',
+      );
     }
 
     final theme = Theme.of(context);
     final options = ref.watch(playgroundModelsProvider);
-    final loadingModels = ref.watch(gridOverviewProvider).isLoading &&
+    final loadingModels =
+        ref.watch(gridOverviewProvider).isLoading &&
         ref.watch(networkModelsProvider).isLoading;
     if (options.isNotEmpty) {
       _syncDefaultModel([for (final o in options) o.id]);
@@ -181,8 +187,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
       );
     }
 
-    final modality =
-        useLocal ? PlaygroundModality.text : _modalityFor(options);
+    final modality = useLocal ? PlaygroundModality.text : _modalityFor(options);
     final needsImage = modality == PlaygroundModality.video;
     final canSend = !chat.sending && (!needsImage || _attachments.isNotEmpty);
 
@@ -220,7 +225,8 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
               ? ComingSoon(message: _emptyHint(modality))
               : ListView.builder(
                   controller: _scroll,
-                  itemCount: chat.messages.length +
+                  itemCount:
+                      chat.messages.length +
                       (chat.phase is SendGenerating ? 1 : 0),
                   itemBuilder: (context, i) => i < chat.messages.length
                       ? _Bubble(message: chat.messages[i])
@@ -229,9 +235,12 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         ),
         if (chat.error != null) ...[
           const SizedBox(height: 8),
-          Text(chat.error!,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error)),
+          Text(
+            chat.error!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
         ],
         const SizedBox(height: 12),
         _InputBar(
@@ -246,16 +255,16 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   }
 
   String _emptyHint(PlaygroundModality modality) => switch (modality) {
-        PlaygroundModality.image => 'Describe an image to generate.',
-        PlaygroundModality.video => 'Attach an image, then describe the motion.',
-        PlaygroundModality.text => 'Send a message to start chatting.',
-      };
+    PlaygroundModality.image => 'Describe an image to generate.',
+    PlaygroundModality.video => 'Attach an image, then describe the motion.',
+    PlaygroundModality.text => 'Send a message to start chatting.',
+  };
 
   String _inputHint(PlaygroundModality modality) => switch (modality) {
-        PlaygroundModality.image => 'Describe the image…',
-        PlaygroundModality.video => 'Describe the motion…',
-        PlaygroundModality.text => 'Message…',
-      };
+    PlaygroundModality.image => 'Describe the image…',
+    PlaygroundModality.video => 'Describe the motion…',
+    PlaygroundModality.text => 'Message…',
+  };
 }
 
 /// Dialog title with the grid it targets, plus a Close button.
@@ -279,8 +288,9 @@ class _DialogHeader extends StatelessWidget {
                 network == null
                     ? 'Chat with a model, or generate images and video.'
                     : 'Chat, or generate images and video, on ${network!.name}.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -336,7 +346,8 @@ class _ModelPicker extends StatelessWidget {
     );
   }
 
-  static IconData _modalityIcon(PlaygroundModality modality) => switch (modality) {
+  static IconData _modalityIcon(PlaygroundModality modality) =>
+      switch (modality) {
         PlaygroundModality.image => Icons.image_outlined,
         PlaygroundModality.video => Icons.movie_outlined,
         PlaygroundModality.text => Icons.smart_toy_outlined,
@@ -359,20 +370,27 @@ class _NoModelYet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.smart_toy_outlined,
-                size: 40, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.smart_toy_outlined,
+              size: 40,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 16),
-            Text('No model is running yet',
-                style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+            Text(
+              'No model is running yet',
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 8),
             Text(
               canManage
                   ? 'Start an engine on this grid to chat with a model.'
                   : 'Wait for someone on this grid to bring a model online, or '
-                      'ask the grid owner to run one.',
+                        'ask the grid owner to run one.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             if (canManage) ...[
               const SizedBox(height: 16),
@@ -405,13 +423,9 @@ class _LocalTestToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Row(
         children: [
           const Icon(Icons.bolt_outlined, size: 18, color: AppPalette.online),
@@ -420,13 +434,18 @@ class _LocalTestToggle extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Test your own model',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w500)),
                 Text(
-                    'Chat with your model directly, without going through the grid',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  'Test your own model',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  'Chat with your model directly, without going through the grid',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -549,8 +568,10 @@ class _InputBar extends StatelessWidget {
               hintText: hint,
               filled: true,
               fillColor: AppPalette.cardBg,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
               border: _border(AppPalette.divider),
               enabledBorder: _border(AppPalette.divider),
               focusedBorder: _border(AppPalette.accent, width: 1.5),
@@ -571,7 +592,8 @@ class _InputBar extends StatelessWidget {
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.arrow_upward_rounded, size: 20),
           ),
         ),

@@ -171,6 +171,33 @@ void main() {
       expect(editor.parseAt(['custom_providers', 1, 'base_url']).value, _base);
     });
 
+    test('overwrites an existing Grid entry when the relay url changed',
+        () async {
+      final config = File('${home.path}/.hermes/config.yaml');
+      await config.create(recursive: true);
+      // Same grid (host ⇒ same `name`), but pointed at an older relay url. Only
+      // one Grid config may exist per file, so the new url must replace it —
+      // not append a second `name: grid.example`.
+      await config.writeAsString(
+        'model:\n'
+        '  provider: custom\n'
+        'custom_providers:\n'
+        '  - name: grid.example\n'
+        '    base_url: https://grid.example/relay/v0\n'
+        '    api_key: sk-old\n'
+        '    model: old-model\n',
+      );
+
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+
+      final editor = YamlEditor(readConfig());
+      final list = editor.parseAt(['custom_providers']).value as List;
+      expect(list.length, 1); // overwritten in place, no duplicate name
+      expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
+      expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
+      expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
+    });
+
     test('writes OPENAI_BASE_URL + OPENAI_API_KEY into .env, keeping the rest',
         () async {
       final env = File('${home.path}/.hermes/.env');

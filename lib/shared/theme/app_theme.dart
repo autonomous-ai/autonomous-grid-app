@@ -72,10 +72,65 @@ abstract final class AppGlass {
       offset: Offset(0, 14),
       spreadRadius: -8,
     ),
+    BoxShadow(color: Color(0x1F000000), blurRadius: 8, offset: Offset(0, 2)),
+  ];
+}
+
+/// Content-card recipe — an opaque dark surface dressed with an indigo accent
+/// wash, a tinted rim, an accent glow and a soft corner aura (the web-16 card
+/// look). Distinct from [AppGlass] (the shell's frosted blur over the wallpaper):
+/// content cards sit on the near-opaque panel where a backdrop blur has nothing
+/// to refract, so they earn depth from the accent treatment instead. Indigo
+/// palette mirrors web-16's dark tokens. Applied via [GlassCard].
+abstract final class AppCard {
+  static const accent = Color(0xFF818CF8); // indigo
+  static const accentStrong = Color(0xFFA5B4FC);
+
+  static const base = Color(0xFF1B1C1F); // card surface
+  static const inset = Color(0xFF16171A); // recessed inner box / list tile
+  static const hair = Color(0xFF2E3035); // neutral card rim
+  static const insetHair = Color(0x0DFFFFFF); // ~5% white rim on an inset box
+
+  // Indigo accent tints (web-16 dark) — the wash, border and glow all read off
+  // these so a card's colour comes from the brand, not a grey frost.
+  static const tint10 = Color(0x24A78BFA); // ~14% — base wash / glow / aura
+  static const tint18 = Color(0x38818CF8); // ~22% — hero wash
+  static const tint25 = Color(0x52818CF8); // ~32% — hero rim
+
+  static const highlightEdge = Color(0x24FFFFFF); // ~14% crisp top hairline
+
+  static const double radius = 18;
+  static const double insetRadius = 12;
+
+  /// Soft ambient drop + a faint accent glow that lifts a card off the panel.
+  static const List<BoxShadow> shadow = [
     BoxShadow(
-      color: Color(0x1F000000),
-      blurRadius: 8,
-      offset: Offset(0, 2),
+      color: Color(0x4D000000),
+      blurRadius: 24,
+      offset: Offset(0, 10),
+      spreadRadius: -6,
+    ),
+    BoxShadow(
+      color: tint10,
+      blurRadius: 40,
+      offset: Offset(0, 16),
+      spreadRadius: -8,
+    ),
+  ];
+
+  /// The focal (hero) card's stronger lift + accent glow.
+  static const List<BoxShadow> heroShadow = [
+    BoxShadow(
+      color: Color(0x59000000),
+      blurRadius: 30,
+      offset: Offset(0, 12),
+      spreadRadius: -6,
+    ),
+    BoxShadow(
+      color: tint18,
+      blurRadius: 38,
+      offset: Offset(0, 14),
+      spreadRadius: -6,
     ),
   ];
 }
@@ -138,6 +193,23 @@ ThemeData buildAppTheme() {
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: AppPalette.accent),
+      ),
+    ),
+    // Dark, rounded, floating toast that matches the content cards — the M3
+    // default snackbar uses `inverseSurface` (a light slab in a dark theme),
+    // which read as a bright bar clashing with the app. See [AppCard].
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppCard.base,
+      contentTextStyle: const TextStyle(
+        color: AppPalette.textPrimary,
+        fontSize: 13,
+      ),
+      actionTextColor: AppCard.accentStrong,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppCard.hair),
       ),
     ),
   );

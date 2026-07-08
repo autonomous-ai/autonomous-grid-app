@@ -3,11 +3,16 @@ import 'package:flutter/services.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 /// A titled group of rows in the detail pane (e.g. "Endpoints", "Details").
 class DetailSection extends StatelessWidget {
-  const DetailSection(
-      {super.key, required this.title, required this.children, this.trailing});
+  const DetailSection({
+    super.key,
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
 
   final String title;
   final List<Widget> children;
@@ -38,14 +43,7 @@ class DetailSection extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: AppPalette.cardBg,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppPalette.divider),
-          ),
-          child: Column(children: _withDividers(children)),
-        ),
+        GlassCard(child: Column(children: _withDividers(children))),
       ],
     );
   }
@@ -64,8 +62,12 @@ class DetailSection extends StatelessWidget {
 
 /// A monospace value row with a copy button — for URLs / IDs.
 class AddressRow extends StatelessWidget {
-  const AddressRow(
-      {super.key, required this.label, required this.value, this.maxLines});
+  const AddressRow({
+    super.key,
+    required this.label,
+    required this.value,
+    this.maxLines,
+  });
 
   final String label;
   final String value;
@@ -85,18 +87,24 @@ class AddressRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(value,
-                    maxLines: maxLines,
-                    overflow:
-                        maxLines == null ? null : TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: AppPalette.textPrimary,
-                        fontFamily: 'monospace',
-                        fontSize: 13)),
+                Text(
+                  value,
+                  maxLines: maxLines,
+                  overflow: maxLines == null ? null : TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppPalette.textPrimary,
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(label,
-                    style: const TextStyle(
-                        color: AppPalette.textSecondary, fontSize: 11.5)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontSize: 11.5,
+                  ),
+                ),
               ],
             ),
           ),
@@ -121,15 +129,23 @@ class MetaRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: const TextStyle(
-                  color: AppPalette.textSecondary, fontSize: 13)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppPalette.textSecondary,
+              fontSize: 13,
+            ),
+          ),
           const Spacer(),
           Flexible(
-            child: Text(value,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                    color: AppPalette.textPrimary, fontSize: 13)),
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: AppPalette.textPrimary,
+                fontSize: 13,
+              ),
+            ),
           ),
         ],
       ),
@@ -167,8 +183,11 @@ class GridBadge extends StatelessWidget {
       return _gridPill(network.roleLabel, AppPalette.teal, onAccent: onAccent);
     }
     if (network.isPublic) {
-      return _gridPill(network.visibilityLabel, AppPalette.accent,
-          onAccent: onAccent);
+      return _gridPill(
+        network.visibilityLabel,
+        AppPalette.accent,
+        onAccent: onAccent,
+      );
     }
     return const SizedBox.shrink();
   }
@@ -198,12 +217,13 @@ class GridBadges extends StatelessWidget {
 
 /// One rounded, tinted pill — the shared shape for role and visibility badges.
 class _BadgePill extends StatelessWidget {
-  const _BadgePill(
-      {required this.label,
-      required this.color,
-      this.compact = false,
-      this.fillAlpha = 0.16,
-      this.borderAlpha = 0.45});
+  const _BadgePill({
+    required this.label,
+    required this.color,
+    this.compact = false,
+    this.fillAlpha = 0.16,
+    this.borderAlpha = 0.45,
+  });
 
   final String label;
   final Color color;
@@ -215,7 +235,9 @@ class _BadgePill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
-          horizontal: compact ? 6 : 8, vertical: compact ? 1 : 3),
+        horizontal: compact ? 6 : 8,
+        vertical: compact ? 1 : 3,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: fillAlpha),
         borderRadius: BorderRadius.circular(6),
@@ -224,10 +246,11 @@ class _BadgePill extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-            color: color,
-            fontSize: compact ? 10 : 11.5,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.2),
+          color: color,
+          fontSize: compact ? 10 : 11.5,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }
@@ -248,7 +271,10 @@ class CopyIconButton extends StatelessWidget {
       onPressed: () {
         Clipboard.setData(ClipboardData(text: value));
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+          const SnackBar(
+            content: Text('Copied'),
+            duration: Duration(seconds: 1),
+          ),
         );
       },
     );
@@ -272,9 +298,10 @@ class GuideLabel extends StatelessWidget {
           Text(
             text,
             style: const TextStyle(
-                color: AppPalette.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600),
+              color: AppPalette.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           if (caption != null)
             Padding(
@@ -282,7 +309,10 @@ class GuideLabel extends StatelessWidget {
               child: Text(
                 caption!,
                 style: const TextStyle(
-                    color: AppPalette.textFaint, fontSize: 11.5, height: 1.3),
+                  color: AppPalette.textFaint,
+                  fontSize: 11.5,
+                  height: 1.3,
+                ),
               ),
             ),
         ],
@@ -313,10 +343,11 @@ class CodeBlock extends StatelessWidget {
             child: SelectableText(
               code,
               style: const TextStyle(
-                  color: AppPalette.textPrimary,
-                  fontFamily: 'monospace',
-                  fontSize: 12.5,
-                  height: 1.45),
+                color: AppPalette.textPrimary,
+                fontFamily: 'monospace',
+                fontSize: 12.5,
+                height: 1.45,
+              ),
             ),
           ),
           Positioned(top: 2, right: 2, child: CopyIconButton(value: code)),

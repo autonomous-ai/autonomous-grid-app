@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
@@ -82,9 +83,12 @@ class ClientAppPanel extends StatelessWidget {
     // Show chat setup for a chat grid, or while the overview still loads (media
     // resolves to none first) — so a chat grid never flashes without its steps.
     final showChat = hasChat || !media.any;
-    // One-click config write only makes sense when the grid can be the app's
-    // model (a chat grid) and the app is actually installed to write into.
-    final canApply = installed && hasChat;
+    // One-click config write shows wherever the manual chat setup does — a chat
+    // grid, or an as-yet-unknown one (overview/models still loading or the relay
+    // unreachable, so `hasChat` reads false transiently). Only a positively
+    // media-only grid hides it. Mirrors `showChat` so the button and the manual
+    // steps never disagree, and the app must actually be installed to write into.
+    final canApply = installed && showChat;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -98,22 +102,22 @@ class ClientAppPanel extends StatelessWidget {
           _ApplyBlock(name: info.name, phase: phase, onApply: onApply),
           const SizedBox(height: 16),
         ],
-        if (showChat) ...[
-          ..._chatSetup(),
-          const SizedBox(height: 16),
-        ],
+        if (showChat) ...[..._chatSetup(), const SizedBox(height: 16)],
         if (media.any) ...[
           // A media-only grid can't be the app's chat model, so the agent still
           // needs its own model before it can build the skill — say so plainly.
           if (!hasChat) ...[
-            _NeedsChatModelNote(
-                appName: info.name, command: info.executable),
+            _NeedsChatModelNote(appName: info.name, command: info.executable),
             const SizedBox(height: 12),
           ],
           _MediaSkillPrompt(
             appName: info.name,
-            prompt: mediaSkillPrompt(baseUrl, apiKey,
-                image: media.image, video: media.video),
+            prompt: mediaSkillPrompt(
+              baseUrl,
+              apiKey,
+              image: media.image,
+              video: media.video,
+            ),
           ),
           const SizedBox(height: 10),
         ],
@@ -193,8 +197,12 @@ class OtherAppPanel extends StatelessWidget {
         ],
         if (media.any)
           _MediaApiCall(
-            curl: mediaApiCurl(baseUrl, apiKey,
-                image: media.image, video: media.video),
+            curl: mediaApiCurl(
+              baseUrl,
+              apiKey,
+              image: media.image,
+              video: media.video,
+            ),
           ),
       ],
     );
@@ -217,7 +225,8 @@ class _MediaSkillPrompt extends StatelessWidget {
       children: [
         GuideLabel(
           'Have $appName build a skill',
-          caption: "This grid makes images or video, not chat — so paste this "
+          caption:
+              "This grid makes images or video, not chat — so paste this "
               "into $appName and it'll create a reusable skill for it.",
         ),
         CodeBlock(code: prompt),
@@ -291,14 +300,9 @@ class _ApplyBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final running = phase is ApplyRunning;
-    return Container(
+    return GlassCard(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -306,7 +310,10 @@ class _ApplyBlock extends StatelessWidget {
             'Grid can write this connection into $name for you, so it uses this '
             'grid as its model — no files to edit (a backup is kept).',
             style: const TextStyle(
-                color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+              color: AppPalette.textSecondary,
+              fontSize: 12.5,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
@@ -340,23 +347,26 @@ class _ApplyStatus extends StatelessWidget {
     if (phase is! ApplyDone) return const SizedBox.shrink();
     return switch (phase.result) {
       ApplyOk(:final message, :final note) => _StatusLine(
-          icon: Icons.check_circle_rounded,
-          color: AppPalette.online,
-          text: note == null ? message : '$message $note',
-        ),
+        icon: Icons.check_circle_rounded,
+        color: AppPalette.online,
+        text: note == null ? message : '$message $note',
+      ),
       ApplyError(:final message) => _StatusLine(
-          icon: Icons.error_outline_rounded,
-          color: Theme.of(context).colorScheme.error,
-          text: '$message Copy the config below and paste it in yourself.',
-        ),
+        icon: Icons.error_outline_rounded,
+        color: Theme.of(context).colorScheme.error,
+        text: '$message Copy the config below and paste it in yourself.',
+      ),
     };
   }
 }
 
 /// One icon + wrapped message line, used for the apply result.
 class _StatusLine extends StatelessWidget {
-  const _StatusLine(
-      {required this.icon, required this.color, required this.text});
+  const _StatusLine({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
 
   final IconData icon;
   final Color color;
@@ -394,21 +404,20 @@ class _NeedsChatModelNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassCard(
+      style: GlassCardStyle.inset,
       width: double.infinity,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Text(
         '$appName needs its own chat model to run and build this skill. This '
         "grid only makes images or video, so it can't be that model — set one "
         'up first (run `$command model`, or add a provider API key in $appName), '
         'then paste the prompt below.',
         style: const TextStyle(
-            color: AppPalette.textSecondary, fontSize: 12.5, height: 1.4),
+          color: AppPalette.textSecondary,
+          fontSize: 12.5,
+          height: 1.4,
+        ),
       ),
     );
   }
@@ -423,14 +432,10 @@ class _MissingAppNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassCard(
+      style: GlassCardStyle.inset,
       width: double.infinity,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -480,7 +485,11 @@ class _SetupSteps extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.tune_rounded, size: 16, color: AppPalette.accent),
+              const Icon(
+                Icons.tune_rounded,
+                size: 16,
+                color: AppPalette.accent,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(

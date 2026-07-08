@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/parsers/catalog_entry.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
 
@@ -31,8 +32,9 @@ class CatalogDownloadSection extends ConsumerWidget {
     final catalog = ref.watch(catalogModelsProvider);
     return catalog.maybeWhen(
       loading: () => const _CatalogLoading(),
-      data: (entries) =>
-          entries.isEmpty ? const SizedBox.shrink() : _CatalogBody(entries: entries),
+      data: (entries) => entries.isEmpty
+          ? const SizedBox.shrink()
+          : _CatalogBody(entries: entries),
       // Any failure (offline, no CLI) just hides the optional section — the
       // free-text download field above still works.
       orElse: () => const SizedBox.shrink(),
@@ -57,18 +59,12 @@ class _CatalogBody extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           'Curated builds for common hardware — pick the one for your device.',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: AppPalette.cardBg,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppPalette.divider),
-          ),
-          child: Column(children: _rows()),
-        ),
+        GlassCard(child: Column(children: _rows())),
         // Owned here (not by the dialog) so hiding the section leaves no gap.
         const SizedBox(height: 32),
       ],
@@ -98,8 +94,10 @@ class _CatalogTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final downloaded =
-        isCatalogModelDownloaded(entry, ref.watch(localModelsProvider));
+    final downloaded = isCatalogModelDownloaded(
+      entry,
+      ref.watch(localModelsProvider),
+    );
     final pulling = ref.watch(modelPullControllerProvider) is ModelPulling;
 
     return Padding(
@@ -121,9 +119,11 @@ class _CatalogTile extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.quantizedFile,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium),
+                Text(
+                  entry.quantizedFile,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
                 const SizedBox(height: 4),
                 _MetaRow(entry: entry),
               ],
@@ -136,8 +136,12 @@ class _CatalogTile extends ConsumerWidget {
     );
   }
 
-  Widget _action(BuildContext context, WidgetRef ref,
-      {required bool downloaded, required bool pulling}) {
+  Widget _action(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool downloaded,
+    required bool pulling,
+  }) {
     final theme = Theme.of(context);
     if (downloaded) {
       return Padding(
@@ -147,9 +151,12 @@ class _CatalogTile extends ConsumerWidget {
           children: [
             const Icon(Icons.check_circle, size: 16, color: AppPalette.online),
             const SizedBox(width: 6),
-            Text('Downloaded',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppPalette.online)),
+            Text(
+              'Downloaded',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppPalette.online,
+              ),
+            ),
           ],
         ),
       );
@@ -157,8 +164,9 @@ class _CatalogTile extends ConsumerWidget {
     return TextButton.icon(
       onPressed: pulling
           ? null
-          : () =>
-              ref.read(modelPullControllerProvider.notifier).pull(entry.pullSpec),
+          : () => ref
+                .read(modelPullControllerProvider.notifier)
+                .pull(entry.pullSpec),
       icon: const Icon(Icons.download_outlined, size: 16),
       label: const Text('Download'),
       style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
@@ -176,8 +184,9 @@ class _MetaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final muted =
-        theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
     return Row(
       children: [
         if (entry.target != null) ...[
@@ -207,9 +216,12 @@ class _DeviceChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: AppPalette.divider),
       ),
-      child: Text(label,
-          style: theme.textTheme.labelSmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }
@@ -233,9 +245,12 @@ class _CatalogLoading extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: 10),
-            Text('Loading suggested models…',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            Text(
+              'Loading suggested models…',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 32),

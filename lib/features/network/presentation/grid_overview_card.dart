@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/grid_overview_provider.dart';
 import '../logic/node_display.dart';
@@ -19,9 +20,13 @@ class GridStatsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ref.watch(gridOverviewProvider).when(
+    return ref
+        .watch(gridOverviewProvider)
+        .when(
           loading: () => const _OverviewMessage(
-              icon: Icons.cloud_sync_outlined, text: 'Loading grid overview…'),
+            icon: Icons.cloud_sync_outlined,
+            text: 'Loading grid overview…',
+          ),
           error: (err, _) =>
               _OverviewMessage(icon: Icons.cloud_off_outlined, text: '$err'),
           data: (overview) => _StatsBar(stats: overview.stats),
@@ -59,9 +64,14 @@ class GridCapabilitiesSection extends ConsumerWidget {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          const Text('This grid can',
-              style: TextStyle(
-                  fontFamily: _mono, fontSize: 12.5, color: AppPalette.textFaint)),
+          const Text(
+            'This grid can',
+            style: TextStyle(
+              fontFamily: _mono,
+              fontSize: 12.5,
+              color: AppPalette.textFaint,
+            ),
+          ),
           ...chips,
         ],
       ),
@@ -89,12 +99,15 @@ class _CapabilityChip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: AppPalette.accent),
           const SizedBox(width: 6),
-          Text(label,
-              style: const TextStyle(
-                  fontFamily: _mono,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppPalette.textPrimary)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontFamily: _mono,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppPalette.textPrimary,
+            ),
+          ),
         ],
       ),
     );
@@ -109,7 +122,8 @@ class GridNodesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final nodes = ref.watch(gridOverviewProvider).asData?.value.nodes ??
+    final nodes =
+        ref.watch(gridOverviewProvider).asData?.value.nodes ??
         const <OverviewNode>[];
     if (nodes.isEmpty) return const SizedBox.shrink();
     return Column(
@@ -117,9 +131,10 @@ class GridNodesSection extends ConsumerWidget {
       children: [
         const SizedBox(height: 14),
         const _SectionHeading(
-            title: 'Nodes',
-            subtitle:
-                'Independent machines pooling their compute to serve this grid.'),
+          title: 'Nodes',
+          subtitle:
+              'Independent machines pooling their compute to serve this grid.',
+        ),
         const SizedBox(height: 14),
         for (final n in nodes) ...[
           _NodeTile(node: n),
@@ -136,18 +151,15 @@ class _StatsBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final uptime = stats.uptimePct == null ? '—' : '${_trim(stats.uptimePct!)}%';
+    final uptime = stats.uptimePct == null
+        ? '—'
+        : '${_trim(stats.uptimePct!)}%';
     // The overview's own `stats.models` can lag at 0 when the relay doesn't
     // detail its models — trust the list we actually resolved (overview or
     // `/models`) whenever it has entries, so the headline matches the section.
     final resolved = ref.watch(gridModelsProvider).length;
     final models = resolved > 0 ? resolved : stats.models;
-    return Container(
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppPalette.divider),
-      ),
+    return GlassCard(
       child: IntrinsicHeight(
         child: Row(
           children: [
@@ -176,19 +188,25 @@ class _StatCell extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: const TextStyle(
-                    fontFamily: _mono,
-                    fontSize: 11,
-                    letterSpacing: 0.6,
-                    color: AppPalette.textFaint)),
+            Text(
+              label,
+              style: const TextStyle(
+                fontFamily: _mono,
+                fontSize: 11,
+                letterSpacing: 0.6,
+                color: AppPalette.textFaint,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(value,
-                style: const TextStyle(
-                    fontFamily: _mono,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppPalette.textPrimary)),
+            Text(
+              value,
+              style: const TextStyle(
+                fontFamily: _mono,
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.textPrimary,
+              ),
+            ),
           ],
         ),
       ),
@@ -206,18 +224,24 @@ class _SectionHeading extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,
-            style: const TextStyle(
-                fontFamily: _mono,
-                fontSize: 19,
-                fontWeight: FontWeight.w700,
-                color: AppPalette.textPrimary)),
+        Text(
+          title,
+          style: const TextStyle(
+            fontFamily: _mono,
+            fontSize: 19,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.textPrimary,
+          ),
+        ),
         const SizedBox(height: 8),
-        Text(subtitle,
-            style: const TextStyle(
-                fontFamily: _mono,
-                fontSize: 13,
-                color: AppPalette.textSecondary)),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            fontFamily: _mono,
+            fontSize: 13,
+            color: AppPalette.textSecondary,
+          ),
+        ),
       ],
     );
   }
@@ -230,14 +254,10 @@ class _Card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding:
           padding ?? const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: child,
     );
   }
@@ -258,8 +278,9 @@ class GridModelsSection extends ConsumerWidget {
       children: [
         const SizedBox(height: 24),
         const _SectionHeading(
-            title: 'Models',
-            subtitle: 'Copy a model ID to use it with the API above.'),
+          title: 'Models',
+          subtitle: 'Copy a model ID to use it with the API above.',
+        ),
         const SizedBox(height: 14),
         for (final m in models) ...[
           _ModelTile(model: m),
@@ -290,8 +311,8 @@ class _ModelTile extends StatelessWidget {
     final icon = mediaLabel == null
         ? Icons.chat_bubble_outline
         : isVideoCapability(model.id)
-            ? Icons.movie_outlined
-            : Icons.image_outlined;
+        ? Icons.movie_outlined
+        : Icons.image_outlined;
     return _Card(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
@@ -299,18 +320,18 @@ class _ModelTile extends StatelessWidget {
           _TileIcon(icon: icon, accent: true, size: 28),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(model.id,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontFamily: _mono,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppPalette.textPrimary)),
+            child: Text(
+              model.id,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: _mono,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppPalette.textPrimary,
+              ),
+            ),
           ),
-          if (pill != null) ...[
-            const SizedBox(width: 10),
-            _Pill(text: pill),
-          ],
+          if (pill != null) ...[const SizedBox(width: 10), _Pill(text: pill)],
           const SizedBox(width: 10),
           _CopyChip(id: model.id),
         ],
@@ -352,19 +373,25 @@ class _NodeTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(node.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontFamily: _mono,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppPalette.textPrimary)),
+                Text(
+                  node.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: _mono,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
                 const SizedBox(height: 3),
-                Text(specs.join('  ·  '),
-                    style: const TextStyle(
-                        fontFamily: _mono,
-                        fontSize: 12,
-                        color: AppPalette.textSecondary)),
+                Text(
+                  specs.join('  ·  '),
+                  style: const TextStyle(
+                    fontFamily: _mono,
+                    fontSize: 12,
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -389,12 +416,15 @@ class _OnlineTag extends StatelessWidget {
       children: [
         StatusDot(color: color, size: 8),
         const SizedBox(width: 6),
-        Text(online ? 'Online' : 'Offline',
-            style: TextStyle(
-                fontFamily: _mono,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color)),
+        Text(
+          online ? 'Online' : 'Offline',
+          style: TextStyle(
+            fontFamily: _mono,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
       ],
     );
   }
@@ -415,9 +445,11 @@ class _TileIcon extends StatelessWidget {
         color: accent ? AppPalette.accent : AppPalette.cardBgHover,
         borderRadius: BorderRadius.circular(9),
       ),
-      child: Icon(icon,
-          size: size * 0.5,
-          color: accent ? Colors.white : AppPalette.textSecondary),
+      child: Icon(
+        icon,
+        size: size * 0.5,
+        color: accent ? Colors.white : AppPalette.textSecondary,
+      ),
     );
   }
 }
@@ -434,12 +466,15 @@ class _Pill extends StatelessWidget {
         color: AppPalette.cardBgHover,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(text,
-          style: const TextStyle(
-              fontFamily: _mono,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: AppPalette.textSecondary)),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontFamily: _mono,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
+          color: AppPalette.textSecondary,
+        ),
+      ),
     );
   }
 }
@@ -465,13 +500,16 @@ class _CopyChip extends StatelessWidget {
             children: [
               Icon(Icons.copy_rounded, size: 13, color: AppPalette.accent),
               SizedBox(width: 6),
-              Text('Copy',
-                  style: TextStyle(
-                      fontFamily: _mono,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.4,
-                      color: AppPalette.accent)),
+              Text(
+                'Copy',
+                style: TextStyle(
+                  fontFamily: _mono,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  color: AppPalette.accent,
+                ),
+              ),
             ],
           ),
         ),
@@ -487,23 +525,21 @@ class _OverviewMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Row(
         children: [
           Icon(icon, size: 18, color: AppPalette.textFaint),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(text,
-                style: const TextStyle(
-                    fontFamily: _mono,
-                    fontSize: 13,
-                    color: AppPalette.textSecondary)),
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontFamily: _mono,
+                fontSize: 13,
+                color: AppPalette.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
@@ -524,5 +560,4 @@ String _cap(String s) =>
     s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
 /// Drop a trailing `.0` so `99.9 → "99.9"`, `8.0 → "8"`, `0.0 → "0"`.
-String _trim(num v) =>
-    v == v.roundToDouble() ? v.toInt().toString() : '$v';
+String _trim(num v) => v == v.roundToDouble() ? v.toInt().toString() : '$v';

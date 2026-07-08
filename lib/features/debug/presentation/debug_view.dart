@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../onboarding/preflight_providers.dart';
 import '../../onboarding/preflight_report.dart';
@@ -34,7 +35,8 @@ class DebugView extends ConsumerWidget {
                 ? const ComingSoon(
                     message:
                         'No grid commands yet — interact with the app and '
-                        'they’ll show up here.')
+                        'they’ll show up here.',
+                  )
                 : ListView.separated(
                     itemCount: logs.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -56,9 +58,12 @@ class _Toolbar extends ConsumerWidget {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Text('$count command${count == 1 ? '' : 's'}',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        Text(
+          '$count command${count == 1 ? '' : 's'}',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const Spacer(),
         TextButton.icon(
           onPressed: count == 0
@@ -79,13 +84,9 @@ class _LogTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -98,7 +99,9 @@ class _LogTile extends StatelessWidget {
                 child: SelectableText(
                   log.command,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                      fontFamily: 'monospace', color: AppPalette.textPrimary),
+                    fontFamily: 'monospace',
+                    color: AppPalette.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -112,7 +115,9 @@ class _LogTile extends StatelessWidget {
               child: SelectableText(
                 log.error!,
                 style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.error, fontFamily: 'monospace'),
+                  color: theme.colorScheme.error,
+                  fontFamily: 'monospace',
+                ),
               ),
             ),
           ],
@@ -130,13 +135,20 @@ class _StatusIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (status) {
       CliCallStatus.running => const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2)),
-      CliCallStatus.success =>
-        const Icon(Icons.check_circle, size: 16, color: AppPalette.online),
-      CliCallStatus.failed => Icon(Icons.error,
-          size: 16, color: Theme.of(context).colorScheme.error),
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      CliCallStatus.success => const Icon(
+        Icons.check_circle,
+        size: 16,
+        color: AppPalette.online,
+      ),
+      CliCallStatus.failed => Icon(
+        Icons.error,
+        size: 16,
+        color: Theme.of(context).colorScheme.error,
+      ),
     };
   }
 }
@@ -148,7 +160,10 @@ class _Meta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: AppPalette.textFaint, fontFamily: 'monospace', fontSize: 11.5);
+      color: AppPalette.textFaint,
+      fontFamily: 'monospace',
+      fontSize: 11.5,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -162,8 +177,9 @@ class _Meta extends StatelessWidget {
   String _detail(GridCommandLog log) {
     final time = _formatTime(log.startedAt);
     if (log.status == CliCallStatus.running) return '$time · running…';
-    final dur =
-        log.duration == null ? '' : ' · ${_formatDuration(log.duration!)}';
+    final dur = log.duration == null
+        ? ''
+        : ' · ${_formatDuration(log.duration!)}';
     final code = switch (log.exitCode) {
       null => '',
       final c when log.kind == CliCallKind.http => ' · HTTP $c',
@@ -197,13 +213,8 @@ class _WhichGridCard extends ConsumerWidget {
     final preflight = ref.watch(preflightProvider);
     final gridBin = Platform.environment['GRID_BIN'];
 
-    return Container(
+    return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppPalette.divider),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -244,29 +255,39 @@ class _WhichGridCard extends ConsumerWidget {
       loading: () => Row(
         children: [
           const SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 2)),
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
           const SizedBox(width: 8),
           Text('checking…', style: theme.textTheme.bodySmall),
         ],
       ),
-      error: (e, _) => SelectableText('check failed: $e',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.error)),
+      error: (e, _) => SelectableText(
+        'check failed: $e',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.error,
+        ),
+      ),
       data: (report) {
         // Health is the exit-0 signal (`gridAvailable`), not the presence of a
         // version string — a working `grid` can exit 0 without printing one.
         if (report.gridAvailable) {
           return Row(
             children: [
-              const Icon(Icons.check_circle, size: 14, color: AppPalette.online),
+              const Icon(
+                Icons.check_circle,
+                size: 14,
+                color: AppPalette.online,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: SelectableText(
-                    report.gridVersion ?? 'installed (version unknown)',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(fontFamily: 'monospace')),
+                  report.gridVersion ?? 'installed (version unknown)',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+                ),
               ),
             ],
           );
@@ -277,9 +298,12 @@ class _WhichGridCard extends ConsumerWidget {
             Icon(Icons.error, size: 14, color: theme.colorScheme.error),
             const SizedBox(width: 8),
             Expanded(
-              child: SelectableText(report.gridError ?? 'grid not found',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.error)),
+              child: SelectableText(
+                report.gridError ?? 'grid not found',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
             ),
           ],
         );
@@ -304,9 +328,12 @@ class _PathRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 70,
-            child: Text(label,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppPalette.textFaint)),
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppPalette.textFaint,
+              ),
+            ),
           ),
           Expanded(
             child: SelectableText(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/provider_run_controller.dart';
@@ -22,43 +23,44 @@ class ProviderRunningCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                if (starting)
-                  const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                else
-                  const Icon(Icons.dns, color: Colors.green, size: 18),
-                const SizedBox(width: 10),
-                Text(starting ? 'Starting…' : 'Engine running'),
-                const Spacer(),
-                OutlinedButton.icon(
-                  onPressed: () =>
-                      ref.read(providerRunControllerProvider.notifier).stop(),
-                  icon: const Icon(Icons.stop),
-                  label: const Text('Stop'),
-                ),
-              ],
-            ),
-            if (!starting) ...[
-              const SizedBox(height: 12),
-              _LiveBanner(
-                theme: theme,
-                onOpenPlayground: () => openPlaygroundDialog(context, ref),
+    return GlassCard(
+      style: GlassCardStyle.hero,
+      expand: true,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              if (starting)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                const Icon(Icons.dns, color: Colors.green, size: 18),
+              const SizedBox(width: 10),
+              Text(starting ? 'Starting…' : 'Engine running'),
+              const Spacer(),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    ref.read(providerRunControllerProvider.notifier).stop(),
+                icon: const Icon(Icons.stop),
+                label: const Text('Stop'),
               ),
             ],
+          ),
+          if (!starting) ...[
             const SizedBox(height: 12),
-            Expanded(child: LogView(lines: log)),
+            _LiveBanner(
+              theme: theme,
+              onOpenPlayground: () => openPlaygroundDialog(context, ref),
+            ),
           ],
-        ),
+          const SizedBox(height: 12),
+          Expanded(child: LogView(lines: log)),
+        ],
       ),
     );
   }
@@ -74,12 +76,9 @@ class _LiveBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassCard(
+      style: GlassCardStyle.inset,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -89,13 +88,16 @@ class _LiveBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Your model is live on the grid',
-                    style: theme.textTheme.bodyMedium),
+                Text(
+                  'Your model is live on the grid',
+                  style: theme.textTheme.bodyMedium,
+                ),
                 const SizedBox(height: 2),
                 Text(
                   'Others on the grid can use it now. Try it yourself in the Playground.',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(

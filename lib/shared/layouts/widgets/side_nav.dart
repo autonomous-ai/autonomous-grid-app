@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass_surface.dart';
 import '../shell_state.dart';
@@ -15,6 +16,7 @@ class SideNav extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final active = ref.watch(navSectionProvider);
     final sections = ref.watch(visibleNavSectionsProvider);
+    final version = ref.watch(appVersionProvider).asData?.value;
 
     return SizedBox(
       width: width,
@@ -32,6 +34,8 @@ class SideNav extends ConsumerWidget {
                 onTap: () =>
                     ref.read(navSectionProvider.notifier).select(section),
               ),
+            const Spacer(),
+            if (version != null) _VersionLabel(version: version),
           ],
         ),
       ),
@@ -62,8 +66,7 @@ class _NavItem extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: radius,
           color: selected ? AppGlass.selected : Colors.transparent,
-          border:
-              selected ? Border.all(color: AppGlass.selectedBorder) : null,
+          border: selected ? Border.all(color: AppGlass.selectedBorder) : null,
         ),
         child: Material(
           color: Colors.transparent,
@@ -77,16 +80,42 @@ class _NavItem extends StatelessWidget {
                 children: [
                   Icon(section.icon, size: 18, color: color),
                   const SizedBox(width: 12),
-                  Text(section.label,
-                      style: TextStyle(
-                          color: color,
-                          fontSize: 13.5,
-                          fontWeight:
-                              selected ? FontWeight.w600 : FontWeight.w500)),
+                  Text(
+                    section.label,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 13.5,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The app version, pinned to the foot of the sidebar — a quiet build stamp so a
+/// user (or a bug report) can tell which build they're on at a glance. Muted so
+/// it never competes with the nav items above it.
+class _VersionLabel extends StatelessWidget {
+  const _VersionLabel({required this.version});
+
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, top: 8, bottom: 2),
+      child: Text(
+        'v$version',
+        style: const TextStyle(
+          color: AppPalette.textFaint,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );

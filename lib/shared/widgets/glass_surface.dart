@@ -55,14 +55,16 @@ class GlassSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveBorder = border ?? Border.all(color: AppGlass.border);
-    final effectiveFill = fill ??
+    final effectiveFill =
+        fill ??
         const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [AppGlass.fillTop, AppGlass.fillBottom],
         );
-    final content =
-        padding == null ? child : Padding(padding: padding!, child: child);
+    final content = padding == null
+        ? child
+        : Padding(padding: padding!, child: child);
 
     final body = Stack(
       children: [
@@ -100,8 +102,10 @@ class GlassSurface extends StatelessWidget {
 
     if (boxShadow != null) {
       surface = DecoratedBox(
-        decoration:
-            BoxDecoration(borderRadius: borderRadius, boxShadow: boxShadow),
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          boxShadow: boxShadow,
+        ),
         child: surface,
       );
     }
