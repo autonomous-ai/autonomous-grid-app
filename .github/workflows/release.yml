@@ -8,14 +8,15 @@ name: release
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized; arm64 grid sidecar)
 #   Grid-<ver>-macOS-Intel.dmg           (signed + notarized; x86_64 grid sidecar, built under Rosetta 2)
+#   Grid-<ver>-Windows-x64.zip           (UNSIGNED — SmartScreen may warn; no auto-update yet)
 #
 # Both DMGs carry the same Flutter app — a Release build is universal (arm64 + x86_64),
 # so it launches on either Mac. They differ only in the bundled `grid` sidecar's arch:
 # Nuitka can't emit a universal binary, so we run one macOS job per sidecar arch (see the
-# matrix below), and each job's sidecar is built for that job's target.
-#
-# Windows builds are disabled for now (deferred) — only the two macOS DMGs are produced.
-# See the commented-out `windows-latest` matrix entry below to re-enable.
+# matrix below), and each job's sidecar is built for that job's target. Windows builds
+# natively (x64) and ships an unsigned onefile sidecar zip — code-signing + WinSparkle
+# auto-update are still TODO(release), so Windows users get a SmartScreen prompt and no
+# in-app updates for now.
 #
 #   git tag v0.1.2 && git push origin v0.1.2
 #
@@ -55,20 +56,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # TEMP(test): Apple Silicon build disabled to iterate on the Intel build in
-          # isolation (faster CI). RESTORE these 3 lines before tagging a real release.
-          # - platform: macos-latest      # Apple Silicon, native arm64 app + sidecar
-          #   arch: arm64
-          #   label: macOS-Apple-Silicon
-          - platform: macos-latest      # Intel x86_64 sidecar, compiled under Rosetta 2 on
-            arch: x64                    # the same arm64 runner — GitHub retired the free
-            label: macOS-Intel           # macos-13 Intel image, so this avoids a paid runner.
-          # Windows build disabled for now — deferred until Windows code-signing +
-          # a WinSparkle key exist. Uncomment to re-enable; the `if: runner.os ==
-          # 'Windows'` build steps below stay in place, dormant, ready for it.
-          # - platform: windows-latest
-          #   arch: x64
-          #   label: Windows-x64
+          - platform: macos-latest      # Apple Silicon, native arm64 app + sidecar
+            arch: arm64
+            label: macOS-Apple-Silicon
+          # - platform: macos-latest      # Intel x86_64 sidecar, compiled under Rosetta 2 on
+          #   arch: x64                    # the same arm64 runner — GitHub retired the free
+          #   label: macOS-Intel           # macos-13 Intel image, so this avoids a paid runner.
+          # - platform: windows-latest    # Windows x64, native build. UNSIGNED zip (SmartScreen
+          #   arch: x64                    # may warn); the `if: runner.os == 'Windows'` steps
+          #   label: Windows-x64           # below build the onefile sidecar + package the zip.
 
     runs-on: ${{ matrix.platform }}
     # The Nuitka sidecar build is slow (macOS ~45m; Windows >56m), and macOS adds
