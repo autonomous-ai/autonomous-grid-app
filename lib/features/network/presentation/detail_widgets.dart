@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_surface.dart';
 
 /// A titled group of rows in the detail pane (e.g. "Endpoints", "Details").
 class DetailSection extends StatelessWidget {
@@ -38,12 +39,8 @@ class DetailSection extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: AppPalette.cardBg,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppPalette.divider),
-          ),
+        GlassSurface(
+          borderRadius: BorderRadius.circular(14),
           child: Column(children: _withDividers(children)),
         ),
       ],
