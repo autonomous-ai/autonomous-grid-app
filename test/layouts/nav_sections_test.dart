@@ -81,11 +81,15 @@ void main() {
   test('consumer network hides the provider-only sections', () {
     final container = containerWith('grid-con');
     final sections = container.read(visibleNavSectionsProvider);
-    // Engines is hidden; Overlord is hidden (in progress); Debug is dev-only,
-    // so it shows here because tests run in debug mode (kDebugMode) — it's gone
-    // in release builds.
-    expect(sections,
-        [NavSection.networks, NavSection.howToUse, NavSection.debug]);
+    // Chat is available to everyone; Engines is hidden; Overlord is hidden (in
+    // progress); Debug is dev-only, so it shows here because tests run in debug
+    // mode (kDebugMode) — it's gone in release builds.
+    expect(sections, [
+      NavSection.networks,
+      NavSection.chat,
+      NavSection.howToUse,
+      NavSection.debug,
+    ]);
   });
 
   test('provider network shows every listed section', () {

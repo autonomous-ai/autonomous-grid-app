@@ -46,6 +46,13 @@ class GridPaths {
 
   static Directory get outputsDir => Directory('${home.path}/outputs');
 
+  /// Saved Chat conversations, one JSON file per conversation
+  /// (`~/.grid/app/chats/<id>.json`). App-owned — the CLI never reads or writes
+  /// here; it lives under `app/` to stay clearly namespaced away from CLI state.
+  static Directory get chatsDir => Directory('${home.path}/app/chats');
+
+  static File chatFile(String id) => File('${chatsDir.path}/$id.json');
+
   /// The CLI's own log directory (`~/.grid/logs`, e.g. `llama_llm_*.log`). The
   /// app drops its own diagnostic logs here too so everything a user might send
   /// us to debug lives in one place.

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/host_arch.dart';
 import '../../features/auth/logic/session_controller.dart';
+import '../../features/chat/presentation/chat_pane.dart';
 import '../../features/network/logic/create_network_controller.dart';
 import '../../features/debug/presentation/debug_view.dart';
 import '../../features/network/presentation/how_to_use_view.dart';
@@ -123,6 +124,7 @@ class _Content extends ConsumerWidget {
         section.providerOnly && !canManage ? NavSection.networks : section;
     return switch (effective) {
       NavSection.networks => const NetworksPane(),
+      NavSection.chat => const ChatPane(),
       NavSection.overlord => const OverlordView(),
       NavSection.howToUse => const HowToUseView(),
       NavSection.provider => const ProviderView(),

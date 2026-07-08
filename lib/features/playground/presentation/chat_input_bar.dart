@@ -1,0 +1,82 @@
+import 'package:flutter/material.dart';
+
+import '../../../shared/theme/app_theme.dart';
+
+/// The message composer — a multiline field plus a circular send button that
+/// spins while a request is in flight. [canSend] gates both Enter-to-send and
+/// the button (e.g. a video needs an attached image first). Shared by the
+/// Playground dialog and the Chat tab.
+class ChatInputBar extends StatelessWidget {
+  const ChatInputBar({
+    super.key,
+    required this.controller,
+    required this.sending,
+    required this.canSend,
+    required this.hint,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final bool sending;
+  final bool canSend;
+  final String hint;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            minLines: 1,
+            maxLines: 5,
+            enabled: !sending,
+            textInputAction: TextInputAction.send,
+            onSubmitted: (_) {
+              if (canSend) onSend();
+            },
+            decoration: InputDecoration(
+              hintText: hint,
+              filled: true,
+              fillColor: AppPalette.cardBg,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+              border: _border(AppPalette.divider),
+              enabledBorder: _border(AppPalette.divider),
+              focusedBorder: _border(AppPalette.accent, width: 1.5),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 48,
+          height: 48,
+          child: FilledButton(
+            onPressed: canSend ? onSend : null,
+            style: FilledButton.styleFrom(
+              shape: const CircleBorder(),
+              padding: EdgeInsets.zero,
+            ),
+            child: sending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.arrow_upward_rounded, size: 20),
+          ),
+        ),
+      ],
+    );
+  }
+
+  OutlineInputBorder _border(Color color, {double width = 1}) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: color, width: width),
+      );
+}

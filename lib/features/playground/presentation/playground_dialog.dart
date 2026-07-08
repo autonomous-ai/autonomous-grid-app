@@ -16,7 +16,10 @@ import '../logic/local_test_state.dart';
 import '../logic/playground_models.dart';
 import '../logic/playground_request.dart';
 import 'attachment_bar.dart';
-import 'message_content.dart';
+import 'chat_bubble.dart';
+import 'chat_input_bar.dart';
+import 'model_picker.dart';
+import 'no_model_yet.dart';
 
 /// Opens the quick model-test dialog for the selected grid and wipes the
 /// transcript once it closes — the playground is a throwaway smoke test, not a
@@ -178,7 +181,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     // engine serving. Guide the user to start one instead of a dead input box.
     final hasUsableModel = options.isNotEmpty || localEndpoint != null;
     if (!loadingModels && !hasUsableModel) {
-      return _NoModelYet(
+      return NoModelYet(
         canManage: network.canManageProvider,
         onGoToEngines: () {
           Navigator.of(context).pop();
@@ -202,7 +205,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
           ),
           const SizedBox(height: 12),
         ],
-        _ModelPicker(
+        ModelPicker(
           controller: _model,
           options: options,
           networkName: network.name,
@@ -229,8 +232,8 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
                       chat.messages.length +
                       (chat.phase is SendGenerating ? 1 : 0),
                   itemBuilder: (context, i) => i < chat.messages.length
-                      ? _Bubble(message: chat.messages[i])
-                      : _GeneratingBubble(phase: chat.phase as SendGenerating),
+                      ? ChatBubble(message: chat.messages[i])
+                      : GeneratingBubble(phase: chat.phase as SendGenerating),
                 ),
         ),
         if (chat.error != null) ...[
@@ -243,7 +246,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
           ),
         ],
         const SizedBox(height: 12),
-        _InputBar(
+        ChatInputBar(
           controller: _message,
           sending: chat.sending,
           canSend: canSend,
@@ -305,108 +308,6 @@ class _DialogHeader extends StatelessWidget {
   }
 }
 
-/// Editable model dropdown — lists what the grid can do (chat models plus any
-/// image / video generation modes, each with its own icon), yet stays typeable
-/// so it still works when nothing can be fetched (no provider online, relay down).
-class _ModelPicker extends StatelessWidget {
-  const _ModelPicker({
-    required this.controller,
-    required this.options,
-    required this.networkName,
-  });
-
-  final TextEditingController controller;
-  final List<PlaygroundModelOption> options;
-  final String networkName;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownMenu<String>(
-      controller: controller,
-      enableFilter: true,
-      requestFocusOnTap: true,
-      expandedInsets: EdgeInsets.zero,
-      label: const Text('Model'),
-      hintText: 'Qwen3.6-35B-A3B',
-      leadingIcon: const Icon(Icons.smart_toy_outlined, size: 18),
-      helperText: options.isEmpty
-          ? 'No models available yet — type a name'
-          : '${options.length} option(s) on $networkName',
-      dropdownMenuEntries: [
-        for (final option in options)
-          DropdownMenuEntry(
-            value: option.id,
-            label: option.label,
-            leadingIcon: Icon(_modalityIcon(option.modality), size: 18),
-          ),
-      ],
-      onSelected: (value) {
-        if (value != null) controller.text = value;
-      },
-    );
-  }
-
-  static IconData _modalityIcon(PlaygroundModality modality) =>
-      switch (modality) {
-        PlaygroundModality.image => Icons.image_outlined,
-        PlaygroundModality.video => Icons.movie_outlined,
-        PlaygroundModality.text => Icons.smart_toy_outlined,
-      };
-}
-
-/// Blocked state when no model can answer yet. Points provider-capable users to
-/// the Engines tab to start one; pure consumers are told to wait for a provider.
-class _NoModelYet extends StatelessWidget {
-  const _NoModelYet({required this.canManage, required this.onGoToEngines});
-  final bool canManage;
-  final VoidCallback onGoToEngines;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.smart_toy_outlined,
-              size: 40,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No model is running yet',
-              style: theme.textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              canManage
-                  ? 'Start an engine on this grid to chat with a model.'
-                  : 'Wait for someone on this grid to bring a model online, or '
-                        'ask the grid owner to run one.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            if (canManage) ...[
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: onGoToEngines,
-                icon: const Icon(Icons.dns_outlined, size: 18),
-                label: const Text('Go to Engines'),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Shown only while a local provider is serving — flips the chat from the relay
 /// to a direct HTTP call against the local server (the curl smoke test).
 class _LocalTestToggle extends StatelessWidget {
@@ -456,154 +357,3 @@ class _LocalTestToggle extends StatelessWidget {
   }
 }
 
-/// A live progress bubble while a media generation streams — percent plus the
-/// relay's short status label, with an indeterminate bar until the first update.
-class _GeneratingBubble extends StatelessWidget {
-  const _GeneratingBubble({required this.phase});
-  final SendGenerating phase;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final pct = (phase.progress * 100).round();
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        constraints: const BoxConstraints(maxWidth: 320),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.auto_awesome_outlined, size: 16),
-                const SizedBox(width: 8),
-                Text('Generating… $pct%', style: theme.textTheme.bodyMedium),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: phase.progress <= 0 ? null : phase.progress,
-                minHeight: 4,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message});
-  final ChatMessage message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isUser = message.role == ChatRole.user;
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: const BoxConstraints(maxWidth: 520),
-        decoration: BoxDecoration(
-          color: isUser
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: MessageContent(
-          text: message.text,
-          media: message.media,
-          color: isUser
-              ? theme.colorScheme.onPrimary
-              : theme.colorScheme.onSurface,
-        ),
-      ),
-    );
-  }
-}
-
-class _InputBar extends StatelessWidget {
-  const _InputBar({
-    required this.controller,
-    required this.sending,
-    required this.canSend,
-    required this.hint,
-    required this.onSend,
-  });
-
-  final TextEditingController controller;
-  final bool sending;
-  final bool canSend;
-  final String hint;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: TextField(
-            controller: controller,
-            minLines: 1,
-            maxLines: 5,
-            enabled: !sending,
-            textInputAction: TextInputAction.send,
-            onSubmitted: (_) {
-              if (canSend) onSend();
-            },
-            decoration: InputDecoration(
-              hintText: hint,
-              filled: true,
-              fillColor: AppPalette.cardBg,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
-              border: _border(AppPalette.divider),
-              enabledBorder: _border(AppPalette.divider),
-              focusedBorder: _border(AppPalette.accent, width: 1.5),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 48,
-          height: 48,
-          child: FilledButton(
-            onPressed: canSend ? onSend : null,
-            style: FilledButton.styleFrom(
-              shape: const CircleBorder(),
-              padding: EdgeInsets.zero,
-            ),
-            child: sending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.arrow_upward_rounded, size: 20),
-          ),
-        ),
-      ],
-    );
-  }
-
-  OutlineInputBorder _border(Color color, {double width = 1}) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: color, width: width),
-      );
-}
