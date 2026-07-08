@@ -55,9 +55,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest      # Apple Silicon, native arm64 app + sidecar
-            arch: arm64
-            label: macOS-Apple-Silicon
+          # TEMP(test): Apple Silicon build disabled to iterate on the Intel build in
+          # isolation (faster CI). RESTORE these 3 lines before tagging a real release.
+          # - platform: macos-latest      # Apple Silicon, native arm64 app + sidecar
+          #   arch: arm64
+          #   label: macOS-Apple-Silicon
           - platform: macos-latest      # Intel x86_64 sidecar, compiled under Rosetta 2 on
             arch: x64                    # the same arm64 runner — GitHub retired the free
             label: macOS-Intel           # macos-13 Intel image, so this avoids a paid runner.
