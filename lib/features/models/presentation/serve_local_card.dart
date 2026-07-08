@@ -10,6 +10,7 @@ import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
 import '../logic/context_length.dart';
 import '../logic/llama_install_controller.dart';
+import '../logic/model_group.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
 import 'context_length_field.dart';
@@ -90,25 +91,31 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final models = ref.watch(localModelsProvider);
+    final groups = ref.watch(modelGroupsProvider);
     final llamaInstalled = ref.watch(engineStatusProvider).llamaInstalled;
     final download = _modelDownloadStatus(
       ref.watch(modelPullControllerProvider),
       ref.watch(nodeSetupControllerProvider),
     );
 
-    // Default to the first model; keep selection valid if the list changes.
-    final names = models.map((m) => m.name).toList();
-    final selected =
-        names.contains(_model) ? _model! : (names.isEmpty ? null : names.first);
-    if (selected != null) _syncAdvertiseFor(selected);
+    // Default to the first model; keep selection valid if the list changes. A
+    // model is keyed by the file we serve (a split set's first shard).
+    ModelGroup? selected;
+    for (final group in groups) {
+      if (group.primary.name == _model) {
+        selected = group;
+        break;
+      }
+    }
+    selected ??= groups.isEmpty ? null : groups.first;
+    if (selected != null) _syncAdvertiseFor(selected.primary.name);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: selected == null
           ? _noModelSection(context, theme,
               llamaInstalled: llamaInstalled, download: download)
-          : _serveControls(names, selected),
+          : _serveControls(groups, selected),
     );
   }
 
@@ -167,16 +174,21 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         ),
       ];
 
-  List<Widget> _serveControls(List<String> names, String selected) => [
+  List<Widget> _serveControls(List<ModelGroup> groups, ModelGroup selected) => [
         DropdownButtonFormField<String>(
-          initialValue: selected,
+          initialValue: selected.primary.name,
           decoration: const InputDecoration(
             labelText: 'Model',
             border: OutlineInputBorder(),
           ),
           items: [
-            for (final name in names)
-              DropdownMenuItem(value: name, child: Text(name)),
+            for (final group in groups)
+              DropdownMenuItem(
+                value: group.primary.name,
+                child: Text(group.isSplit
+                    ? '${group.displayName} · ${group.partCount} parts'
+                    : group.displayName),
+              ),
           ],
           // Reset the context choice so the slider falls back to the new
           // model's own maximum instead of carrying over the previous one.
@@ -192,7 +204,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         ),
         const SizedBox(height: 12),
         ContextLengthField(
-          model: selected,
+          model: selected.primary.name,
           value: _ctxSize,
           onChanged: (tokens) => setState(() => _ctxSize = tokens),
         ),
@@ -205,7 +217,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               FilledButton.icon(
-                onPressed: () => _start(selected),
+                onPressed: () => _start(selected.primary.name),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Start engine'),
               ),

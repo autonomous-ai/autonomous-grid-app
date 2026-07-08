@@ -45,11 +45,17 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
       children: [
         TextField(
           controller: _spec,
+          minLines: 1,
+          maxLines: 6,
+          keyboardType: TextInputType.multiline,
           decoration: const InputDecoration(
             labelText: 'Model to download',
-            helperText: 'A model in the format  owner/repo:file.gguf',
-            hintText: 'unsloth/…-GGUF:…IQ3_S.gguf',
+            helperText: 'Format  owner/repo:file.gguf — one per line. For a '
+                'split model, paste every part.',
+            helperMaxLines: 2,
+            hintText: 'unsloth/…-GGUF:…-00001-of-00005.gguf',
             border: OutlineInputBorder(),
+            alignLabelWithHint: true,
           ),
         ),
         const SizedBox(height: 8),
@@ -131,15 +137,18 @@ class _ProgressView extends ConsumerWidget {
           '(${progress.pct!.toStringAsFixed(1)}%)',
     };
 
+    final multi = state.total > 1;
+    final heading = multi
+        ? 'Downloading part ${state.current} of ${state.total}'
+        : 'Downloading a model';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
             Expanded(
-              child: Text('Downloading ${state.spec}',
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium),
+              child: Text(heading, style: theme.textTheme.bodyMedium),
             ),
             const SizedBox(width: 8),
             TextButton.icon(
@@ -153,6 +162,11 @@ class _ProgressView extends ConsumerWidget {
             ),
           ],
         ),
+        const SizedBox(height: 4),
+        Text(state.spec,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         const SizedBox(height: 10),
         LinearProgressIndicator(value: fraction),
         const SizedBox(height: 6),
