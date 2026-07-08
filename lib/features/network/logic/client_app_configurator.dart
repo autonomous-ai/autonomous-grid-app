@@ -138,7 +138,10 @@ class ClientAppConfigurator {
         'OPENAI_API_KEY': key,
       });
       return ApplyOk(
-          'Pointed Hermes at this grid (${_display(config)} + ${_display(env)}).');
+        'Pointed Hermes at this grid (${_display(config)} + ${_display(env)}).',
+        note: 'If Hermes is already open, refresh its model list (or restart '
+            'it) to see this grid\'s models.',
+      );
     } on Object catch (e) {
       return ApplyError('Couldn\'t update Hermes config: ${_reason(e)}');
     }
