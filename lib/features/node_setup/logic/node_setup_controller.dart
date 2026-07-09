@@ -4,7 +4,7 @@ import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/logging/node_setup_log.dart';
 import '../../../infrastructure/providers.dart';
-import '../../models/logic/llama_install_controller.dart';
+import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import 'node_capabilities.dart';
 import 'node_setup_plan.dart';
