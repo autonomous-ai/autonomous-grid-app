@@ -36,6 +36,12 @@ class FakeGridCliService implements GridCliService {
   void stubPull(List<String> args, List<DownloadProgress> progress) =>
       _pulls[keyOf(args)] = progress;
 
+  /// The [args] and per-call environment of the most recent [start], so tests
+  /// can assert a secret (e.g. an API-engine key) was passed via the env channel
+  /// rather than on the command line.
+  List<String>? lastStartArgs;
+  Map<String, String>? lastStartEnvironment;
+
   @override
   Future<CliResult> run(List<String> args) async {
     return _results[keyOf(args)] ??
@@ -43,7 +49,10 @@ class FakeGridCliService implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args) async {
+  Future<GridProcess> start(List<String> args,
+      {Map<String, String>? environment}) async {
+    lastStartArgs = args;
+    lastStartEnvironment = environment;
     final queue = _runs[keyOf(args)];
     final run = (queue == null || queue.isEmpty)
         ? const _FakeRun([], 0, Duration.zero)

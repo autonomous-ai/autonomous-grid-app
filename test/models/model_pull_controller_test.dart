@@ -39,7 +39,8 @@ class _HangingPullCli implements GridCliService {
       const CliResult(exitCode: 0, stdout: '', stderr: '');
 
   @override
-  Future<GridProcess> start(List<String> args) async =>
+  Future<GridProcess> start(List<String> args,
+          {Map<String, String>? environment}) async =>
       throw UnimplementedError();
 }
 

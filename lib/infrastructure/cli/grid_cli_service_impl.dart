@@ -63,9 +63,15 @@ class GridCliServiceImpl implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args) async {
+  Future<GridProcess> start(List<String> args,
+      {Map<String, String>? environment}) async {
+    // Per-call vars (e.g. an API-engine key) layer on top of the base env, never
+    // replacing it — the CLI still needs PATH/PYTHONUNBUFFERED/UTF-8 to run.
+    final env = (environment == null || environment.isEmpty)
+        ? _env
+        : {..._env, ...environment};
     final process = await Process.start(executable, args,
-        runInShell: false, environment: _env);
+        runInShell: false, environment: env);
     final controller = StreamController<CliLine>();
 
     final outSub = process.stdout

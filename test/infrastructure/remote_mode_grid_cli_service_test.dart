@@ -9,6 +9,7 @@ class _RecordingCliService implements GridCliService {
   final List<List<String>> runArgs = [];
   final List<List<String>> startArgs = [];
   final List<List<String>> pullArgs = [];
+  Map<String, String>? lastStartEnvironment;
 
   @override
   Future<CliResult> run(List<String> args) async {
@@ -17,8 +18,10 @@ class _RecordingCliService implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args) async {
+  Future<GridProcess> start(List<String> args,
+      {Map<String, String>? environment}) async {
     startArgs.add(args);
+    lastStartEnvironment = environment;
     return GridProcess(
       lines: const Stream.empty(),
       exitCode: Future.value(0),
@@ -53,6 +56,12 @@ void main() {
       expect(inner.startArgs.single, ['--remote', 'join', 'grid.example']);
     });
 
+    test('start forwards the per-call environment to the inner service',
+        () async {
+      await sut.start(['join', 'grid.example'],
+          environment: const {'OPENAI_API_KEY': 'sk-x'});
+      expect(inner.lastStartEnvironment, {'OPENAI_API_KEY': 'sk-x'});
+    });
   });
 
   group('drops --remote for local-machine commands', () {

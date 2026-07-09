@@ -511,4 +511,65 @@ void main() {
     expect(state, isA<ProviderRunActive>());
     expect((state as ProviderRunActive).starting, isFalse);
   });
+
+  test('startApiEngine joins via --api with the key in the env, not argv',
+      () async {
+    // `--api <kind> [-m …]`; the secret rides in the environment so it never
+    // reaches the command line (and so never the Debug tab / CLI transcript).
+    const apiArgs = [
+      'join', 'net',
+      '--api', 'openai',
+      '-m', 'openai:gpt-5.5',
+      '--name', 'grid-app',
+    ];
+    final fake = FakeGridCliService()
+      ..stubStart(
+        apiArgs,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Joining engine…')],
+      );
+    final container = _containerWith(fake);
+    addTearDown(container.dispose);
+
+    await container.read(providerRunControllerProvider.notifier).startApiEngine(
+          network: 'net',
+          kind: 'openai',
+          envVar: 'OPENAI_API_KEY',
+          apiKey: 'sk-secret',
+          models: const ['openai:gpt-5.5'],
+        );
+
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
+    expect(fake.lastStartArgs, apiArgs);
+    expect(fake.lastStartArgs, isNot(contains('sk-secret')));
+    expect(fake.lastStartEnvironment, {'OPENAI_API_KEY': 'sk-secret'});
+  });
+
+  test('startApiEngine with no models omits -m and passes no env for a stored key',
+      () async {
+    // No models = serve the whole whitelist (the CLI's zero-config default), and
+    // an empty key means "use the key the CLI already stored" — no env override.
+    const apiArgs = ['join', 'net', '--api', 'openai', '--name', 'grid-app'];
+    final fake = FakeGridCliService()
+      ..stubStart(
+        apiArgs,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Joining engine…')],
+      );
+    final container = _containerWith(fake);
+    addTearDown(container.dispose);
+
+    await container.read(providerRunControllerProvider.notifier).startApiEngine(
+          network: 'net',
+          kind: 'openai',
+          envVar: 'OPENAI_API_KEY',
+          apiKey: '',
+        );
+
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
+    expect(fake.lastStartArgs, apiArgs);
+    expect(fake.lastStartEnvironment, isNull);
+  });
 }

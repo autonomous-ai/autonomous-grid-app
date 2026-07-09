@@ -78,7 +78,14 @@ abstract interface class GridCliService {
   Future<CliResult> run(List<String> args);
 
   /// Start a long-running command and return a handle to its output + lifetime.
-  Future<GridProcess> start(List<String> args);
+  ///
+  /// [environment] adds/overrides variables for this one spawn only, on top of
+  /// the base environment. It's the channel for secrets the CLI reads from the
+  /// environment (e.g. an API-engine key in `OPENAI_API_KEY`): passing them here
+  /// instead of as argv keeps them out of the command line — and so out of the
+  /// Debug tab and the CLI transcript, which log only [args] (mirrors the CLI's
+  /// own "never a flag — a key on the command line leaks into shell history").
+  Future<GridProcess> start(List<String> args, {Map<String, String>? environment});
 
   /// Run `models pull` / `media pull`, surfacing parsed download progress.
   Stream<DownloadProgress> pull(List<String> args);

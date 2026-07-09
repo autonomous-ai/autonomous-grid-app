@@ -28,6 +28,22 @@ class GridHomeStore {
     if (file.existsSync()) file.deleteSync();
   }
 
+  /// Service kinds that already have a stored API-engine key in
+  /// `~/.grid/api_keys.toml` (a `[<kind>]` table with a non-empty `key`). Lets
+  /// the hosted-provider block skip re-asking for a key the CLI already saved on
+  /// a prior successful join. Reads presence only — never the key itself.
+  /// Lenient: a missing/corrupt file yields an empty set, never throws.
+  Set<String> storedApiKinds() {
+    final map = _readToml(GridPaths.apiKeysFile);
+    if (map == null) return const {};
+    final kinds = <String>{};
+    map.forEach((kind, entry) {
+      final key = entry is Map ? entry['key'] : null;
+      if (key is String && key.isNotEmpty) kinds.add(kind);
+    });
+    return kinds;
+  }
+
   NetworkConfig? readNetworkConfig(String networkId) {
     final map = _readToml(GridPaths.networkConfigFile(networkId));
     return map == null ? null : NetworkConfig.fromToml(map);

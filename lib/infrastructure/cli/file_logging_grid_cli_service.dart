@@ -36,11 +36,13 @@ class FileLoggingGridCliService implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args) async {
+  Future<GridProcess> start(List<String> args,
+      {Map<String, String>? environment}) async {
+    // Only [args] is recorded; [environment] (which may hold a secret) is not.
     final entry = _log.begin(_display(args));
     final GridProcess process;
     try {
-      process = await _inner.start(args);
+      process = await _inner.start(args, environment: environment);
     } catch (e) {
       entry.end(error: e.toString());
       rethrow;

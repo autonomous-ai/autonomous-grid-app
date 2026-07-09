@@ -235,6 +235,37 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     );
   }
 
+  /// Serve a third-party hosted engine via the provider's own API key
+  /// (`grid join <grid> --api <kind> [-m <model> …]`). Remote-only, which this
+  /// app always is. The key travels in [environment] (`<KIND>_API_KEY`), not in
+  /// argv, so it never reaches a log — the CLI reads it there first, validates
+  /// it against the vendor, then stores it for the detached serve loop to reuse
+  /// (ADR 0012). Pass an empty [apiKey] to fall back to that stored key.
+  ///
+  /// [models] are advertised whitelist names (`openai:gpt-5.5`); empty serves
+  /// the whole whitelist the key can see (the CLI's zero-config default). No
+  /// `--advertise-as`/`--ctx-size`: the CLI rejects aliasing for API engines and
+  /// the vendor owns the context window.
+  Future<void> startApiEngine({
+    required String network,
+    required String kind,
+    required String envVar,
+    required String apiKey,
+    List<String> models = const [],
+  }) {
+    return _start(
+      [
+        'join', network,
+        '--api', kind,
+        for (final model in models) ...['-m', model],
+        '--name', _engineName,
+      ],
+      grid: network,
+      model: models.isEmpty ? kind : models.join(', '),
+      environment: apiKey.isEmpty ? null : {envVar: apiKey},
+    );
+  }
+
   List<String> _advertiseArgs(String? advertiseAs) =>
       (advertiseAs != null && advertiseAs.isNotEmpty)
           ? ['--advertise-as', advertiseAs]
@@ -252,6 +283,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       {required String grid,
       String? model,
       bool retried = false,
+      Map<String, String>? environment,
       Future<List<String>> Function()? rebuildForPortConflict}) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
@@ -274,7 +306,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     state =
         ProviderRunActive(grid: grid, log: const [], starting: true, model: model);
 
-    _process = await service.start(args);
+    _process = await service.start(args, environment: environment);
     _process!.lines.listen((line) {
       log.add(line.text);
       if (log.length > _maxLogLines) {
@@ -307,7 +339,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     // stuck unable to start (and unable to stop a run the app never tracked).
     if (!retried && lowerFailure.contains('already joined')) {
       await _leaveEngine(service, grid);
-      return _start(args, grid: grid, model: model, retried: true);
+      return _start(args,
+          grid: grid, model: model, retried: true, environment: environment);
     }
     // Another process grabbed the chosen port between picking it and the engine
     // binding it. Rebuild the args with a fresh free port and retry once.
@@ -315,7 +348,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         rebuildForPortConflict != null &&
         lowerFailure.contains('already in use')) {
       return _start(await rebuildForPortConflict(),
-          grid: grid, model: model, retried: true);
+          grid: grid, model: model, retried: true, environment: environment);
     }
     _grid = null;
     state = ProviderRunFailed(failure);

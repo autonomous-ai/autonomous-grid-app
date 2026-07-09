@@ -26,6 +26,13 @@ class GridPaths {
 
   static File get credentialsFile => File('${home.path}/credentials.toml');
 
+  /// Machine-local API-engine key store (`~/.grid/api_keys.toml`, `0o600`) — one
+  /// vendor key per service kind, written by `grid join --api <kind>`. Separate
+  /// from [credentialsFile] on purpose: `grid logout` clears credentials but
+  /// leaves this (the key belongs to the vendor account, not the sign-in). The
+  /// app only reads whether a kind has a key, to skip re-asking (ADR 0012).
+  static File get apiKeysFile => File('${home.path}/api_keys.toml');
+
   /// The merged CLI's mode pointer + per-mode active grid
   /// (`{"mode": …, "active": {"local": …, "remote": …}}`). New in dual-mode: the
   /// active selection moved here out of `credentials.toml` (CLI shared/state.py).

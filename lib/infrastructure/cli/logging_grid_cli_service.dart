@@ -30,10 +30,13 @@ class LoggingGridCliService implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args) async {
+  Future<GridProcess> start(List<String> args,
+      {Map<String, String>? environment}) async {
+    // Log only [args] — never [environment], which may carry a secret (e.g. an
+    // API-engine key). That's the whole point of the env channel.
     final id = _log.begin(CliCallKind.start, 'grid ${args.join(' ')}');
     try {
-      final process = await _inner.start(args);
+      final process = await _inner.start(args, environment: environment);
       // Finalize when the process exits; leave the lines stream for the caller.
       unawaited(process.exitCode.then(
         (code) => _log.finish(id, exitCode: code),
