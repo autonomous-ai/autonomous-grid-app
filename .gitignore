@@ -49,3 +49,5 @@ app.*.map.json
 .claude
 docs/
 CLAUDE.md
+.codex/
+AGENTS.md
