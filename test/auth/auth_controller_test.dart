@@ -28,7 +28,7 @@ class _FakeStore extends GridHomeStore {
 
   // Keep sign-out offline: never scan the real `~/.grid/run/engines`.
   @override
-  List<String> listServingGrids(String engineName) => serving;
+  List<String> listServingGrids() => serving;
 }
 
 class _RecordingCli extends FakeGridCliService {
@@ -161,8 +161,7 @@ void main() {
 
     await container.read(authControllerProvider.notifier).logout();
 
-    expect(cli.runs,
-        contains(equals(const ['leave', 'net', '--engine', 'grid-app'])));
+    expect(cli.runs, contains(equals(const ['leave', 'net'])));
     expect(cli.runs, contains(equals(const ['logout'])));
     expect(container.read(authControllerProvider), isA<AuthIdle>());
   });

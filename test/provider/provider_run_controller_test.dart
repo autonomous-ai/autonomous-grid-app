@@ -27,16 +27,23 @@ class _StubHomeStore extends GridHomeStore {
   final List<String> log;
   final List<String> serving;
 
-  @override
-  EngineRunRecord? readEngineRun(String gridId, String engineName) => record;
+  /// The engine id [ProviderRunController.reconcile] asked the log for — must be
+  /// the record's own id (the CLI's `remote`), never the app's `--name`.
+  String? logEngineIdAsked;
 
   @override
-  List<String> readEngineRunLog(String gridId, String engineName,
-          {int maxLines = 400}) =>
-      log;
+  List<EngineRunRecord> listEngineRuns(String gridId) =>
+      record == null ? const [] : [record!];
 
   @override
-  List<String> listServingGrids(String engineName) => serving;
+  List<String> readEngineRunLog(String gridId, String engineId,
+      {int maxLines = 400}) {
+    logEngineIdAsked = engineId;
+    return log;
+  }
+
+  @override
+  List<String> listServingGrids() => serving;
 }
 
 /// A fake CLI that records every `run` call so tests can assert which engines
@@ -322,6 +329,29 @@ void main() {
     expect(state.log, contains('Engine serving [m] via the relay'));
   });
 
+  test('reconcile adopts a remote engine whose id differs from the node name',
+      () {
+    // In remote mode the CLI keys the run record by a fixed engine id (`remote`),
+    // not our `--name` (here 'grid-app'). Reconcile must still find and adopt it,
+    // and read its log by the record's own id — the old name-keyed lookup missed
+    // `remote.json` and left the engine unadoptable (no Stop) after a restart.
+    final store = _StubHomeStore(
+      record: EngineRunRecord(
+          engineId: 'remote', gridId: 'net', models: const ['m'], pid: io.pid),
+      log: const ['Engine serving [m] via the relay'],
+    );
+    final container = _containerWith(FakeGridCliService(), store: store);
+    addTearDown(container.dispose);
+
+    container.read(providerRunControllerProvider.notifier).reconcile('net');
+
+    final state = container.read(providerRunControllerProvider);
+    expect(state, isA<ProviderRunActive>());
+    expect((state as ProviderRunActive).grid, 'net');
+    expect(state.log, contains('Engine serving [m] via the relay'));
+    expect(store.logEngineIdAsked, 'remote');
+  });
+
   test('reconcile ignores a stale record whose process is gone', () {
     final container = _containerWith(
       FakeGridCliService(),
@@ -409,8 +439,7 @@ void main() {
     await notifier.startExternal(
         network: 'gridB', endpoint: 'http://x/v1', model: 'm');
 
-    expect(cli.runs,
-        contains(equals(const ['leave', 'gridA', '--engine', 'grid-app'])));
+    expect(cli.runs, contains(equals(const ['leave', 'gridA'])));
     final state = container.read(providerRunControllerProvider);
     expect(state, isA<ProviderRunActive>());
     expect((state as ProviderRunActive).grid, 'gridB');
@@ -433,8 +462,7 @@ void main() {
 
     await notifier.shutdownServing();
 
-    expect(
-        cli.runs, contains(equals(const ['leave', 'net', '--engine', 'grid-app'])));
+    expect(cli.runs, contains(equals(const ['leave', 'net'])));
     expect(container.read(providerRunControllerProvider), isA<ProviderRunIdle>());
   });
 
@@ -450,8 +478,7 @@ void main() {
 
     await container.read(providerRunControllerProvider.notifier).shutdownServing();
 
-    expect(cli.runs,
-        contains(equals(const ['leave', 'ghost', '--engine', 'grid-app'])));
+    expect(cli.runs, contains(equals(const ['leave', 'ghost'])));
     expect(container.read(providerRunControllerProvider), isA<ProviderRunIdle>());
   });
 

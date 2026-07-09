@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
+import '../../../infrastructure/state/models/engine_run.dart';
 import '../../network/logic/grid_sync_controller.dart';
 import 'backend_detector.dart';
 import 'free_port.dart';
@@ -113,7 +114,7 @@ class ProviderRunFailed extends ProviderRunState {
 /// **detached** background process and returns once it's launched — so a clean
 /// exit (0) means "now serving", not "stopped". The engine keeps running via the
 /// relay until we `grid leave` it, which [stop] (and dispose) do so no engine is
-/// left behind. We pass a fixed `--name` so `grid leave --engine` can target it.
+/// left behind. We pass a fixed `--name` as the node's display name on the grid.
 ///
 /// TODO(BE): the detached engine logs to `~/.grid/run/engines/...`, not through
 /// this process, so the streamed log is just `join`'s startup lines and the
@@ -122,11 +123,11 @@ class ProviderRunFailed extends ProviderRunState {
 class ProviderRunController extends Notifier<ProviderRunState> {
   static const _maxLogLines = 400;
 
-  /// Stable engine id passed via `--name`, so [stop] can target it with
-  /// `grid leave --engine`. Namespaced per grid by the CLI's run records. The
-  /// machine's own name (via [nodeNameProvider]) rather than a fixed literal, so
-  /// each host appears as itself on the grid page instead of a shared
-  /// "grid-app". Read once — it's stable for the app's lifetime.
+  /// The node's display name on the grid, passed via `--name` on join so each
+  /// host appears as itself on the grid page instead of a shared "grid-app".
+  /// The machine's own name (via [nodeNameProvider]); read once — it's stable
+  /// for the app's lifetime. Purely cosmetic: the CLI keys run records and
+  /// `grid leave` by its own engine id, not this name (see [_leaveEngine]).
   late final String _engineName = ref.read(nodeNameProvider);
 
   /// Context window for an external (`--at`) engine, passed via `--ctx-size`.
@@ -163,12 +164,13 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     if (service == null) return;
 
     final store = ref.read(gridHomeStoreProvider);
-    final record = store.readEngineRun(gridId, _engineName);
-    if (record == null || !_pidIsAlive(record.pid)) return;
+    final record = _liveRun(store.listEngineRuns(gridId));
+    if (record == null) return;
 
     _service = service;
     _grid = gridId;
-    final log = store.readEngineRunLog(gridId, _engineName, maxLines: _maxLogLines);
+    final log =
+        store.readEngineRunLog(gridId, record.engineId, maxLines: _maxLogLines);
     state = ProviderRunActive(
       grid: gridId,
       starting: false,
@@ -337,6 +339,17 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }());
   }
 
+  /// The first still-running engine among [records], or null when none is alive.
+  /// A grid dir can hold stale records from prior sessions alongside the live
+  /// one, so we adopt the one whose process still answers rather than the first
+  /// on disk.
+  static EngineRunRecord? _liveRun(List<EngineRunRecord> records) {
+    for (final record in records) {
+      if (_pidIsAlive(record.pid)) return record;
+    }
+    return null;
+  }
+
   /// True if [pid] names a live process. POSIX `kill -0` probes existence
   /// without signalling; where it's unavailable we can't tell, so assume alive
   /// (the Stop path `grid leave`s regardless).
@@ -378,7 +391,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     if (service != null) {
       final grids = <String>{
         if (_grid != null) _grid!,
-        ...ref.read(gridHomeStoreProvider).listServingGrids(_engineName),
+        ...ref.read(gridHomeStoreProvider).listServingGrids(),
       };
       for (final grid in grids) {
         try {
@@ -406,8 +419,17 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }
   }
 
-  /// `grid leave <grid> --engine grid-app` — unregisters and kills the detached
-  /// engine serving [grid]. One place so every stop path stays consistent.
+  /// `grid leave <grid>` — tears down this machine's engine identity on [grid],
+  /// stopping the detached `grid join` engine (and reaping any legacy sibling run
+  /// record). One place so every stop path stays consistent.
+  ///
+  /// No `--engine` filter, on purpose: in remote mode the CLI keys the run record
+  /// by a fixed engine id (`remote`), not our `--name` — which it stores only as
+  /// the display `meta_name` — and `grid leave --engine` matches by endpoint URL,
+  /// served model or label, never by name. Passing `--engine <name>` therefore
+  /// matched nothing and left the engine serving on the relay after the app
+  /// closed. A bare leave targets the grid's single identity, which in this
+  /// remote-only app is exactly the engine we started.
   Future<void> _leaveEngine(GridCliService service, String grid) =>
-      service.run(['leave', grid, '--engine', _engineName]);
+      service.run(['leave', grid]);
 }

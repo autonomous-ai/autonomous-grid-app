@@ -86,9 +86,12 @@ class GridPaths {
   /// process keeps serving via the relay until `grid leave`).
   static Directory get runEnginesDir => Directory('${home.path}/run/engines');
 
-  static File engineRunFile(String gridId, String engineName) =>
-      File('${runEnginesDir.path}/$gridId/$engineName.json');
+  static Directory engineRunDir(String gridId) =>
+      Directory('${runEnginesDir.path}/$gridId');
 
-  static File engineRunLogFile(String gridId, String engineName) =>
-      File('${runEnginesDir.path}/$gridId/$engineName.log');
+  static File engineRunFile(String gridId, String engineId) =>
+      File('${engineRunDir(gridId).path}/$engineId.json');
+
+  static File engineRunLogFile(String gridId, String engineId) =>
+      File('${engineRunDir(gridId).path}/$engineId.log');
 }

@@ -86,11 +86,26 @@ class GridHomeStore {
     return out;
   }
 
-  /// The persisted run record for engine [engineName] serving grid [gridId], or
-  /// null when no record exists (not serving). Lenient: a missing/corrupt file
-  /// reads as "not serving" so a bad record can't brick the provider UI.
-  EngineRunRecord? readEngineRun(String gridId, String engineName) {
-    final file = GridPaths.engineRunFile(gridId, engineName);
+  /// Every persisted run record under `~/.grid/run/engines/<grid_id>/` — one
+  /// `<engine_id>.json` per detached engine `grid join` launched. We scan the
+  /// directory rather than open `<name>.json` because the engine id is the CLI's
+  /// own (`remote` in remote mode), NOT the app's `--name` (which it stores only
+  /// as the display `meta_name`) — so guessing the filename by name misses the
+  /// live record entirely. Lenient: a missing dir or an unreadable/foreign file
+  /// is skipped, never thrown, so a bad record can't brick the provider UI.
+  List<EngineRunRecord> listEngineRuns(String gridId) {
+    final dir = GridPaths.engineRunDir(gridId);
+    if (!dir.existsSync()) return const [];
+    final out = <EngineRunRecord>[];
+    for (final entity in dir.listSync()) {
+      if (entity is! File || !entity.path.endsWith('.json')) continue;
+      final record = _readEngineRunFile(entity);
+      if (record != null) out.add(record);
+    }
+    return out;
+  }
+
+  EngineRunRecord? _readEngineRunFile(File file) {
     if (!file.existsSync()) return null;
     try {
       final decoded = jsonDecode(file.readAsStringSync());
@@ -101,12 +116,11 @@ class GridHomeStore {
     }
   }
 
-  /// Grid ids that currently have a run record for engine [engineName] under
-  /// `~/.grid/run/engines/<grid_id>/<engine>.json`. Read before sign-out / app
-  /// close so we can `grid leave` anything still serving — even an engine
-  /// adopted from a prior session the app never reconciled this run. Lenient: a
-  /// missing dir or an unreadable record is skipped, never thrown.
-  List<String> listServingGrids(String engineName) {
+  /// Grid ids that currently have at least one engine run record. Read before
+  /// sign-out / app close so we can `grid leave` anything still serving — even an
+  /// engine adopted from a prior session the app never reconciled this run.
+  /// Lenient: a missing dir or an unreadable record is skipped, never thrown.
+  List<String> listServingGrids() {
     final dir = GridPaths.runEnginesDir;
     if (!dir.existsSync()) return const [];
     final out = <String>[];
@@ -114,16 +128,16 @@ class GridHomeStore {
       if (entity is! Directory) continue;
       final gridId = entity.path.split(Platform.pathSeparator).last;
       if (gridId.isEmpty) continue;
-      if (readEngineRun(gridId, engineName) != null) out.add(gridId);
+      if (listEngineRuns(gridId).isNotEmpty) out.add(gridId);
     }
     return out;
   }
 
-  /// Tail of a resumed engine's log (`<engine>.log`), so the running card can
+  /// Tail of a resumed engine's log (`<engine_id>.log`), so the running card can
   /// show real context after a restart. Empty when missing/unreadable.
-  List<String> readEngineRunLog(String gridId, String engineName,
+  List<String> readEngineRunLog(String gridId, String engineId,
       {int maxLines = 400}) {
-    final file = GridPaths.engineRunLogFile(gridId, engineName);
+    final file = GridPaths.engineRunLogFile(gridId, engineId);
     if (!file.existsSync()) return const [];
     try {
       final lines = file.readAsLinesSync();
