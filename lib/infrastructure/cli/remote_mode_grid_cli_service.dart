@@ -2,7 +2,7 @@ import 'grid_cli_service.dart';
 import 'parsers/download_progress.dart';
 
 /// Forces every `grid` invocation into **remote mode** by prepending the global
-/// `--remote` flag.
+/// `--remote` flag — except the local-machine commands in [_localCommands].
 ///
 /// The dual-mode CLI defaults to **local** mode when `~/.grid/state.json` has no
 /// saved mode, and gates the remote-only commands (`login`, `members`, `sync`,
@@ -11,10 +11,18 @@ import 'parsers/download_progress.dart';
 /// the mode per command rather than relying on the persisted mode (which the
 /// user can flip from their own terminal with `grid mode local`).
 ///
-/// `--remote` is a global flag accepted before any command and is a no-op for
-/// the mode-agnostic commands (`engine` / `catalog` / `pull` / `rm` /
-/// `--version`), so prepending it universally is safe. Sits *outside*
-/// [LoggingGridCliService] so the Debug tab shows the exact command that ran.
+/// **Exception — local-machine commands.** Some commands act on *this machine*,
+/// not the remote grid, and `--remote` either misroutes them or flips them onto
+/// the wrong path:
+///  - `engine …` (install llama.cpp / comfyui, status, pull) builds and detects
+///    the local engine; `--remote` pushes it onto the remote/CUDA path — e.g.
+///    `grid --remote engine install llama.cpp` fails on a Mac with "No NVIDIA
+///    GPUs detected".
+///  - `pull …` downloads a model to this machine's `~/.grid/models`.
+/// These drop the flag; every other command still runs remote.
+///
+/// Sits *outside* [LoggingGridCliService] so the Debug tab shows the exact
+/// command that ran.
 class RemoteModeGridCliService implements GridCliService {
   const RemoteModeGridCliService(this._inner);
 
@@ -22,7 +30,14 @@ class RemoteModeGridCliService implements GridCliService {
 
   static const _modeFlag = '--remote';
 
-  List<String> _remote(List<String> args) => [_modeFlag, ...args];
+  /// Command families that operate on the local machine and must not be forced
+  /// into remote mode (matched on the first arg — the top-level `grid` command).
+  static const _localCommands = {'engine', 'pull'};
+
+  List<String> _remote(List<String> args) {
+    if (args.isNotEmpty && _localCommands.contains(args.first)) return args;
+    return [_modeFlag, ...args];
+  }
 
   @override
   Future<CliResult> run(List<String> args) => _inner.run(_remote(args));

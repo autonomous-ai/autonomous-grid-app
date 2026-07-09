@@ -26,16 +26,37 @@ void main() {
 
     final ok = await container
         .read(modelDeleteControllerProvider.notifier)
-        .delete('qwen.gguf');
+        .delete(['qwen.gguf'], label: 'qwen.gguf');
 
     expect(ok, isTrue);
-    expect(cli.runs, contains(equals(const ['rm', 'qwen.gguf'])));
+    expect(cli.runs, contains(equals(const ['rm', 'qwen.gguf', '--yes'])));
+    expect(container.read(modelDeleteControllerProvider), isA<ModelDeleteIdle>());
+  });
+
+  test('delete removes every file of a split model', () async {
+    final cli = _RecordingCli();
+    final container = ProviderContainer(
+      overrides: [gridCliServiceProvider.overrideWithValue(cli)],
+    );
+    addTearDown(container.dispose);
+
+    final files = [
+      'MiniMax-M3-00001-of-00002.gguf',
+      'MiniMax-M3-00002-of-00002.gguf',
+    ];
+    final ok = await container
+        .read(modelDeleteControllerProvider.notifier)
+        .delete(files, label: 'MiniMax-M3');
+
+    expect(ok, isTrue);
+    expect(cli.runs, contains(equals(['rm', files[0], '--yes'])));
+    expect(cli.runs, contains(equals(['rm', files[1], '--yes'])));
     expect(container.read(modelDeleteControllerProvider), isA<ModelDeleteIdle>());
   });
 
   test('delete surfaces a failure when the CLI returns non-zero', () async {
     final cli = _RecordingCli()
-      ..stubResult(['rm', 'qwen.gguf'],
+      ..stubResult(['rm', 'qwen.gguf', '--yes'],
           const CliResult(exitCode: 1, stdout: '', stderr: 'no such model'));
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(cli)],
@@ -44,7 +65,7 @@ void main() {
 
     final ok = await container
         .read(modelDeleteControllerProvider.notifier)
-        .delete('qwen.gguf');
+        .delete(['qwen.gguf'], label: 'qwen.gguf');
 
     expect(ok, isFalse);
     expect(
@@ -59,7 +80,7 @@ void main() {
 
     final ok = await container
         .read(modelDeleteControllerProvider.notifier)
-        .delete('x.gguf');
+        .delete(['x.gguf'], label: 'x.gguf');
 
     expect(ok, isFalse);
     expect(

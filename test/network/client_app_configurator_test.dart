@@ -101,6 +101,8 @@ void main() {
       final result = await sut.apply(ClientApp.hermes, _base, _key, [_model]);
 
       expect(result, isA<ApplyOk>());
+      // Success carries a follow-up note: refresh Hermes to see the grid model.
+      expect((result as ApplyOk).note, isNotNull);
       final editor = YamlEditor(readConfig());
       expect(editor.parseAt(['model', 'provider']).value, 'custom');
       expect(editor.parseAt(['model', 'base_url']).value, _base);

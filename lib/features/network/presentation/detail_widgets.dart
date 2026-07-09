@@ -256,7 +256,17 @@ class _BadgePill extends StatelessWidget {
   }
 }
 
-/// A compact icon button that copies [value] to the clipboard and toasts.
+/// Copies [text] to the clipboard and shows a brief "Copied" toast. Shared by
+/// every copy affordance so the behavior and the toast copy stay identical.
+void copyToClipboard(BuildContext context, String text) {
+  Clipboard.setData(ClipboardData(text: text));
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+  );
+}
+
+/// A compact, low-emphasis icon button that copies [value] — the corner
+/// affordance for rows/panels where copying is secondary (URLs, IDs, snippets).
 class CopyIconButton extends StatelessWidget {
   const CopyIconButton({super.key, required this.value});
   final String value;
@@ -268,15 +278,34 @@ class CopyIconButton extends StatelessWidget {
       color: AppPalette.textSecondary,
       tooltip: 'Copy',
       visualDensity: VisualDensity.compact,
-      onPressed: () {
-        Clipboard.setData(ClipboardData(text: value));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Copied'),
-            duration: Duration(seconds: 1),
-          ),
-        );
-      },
+      onPressed: () => copyToClipboard(context, value),
+    );
+  }
+}
+
+/// A highlighted, accent-tinted "Copy" pill — for a card whose whole purpose is
+/// copying one value (e.g. a media skill prompt), where the copy is the primary
+/// action and should stand out instead of sitting as a faint corner icon.
+class CopyButton extends StatelessWidget {
+  const CopyButton({super.key, required this.value, this.label = 'Copy'});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonalIcon(
+      onPressed: () => copyToClipboard(context, value),
+      icon: const Icon(Icons.copy_rounded, size: 15),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        backgroundColor: AppPalette.accent.withValues(alpha: 0.16),
+        foregroundColor: AppPalette.accent,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        side: BorderSide(color: AppPalette.accent.withValues(alpha: 0.5)),
+      ),
     );
   }
 }

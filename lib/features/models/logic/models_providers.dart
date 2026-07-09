@@ -4,10 +4,18 @@ import '../../../infrastructure/cli/parsers/catalog_entry.dart';
 import '../../../infrastructure/cli/parsers/model_context.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/state/models/local_files.dart';
+import 'model_group.dart';
 
 /// GGUF models found under `~/.grid/models/`. Invalidate to rescan.
 final localModelsProvider = Provider<List<LocalModel>>((ref) {
   return ref.watch(gridHomeStoreProvider).listLocalModels();
+});
+
+/// The same models, grouped so a split GGUF's parts read as one servable model.
+/// The model list, the serve picker and delete all work off this so they stay
+/// consistent — one model, one row, one action.
+final modelGroupsProvider = Provider<List<ModelGroup>>((ref) {
+  return groupLocalModels(ref.watch(localModelsProvider));
 });
 
 /// Maximum context length (tokens) the given local model supports, read from
