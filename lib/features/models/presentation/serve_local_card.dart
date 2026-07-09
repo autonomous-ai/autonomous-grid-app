@@ -115,25 +115,34 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: selected == null
-          ? _noModelSection(context, theme,
-              llamaInstalled: llamaInstalled, download: download)
-          : _serveControls(groups, selected),
+      children: _engineSection(context, theme,
+          llamaInstalled: llamaInstalled,
+          download: download,
+          groups: groups,
+          selected: selected),
     );
   }
 
-  /// What to show when no model is downloaded yet. A live download takes
-  /// priority — the redundant "Download a model" button would sit right above
-  /// the progress bar and confuse — so it's replaced with a progress indicator.
-  List<Widget> _noModelSection(BuildContext context, ThemeData theme,
-      {required bool llamaInstalled, required ({int? pct})? download}) {
+  /// The block's contents, in priority order:
+  /// 1. a model download in flight → progress (the live bar + Cancel are below);
+  /// 2. the engine isn't installed → set it up first. Serving is impossible
+  ///    without the engine even when a model is on disk, so a leftover GGUF from
+  ///    a removed engine must NOT present a dead "Start engine" — gate on the
+  ///    engine, not on whether a model happens to exist;
+  /// 3. engine installed but no model → prompt to download one;
+  /// 4. engine installed + a model ready → the serve controls.
+  List<Widget> _engineSection(
+    BuildContext context,
+    ThemeData theme, {
+    required bool llamaInstalled,
+    required ({int? pct})? download,
+    required List<ModelGroup> groups,
+    required ModelGroup? selected,
+  }) {
     if (download != null) return _downloadingSection(theme, download.pct);
-    // No models yet. If the engine is installed, downloading one is the next
-    // step — make it a primary action, not a tucked-away link. Until the engine
-    // is installed, offer to install it right here (the node-setup card hides
-    // once another engine already covers text inference, so this can't dead-end).
-    if (llamaInstalled) return _downloadPromptSection(context, theme);
-    return const [_EngineSetupSection()];
+    if (!llamaInstalled) return const [_EngineSetupSection()];
+    if (selected == null) return _downloadPromptSection(context, theme);
+    return _serveControls(groups, selected);
   }
 
   /// A model is downloading (node setup or a manual pull): show progress in
@@ -248,8 +257,12 @@ class _EngineSetupSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final state = ref.watch(engineSetupControllerProvider);
+    final brewReady = ref.watch(homebrewInstalledProvider);
 
-    // Derive the two step statuses + log from whichever variant we're in.
+    // Derive the two step statuses + log from whichever variant we're in. At
+    // rest, reflect reality instead of hardcoding "Waiting": a machine that
+    // already has Homebrew shows that prerequisite as satisfied — matching
+    // [EngineSetupController.run], which skips the Homebrew step when it's present.
     final (StepStatus brew, StepStatus engine, List<String> log) =
         switch (state) {
       EngineSetupRunning(:final progress) ||
@@ -257,8 +270,11 @@ class _EngineSetupSection extends ConsumerWidget {
       EngineSetupFailed(:final progress) =>
         (progress.brew, progress.engine, progress.log),
       EngineSetupDone() => (StepStatus.done, StepStatus.done, const <String>[]),
-      EngineSetupIdle() =>
-        (StepStatus.pending, StepStatus.pending, const <String>[]),
+      EngineSetupIdle() => (
+          brewReady ? StepStatus.done : StepStatus.pending,
+          StepStatus.pending,
+          const <String>[],
+        ),
     };
     final showLog =
         log.isNotEmpty && (state is EngineSetupRunning || state is EngineSetupFailed);
