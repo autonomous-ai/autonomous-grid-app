@@ -254,7 +254,7 @@ class _MediaSkillCard extends StatelessWidget {
     return GlassCard(
       style: GlassCardStyle.inset,
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 10, 6, 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -272,7 +272,8 @@ class _MediaSkillCard extends StatelessWidget {
                   ),
                 ),
               ),
-              CopyIconButton(value: prompt),
+              const SizedBox(width: 8),
+              CopyButton(value: prompt),
             ],
           ),
           Padding(
