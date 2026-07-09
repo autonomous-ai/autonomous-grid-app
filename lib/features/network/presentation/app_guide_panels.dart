@@ -32,10 +32,11 @@ class ApplyDone extends ApplyPhase {
 /// fallback, and a Download prompt when the app is missing.
 ///
 /// A media grid (image/video) can't be wired as a chat "custom endpoint" nor be
-/// the app's model, so instead of the chat setup + Apply it shows a "build a
-/// skill" prompt (and a note that the agent needs its own chat model first) —
-/// see [media] / [hasChat]. A grid that serves both keeps the chat setup/Apply
-/// and appends the media prompt.
+/// the app's model, so instead of the chat setup + Apply it shows one compact
+/// "build a skill" card per media capability (and a note that the agent needs
+/// its own chat model first) — see [media] / [hasChat] and [_mediaSkillCards].
+/// A grid that serves both keeps the chat setup/Apply and appends the media
+/// cards.
 class ClientAppPanel extends StatelessWidget {
   const ClientAppPanel({
     super.key,
@@ -102,7 +103,9 @@ class ClientAppPanel extends StatelessWidget {
           _ApplyBlock(name: info.name, phase: phase, onApply: onApply),
           const SizedBox(height: 16),
         ],
-        if (showChat) ...[..._chatSetup(), const SizedBox(height: 16)],
+        // Skill cards sit right under the one-tap setup block — both are quick
+        // "do it for me / copy" actions, so they group above the manual chat
+        // steps below.
         if (media.any) ...[
           // A media-only grid can't be the app's chat model, so the agent still
           // needs its own model before it can build the skill — say so plainly.
@@ -110,17 +113,9 @@ class ClientAppPanel extends StatelessWidget {
             _NeedsChatModelNote(appName: info.name, command: info.executable),
             const SizedBox(height: 12),
           ],
-          _MediaSkillPrompt(
-            appName: info.name,
-            prompt: mediaSkillPrompt(
-              baseUrl,
-              apiKey,
-              image: media.image,
-              video: media.video,
-            ),
-          ),
-          const SizedBox(height: 10),
+          ..._mediaSkillCards(),
         ],
+        if (showChat) ...[..._chatSetup(), const SizedBox(height: 16)],
         _DocsLink(appName: info.name, onOpen: onOpenSite),
       ],
     );
@@ -148,6 +143,32 @@ class ClientAppPanel extends StatelessWidget {
     ClientApp.openClaw => openClawSnippet(baseUrl, apiKey, models),
     ClientApp.hermes => hermesConfigSnippet(baseUrl, apiKey, models.first),
   };
+
+  /// One compact skill card per media capability the grid serves, so image and
+  /// video stay separate single-purpose skills (a grid that does both shows
+  /// both). Each card copies the full paste-ready prompt for that one API.
+  List<Widget> _mediaSkillCards() => [
+    if (media.image) ...[
+      _MediaSkillCard(
+        icon: Icons.image_outlined,
+        title: 'Have ${info.name} build an image skill',
+        note: 'Paste this into ${info.name} — it writes a reusable skill that '
+            'makes images with this grid.',
+        prompt: mediaSkillPrompt(baseUrl, apiKey, image: true, video: false),
+      ),
+      const SizedBox(height: 10),
+    ],
+    if (media.video) ...[
+      _MediaSkillCard(
+        icon: Icons.videocam_outlined,
+        title: 'Have ${info.name} build a video skill',
+        note: 'Paste this into ${info.name} — it writes a reusable skill that '
+            'turns an image into a short video with this grid.',
+        prompt: mediaSkillPrompt(baseUrl, apiKey, image: false, video: true),
+      ),
+      const SizedBox(height: 10),
+    ],
+  ];
 }
 
 /// Fallback for any app we don't detect: the same two copyable values plus a
@@ -209,28 +230,64 @@ class OtherAppPanel extends StatelessWidget {
   }
 }
 
-/// The media "build a skill" block for an agent client: paste this prompt and
-/// the agent writes a reusable skill that calls the grid's image/video API. What
-/// a media grid needs instead of a chat config, since it isn't a chat provider.
-class _MediaSkillPrompt extends StatelessWidget {
-  const _MediaSkillPrompt({required this.appName, required this.prompt});
+/// A compact "build a skill" card for one media capability (image or video) on
+/// an agent client. A media grid isn't a chat provider — it's an HTTP API — so
+/// instead of a config block we hand the agent a paste-ready prompt that writes
+/// a reusable skill around it. The prompt is long and meant to be pasted, not
+/// read, so the card shows just a one-line [title] and a short [note] with a
+/// Copy button that puts the whole [prompt] on the clipboard.
+class _MediaSkillCard extends StatelessWidget {
+  const _MediaSkillCard({
+    required this.icon,
+    required this.title,
+    required this.note,
+    required this.prompt,
+  });
 
-  final String appName;
+  final IconData icon;
+  final String title;
+  final String note;
   final String prompt;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GuideLabel(
-          'Have $appName build a skill',
-          caption:
-              "This grid makes images or video, not chat — so paste this "
-              "into $appName and it'll create a reusable skill for it.",
-        ),
-        CodeBlock(code: prompt),
-      ],
+    return GlassCard(
+      style: GlassCardStyle.inset,
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: AppPalette.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppPalette.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              CopyIconButton(value: prompt),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 24, right: 8, top: 2),
+            child: Text(
+              note,
+              style: const TextStyle(
+                color: AppPalette.textFaint,
+                fontSize: 11.5,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
