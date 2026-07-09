@@ -16,6 +16,9 @@ import 'model_pull_card.dart';
 /// engine block. (Node setup / installing llama.cpp lives in the Engines tab.)
 Future<void> showModelManager(BuildContext context) => showDialog<void>(
   context: context,
+  // A download can be running in the background — an accidental tap outside
+  // shouldn't dismiss the dialog. Only the Close/X button closes it.
+  barrierDismissible: false,
   builder: (_) => const _ModelManagerDialog(),
 );
 

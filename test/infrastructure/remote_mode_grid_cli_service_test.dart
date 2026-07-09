@@ -53,13 +53,9 @@ void main() {
       expect(inner.startArgs.single, ['--remote', 'join', 'grid.example']);
     });
 
-    test('pull', () async {
-      sut.pull(['models', 'pull', 'qwen']).listen(null);
-      expect(inner.pullArgs.single, ['--remote', 'models', 'pull', 'qwen']);
-    });
   });
 
-  group('drops --remote for local engine commands', () {
+  group('drops --remote for local-machine commands', () {
     // `grid --remote engine install` builds against the remote/CUDA path and
     // fails on a Mac ("No NVIDIA GPUs detected"); the engine family is local.
     test('engine install llama.cpp starts without --remote', () async {
@@ -80,6 +76,12 @@ void main() {
     test('engine pull runs without --remote', () async {
       sut.pull(['engine', 'pull', 'sdxl']).listen(null);
       expect(inner.pullArgs.single, ['engine', 'pull', 'sdxl']);
+    });
+
+    // `grid pull <spec>` downloads a model to this machine's ~/.grid/models.
+    test('model pull runs without --remote', () async {
+      sut.pull(['pull', 'qwen3-coder:q4']).listen(null);
+      expect(inner.pullArgs.single, ['pull', 'qwen3-coder:q4']);
     });
   });
 
