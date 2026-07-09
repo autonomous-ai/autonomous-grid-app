@@ -7,14 +7,20 @@ import '../../features/auth/logic/session_controller.dart';
 /// Primary nav sections shown in the left sidebar (Tailscale-style).
 enum NavSection {
   networks(Icons.bolt, 'Grids'),
-  chat(Icons.chat_bubble_outline_rounded, 'Chat'),
+  // tạm thời ẩn đi
+  // chat(Icons.chat_bubble_outline_rounded, 'Chat'),
   overlord(Icons.monitor_heart_outlined, 'Overlord', hidden: true),
   howToUse(Icons.help_outline_rounded, 'How to use'),
   provider(Icons.dns_outlined, 'Engines', providerOnly: true),
   debug(Icons.bug_report_outlined, 'Debug', devOnly: true);
 
-  const NavSection(this.icon, this.label,
-      {this.providerOnly = false, this.devOnly = false, this.hidden = false});
+  const NavSection(
+    this.icon,
+    this.label, {
+    this.providerOnly = false,
+    this.devOnly = false,
+    this.hidden = false,
+  });
   final IconData icon;
   final String label;
 
@@ -45,8 +51,9 @@ final visibleNavSectionsProvider = Provider<List<NavSection>>((ref) {
 });
 
 /// The active sidebar section. Networks is the landing screen.
-final navSectionProvider =
-    NotifierProvider<NavSectionNotifier, NavSection>(NavSectionNotifier.new);
+final navSectionProvider = NotifierProvider<NavSectionNotifier, NavSection>(
+  NavSectionNotifier.new,
+);
 
 class NavSectionNotifier extends Notifier<NavSection> {
   @override
