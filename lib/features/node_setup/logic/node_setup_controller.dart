@@ -45,16 +45,28 @@ class NodeSetupDone extends NodeSetupState {
   final List<SetupStep> completed;
 }
 
+/// Why a setup run stopped, which decides how loudly the UI speaks about it.
+/// [error] is a genuine failure (a crash, a broken download) → the red bar.
+/// [unsupported] means the computer simply isn't ready to auto-host the built-in
+/// engine — a missing prerequisite like Homebrew, common on a non-technical
+/// user's Mac. Nothing is broken, so the auto flow surfaces it as a calm notice
+/// rather than an alarm the moment the app opens.
+enum NodeSetupFailureKind { error, unsupported }
+
 class NodeSetupFailed extends NodeSetupState {
   const NodeSetupFailed({
     required this.step,
     required this.message,
     required this.log,
+    this.kind = NodeSetupFailureKind.error,
   });
 
   final SetupStep step;
   final String message;
   final List<String> log;
+
+  /// Severity of the stop — see [NodeSetupFailureKind].
+  final NodeSetupFailureKind kind;
 }
 
 /// Orchestrates the "set up this computer as a node" sequence: runs each
@@ -138,7 +150,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   }
 
   /// Streaming lifecycle step (`llama.cpp install`, `media install`): success is
-  /// `exitCode == 0`, failure surfaces a humanized message ([_humanizeFailure]).
+  /// `exitCode == 0`, failure surfaces a humanized message ([_describeFailure]).
   Future<bool> _runStreaming(
     GridCliService service,
     List<SetupStep> steps,
@@ -159,27 +171,38 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     if (_cancelled) return false;
     if (exit == 0) return true;
 
+    final failure = _describeFailure(step, log, exit);
     state = NodeSetupFailed(
       step: step,
-      message: _humanizeFailure(step, log, exit),
+      message: failure.message,
+      kind: failure.kind,
       log: List.unmodifiable(log),
     );
     return false;
   }
 
-  /// Map a raw CLI failure to plain language at the controller boundary (§6).
-  /// The built-in engine install needs Homebrew, which a non-technical user's
-  /// Mac often lacks — turn that jargon into an actionable next step instead of
-  /// dead-ending. Everything else keeps the CLI's own last line.
-  static String _humanizeFailure(SetupStep step, List<String> log, int exit) {
+  /// Map a raw CLI failure to plain language + severity at the controller
+  /// boundary (§6). The built-in engine install needs Homebrew, which a
+  /// non-technical user's Mac often lacks — that's not a crash, it's a "this
+  /// computer can't auto-host yet" notice, so we tag it [unsupported] and phrase
+  /// an actionable next step instead of dead-ending. Everything else keeps the
+  /// CLI's own last line as a genuine [error].
+  static ({String message, NodeSetupFailureKind kind}) _describeFailure(
+      SetupStep step, List<String> log, int exit) {
     final raw = log.isNotEmpty ? log.last : '';
     if (raw.toLowerCase().contains('homebrew is required')) {
-      return "This computer can't run the built-in engine yet: it needs "
-          'Homebrew, which isn\'t installed. Install it from https://brew.sh '
-          'and run setup again — or use an engine shared by another computer on '
-          'your grid.';
+      return (
+        kind: NodeSetupFailureKind.unsupported,
+        message: "This computer can't run the built-in engine yet: it needs "
+            'Homebrew, which isn\'t installed. Install it from https://brew.sh '
+            'and run setup again — or use an engine shared by another computer '
+            'on your grid.',
+      );
     }
-    return raw.isNotEmpty ? raw : '${step.title} failed (exit $exit).';
+    return (
+      kind: NodeSetupFailureKind.error,
+      message: raw.isNotEmpty ? raw : '${step.title} failed (exit $exit).',
+    );
   }
 
   /// Download step (`models pull`, `media pull`): success is the progress stream

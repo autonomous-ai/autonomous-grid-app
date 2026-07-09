@@ -113,6 +113,8 @@ void main() {
     expect(state, isA<NodeSetupFailed>());
     expect((state as NodeSetupFailed).step.action, SetupAction.installLlama);
     expect(state.message, contains('brew'));
+    // A generic CLI failure is a real error (red bar), not the soft notice.
+    expect(state.kind, NodeSetupFailureKind.error);
   });
 
   test('an empty plan completes immediately', () async {
@@ -231,5 +233,7 @@ void main() {
     expect(state, isA<NodeSetupFailed>());
     expect((state as NodeSetupFailed).message, contains('brew.sh'));
     expect(state.message, contains("can't run the built-in engine"));
+    // A missing prerequisite is a soft "not ready" notice, not a red error.
+    expect(state.kind, NodeSetupFailureKind.unsupported);
   });
 }

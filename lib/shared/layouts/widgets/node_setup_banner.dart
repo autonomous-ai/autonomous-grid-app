@@ -7,7 +7,8 @@ import '../shell_state.dart';
 
 /// App-wide strip that surfaces the background node-setup run so the user always
 /// knows what's installing/downloading, from any tab. Shows a thin progress bar
-/// while running and a slim error row on failure; invisible otherwise.
+/// while running, a calm neutral notice when the computer just can't auto-host
+/// yet, and a red error row on a genuine failure; invisible otherwise.
 class NodeSetupBanner extends ConsumerWidget {
   const NodeSetupBanner({super.key});
 
@@ -81,21 +82,36 @@ class _FailedBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final gentle = state.kind == NodeSetupFailureKind.unsupported;
+
+    // A missing prerequisite isn't a crash — dress it as a calm neutral strip
+    // (same family as the running banner) so a first-time user doesn't read
+    // "the app is already broken" the moment it opens.
+    final background = gentle
+        ? theme.colorScheme.surfaceContainerHighest
+        : theme.colorScheme.errorContainer;
+    final foreground = gentle
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.onErrorContainer;
+
     return Material(
-      color: theme.colorScheme.errorContainer,
+      color: background,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
         child: Row(
           children: [
-            Icon(Icons.error_outline,
-                size: 16, color: theme.colorScheme.onErrorContainer),
+            Icon(gentle ? Icons.info_outline : Icons.error_outline,
+                size: 16, color: foreground),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Node setup stopped at "${state.step.title}". Open Engines to retry.',
+                gentle
+                    ? "This computer can't host its own engine — you can still "
+                        'use engines shared on your grid.'
+                    : 'Node setup stopped at "${state.step.title}". '
+                        'Open Engines to retry.',
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onErrorContainer),
+                style: theme.textTheme.bodySmall?.copyWith(color: foreground),
               ),
             ),
             TextButton(

@@ -262,15 +262,22 @@ class _FailedBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final gentle = state.kind == NodeSetupFailureKind.unsupported;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            Icon(Icons.error_outline, color: theme.colorScheme.error, size: 18),
+            Icon(gentle ? Icons.info_outline : Icons.error_outline,
+                color:
+                    gentle ? theme.colorScheme.primary : theme.colorScheme.error,
+                size: 18),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('Setup stopped at "${state.step.title}"',
+              child: Text(
+                  gentle
+                      ? "This computer can't host its own engine yet"
+                      : 'Setup stopped at "${state.step.title}"',
                   style: theme.textTheme.titleSmall),
             ),
           ],
