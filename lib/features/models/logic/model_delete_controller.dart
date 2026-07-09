@@ -52,11 +52,12 @@ class ModelDeleteController extends Notifier<ModelDeleteState> {
     }
 
     state = ModelDeleting(label);
-    // TODO(BE): assumes the merged CLI removes a stored model with
-    // `grid rm <file>` (the mode-agnostic `rm` command, parallel to `pull`).
-    // Revisit the arg form if the CLI expects something else.
+    // `grid rm <file>` deletes a stored model by its filename under
+    // ~/.grid/models. `--yes` is REQUIRED: without it the CLI calls input() for
+    // a [y/N] confirmation, which EOFs on our non-interactive stdin and aborts
+    // (exit 1) — the app can't answer a prompt.
     for (final file in files) {
-      final result = await service.run(['rm', file]);
+      final result = await service.run(['rm', file, '--yes']);
       if (!result.ok) {
         // Rescan so the list reflects whatever was already removed.
         ref.invalidate(localModelsProvider);

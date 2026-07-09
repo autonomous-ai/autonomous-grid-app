@@ -29,7 +29,7 @@ void main() {
         .delete(['qwen.gguf'], label: 'qwen.gguf');
 
     expect(ok, isTrue);
-    expect(cli.runs, contains(equals(const ['rm', 'qwen.gguf'])));
+    expect(cli.runs, contains(equals(const ['rm', 'qwen.gguf', '--yes'])));
     expect(container.read(modelDeleteControllerProvider), isA<ModelDeleteIdle>());
   });
 
@@ -49,14 +49,14 @@ void main() {
         .delete(files, label: 'MiniMax-M3');
 
     expect(ok, isTrue);
-    expect(cli.runs, contains(equals(['rm', files[0]])));
-    expect(cli.runs, contains(equals(['rm', files[1]])));
+    expect(cli.runs, contains(equals(['rm', files[0], '--yes'])));
+    expect(cli.runs, contains(equals(['rm', files[1], '--yes'])));
     expect(container.read(modelDeleteControllerProvider), isA<ModelDeleteIdle>());
   });
 
   test('delete surfaces a failure when the CLI returns non-zero', () async {
     final cli = _RecordingCli()
-      ..stubResult(['rm', 'qwen.gguf'],
+      ..stubResult(['rm', 'qwen.gguf', '--yes'],
           const CliResult(exitCode: 1, stdout: '', stderr: 'no such model'));
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(cli)],
