@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/theme/app_theme.dart';
+
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/node_capabilities.dart';
@@ -165,7 +167,7 @@ class _CapChip extends StatelessWidget {
       avatar: Icon(
         ok ? Icons.check_circle : Icons.remove_circle_outline,
         size: 16,
-        color: ok ? Colors.green : Theme.of(context).colorScheme.outline,
+        color: ok ? AppPalette.online : Theme.of(context).colorScheme.outline,
       ),
       label: Text(label),
     );
@@ -329,7 +331,7 @@ class _DoneBody extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 18),
+            const Icon(Icons.check_circle, color: AppPalette.online, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -346,7 +348,7 @@ class _DoneBody extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 6),
             child: Row(
               children: [
-                const Icon(Icons.check, size: 16, color: Colors.green),
+                const Icon(Icons.check, size: 16, color: AppPalette.online),
                 const SizedBox(width: 8),
                 Expanded(
                     child: Text(step.title, style: theme.textTheme.bodySmall)),

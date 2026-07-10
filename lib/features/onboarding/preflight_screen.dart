@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../shared/theme/app_theme.dart';
 import '../../core/app_environment.dart';
 import '../../shared/widgets/error_box.dart';
 import 'preflight_providers.dart';
@@ -139,7 +140,7 @@ class _CheckRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = ok ? Colors.green : Theme.of(context).colorScheme.error;
+    final color = ok ? AppPalette.online : Theme.of(context).colorScheme.error;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(

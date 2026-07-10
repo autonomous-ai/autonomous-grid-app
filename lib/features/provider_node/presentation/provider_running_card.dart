@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/theme/app_theme.dart';
+
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../playground/presentation/playground_dialog.dart';
@@ -39,7 +41,7 @@ class ProviderRunningCard extends ConsumerWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else
-                const Icon(Icons.dns, color: Colors.green, size: 18),
+                const Icon(Icons.dns, color: AppPalette.online, size: 18),
               const SizedBox(width: 10),
               Text(starting ? 'Starting…' : 'Engine running'),
               const Spacer(),
@@ -82,7 +84,7 @@ class _LiveBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 18),
+          const Icon(Icons.check_circle, color: AppPalette.online, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

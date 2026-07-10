@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../shared/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../logic/model_pull_controller.dart';
@@ -82,7 +84,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 18),
+              const Icon(Icons.check_circle, color: AppPalette.online, size: 18),
               const SizedBox(width: 8),
               Expanded(child: Text('Downloaded ${state.file}')),
             ],

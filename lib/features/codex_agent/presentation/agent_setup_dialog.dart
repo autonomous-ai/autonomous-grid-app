@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/theme/app_theme.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_tool.dart';
 
@@ -112,7 +113,7 @@ class _Body extends StatelessWidget {
       ),
       AgentSetupDone() => const _Line(
         icon: Icons.check_circle,
-        color: Colors.green,
+        color: AppPalette.online,
         text: 'Installed. The agent is ready.',
       ),
       AgentSetupFailed(:final message) => _Line(

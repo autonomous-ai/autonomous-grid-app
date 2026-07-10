@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/theme/app_theme.dart';
+
 import '../../../infrastructure/cli/codex_event.dart';
 import '../logic/codex_providers.dart';
 
@@ -108,7 +110,7 @@ class _StatusDot extends StatelessWidget {
           child: CircularProgressIndicator(strokeWidth: 1.6),
         );
       case CodexActivityStatus.done:
-        return const Icon(Icons.check_circle, size: 14, color: Colors.green);
+        return const Icon(Icons.check_circle, size: 14, color: AppPalette.online);
       case CodexActivityStatus.failed:
         return Icon(
           Icons.error_outline,

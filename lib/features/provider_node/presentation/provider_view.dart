@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/theme/app_theme.dart';
+
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/section_scaffold.dart';
@@ -207,7 +209,7 @@ class _EngineBusyElsewhere extends ConsumerWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.dns, color: Colors.green, size: 20),
+                const Icon(Icons.dns, color: AppPalette.online, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
