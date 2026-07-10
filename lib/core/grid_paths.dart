@@ -73,26 +73,29 @@ class GridPaths {
 
   /// The CLI's own log directory (`~/.grid/logs`, e.g. `llama_llm_*.log`). The
   /// app drops its own diagnostic logs here too so everything a user might send
-  /// us to debug lives in one place.
+  /// us to debug lives in one place. Each app log rotates per calendar day into
+  /// `<base>-YYYYMMDD.log` (see [DailyLogFile]) so no single file grows without
+  /// bound.
   static Directory get logsDir => Directory('${home.path}/logs');
 
-  /// Durable transcript of the background node-setup / auto-install run, written
-  /// by the app itself (not the CLI). The in-app log is in-memory only and gone
-  /// once the app closes; this file survives a failed silent install so it can
-  /// be debugged after the fact.
-  static File get nodeSetupLog => File('${logsDir.path}/app_node_setup.log');
+  /// Filename stem for the app's narrative timeline (`app-YYYYMMDD.log`):
+  /// lifecycle milestones, every CLI/HTTP call as a one-liner, and every uncaught
+  /// error with its stack trace. The first file to read to understand what the
+  /// app was doing and where it broke; [cliLogBase] holds the deeper per-command
+  /// CLI output.
+  static const String appLogBase = 'app';
 
-  /// Durable transcript of every `grid` CLI call the app makes (command,
-  /// streamed output, outcome). The in-app Debug tab is a capped in-memory ring
-  /// buffer gone once the app closes; this file survives so a user can send it
-  /// to us to debug a failed command after the fact.
-  static File get cliLog => File('${logsDir.path}/app_cli.log');
+  /// Filename stem for the durable transcript of every `grid` CLI call the app
+  /// makes (`app_cli-YYYYMMDD.log`): command, streamed output, outcome. The
+  /// in-app Debug tab is a capped in-memory ring buffer gone once the app closes;
+  /// this file survives so a user can send it to us to debug a failed command.
+  static const String cliLogBase = 'app_cli';
 
-  /// The app's own narrative timeline: lifecycle milestones, every CLI/HTTP call
-  /// as a one-liner, and every uncaught error with its stack trace. This is the
-  /// first file to read to understand what the app was doing and where it broke;
-  /// [cliLog] holds the deeper per-command CLI output.
-  static File get appLog => File('${logsDir.path}/app.log');
+  /// Filename stem for the background node-setup / auto-install transcript
+  /// (`app_node_setup-YYYYMMDD.log`), written by the app itself (not the CLI).
+  /// The in-app log is in-memory only and gone once the app closes; this file
+  /// survives a failed silent install so it can be debugged after the fact.
+  static const String nodeSetupLogBase = 'app_node_setup';
 
   /// Where `grid llama.cpp install` links the engine (provider_runtime
   /// paths.py: `llama_server_bin()`).

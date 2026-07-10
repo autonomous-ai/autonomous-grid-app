@@ -58,9 +58,10 @@ void main() {
         gridOverviewForProvider(
           'grid-foo',
         ).overrideWith((ref) async => _overviewWith('maker/m1')),
-        gridOverviewForProvider('grid-bar').overrideWith(
-          (ref) => throw const GridOverviewUnavailable('down'),
-        ),
+        gridOverviewForProvider('grid-bar').overrideWith((ref) async {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+          throw const GridOverviewUnavailable('down');
+        }),
       ],
     );
     addTearDown(container.dispose);

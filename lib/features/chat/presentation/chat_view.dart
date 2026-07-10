@@ -253,60 +253,89 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
     final trailing = _trailingBubble(sessions.phase, agentMode);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
       children: [
-        _ChatHeader(modelController: _model, onSelect: _pickGridModel),
-        const Divider(height: 1),
-        if (!hasModel)
-          Expanded(
-            child: NoModelYet(
-              canManage: widget.network.canManageProvider,
-              onGoToEngines: () => ref
-                  .read(navSectionProvider.notifier)
-                  .select(NavSection.provider),
-            ),
-          )
-        else ...[
-          Expanded(
-            child: messages.isEmpty
-                ? _EmptyChat(hint: _emptyHint(modality))
-                : Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ListView.builder(
-                        controller: _scroll,
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                        itemCount: messages.length + (trailing != null ? 1 : 0),
-                        itemBuilder: (context, i) => i < messages.length
-                            ? ChatBubble(message: messages[i])
-                            : trailing ?? const SizedBox.shrink(),
-                      ),
-                      if (!_atBottom)
-                        Positioned(
-                          right: 16,
-                          bottom: 12,
-                          child: _JumpToLatestButton(
-                            onTap: () => _scrollToBottom(animated: true),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!hasModel)
+              Expanded(
+                child: NoModelYet(
+                  canManage: widget.network.canManageProvider,
+                  onGoToEngines: () => ref
+                      .read(navSectionProvider.notifier)
+                      .select(NavSection.provider),
+                ),
+              )
+            else ...[
+              Expanded(
+                child: messages.isEmpty
+                    ? _EmptyChat(hint: _emptyHint(modality))
+                    : Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ListView.builder(
+                            controller: _scroll,
+                            // Extra top padding clears the floating Agent pill.
+                            padding: const EdgeInsets.fromLTRB(20, 52, 20, 8),
+                            itemCount:
+                                messages.length + (trailing != null ? 1 : 0),
+                            itemBuilder: (context, i) => i < messages.length
+                                ? ChatBubble(message: messages[i])
+                                : trailing ?? const SizedBox.shrink(),
                           ),
-                        ),
-                    ],
-                  ),
+                          if (!_atBottom)
+                            Positioned(
+                              right: 16,
+                              bottom: 12,
+                              child: _JumpToLatestButton(
+                                onTap: () => _scrollToBottom(animated: true),
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+              _Composer(
+                messageController: _message,
+                attachments: _attachments,
+                modality: modality,
+                needsImage: needsImage,
+                sending: sessions.sending,
+                canSend: canSend,
+                error: sessions.error,
+                modelPicker: GridModelPicker(
+                  currentModelId: _model.text,
+                  onSelect: _pickGridModel,
+                ),
+                onAddAttachment: (a) => setState(() => _attachments.add(a)),
+                onPickImage: _pickImage,
+                onRemoveAttachment: (i) =>
+                    setState(() => _attachments.removeAt(i)),
+                onSend: () => _send(modality),
+              ),
+            ],
+          ],
+        ),
+        // The Agent toggle floats over the top-right corner instead of a full
+        // header row.
+        const Positioned(
+          top: 10,
+          right: 14,
+          child: _FloatingPill(child: AgentBackendPicker()),
+        ),
+        // A model-less grid has no composer to host the model picker, so float
+        // it too — the user can still switch to a grid that serves a model.
+        if (!hasModel)
+          Positioned(
+            top: 10,
+            left: 14,
+            child: _FloatingPill(
+              child: GridModelPicker(
+                currentModelId: _model.text,
+                onSelect: _pickGridModel,
+              ),
+            ),
           ),
-          _Composer(
-            messageController: _message,
-            attachments: _attachments,
-            modality: modality,
-            needsImage: needsImage,
-            sending: sessions.sending,
-            canSend: canSend,
-            error: sessions.error,
-            onAddAttachment: (a) => setState(() => _attachments.add(a)),
-            onPickImage: _pickImage,
-            onRemoveAttachment: (i) => setState(() => _attachments.removeAt(i)),
-            onSend: () => _send(modality),
-          ),
-        ],
       ],
     );
   }
@@ -328,35 +357,21 @@ class _ChatViewState extends ConsumerState<ChatView> {
   };
 }
 
-/// The slim header above the transcript: one unified grid+model picker beside
-/// the Agent backend picker, so you never have to leave Chat to change grid,
-/// model, or agent. Left-aligned and width-capped so it stays a comfortable
-/// size on a wide window.
-class _ChatHeader extends StatelessWidget {
-  const _ChatHeader({required this.modelController, required this.onSelect});
+/// An opaque, rounded surface for a control that floats over the transcript, so
+/// it stays legible above scrolling messages.
+class _FloatingPill extends StatelessWidget {
+  const _FloatingPill({required this.child});
 
-  final TextEditingController modelController;
-  final GridModelSelected onSelect;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
-      child: Row(
-        children: [
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: GridModelPicker(
-                currentModelId: modelController.text,
-                onSelect: onSelect,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          const AgentBackendPicker(),
-        ],
-      ),
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      elevation: 3,
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: child,
     );
   }
 }
@@ -373,6 +388,7 @@ class _Composer extends StatelessWidget {
     required this.sending,
     required this.canSend,
     required this.error,
+    required this.modelPicker,
     required this.onAddAttachment,
     required this.onPickImage,
     required this.onRemoveAttachment,
@@ -386,6 +402,7 @@ class _Composer extends StatelessWidget {
   final bool sending;
   final bool canSend;
   final String? error;
+  final Widget modelPicker;
   final ValueChanged<MediaAttachment> onAddAttachment;
   final VoidCallback onPickImage;
   final ValueChanged<int> onRemoveAttachment;
@@ -434,6 +451,10 @@ class _Composer extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
+          // Subtle model selector sitting just above the input — quiet, since
+          // the model rarely changes.
+          Align(alignment: Alignment.centerLeft, child: modelPicker),
+          const SizedBox(height: 2),
           ChatInputBar(
             controller: messageController,
             sending: sending,

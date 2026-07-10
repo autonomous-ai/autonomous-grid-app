@@ -1,12 +1,11 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
 import 'log_file.dart';
 
 /// Durable, append-only transcript of the background node-setup / auto-install
-/// run, written next to the CLI's own logs at `~/.grid/logs/app_node_setup.log`.
+/// run, written per day next to the CLI's own logs at
+/// `~/.grid/logs/app_node_setup-YYYYMMDD.log`.
 ///
 /// Why: [NodeSetupController]'s in-app log lives only in memory (capped at 400
 /// lines) and is gone the moment the app closes — so when auto-install silently
@@ -33,14 +32,14 @@ abstract interface class NodeSetupLog {
   void endRun(String outcome);
 }
 
-/// [NodeSetupLog] backed by a real file under `~/.grid/logs`. Writes are
-/// synchronous and flushed so a line survives even if the app is force-quit
-/// mid-install; any IO error is swallowed — logging must never break the setup
-/// flow it only observes.
+/// [NodeSetupLog] backed by a per-day file under `~/.grid/logs`
+/// (`app_node_setup-YYYYMMDD.log`). Writes are synchronous and flushed so a line
+/// survives even if the app is force-quit mid-install; any IO error is swallowed
+/// — logging must never break the setup flow it only observes.
 class FileNodeSetupLog implements NodeSetupLog {
-  FileNodeSetupLog(File file) : _file = LogFile(file);
+  FileNodeSetupLog(this._file);
 
-  final LogFile _file;
+  final DailyLogFile _file;
 
   static const _rule = '================================================';
 
@@ -52,18 +51,19 @@ class FileNodeSetupLog implements NodeSetupLog {
 
   @override
   void startRun(List<String> stepTitles) {
-    _file.rotateIfLarge();
     final start = DateTime.now();
     _runStart = start;
     final plan = StringBuffer();
     for (var i = 0; i < stepTitles.length; i++) {
       plan.write('\n   ${i + 1}. ${stepTitles[i]}');
     }
-    _file.append('\n$_rule\n'
-        ' Grid node setup\n'
-        ' Started ${logStamp(start)}\n'
-        ' Plan:$plan\n'
-        '$_rule');
+    _file.append(
+      '\n$_rule\n'
+      ' Grid node setup\n'
+      ' Started ${logStamp(start)}\n'
+      ' Plan:$plan\n'
+      '$_rule',
+    );
   }
 
   @override
@@ -94,15 +94,20 @@ class FileNodeSetupLog implements NodeSetupLog {
         ? ''
         : ' (total ${logDuration(DateTime.now().difference(_runStart!))})';
     _file.append(
-        ' Result: $outcome\n Ended ${logStamp(DateTime.now())}$total\n$_rule\n');
+      ' Result: $outcome\n Ended ${logStamp(DateTime.now())}$total\n$_rule\n',
+    );
     _runStart = null;
   }
 
   /// Emit a clock-stamped transcript line.
-  void _line(String text) => _file.append('[${logClock(DateTime.now())}] $text');
+  void _line(String text) =>
+      _file.append('[${logClock(DateTime.now())}] $text');
 }
 
-/// The setup transcript sink. A real file by default; override in dev/test with
-/// an in-memory fake so tests never touch `~/.grid`.
-final nodeSetupLogProvider =
-    Provider<NodeSetupLog>((ref) => FileNodeSetupLog(GridPaths.nodeSetupLog));
+/// The setup transcript sink. A per-day file by default; override in dev/test
+/// with an in-memory fake so tests never touch `~/.grid`.
+final nodeSetupLogProvider = Provider<NodeSetupLog>(
+  (ref) => FileNodeSetupLog(
+    DailyLogFile(GridPaths.logsDir, GridPaths.nodeSetupLogBase),
+  ),
+);

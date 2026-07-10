@@ -1,12 +1,11 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
 import 'log_file.dart';
 
 /// Durable, append-only transcript of every `grid` CLI call the app makes,
-/// written to `~/.grid/logs/app_cli.log` next to the CLI's own logs.
+/// written per day to `~/.grid/logs/app_cli-YYYYMMDD.log` next to the CLI's own
+/// logs.
 ///
 /// Why: the in-app Debug tab ([commandLogProvider]) is a capped in-memory ring
 /// buffer that vanishes the moment the app closes, so when a command misbehaves
@@ -32,18 +31,18 @@ abstract interface class CliLogEntry {
   void end({int? exitCode, Duration? duration, String? error});
 }
 
-/// [CliLog] backed by a real file under `~/.grid/logs`. Writes are synchronous
-/// and flushed (see [LogFile]); IO errors are swallowed — logging must never
-/// break the CLI call it observes.
+/// [CliLog] backed by a per-day file under `~/.grid/logs`
+/// (`app_cli-YYYYMMDD.log`). Writes are synchronous and flushed (see
+/// [DailyLogFile]); IO errors are swallowed — logging must never break the CLI
+/// call it observes.
 class FileCliLog implements CliLog {
-  FileCliLog(File file) : _file = LogFile(file);
+  FileCliLog(this._file);
 
-  final LogFile _file;
+  final DailyLogFile _file;
   int _seq = 0;
 
   @override
   CliLogEntry begin(String command) {
-    _file.rotateIfLarge();
     final id = ++_seq;
     final start = DateTime.now();
     _file.append('[${logClock(start)}] #$id \$ $command');
@@ -54,7 +53,7 @@ class FileCliLog implements CliLog {
 class _FileCliLogEntry implements CliLogEntry {
   _FileCliLogEntry(this._file, this._id, this._start);
 
-  final LogFile _file;
+  final DailyLogFile _file;
   final int _id;
   final DateTime _start;
   bool _ended = false;
@@ -78,6 +77,8 @@ class _FileCliLogEntry implements CliLogEntry {
   }
 }
 
-/// The CLI transcript sink. A real file by default; override in dev/test with an
-/// in-memory fake so tests never touch `~/.grid/logs`.
-final cliLogProvider = Provider<CliLog>((ref) => FileCliLog(GridPaths.cliLog));
+/// The CLI transcript sink. A per-day file by default; override in dev/test with
+/// an in-memory fake so tests never touch `~/.grid/logs`.
+final cliLogProvider = Provider<CliLog>(
+  (ref) => FileCliLog(DailyLogFile(GridPaths.logsDir, GridPaths.cliLogBase)),
+);

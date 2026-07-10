@@ -63,7 +63,8 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
   }
 }
 
-/// The compact button face: a model icon, the current model, and a caret.
+/// The subtle button face that lives by the composer: a small muted model name
+/// and a caret — quiet, since the model rarely changes.
 class _TriggerButton extends StatelessWidget {
   const _TriggerButton({required this.label, required this.onTap});
 
@@ -72,13 +73,22 @@ class _TriggerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return OutlinedButton.icon(
+    final theme = Theme.of(context);
+    return TextButton(
       onPressed: onTap,
-      icon: const Icon(Icons.smart_toy_outlined, size: 18),
-      label: Row(
+      style: TextButton.styleFrom(
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
+        textStyle: theme.textTheme.bodySmall,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const Icon(Icons.smart_toy_outlined, size: 15),
+          const SizedBox(width: 6),
           Flexible(
             child: Text(
               label,
@@ -86,17 +96,8 @@ class _TriggerButton extends StatelessWidget {
               softWrap: false,
             ),
           ),
-          const Icon(Icons.arrow_drop_down, size: 20),
+          const Icon(Icons.arrow_drop_down, size: 18),
         ],
-      ),
-      style: ButtonStyle(
-        foregroundColor: WidgetStatePropertyAll(scheme.onSurface),
-        minimumSize: const WidgetStatePropertyAll(Size(0, 56)),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 16),
-        ),
-        alignment: Alignment.centerLeft,
       ),
     );
   }

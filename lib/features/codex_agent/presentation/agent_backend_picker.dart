@@ -98,14 +98,14 @@ class _PickerButton extends StatelessWidget {
     );
   }
 
-  /// Shared sizing so the button matches the 56px-tall Grid/Model dropdowns and
-  /// doesn't inflate the row with the default 48px tap target.
+  /// Compact sizing so it reads as a light floating pill, not a full-height
+  /// form field.
   ButtonStyle _style({Color? foreground}) => ButtonStyle(
     foregroundColor: foreground == null
         ? null
         : WidgetStatePropertyAll(foreground),
-    minimumSize: const WidgetStatePropertyAll(Size(0, 56)),
+    minimumSize: const WidgetStatePropertyAll(Size(0, 40)),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 14)),
   );
 }

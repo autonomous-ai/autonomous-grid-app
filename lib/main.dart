@@ -10,13 +10,16 @@ import 'app/single_instance.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
 import 'infrastructure/logging/app_log.dart';
+import 'infrastructure/logging/log_file.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Wire the durable app-log first so every later step — including a crash
-  // during startup — lands in `~/.grid/logs/app.log`.
-  final appLog = FileAppLog(GridPaths.appLog);
+  // during startup — lands in `~/.grid/logs/app-YYYYMMDD.log`.
+  final appLog = FileAppLog(
+    DailyLogFile(GridPaths.logsDir, GridPaths.appLogBase),
+  );
   _installErrorHandlers(appLog);
   appLog.info('app', 'Grid starting');
 
@@ -61,17 +64,19 @@ Future<void> main() async {
   updater.bindNativeMenu();
 
   appLog.info('app', 'Launching UI');
-  runApp(ProviderScope(
-    // Share the one file instance with every consumer (e.g. the command log
-    // mirror) so the whole app writes to a single timeline. Hand the UI the same
-    // updater instance that owns the Sparkle listener, so its check-outcome
-    // toasts come from the checks the menu triggers.
-    overrides: [
-      appLogProvider.overrideWithValue(appLog),
-      appUpdaterServiceProvider.overrideWithValue(updater),
-    ],
-    child: const GridApp(),
-  ));
+  runApp(
+    ProviderScope(
+      // Share the one file instance with every consumer (e.g. the command log
+      // mirror) so the whole app writes to a single timeline. Hand the UI the same
+      // updater instance that owns the Sparkle listener, so its check-outcome
+      // toasts come from the checks the menu triggers.
+      overrides: [
+        appLogProvider.overrideWithValue(appLog),
+        appUpdaterServiceProvider.overrideWithValue(updater),
+      ],
+      child: const GridApp(),
+    ),
+  );
 }
 
 /// Route Flutter framework errors and otherwise-uncaught async errors into
@@ -82,8 +87,12 @@ void _installErrorHandlers(AppLog appLog) {
   final priorOnError = FlutterError.onError;
   FlutterError.onError = (details) {
     priorOnError?.call(details);
-    appLog.failure('flutter', details.exceptionAsString(),
-        error: details.exception, stackTrace: details.stack);
+    appLog.failure(
+      'flutter',
+      details.exceptionAsString(),
+      error: details.exception,
+      stackTrace: details.stack,
+    );
   };
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
     appLog.failure('app', 'Uncaught error', error: error, stackTrace: stack);

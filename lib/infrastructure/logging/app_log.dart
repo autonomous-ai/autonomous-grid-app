@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'log_file.dart';
@@ -47,19 +45,22 @@ extension AppLogX on AppLog {
     String message, {
     Object? error,
     StackTrace? stackTrace,
-  }) =>
-      record(AppLogLevel.error, category, message,
-          error: error, stackTrace: stackTrace);
+  }) => record(
+    AppLogLevel.error,
+    category,
+    message,
+    error: error,
+    stackTrace: stackTrace,
+  );
 }
 
-/// [AppLog] backed by a real file under `~/.grid/logs`. Writes are synchronous
-/// and flushed (see [LogFile]); IO errors are swallowed — logging must never
-/// break the flow it observes.
+/// [AppLog] backed by a per-day file under `~/.grid/logs` (`app-YYYYMMDD.log`).
+/// Writes are synchronous and flushed (see [DailyLogFile]); IO errors are
+/// swallowed — logging must never break the flow it observes.
 class FileAppLog implements AppLog {
-  FileAppLog(File file) : _file = LogFile(file);
+  FileAppLog(this._file);
 
-  final LogFile _file;
-  bool _rotated = false;
+  final DailyLogFile _file;
 
   @override
   void record(
@@ -69,28 +70,31 @@ class FileAppLog implements AppLog {
     Object? error,
     StackTrace? stackTrace,
   }) {
-    // Rotate once per app run, at the first write, so a session is never split
-    // across files mid-way.
-    if (!_rotated) {
-      _rotated = true;
-      _file.rotateIfLarge();
-    }
-    final line = StringBuffer('[${logStamp(DateTime.now())}] '
-        '${_levelTag(level)} ${_categoryTag(category)} $message');
+    final line = StringBuffer(
+      '[${logStamp(DateTime.now())}] '
+      '${_levelTag(level)} ${_categoryTag(category)} $message',
+    );
     if (error != null) line.write('  err=$error');
     _file.append(line.toString());
     if (stackTrace != null) {
-      _file.append(stackTrace.toString().trimRight().split('\n').map((l) => '    $l').join('\n'));
+      _file.append(
+        stackTrace
+            .toString()
+            .trimRight()
+            .split('\n')
+            .map((l) => '    $l')
+            .join('\n'),
+      );
     }
   }
 
   /// Five-wide upper-case level so message columns line up.
   static String _levelTag(AppLogLevel level) => switch (level) {
-        AppLogLevel.debug => 'DEBUG',
-        AppLogLevel.info => 'INFO ',
-        AppLogLevel.warn => 'WARN ',
-        AppLogLevel.error => 'ERROR',
-      };
+    AppLogLevel.debug => 'DEBUG',
+    AppLogLevel.info => 'INFO ',
+    AppLogLevel.warn => 'WARN ',
+    AppLogLevel.error => 'ERROR',
+  };
 
   /// Pad short categories to a common width for a readable second column.
   static String _categoryTag(String category) =>
@@ -103,8 +107,13 @@ class NoopAppLog implements AppLog {
   const NoopAppLog();
 
   @override
-  void record(AppLogLevel level, String category, String message,
-      {Object? error, StackTrace? stackTrace}) {}
+  void record(
+    AppLogLevel level,
+    String category,
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+  }) {}
 }
 
 /// The app-log sink. Defaults to [NoopAppLog] so unit tests stay offline; the
