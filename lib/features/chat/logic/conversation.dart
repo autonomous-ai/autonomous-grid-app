@@ -33,24 +33,23 @@ class Conversation {
     String? model,
     DateTime? updatedAt,
     List<ChatMessage>? messages,
-  }) =>
-      Conversation(
-        id: id,
-        title: title ?? this.title,
-        model: model ?? this.model,
-        createdAt: createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-        messages: messages ?? this.messages,
-      );
+  }) => Conversation(
+    id: id,
+    title: title ?? this.title,
+    model: model ?? this.model,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    messages: messages ?? this.messages,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'model': model,
-        'createdAt': createdAt.toIso8601String(),
-        'updatedAt': updatedAt.toIso8601String(),
-        'messages': [for (final m in messages) _messageToJson(m)],
-      };
+    'id': id,
+    'title': title,
+    'model': model,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+    'messages': [for (final m in messages) _messageToJson(m)],
+  };
 
   /// Rebuilds a conversation from stored JSON, tolerating missing/renamed
   /// fields so one hand-edited file never bricks the whole history. Throws only
@@ -138,12 +137,12 @@ List<ConversationGroup> groupConversationsByRecency(
 }
 
 Map<String, dynamic> _messageToJson(ChatMessage message) => {
-      'role': message.role.name,
-      'text': message.text,
-      'media': [
-        for (final m in message.media) {'path': m.path, 'kind': m.kind.name},
-      ],
-    };
+  'role': message.role.name,
+  'text': message.text,
+  'media': [
+    for (final m in message.media) {'path': m.path, 'kind': m.kind.name},
+  ],
+};
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
   final rawMedia = json['media'];

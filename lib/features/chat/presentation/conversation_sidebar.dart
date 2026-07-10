@@ -47,8 +47,9 @@ class ConversationSidebar extends ConsumerWidget {
                               title: conversation.title,
                               selected: conversation.id == sessions.activeId,
                               onTap: () => controller.select(conversation.id),
-                              onDelete: () => controller
-                                  .deleteConversation(conversation.id),
+                              onDelete: () => controller.deleteConversation(
+                                conversation.id,
+                              ),
                             ),
                         ],
                       ],
@@ -82,7 +83,11 @@ class _NewChatButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: const [
-              Icon(Icons.edit_outlined, size: 17, color: AppPalette.textPrimary),
+              Icon(
+                Icons.edit_outlined,
+                size: 17,
+                color: AppPalette.textPrimary,
+              ),
               SizedBox(width: 10),
               Text(
                 'New chat',
@@ -146,8 +151,9 @@ class _ConversationTileState extends State<_ConversationTile> {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        widget.selected ? AppPalette.textPrimary : AppPalette.textSecondary;
+    final color = widget.selected
+        ? AppPalette.textPrimary
+        : AppPalette.textSecondary;
     const radius = BorderRadius.all(Radius.circular(9));
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),

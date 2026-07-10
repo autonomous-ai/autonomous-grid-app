@@ -63,7 +63,7 @@ ProviderContainer _container(
     overrides: [
       codexAgentServiceProvider.overrideWithValue(service),
       if (workspace != null)
-        codexWorkspaceDirProvider.overrideWithValue(workspace),
+        agentWorkspaceDirProvider.overrideWithValue(workspace),
     ],
   );
   addTearDown(container.dispose);

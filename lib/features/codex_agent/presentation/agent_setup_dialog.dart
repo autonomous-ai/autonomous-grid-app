@@ -1,29 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../logic/codex_install_controller.dart';
+import '../logic/agent_install_controller.dart';
+import '../logic/agent_tool.dart';
 
-/// Opens the one-time Codex install flow. Resolves to true when codex ends up
-/// installed (so the caller can turn Agent mode on), false/null otherwise.
-Future<bool?> showCodexSetupDialog(BuildContext context) => showDialog<bool>(
-  context: context,
-  builder: (_) => const _CodexSetupDialog(),
-);
+/// Opens the one-time install flow for [tool]. Resolves to true when the tool
+/// ends up installed (so the caller can select that backend), false/null
+/// otherwise.
+Future<bool?> showAgentSetupDialog(BuildContext context, AgentTool tool) =>
+    showDialog<bool>(
+      context: context,
+      builder: (_) => _AgentSetupDialog(tool: tool),
+    );
 
-/// A compact install dialog driven by [CodexInstallController]: explain what
-/// Agent mode is, hand off `brew install --cask codex` to Terminal, then
-/// re-check on Continue — the same visible-checklist shape as the engine setup.
-class _CodexSetupDialog extends ConsumerWidget {
-  const _CodexSetupDialog();
+/// A compact install dialog driven by [AgentInstallController]: explain what the
+/// tool is, hand off `brew install …` to Terminal, then re-check on Continue.
+class _AgentSetupDialog extends ConsumerWidget {
+  const _AgentSetupDialog({required this.tool});
+
+  final AgentTool tool;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(codexInstallControllerProvider);
-    final controller = ref.read(codexInstallControllerProvider.notifier);
+    final state = ref.watch(agentInstallControllerProvider);
+    final controller = ref.read(agentInstallControllerProvider.notifier);
+    final info = kAgentTools[tool]!;
     final theme = Theme.of(context);
 
     return AlertDialog(
-      title: const Text('Turn on Agent mode'),
+      title: Text('Set up ${info.displayName}'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 380),
         child: Column(
@@ -31,9 +36,8 @@ class _CodexSetupDialog extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Agent is an assistant powered by Codex — it can read files and '
-              'run read-only tasks in a dedicated folder. It needs Codex '
-              'installed once, via Homebrew.',
+              '${info.blurb} It runs in the Chat tab, powered by your grid. It '
+              'needs installing once via Homebrew.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -47,20 +51,20 @@ class _CodexSetupDialog extends ConsumerWidget {
 
   List<Widget> _actions(
     BuildContext context,
-    CodexSetupState state,
-    CodexInstallController controller,
+    AgentSetupState state,
+    AgentInstallController controller,
   ) => switch (state) {
-    CodexSetupIdle() => [
+    AgentSetupIdle() => [
       TextButton(
         onPressed: () => Navigator.of(context).pop(false),
         child: const Text('Later'),
       ),
       FilledButton(
-        onPressed: controller.run,
-        child: const Text('Install Codex'),
+        onPressed: () => controller.start(tool),
+        child: const Text('Install'),
       ),
     ],
-    CodexSetupInstalling() => [
+    AgentSetupInstalling() => [
       TextButton(
         onPressed: controller.reopenTerminal,
         child: const Text('Reopen Terminal'),
@@ -70,18 +74,21 @@ class _CodexSetupDialog extends ConsumerWidget {
         child: const Text('Continue'),
       ),
     ],
-    CodexSetupDone() => [
+    AgentSetupDone() => [
       FilledButton(
         onPressed: () => Navigator.of(context).pop(true),
         child: const Text('Done'),
       ),
     ],
-    CodexSetupFailed() => [
+    AgentSetupFailed() => [
       TextButton(
         onPressed: () => Navigator.of(context).pop(false),
         child: const Text('Close'),
       ),
-      FilledButton(onPressed: controller.run, child: const Text('Try again')),
+      FilledButton(
+        onPressed: () => controller.start(tool),
+        child: const Text('Try again'),
+      ),
     ],
   };
 }
@@ -90,25 +97,25 @@ class _CodexSetupDialog extends ConsumerWidget {
 class _Body extends StatelessWidget {
   const _Body({required this.state});
 
-  final CodexSetupState state;
+  final AgentSetupState state;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return switch (state) {
-      CodexSetupIdle() => const SizedBox.shrink(),
-      CodexSetupInstalling(:final note) => _Line(
+      AgentSetupIdle() => const SizedBox.shrink(),
+      AgentSetupInstalling(:final note) => _Line(
         icon: Icons.terminal,
         color: theme.colorScheme.primary,
         text:
             note ?? 'Installing in Terminal. Press Continue when it finishes.',
       ),
-      CodexSetupDone() => _Line(
+      AgentSetupDone() => const _Line(
         icon: Icons.check_circle,
         color: Colors.green,
-        text: 'Codex is installed. Agent is ready.',
+        text: 'Installed. The agent is ready.',
       ),
-      CodexSetupFailed(:final message) => _Line(
+      AgentSetupFailed(:final message) => _Line(
         icon: Icons.error_outline,
         color: theme.colorScheme.error,
         text: message,

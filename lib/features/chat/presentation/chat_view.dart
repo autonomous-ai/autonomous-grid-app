@@ -5,8 +5,8 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../codex_agent/logic/codex_providers.dart';
-import '../../codex_agent/presentation/agent_mode_toggle.dart';
+import '../../codex_agent/logic/agent_backend.dart';
+import '../../codex_agent/presentation/agent_backend_picker.dart';
 import '../../codex_agent/presentation/agent_working_bubble.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import '../../network/logic/network_models_provider.dart';
@@ -147,7 +147,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final loadingModels =
         ref.watch(gridOverviewProvider).isLoading &&
         ref.watch(networkModelsProvider).isLoading;
-    final agentMode = ref.watch(codexAgentEnabledProvider);
+    final agentMode = ref.watch(agentBackendProvider).isOn;
 
     _syncModelField(sessions.active, options, widget.network.networkId);
 
@@ -289,7 +289,7 @@ class _ChatHeader extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 12),
-          const AgentModeToggle(),
+          const AgentBackendPicker(),
         ],
       ),
     );

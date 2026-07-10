@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../codex_agent/logic/agent_backend.dart';
 import '../../codex_agent/logic/codex_chat_sender.dart';
-import '../../codex_agent/logic/codex_providers.dart';
+import '../../codex_agent/logic/hermes_chat_sender.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
@@ -52,8 +53,8 @@ class ChatSessionsState {
 /// so text/image/video routing and error copy match the Playground exactly.
 final chatSessionsProvider =
     NotifierProvider<ChatSessionsController, ChatSessionsState>(
-  ChatSessionsController.new,
-);
+      ChatSessionsController.new,
+    );
 
 class ChatSessionsController extends Notifier<ChatSessionsState> {
   StreamSubscription<ChatSendUpdate>? _sub;
@@ -129,24 +130,28 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       updatedAt: DateTime.now(),
       messages: [...base.messages, userTurn],
     );
-    final conversation =
-        withUser.copyWith(title: deriveConversationTitle(withUser.messages));
+    final conversation = withUser.copyWith(
+      title: deriveConversationTitle(withUser.messages),
+    );
     _commit(conversation, phase: const SendBusy());
 
-    // Agent mode routes the turn through codex (text only) instead of the relay
-    // chat sender; everything downstream — folding updates, persistence — is
-    // identical because both implement [ChatSender].
-    final agentMode = ref.read(codexAgentEnabledProvider);
-    final sender = agentMode
-        ? ref.read(codexChatSenderProvider)
-        : ref.read(chatSenderProvider);
+    // Agent mode routes the turn through codex/hermes (text only) instead of the
+    // relay chat sender; everything downstream — folding updates, persistence —
+    // is identical because all three implement [ChatSender].
+    final backend = ref.read(agentBackendProvider);
+    final sender = switch (backend) {
+      AgentBackend.off => ref.read(chatSenderProvider),
+      AgentBackend.codex => ref.read(codexChatSenderProvider),
+      AgentBackend.hermes => ref.read(hermesChatSenderProvider),
+    };
+    final agentMode = backend.isOn;
     final updates = sender.send(
-          network: network,
-          model: model,
-          history: conversation.messages,
-          modality: agentMode ? PlaygroundModality.text : modality,
-          attachments: agentMode ? const [] : attachments,
-        );
+      network: network,
+      model: model,
+      history: conversation.messages,
+      modality: agentMode ? PlaygroundModality.text : modality,
+      attachments: agentMode ? const [] : attachments,
+    );
 
     // Fold updates through a stored subscription so [stop] and disposal can
     // cancel an in-flight reply instead of letting it write back later.

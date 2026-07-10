@@ -6,6 +6,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
+import 'agent_prompt.dart';
 import 'codex_exec_args.dart';
 import 'codex_providers.dart';
 
@@ -48,7 +49,7 @@ class CodexChatSender implements ChatSender {
       );
       return;
     }
-    final prompt = _promptFrom(history);
+    final prompt = buildAgentPrompt(history);
     if (prompt.isEmpty) {
       yield const ChatSendFailure('Nothing to send.');
       return;
@@ -59,7 +60,7 @@ class CodexChatSender implements ChatSender {
       model: model,
       prompt: prompt,
     );
-    final workdir = _ref.read(codexWorkspaceDirProvider).path;
+    final workdir = _ref.read(agentWorkspaceDirProvider).path;
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'codex exec -m $model (agent)');
     final activityLog = _ref.read(codexActivityProvider.notifier)..clear();
@@ -110,21 +111,6 @@ class CodexChatSender implements ChatSender {
       return;
     }
     yield ChatSendFailure(_humanize(failure, exit));
-  }
-
-  /// The prompt sent to codex: the latest user turn, with any earlier turns as a
-  /// short context preamble so the agent isn't amnesiac between messages.
-  static String _promptFrom(List<ChatMessage> history) {
-    if (history.isEmpty) return '';
-    final latest = history.last.text.trim();
-    final prior = [
-      for (final m in history.take(history.length - 1))
-        if (m.text.trim().isNotEmpty)
-          '${m.role == ChatRole.user ? 'User' : 'Assistant'}: '
-              '${m.text.trim()}',
-    ];
-    if (prior.isEmpty) return latest;
-    return 'Conversation so far:\n${prior.join('\n')}\n\nUser: $latest';
   }
 
   /// Maps a raw codex/stderr failure to a plain-language line. The most common
