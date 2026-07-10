@@ -97,6 +97,12 @@ class GridPaths {
   /// survives a failed silent install so it can be debugged after the fact.
   static const String nodeSetupLogBase = 'app_node_setup';
 
+  /// Filename stem for the transcript of every HTTP request the app makes
+  /// (`app_https-YYYYMMDD.log`): relay chat/media and the managed-grid API. Kept
+  /// apart from [appLogBase] so a user debugging a network problem can send just
+  /// the HTTP trace. Each line is written the moment the request is issued.
+  static const String httpLogBase = 'app_https';
+
   /// Where `grid llama.cpp install` links the engine (provider_runtime
   /// paths.py: `llama_server_bin()`).
   static File get llamaServerBin => File('${home.path}/bin/llama-server');

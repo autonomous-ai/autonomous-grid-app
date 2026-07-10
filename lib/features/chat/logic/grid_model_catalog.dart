@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
@@ -32,29 +33,30 @@ final gridModelCatalogProvider = Provider.autoDispose<List<GridModelGroup>>((
   ref,
 ) {
   final grids = ref.watch(sessionProvider).networks;
-  return [for (final grid in grids) _groupFor(ref, grid)];
+  return [
+    for (final grid in grids)
+      gridModelGroupFrom(grid, ref.watch(gridOverviewForProvider(grid.networkId))),
+  ];
 });
 
-GridModelGroup _groupFor(Ref ref, NetworkCredential grid) {
-  final overview = ref.watch(gridOverviewForProvider(grid.networkId));
-  return overview.when(
-    data: (data) {
-      final capabilities = [for (final node in data.nodes) ...node.models];
-      return GridModelGroup(
-        grid: grid,
-        options: playgroundOptionsFrom(data.models, capabilities),
-        status: GridModelStatus.ready,
-      );
-    },
-    loading: () => GridModelGroup(
+/// Maps a grid and its (possibly still-loading) overview into a menu group. Pure
+/// so the loading / ready / offline mapping is unit-tested without any async or
+/// provider timing.
+GridModelGroup gridModelGroupFrom(
+  NetworkCredential grid,
+  AsyncValue<GridOverview> overview,
+) => overview.when(
+  skipLoadingOnReload: false,
+  data: (data) {
+    final capabilities = [for (final node in data.nodes) ...node.models];
+    return GridModelGroup(
       grid: grid,
-      options: const [],
-      status: GridModelStatus.loading,
-    ),
-    error: (_, _) => GridModelGroup(
-      grid: grid,
-      options: const [],
-      status: GridModelStatus.offline,
-    ),
-  );
-}
+      options: playgroundOptionsFrom(data.models, capabilities),
+      status: GridModelStatus.ready,
+    );
+  },
+  loading: () =>
+      GridModelGroup(grid: grid, options: const [], status: GridModelStatus.loading),
+  error: (_, _) =>
+      GridModelGroup(grid: grid, options: const [], status: GridModelStatus.offline),
+);

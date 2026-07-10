@@ -30,20 +30,6 @@ GridOverview _overviewWith(String modelId) => GridOverview(
   nodes: const [],
 );
 
-/// Reads the catalog once the grid overviews have settled out of `loading`,
-/// keeping the autoDispose chain alive while they resolve.
-Future<List<GridModelGroup>> _settled(ProviderContainer container) async {
-  final sub = container.listen(gridModelCatalogProvider, (_, _) {});
-  addTearDown(sub.close);
-  for (var i = 0; i < 40; i++) {
-    final catalog = container.read(gridModelCatalogProvider);
-    final done = catalog.every((g) => g.status != GridModelStatus.loading);
-    if (done) return catalog;
-    await Future<void>.delayed(const Duration(milliseconds: 5));
-  }
-  return container.read(gridModelCatalogProvider);
-}
-
 void main() {
   final foo = _network('grid-foo', 'Foo');
   final bar = _network('grid-bar', 'Bar');
@@ -58,15 +44,28 @@ void main() {
         gridOverviewForProvider(
           'grid-foo',
         ).overrideWith((ref) async => _overviewWith('maker/m1')),
-        gridOverviewForProvider('grid-bar').overrideWith((ref) async {
-          await Future<void>.delayed(const Duration(milliseconds: 1));
-          throw const GridOverviewUnavailable('down');
-        }),
+        gridOverviewForProvider(
+          'grid-bar',
+        ).overrideWith((ref) async => throw const GridOverviewUnavailable('x')),
       ],
     );
     addTearDown(container.dispose);
 
-    final catalog = await _settled(container);
+    // Hold both overviews (and the catalog) alive with real listeners so their
+    // async states settle instead of being torn down mid-load.
+    container.listen(gridOverviewForProvider('grid-foo'), (_, _) {});
+    container.listen(gridOverviewForProvider('grid-bar'), (_, _) {});
+    container.listen(gridModelCatalogProvider, (_, _) {});
+
+    for (var i = 0; i < 50; i++) {
+      final settled = container
+          .read(gridModelCatalogProvider)
+          .every((g) => g.status != GridModelStatus.loading);
+      if (settled) break;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    final catalog = container.read(gridModelCatalogProvider);
     expect(catalog, hasLength(2));
 
     final fooGroup = catalog.firstWhere((g) => g.grid.networkId == 'grid-foo');

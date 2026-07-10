@@ -10,6 +10,7 @@ import 'app/single_instance.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
 import 'infrastructure/logging/app_log.dart';
+import 'infrastructure/logging/http_log.dart';
 import 'infrastructure/logging/log_file.dart';
 
 Future<void> main() async {
@@ -72,6 +73,9 @@ Future<void> main() async {
       // toasts come from the checks the menu triggers.
       overrides: [
         appLogProvider.overrideWithValue(appLog),
+        // Every HTTP call the app reports also lands in its own per-day file
+        // (`app_https-YYYYMMDD.log`), written the moment the request is issued.
+        httpLogProvider.overrideWithValue(buildFileHttpLog()),
         appUpdaterServiceProvider.overrideWithValue(updater),
       ],
       child: const GridApp(),

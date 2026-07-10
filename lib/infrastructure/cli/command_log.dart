@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../logging/app_log.dart';
+import '../logging/http_log.dart';
 import '../logging/log_file.dart';
 
 /// How the command was issued: a `grid` CLI call (run/start/pull) or a direct
@@ -44,24 +45,24 @@ class GridCommandLog {
     int? exitCode,
     Duration? duration,
     String? error,
-  }) =>
-      GridCommandLog(
-        id: id,
-        kind: kind,
-        command: command,
-        startedAt: startedAt,
-        status: status ?? this.status,
-        exitCode: exitCode ?? this.exitCode,
-        duration: duration ?? this.duration,
-        error: error ?? this.error,
-      );
+  }) => GridCommandLog(
+    id: id,
+    kind: kind,
+    command: command,
+    startedAt: startedAt,
+    status: status ?? this.status,
+    exitCode: exitCode ?? this.exitCode,
+    duration: duration ?? this.duration,
+    error: error ?? this.error,
+  );
 }
 
 /// In-memory ring buffer of recent commands, newest first. Fed by
 /// [LoggingGridCliService] and the local-chat path; read by the Debug tab.
 final commandLogProvider =
     NotifierProvider<CommandLogNotifier, List<GridCommandLog>>(
-        CommandLogNotifier.new);
+      CommandLogNotifier.new,
+    );
 
 class CommandLogNotifier extends Notifier<List<GridCommandLog>> {
   static const _maxEntries = 200;
@@ -80,8 +81,15 @@ class CommandLogNotifier extends Notifier<List<GridCommandLog>> {
       startedAt: DateTime.now(),
       status: CliCallStatus.running,
     );
-    _schedule(() =>
-        state = [entry, ...state].take(_maxEntries).toList(growable: false));
+    // Write HTTP calls to their own durable file the instant they are issued —
+    // not only when they complete — so a request that hangs still leaves a
+    // trace. Synchronous and best-effort, so it never blocks the call.
+    if (kind == CliCallKind.http) {
+      ref.read(httpLogProvider).start(id, command);
+    }
+    _schedule(
+      () => state = [entry, ...state].take(_maxEntries).toList(growable: false),
+    );
     return id;
   }
 
@@ -106,7 +114,19 @@ class CommandLogNotifier extends Notifier<List<GridCommandLog>> {
           else
             e,
       ];
-      if (finished != null) _mirrorToAppLog(finished);
+      if (finished != null) {
+        _mirrorToAppLog(finished);
+        if (finished.kind == CliCallKind.http) {
+          ref
+              .read(httpLogProvider)
+              .finish(
+                finished.id,
+                statusCode: finished.exitCode,
+                error: finished.error,
+                duration: finished.duration,
+              );
+        }
+      }
     });
   }
 
@@ -120,8 +140,8 @@ class CommandLogNotifier extends Notifier<List<GridCommandLog>> {
     final code = e.exitCode == null
         ? ''
         : isHttp
-            ? ' status=${e.exitCode}'
-            : ' exit=${e.exitCode}';
+        ? ' status=${e.exitCode}'
+        : ' exit=${e.exitCode}';
     final dur = e.duration == null ? '' : ' (${logDuration(e.duration!)})';
     final err = e.error == null ? '' : ': ${e.error}';
     final message = '${e.command} → ${failed ? 'FAILED' : 'ok'}$code$dur$err';
