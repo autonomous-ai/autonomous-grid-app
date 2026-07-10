@@ -5,6 +5,9 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../codex_agent/logic/codex_providers.dart';
+import '../../codex_agent/presentation/agent_mode_toggle.dart';
+import '../../codex_agent/presentation/agent_working_bubble.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../playground/logic/playground_models.dart';
@@ -109,7 +112,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
-    ref.read(chatSessionsProvider.notifier).send(
+    ref
+        .read(chatSessionsProvider.notifier)
+        .send(
           network: widget.network,
           model: _model.text.trim(),
           message: message,
@@ -139,8 +144,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   Widget build(BuildContext context) {
     final sessions = ref.watch(chatSessionsProvider);
     final options = ref.watch(playgroundModelsProvider);
-    final loadingModels = ref.watch(gridOverviewProvider).isLoading &&
+    final loadingModels =
+        ref.watch(gridOverviewProvider).isLoading &&
         ref.watch(networkModelsProvider).isLoading;
+    final agentMode = ref.watch(codexAgentEnabledProvider);
 
     _syncModelField(sessions.active, options, widget.network.networkId);
 
@@ -155,8 +162,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final hasModel = loadingModels || options.isNotEmpty;
     final modality = _modalityFor(options);
     final needsImage = modality == PlaygroundModality.video;
-    final canSend = !sessions.sending && (!needsImage || _attachments.isNotEmpty);
+    final canSend =
+        !sessions.sending && (!needsImage || _attachments.isNotEmpty);
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
+    final trailing = _trailingBubble(sessions.phase, agentMode);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -183,12 +192,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 : ListView.builder(
                     controller: _scroll,
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                    itemCount: messages.length +
-                        (sessions.phase is SendGenerating ? 1 : 0),
+                    itemCount: messages.length + (trailing != null ? 1 : 0),
                     itemBuilder: (context, i) => i < messages.length
                         ? ChatBubble(message: messages[i])
-                        : GeneratingBubble(
-                            phase: sessions.phase as SendGenerating),
+                        : trailing ?? const SizedBox.shrink(),
                   ),
           ),
           _Composer(
@@ -209,11 +216,21 @@ class _ChatViewState extends ConsumerState<ChatView> {
     );
   }
 
+  /// The bubble appended after the transcript for the in-flight turn: the media
+  /// progress bar while a generation streams, or a spinner while an Agent
+  /// (codex) run works — never the media bar for an agent turn, which produces
+  /// text, not media.
+  Widget? _trailingBubble(SendPhase phase, bool agentMode) => switch (phase) {
+    SendGenerating g => GeneratingBubble(phase: g),
+    SendBusy() when agentMode => const AgentWorkingBubble(),
+    _ => null,
+  };
+
   String _emptyHint(PlaygroundModality modality) => switch (modality) {
-        PlaygroundModality.image => 'Describe an image to generate.',
-        PlaygroundModality.video => 'Attach an image, then describe the motion.',
-        PlaygroundModality.text => 'Send a message to start chatting.',
-      };
+    PlaygroundModality.image => 'Describe an image to generate.',
+    PlaygroundModality.video => 'Attach an image, then describe the motion.',
+    PlaygroundModality.text => 'Send a message to start chatting.',
+  };
 }
 
 /// The slim header above the transcript: a grid switcher (only when the account
@@ -245,29 +262,35 @@ class _ChatHeader extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: showGrid ? 740 : 360),
-          child: showGrid
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _GridDropdown(
-                        grids: grids,
-                        selectedId: selectedId,
-                        onSelect: (grid) => ref
-                            .read(selectedNetworkProvider.notifier)
-                            .select(grid),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: modelPicker),
-                  ],
-                )
-              : modelPicker,
-        ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: showGrid ? 740 : 360),
+              child: showGrid
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _GridDropdown(
+                            grids: grids,
+                            selectedId: selectedId,
+                            onSelect: (grid) => ref
+                                .read(selectedNetworkProvider.notifier)
+                                .select(grid),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: modelPicker),
+                      ],
+                    )
+                  : modelPicker,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const AgentModeToggle(),
+        ],
       ),
     );
   }
@@ -357,8 +380,9 @@ class _Composer extends StatelessWidget {
           if (error != null) ...[
             Text(
               error!,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             ),
             const SizedBox(height: 8),
           ],
@@ -405,10 +429,10 @@ class _Composer extends StatelessWidget {
   }
 
   String _inputHint(PlaygroundModality modality) => switch (modality) {
-        PlaygroundModality.image => 'Describe the image…',
-        PlaygroundModality.video => 'Describe the motion…',
-        PlaygroundModality.text => 'Send a message…',
-      };
+    PlaygroundModality.image => 'Describe the image…',
+    PlaygroundModality.video => 'Describe the motion…',
+    PlaygroundModality.text => 'Send a message…',
+  };
 }
 
 /// The inline "+" that attaches an image to a vision chat message. Disabled
@@ -446,16 +470,20 @@ class _EmptyChat extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.forum_outlined, size: 40, color: AppPalette.textFaint),
+          const Icon(
+            Icons.forum_outlined,
+            size: 40,
+            color: AppPalette.textFaint,
+          ),
           const SizedBox(height: 14),
           Text(
             hint,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: AppPalette.textSecondary),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
           ),
         ],
       ),
     );
   }
 }
-

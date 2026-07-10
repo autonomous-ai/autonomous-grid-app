@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../codex_agent/logic/codex_chat_sender.dart';
+import '../../codex_agent/logic/codex_providers.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
@@ -11,7 +13,7 @@ import 'chat_store.dart';
 import 'conversation.dart';
 
 export '../../playground/logic/chat_message.dart'
-    show ChatRole, ChatMessage, ChatMedia, SendPhase, SendGenerating;
+    show ChatRole, ChatMessage, ChatMedia, SendPhase, SendBusy, SendGenerating;
 
 /// The Chat tab's whole state: every saved conversation (newest first), which
 /// one is open, and the in-flight send [phase] / [error]. A null [activeId]
@@ -131,12 +133,19 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         withUser.copyWith(title: deriveConversationTitle(withUser.messages));
     _commit(conversation, phase: const SendBusy());
 
-    final updates = ref.read(chatSenderProvider).send(
+    // Agent mode routes the turn through codex (text only) instead of the relay
+    // chat sender; everything downstream — folding updates, persistence — is
+    // identical because both implement [ChatSender].
+    final agentMode = ref.read(codexAgentEnabledProvider);
+    final sender = agentMode
+        ? ref.read(codexChatSenderProvider)
+        : ref.read(chatSenderProvider);
+    final updates = sender.send(
           network: network,
           model: model,
           history: conversation.messages,
-          modality: modality,
-          attachments: attachments,
+          modality: agentMode ? PlaygroundModality.text : modality,
+          attachments: agentMode ? const [] : attachments,
         );
 
     // Fold updates through a stored subscription so [stop] and disposal can

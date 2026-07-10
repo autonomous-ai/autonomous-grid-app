@@ -60,6 +60,13 @@ class GridPaths {
 
   static File chatFile(String id) => File('${chatsDir.path}/$id.json');
 
+  /// Working directory for the Chat tab's experimental Agent mode (codex). The
+  /// agent runs read-only here so its file tools have a stable, app-owned root
+  /// instead of pointing at the user's home. App-owned — the CLI never touches
+  /// it.
+  static Directory get codexWorkspaceDir =>
+      Directory('${home.path}/app/codex-workspace');
+
   /// The CLI's own log directory (`~/.grid/logs`, e.g. `llama_llm_*.log`). The
   /// app drops its own diagnostic logs here too so everything a user might send
   /// us to debug lives in one place.
