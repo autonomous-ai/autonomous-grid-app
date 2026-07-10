@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -48,6 +49,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   String? _syncedKey;
   bool _synced = false;
 
+  /// The current grid's model options, cached so the change listener can tell a
+  /// real selection from a half-typed name before persisting it.
+  List<PlaygroundModelOption> _options = const [];
+
   @override
   void initState() {
     super.initState();
@@ -58,7 +63,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   void _onModelChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _rememberModel();
+  }
+
+  /// Persist the selection once it's a real option (not a name being typed) so a
+  /// new chat and the next launch default to it instead of the grid's first
+  /// model.
+  void _rememberModel() {
+    final id = _model.text.trim();
+    if (id.isEmpty || !_options.any((o) => o.id == id)) return;
+    ref.read(chatPrefsProvider.notifier).setModel(id);
   }
 
   @override
@@ -79,20 +95,27 @@ class _ChatViewState extends ConsumerState<ChatView> {
     List<PlaygroundModelOption> options,
     String gridId,
   ) {
+    _options = options;
     final key = '${active?.id}|$gridId';
     if (!_synced || key != _syncedKey) {
       _synced = true;
       _syncedKey = key;
       final stored = active?.model ?? '';
       final hasStored = options.any((o) => o.id == stored);
-      _setModelText(
-        hasStored ? stored : (options.isEmpty ? '' : options.first.id),
-      );
+      _setModelText(hasStored ? stored : _defaultModel(options));
       return;
     }
     if (_model.text.isEmpty && options.isNotEmpty) {
-      _setModelText(options.first.id);
+      _setModelText(_defaultModel(options));
     }
+  }
+
+  /// The model to fall back to when the conversation has none: the one the user
+  /// last used (if this grid still offers it), else the grid's first option.
+  String _defaultModel(List<PlaygroundModelOption> options) {
+    final saved = ref.read(chatPrefsProvider).model;
+    if (saved != null && options.any((o) => o.id == saved)) return saved;
+    return options.isEmpty ? '' : options.first.id;
   }
 
   void _setModelText(String value) {

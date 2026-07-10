@@ -17,9 +17,9 @@ class GridPaths {
 
   static Directory get home {
     final override = Platform.environment['GRID_HOME'];
-    return Directory(override != null && override.isNotEmpty
-        ? override
-        : '$userHome/.grid');
+    return Directory(
+      override != null && override.isNotEmpty ? override : '$userHome/.grid',
+    );
   }
 
   static File get deviceFile => File('${home.path}/device.toml');
@@ -59,6 +59,10 @@ class GridPaths {
   static Directory get chatsDir => Directory('${home.path}/app/chats');
 
   static File chatFile(String id) => File('${chatsDir.path}/$id.json');
+
+  /// The Chat tab's remembered selections (last grid, model, agent backend), so
+  /// reopening the app restores them. App-owned — the CLI never touches it.
+  static File get chatPrefsFile => File('${home.path}/app/chat_prefs.json');
 
   /// Working directory for the Chat tab's experimental Agent mode (codex). The
   /// agent runs read-only here so its file tools have a stable, app-owned root

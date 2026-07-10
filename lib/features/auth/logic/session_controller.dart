@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/providers.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/credentials_file.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 
@@ -40,6 +41,16 @@ class SelectedNetwork extends Notifier<NetworkCredential?> {
     // the user — unless that grid vanished from the synced list.
     final picked = _selectedId == null ? null : creds.byName(_selectedId!);
     if (picked != null) return picked;
+    // First selection this session: restore the grid the user last used, so
+    // reopening the app lands on it rather than the CLI default. Skipped once
+    // they've picked live (above), and only if that grid still exists.
+    if (_selectedId == null) {
+      final saved = ref.read(chatPrefsProvider).networkId;
+      if (saved != null) {
+        final match = creds.byName(saved);
+        if (match != null) return match;
+      }
+    }
     if (active != null) {
       final match = creds.byName(active);
       if (match != null) return match;
@@ -50,5 +61,6 @@ class SelectedNetwork extends Notifier<NetworkCredential?> {
   void select(NetworkCredential network) {
     _selectedId = network.networkId;
     state = network;
+    ref.read(chatPrefsProvider.notifier).setNetwork(network.networkId);
   }
 }
