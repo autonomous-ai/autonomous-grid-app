@@ -23,18 +23,21 @@ import 'node_display.dart';
 /// [gridOverviewProvider], so the list dot and the detail header never disagree.
 final gridOverviewForProvider = FutureProvider.autoDispose
     .family<GridOverview, String>((ref, networkId) async {
-  final match =
-      ref.watch(sessionProvider).networks.where((n) => n.networkId == networkId);
-  if (match.isEmpty) {
-    throw const GridOverviewUnavailable('Grid not found.');
-  }
-  return _fetchOverview(ref.read(commandLogProvider.notifier), match.first);
-});
+      final match = ref
+          .watch(sessionProvider)
+          .networks
+          .where((n) => n.networkId == networkId);
+      if (match.isEmpty) {
+        throw const GridOverviewUnavailable('Grid not found.');
+      }
+      return _fetchOverview(ref.read(commandLogProvider.notifier), match.first);
+    });
 
 /// Overview for the currently selected grid — the detail pane's convenience view
 /// over [gridOverviewForProvider].
-final gridOverviewProvider =
-    FutureProvider.autoDispose<GridOverview>((ref) async {
+final gridOverviewProvider = FutureProvider.autoDispose<GridOverview>((
+  ref,
+) async {
   final network = ref.watch(selectedNetworkProvider);
   if (network == null) {
     throw const GridOverviewUnavailable('No grid selected.');
@@ -48,7 +51,8 @@ final gridOverviewProvider =
 /// each node's "serving N" count read this one derived list, so the count and the
 /// list can never disagree. Empty while loading or when the grid advertises none.
 final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
-  final rich = ref.watch(gridOverviewProvider).asData?.value.models ??
+  final rich =
+      ref.watch(gridOverviewProvider).asData?.value.models ??
       const <OverviewModel>[];
   if (rich.isNotEmpty) return rich;
   final ids = ref.watch(networkModelsProvider).asData?.value ?? const [];
@@ -102,10 +106,13 @@ GridMediaCapabilities gridMediaCapabilitiesFrom(Iterable<String> capabilities) {
 /// (no image/video) while loading or when no media provider is online.
 final gridMediaCapabilitiesProvider =
     Provider.autoDispose<GridMediaCapabilities>((ref) {
-  final nodes = ref.watch(gridOverviewProvider).asData?.value.nodes ??
-      const <OverviewNode>[];
-  return gridMediaCapabilitiesFrom([for (final node in nodes) ...node.models]);
-});
+      final nodes =
+          ref.watch(gridOverviewProvider).asData?.value.nodes ??
+          const <OverviewNode>[];
+      return gridMediaCapabilitiesFrom([
+        for (final node in nodes) ...node.models,
+      ]);
+    });
 
 class GridOverviewUnavailable implements Exception {
   const GridOverviewUnavailable(this.message);
@@ -129,10 +136,13 @@ Future<GridOverview> _fetchOverview(
 
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
   try {
-    final request =
-        await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 4));
-    request.headers
-        .set(HttpHeaders.authorizationHeader, 'Bearer ${network.relayApiKey}');
+    final request = await client
+        .getUrl(Uri.parse(url))
+        .timeout(const Duration(seconds: 4));
+    request.headers.set(
+      HttpHeaders.authorizationHeader,
+      'Bearer ${network.relayApiKey}',
+    );
     final response = await request.close().timeout(const Duration(seconds: 6));
     final body = await response.transform(utf8.decoder).join();
     done(status: response.statusCode);
@@ -155,7 +165,7 @@ Future<GridOverview> _fetchOverview(
 }
 
 String _reason(int status) => switch (status) {
-      503 => 'No node is online for this grid right now.',
-      401 || 403 => 'Not authorized for this grid.',
-      _ => 'Grid overview unavailable (HTTP $status).',
-    };
+  503 => 'No node is online for this grid right now.',
+  401 || 403 => 'Not authorized for this grid.',
+  _ => 'Grid overview unavailable (HTTP $status).',
+};

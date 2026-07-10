@@ -13,8 +13,9 @@ import '../../auth/logic/session_controller.dart';
 /// the inference scope, or the relay is unreachable. Callers (the Playground's
 /// model picker, the grid overview's node list) keep a graceful fallback in
 /// those cases so the UI never blanks out.
-final networkModelsProvider =
-    FutureProvider.autoDispose<List<String>>((ref) async {
+final networkModelsProvider = FutureProvider.autoDispose<List<String>>((
+  ref,
+) async {
   final network = ref.watch(selectedNetworkProvider);
   if (network == null) return const [];
   final log = ref.read(commandLogProvider.notifier);
@@ -37,8 +38,9 @@ Future<List<String>> _fetchModels(
 
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
   try {
-    final request =
-        await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 3));
+    final request = await client
+        .getUrl(Uri.parse(url))
+        .timeout(const Duration(seconds: 3));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
     final response = await request.close().timeout(const Duration(seconds: 4));
     final body = await response.transform(utf8.decoder).join();
