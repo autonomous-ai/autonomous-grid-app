@@ -276,8 +276,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         children: [
                           ListView.builder(
                             controller: _scroll,
-                            // Extra top padding clears the floating Agent pill.
-                            padding: const EdgeInsets.fromLTRB(20, 52, 20, 8),
+                            // Top padding + the top scrim keep messages clear of
+                            // the floating controls as they scroll past.
+                            padding: const EdgeInsets.fromLTRB(20, 62, 20, 8),
                             itemCount:
                                 messages.length + (trailing != null ? 1 : 0),
                             itemBuilder: (context, i) => i < messages.length
@@ -316,6 +317,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
             ],
           ],
         ),
+        // A short fade at the very top so messages dissolve into the background
+        // as they scroll under the floating controls, instead of colliding.
+        const Positioned(top: 0, left: 0, right: 0, child: _TopScrim()),
         // The Agent toggle floats over the top-right corner instead of a full
         // header row.
         const Positioned(
@@ -355,6 +359,30 @@ class _ChatViewState extends ConsumerState<ChatView> {
     PlaygroundModality.video => 'Attach an image, then describe the motion.',
     PlaygroundModality.text => 'Send a message to start chatting.',
   };
+}
+
+/// A short gradient at the top of the transcript that fades messages into the
+/// window background as they scroll up, so they don't collide with the floating
+/// controls. Non-interactive so it never eats taps.
+class _TopScrim extends StatelessWidget {
+  const _TopScrim();
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+    return IgnorePointer(
+      child: Container(
+        height: 56,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [bg, bg.withAlpha(0)],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// An opaque, rounded surface for a control that floats over the transcript, so

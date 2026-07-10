@@ -32,69 +32,48 @@ GridOverview _overviewWith(String modelId) => GridOverview(
 
 void main() {
   final foo = _network('grid-foo', 'Foo');
-  final bar = _network('grid-bar', 'Bar');
 
-  test('groups each grid, marking a reachable one ready and a failing one '
-      'offline', () async {
+  group('gridModelGroupFrom', () {
+    test('a ready overview maps to a ready group with its options', () {
+      final group = gridModelGroupFrom(
+        foo,
+        AsyncData(_overviewWith('maker/m1')),
+      );
+      expect(group.grid.networkId, 'grid-foo');
+      expect(group.status, GridModelStatus.ready);
+      expect(group.options.single.id, 'maker/m1');
+    });
+
+    test('an errored overview maps to offline with no options', () {
+      final group = gridModelGroupFrom(
+        foo,
+        AsyncError(const GridOverviewUnavailable('down'), StackTrace.empty),
+      );
+      expect(group.status, GridModelStatus.offline);
+      expect(group.options, isEmpty);
+    });
+
+    test('a loading overview maps to loading', () {
+      final group = gridModelGroupFrom(foo, const AsyncLoading());
+      expect(group.status, GridModelStatus.loading);
+      expect(group.options, isEmpty);
+    });
+  });
+
+  test('catalog builds one group per grid in the session', () {
+    final bar = _network('grid-bar', 'Bar');
     final container = ProviderContainer(
       overrides: [
         sessionProvider.overrideWithValue(
           CredentialsFile(networks: [foo, bar], activeNetwork: 'grid-foo'),
         ),
-        gridOverviewForProvider(
-          'grid-foo',
-        ).overrideWith((ref) async => _overviewWith('maker/m1')),
-        gridOverviewForProvider(
-          'grid-bar',
-        ).overrideWith((ref) async => throw const GridOverviewUnavailable('x')),
       ],
     );
     addTearDown(container.dispose);
-
-    // Hold both overviews (and the catalog) alive with real listeners so their
-    // async states settle instead of being torn down mid-load.
-    container.listen(gridOverviewForProvider('grid-foo'), (_, _) {});
-    container.listen(gridOverviewForProvider('grid-bar'), (_, _) {});
-    container.listen(gridModelCatalogProvider, (_, _) {});
-
-    for (var i = 0; i < 50; i++) {
-      final settled = container
-          .read(gridModelCatalogProvider)
-          .every((g) => g.status != GridModelStatus.loading);
-      if (settled) break;
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
 
     final catalog = container.read(gridModelCatalogProvider);
-    expect(catalog, hasLength(2));
-
-    final fooGroup = catalog.firstWhere((g) => g.grid.networkId == 'grid-foo');
-    expect(fooGroup.status, GridModelStatus.ready);
-    expect(fooGroup.options.single.id, 'maker/m1');
-
-    final barGroup = catalog.firstWhere((g) => g.grid.networkId == 'grid-bar');
-    expect(barGroup.status, GridModelStatus.offline);
-    expect(barGroup.options, isEmpty);
-  });
-
-  test('reports loading before a grid overview resolves', () {
-    final container = ProviderContainer(
-      overrides: [
-        sessionProvider.overrideWithValue(
-          CredentialsFile(networks: [foo], activeNetwork: 'grid-foo'),
-        ),
-        gridOverviewForProvider(
-          'grid-foo',
-        ).overrideWith((ref) => Future.value(_overviewWith('maker/m1'))),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    final sub = container.listen(gridModelCatalogProvider, (_, _) {});
-    addTearDown(sub.close);
-
-    // Read synchronously, before the future completes.
-    final group = container.read(gridModelCatalogProvider).single;
-    expect(group.status, GridModelStatus.loading);
+    expect(catalog.map((g) => g.grid.networkId), ['grid-foo', 'grid-bar']);
+    // Overviews haven't resolved (no relay in tests) — both start loading.
+    expect(catalog.every((g) => g.status == GridModelStatus.loading), isTrue);
   });
 }

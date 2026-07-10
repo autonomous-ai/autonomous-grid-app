@@ -146,8 +146,9 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
     final currentGridId = ref.watch(selectedNetworkProvider)?.networkId;
 
     // A fixed width lets the menu's IntrinsicWidth size without measuring the
-    // rows; no inner scrollable (which can't be intrinsic-measured) — the menu
-    // scrolls itself when the list is tall.
+    // list. The pinned search sits above a bounded, scrollable body — a
+    // SingleChildScrollView (unlike a lazy ListView) can be intrinsic-measured,
+    // so it's safe inside the menu.
     return SizedBox(
       width: 340,
       child: Column(
@@ -156,9 +157,17 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         children: [
           _SearchField(controller: _search, onChanged: _onQueryChanged),
           const Divider(height: 1),
-          const SizedBox(height: 6),
-          ..._rows(catalog, currentGridId),
-          const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 300),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _rows(catalog, currentGridId),
+              ),
+            ),
+          ),
         ],
       ),
     );

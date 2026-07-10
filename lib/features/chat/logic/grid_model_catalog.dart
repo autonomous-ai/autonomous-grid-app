@@ -35,7 +35,10 @@ final gridModelCatalogProvider = Provider.autoDispose<List<GridModelGroup>>((
   final grids = ref.watch(sessionProvider).networks;
   return [
     for (final grid in grids)
-      gridModelGroupFrom(grid, ref.watch(gridOverviewForProvider(grid.networkId))),
+      gridModelGroupFrom(
+        grid,
+        ref.watch(gridOverviewForProvider(grid.networkId)),
+      ),
   ];
 });
 
@@ -55,8 +58,14 @@ GridModelGroup gridModelGroupFrom(
       status: GridModelStatus.ready,
     );
   },
-  loading: () =>
-      GridModelGroup(grid: grid, options: const [], status: GridModelStatus.loading),
-  error: (_, _) =>
-      GridModelGroup(grid: grid, options: const [], status: GridModelStatus.offline),
+  loading: () => GridModelGroup(
+    grid: grid,
+    options: const [],
+    status: GridModelStatus.loading,
+  ),
+  error: (_, _) => GridModelGroup(
+    grid: grid,
+    options: const [],
+    status: GridModelStatus.offline,
+  ),
 );
