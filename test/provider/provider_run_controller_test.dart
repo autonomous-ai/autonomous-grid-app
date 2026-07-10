@@ -440,6 +440,35 @@ void main() {
     expect(container.read(providerRunControllerProvider), isA<ProviderRunStopped>());
   });
 
+  test('stop re-runs grid sync after leaving so the roster refreshes',
+      () async {
+    // Leaving deregisters the engine; a follow-up `grid sync` (mirroring the
+    // post-join sync) pulls the refreshed list so the UI stops showing it.
+    final cli = _RecordingCli();
+    final container = ProviderContainer(overrides: [
+      gridCliServiceProvider.overrideWithValue(cli),
+      nodeNameProvider.overrideWithValue('grid-app'),
+      gridHomeStoreProvider.overrideWithValue(_StubHomeStore(
+        record: EngineRunRecord(
+            engineId: 'grid-app', gridId: 'net', models: const ['m'], pid: io.pid),
+      )),
+      // Drop the delay so the fire-and-forget sync runs at once.
+      syncDelayAfterJoinProvider.overrideWithValue(Duration.zero),
+    ]);
+    addTearDown(container.dispose);
+
+    final notifier = container.read(providerRunControllerProvider.notifier);
+    notifier.reconcile('net');
+    await notifier.stop();
+    // The post-leave sync is fire-and-forget; let it reach the CLI.
+    await Future<void>.delayed(Duration.zero);
+
+    expect(cli.runs, contains(equals(const ['leave', 'net'])));
+    expect(cli.runs, contains(equals(const ['sync'])));
+    expect(
+        container.read(providerRunControllerProvider), isA<ProviderRunStopped>());
+  });
+
   test('starting on a new grid leaves the engine on the previous grid',
       () async {
     // Only one engine at a time: starting on gridB must `grid leave` gridA

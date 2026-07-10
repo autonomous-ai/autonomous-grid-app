@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/delete_network_controller.dart';
@@ -82,18 +83,20 @@ class _OverviewTab extends StatelessWidget {
         // What the grid can actually do (Chat / Images / Video) — the only place
         // a media capability shows, since it isn't a listed model.
         const GridCapabilitiesSection(),
-        const SizedBox(height: 22),
-        // API access first: the credentials a developer needs to call this grid.
-        ConsumerEnvCard(network: network),
-        // Then the models they can call, and the nodes serving them. Each adds
-        // its own leading gap and collapses to nothing when empty.
+        // One primary action for everyone: use the grid once it serves a model,
+        // otherwise set it up (owner/provider) or wait for one (consumer).
+        const SizedBox(height: 18),
+        _PrimaryAction(network: network),
+        // The models it serves, and the nodes serving them. Each adds its own
+        // leading gap and collapses to nothing when empty.
         const GridModelsSection(),
         const GridNodesSection(),
-        // "Set up engine" is provider-only; the quick "Test" action now lives in
-        // the header. Consumers have no body action, so skip the spacing too.
-        if (network.canManageProvider) ...[
-          const SizedBox(height: 20),
-          const _Actions(),
+        // Raw developer credentials are a consumer convenience; owners/providers
+        // manage via the Engines tab and reach the guide from "Use this grid",
+        // so the API-access block is dropped from their overview.
+        if (!network.canManageProvider) ...[
+          const SizedBox(height: 24),
+          ConsumerEnvCard(network: network),
         ],
         // Owner-only, pinned to the bottom: permanently delete this grid.
         if (network.isOwner) ...[
@@ -139,14 +142,13 @@ class _Header extends ConsumerWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            // Add member is owner-only (BE doesn't support member admin for
-            // providers yet); it sits beside Test so it's reachable from any tab.
+            // Owner/provider header action: managing members. Using the grid is
+            // the body's "Use this grid" card (for every role), so the header
+            // carries no test/try button.
             if (network.canManageProvider) ...[
+              const SizedBox(width: 12),
               _AddMemberButton(network: network),
-              const SizedBox(width: 8),
             ],
-            const _TestModelButton(),
           ],
         ),
         const SizedBox(height: 8),
@@ -186,23 +188,112 @@ class _Actions extends ConsumerWidget {
   }
 }
 
-/// The grid's header action: opens the quick model-test chat dialog. Lives
-/// top-right so it's always within reach whichever tab you're on.
-class _TestModelButton extends ConsumerWidget {
-  const _TestModelButton();
+/// The grid's front-door action — the plain answer to "what do I do here?".
+/// Waits for the overview (the stats section owns the loading/error message),
+/// then branches on whether the grid serves anything usable yet:
+/// - serving a model → a prominent "Use this grid" for everyone;
+/// - nothing yet + can host (owner/provider) → just "Set up engine";
+/// - nothing yet + consumer → a human "come back later" note, never a dead end.
+class _PrimaryAction extends ConsumerWidget {
+  const _PrimaryAction({required this.network});
+
+  final NetworkCredential network;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return FilledButton.icon(
-      onPressed: () => openPlaygroundDialog(context, ref),
-      icon: const Icon(Icons.chat_bubble_outline, size: 16),
-      label: const Text('Test'),
+    final overview = ref.watch(gridOverviewProvider);
+    if (overview.isLoading || overview.hasError) {
+      return const SizedBox.shrink();
+    }
+    final usable = ref.watch(gridHasChatProvider) ||
+        ref.watch(gridMediaCapabilitiesProvider).any;
+    if (usable) return const _TryThisGrid();
+    return network.canManageProvider
+        ? const _Actions()
+        : const _NothingServedYet();
+  }
+}
+
+/// Prominent "use this grid" card for a consumer — the two ways to actually use
+/// it, side by side: **Try it** opens the quick in-app chat (the same dialog the
+/// header "Test" opens for providers), and **How to use** jumps to the guide for
+/// wiring the grid into their own apps. No jargon, no setup.
+class _TryThisGrid extends ConsumerWidget {
+  const _TryThisGrid();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Use this grid',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Send it a message here, or connect it to your own apps.',
+            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: () => openPlaygroundDialog(context, ref),
+                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                label: const Text('Try it'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => ref
+                    .read(navSectionProvider.notifier)
+                    .select(NavSection.howToUse),
+                icon: const Icon(Icons.help_outline_rounded, size: 18),
+                label: const Text('How to use'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// Admin/provider header action: opens the invite-member dialog. Sits beside
-/// Test so member management is reachable from any tab, not just Members.
+/// Shown to a consumer when the grid is reachable but serving nothing yet, so an
+/// idle public grid reads as "come back later" instead of looking broken.
+class _NothingServedYet extends StatelessWidget {
+  const _NothingServedYet();
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Row(
+        children: const [
+          Icon(Icons.cloud_off_outlined, size: 18, color: AppPalette.textFaint),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'No one is sharing a model on this grid right now. Check back '
+              'later, or open another grid to try it.',
+              style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Admin/provider header action: opens the invite-member dialog. Reachable from
+/// any tab, not just Members.
 class _AddMemberButton extends StatelessWidget {
   const _AddMemberButton({required this.network});
   final NetworkCredential network;

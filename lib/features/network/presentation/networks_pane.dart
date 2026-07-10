@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../auth/logic/session_controller.dart';
+import 'getting_started_coach.dart';
 import 'network_detail.dart';
 import 'network_list.dart';
 
 /// The Networks section: a list column on the left, the selected network's
-/// detail on the right (Tailscale Devices ▸ device-detail).
+/// detail on the right (Tailscale Devices ▸ device-detail). A first-run coach
+/// sits across the top for consumer-only accounts (see [GettingStartedCoach]).
 class NetworksPane extends ConsumerWidget {
   const NetworksPane({super.key});
 
@@ -15,15 +17,23 @@ class NetworksPane extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(selectedNetworkProvider);
 
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const NetworkList(),
-        const VerticalDivider(width: 1),
+        const GettingStartedCoach(),
         Expanded(
-          child: selected == null
-              ? const _NoSelection()
-              : NetworkDetail(network: selected),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const NetworkList(),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: selected == null
+                    ? const _NoSelection()
+                    : NetworkDetail(network: selected),
+              ),
+            ],
+          ),
         ),
       ],
     );

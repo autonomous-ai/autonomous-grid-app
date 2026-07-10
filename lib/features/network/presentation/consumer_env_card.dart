@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/glass_card.dart';
 import 'detail_widgets.dart';
 
 /// The set of grids whose API key is currently revealed. Kept in a provider
@@ -30,53 +31,140 @@ class _RevealedKeysNotifier extends Notifier<Set<String>> {
 /// / [NetworkCredential.relayApiKey]), so this needs no subprocess. The key is
 /// masked until the viewer reveals it, and "How to use" jumps to the full How to
 /// use section that wires these values into a real client for them.
-class ConsumerEnvCard extends ConsumerWidget {
+class ConsumerEnvCard extends ConsumerStatefulWidget {
   const ConsumerEnvCard({super.key, required this.network});
 
   final NetworkCredential network;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ConsumerEnvCard> createState() => _ConsumerEnvCardState();
+}
+
+class _ConsumerEnvCardState extends ConsumerState<ConsumerEnvCard> {
+  // Collapsed by default so developer credentials never dominate the first
+  // thing a non-technical user sees — the "How to use" shortcut stays visible
+  // in the header regardless, and a developer expands the raw values once.
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final network = widget.network;
     final revealed =
         ref.watch(_revealedKeysProvider).contains(network.networkId);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DetailSection(
-          title: 'API access (for developers)',
-          // A bare "?" didn't read as clickable — a labelled button does, and
-          // says plainly what tapping it gives you.
-          trailing: Tooltip(
-            message: 'See how to connect your apps to this grid',
-            child: TextButton.icon(
-              icon: const Icon(Icons.help_outline_rounded, size: 16),
-              label: const Text('How to use'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppPalette.textSecondary,
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                textStyle:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-              onPressed: () => ref
-                  .read(navSectionProvider.notifier)
-                  .select(NavSection.howToUse),
+        _EnvHeader(
+          expanded: _expanded,
+          onToggle: () => setState(() => _expanded = !_expanded),
+          // Consumers reach "How to use" from the prominent "Use this grid"
+          // card, so only owners/providers (who have no such card) need the
+          // shortcut here — avoids showing it twice on the consumer overview.
+          showHowToUse: network.canManageProvider,
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: 8),
+          GlassCard(
+            child: Column(
+              children: [
+                EnvVarRow(name: 'OPENAI_BASE_URL', value: network.relayBaseUrl),
+                const Divider(height: 1, indent: 14, endIndent: 14),
+                EnvVarRow(
+                  name: 'OPENAI_API_KEY',
+                  value: network.relayApiKey,
+                  secret: true,
+                  revealed: revealed,
+                  onToggleReveal: () => ref
+                      .read(_revealedKeysProvider.notifier)
+                      .toggle(network.networkId),
+                ),
+              ],
             ),
           ),
-          children: [
-            EnvVarRow(name: 'OPENAI_BASE_URL', value: network.relayBaseUrl),
-            EnvVarRow(
-              name: 'OPENAI_API_KEY',
-              value: network.relayApiKey,
-              secret: true,
-              revealed: revealed,
-              onToggleReveal: () => ref
-                  .read(_revealedKeysProvider.notifier)
-                  .toggle(network.networkId),
-            ),
-          ],
-        ),
+        ],
       ],
+    );
+  }
+}
+
+/// The collapsible header for [ConsumerEnvCard]: a chevron + section label that
+/// toggles the raw credentials, with the "How to use" shortcut pinned at the
+/// trailing edge so it's reachable without expanding anything.
+class _EnvHeader extends StatelessWidget {
+  const _EnvHeader({
+    required this.expanded,
+    required this.onToggle,
+    required this.showHowToUse,
+  });
+
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  /// Whether to show the "How to use" shortcut at the trailing edge. Off for
+  /// consumers, who already have it on the "Use this grid" card above.
+  final bool showHowToUse;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+              child: Row(
+                children: [
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_down_rounded
+                        : Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppPalette.textFaint,
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'API ACCESS (FOR DEVELOPERS)',
+                    style: TextStyle(
+                      color: AppPalette.textFaint,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (showHowToUse) const _HowToUseButton(),
+      ],
+    );
+  }
+}
+
+/// Jumps to the full "How to use" guide — the plain-language path that wires
+/// this grid's credentials into a real client for a non-technical user.
+class _HowToUseButton extends ConsumerWidget {
+  const _HowToUseButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Tooltip(
+      message: 'See how to connect your apps to this grid',
+      child: TextButton.icon(
+        icon: const Icon(Icons.help_outline_rounded, size: 16),
+        label: const Text('How to use'),
+        style: TextButton.styleFrom(
+          foregroundColor: AppPalette.textSecondary,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        onPressed: () =>
+            ref.read(navSectionProvider.notifier).select(NavSection.howToUse),
+      ),
     );
   }
 }

@@ -334,7 +334,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       // `grid join` launched the engine in the background; it's serving now.
       state = ProviderRunActive(
           grid: grid, log: List.unmodifiable(log), starting: false, model: model);
-      _syncGridAfterJoin();
+      _syncGridSoon();
       return;
     }
 
@@ -361,12 +361,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     state = ProviderRunFailed(failure);
   }
 
-  /// After a successful join the engine is now advertised on the grid, so
-  /// re-run `grid sync` to pull the refreshed grid list/tokens (mirrors the
-  /// auto-sync after create/login). Fire-and-forget and best-effort: a sync
-  /// hiccup must never disturb a start that already succeeded, and the sync
-  /// controller surfaces its own status/expiry handling.
-  void _syncGridAfterJoin() {
+  /// Re-run `grid sync` a moment after the engine roster changes — a join or a
+  /// leave — to pull the refreshed grid list/tokens so the UI reflects the
+  /// engine appearing or disappearing (mirrors the auto-sync after
+  /// create/login). Fire-and-forget and best-effort: a sync hiccup must never
+  /// disturb the action that already succeeded, and the sync controller surfaces
+  /// its own status/expiry handling. Delayed so the relay has registered (or
+  /// deregistered) the engine before we re-read.
+  void _syncGridSoon() {
     final delay = ref.read(syncDelayAfterJoinProvider);
     unawaited(() async {
       await Future<void>.delayed(delay);
@@ -419,6 +421,9 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       } on Object {
         // A slow/failed leave must not block the Stop action's UI settling.
       }
+      // The engine has left, so re-sync the grid list/state — same as after a
+      // join — so the UI stops showing it as serving.
+      _syncGridSoon();
     }
     state = const ProviderRunStopped();
   }
