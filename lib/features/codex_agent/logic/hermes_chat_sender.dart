@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/command_log.dart';
-import '../../../infrastructure/cli/hermes_agent_service.dart';
+import '../../../infrastructure/cli/hermes_acp_service.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
@@ -12,32 +12,33 @@ import 'agent_prompt.dart';
 import 'agent_tool.dart';
 import 'codex_providers.dart';
 
-/// The hermes seam, or null when hermes is absent.
-final hermesAgentServiceProvider = Provider<HermesAgentService?>((ref) {
+/// The hermes ACP seam, or null when hermes is absent.
+final hermesAcpServiceProvider = Provider<HermesAcpService?>((ref) {
   final path = ref.watch(agentToolPathProvider(AgentTool.hermes));
-  return path == null ? null : HermesAgentServiceImpl(path);
+  return path == null ? null : HermesAcpServiceImpl(path);
 });
 
-/// The grid id Hermes's config was last pointed at, so we only rewrite
-/// `~/.hermes` when the target grid actually changes (Hermes has no inline
-/// base-url/key flag — the endpoint must live in its config).
-final hermesConfiguredGridProvider =
-    NotifierProvider<HermesConfiguredGrid, String?>(HermesConfiguredGrid.new);
+/// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
+/// `~/.hermes` when the target grid or model changes. ACP reads the model from
+/// config (no inline endpoint/model flag), so the config must carry the current
+/// selection.
+final hermesConfiguredProvider = NotifierProvider<HermesConfigured, String?>(
+  HermesConfigured.new,
+);
 
-class HermesConfiguredGrid extends Notifier<String?> {
+class HermesConfigured extends Notifier<String?> {
   @override
   String? build() => null;
 
-  void set(String? networkId) => state = networkId;
+  void set(String? key) => state = key;
 }
 
-/// The Agent-mode [ChatSender] backed by Hermes: routes a Chat-tab turn through
-/// `hermes -z` (one-shot, read-only), driven by the selected grid model.
+/// The Agent-mode [ChatSender] backed by Hermes via ACP (Agent Client Protocol).
 ///
 /// Unlike codex, Hermes talks OpenAI chat/completions, so it works with the grid
-/// today. It has no inline endpoint flag, so we point `~/.hermes` at the grid via
-/// the shared [ClientAppConfigurator] — but only when the target grid changes,
-/// to avoid rewriting the user's config on every message.
+/// today. ACP streams `tool_call` / `agent_message_chunk` updates, so this feeds
+/// the same live activity feed ([codexActivityProvider]) codex uses — the user
+/// sees each shell command and file read as it happens.
 final hermesChatSenderProvider = Provider<ChatSender>(
   (ref) => HermesChatSender(ref),
 );
@@ -60,7 +61,7 @@ class HermesChatSender implements ChatSender {
       yield const ChatSendFailure('Agent mode only supports text chat.');
       return;
     }
-    final service = _ref.read(hermesAgentServiceProvider);
+    final service = _ref.read(hermesAcpServiceProvider);
     if (service == null) {
       yield const ChatSendFailure(
         "Hermes isn't installed for Agent mode. Pick Hermes again to install "
@@ -81,44 +82,44 @@ class HermesChatSender implements ChatSender {
     }
 
     final workdir = _ref.read(agentWorkspaceDirProvider).path;
+    final activityLog = _ref.read(codexActivityProvider.notifier)..clear();
     final log = _ref.read(commandLogProvider.notifier);
-    final logId = log.begin(CliCallKind.start, 'hermes -z -m $model (agent)');
+    final logId = log.begin(CliCallKind.start, 'hermes acp -m $model (agent)');
 
-    final run = service.run(
-      args: ['-z', prompt, '-m', model, '--safe-mode'],
-      environment: const {},
-      workdir: workdir,
-    );
-
+    final run = service.prompt(text: prompt, workdir: workdir);
     final answer = StringBuffer();
     var settled = false;
     try {
-      await for (final line in run.lines) {
-        if (answer.isNotEmpty) answer.write('\n');
-        answer.write(line);
+      await for (final event in run.events) {
+        switch (event) {
+          case HermesAcpActivity(:final activity):
+            activityLog.upsert(activity);
+          case HermesAcpMessage(:final text):
+            answer.write(text);
+        }
       }
       settled = true;
     } finally {
       if (!settled) run.kill();
     }
+    await run.done;
 
-    final exit = await run.exitCode;
     final text = answer.toString().trim();
-    log.finish(logId, exitCode: exit, error: text.isEmpty ? 'no output' : null);
+    log.finish(logId, error: text.isEmpty ? 'no output' : null);
 
     if (text.isNotEmpty) {
       yield ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: text));
       return;
     }
-    yield ChatSendFailure(_humanize(exit));
+    yield const ChatSendFailure("The agent didn't return an answer.");
   }
 
-  /// Ensures `~/.hermes` points at [network] (idempotent, only rewritten when the
-  /// grid changed). Returns null on success, else a user-facing error line.
+  /// Ensures `~/.hermes` points at [network] with [model] (idempotent, only
+  /// rewritten when the grid or model changed). Returns null on success, else a
+  /// user-facing error line.
   Future<String?> _pointAtGrid(NetworkCredential network, String model) async {
-    if (_ref.read(hermesConfiguredGridProvider) == network.networkId) {
-      return null;
-    }
+    final key = '${network.networkId}|$model';
+    if (_ref.read(hermesConfiguredProvider) == key) return null;
     final result = await _ref.read(clientAppConfiguratorProvider).apply(
       ClientApp.hermes,
       network.relayBaseUrl,
@@ -128,10 +129,7 @@ class HermesChatSender implements ChatSender {
     if (result is ApplyError) {
       return "Couldn't point Hermes at this grid: ${result.message}";
     }
-    _ref.read(hermesConfiguredGridProvider.notifier).set(network.networkId);
+    _ref.read(hermesConfiguredProvider.notifier).set(key);
     return null;
   }
-
-  static String _humanize(int exit) =>
-      "The agent didn't respond (exit code $exit).";
 }
