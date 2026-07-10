@@ -16,13 +16,17 @@ import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/chat_bubble.dart';
 import '../../playground/presentation/chat_input_bar.dart';
-import '../../playground/presentation/model_picker.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import 'grid_model_picker.dart';
 
 /// How many images may ride along on a single vision chat message.
 const int _maxChatImages = 4;
+
+/// How close to the end (px) still counts as "at the bottom" — within this, new
+/// messages auto-follow and the jump-to-latest button hides.
+const double _atBottomThreshold = 120;
 
 /// The open conversation: a model picker on top, the scrolling transcript, and
 /// the composer at the foot. Reuses the Playground's shared chat widgets and the
@@ -53,6 +57,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// real selection from a half-typed name before persisting it.
   List<PlaygroundModelOption> _options = const [];
 
+  /// Whether the transcript is scrolled to (near) the bottom. Drives the
+  /// jump-to-latest button and whether new messages auto-follow.
+  bool _atBottom = true;
+
+  /// A model the user picked from another grid, held across the grid switch it
+  /// triggers so [_syncModelField] applies it instead of the new grid's default.
+  String? _pendingPick;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +72,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // rebuild on its own. Refresh so the modality-driven UI (attach bar, send
     // gating, hints) tracks the selection.
     _model.addListener(_onModelChanged);
+    _scroll.addListener(_onScroll);
+    // Reopening the tab rebuilds this view; land on the latest turn rather than
+    // stranding the user at the top of the transcript.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - _atBottomThreshold;
+    if (atBottom != _atBottom && mounted) {
+      setState(() => _atBottom = atBottom);
+    }
   }
 
   void _onModelChanged() {
@@ -80,6 +105,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   @override
   void dispose() {
     _model.removeListener(_onModelChanged);
+    _scroll.removeListener(_onScroll);
     _model.dispose();
     _message.dispose();
     _scroll.dispose();
@@ -97,6 +123,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
   ) {
     _options = options;
     final key = '${active?.id}|$gridId';
+    // A picker-driven grid switch just landed: honor the model the user chose
+    // rather than resetting to this grid's default, then treat it as synced.
+    final pending = _pendingPick;
+    if (pending != null) {
+      _pendingPick = null;
+      _synced = true;
+      _syncedKey = key;
+      _setModelText(pending);
+      return;
+    }
     if (!_synced || key != _syncedKey) {
       _synced = true;
       _syncedKey = key;
@@ -122,6 +158,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _model.text != value) _model.text = value;
     });
+  }
+
+  /// Apply a pick from the unified grid+model picker: switch to [grid] when it
+  /// differs (stashing the model so the re-sync keeps it), else just set the
+  /// model on the current grid.
+  void _pickGridModel(NetworkCredential grid, PlaygroundModelOption option) {
+    final currentId = ref.read(selectedNetworkProvider)?.networkId;
+    if (currentId == grid.networkId) {
+      _setModelText(option.id);
+      return;
+    }
+    _pendingPick = option.id;
+    ref.read(selectedNetworkProvider.notifier).select(grid);
   }
 
   /// The modality of the currently-selected option. Unknown / hand-typed ids
@@ -158,9 +207,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
     }
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animated = false}) {
     if (!_scroll.hasClients) return;
-    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    final target = _scroll.position.maxScrollExtent;
+    if (!animated) {
+      _scroll.jumpTo(target);
+      return;
+    }
+    _scroll.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
@@ -174,9 +232,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
     _syncModelField(sessions.active, options, widget.network.networkId);
 
-    // Keep the transcript pinned to the latest message.
-    ref.listen(chatSessionsProvider, (_, _) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    // Follow new turns while the user is already at the bottom, and always snap
+    // down after switching conversations so a reopened chat shows its latest
+    // message — but don't yank a user who scrolled up to read history.
+    ref.listen(chatSessionsProvider, (prev, next) {
+      final switched = prev?.activeId != next.activeId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (switched || _atBottom) _scrollToBottom();
+      });
     });
 
     // Nothing can answer yet: no model advertised on the grid. Keep the header
@@ -193,11 +256,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ChatHeader(
-          modelController: _model,
-          options: options,
-          networkName: widget.network.name,
-        ),
+        _ChatHeader(modelController: _model, onSelect: _pickGridModel),
         const Divider(height: 1),
         if (!hasModel)
           Expanded(
@@ -212,13 +271,26 @@ class _ChatViewState extends ConsumerState<ChatView> {
           Expanded(
             child: messages.isEmpty
                 ? _EmptyChat(hint: _emptyHint(modality))
-                : ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                    itemCount: messages.length + (trailing != null ? 1 : 0),
-                    itemBuilder: (context, i) => i < messages.length
-                        ? ChatBubble(message: messages[i])
-                        : trailing ?? const SizedBox.shrink(),
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                        itemCount: messages.length + (trailing != null ? 1 : 0),
+                        itemBuilder: (context, i) => i < messages.length
+                            ? ChatBubble(message: messages[i])
+                            : trailing ?? const SizedBox.shrink(),
+                      ),
+                      if (!_atBottom)
+                        Positioned(
+                          right: 16,
+                          bottom: 12,
+                          child: _JumpToLatestButton(
+                            onTap: () => _scrollToBottom(animated: true),
+                          ),
+                        ),
+                    ],
                   ),
           ),
           _Composer(
@@ -256,106 +328,35 @@ class _ChatViewState extends ConsumerState<ChatView> {
   };
 }
 
-/// The slim header above the transcript: a grid switcher (only when the account
-/// has more than one grid) beside the model picker, so you never have to leave
-/// Chat to change either. Left-aligned and width-capped so the two pickers stay
-/// a comfortable size on a wide window.
-class _ChatHeader extends ConsumerWidget {
-  const _ChatHeader({
-    required this.modelController,
-    required this.options,
-    required this.networkName,
-  });
+/// The slim header above the transcript: one unified grid+model picker beside
+/// the Agent backend picker, so you never have to leave Chat to change grid,
+/// model, or agent. Left-aligned and width-capped so it stays a comfortable
+/// size on a wide window.
+class _ChatHeader extends StatelessWidget {
+  const _ChatHeader({required this.modelController, required this.onSelect});
 
   final TextEditingController modelController;
-  final List<PlaygroundModelOption> options;
-  final String networkName;
+  final GridModelSelected onSelect;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final grids = ref.watch(sessionProvider).networks;
-    final selectedId = ref.watch(selectedNetworkProvider)?.networkId;
-    final showGrid = grids.length >= 2;
-
-    final modelPicker = ModelPicker(
-      controller: modelController,
-      options: options,
-      networkName: networkName,
-    );
-
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Flexible(
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: showGrid ? 740 : 360),
-              child: showGrid
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _GridDropdown(
-                            grids: grids,
-                            selectedId: selectedId,
-                            onSelect: (grid) => ref
-                                .read(selectedNetworkProvider.notifier)
-                                .select(grid),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(child: modelPicker),
-                      ],
-                    )
-                  : modelPicker,
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: GridModelPicker(
+                currentModelId: modelController.text,
+                onSelect: onSelect,
+              ),
             ),
           ),
           const SizedBox(width: 12),
           const AgentBackendPicker(),
         ],
       ),
-    );
-  }
-}
-
-/// A non-editable dropdown that switches the active grid in place. Keyed on the
-/// selection so an external change (e.g. from the Grids tab) re-syncs its label.
-class _GridDropdown extends StatelessWidget {
-  const _GridDropdown({
-    required this.grids,
-    required this.selectedId,
-    required this.onSelect,
-  });
-
-  final List<NetworkCredential> grids;
-  final String? selectedId;
-  final ValueChanged<NetworkCredential> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownMenu<String>(
-      key: ValueKey(selectedId),
-      initialSelection: selectedId,
-      requestFocusOnTap: false,
-      enableFilter: false,
-      expandedInsets: EdgeInsets.zero,
-      label: const Text('Grid'),
-      leadingIcon: const Icon(Icons.bolt, size: 18),
-      helperText: '${grids.length} grids',
-      dropdownMenuEntries: [
-        for (final grid in grids)
-          DropdownMenuEntry(value: grid.networkId, label: grid.name),
-      ],
-      onSelected: (id) {
-        if (id == null) return;
-        for (final grid in grids) {
-          if (grid.networkId == id) {
-            onSelect(grid);
-            return;
-          }
-        }
-      },
     );
   }
 }
@@ -476,6 +477,41 @@ class _AttachButton extends StatelessWidget {
       color: AppPalette.textSecondary,
       icon: const Icon(Icons.add_photo_alternate_outlined),
       onPressed: enabled ? onTap : null,
+    );
+  }
+}
+
+/// A small floating "jump to latest" control, shown over the transcript only
+/// while the user has scrolled up. Tapping animates back to the newest message
+/// so they never have to drag to the bottom by hand.
+class _JumpToLatestButton extends StatelessWidget {
+  const _JumpToLatestButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: 'Jump to latest',
+      child: Material(
+        color: scheme.surfaceContainerHighest,
+        elevation: 3,
+        shape: CircleBorder(side: BorderSide(color: scheme.outlineVariant)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 24,
+              color: scheme.onSurface,
+              semanticLabel: 'Jump to latest',
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
