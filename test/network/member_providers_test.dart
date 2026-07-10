@@ -36,7 +36,7 @@ ProviderContainer _container({
 /// Reads the members future while holding a subscription, so the autoDispose
 /// provider isn't torn down mid-load by a bare one-off `read`.
 Future<List<ManagedNetworkMember>> _readMembers(ProviderContainer container) {
-  container.listen(networkMembersProvider(_net), (_, __) {});
+  container.listen(networkMembersProvider(_net), (_, _) {});
   return container.read(networkMembersProvider(_net).future);
 }
 

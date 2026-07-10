@@ -145,7 +145,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _syncModelField(sessions.active, options, widget.network.networkId);
 
     // Keep the transcript pinned to the latest message.
-    ref.listen(chatSessionsProvider, (_, __) {
+    ref.listen(chatSessionsProvider, (_, _) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     });
 

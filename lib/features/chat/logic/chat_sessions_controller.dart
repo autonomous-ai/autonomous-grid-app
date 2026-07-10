@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -52,8 +54,12 @@ final chatSessionsProvider =
 );
 
 class ChatSessionsController extends Notifier<ChatSessionsState> {
+  StreamSubscription<ChatSendUpdate>? _sub;
+  Completer<void>? _done;
+
   @override
   ChatSessionsState build() {
+    ref.onDispose(_cancel);
     final conversations = ref.read(chatStoreProvider).loadAll();
     return ChatSessionsState(
       conversations: conversations,
@@ -133,28 +139,58 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
           attachments: attachments,
         );
 
-    await for (final update in updates) {
-      // The conversation may have been deleted mid-flight — bail rather than
-      // resurrect it.
-      final current = _find(conversation.id);
-      if (current == null) return;
-      switch (update) {
-        case ChatSendGenerating(:final progress, :final status):
-          state = _withPhase(
-            SendGenerating(progress: progress, status: status),
-          );
-        case ChatSendSuccess(:final reply):
-          _commit(
-            current.copyWith(
-              updatedAt: DateTime.now(),
-              messages: [...current.messages, reply],
-            ),
-            phase: const SendIdle(),
-          );
-        case ChatSendFailure(:final error):
-          state = _withPhase(const SendIdle(), error: error);
-      }
-    }
+    // Fold updates through a stored subscription so [stop] and disposal can
+    // cancel an in-flight reply instead of letting it write back later.
+    final done = _done = Completer<void>();
+    _sub = updates.listen(
+      (update) {
+        // The conversation may have been deleted mid-flight — drop the update
+        // rather than resurrect it.
+        final current = _find(conversation.id);
+        if (current == null) return;
+        switch (update) {
+          case ChatSendGenerating(:final progress, :final status):
+            state = _withPhase(
+              SendGenerating(progress: progress, status: status),
+            );
+          case ChatSendSuccess(:final reply):
+            _commit(
+              current.copyWith(
+                updatedAt: DateTime.now(),
+                messages: [...current.messages, reply],
+              ),
+              phase: const SendIdle(),
+            );
+          case ChatSendFailure(:final error):
+            state = _withPhase(const SendIdle(), error: error);
+        }
+      },
+      onDone: _finish,
+      onError: (Object _) => _finish(),
+      cancelOnError: true,
+    );
+    return done.future;
+  }
+
+  /// Stop an in-flight reply, leaving the already-persisted user turn in place
+  /// and returning the composer to idle.
+  void stop() {
+    _cancel();
+    if (state.sending) state = _withPhase(const SendIdle());
+  }
+
+  /// Settle the current send: drop the subscription and complete the future
+  /// [send] returned (whether it finished on its own or was cancelled).
+  void _finish() {
+    _sub = null;
+    final done = _done;
+    _done = null;
+    if (done != null && !done.isCompleted) done.complete();
+  }
+
+  void _cancel() {
+    _sub?.cancel();
+    _finish();
   }
 
   /// The open conversation, or a fresh (unsaved) one seeded with [model].

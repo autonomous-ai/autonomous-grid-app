@@ -36,7 +36,7 @@ class ContextLengthField extends ConsumerWidget {
     final maxContext = ref.watch(modelMaxContextProvider(model));
     return maxContext.when(
       loading: () => const _AdvancedTile(valueLabel: null, child: _ReadingLine()),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
       data: (max) {
         if (max == null || max <= minContextTokens) return const SizedBox.shrink();
         final current = value == null

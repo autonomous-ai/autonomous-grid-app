@@ -39,7 +39,7 @@ class DebugView extends ConsumerWidget {
                   )
                 : ListView.separated(
                     itemCount: logs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) => _LogTile(log: logs[i]),
                   ),
           ),

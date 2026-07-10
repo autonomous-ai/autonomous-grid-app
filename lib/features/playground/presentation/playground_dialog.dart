@@ -132,7 +132,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     final network = ref.watch(selectedNetworkProvider);
 
     // Keep the transcript pinned to the latest message.
-    ref.listen(chatControllerProvider, (_, __) {
+    ref.listen(chatControllerProvider, (_, _) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     });
 

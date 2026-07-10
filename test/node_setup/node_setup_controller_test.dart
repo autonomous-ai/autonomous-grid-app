@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_controller.dart';
@@ -39,6 +41,29 @@ class _RecordingLog implements NodeSetupLog {
 
   @override
   void endRun(String outcome) => runOutcome = outcome;
+}
+
+/// A [GridCliService] whose streaming process is driven line-by-line by the
+/// test: it hands back a [GridProcess] fed from [lines] with an exit code the
+/// test resolves via [exit], so a late line can be flushed after the step ends.
+class _ScriptedProcessCli implements GridCliService {
+  _ScriptedProcessCli(this.lines, this.exit);
+
+  final StreamController<CliLine> lines;
+  final Completer<int> exit;
+
+  @override
+  Future<GridProcess> start(List<String> args,
+          {Map<String, String>? environment}) async =>
+      GridProcess(lines: lines.stream, exitCode: exit.future, kill: () {});
+
+  @override
+  Future<CliResult> run(List<String> args) async =>
+      const CliResult(exitCode: 0, stdout: '', stderr: '');
+
+  @override
+  Stream<DownloadProgress> pull(List<String> args) =>
+      const Stream<DownloadProgress>.empty();
 }
 
 const _llamaStep = SetupStep(
@@ -235,5 +260,33 @@ void main() {
     expect(state.message, contains("can't run the built-in engine"));
     // A missing prerequisite is a soft "not ready" notice, not a red error.
     expect(state.kind, NodeSetupFailureKind.unsupported);
+  });
+
+  test('a late line after a step fails does not revive the running state',
+      () async {
+    // A streamed step can flush a buffered stderr tail after it has already
+    // exited non-zero; that line must not flip the card back to "Running step
+    // 1/1" and spin forever (there is no process left).
+    final lines = StreamController<CliLine>();
+    final exit = Completer<int>();
+    final container = _container(_ScriptedProcessCli(lines, exit));
+    final notifier = container.read(nodeSetupControllerProvider.notifier);
+
+    final run = notifier.run([_llamaStep]);
+    await Future<void>.delayed(Duration.zero); // let the listener subscribe
+    lines.add(const CliLine(isStderr: true, text: 'working'));
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupRunning>());
+
+    exit.complete(1); // the step fails
+    await run;
+    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
+
+    // A tail line arriving after the failure is dropped, not re-run.
+    lines.add(const CliLine(isStderr: true, text: 'late tail'));
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
+
+    await lines.close();
   });
 }

@@ -47,7 +47,7 @@ class _LocalImage extends StatelessWidget {
             File(path),
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
-            errorBuilder: (_, __, ___) => MediaErrorBox(
+            errorBuilder: (_, _, _) => MediaErrorBox(
               url: href,
               icon: Icons.broken_image_outlined,
               label: 'Image failed to load',

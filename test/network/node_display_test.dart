@@ -13,11 +13,11 @@ OverviewNode _node({
     OverviewNode.fromJson({
       'name': 'n',
       'engine': engine,
-      if (model != null) 'model': model,
+      'model': ?model,
       'models': models,
-      if (concurrency != null) 'max_concurrency': concurrency,
-      if (vramGb != null) 'vram_gb': vramGb,
-      if (vramTotalMb != null) 'vram_total_mb': vramTotalMb,
+      'max_concurrency': ?concurrency,
+      'vram_gb': ?vramGb,
+      'vram_total_mb': ?vramTotalMb,
       'online': true,
     });
 

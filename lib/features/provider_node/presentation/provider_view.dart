@@ -115,7 +115,7 @@ class _ServeSection extends ConsumerWidget {
     // node-setup/serve path there; it would only dead-end. Offer BYO instead.
     if (Platform.isWindows) {
       return [
-        if (failedNote != null) failedNote,
+        ?failedNote,
         const _BuiltInUnavailableNote(),
         const SizedBox(height: 16),
         // A hosted API provider needs no local engine, so it's the natural path
@@ -127,7 +127,7 @@ class _ServeSection extends ConsumerWidget {
     }
 
     return [
-      if (failedNote != null) failedNote,
+      ?failedNote,
       EngineBlock(
         icon: Icons.dns_outlined,
         title: 'LLama.cpp',

@@ -116,7 +116,7 @@ void main() {
   test('switching to a consumer network resets a provider-only section', () {
     final container = containerWith('grid-prov');
     // Keep the notifier alive so its build() registers the reset listener.
-    container.listen(navSectionProvider, (_, __) {});
+    container.listen(navSectionProvider, (_, _) {});
 
     container.read(navSectionProvider.notifier).select(NavSection.provider);
     expect(container.read(navSectionProvider), NavSection.provider);

@@ -160,13 +160,18 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     final step = steps[i];
     final process = await service.start(step.args);
     _process = process;
-    process.lines.listen((line) {
+    final sub = process.lines.listen((line) {
+      // Ignore a line that arrives after this step ended (cancel, failure, or
+      // the next step already started) — it must not revive a stale
+      // "Running step i" state and hang the spinner forever.
+      if (_cancelled || state is! NodeSetupRunning) return;
       _output(log, line);
       state = NodeSetupRunning(
           steps: steps, index: i, log: List.unmodifiable(log));
     });
 
     final exit = await process.exitCode;
+    await sub.cancel();
     _process = null;
     if (_cancelled) return false;
     if (exit == 0) return true;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -16,8 +18,14 @@ final chatControllerProvider =
     NotifierProvider<ChatController, ChatState>(ChatController.new);
 
 class ChatController extends Notifier<ChatState> {
+  StreamSubscription<ChatSendUpdate>? _sub;
+  Completer<void>? _done;
+
   @override
-  ChatState build() => const ChatState();
+  ChatState build() {
+    ref.onDispose(_cancel);
+    return const ChatState();
+  }
 
   Future<void> send({
     required NetworkCredential network,
@@ -47,20 +55,52 @@ class ChatController extends Notifier<ChatState> {
           localBaseUrl: localBaseUrl,
         );
 
-    await for (final update in updates) {
-      switch (update) {
-        case ChatSendGenerating(:final progress, :final status):
-          state = ChatState(
-            messages: history,
-            phase: SendGenerating(progress: progress, status: status),
-          );
-        case ChatSendSuccess(:final reply):
-          state = ChatState(messages: [...history, reply]);
-        case ChatSendFailure(:final error):
-          state = ChatState(messages: history, error: error);
-      }
-    }
+    // Fold updates through a stored subscription rather than `await for`, so
+    // closing the dialog ([clear]) can cancel it — a late update must never
+    // resurrect a closed dialog's transcript (or leave the input locked).
+    final done = _done = Completer<void>();
+    _sub = updates.listen(
+      (update) {
+        switch (update) {
+          case ChatSendGenerating(:final progress, :final status):
+            state = ChatState(
+              messages: history,
+              phase: SendGenerating(progress: progress, status: status),
+            );
+          case ChatSendSuccess(:final reply):
+            state = ChatState(messages: [...history, reply]);
+          case ChatSendFailure(:final error):
+            state = ChatState(messages: history, error: error);
+        }
+      },
+      onDone: _finish,
+      onError: (Object _) => _finish(),
+      cancelOnError: true,
+    );
+    return done.future;
   }
 
-  void clear() => state = const ChatState();
+  /// Cancel an in-flight send without wiping the transcript.
+  void stop() => _cancel();
+
+  /// Reset to an empty transcript, cancelling any in-flight send first so a
+  /// late update can't write back after the dialog closes.
+  void clear() {
+    _cancel();
+    state = const ChatState();
+  }
+
+  /// Settle the current send: drop the subscription and complete the future
+  /// [send] returned (whether it finished on its own or was cancelled).
+  void _finish() {
+    _sub = null;
+    final done = _done;
+    _done = null;
+    if (done != null && !done.isCompleted) done.complete();
+  }
+
+  void _cancel() {
+    _sub?.cancel();
+    _finish();
+  }
 }

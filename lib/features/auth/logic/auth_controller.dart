@@ -17,14 +17,22 @@ final authControllerProvider =
 /// code as they stream in, and resolves on the process exit code (cli/auth.py).
 class AuthController extends Notifier<AuthState> {
   GridProcess? _process;
+  StreamSubscription<CliLine>? _lineSub;
 
   @override
   AuthState build() {
-    ref.onDispose(() => _process?.kill());
+    ref.onDispose(() {
+      _lineSub?.cancel();
+      _process?.kill();
+    });
     return const AuthIdle();
   }
 
   Future<void> login() async {
+    // Re-entrancy guard: a second login while one is in flight would overwrite
+    // `_process` and leak the first, so ignore it (mirrors NodeSetupController).
+    if (state is AuthStarting || state is AuthAwaitingApproval) return;
+
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const AuthFailure('grid executable not found.');
@@ -38,7 +46,11 @@ class AuthController extends Notifier<AuthState> {
     // The merged CLI's device sign-in reads its own control-plane URL from
     // `~/.grid`, so the old `--api-url` knob is gone.
     _process = await service.start(['login', '--no-browser']);
-    _process!.lines.listen((line) {
+    _lineSub = _process!.lines.listen((line) {
+      // Drop lines that arrive after the login already resolved (timeout,
+      // cancel, or exit) so a buffered line can't flip the UI back to
+      // "Waiting for approval…" once the process is gone.
+      if (state is! AuthStarting && state is! AuthAwaitingApproval) return;
       if (line.isStderr) errorLines.add(line.text);
       parser.feed(line.text);
       final login = parser.result;
@@ -53,10 +65,13 @@ class AuthController extends Notifier<AuthState> {
     try {
       exitCode = await _process!.exitCode.timeout(const Duration(minutes: 5));
     } on TimeoutException {
+      await _lineSub?.cancel();
       _process?.kill();
       state = const AuthFailure('Sign-in timed out — please try again.');
       return;
     }
+    await _lineSub?.cancel();
+    _lineSub = null;
     if (exitCode == 0) {
       ref.invalidate(sessionProvider);
       // Clear any lingering "session expired" flag so RootView, which now treats
@@ -87,6 +102,8 @@ class AuthController extends Notifier<AuthState> {
   }
 
   void cancel() {
+    _lineSub?.cancel();
+    _lineSub = null;
     _process?.kill();
     state = const AuthIdle();
   }

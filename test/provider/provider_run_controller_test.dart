@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,6 +55,18 @@ class _RecordingCli extends FakeGridCliService {
   @override
   Future<CliResult> run(List<String> args) {
     runs.add(args);
+    return super.run(args);
+  }
+}
+
+/// A fake CLI whose `grid leave` never returns, so tests can prove the stop
+/// paths still settle the UI via their timeout.
+class _HangingLeaveCli extends FakeGridCliService {
+  @override
+  Future<CliResult> run(List<String> args) {
+    if (args.isNotEmpty && args.first == 'leave') {
+      return Completer<CliResult>().future; // never completes
+    }
     return super.run(args);
   }
 }
@@ -394,6 +407,29 @@ void main() {
             engineId: 'grid-app', gridId: 'net', models: const ['m'], pid: io.pid),
       ),
     );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(providerRunControllerProvider.notifier);
+    notifier.reconcile('net');
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunActive>());
+
+    await notifier.stop();
+    expect(container.read(providerRunControllerProvider), isA<ProviderRunStopped>());
+  });
+
+  test('stop settles to Stopped even when grid leave hangs', () async {
+    // A wedged relay makes `grid leave` never return; the Stop action must
+    // still land the UI on "Stopped" via its timeout, never strand it on
+    // "Engine running". The timeout is shrunk so the test doesn't wait 6s.
+    final container = ProviderContainer(overrides: [
+      gridCliServiceProvider.overrideWithValue(_HangingLeaveCli()),
+      nodeNameProvider.overrideWithValue('grid-app'),
+      gridHomeStoreProvider.overrideWithValue(_StubHomeStore(
+        record: EngineRunRecord(
+            engineId: 'grid-app', gridId: 'net', models: const ['m'], pid: io.pid),
+      )),
+      leaveTimeoutProvider.overrideWithValue(const Duration(milliseconds: 20)),
+    ]);
     addTearDown(container.dispose);
 
     final notifier = container.read(providerRunControllerProvider.notifier);

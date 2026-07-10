@@ -355,7 +355,7 @@ class _NodeTile extends StatelessWidget {
     final specs = <String>[
       nodeEngineLabel(node.engine),
       if ((node.deviceClass ?? '').isNotEmpty) node.deviceClass!.toUpperCase(),
-      if (vram != null) vram,
+      ?vram,
       nodeRoleSummary(node),
       if ((node.maxConcurrency ?? 0) > 1) '${node.maxConcurrency} parallel',
       if (node.throughputTokS != null) '~${node.throughputTokS!.round()} tok/s',

@@ -26,6 +26,13 @@ final freePortFinderProvider = Provider<FreePortFinder>((_) => findFreePort);
 final syncDelayAfterJoinProvider =
     Provider<Duration>((_) => const Duration(seconds: 5));
 
+/// Cap on any `grid leave` wait so a hung/slow relay can never strand the UI on
+/// "Engine running" (or block sign-out/quit). Shared by [ProviderRunController]'s
+/// stop and shutdown paths; overridable in tests to avoid a real multi-second
+/// wait.
+final leaveTimeoutProvider =
+    Provider<Duration>((_) => const Duration(seconds: 6));
+
 /// The name this machine joins a grid under (the node name on the grid page and
 /// the stable engine id for stop/reconcile) — the machine's own name via
 /// [deriveNodeName], so two machines don't both show as "grid-app". Overridable
@@ -397,14 +404,21 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }
 
   /// Stop the engine: `grid leave` unregisters and kills the detached engine.
+  /// Time-boxed and best-effort so a hung leave still lands the UI on
+  /// "Stopped" instead of stranding it on "Engine running".
   Future<void> stop() async {
     _stopping = true;
     _process?.kill();
+    _process = null;
     final service = _service;
     final grid = _grid;
     _grid = null;
     if (service != null && grid != null) {
-      await _leaveEngine(service, grid);
+      try {
+        await _leaveEngine(service, grid).timeout(ref.read(leaveTimeoutProvider));
+      } on Object {
+        // A slow/failed leave must not block the Stop action's UI settling.
+      }
     }
     state = const ProviderRunStopped();
   }
@@ -423,12 +437,12 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     final service = ref.read(gridCliServiceProvider);
     if (service != null) {
       final grids = <String>{
-        if (_grid != null) _grid!,
+        ?_grid,
         ...ref.read(gridHomeStoreProvider).listServingGrids(),
       };
       for (final grid in grids) {
         try {
-          await _leaveEngine(service, grid).timeout(const Duration(seconds: 6));
+          await _leaveEngine(service, grid).timeout(ref.read(leaveTimeoutProvider));
         } on Object {
           // Best-effort: a failed/slow leave must not block the caller.
         }

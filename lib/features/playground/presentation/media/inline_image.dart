@@ -21,8 +21,8 @@ class InlineImage extends StatelessWidget {
             imageUrl: url,
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
-            placeholder: (_, __) => const MediaLoadingBox(),
-            errorWidget: (_, __, ___) => MediaErrorBox(
+            placeholder: (_, _) => const MediaLoadingBox(),
+            errorWidget: (_, _, _) => MediaErrorBox(
               url: url,
               icon: Icons.broken_image_outlined,
               label: 'Image failed to load',

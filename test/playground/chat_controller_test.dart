@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -5,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/playground/logic/chat_controller.dart';
+import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/chat_transport.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/media_transport.dart';
@@ -85,6 +87,23 @@ ProviderContainer _container({
 
 MediaFile _file(String name, List<int> bytes) =>
     MediaFile(filename: name, contentBase64: base64.encode(bytes));
+
+/// A [ChatSender] whose stream stays open until the test drives it, so a send
+/// can be left mid-flight to exercise cancellation.
+class _OpenStreamSender implements ChatSender {
+  final controller = StreamController<ChatSendUpdate>();
+
+  @override
+  Stream<ChatSendUpdate> send({
+    required NetworkCredential network,
+    required String model,
+    required List<ChatMessage> history,
+    PlaygroundModality modality = PlaygroundModality.text,
+    List<MediaAttachment> attachments = const [],
+    String? localBaseUrl,
+  }) =>
+      controller.stream;
+}
 
 void main() {
   group('text chat over HTTP', () {
@@ -286,6 +305,41 @@ void main() {
       final state = container.read(chatControllerProvider);
       expect(state.error, contains('provider offline'));
       expect(state.messages, hasLength(1));
+    });
+  });
+
+  group('cancellation', () {
+    test('clear() cancels an in-flight send so a late reply cannot resurrect it',
+        () async {
+      final sender = _OpenStreamSender();
+      final container = ProviderContainer(
+        overrides: [chatSenderProvider.overrideWithValue(sender)],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      // Start a send but keep the stream open — the dialog is "generating".
+      final pending =
+          notifier.send(network: _credential(), model: 'm', message: 'hi');
+      await Future<void>.delayed(Duration.zero); // let send() subscribe
+      expect(container.read(chatControllerProvider).sending, isTrue);
+
+      // The dialog closes → clear() must cancel the subscription.
+      notifier.clear();
+      expect(container.read(chatControllerProvider).messages, isEmpty);
+      expect(container.read(chatControllerProvider).sending, isFalse);
+      // send()'s future settles on cancel rather than hanging forever.
+      await pending;
+
+      // A reply that arrives after close must be dropped, not written back.
+      sender.controller.add(
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'late')),
+      );
+      await sender.controller.close();
+
+      final state = container.read(chatControllerProvider);
+      expect(state.messages, isEmpty);
+      expect(state.sending, isFalse);
     });
   });
 }

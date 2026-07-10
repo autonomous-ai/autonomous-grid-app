@@ -51,15 +51,30 @@ class GridCliServiceImpl implements GridCliService {
     return env;
   }
 
+  /// Upper bound on a one-shot `grid` command. These are quick lifecycle calls
+  /// (login/logout/leave/sync/catalog), not streams, so a wait past this means
+  /// the CLI is wedged — return a failed result rather than hang a caller (and
+  /// through it, screens gated on it like preflight) forever.
+  static const _runTimeout = Duration(seconds: 60);
+
   @override
   Future<CliResult> run(List<String> args) async {
-    final result = await Process.run(executable, args,
-        runInShell: false, environment: _env);
-    return CliResult(
-      exitCode: result.exitCode,
-      stdout: result.stdout as String,
-      stderr: result.stderr as String,
-    );
+    try {
+      final result = await Process.run(executable, args,
+              runInShell: false, environment: _env)
+          .timeout(_runTimeout);
+      return CliResult(
+        exitCode: result.exitCode,
+        stdout: result.stdout as String,
+        stderr: result.stderr as String,
+      );
+    } on TimeoutException {
+      return const CliResult(
+        exitCode: -1,
+        stdout: '',
+        stderr: 'grid command timed out.',
+      );
+    }
   }
 
   @override
