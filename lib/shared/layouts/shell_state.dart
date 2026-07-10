@@ -9,12 +9,12 @@ enum NavSection {
   networks(Icons.bolt, 'Grids'),
   howToUse(Icons.help_outline_rounded, 'How to use'),
   provider(Icons.dns_outlined, 'Engines', providerOnly: true),
-  chat(Icons.chat_bubble_outline_rounded, 'Chat', devOnly: true),
+  chat(Icons.chat_bubble_outline_rounded, 'Chat', devOnly: false),
   overlord(
     Icons.monitor_heart_outlined,
     'Overlord',
     devOnly: true,
-    hidden: false,
+    hidden: true,
   ),
   debug(Icons.bug_report_outlined, 'Debug', devOnly: true);
 
