@@ -1,12 +1,9 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/models/media_event.dart';
+import '../../../infrastructure/api/relay_api_client.dart';
 import '../../../infrastructure/cli/command_log.dart';
-import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
 import 'network_models_provider.dart';
 import 'node_display.dart';
@@ -30,7 +27,32 @@ final gridOverviewForProvider = FutureProvider.autoDispose
       if (match.isEmpty) {
         throw const GridOverviewUnavailable('Grid not found.');
       }
-      return _fetchOverview(ref.read(commandLogProvider.notifier), match.first);
+      final network = match.first;
+      final log = ref.read(commandLogProvider.notifier);
+      final client = ref.read(relayApiClientProvider);
+      final id = log.begin(
+        CliCallKind.http,
+        'GET ${network.relayBaseUrl}/grid/overview',
+      );
+      try {
+        final overview = await client.overview(
+          baseUrl: network.relayBaseUrl,
+          apiKey: network.relayApiKey,
+        );
+        log.finish(id, exitCode: 200);
+        return overview;
+      } on RelayUnavailable catch (e) {
+        log.finish(
+          id,
+          exitCode: e.statusCode,
+          error: e.statusCode == null ? '${e.cause ?? 'unreachable'}' : null,
+        );
+        throw GridOverviewUnavailable(
+          e.statusCode == null
+              ? 'Grid is unreachable right now.'
+              : _reason(e.statusCode!),
+        );
+      }
     });
 
 /// Overview for the currently selected grid — the detail pane's convenience view
@@ -119,49 +141,6 @@ class GridOverviewUnavailable implements Exception {
   final String message;
   @override
   String toString() => message;
-}
-
-Future<GridOverview> _fetchOverview(
-  CommandLogNotifier log,
-  NetworkCredential network,
-) async {
-  final url = '${network.relayBaseUrl}/grid/overview';
-  final logId = log.begin(CliCallKind.http, 'GET $url');
-  var logged = false;
-  void done({int? status, String? error}) {
-    if (logged) return;
-    logged = true;
-    log.finish(logId, exitCode: status, error: error);
-  }
-
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-  try {
-    final request = await client
-        .getUrl(Uri.parse(url))
-        .timeout(const Duration(seconds: 4));
-    request.headers.set(
-      HttpHeaders.authorizationHeader,
-      'Bearer ${network.relayApiKey}',
-    );
-    final response = await request.close().timeout(const Duration(seconds: 6));
-    final body = await response.transform(utf8.decoder).join();
-    done(status: response.statusCode);
-    if (response.statusCode != 200) {
-      throw GridOverviewUnavailable(_reason(response.statusCode));
-    }
-    final decoded = jsonDecode(body);
-    if (decoded is! Map) {
-      throw const GridOverviewUnavailable('Malformed overview response.');
-    }
-    return GridOverview.fromJson(decoded.cast<String, dynamic>());
-  } on GridOverviewUnavailable {
-    rethrow;
-  } on Object catch (e) {
-    done(error: e.toString());
-    throw const GridOverviewUnavailable('Grid is unreachable right now.');
-  } finally {
-    client.close(force: true);
-  }
 }
 
 String _reason(int status) => switch (status) {
