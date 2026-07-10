@@ -7,6 +7,8 @@ import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
 import '../logic/grid_overview_provider.dart';
 import 'detail_widgets.dart';
+import 'missing_app_note.dart';
+import 'setup_steps.dart';
 
 /// Where the "Set up for me" write is in its lifecycle for the selected app.
 sealed class ApplyPhase {
@@ -94,7 +96,7 @@ class ClientAppPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (!installed) ...[
-          _MissingAppNote(name: info.name, onDownload: onOpenSite),
+          MissingAppNote(name: info.name, onDownload: onOpenSite),
           const SizedBox(height: 16),
         ],
         ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
@@ -110,13 +112,13 @@ class ClientAppPanel extends StatelessWidget {
           // A media-only grid can't be the app's chat model, so the agent still
           // needs its own model before it can build the skill — say so plainly.
           if (!hasChat) ...[
-            _NeedsChatModelNote(appName: info.name, command: info.executable),
+            NeedsChatModelNote(appName: info.name, command: info.executable),
             const SizedBox(height: 12),
           ],
           ..._mediaSkillCards(),
         ],
         if (showChat) ...[..._chatSetup(), const SizedBox(height: 16)],
-        _DocsLink(appName: info.name, onOpen: onOpenSite),
+        DocsLink(appName: info.name, onOpen: onOpenSite),
       ],
     );
   }
@@ -129,7 +131,7 @@ class ClientAppPanel extends StatelessWidget {
     final guide = appSetupGuide(info);
     final fileFirst = info.app != ClientApp.hermes;
     return [
-      _SetupSteps(title: guide.title, steps: guide.steps),
+      SetupSteps(title: guide.title, steps: guide.steps),
       const SizedBox(height: 16),
       if (fileFirst)
         GuideLabel(info.name, caption: 'Paste into ${info.configPath}')
@@ -446,214 +448,6 @@ class _StatusLine extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Shown on a media-only grid: the agent needs its own chat model to run and
-/// build the skill, and this grid (images/video) can't be that model. Names the
-/// next step so the user isn't stuck on "No inference provider configured".
-class _NeedsChatModelNote extends StatelessWidget {
-  const _NeedsChatModelNote({required this.appName, required this.command});
-
-  final String appName;
-  final String command;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      style: GlassCardStyle.inset,
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      child: Text(
-        '$appName needs its own chat model to run and build this skill. This '
-        "grid only makes images or video, so it can't be that model — set one "
-        'up first (run `$command model`, or add a provider API key in $appName), '
-        'then paste the prompt below.',
-        style: const TextStyle(
-          color: AppPalette.textSecondary,
-          fontSize: 12.5,
-          height: 1.4,
-        ),
-      ),
-    );
-  }
-}
-
-/// A one-line note + Download button shown when the client isn't installed yet.
-class _MissingAppNote extends StatelessWidget {
-  const _MissingAppNote({required this.name, required this.onDownload});
-
-  final String name;
-  final VoidCallback onDownload;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      style: GlassCardStyle.inset,
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "You don't have $name yet. Install it first, then paste the "
-            'connection below.',
-            style: const TextStyle(
-              color: AppPalette.textSecondary,
-              fontSize: 12.5,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: onDownload,
-            icon: const Icon(Icons.download_rounded, size: 16),
-            label: Text('Download $name'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A titled, numbered walkthrough to finish setup — the app's own [steps] in
-/// plain language (see `appSetupGuide`). Rendered as an accent-tinted card with
-/// numbered badges so the manual steps read as a distinct "do this" block
-/// instead of blending into the surrounding copy (users were skipping past it).
-class _SetupSteps extends StatelessWidget {
-  const _SetupSteps({required this.title, required this.steps});
-
-  final String title;
-  final List<String> steps;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
-      decoration: BoxDecoration(
-        color: AppPalette.accent.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.accent.withValues(alpha: 0.32)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.tune_rounded,
-                size: 16,
-                color: AppPalette.accent,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppPalette.textPrimary,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          for (var i = 0; i < steps.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _StepRow(number: i + 1, text: steps[i]),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One numbered step: an accent badge with its ordinal beside the instruction.
-class _StepRow extends StatelessWidget {
-  const _StepRow({required this.number, required this.text});
-
-  final int number;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 20,
-          height: 20,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppPalette.accent.withValues(alpha: 0.16),
-            shape: BoxShape.circle,
-          ),
-          child: Text(
-            '$number',
-            style: const TextStyle(
-              color: AppPalette.accent,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: AppPalette.textSecondary,
-                fontSize: 12.5,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// A subtle link to the app's official site for deeper setup docs.
-class _DocsLink extends StatelessWidget {
-  const _DocsLink({required this.appName, required this.onOpen});
-
-  final String appName;
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onOpen,
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '$appName docs',
-              style: const TextStyle(
-                color: AppPalette.accent,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 3),
-            const Icon(
-              Icons.open_in_new_rounded,
-              size: 13,
-              color: AppPalette.accent,
-            ),
-          ],
-        ),
       ),
     );
   }
