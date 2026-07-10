@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 
 /// Best-effort append-only diagnostic log split into one file per calendar day
@@ -59,8 +60,10 @@ class DailyLogFile {
         _pruneOlderThan(now);
       }
       file.writeAsStringSync('$block\n', mode: FileMode.append, flush: true);
-    } catch (_) {
-      // Best-effort: never surface an IO failure into the caller's flow.
+    } catch (e) {
+      // Best-effort: never surface an IO failure into the caller's flow, but
+      // log it so we can spot broken permissions or full disks in debug runs.
+      developer.log('DailyLogFile.append failed: $e');
     }
   }
 
@@ -81,8 +84,10 @@ class DailyLogFile {
           entry.deleteSync();
         }
       }
-    } catch (_) {
-      // Pruning is best-effort; on failure the old files simply stay put.
+    } catch (e) {
+      // Pruning is best-effort; on failure the old files simply stay put,
+      // but log it so we can spot permission/disk issues in debug runs.
+      developer.log('DailyLogFile._pruneOlderThan failed: $e');
     }
   }
 }

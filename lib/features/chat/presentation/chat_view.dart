@@ -15,10 +15,10 @@ import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/chat_bubble.dart';
-import '../../playground/presentation/chat_input_bar.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import 'chat_composer.dart';
 import 'grid_model_picker.dart';
 
 /// How many images may ride along on a single vision chat message.
@@ -296,7 +296,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         ],
                       ),
               ),
-              _Composer(
+              ComposerSection(
                 messageController: _message,
                 attachments: _attachments,
                 modality: modality,
@@ -404,133 +404,7 @@ class _FloatingPill extends StatelessWidget {
   }
 }
 
-/// The composer foot: an optional error line, the attachment thumbnails, and
-/// the message input. Text chat attaches images via the inline "+" for vision
-/// models; media generation uses the full source-image bar.
-class _Composer extends StatelessWidget {
-  const _Composer({
-    required this.messageController,
-    required this.attachments,
-    required this.modality,
-    required this.needsImage,
-    required this.sending,
-    required this.canSend,
-    required this.error,
-    required this.modelPicker,
-    required this.onAddAttachment,
-    required this.onPickImage,
-    required this.onRemoveAttachment,
-    required this.onSend,
-  });
-
-  final TextEditingController messageController;
-  final List<MediaAttachment> attachments;
-  final PlaygroundModality modality;
-  final bool needsImage;
-  final bool sending;
-  final bool canSend;
-  final String? error;
-  final Widget modelPicker;
-  final ValueChanged<MediaAttachment> onAddAttachment;
-  final VoidCallback onPickImage;
-  final ValueChanged<int> onRemoveAttachment;
-  final VoidCallback onSend;
-
-  bool get _isText => modality == PlaygroundModality.text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (error != null) ...[
-            Text(
-              error!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-          // Media generation: source-image bar with its own add tile + hint.
-          if (!_isText) ...[
-            AttachmentBar(
-              attachments: attachments,
-              maxCount: needsImage ? 1 : 3,
-              hint: needsImage
-                  ? 'Video needs a starting image to animate.'
-                  : 'Optional: attach up to 3 images to edit instead of generate.',
-              onAdd: onAddAttachment,
-              onRemoveAt: onRemoveAttachment,
-            ),
-            const SizedBox(height: 12),
-          ],
-          // Vision chat: thumbnails of what's attached; add via the inline "+".
-          if (_isText && attachments.isNotEmpty) ...[
-            AttachmentBar(
-              attachments: attachments,
-              maxCount: _maxChatImages,
-              showAddTile: false,
-              onAdd: onAddAttachment,
-              onRemoveAt: onRemoveAttachment,
-            ),
-            const SizedBox(height: 12),
-          ],
-          // Subtle model selector sitting just above the input — quiet, since
-          // the model rarely changes.
-          Align(alignment: Alignment.centerLeft, child: modelPicker),
-          const SizedBox(height: 2),
-          ChatInputBar(
-            controller: messageController,
-            sending: sending,
-            canSend: canSend,
-            hint: _inputHint(modality),
-            onSend: onSend,
-            prefix: _isText
-                ? _AttachButton(
-                    enabled: !sending && attachments.length < _maxChatImages,
-                    onTap: onPickImage,
-                  )
-                : null,
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _inputHint(PlaygroundModality modality) => switch (modality) {
-    PlaygroundModality.image => 'Describe the image…',
-    PlaygroundModality.video => 'Describe the motion…',
-    PlaygroundModality.text => 'Send a message…',
-  };
-}
-
-/// The inline "+" that attaches an image to a vision chat message. Disabled
-/// while sending or once the per-message image cap is reached.
-class _AttachButton extends StatelessWidget {
-  const _AttachButton({required this.enabled, required this.onTap});
-
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: enabled ? 'Attach image' : 'Up to $_maxChatImages images',
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-      iconSize: 20,
-      color: AppPalette.textSecondary,
-      icon: const Icon(Icons.add_photo_alternate_outlined),
-      onPressed: enabled ? onTap : null,
-    );
-  }
-}
-
-/// A small floating "jump to latest" control, shown over the transcript only
+/// A short gradient at the top of the transcript that fades messages into the
 /// while the user has scrolled up. Tapping animates back to the newest message
 /// so they never have to drag to the bottom by hand.
 class _JumpToLatestButton extends StatelessWidget {
