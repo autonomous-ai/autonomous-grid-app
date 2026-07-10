@@ -27,7 +27,11 @@ class SetupSteps extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.tune_rounded, size: 16, color: AppPalette.accent),
+              const Icon(
+                Icons.tune_rounded,
+                size: 16,
+                color: AppPalette.accent,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -45,7 +49,7 @@ class SetupSteps extends StatelessWidget {
           for (var i = 0; i < steps.length; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: StepRow(number: i + 1, text: steps[i]),
+              child: _StepRow(number: i + 1, text: steps[i]),
             ),
         ],
       ),
@@ -54,8 +58,8 @@ class SetupSteps extends StatelessWidget {
 }
 
 /// One numbered step: an accent badge with its ordinal beside the instruction.
-class StepRow extends StatelessWidget {
-  const StepRow({super.key, required this.number, required this.text});
+class _StepRow extends StatelessWidget {
+  const _StepRow({required this.number, required this.text});
 
   final int number;
   final String text;
@@ -127,7 +131,11 @@ class DocsLink extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 3),
-            const Icon(Icons.open_in_new_rounded, size: 13, color: AppPalette.accent),
+            const Icon(
+              Icons.open_in_new_rounded,
+              size: 13,
+              color: AppPalette.accent,
+            ),
           ],
         ),
       ),

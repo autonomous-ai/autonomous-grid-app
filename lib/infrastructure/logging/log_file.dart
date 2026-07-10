@@ -61,9 +61,8 @@ class DailyLogFile {
       }
       file.writeAsStringSync('$block\n', mode: FileMode.append, flush: true);
     } catch (e) {
-      // Best-effort: never surface an IO failure into the caller's flow, but
-      // log it so we can spot broken permissions or full disks in debug runs.
-      developer.log('DailyLogFile.append failed: $e');
+      // Best-effort: never surface an IO failure into the caller's flow.
+      _debugLog('DailyLogFile.append failed: $e');
     }
   }
 
@@ -85,11 +84,22 @@ class DailyLogFile {
         }
       }
     } catch (e) {
-      // Pruning is best-effort; on failure the old files simply stay put,
-      // but log it so we can spot permission/disk issues in debug runs.
-      developer.log('DailyLogFile._pruneOlderThan failed: $e');
+      // Pruning is best-effort; on failure the old files simply stay put.
+      _debugLog('DailyLogFile._pruneOlderThan failed: $e');
     }
   }
+}
+
+/// Debug-only diagnostic for a swallowed log-sink IO failure. A log sink can't
+/// route its own failure through the app's log stack ([AppLog]/`~/.grid/logs`)
+/// without recursing, so this uses `dart:developer` directly — the one
+/// deliberate exception to §12 "not raw dart:developer". `assert` strips it from
+/// release builds, so it never adds noise to a shipped app.
+void _debugLog(String message) {
+  assert(() {
+    developer.log(message);
+    return true;
+  }());
 }
 
 /// The dated filename for [base] on [day]: `app` → `app-20260710.log`.

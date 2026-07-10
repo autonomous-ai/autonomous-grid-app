@@ -93,7 +93,7 @@ class ComposerSection extends StatelessWidget {
             hint: _inputHint(modality),
             onSend: onSend,
             prefix: _isText
-                ? AttachButton(
+                ? _AttachButton(
                     enabled: !sending && attachments.length < maxChatImages,
                     onTap: onPickImage,
                   )
@@ -105,20 +105,16 @@ class ComposerSection extends StatelessWidget {
   }
 
   String _inputHint(PlaygroundModality modality) => switch (modality) {
-        PlaygroundModality.image => 'Describe the image…',
-        PlaygroundModality.video => 'Describe the motion…',
-        PlaygroundModality.text => 'Send a message…',
-      };
+    PlaygroundModality.image => 'Describe the image…',
+    PlaygroundModality.video => 'Describe the motion…',
+    PlaygroundModality.text => 'Send a message…',
+  };
 }
 
 /// The inline "+" that attaches an image to a vision chat message. Disabled
 /// while sending or once the per-message image cap is reached.
-class AttachButton extends StatelessWidget {
-  const AttachButton({
-    super.key,
-    required this.enabled,
-    required this.onTap,
-  });
+class _AttachButton extends StatelessWidget {
+  const _AttachButton({required this.enabled, required this.onTap});
 
   final bool enabled;
   final VoidCallback onTap;
@@ -126,9 +122,7 @@ class AttachButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: enabled
-          ? 'Attach image'
-          : 'Up to $maxChatImages images',
+      tooltip: enabled ? 'Attach image' : 'Up to $maxChatImages images',
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 40, height: 40),
       iconSize: 20,

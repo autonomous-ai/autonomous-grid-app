@@ -6,8 +6,6 @@ import '../../../shared/theme/app_theme.dart';
 import '../logic/grid_overview_provider.dart';
 import 'grid_overview_widgets.dart';
 
-const _mono = 'monospace';
-
 /// Live `GET {relayBaseUrl}/grid/overview` headline stats for the open grid.
 /// Owns the single loading/error indicator for the overview — the Models and
 /// Nodes sections stay quiet until the data resolves, so the pane never shows
@@ -64,7 +62,7 @@ class GridCapabilitiesSection extends ConsumerWidget {
           const Text(
             'This grid can',
             style: TextStyle(
-              fontFamily: _mono,
+              fontFamily: kGridMono,
               fontSize: 12.5,
               color: AppPalette.textFaint,
             ),
@@ -75,7 +73,6 @@ class GridCapabilitiesSection extends ConsumerWidget {
     );
   }
 }
-
 
 /// The grid's Nodes section — the machines pooling compute to serve it. Renders
 /// only once the overview resolves with at least one node; [GridStatsSection]
@@ -135,9 +132,3 @@ class GridModelsSection extends ConsumerWidget {
     );
   }
 }
-
-
-
-
-
-

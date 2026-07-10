@@ -9,11 +9,14 @@ import '../../../shared/widgets/status_dot.dart';
 import '../logic/grid_overview_provider.dart';
 import '../logic/node_display.dart';
 
-const _mono = 'monospace';
+/// Monospace family for the grid-overview surface. Shared by the card sections
+/// and these widgets so the two files agree on one font token (no duplicate
+/// literal).
+const kGridMono = 'monospace';
 
 /// A single capability chip: an accent icon plus its label.
 class CapabilityChip extends StatelessWidget {
-  const CapabilityChip({required this.icon, required this.label});
+  const CapabilityChip({super.key, required this.icon, required this.label});
   final IconData icon;
   final String label;
 
@@ -34,7 +37,7 @@ class CapabilityChip extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              fontFamily: _mono,
+              fontFamily: kGridMono,
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
               color: AppPalette.textPrimary,
@@ -48,7 +51,7 @@ class CapabilityChip extends StatelessWidget {
 
 /// Stats bar showing Models / Nodes / Uptime headline numbers.
 class StatsBar extends ConsumerWidget {
-  const StatsBar({required this.stats});
+  const StatsBar({super.key, required this.stats});
   final GridStats stats;
 
   @override
@@ -65,11 +68,11 @@ class StatsBar extends ConsumerWidget {
       child: IntrinsicHeight(
         child: Row(
           children: [
-            StatCell(label: 'MODELS', value: '$models'),
+            _StatCell(label: 'MODELS', value: '$models'),
             const VerticalDivider(width: 1),
-            StatCell(label: 'NODES', value: '${stats.nodes}'),
+            _StatCell(label: 'NODES', value: '${stats.nodes}'),
             const VerticalDivider(width: 1),
-            StatCell(label: 'UPTIME', value: uptime),
+            _StatCell(label: 'UPTIME', value: uptime),
           ],
         ),
       ),
@@ -78,8 +81,8 @@ class StatsBar extends ConsumerWidget {
 }
 
 /// One stat cell inside the stats bar: a small label over a large number.
-class StatCell extends StatelessWidget {
-  const StatCell({required this.label, required this.value});
+class _StatCell extends StatelessWidget {
+  const _StatCell({required this.label, required this.value});
   final String label;
   final String value;
 
@@ -94,7 +97,7 @@ class StatCell extends StatelessWidget {
             Text(
               label,
               style: const TextStyle(
-                fontFamily: _mono,
+                fontFamily: kGridMono,
                 fontSize: 11,
                 letterSpacing: 0.6,
                 color: AppPalette.textFaint,
@@ -103,8 +106,10 @@ class StatCell extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontFamily: _mono,
+                fontFamily: kGridMono,
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
                 color: AppPalette.textPrimary,
@@ -119,7 +124,11 @@ class StatCell extends StatelessWidget {
 
 /// Section heading: a bold title over a softer subtitle.
 class SectionHeading extends StatelessWidget {
-  const SectionHeading({required this.title, required this.subtitle});
+  const SectionHeading({
+    super.key,
+    required this.title,
+    required this.subtitle,
+  });
   final String title;
   final String subtitle;
 
@@ -131,7 +140,7 @@ class SectionHeading extends StatelessWidget {
         Text(
           title,
           style: const TextStyle(
-            fontFamily: _mono,
+            fontFamily: kGridMono,
             fontSize: 19,
             fontWeight: FontWeight.w700,
             color: AppPalette.textPrimary,
@@ -141,7 +150,7 @@ class SectionHeading extends StatelessWidget {
         Text(
           subtitle,
           style: const TextStyle(
-            fontFamily: _mono,
+            fontFamily: kGridMono,
             fontSize: 13,
             color: AppPalette.textSecondary,
           ),
@@ -152,8 +161,8 @@ class SectionHeading extends StatelessWidget {
 }
 
 /// Thin glass-card wrapper used by model and node tiles.
-class TileCard extends StatelessWidget {
-  const TileCard({required this.child, this.padding});
+class _TileCard extends StatelessWidget {
+  const _TileCard({required this.child, this.padding});
   final Widget child;
   final EdgeInsetsGeometry? padding;
 
@@ -170,7 +179,7 @@ class TileCard extends StatelessWidget {
 
 /// One compact model row: modality glyph, copyable id, kind pill, Copy action.
 class ModelTile extends StatelessWidget {
-  const ModelTile({required this.model});
+  const ModelTile({super.key, required this.model});
   final OverviewModel model;
 
   @override
@@ -186,27 +195,27 @@ class ModelTile extends StatelessWidget {
         : isVideoCapability(model.id)
         ? Icons.movie_outlined
         : Icons.image_outlined;
-    return TileCard(
+    return _TileCard(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
         children: [
-          TileIcon(icon: icon, accent: true, size: 28),
+          _TileIcon(icon: icon, accent: true, size: 28),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               model.id,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontFamily: _mono,
+                fontFamily: kGridMono,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: AppPalette.textPrimary,
               ),
             ),
           ),
-          if (pill != null) ...[const SizedBox(width: 10), Pill(text: pill)],
+          if (pill != null) ...[const SizedBox(width: 10), _Pill(text: pill)],
           const SizedBox(width: 10),
-          CopyChip(id: model.id),
+          _CopyChip(id: model.id),
         ],
       ),
     );
@@ -215,7 +224,7 @@ class ModelTile extends StatelessWidget {
 
 /// One node row — engine, device class, VRAM, role, concurrency, throughput.
 class NodeTile extends StatelessWidget {
-  const NodeTile({required this.node});
+  const NodeTile({super.key, required this.node});
   final OverviewNode node;
 
   @override
@@ -230,10 +239,10 @@ class NodeTile extends StatelessWidget {
       if ((node.maxConcurrency ?? 0) > 1) '${node.maxConcurrency} parallel',
       if (node.throughputTokS != null) '~${node.throughputTokS!.round()} tok/s',
     ].where((s) => s.isNotEmpty).toList();
-    return TileCard(
+    return _TileCard(
       child: Row(
         children: [
-          TileIcon(
+          _TileIcon(
             icon: media ? Icons.auto_awesome_outlined : Icons.dns_outlined,
             accent: false,
             size: 34,
@@ -247,7 +256,7 @@ class NodeTile extends StatelessWidget {
                   node.name,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontFamily: _mono,
+                    fontFamily: kGridMono,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: AppPalette.textPrimary,
@@ -256,8 +265,10 @@ class NodeTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   specs.join('  ·  '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontFamily: _mono,
+                    fontFamily: kGridMono,
                     fontSize: 12,
                     color: AppPalette.textSecondary,
                   ),
@@ -266,7 +277,7 @@ class NodeTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          OnlineTag(online: node.online),
+          _OnlineTag(online: node.online),
         ],
       ),
     );
@@ -274,8 +285,8 @@ class NodeTile extends StatelessWidget {
 }
 
 /// Compact online/offline status, dot plus word, on a node row.
-class OnlineTag extends StatelessWidget {
-  const OnlineTag({required this.online});
+class _OnlineTag extends StatelessWidget {
+  const _OnlineTag({required this.online});
   final bool online;
 
   @override
@@ -289,7 +300,7 @@ class OnlineTag extends StatelessWidget {
         Text(
           online ? 'Online' : 'Offline',
           style: TextStyle(
-            fontFamily: _mono,
+            fontFamily: kGridMono,
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: color,
@@ -301,8 +312,8 @@ class OnlineTag extends StatelessWidget {
 }
 
 /// Modality/media glyph container with optional accent background.
-class TileIcon extends StatelessWidget {
-  const TileIcon({required this.icon, required this.accent, this.size = 32});
+class _TileIcon extends StatelessWidget {
+  const _TileIcon({required this.icon, required this.accent, this.size = 32});
   final IconData icon;
   final bool accent;
   final double size;
@@ -326,8 +337,8 @@ class TileIcon extends StatelessWidget {
 }
 
 /// Small rounded label pill (e.g. "Chat", "Images") on a tile.
-class Pill extends StatelessWidget {
-  const Pill({required this.text});
+class _Pill extends StatelessWidget {
+  const _Pill({required this.text});
   final String text;
 
   @override
@@ -341,7 +352,7 @@ class Pill extends StatelessWidget {
       child: Text(
         text,
         style: const TextStyle(
-          fontFamily: _mono,
+          fontFamily: kGridMono,
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
           color: AppPalette.textSecondary,
@@ -352,8 +363,8 @@ class Pill extends StatelessWidget {
 }
 
 /// Small "Copy" pill on a model tile — copies the model's exact id.
-class CopyChip extends StatelessWidget {
-  const CopyChip({required this.id});
+class _CopyChip extends StatelessWidget {
+  const _CopyChip({required this.id});
   final String id;
 
   @override
@@ -363,7 +374,7 @@ class CopyChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => copyToClipboard(context, id),
+        onTap: () => _copyToClipboard(context, id),
         child: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
@@ -374,7 +385,7 @@ class CopyChip extends StatelessWidget {
               Text(
                 'Copy',
                 style: TextStyle(
-                  fontFamily: _mono,
+                  fontFamily: kGridMono,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
@@ -391,7 +402,7 @@ class CopyChip extends StatelessWidget {
 
 /// Loading/error placeholder for the overview pane.
 class OverviewMessage extends StatelessWidget {
-  const OverviewMessage({required this.icon, required this.text});
+  const OverviewMessage({super.key, required this.icon, required this.text});
   final IconData icon;
   final String text;
 
@@ -407,7 +418,7 @@ class OverviewMessage extends StatelessWidget {
             child: Text(
               text,
               style: const TextStyle(
-                fontFamily: _mono,
+                fontFamily: kGridMono,
                 fontSize: 13,
                 color: AppPalette.textSecondary,
               ),
@@ -420,7 +431,7 @@ class OverviewMessage extends StatelessWidget {
 }
 
 /// Copy [text] to the clipboard and confirm with a brief snackbar.
-void copyToClipboard(BuildContext context, String text) {
+void _copyToClipboard(BuildContext context, String text) {
   Clipboard.setData(ClipboardData(text: text));
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
