@@ -118,8 +118,10 @@ class _CurrentGridLabel extends ConsumerWidget {
 }
 
 /// Avatar that opens an account menu: email, "Check for updates", the app
-/// version, and Sign out. Opening the menu also kicks off a silent update check,
-/// so a newer build surfaces just from viewing the version — no separate tap.
+/// version, and Sign out. Once a check has found a newer build the avatar wears
+/// a dot and the item reads "Update to …", so an update is noticed instead of
+/// having to be hunted for. Check outcomes are toasted app-wide by
+/// `UpdateToastScope`.
 class _AccountMenu extends ConsumerWidget {
   const _AccountMenu({required this.name, required this.email});
   final String name;
@@ -130,12 +132,8 @@ class _AccountMenu extends ConsumerWidget {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
     final updater = ref.read(appUpdaterServiceProvider);
     final version = ref.watch(appVersionProvider).asData?.value;
-    // Surface every check outcome as a toast so an explicit "Check for updates"
-    // never silently does nothing — Sparkle only shows its own UI on success.
-    ref.listen(appUpdateStatusProvider, (_, next) {
-      final status = next.asData?.value;
-      if (status != null) _showUpdateToast(context, status);
-    });
+    final status = ref.watch(appUpdateStatusProvider).asData?.value;
+    final available = status is UpdateAvailable ? status : null;
     return PopupMenuButton<String>(
       tooltip: name,
       offset: const Offset(0, 42),
@@ -157,14 +155,21 @@ class _AccountMenu extends ConsumerWidget {
           child: Text(email, style: const TextStyle(fontSize: 12.5)),
         ),
         const PopupMenuDivider(),
-        if (updater.isEnabled)
-          const PopupMenuItem(
+        // Mirrors the macOS "Grid ▸ Check for Updates…" app-menu item — both
+        // routes offer the same action, and both always answer (a build with no
+        // update feed says so in a toast instead of doing nothing).
+        if (updater.isSupported)
+          PopupMenuItem(
             value: 'check_updates',
             child: Row(
               children: [
-                Icon(Icons.system_update_alt, size: 18),
-                SizedBox(width: 10),
-                Text('Check for updates'),
+                Icon(Icons.system_update_alt,
+                    size: 18,
+                    color: available == null ? null : AppPalette.brandBolt),
+                const SizedBox(width: 10),
+                Text(available == null
+                    ? 'Check for updates'
+                    : 'Update to ${available.version ?? 'the latest version'}'),
               ],
             ),
           ),
@@ -188,15 +193,7 @@ class _AccountMenu extends ConsumerWidget {
           ),
         ),
       ],
-      child: CircleAvatar(
-        radius: 14,
-        backgroundColor: AppPalette.accentMuted,
-        child: Text(initial,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600)),
-      ),
+      child: _Avatar(initial: initial, updateAvailable: available != null),
     );
   }
 
@@ -226,19 +223,28 @@ class _AccountMenu extends ConsumerWidget {
   }
 }
 
-/// Toasts a "Check for updates" outcome so the tap always resolves to feedback —
-/// Sparkle shows its own dialog only when it succeeds, so this covers the
-/// checking / up-to-date / failed states it stays silent on.
-void _showUpdateToast(BuildContext context, UpdateStatus status) {
-  final message = switch (status) {
-    UpdateChecking() => 'Checking for updates…',
-    UpdateUpToDate() => "You're on the latest version.",
-    UpdateAvailable(:final version) => version == null
-        ? 'An update is available — follow the prompt to install.'
-        : 'Update available: $version — follow the prompt to install.',
-    UpdateFailed(:final message) => "Couldn't check for updates: $message",
-  };
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
-  );
+/// The account avatar, dotted while a newer build is waiting — the one hint the
+/// user gets before opening the menu, so an update doesn't stay hidden behind a
+/// click no one thinks to make.
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.initial, required this.updateAvailable});
+  final String initial;
+  final bool updateAvailable;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatar = CircleAvatar(
+      radius: 14,
+      backgroundColor: AppPalette.accentMuted,
+      child: Text(initial,
+          style: const TextStyle(
+              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+    );
+    if (!updateAvailable) return avatar;
+    return Badge(
+      backgroundColor: AppPalette.brandBolt,
+      smallSize: 8,
+      child: avatar,
+    );
+  }
 }

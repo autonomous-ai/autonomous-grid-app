@@ -48,6 +48,14 @@ class UpdateFailed extends UpdateStatus {
   final String message;
 }
 
+/// This build can't auto-update at all — no appcast feed was baked in (a local
+/// / dev build), so there is nothing to check against. Emitted instead of doing
+/// nothing, because the macOS "Check for Updates…" menu item always exists and
+/// a silent no-op reads as a broken app.
+class UpdateUnsupported extends UpdateStatus {
+  const UpdateUnsupported();
+}
+
 /// Thin wrapper over the `auto_updater` (Sparkle / WinSparkle) plugin. macOS-only
 /// for now — Windows is deferred until its signing key + installer exist — and a
 /// no-op elsewhere so callers never have to branch on the platform.
@@ -72,13 +80,27 @@ class AppUpdaterService with UpdaterListener {
   final StreamController<UpdateStatus> _status =
       StreamController<UpdateStatus>.broadcast();
 
-  /// Outcomes of update checks, so the UI can toast "checking / up to date /
-  /// available / failed". Broadcast: late subscribers just miss earlier events.
-  Stream<UpdateStatus> get status => _status.stream;
+  UpdateStatus? _last;
 
-  /// True when a feed is configured on a platform the updater supports. Gates
-  /// every action so callers don't branch on the platform.
-  bool get isEnabled => Platform.isMacOS && kAppcastFeedUrl.isNotEmpty;
+  /// Outcomes of update checks, so the UI can toast "checking / up to date /
+  /// available / failed". The latest outcome is replayed to new subscribers:
+  /// the launch check runs before the first frame, and without a replay its
+  /// "update available" would be emitted into the void and never shown.
+  Stream<UpdateStatus> get status async* {
+    final last = _last;
+    if (last != null) yield last;
+    yield* _status.stream;
+  }
+
+  /// True on the platforms that ship the updater UI (and the "Check for
+  /// Updates…" app-menu item). The in-app menu mirrors this so both entry
+  /// points exist together — a build with no feed still answers, with
+  /// [UpdateUnsupported].
+  bool get isSupported => Platform.isMacOS;
+
+  /// True when a feed is also configured, i.e. a check can actually run. Gates
+  /// every Sparkle call so callers don't branch on the platform.
+  bool get isEnabled => isSupported && kAppcastFeedUrl.isNotEmpty;
 
   /// Points Sparkle at the feed, schedules periodic background checks, and fires
   /// one silent check now so a newer build is surfaced on launch without the user
@@ -101,10 +123,15 @@ class AppUpdaterService with UpdaterListener {
   /// User-initiated check — shows Sparkle's UI even when already up to date, so
   /// an explicit "Check for updates" tap always gives feedback. Emits
   /// [UpdateChecking] up front so the UI acknowledges the tap even if the native
-  /// side never responds.
+  /// side never responds, and [UpdateUnsupported] when this build has no feed —
+  /// a tap must never resolve to silence.
   Future<void> checkForUpdates() async {
-    if (!isEnabled) return;
     _log.info('update', 'User-initiated update check');
+    if (!isEnabled) {
+      _log.info('update', 'Updater disabled — this build has no update feed');
+      _emit(const UpdateUnsupported());
+      return;
+    }
     _emit(const UpdateChecking());
     await _guard(() => autoUpdater.checkForUpdates(inBackground: false));
   }
@@ -122,8 +149,8 @@ class AppUpdaterService with UpdaterListener {
 
   /// Wire the native macOS "Grid ▸ Check for Updates…" menu item to
   /// [checkForUpdates]. Only macOS ships that menu item, so this is a no-op
-  /// elsewhere; [checkForUpdates] itself still guards on [isEnabled], so an
-  /// unconfigured dev build (no appcast feed) simply does nothing.
+  /// elsewhere; on a build with no feed the tap resolves to [UpdateUnsupported]
+  /// rather than to silence.
   void bindNativeMenu() {
     if (!Platform.isMacOS) return;
     _menuChannel.setMethodCallHandler((call) async {
@@ -165,6 +192,7 @@ class AppUpdaterService with UpdaterListener {
       _log.info('update', 'Quitting to install update');
 
   void _emit(UpdateStatus status) {
+    _last = status;
     if (!_status.isClosed) _status.add(status);
   }
 }
@@ -172,8 +200,9 @@ class AppUpdaterService with UpdaterListener {
 /// The app-update seam. Overridden in `main` with the one instance that owns the
 /// Sparkle listener + log; the default (unoverridden) instance is inert since no
 /// feed is configured in tests.
-final appUpdaterServiceProvider =
-    Provider<AppUpdaterService>((ref) => AppUpdaterService());
+final appUpdaterServiceProvider = Provider<AppUpdaterService>(
+  (ref) => AppUpdaterService(),
+);
 
 /// Stream of check outcomes for the UI to toast — a tap never silently no-ops.
 /// Empty until the first check runs.

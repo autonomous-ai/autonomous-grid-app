@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../features/app_update/presentation/update_toast_scope.dart';
 import '../shared/layouts/tray_controller.dart';
 import '../shared/theme/app_theme.dart';
 import 'root_view.dart';
@@ -16,7 +17,13 @@ class GridApp extends StatelessWidget {
       themeMode: ThemeMode.dark,
       theme: buildAppTheme(),
       darkTheme: buildAppTheme(),
-      home: const WindowLifecycleScope(child: TrayScope(child: RootView())),
+      home: const WindowLifecycleScope(
+        child: TrayScope(
+          // Update-check feedback is mounted app-wide: the macOS "Check for
+          // Updates…" menu item works on the login screen too.
+          child: UpdateToastScope(child: RootView()),
+        ),
+      ),
     );
   }
 }

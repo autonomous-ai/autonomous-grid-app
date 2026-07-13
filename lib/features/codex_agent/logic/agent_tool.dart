@@ -33,13 +33,14 @@ class AgentToolInfo {
 }
 
 const Map<AgentTool, AgentToolInfo> kAgentTools = {
-  AgentTool.codex: AgentToolInfo(
-    tool: AgentTool.codex,
-    displayName: 'Codex',
-    executable: 'codex',
-    brewInstallCommand: 'brew install --cask codex',
-    blurb: "OpenAI's coding agent. Reads files and runs read-only tasks.",
-  ),
+  // waiting BE support - CodeX
+  // AgentTool.codex: AgentToolInfo(
+  //   tool: AgentTool.codex,
+  //   displayName: 'Codex',
+  //   executable: 'codex',
+  //   brewInstallCommand: 'brew install --cask codex',
+  //   blurb: "OpenAI's coding agent. Reads files and runs read-only tasks.",
+  // ),
   AgentTool.hermes: AgentToolInfo(
     tool: AgentTool.hermes,
     displayName: 'Hermes',
