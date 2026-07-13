@@ -55,11 +55,12 @@ Future<void> main() async {
   });
   appLog.info('app', 'Window ready');
 
-  // Configure macOS auto-update (Sparkle) before the UI shows: silent, scheduled
-  // background checks that surface a prompt only when a newer signed build is
-  // published. A no-op off macOS or when no appcast feed is configured.
-  // `bindNativeMenu` links the "Grid ▸ Check for Updates…" app-menu item to the
-  // same updater.
+  // Configure macOS auto-update (Sparkle) before the UI shows: point it at the
+  // feed and schedule its periodic checks. The *launch* check is fired later,
+  // from the app shell — a first-run machine is busy installing an engine and
+  // downloading a model, and an update prompt must not land on top of that.
+  // A no-op off macOS or when no appcast feed is configured. `bindNativeMenu`
+  // links the "Grid ▸ Check for Updates…" app-menu item to the same updater.
   final updater = AppUpdaterService(log: appLog);
   await updater.init();
   updater.bindNativeMenu();

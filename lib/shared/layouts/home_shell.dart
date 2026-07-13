@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/chat/presentation/chat_pane.dart';
 import '../../features/network/logic/create_network_controller.dart';
@@ -46,6 +49,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           .read(createNetworkControllerProvider.notifier)
           .createFirstGridIfNeeded();
       _resumeSharing();
+      // The launch update check lives here, not at startup: the shell is only
+      // reached once first-run setup is done or skipped, so Sparkle's "restart
+      // to update" prompt can't land on top of a model download.
+      unawaited(ref.read(appUpdaterServiceProvider).checkInBackground());
     });
   }
 

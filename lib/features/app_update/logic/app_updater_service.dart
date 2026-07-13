@@ -102,15 +102,20 @@ class AppUpdaterService with UpdaterListener {
   /// every Sparkle call so callers don't branch on the platform.
   bool get isEnabled => isSupported && kAppcastFeedUrl.isNotEmpty;
 
-  /// Points Sparkle at the feed, schedules periodic background checks, and fires
-  /// one silent check now so a newer build is surfaced on launch without the user
-  /// asking. A no-op when the updater isn't enabled.
+  /// Points Sparkle at the feed and schedules its periodic background checks. A
+  /// no-op when the updater isn't enabled.
+  ///
+  /// Deliberately does *not* check right now: on a first run the app is busy
+  /// installing an engine and downloading a model, and Sparkle's "a new version
+  /// is available" dialog would land on top of that — asking the user to restart
+  /// the very app that is mid-download. The launch check is fired from the app
+  /// shell instead ([checkInBackground]), which is only reached once setup is
+  /// done or skipped.
   Future<void> init() async {
     if (!isEnabled) return;
     autoUpdater.addListener(this);
     await autoUpdater.setFeedURL(kAppcastFeedUrl);
     await autoUpdater.setScheduledCheckInterval(_dailySeconds);
-    unawaited(checkInBackground());
   }
 
   /// Silent check — Sparkle surfaces its update prompt only when a newer build
