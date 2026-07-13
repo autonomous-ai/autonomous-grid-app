@@ -36,11 +36,13 @@ ManagedNetworkCreateFn _stubCreate((ManagedNetwork?, ManagedNetworkError?) resul
       result;
 }
 
-/// Like [_stubCreate] but records the name passed to the create call.
+/// Like [_stubCreate] but records the name (and optionally the type) passed to
+/// the create call.
 ManagedNetworkCreateFn _recordCreate(
   List<String> names,
-  (ManagedNetwork?, ManagedNetworkError?) result,
-) {
+  (ManagedNetwork?, ManagedNetworkError?) result, {
+  List<ManagedNetworkType>? types,
+}) {
   return ({
     required String apiUrl,
     required String sessionToken,
@@ -48,6 +50,7 @@ ManagedNetworkCreateFn _recordCreate(
     required ManagedNetworkType type,
   }) async {
     names.add(name);
+    types?.add(type);
     return result;
   };
 }
@@ -80,10 +83,15 @@ class _RecordingCli extends FakeGridCliService {
   }
 }
 
-NetworkCredential _existingNetwork() => NetworkCredential.fromToml(const {
+/// A grid already in `credentials.toml`. [roles] decides whether the user owns
+/// it (`admin`) or was merely invited onto someone else's — the two cases the
+/// auto-provision gate must tell apart.
+NetworkCredential _existingNetwork({List<String> roles = const ['admin']}) =>
+    NetworkCredential.fromToml({
       'network_id': 'net-existing',
       'lan_signaling_url': 'https://signal.example',
       'access_token': 'a',
+      'roles': roles,
     });
 
 ProviderContainer _container({
@@ -214,6 +222,26 @@ void main() {
         isA<CreateNetworkDone>());
   });
 
+  test('createFirstGridIfNeeded provisions a private grid', () async {
+    // A grid the user never asked for must not be open to strangers. Asserted on
+    // the wire value, not the enum name — the names read backwards on purpose
+    // (permissionedProviders IS `permissioned-public`, the Private one).
+    final names = <String>[];
+    final types = <ManagedNetworkType>[];
+    final container = _container(
+      create: _recordCreate(names, (_created, null), types: types),
+      cli: FakeGridCliService(),
+      email: 'huy@gmail.com',
+    );
+
+    await container
+        .read(createNetworkControllerProvider.notifier)
+        .createFirstGridIfNeeded();
+
+    expect(types.single.wire, 'permissioned-public');
+    expect(types.single.label, 'Private');
+  });
+
   test('createFirstGridIfNeeded skips a second call while a create is in flight',
       () async {
     final names = <String>[];
@@ -238,7 +266,7 @@ void main() {
     await first;
   });
 
-  test('createFirstGridIfNeeded is a no-op when a grid already exists',
+  test('createFirstGridIfNeeded is a no-op when the user already owns a grid',
       () async {
     final names = <String>[];
     final container = _container(
@@ -255,5 +283,26 @@ void main() {
     expect(names, isEmpty);
     expect(container.read(createNetworkControllerProvider),
         isA<CreateNetworkIdle>());
+  });
+
+  test('createFirstGridIfNeeded still provisions for a guest on someone '
+      "else's grid", () async {
+    // Invited onto a colleague's grid but owning none: without a grid of their
+    // own they can't share a model anywhere, so they still need the starter one.
+    final names = <String>[];
+    final container = _container(
+      create: _recordCreate(names, (_created, null)),
+      cli: FakeGridCliService(),
+      networks: [_existingNetwork(roles: const ['consumer'])],
+      email: 'huy@gmail.com',
+    );
+
+    await container
+        .read(createNetworkControllerProvider.notifier)
+        .createFirstGridIfNeeded();
+
+    expect(names, ['Huy AI Grid']);
+    expect(container.read(createNetworkControllerProvider),
+        isA<CreateNetworkDone>());
   });
 }

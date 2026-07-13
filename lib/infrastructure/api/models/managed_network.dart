@@ -33,6 +33,13 @@ enum ManagedNetworkType {
 
   /// The API default when `network_type` is omitted.
   static const ManagedNetworkType fallback = ManagedNetworkType.permissionedPublic;
+
+  /// What the app picks for the starter grid it provisions on the user's behalf:
+  /// **Private** (`permissioned-public` — providers and consumers both
+  /// whitelisted). A grid nobody asked for must not be open to strangers by
+  /// default; making it Public stays a deliberate choice in the create dialog.
+  static const ManagedNetworkType starterDefault =
+      ManagedNetworkType.permissionedProviders;
 }
 
 /// Response from `POST /v1/grid/managed-networks` — a freshly created managed

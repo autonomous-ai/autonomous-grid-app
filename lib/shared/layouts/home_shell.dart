@@ -17,6 +17,7 @@ import '../widgets/glass_surface.dart';
 import 'shell_state.dart';
 import 'widgets/ambient_background.dart';
 import 'widgets/app_top_bar.dart';
+import 'widgets/grid_provision_banner.dart';
 import 'widgets/node_setup_banner.dart';
 import 'widgets/session_expired_banner.dart';
 import 'widgets/side_nav.dart';
@@ -36,9 +37,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void initState() {
     super.initState();
     // The signed-in shell is the one spot guaranteed to appear both after a
-    // fresh sign-in and when simply re-opening the app — so a grid-less account
-    // gets its starter grid provisioned here. Post-frame so we never mutate
-    // state during the first build; the controller no-ops once a grid exists.
+    // fresh sign-in and when simply re-opening the app — so an account that owns
+    // no grid gets its starter grid provisioned here (being a guest on someone
+    // else's grid doesn't count: you can't share a model on it). Post-frame so
+    // we never mutate state during the first build; the controller no-ops once
+    // the user owns one.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref
@@ -64,6 +67,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             children: [
               const AppTopBar(),
               const SessionExpiredBanner(),
+              const GridProvisionBanner(),
               const NodeSetupBanner(),
               Expanded(
                 child: Padding(

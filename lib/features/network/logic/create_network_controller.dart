@@ -34,21 +34,33 @@ class CreateNetworkIdle extends CreateNetworkState {
   const CreateNetworkIdle();
 }
 
+/// A create is in flight. [auto] marks the starter grid the app provisions by
+/// itself (see [CreateNetworkController.createFirstGridIfNeeded]) — nobody asked
+/// for it on screen, so only that case is announced in the app-wide banner; a
+/// create the user started from the dialog already has a spinner in front of them.
 class CreateNetworkSubmitting extends CreateNetworkState {
-  const CreateNetworkSubmitting();
+  const CreateNetworkSubmitting({this.auto = false});
+  final bool auto;
 }
 
 /// The network was created. [joinWarning] is set when the network exists on the
 /// server but couldn't be added to the local list (so the UI can nudge).
 class CreateNetworkDone extends CreateNetworkState {
-  const CreateNetworkDone(this.network, {this.joinWarning});
+  const CreateNetworkDone(this.network, {this.joinWarning, this.auto = false});
   final ManagedNetwork network;
   final String? joinWarning;
+
+  /// Whether this was the app's own starter grid — see [CreateNetworkSubmitting].
+  final bool auto;
 }
 
 class CreateNetworkFailed extends CreateNetworkState {
-  const CreateNetworkFailed(this.message);
+  const CreateNetworkFailed(this.message, {this.auto = false});
   final String message;
+
+  /// Whether the failed create was the app's own — see [CreateNetworkSubmitting].
+  /// A silent failure here would leave the user with no grid and no explanation.
+  final bool auto;
 }
 
 /// Creates a managed (hosted) grid via the control-plane API, then refreshes the
@@ -58,24 +70,27 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
   @override
   CreateNetworkState build() => const CreateNetworkIdle();
 
+  /// Creates a grid. [auto] flags the app's own starter grid, so the app-wide
+  /// banner can announce a create the user never asked for (and its failure).
   Future<void> submit({
     required String name,
     required ManagedNetworkType type,
+    bool auto = false,
   }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
-      state = const CreateNetworkFailed('Enter a name for your grid.');
+      state = CreateNetworkFailed('Enter a name for your grid.', auto: auto);
       return;
     }
 
     final session = ref.read(sessionProvider);
     final token = session.sessionToken;
     if (token == null || token.isEmpty) {
-      state = const CreateNetworkFailed('Sign in before creating a grid.');
+      state = CreateNetworkFailed('Sign in before creating a grid.', auto: auto);
       return;
     }
 
-    state = const CreateNetworkSubmitting();
+    state = CreateNetworkSubmitting(auto: auto);
 
     final apiUrl = ref.read(gridApiUrlProvider);
     final create = ref.read(managedNetworkCreateProvider);
@@ -99,29 +114,37 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
     );
 
     if (network == null) {
-      state = CreateNetworkFailed(error?.message ?? 'Could not create the grid.');
+      state = CreateNetworkFailed(
+        error?.message ?? 'Could not create the grid.',
+        auto: auto,
+      );
       return;
     }
 
     final joinWarning = await _syncAndSelect(network.networkId);
     ref.invalidate(sessionProvider);
-    state = CreateNetworkDone(network, joinWarning: joinWarning);
+    state = CreateNetworkDone(network, joinWarning: joinWarning, auto: auto);
   }
 
-  /// Provision the user's very first grid, named after them ("Đức AI Grid" from
-  /// the profile name, else "Huy AI Grid" from huy@gmail.com). Fired when the
+  /// Provision the user's own grid, named after them ("Đức AI Grid" from the
+  /// profile name, else "Huy AI Grid" from huy@gmail.com). Fired when the
   /// signed-in shell appears (see `HomeShell`), so it covers both a fresh login
-  /// and simply re-opening the app on a grid-less account. No-ops once a grid
-  /// exists, and while a create is already in flight, so it's safe to call more
-  /// than once and never races a manual create. Delegates to [submit] for the
-  /// actual create + local join + session refresh.
+  /// and simply re-opening the app.
+  ///
+  /// The gate is *owning* a grid, not merely being on one: someone invited to a
+  /// colleague's grid has networks but can't share a model anywhere, which left
+  /// them without the one grid every user needs. No-ops once they own one, and
+  /// while a create is already in flight, so it's safe to call more than once
+  /// and never races a manual create. Delegates to [submit] for the actual
+  /// create + local join + session refresh.
   Future<void> createFirstGridIfNeeded() async {
     if (state is CreateNetworkSubmitting) return;
     final session = ref.read(sessionProvider);
-    if (session.networks.isNotEmpty) return;
+    if (session.networks.any((n) => n.isOwner)) return;
     await submit(
       name: defaultGridName(name: session.userName, email: session.userEmail),
-      type: ManagedNetworkType.fallback,
+      type: ManagedNetworkType.starterDefault,
+      auto: true,
     );
   }
 
