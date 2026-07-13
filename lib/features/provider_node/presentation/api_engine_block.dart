@@ -7,8 +7,9 @@ import '../logic/api_engine_catalog.dart';
 import '../logic/provider_run_controller.dart';
 import 'engine_block.dart';
 
-/// The "cloud AI" engine block: serve a hosted model (e.g. OpenAI's) to the grid
-/// using the user's own API key, with no local engine, model download, or setup.
+/// The "Cloud Provider" engine block: serve a hosted model (e.g. OpenAI's) to
+/// the grid using the user's own API key, with no local engine, model download,
+/// or setup.
 ///
 /// Hidden entirely when no hosted provider is available — either `grid` is
 /// missing or the installed CLI whitelists none we can present ([apiEnginesProvider]).
@@ -28,9 +29,9 @@ class ApiEngineBlock extends ConsumerWidget {
 
     return EngineBlock(
       icon: Icons.cloud_outlined,
-      title: 'Cloud AI',
-      subtitle: 'Serve a hosted model like OpenAI’s with your own API key '
-          '— no download or setup.',
+      title: 'Cloud Provider',
+      subtitle: 'Share models from a hosted provider using your own API key. '
+          'No local model download required.',
       child: _ApiEngineForm(network: network, engines: available),
     );
   }
@@ -99,6 +100,16 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
   Future<void> _openKeyHelp(String url) =>
       launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
+  /// Why Start can't run yet, or null when it can. Surfaced as a tooltip on the
+  /// disabled button so it explains itself instead of sitting greyed out.
+  String? _startBlockedReason() {
+    if (!_usingStoredKey && _key.text.trim().isEmpty) {
+      return 'Enter a valid API key to start sharing cloud models.';
+    }
+    if (_selected.isEmpty) return 'Pick at least one model to share.';
+    return null;
+  }
+
   void _start() {
     final engine = _engine;
     // Preserve whitelist order; serve-all sends no -m (the CLI's zero-config
@@ -157,8 +168,8 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
         ],
         const SizedBox(height: 12),
         Text(
-          'Your key is saved on this computer only and used to serve these '
-          'models to your grid. Requests to them leave the grid for ${engine.provider.label}.',
+          'Your key stays on this computer. When grid requests use these '
+          'models, prompts are sent to ${engine.provider.label} for inference.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
@@ -167,19 +178,37 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
           alignment: Alignment.centerLeft,
           child: ListenableBuilder(
             listenable: _key,
-            builder: (context, _) {
-              final keyOk = _usingStoredKey || _key.text.trim().isNotEmpty;
-              final canStart = keyOk && _selected.isNotEmpty;
-              return FilledButton.icon(
-                onPressed: canStart ? _start : null,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Start engine'),
-              );
-            },
+            builder: (context, _) => _StartButton(
+              blockedReason: _startBlockedReason(),
+              onPressed: _start,
+            ),
           ),
         ),
       ],
     );
+  }
+}
+
+/// Start, carrying the reason it can't run yet as a tooltip on the disabled
+/// button — a greyed-out button that never says why is a dead end for a
+/// first-time user.
+class _StartButton extends StatelessWidget {
+  const _StartButton({required this.blockedReason, required this.onPressed});
+
+  /// Why the button is disabled, or null when it can start.
+  final String? blockedReason;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = blockedReason;
+    final button = FilledButton.icon(
+      onPressed: reason == null ? onPressed : null,
+      icon: const Icon(Icons.play_arrow),
+      label: const Text('Start cloud engine'),
+    );
+    if (reason == null) return button;
+    return Tooltip(message: reason, child: button);
   }
 }
 
@@ -268,7 +297,7 @@ class _KeyField extends StatelessWidget {
           autocorrect: false,
           enableSuggestions: false,
           decoration: InputDecoration(
-            labelText: '${provider.label} API key',
+            labelText: 'Provider API key',
             hintText: provider.keyHint,
             border: const OutlineInputBorder(),
             // Cap the toggle so it doesn't inflate the field above the theme's
@@ -289,7 +318,7 @@ class _KeyField extends StatelessWidget {
             child: TextButton.icon(
               onPressed: () => onOpenHelp(helpUrl),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Where do I find my key?'),
+              label: const Text('Find your API key'),
             ),
           ),
       ],
@@ -298,9 +327,9 @@ class _KeyField extends StatelessWidget {
 }
 
 /// A compact multi-select for the whitelisted models: a field showing a summary
-/// ("All models (4)" / "2 of 4 models") that drops a checkbox menu. All are
-/// shared by default; the menu stays open while ticking so several can be picked
-/// in one go. Keeps the block short instead of a full checkbox list.
+/// ("All available models (4)" / "2 of 4 models") that drops a checkbox menu.
+/// All are shared by default; the menu stays open while ticking so several can
+/// be picked in one go. Keeps the block short instead of a full checkbox list.
 class _ModelMultiSelect extends StatelessWidget {
   const _ModelMultiSelect({
     required this.models,
@@ -341,7 +370,9 @@ class _ModelMultiSelect extends StatelessWidget {
 
   String _summary() {
     if (selected.isEmpty) return 'No models selected';
-    if (selected.length == models.length) return 'All models (${models.length})';
+    if (selected.length == models.length) {
+      return 'All available models (${models.length})';
+    }
     return '${selected.length} of ${models.length} models';
   }
 }
@@ -362,7 +393,7 @@ class _ModelField extends StatelessWidget {
       child: InputDecorator(
         isEmpty: false,
         decoration: const InputDecoration(
-          labelText: 'Models to share',
+          labelText: 'Models available to the grid',
           border: OutlineInputBorder(),
         ),
         child: Row(

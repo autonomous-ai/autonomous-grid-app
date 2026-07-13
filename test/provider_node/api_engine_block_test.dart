@@ -56,9 +56,9 @@ void main() {
       (tester) async {
     await _pumpBlock(tester);
 
-    expect(find.text('Cloud AI'), findsOneWidget);
-    expect(find.text('Models to share'), findsOneWidget);
-    expect(find.text('All models (2)'), findsOneWidget);
+    expect(find.text('Cloud Provider'), findsOneWidget);
+    expect(find.text('Models available to the grid'), findsOneWidget);
+    expect(find.text('All available models (2)'), findsOneWidget);
     // Freshness note surfaces the CLI's verified date.
     expect(find.textContaining('8 Jul 2026'), findsOneWidget);
   });
@@ -68,7 +68,7 @@ void main() {
     await _pumpBlock(tester);
 
     // Open the dropdown and untick one model.
-    await tester.tap(find.text('All models (2)'));
+    await tester.tap(find.text('All available models (2)'));
     await tester.pumpAndSettle();
     expect(find.text('gpt-5.5'), findsOneWidget); // a menu row is showing
 
@@ -82,7 +82,7 @@ void main() {
 
   testWidgets('the open menu rows span the full field width', (tester) async {
     await _pumpBlock(tester);
-    await tester.tap(find.text('All models (2)'));
+    await tester.tap(find.text('All available models (2)'));
     await tester.pumpAndSettle();
 
     // The anchor's own box is the field; each menu row must match its width

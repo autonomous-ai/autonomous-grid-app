@@ -56,7 +56,7 @@ class ContextLengthField extends ConsumerWidget {
 }
 
 /// Collapsible "advanced" container for the setting: an outlined tile titled
-/// "Context length" with the current value on the same row, expanding to reveal
+/// "Context window" with the current value on the same row, expanding to reveal
 /// [child]. Kept to one line so its collapsed height matches the input fields
 /// above it, and tucked away until the user wants it.
 class _AdvancedTile extends StatelessWidget {
@@ -89,7 +89,7 @@ class _AdvancedTile extends StatelessWidget {
           expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
           title: Row(
             children: [
-              Text('Context length', style: theme.textTheme.titleSmall),
+              Text('Context window', style: theme.textTheme.titleSmall),
               const Spacer(),
               Text(
                 valueLabel ?? 'Reading limit…',

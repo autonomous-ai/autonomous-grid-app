@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum NavSection {
   networks(Icons.bolt, 'Grids'),
   howToUse(Icons.help_outline_rounded, 'How to use'),
-  provider(Icons.dns_outlined, 'Engines'),
+  provider(Icons.dns_outlined, 'Model Engines'),
   chat(Icons.chat_bubble_outline_rounded, 'Chat', devOnly: false),
   overlord(
     Icons.monitor_heart_outlined,

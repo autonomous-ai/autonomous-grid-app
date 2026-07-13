@@ -47,7 +47,7 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
     }
 
     return const SectionScaffold(
-      title: 'Engines',
+      title: 'Model Engines',
       // _ServeSection owns its own scrolling: the running engine fills the
       // height (only its log scrolls), other states scroll as a page.
       child: _ServeSection(),
@@ -137,8 +137,8 @@ class _ServeSection extends ConsumerWidget {
       ?failedNote,
       EngineBlock(
         icon: Icons.dns_outlined,
-        title: 'LLama.cpp',
-        subtitle: 'Download a model, then start the built-in engine',
+        title: 'Local Engine',
+        subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
         child: ServeLocalCard(network: network),
       ),
       const SizedBox(height: 16),

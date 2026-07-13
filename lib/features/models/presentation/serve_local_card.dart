@@ -36,7 +36,8 @@ int? _pctOf(DownloadProgress? p) =>
 
 /// The built-in llama.cpp engine block: serve a locally pulled GGUF model via
 /// `grid join <grid> --serve <gguf> --advertise-as <name>`. Downloading and
-/// managing models lives in the model manager ("Manage models"), opened here.
+/// managing models lives in the model manager, opened here from
+/// "Download or manage models".
 class ServeLocalCard extends ConsumerStatefulWidget {
   const ServeLocalCard({super.key, required this.network});
 
@@ -127,8 +128,8 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   /// 1. a model download in flight → progress (the live bar + Cancel are below);
   /// 2. the engine isn't installed → set it up first. Serving is impossible
   ///    without the engine even when a model is on disk, so a leftover GGUF from
-  ///    a removed engine must NOT present a dead "Start engine" — gate on the
-  ///    engine, not on whether a model happens to exist;
+  ///    a removed engine must NOT present a dead "Start local engine" — gate
+  ///    on the engine, not on whether a model happens to exist;
   /// 3. engine installed but no model → prompt to download one;
   /// 4. engine installed + a model ready → the serve controls.
   List<Widget> _engineSection(
@@ -190,7 +191,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         DropdownButtonFormField<String>(
           initialValue: selected.primary.name,
           decoration: const InputDecoration(
-            labelText: 'Model',
+            labelText: 'Local model',
             border: OutlineInputBorder(),
           ),
           items: [
@@ -231,12 +232,12 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
               FilledButton.icon(
                 onPressed: () => _start(selected.primary.name),
                 icon: const Icon(Icons.play_arrow),
-                label: const Text('Start engine'),
+                label: const Text('Start local engine'),
               ),
               TextButton.icon(
                 onPressed: () => showModelManager(context),
                 icon: const Icon(Icons.tune, size: 18),
-                label: const Text('Manage models'),
+                label: const Text('Download or manage models'),
               ),
             ],
           ),

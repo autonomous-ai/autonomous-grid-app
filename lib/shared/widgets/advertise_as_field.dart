@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// The "Advertise as" field — the name a served model is announced under on the
-/// grid (the `grid` CLI's `--advertise-as`). It's what other people on the grid
-/// see and pick when they want to use this model, and it does not have to match
-/// the model's filename. The term mirrors the CLI on purpose, so a help tooltip
-/// explains it inline for first-time users.
+/// The "Model name shown to the grid" field — the name a served model is
+/// announced under on the grid (the `grid` CLI's `--advertise-as`). It's what
+/// other people on the grid see and pick when they want to use this model, and
+/// it does not have to match the model's filename. A help tooltip spells that
+/// out inline for first-time users.
 class AdvertiseAsField extends StatelessWidget {
   const AdvertiseAsField({
     super.key,
@@ -27,15 +27,18 @@ class AdvertiseAsField extends StatelessWidget {
   /// it sets the model name advertised to (and requested by) consumers on the
   /// network, and need not match a local file.
   static const _tooltip =
-      'The name people on your grid see and pick to use this model. '
-      "It doesn't have to match the model's filename.";
+      'This is the model name other grid clients will see when routing '
+      'requests to your machine.';
+
+  /// The field label; the same concept whether or not the flag is optional.
+  static const _label = 'Model name shown to the grid';
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       decoration: InputDecoration(
-        labelText: optional ? 'Advertise as (optional)' : 'Advertise as',
+        labelText: optional ? '$_label (optional)' : _label,
         hintText: hintText,
         border: const OutlineInputBorder(),
         suffixIcon: Tooltip(
