@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/logic/session_controller.dart';
 import '../features/auth/logic/session_expiry_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
+import '../features/onboarding/logic/installer_rows.dart';
 import '../features/onboarding/preflight_providers.dart';
 import '../features/onboarding/preflight_screen.dart';
+import '../features/onboarding/presentation/installer_screen.dart';
 import '../shared/layouts/home_shell.dart';
 
-/// Routes between the three top-level states: onboarding (no `grid`),
-/// login (no session), and the app shell.
+/// Routes between the four top-level states: onboarding (no `grid`), login (no
+/// session), first-run setup (a computer that isn't ready to run AI yet), and
+/// the app shell.
 class RootView extends ConsumerWidget {
   const RootView({super.key});
 
@@ -30,9 +33,14 @@ class RootView extends ConsumerWidget {
             // stranding the user in the app behind a banner.
             final needsLogin =
                 ref.watch(sessionExpiryProvider) == SessionExpiry.needsLogin;
-            return loggedIn && !needsLogin
-                ? const HomeShell()
-                : const LoginScreen();
+            if (!loggedIn || needsLogin) return const LoginScreen();
+
+            // A brand-new computer has no engine, no model and no assistant.
+            // Set it up in front of the user, as its own screen — the app it
+            // would otherwise drop them into can't answer a single message yet.
+            if (ref.watch(showInstallerProvider)) return const InstallerScreen();
+
+            return const HomeShell();
           },
         );
   }

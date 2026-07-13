@@ -1,5 +1,6 @@
 import '../../infrastructure/cli/cli_diagnostics.dart';
 import '../../infrastructure/cli/grid_cli_service.dart';
+import 'grid_version.dart';
 import 'preflight_report.dart';
 
 /// Probes the host for the one thing the app depends on: a working `grid`
@@ -25,10 +26,21 @@ class PreflightService {
     // self-contradictory "did not run (exit 0)" after a CLI upgrade.
     if (result.ok) {
       final version = result.stdout.trim();
-      return PreflightReport(
-        gridAvailable: true,
-        gridVersion: version.isNotEmpty ? version : null,
-      );
+      final printed = version.isNotEmpty ? version : null;
+
+      // A CLI that runs but is too old is as unusable as one that's missing —
+      // it has no `agent install`, and its `engine install` still demands
+      // Homebrew. Fail here, in the app's voice, instead of deep inside a setup
+      // the user can't interpret.
+      if (!isSupportedGridVersion(parseGridVersion(version))) {
+        return PreflightReport(
+          gridAvailable: false,
+          gridVersion: printed,
+          gridError: outdatedGridMessage(printed),
+        );
+      }
+
+      return PreflightReport(gridAvailable: true, gridVersion: printed);
     }
 
     // Non-zero exit: `grid` is present but couldn't run. A *negative* exit code

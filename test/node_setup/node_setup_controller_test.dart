@@ -214,38 +214,24 @@ void main() {
     expect(log.runOutcome, contains('grid executable not found'));
   });
 
-  test('autoStart with an empty plan stays idle', () async {
+  test('an empty plan is done, not "running nothing"', () async {
     final container = _container(FakeGridCliService());
 
-    await container.read(nodeSetupControllerProvider.notifier).autoStart(const []);
+    await container.read(nodeSetupControllerProvider.notifier).run(const []);
 
-    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupIdle>());
-  });
-
-  test('autoStart runs once, then is a no-op', () async {
-    final fake = FakeGridCliService()
-      ..stubStart(['engine', 'install', 'llama.cpp'],
-          exitCode: 0, lines: const [CliLine(isStderr: false, text: 'ok')]);
-    final container = _container(fake);
-    final notifier = container.read(nodeSetupControllerProvider.notifier);
-
-    await notifier.autoStart([_llamaStep]);
-    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
-
-    // A second auto-start (e.g. after capabilities re-detect) must not re-run.
-    await notifier.autoStart([_llamaStep]);
     expect(container.read(nodeSetupControllerProvider), isA<NodeSetupDone>());
   });
 
-  test('humanizes a missing-Homebrew engine-install failure', () async {
-    // The CLI dead-ends with this raw line when Homebrew is absent; the user
-    // should see a plain, actionable message instead — we no longer auto-install.
+  test('humanizes a computer that cannot host an engine at all', () async {
+    // A Linux box with no GPU: nothing is broken, this machine just can't run a
+    // model itself. Say so plainly, and point at the way out (someone else's
+    // engine) — not at a raw CLI line.
     final fake = FakeGridCliService()
       ..stubStart(['engine', 'install', 'llama.cpp'], exitCode: 1, lines: const [
         CliLine(
           isStderr: true,
-          text: 'Homebrew is required for the Apple Silicon prebuilt '
-              'llama.cpp install. Install Homebrew from https://brew.sh/ ...',
+          text: 'No NVIDIA GPUs detected (nvidia-smi missing or returned '
+              'nothing). Pass --target-sm <sm_XX> to override.',
         ),
       ]);
     final container = _container(fake);
@@ -256,9 +242,9 @@ void main() {
 
     final state = container.read(nodeSetupControllerProvider);
     expect(state, isA<NodeSetupFailed>());
-    expect((state as NodeSetupFailed).message, contains('brew.sh'));
-    expect(state.message, contains("can't run the built-in engine"));
-    // A missing prerequisite is a soft "not ready" notice, not a red error.
+    expect((state as NodeSetupFailed).message, contains('shared by another'));
+    expect(state.message, isNot(contains('nvidia-smi')));
+    // Can't-host is a soft "not ready" notice, not a red error.
     expect(state.kind, NodeSetupFailureKind.unsupported);
   });
 

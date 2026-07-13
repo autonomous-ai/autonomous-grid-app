@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../../core/grid_paths.dart';
+
 /// The `PATH` (and spawn environment) a Finder/`open`-launched GUI app must use
 /// to find user-installed command-line tools.
 ///
@@ -12,10 +14,13 @@ import 'dart:io';
 /// installed. Run from `flutter run` it all works, because the terminal's `PATH`
 /// is inherited; only the packaged app trips on this.
 ///
-/// We rebuild `PATH` from three sources, de-duplicated, order-preserving:
-///   1. well-known tool dirs a GUI `PATH` usually omits (both Homebrew prefixes),
-///   2. the user's real login-shell `PATH` (asdf/nvm/pyenv/custom installs),
-///   3. the inherited `PATH` as a final fallback.
+/// We rebuild `PATH` from four sources, de-duplicated, order-preserving:
+///   1. `~/.grid/bin` — the tools Grid installs for itself (the built-in engine,
+///      the chat agent). It comes first: a copy Grid installed and pinned beats
+///      whatever else happens to be on the machine.
+///   2. well-known tool dirs a GUI `PATH` usually omits (both Homebrew prefixes),
+///   3. the user's real login-shell `PATH` (asdf/nvm/pyenv/custom installs),
+///   4. the inherited `PATH` as a final fallback.
 class HostEnvironment {
   HostEnvironment._();
 
@@ -48,6 +53,10 @@ class HostEnvironment {
       if (d.isEmpty || !seen.add(d)) return;
       dirs.add(d);
     }
+
+    // Grid's own tools (llama-server, hermes) — installed by the CLI, so they
+    // are found without Homebrew and without the user's shell.
+    add(GridPaths.binDir.path);
 
     final home = Platform.environment['HOME'] ?? '';
     if (home.isNotEmpty) add('$home/.local/bin'); // uv tool / pipx (where `grid` lives)

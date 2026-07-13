@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/host_arch.dart';
+import '../../features/auth/logic/session_controller.dart';
 import '../../features/chat/presentation/chat_pane.dart';
 import '../../features/network/logic/create_network_controller.dart';
+import '../../features/node_setup/logic/auto_host_controller.dart';
 import '../../features/debug/presentation/debug_view.dart';
 import '../../features/network/presentation/how_to_use_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
-import '../../features/node_setup/logic/node_capabilities.dart';
-import '../../features/node_setup/logic/node_setup_controller.dart';
-import '../../features/node_setup/logic/node_setup_plan.dart';
 import '../../features/overlord/presentation/overlord_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
 import '../theme/app_theme.dart';
@@ -18,13 +16,15 @@ import 'shell_state.dart';
 import 'widgets/ambient_background.dart';
 import 'widgets/app_top_bar.dart';
 import 'widgets/grid_provision_banner.dart';
-import 'widgets/node_setup_banner.dart';
 import 'widgets/session_expired_banner.dart';
 import 'widgets/side_nav.dart';
 
 /// The main app frame, Tailscale-style: a full-width title bar on top, a left
-/// nav sidebar, and the active section to its right. Also kicks off the
-/// hands-off node setup in the background and surfaces it via [NodeSetupBanner].
+/// nav sidebar, and the active section to its right.
+///
+/// Setting this computer up is *not* its job any more: a machine that isn't
+/// ready never reaches the shell — [RootView] shows the installer instead. So
+/// everything here can assume a usable app.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -36,24 +36,40 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   void initState() {
     super.initState();
-    // The signed-in shell is the one spot guaranteed to appear both after a
-    // fresh sign-in and when simply re-opening the app — so an account that owns
-    // no grid gets its starter grid provisioned here (being a guest on someone
-    // else's grid doesn't count: you can't share a model on it). Post-frame so
-    // we never mutate state during the first build; the controller no-ops once
-    // the user owns one.
+    // Post-frame so we never mutate state during the first build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // A user who never went through the installer (they skipped it, or
+      // they're a guest on someone else's grid) can still reach the shell
+      // owning no grid. No-ops once they own one.
       ref
           .read(createNetworkControllerProvider.notifier)
           .createFirstGridIfNeeded();
+      _resumeSharing();
     });
   }
+
+  /// Put this computer back on its grid when it isn't serving — after a reboot,
+  /// say, where the engine died with the machine.
+  ///
+  /// Without this, an already-set-up computer would sail past the installer
+  /// (nothing left to install) into an app whose grid has no model on it, and
+  /// chat would answer nothing. It only ever *resumes*: the controller adopts a
+  /// still-running engine rather than starting a second one, and it runs once
+  /// per session — so a user who deliberately stopped their engine doesn't get
+  /// it restarted behind their back.
+  void _resumeSharing() =>
+      ref.read(autoHostControllerProvider.notifier).startIfReady();
 
   @override
   Widget build(BuildContext context) {
     final section = ref.watch(navSectionProvider);
-    _autoStartNodeSetup();
+
+    // The starter grid is provisioned asynchronously, so on a first sign-in it
+    // can arrive after the frame above — resume once it does.
+    ref.listen(selectedNetworkProvider, (_, next) {
+      if (next != null) _resumeSharing();
+    });
 
     // A lit backdrop behind everything, then floating glass panels over it
     // (macOS Tahoe-style): a translucent sidebar and a near-opaque content
@@ -68,7 +84,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               const AppTopBar(),
               const SessionExpiredBanner(),
               const GridProvisionBanner(),
-              const NodeSetupBanner(),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
@@ -96,20 +111,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 
-  /// Once capabilities are known, start filling the gaps in the background — no
-  /// prompt. Only on Apple Silicon Macs: the built-in engine (llama.cpp + Metal)
-  /// is supported there, so Intel Macs, Linux and Windows run as consumers and
-  /// never auto-provision an engine.
-  void _autoStartNodeSetup() {
-    if (!isAppleSiliconMac) return;
-    ref.listen(nodeCapabilitiesProvider, (_, next) {
-      final caps = next.asData?.value;
-      if (caps == null) return;
-      ref
-          .read(nodeSetupControllerProvider.notifier)
-          .autoStart(buildSetupPlan(caps));
-    });
-  }
 }
 
 /// Routes the active nav section to its pane. Networks is a two-column

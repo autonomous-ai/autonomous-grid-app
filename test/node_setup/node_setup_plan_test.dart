@@ -17,6 +17,7 @@ NodeCapabilities _caps({
   bool engineInstalled = false,
   MediaStatus media = MediaStatus.notInstalled,
   int models = 0,
+  bool agent = false,
   CatalogModel? recommended = _model,
 }) =>
     NodeCapabilities(
@@ -26,6 +27,7 @@ NodeCapabilities _caps({
           : EngineStatus.notInstalled,
       media: media,
       localModelCount: models,
+      hasAgent: agent,
       recommendedModel: recommended,
     );
 
@@ -53,7 +55,22 @@ List<SetupAction> _actions(List<SetupStep> steps) =>
 void main() {
   test('media is off by default — a fresh machine sets up text only', () {
     final plan = buildSetupPlan(_caps());
+    expect(_actions(plan), [
+      SetupAction.installLlama,
+      SetupAction.pullModel,
+      SetupAction.installAgent,
+    ]);
+  });
+
+  test('a machine that already has the assistant does not reinstall it', () {
+    final plan = buildSetupPlan(_caps(agent: true));
     expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
+  });
+
+  test('the assistant is installed without a package manager', () {
+    final plan = buildSetupPlan(_caps());
+    final step = plan.firstWhere((s) => s.action == SetupAction.installAgent);
+    expect(step.args, ['agent', 'install', 'hermes']);
   });
 
   test('with media enabled, a fresh machine installs both engines', () {
@@ -61,26 +78,40 @@ void main() {
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.pullModel,
+      SetupAction.installAgent,
       SetupAction.installComfy,
       SetupAction.pullMediaBundle,
     ]);
   });
 
-  test('an existing Ollama with models needs nothing (media off)', () {
+  test('a running Ollama does not excuse Grid from setting itself up', () {
+    // Regression: Grid used to treat someone else's server as "text inference
+    // covered" and install nothing — leaving a grid with no model on it. Grid
+    // sets up its own engine and model; the user's Ollama is theirs to share
+    // deliberately, from the Engines tab.
     final plan = buildSetupPlan(_caps(backends: [_ollama()]));
-    expect(plan, isEmpty);
+    expect(_actions(plan), [
+      SetupAction.installLlama,
+      SetupAction.pullModel,
+      SetupAction.installAgent,
+    ]);
   });
 
-  test('an installed-but-not-running Ollama still needs the built-in engine', () {
-    // A detected-but-stopped backend can't serve, so node setup must still
-    // install llama.cpp and pull a model rather than assume text is covered.
+  test('a stopped Ollama changes nothing either', () {
     final plan = buildSetupPlan(_caps(backends: [_ollama(running: false)]));
-    expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
+    expect(_actions(plan), [
+      SetupAction.installLlama,
+      SetupAction.pullModel,
+      SetupAction.installAgent,
+    ]);
   });
 
-  test('with media enabled, an existing Ollama still installs ComfyUI', () {
+  test('with media enabled, a machine with Ollama still installs everything', () {
     final plan = buildSetupPlan(_caps(backends: [_ollama()]), includeMedia: true);
     expect(_actions(plan), [
+      SetupAction.installLlama,
+      SetupAction.pullModel,
+      SetupAction.installAgent,
       SetupAction.installComfy,
       SetupAction.pullMediaBundle,
     ]);
@@ -88,7 +119,11 @@ void main() {
 
   test('falls back to a default model when the catalog recommends none', () {
     final plan = buildSetupPlan(_caps(recommended: null), isMacOS: true);
-    expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
+    expect(_actions(plan), [
+      SetupAction.installLlama,
+      SetupAction.pullModel,
+      SetupAction.installAgent,
+    ]);
     final pull = plan.firstWhere((s) => s.action == SetupAction.pullModel);
     expect(pull.args, [
       'pull',
@@ -98,7 +133,12 @@ void main() {
 
   test('a fully set-up node needs no steps', () {
     final plan = buildSetupPlan(
-      _caps(engineInstalled: true, media: _completeMedia, models: 1),
+      _caps(
+        engineInstalled: true,
+        media: _completeMedia,
+        models: 1,
+        agent: true,
+      ),
       includeMedia: true,
     );
     expect(plan, isEmpty);

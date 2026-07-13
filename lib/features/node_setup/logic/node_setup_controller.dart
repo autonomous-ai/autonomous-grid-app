@@ -47,10 +47,10 @@ class NodeSetupDone extends NodeSetupState {
 
 /// Why a setup run stopped, which decides how loudly the UI speaks about it.
 /// [error] is a genuine failure (a crash, a broken download) → the red bar.
-/// [unsupported] means the computer simply isn't ready to auto-host the built-in
-/// engine — a missing prerequisite like Homebrew, common on a non-technical
-/// user's Mac. Nothing is broken, so the auto flow surfaces it as a calm notice
-/// rather than an alarm the moment the app opens.
+/// [unsupported] means the computer simply can't host the built-in engine — no
+/// GPU to run it on, or no build for its CPU. Nothing is broken, so the auto
+/// flow surfaces it as a calm notice rather than an alarm the moment the app
+/// opens.
 enum NodeSetupFailureKind { error, unsupported }
 
 class NodeSetupFailed extends NodeSetupState {
@@ -77,7 +77,6 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   static const _maxLogLines = 400;
   GridProcess? _process;
   bool _cancelled = false;
-  bool _autoStarted = false;
   late final NodeSetupLog _logFile;
 
   @override
@@ -87,16 +86,9 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     return const NodeSetupIdle();
   }
 
-  /// Hands-off background entry point: starts setup once per app session when
-  /// there are gaps to fill. A no-op if it already auto-started, or if a run is
-  /// in flight. After a cancel/failure the user resumes via [run] — we don't
-  /// auto-restart and nag. Returns immediately when [steps] is empty.
-  Future<void> autoStart(List<SetupStep> steps) async {
-    if (_autoStarted || steps.isEmpty || state is! NodeSetupIdle) return;
-    _autoStarted = true;
-    await run(steps);
-  }
-
+  /// Runs [steps] in order, stopping at the first failure. Driven by the
+  /// first-run installer, and by the Engines tab when a user sets the machine up
+  /// by hand — one implementation, so the two can't disagree.
   Future<void> run(List<SetupStep> steps) async {
     if (state is NodeSetupRunning) return;
     if (steps.isEmpty) {
@@ -186,22 +178,29 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     return false;
   }
 
+  /// CLI failures that mean "this computer simply can't host an engine", not
+  /// "something broke": a Linux box with no GPU to run one on, or a CPU
+  /// architecture we publish no build for. Nothing is wrong — the user can still
+  /// use an engine someone else shares — so these get a calm notice rather than
+  /// an alarm. (The engine install itself no longer needs Homebrew, so its old
+  /// "Homebrew is required" failure is gone.)
+  static const _unsupportedMarkers = [
+    'no nvidia gpus detected',
+    'no prebuilt llama.cpp',
+  ];
+
   /// Map a raw CLI failure to plain language + severity at the controller
-  /// boundary (§6). The built-in engine install needs Homebrew, which a
-  /// non-technical user's Mac often lacks — that's not a crash, it's a "this
-  /// computer can't auto-host yet" notice, so we tag it [unsupported] and phrase
-  /// an actionable next step instead of dead-ending. Everything else keeps the
-  /// CLI's own last line as a genuine [error].
+  /// boundary (§6). Everything outside [_unsupportedMarkers] keeps the CLI's own
+  /// last line as a genuine [error].
   static ({String message, NodeSetupFailureKind kind}) _describeFailure(
       SetupStep step, List<String> log, int exit) {
     final raw = log.isNotEmpty ? log.last : '';
-    if (raw.toLowerCase().contains('homebrew is required')) {
+    final lowered = raw.toLowerCase();
+    if (_unsupportedMarkers.any(lowered.contains)) {
       return (
         kind: NodeSetupFailureKind.unsupported,
-        message: "This computer can't run the built-in engine yet: it needs "
-            'Homebrew, which isn\'t installed. Install it from https://brew.sh '
-            'and run setup again — or use an engine shared by another computer '
-            'on your grid.',
+        message: "This computer can't run AI models on its own hardware. You "
+            'can still use an engine shared by another computer on your grid.',
       );
     }
     return (

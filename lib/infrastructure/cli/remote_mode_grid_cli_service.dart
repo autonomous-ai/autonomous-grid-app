@@ -32,7 +32,7 @@ class RemoteModeGridCliService implements GridCliService {
 
   /// Command families that operate on the local machine and must not be forced
   /// into remote mode (matched on the first arg — the top-level `grid` command).
-  static const _localCommands = {'engine', 'pull'};
+  static const _localCommands = {'engine', 'agent', 'pull'};
 
   List<String> _remote(List<String> args) {
     if (args.isNotEmpty && _localCommands.contains(args.first)) return args;

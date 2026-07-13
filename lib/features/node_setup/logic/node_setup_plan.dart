@@ -4,7 +4,13 @@ import 'node_capabilities.dart';
 import 'node_setup_config.dart';
 
 /// One install/download action in the node-setup sequence.
-enum SetupAction { installLlama, pullModel, installComfy, pullMediaBundle }
+enum SetupAction {
+  installLlama,
+  pullModel,
+  installAgent,
+  installComfy,
+  pullMediaBundle,
+}
 
 /// A single planned step: what to run, why, and how to run it. [args] is the
 /// exact `grid` argument vector; [isDownload] routes long downloads through the
@@ -37,12 +43,19 @@ String _fallbackModelSpec({bool? isMacOS}) => (isMacOS ?? Platform.isMacOS)
     ? 'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-IQ3_S.gguf'
     : 'unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q5_K_XL.gguf';
 
-/// Decides the minimal sequence of steps to make this computer a usable node,
-/// installing only what's missing (the "auto-detect, fill the gaps" flow). Pure
-/// and side-effect free, so it's trivially testable. Steps run in list order;
-/// the ComfyUI bundle download is sequenced after its install. The model to pull
-/// prefers [NodeCapabilities.recommendedModel] (the CLI catalog) and falls back
-/// to [_fallbackModelSpec] so the model download is never silently skipped.
+/// Decides the sequence of steps that makes this computer a usable node,
+/// installing only what's actually missing. Pure and side-effect free, so it's
+/// trivially testable. Steps run in list order; the ComfyUI bundle download is
+/// sequenced after its install. The model to pull prefers
+/// [NodeCapabilities.recommendedModel] (the CLI catalog) and falls back to
+/// [_fallbackModelSpec] so the model download is never silently skipped.
+///
+/// "Missing" is judged against **Grid's own** engine and models, not against
+/// whatever else the machine happens to run. A developer with Ollama already up
+/// used to get an empty plan — Grid would install nothing, own nothing, and the
+/// grid would sit there with no model on it. Grid sets up its own engine and its
+/// own model so it can serve them reliably; another server the user runs is
+/// something they can *also* share, from the Engines tab, on purpose.
 List<SetupStep> buildSetupPlan(
   NodeCapabilities caps, {
   bool includeMedia = kMediaSetupEnabled,
@@ -50,7 +63,7 @@ List<SetupStep> buildSetupPlan(
 }) {
   final steps = <SetupStep>[];
 
-  if (!caps.hasTextInference) {
+  if (!caps.engine.llamaInstalled) {
     steps.add(const SetupStep(
       action: SetupAction.installLlama,
       title: 'Install the built-in engine',
@@ -60,9 +73,7 @@ List<SetupStep> buildSetupPlan(
     ));
   }
 
-  // Always pull a model when this node has none and no external backend to
-  // serve through — catalog label when known, otherwise a robust repo:file spec.
-  if (!caps.hasModels && !caps.hasExternalModels) {
+  if (!caps.hasModels) {
     final model = caps.recommendedModel;
     final spec = model?.label ?? _fallbackModelSpec(isMacOS: isMacOS);
     final display = model?.repoFile ?? spec;
@@ -72,6 +83,18 @@ List<SetupStep> buildSetupPlan(
       detail: 'A ready-to-use AI model ($display) — can be several GB.',
       args: ['pull', spec],
       isDownload: true,
+    ));
+  }
+
+  // The agent is what lets chat use tools, so a first run installs it too — no
+  // Homebrew needed: `grid agent install` fetches it into ~/.grid.
+  if (!caps.hasAgent) {
+    steps.add(const SetupStep(
+      action: SetupAction.installAgent,
+      title: 'Install the assistant',
+      detail: 'The part that can use tools and act on what you ask.',
+      args: ['agent', 'install', 'hermes'],
+      isDownload: false,
     ));
   }
 

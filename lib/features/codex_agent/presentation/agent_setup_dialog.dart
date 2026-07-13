@@ -14,8 +14,9 @@ Future<bool?> showAgentSetupDialog(BuildContext context, AgentTool tool) =>
       builder: (_) => _AgentSetupDialog(tool: tool),
     );
 
-/// A compact install dialog driven by [AgentInstallController]: explain what the
-/// tool is, hand off `brew install …` to Terminal, then re-check on Continue.
+/// A compact install dialog driven by [AgentInstallController]. Hermes installs
+/// in-app (the CLI fetches it — the user only waits); Codex hands `brew install`
+/// to Terminal and re-checks on Continue.
 class _AgentSetupDialog extends ConsumerWidget {
   const _AgentSetupDialog({required this.tool});
 
@@ -36,11 +37,7 @@ class _AgentSetupDialog extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '${info.blurb} It runs in the Chat tab, powered by your grid. It '
-              'needs installing once via Homebrew.',
-              style: theme.textTheme.bodyMedium,
-            ),
+            Text(_intro(info), style: theme.textTheme.bodyMedium),
             const SizedBox(height: 16),
             _Body(state: state),
           ],
@@ -49,6 +46,17 @@ class _AgentSetupDialog extends ConsumerWidget {
       actions: _actions(context, state, controller),
     );
   }
+
+  /// What the user is agreeing to — honest about who does the work, and about
+  /// the one flow that still needs them.
+  String _intro(AgentToolInfo info) => switch (info.install) {
+    GridCliInstall() =>
+      '${info.blurb} It runs in the Chat tab, powered by your grid. Grid '
+          'installs it for you — it takes a minute the first time.',
+    BrewInstall(:final command) =>
+      '${info.blurb} It runs in the Chat tab, powered by your grid. It '
+          'installs once with Homebrew, in Terminal: $command',
+  };
 
   List<Widget> _actions(
     BuildContext context,
@@ -65,7 +73,10 @@ class _AgentSetupDialog extends ConsumerWidget {
         child: const Text('Install'),
       ),
     ],
-    AgentSetupInstalling() => [
+    // Nothing to press while the app installs — the only honest action is to
+    // wait, so the dialog offers none.
+    AgentSetupRunning() => const [],
+    AgentSetupAwaitingTerminal() => [
       TextButton(
         onPressed: controller.reopenTerminal,
         child: const Text('Reopen Terminal'),
@@ -105,7 +116,8 @@ class _Body extends StatelessWidget {
     final theme = Theme.of(context);
     return switch (state) {
       AgentSetupIdle() => const SizedBox.shrink(),
-      AgentSetupInstalling(:final note) => _Line(
+      AgentSetupRunning() => const _InstallingLine(),
+      AgentSetupAwaitingTerminal(:final note) => _Line(
         icon: Icons.terminal,
         color: theme.colorScheme.primary,
         text:
@@ -122,6 +134,35 @@ class _Body extends StatelessWidget {
         text: message,
       ),
     };
+  }
+}
+
+/// The app is doing the install itself. There is no meaningful percentage to
+/// show (a package manager downloading dozens of things), so this says what is
+/// happening and that it's normal for it to take a while — rather than a bare
+/// spinner the user has to guess at.
+class _InstallingLine extends StatelessWidget {
+  const _InstallingLine();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Installing… this can take a minute the first time.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
   }
 }
 

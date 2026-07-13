@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/providers.dart';
+import '../../codex_agent/logic/agent_tool.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import '../../provider_node/logic/backend_detector.dart';
@@ -19,6 +20,7 @@ class NodeCapabilities {
     required this.engine,
     required this.media,
     required this.localModelCount,
+    this.hasAgent = false,
     this.recommendedModel,
   });
 
@@ -26,6 +28,10 @@ class NodeCapabilities {
   final EngineStatus engine;
   final MediaStatus media;
   final int localModelCount;
+
+  /// Whether the chat agent (Hermes) is installed. It's what lets chat use
+  /// tools, so first-run setup installs it alongside the engine and the model.
+  final bool hasAgent;
 
   /// Default model to auto-download, from `grid catalog`. Null when the CLI
   /// recommends none for this machine (then no model is pulled).
@@ -37,11 +43,6 @@ class NodeCapabilities {
   /// as text inference already in place.
   List<DetectedBackend> get externalBackends =>
       textBackends.where((b) => b.isExternal && b.running).toList();
-
-  /// An external backend that already advertises at least one model — this node
-  /// can serve through it (`grid join --at`) without a local GGUF.
-  bool get hasExternalModels =>
-      externalBackends.any((b) => b.models.isNotEmpty);
 
   /// Any way to serve text: an external server, or the installed llama.cpp engine.
   bool get hasTextInference =>
@@ -90,6 +91,7 @@ final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
     engine: EngineDetector().detect(),
     media: await mediaFuture,
     localModelCount: modelCount,
+    hasAgent: ref.read(agentToolInstalledProvider(AgentTool.hermes)),
     recommendedModel: recommended,
   );
 });

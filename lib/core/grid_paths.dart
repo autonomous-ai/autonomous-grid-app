@@ -105,7 +105,12 @@ class GridPaths {
 
   /// Where `grid llama.cpp install` links the engine (provider_runtime
   /// paths.py: `llama_server_bin()`).
-  static File get llamaServerBin => File('${home.path}/bin/llama-server');
+  /// Where the CLI installs the tools it owns — the built-in engine, and the
+  /// chat agent (`grid agent install hermes`). Grid installs them itself, so
+  /// nothing here depends on Homebrew or on the user's `PATH`.
+  static Directory get binDir => Directory('${home.path}/bin');
+
+  static File get llamaServerBin => File('${binDir.path}/llama-server');
 
   /// Run records for detached engines launched by `grid join`, namespaced per
   /// grid: `~/.grid/run/engines/<grid_id>/<engine_id>.{json,log}`. The app reads

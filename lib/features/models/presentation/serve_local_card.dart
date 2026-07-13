@@ -3,10 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/log_view.dart';
-import '../../../shared/widgets/status_dot.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
@@ -246,11 +244,10 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 }
 
 /// Shown in the built-in engine block when the engine isn't set up on this
-/// computer (fresh machine, or the user removed it). Runs the setup checklist in
-/// place — install Homebrew (in Terminal, since its installer needs an
-/// interactive password), then the llama.cpp engine — with per-step status and a
-/// live log, so the block is self-sufficient and never points at the node-setup
-/// card (which hides itself once another engine already covers text inference).
+/// computer (fresh machine, or the user removed it). Installs it in place — one
+/// download, no package manager and no password — with a live log, so the block
+/// is self-sufficient and never points at the node-setup card (which hides
+/// itself once another engine already covers text inference).
 class _EngineSetupSection extends ConsumerWidget {
   const _EngineSetupSection();
 
@@ -258,52 +255,26 @@ class _EngineSetupSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final state = ref.watch(engineSetupControllerProvider);
-    final brewReady = ref.watch(homebrewInstalledProvider);
 
-    // Derive the two step statuses + log from whichever variant we're in. At
-    // rest, reflect reality instead of hardcoding "Waiting": a machine that
-    // already has Homebrew shows that prerequisite as satisfied — matching
-    // [EngineSetupController.run], which skips the Homebrew step when it's present.
-    final (StepStatus brew, StepStatus engine, List<String> log) =
-        switch (state) {
-      EngineSetupRunning(:final progress) ||
-      EngineSetupAwaitingHomebrew(:final progress) ||
-      EngineSetupFailed(:final progress) =>
-        (progress.brew, progress.engine, progress.log),
-      EngineSetupDone() => (StepStatus.done, StepStatus.done, const <String>[]),
-      EngineSetupIdle() => (
-          brewReady ? StepStatus.done : StepStatus.pending,
-          StepStatus.pending,
-          const <String>[],
-        ),
+    final log = switch (state) {
+      EngineSetupRunning(:final log) => log,
+      EngineSetupFailed(:final log) => log,
+      _ => const <String>[],
     };
-    final showLog =
-        log.isNotEmpty && (state is EngineSetupRunning || state is EngineSetupFailed);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           _intro(state),
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
-        const SizedBox(height: 14),
-        _ChecklistRow(
-          label: 'Homebrew',
-          hint: 'macOS app installer the engine needs',
-          status: brew,
-        ),
-        const SizedBox(height: 10),
-        _ChecklistRow(
-          label: 'Built-in engine (llama.cpp)',
-          hint: 'runs AI models on this computer',
-          status: engine,
-        ),
-        ..._noteLine(theme, state),
+        ..._errorLine(theme, state),
         const SizedBox(height: 14),
         _EngineSetupActions(state: state),
-        if (showLog) ...[
+        if (log.isNotEmpty) ...[
           const SizedBox(height: 12),
           SizedBox(height: 160, child: LogView(lines: log)),
         ],
@@ -313,34 +284,32 @@ class _EngineSetupSection extends ConsumerWidget {
 
   /// The lead-in sentence for the current state.
   static String _intro(EngineSetupState state) => switch (state) {
-        EngineSetupRunning() =>
-          'Setting up the built-in engine — this can take a few minutes.',
-        EngineSetupAwaitingHomebrew() =>
-          'Homebrew is installing in the Terminal window that just opened. '
-              'Enter your Mac password there; when it finishes, come back and '
-              'press Continue.',
-        _ => "The built-in engine isn't set up on this computer yet. This "
-            'installs what it needs, then you can download and run a model here.',
-      };
+    EngineSetupRunning() =>
+      'Downloading the built-in engine — this takes a moment.',
+    EngineSetupDone() =>
+      'The built-in engine is ready. Download a model to run it.',
+    _ =>
+      "The built-in engine isn't set up on this computer yet. Grid downloads "
+          'it for you — then you can run a model here.',
+  };
 
-  /// The error (failed) or hint (awaiting) line under the checklist, if any.
-  static List<Widget> _noteLine(ThemeData theme, EngineSetupState state) {
-    final (String, Color)? line = switch (state) {
-      EngineSetupFailed(:final message) => (message, theme.colorScheme.error),
-      EngineSetupAwaitingHomebrew(:final note?) =>
-        (note, theme.colorScheme.error),
-      _ => null,
-    };
-    if (line == null) return const [];
+  /// The error line under the intro, if the install failed.
+  static List<Widget> _errorLine(ThemeData theme, EngineSetupState state) {
+    if (state is! EngineSetupFailed) return const [];
     return [
       const SizedBox(height: 10),
-      Text(line.$1, style: theme.textTheme.bodySmall?.copyWith(color: line.$2)),
+      Text(
+        state.message,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.error,
+        ),
+      ),
     ];
   }
 }
 
-/// The action button(s) for the setup section — they differ per state: start /
-/// retry, Continue (after the Terminal install), or a disabled spinner.
+/// The action button for the setup section: start, retry, or a disabled spinner
+/// while the engine downloads.
 class _EngineSetupActions extends ConsumerWidget {
   const _EngineSetupActions({required this.state});
 
@@ -349,133 +318,29 @@ class _EngineSetupActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(engineSetupControllerProvider.notifier);
-    switch (state) {
-      case EngineSetupRunning():
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: null,
-            icon: const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-            label: const Text('Setting up…'),
+    if (state is EngineSetupRunning) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton.icon(
+          onPressed: null,
+          icon: const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-        );
-      case EngineSetupAwaitingHomebrew():
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              FilledButton.icon(
-                onPressed: notifier.continueSetup,
-                icon: const Icon(Icons.check, size: 18),
-                label: const Text('Continue'),
-              ),
-              TextButton.icon(
-                onPressed: notifier.reopenTerminal,
-                icon: const Icon(Icons.terminal, size: 18),
-                label: const Text('Reopen Terminal'),
-              ),
-            ],
-          ),
-        );
-      case EngineSetupIdle():
-      case EngineSetupFailed():
-      case EngineSetupDone():
-        final isFailed = state is EngineSetupFailed;
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: notifier.run,
-            icon: Icon(isFailed ? Icons.refresh : Icons.download_outlined,
-                size: 18),
-            label: Text(isFailed ? 'Try again' : 'Set up built-in engine'),
-          ),
-        );
+          label: const Text('Setting up…'),
+        ),
+      );
     }
-  }
-}
 
-/// One row of the setup checklist: a status icon, the step [label] with a
-/// plain-language [hint], and a trailing status word.
-class _ChecklistRow extends StatelessWidget {
-  const _ChecklistRow({
-    required this.label,
-    required this.hint,
-    required this.status,
-  });
-
-  final String label;
-  final String hint;
-  final StepStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
-    return Row(
-      children: [
-        SizedBox(
-            width: 18, height: 18, child: Center(child: _StepIcon(status))),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: theme.textTheme.bodyMedium),
-              Text(hint,
-                  style: theme.textTheme.bodySmall?.copyWith(color: muted)),
-            ],
-          ),
-        ),
-        Text(
-          _statusLabel(status),
-          style: theme.textTheme.labelSmall
-              ?.copyWith(color: _statusColor(theme, status)),
-        ),
-      ],
+    final isFailed = state is EngineSetupFailed;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: FilledButton.icon(
+        onPressed: notifier.run,
+        icon: Icon(isFailed ? Icons.refresh : Icons.download_outlined, size: 18),
+        label: Text(isFailed ? 'Try again' : 'Set up built-in engine'),
+      ),
     );
-  }
-
-  static String _statusLabel(StepStatus status) => switch (status) {
-        StepStatus.pending => 'Waiting',
-        StepStatus.running => 'Working…',
-        StepStatus.done => 'Ready',
-        StepStatus.failed => 'Failed',
-      };
-
-  static Color _statusColor(ThemeData theme, StepStatus status) =>
-      switch (status) {
-        StepStatus.pending => theme.colorScheme.onSurfaceVariant,
-        StepStatus.running => theme.colorScheme.primary,
-        StepStatus.done => AppPalette.online,
-        StepStatus.failed => theme.colorScheme.error,
-      };
-}
-
-/// The leading icon for a checklist row, reflecting the step's [status].
-class _StepIcon extends StatelessWidget {
-  const _StepIcon(this.status);
-  final StepStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return switch (status) {
-      StepStatus.pending => StatusDot(
-          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
-      StepStatus.running => const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2)),
-      StepStatus.done =>
-        const Icon(Icons.check_circle, size: 18, color: AppPalette.online),
-      StepStatus.failed =>
-        Icon(Icons.error, size: 18, color: theme.colorScheme.error),
-    };
   }
 }

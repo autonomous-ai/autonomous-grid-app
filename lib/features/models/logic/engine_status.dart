@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
-import '../../../infrastructure/cli/host_environment.dart';
 
 /// Whether the llama.cpp engine (`llama-server`) is installed for the client.
 class EngineStatus {
@@ -46,10 +45,3 @@ class EngineDetector {
 final engineStatusProvider =
     Provider<EngineStatus>((ref) => EngineDetector().detect());
 
-/// Whether Homebrew is installed on this computer (either prefix). The built-in
-/// engine's macOS install path drives Homebrew, so the setup checklist gates the
-/// engine step on this. Invalidate after installing Homebrew to re-probe.
-/// [HostEnvironment] already lists both brew prefixes, so a freshly installed
-/// `/opt/homebrew/bin/brew` is seen without rebuilding `PATH`.
-final homebrewInstalledProvider =
-    Provider<bool>((ref) => HostEnvironment.findExecutable('brew') != null);
