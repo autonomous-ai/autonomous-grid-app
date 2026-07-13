@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/network/logic/client_app_detector.dart';
 
@@ -31,11 +32,23 @@ void main() {
     expect(_detector().detect(), isEmpty);
   });
 
-  test('detect() returns apps in ClientApp.values order', () {
+  test('detect() only reports apps this build offers, in values order', () {
     final d = _detector(
       dirs: {'$_home/.openclaw', '$_home/.hermes', '$_home/.codex'},
     );
-    expect(d.detect().toList(), ClientApp.values);
+    // An installed-but-hidden app (Codex outside debug) must not come back as
+    // installed — it would light up a chip the picker doesn't render.
+    expect(d.detect().toList(), kSelectableClientApps);
+  });
+
+  test('Codex is debug-only; the shipped clients always show', () {
+    // Codex needs the Responses API the relay doesn't serve yet, so a shipped
+    // build hides it (tests run in debug ⇒ it's selectable here).
+    expect(ClientApp.codex.isSelectable, kDebugMode);
+    expect(ClientApp.openClaw.isSelectable, isTrue);
+    expect(ClientApp.hermes.isSelectable, isTrue);
+    expect(kSelectableClientApps, contains(ClientApp.openClaw));
+    expect(kSelectableClientApps.contains(ClientApp.codex), kDebugMode);
   });
 
   group('appSetupGuide', () {

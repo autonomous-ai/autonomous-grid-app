@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
@@ -8,6 +9,27 @@ import '../../../infrastructure/cli/host_environment.dart';
 /// A local AI client the user can point at a grid. Each one has a config file we
 /// know how to write ("Apply for me") and a download page for when it's absent.
 enum ClientApp { openClaw, hermes, codex }
+
+extension ClientAppX on ClientApp {
+  /// Whether the guide offers this client at all.
+  ///
+  /// Codex is hidden from shipped builds: codex ≥ 0.141 talks only to the
+  /// Responses API, while the relay serves Chat Completions, so a grid wired
+  /// into Codex answers every prompt with a 404 on `/v1/responses`. Offering it
+  /// would be a lie — same call as the Chat tab's Agent mode
+  /// (`AgentBackend.isSelectable`). Kept in debug so it can be tried again the
+  /// day the relay grows the endpoint.
+  /// TODO(BE): unhide once the relay serves the Responses API.
+  bool get isSelectable => this != ClientApp.codex || kDebugMode;
+}
+
+/// The clients the guide may show, in [ClientApp.values] order — everything the
+/// build is allowed to offer (see [ClientAppX.isSelectable]). The one list the
+/// picker and the detector both walk, so a hidden app can't sneak back in as an
+/// "Installed" chip or the default selection.
+final List<ClientApp> kSelectableClientApps = List.unmodifiable(
+  ClientApp.values.where((app) => app.isSelectable),
+);
 
 /// Static facts about a [ClientApp] — display name, where to get it, and where
 /// its config lives. One source of truth so the dialog, detector and
@@ -141,9 +163,10 @@ class ClientAppDetector {
     return _findExecutable(info.executable) != null;
   }
 
-  /// The installed apps, in [ClientApp.values] order.
+  /// The installed apps this build may offer, in [ClientApp.values] order — an
+  /// app the guide can't show is never reported as installed.
   Set<ClientApp> detect() => {
-    for (final app in ClientApp.values)
+    for (final app in kSelectableClientApps)
       if (isInstalled(app)) app,
   };
 

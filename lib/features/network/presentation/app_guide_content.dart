@@ -67,7 +67,7 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
     final installed = ref.watch(installedClientAppsProvider);
     final selected = _touched
         ? _selected
-        : ClientApp.values
+        : kSelectableClientApps
             .firstWhere(installed.contains, orElse: () => ClientApp.openClaw);
 
     // Every chat model the grid serves — OpenClaw lists them all; the first is
@@ -128,8 +128,9 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
   }
 }
 
-/// The row of app choices — the two known clients (with an "Installed" dot when
-/// detected) plus a generic "Other app".
+/// The row of app choices — every client this build offers (with an "Installed"
+/// dot when detected) plus a generic "Other app". Codex is debug-only, so a
+/// shipped build shows one chip fewer — see [ClientAppX.isSelectable].
 class _AppSelector extends StatelessWidget {
   const _AppSelector({
     required this.selected,
@@ -147,7 +148,7 @@ class _AppSelector extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final app in ClientApp.values)
+        for (final app in kSelectableClientApps)
           _AppChip(
             label: kClientApps[app]!.name,
             selected: selected == app,
