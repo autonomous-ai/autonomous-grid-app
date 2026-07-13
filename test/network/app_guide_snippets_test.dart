@@ -1,7 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/codex_agent/logic/codex_exec_args.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
+import 'package:grid_app/features/network/logic/client_app_detector.dart';
+import 'package:toml/toml.dart';
 
 const _base = 'https://grid.example/relay/v1';
 const _key = 'sk-test-123';
@@ -52,6 +55,52 @@ void main() {
     expect(config, contains('custom_providers:'));
     expect(config, contains('name: ${hermesProviderName(_base)}'));
     expect(config, contains('model: $_model'));
+  });
+
+  group('Codex', () {
+    test('config block is valid TOML selecting the grid provider', () {
+      final toml = TomlDocument.parse(codexConfigSnippet(_base, _model)).toMap();
+      expect(toml['model'], _model);
+      expect(toml['model_provider'], kCodexProviderId);
+      final grid =
+          (toml['model_providers'] as Map)[kCodexProviderId] as Map;
+      expect(grid['base_url'], _base);
+      // Codex ≥ 0.141 rejects `wire_api = "chat"` outright, so the provider must
+      // stay on the Responses API.
+      expect(grid['wire_api'], 'responses');
+      // Codex has no api_key field — it reads the key from this env var, so the
+      // key must never leak into config.toml.
+      expect(grid['env_key'], gridApiKeyEnv);
+      expect(codexConfigSnippet(_base, _model), isNot(contains(_key)));
+    });
+
+    test('env block carries the key Codex loads from its dotenv', () {
+      expect(codexEnvSnippet(_key), '$gridApiKeyEnv=$_key');
+    });
+
+    test('appSnippets gives Codex both files: config then key', () {
+      final blocks = appSnippets(
+          kClientApps[ClientApp.codex]!, _base, _key, const [_model]);
+      expect(blocks.length, 2);
+      expect(blocks.first.caption, contains('~/.codex/config.toml'));
+      expect(blocks.first.code, contains('[model_providers.$kCodexProviderId]'));
+      expect(blocks.last.caption, contains(kCodexEnvPath));
+      expect(blocks.last.code, contains(_key));
+    });
+
+    test('appSnippets gives the file-based clients a single block', () {
+      for (final app in [ClientApp.openClaw, ClientApp.hermes]) {
+        final blocks =
+            appSnippets(kClientApps[app]!, _base, _key, const [_model]);
+        expect(blocks.single.code, contains(_base));
+      }
+    });
+
+    test('appSnippets falls back to the default model for an empty grid', () {
+      final blocks =
+          appSnippets(kClientApps[ClientApp.codex]!, _base, _key, const []);
+      expect(blocks.first.code, contains('model = "$kGuideDefaultModel"'));
+    });
   });
 
   test('Python snippet points the SDK at the pair', () {

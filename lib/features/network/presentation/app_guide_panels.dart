@@ -123,28 +123,25 @@ class ClientAppPanel extends StatelessWidget {
     );
   }
 
-  /// The chat-provider walkthrough: the app's setup steps and the exact config
-  /// block to paste. Hermes has a one-click in-app flow, so its GUI steps lead
-  /// and the config file drops to a "prefer editing files?" alternative; a
-  /// file-based client leads with the block its steps reference.
+  /// The chat-provider walkthrough: the app's setup steps, then the exact
+  /// block(s) to paste — one per file the app needs (Codex takes two: its config
+  /// and the dotenv holding the key). Each block's label comes from
+  /// [appSnippets], so Hermes's file stays a "prefer editing files?" alternative
+  /// to its in-app flow while a file-based client leads with the block its steps
+  /// reference.
   List<Widget> _chatSetup() {
     final guide = appSetupGuide(info);
-    final fileFirst = info.app != ClientApp.hermes;
     return [
       SetupSteps(title: guide.title, steps: guide.steps),
       const SizedBox(height: 16),
-      if (fileFirst)
-        GuideLabel(info.name, caption: 'Paste into ${info.configPath}')
-      else
-        GuideLabel('Prefer editing files?', caption: info.configPath),
-      CodeBlock(code: _snippet()),
+      for (final (i, block)
+          in appSnippets(info, baseUrl, apiKey, models).indexed) ...[
+        if (i > 0) const SizedBox(height: 12),
+        GuideLabel(block.label, caption: block.caption),
+        CodeBlock(code: block.code),
+      ],
     ];
   }
-
-  String _snippet() => switch (info.app) {
-    ClientApp.openClaw => openClawSnippet(baseUrl, apiKey, models),
-    ClientApp.hermes => hermesConfigSnippet(baseUrl, apiKey, models.first),
-  };
 
   /// One compact skill card per media capability the grid serves, so image and
   /// video stay separate single-purpose skills (a grid that does both shows

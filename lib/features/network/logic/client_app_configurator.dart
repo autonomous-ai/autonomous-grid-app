@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:toml/toml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../codex_agent/logic/codex_exec_args.dart' show gridApiKeyEnv;
 import 'app_guide_snippets.dart';
 import 'client_app_detector.dart';
 
@@ -50,6 +52,9 @@ class ClientAppConfigurator {
       case ClientApp.hermes:
         // Hermes carries one default and discovers the rest from the endpoint.
         return _applyHermes(base, key, ids.first);
+      case ClientApp.codex:
+        // Codex names a single model in its config; the key goes to its dotenv.
+        return _applyCodex(base, key, ids.first);
     }
   }
 
@@ -136,7 +141,7 @@ class ClientAppConfigurator {
       await _upsertEnvVars(env, {
         'OPENAI_BASE_URL': base,
         'OPENAI_API_KEY': key,
-      });
+      }, 'Hermes');
       return ApplyOk(
         'Pointed Hermes at this grid (${_display(config)} + ${_display(env)}).',
         note: 'If Hermes is already open, refresh its model list (or restart '
@@ -147,11 +152,53 @@ class ClientAppConfigurator {
     }
   }
 
+  /// Points Codex at the grid: the provider + selected model in
+  /// `~/.codex/config.toml`, and the key in `~/.codex/.env` (Codex has no
+  /// `api_key` config field — its provider names an env var, and it loads that
+  /// dotenv itself, so the user never exports anything in their shell).
+  ///
+  /// Unlike the YAML/JSON writes, this one re-encodes the whole TOML document:
+  /// there's no in-place TOML editor, so an existing file keeps every **setting**
+  /// but loses its comments and key order. The `.bak` backup is the safety net.
+  Future<ApplyResult> _applyCodex(String base, String key, String model) async {
+    final config = File('$_home/.codex/config.toml');
+    final env = File('$_home/.codex/.env');
+    try {
+      final text = (await config.exists()) ? await config.readAsString() : '';
+      final root = text.trim().isEmpty
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(TomlDocument.parse(text).toMap());
+
+      // Repoint Codex at the grid (that's what the user asked for), keeping
+      // every other provider and setting in the file.
+      root['model'] = model;
+      root['model_provider'] = kCodexProviderId;
+      _childMap(root, 'model_providers')[kCodexProviderId] = {
+        'name': 'Grid',
+        'base_url': base,
+        'env_key': gridApiKeyEnv,
+        'wire_api': 'responses',
+      };
+
+      await _backupThenWrite(
+          config, TomlDocument.fromMap(root).toString().trimRight());
+      await _upsertEnvVars(env, {gridApiKeyEnv: key}, 'Codex');
+      return ApplyOk(
+        'Pointed Codex at this grid (${_display(config)} + ${_display(env)}).',
+        note: 'Codex picks it up on its next run — restart any open session.',
+      );
+    } on Object catch (e) {
+      return ApplyError('Couldn\'t update Codex config: ${_reason(e)}');
+    }
+  }
+
   /// Upserts `KEY=value` lines in a dotenv file, replacing an existing
   /// uncommented assignment in place (commented `# KEY=` template lines are left
-  /// alone) and appending any that are new under a Grid header. Preserves every
-  /// other line/comment and backs an existing file up to `<file>.bak` first.
-  Future<void> _upsertEnvVars(File env, Map<String, String> vars) async {
+  /// alone) and appending any that are new under a Grid header naming [appName].
+  /// Preserves every other line/comment and backs an existing file up to
+  /// `<file>.bak` first.
+  Future<void> _upsertEnvVars(
+      File env, Map<String, String> vars, String appName) async {
     final lines = (await env.exists()) ? await env.readAsLines() : <String>[];
     final remaining = Map<String, String>.from(vars);
     final out = <String>[];
@@ -168,7 +215,7 @@ class ClientAppConfigurator {
     }
     if (remaining.isNotEmpty) {
       if (out.isNotEmpty && out.last.trim().isNotEmpty) out.add('');
-      out.add('# Added by Grid — points Hermes at this grid');
+      out.add('# Added by Grid — points $appName at this grid');
       remaining.forEach((k, v) => out.add('$k=$v'));
     }
     await env.parent.create(recursive: true);

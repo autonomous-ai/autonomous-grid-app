@@ -4,6 +4,9 @@
 /// grid's real relay BASE_URL / API_KEY — the same pair `grid info --env` prints.
 library;
 
+import '../../codex_agent/logic/codex_exec_args.dart' show gridApiKeyEnv;
+import 'client_app_detector.dart';
+
 /// Fallback model id used only when the grid advertises none (no engine online /
 /// relay unreachable). The live model the grid actually serves is preferred — see
 /// `networkModelsProvider`; this is just so the snippets are never blank.
@@ -64,6 +67,77 @@ String hermesConfigSnippet(String base, String key, String model) => 'model:\n'
     '    base_url: $base\n'
     '    api_key: $key\n'
     '    model: $model';
+
+/// Codex `model_providers` id for a grid — the value its `model_provider` key
+/// points at, and the table name in the config block.
+const String kCodexProviderId = 'grid';
+
+/// The `~/.codex/config.toml` block that makes a grid Codex's model: the grid as
+/// a named provider plus `model` / `model_provider` selecting it.
+///
+/// `wire_api = "responses"` is forced: Codex ≥ 0.141 rejects
+/// `wire_api = "chat"` outright ("no longer supported"), so the grid must answer
+/// on the Responses API.
+/// TODO(BE): Codex only works once the relay serves `/v1/responses` — until then
+/// a send fails with a 404 (same wall as the Chat tab's Agent mode).
+///
+/// Codex has no `api_key` config field — it reads the key from the environment
+/// variable named by `env_key` — so the key lives in [codexEnvSnippet], not here.
+String codexConfigSnippet(String base, String model) => 'model = "$model"\n'
+    'model_provider = "$kCodexProviderId"\n'
+    '\n'
+    '[model_providers.$kCodexProviderId]\n'
+    'name = "Grid"\n'
+    'base_url = "$base"\n'
+    'env_key = "$gridApiKeyEnv"\n'
+    'wire_api = "responses"';
+
+/// The `~/.codex/.env` line holding the grid's API key. Codex loads this dotenv
+/// itself, so the user never has to export a variable in their shell.
+String codexEnvSnippet(String key) => '$gridApiKeyEnv=$key';
+
+/// The paste-ready blocks for [info]'s manual setup — one per file the app needs
+/// (Codex takes two: its config and the dotenv holding the key). Each block
+/// carries the [label] + [caption] shown above it, so the panel just renders
+/// what the app declares instead of branching per app.
+List<({String label, String caption, String code})> appSnippets(
+  ClientAppInfo info,
+  String base,
+  String key,
+  List<String> models,
+) {
+  final model = models.isEmpty ? kGuideDefaultModel : models.first;
+  return switch (info.app) {
+    // Hermes leads with its in-app flow, so its file is the "prefer files?"
+    // alternative rather than the main event.
+    ClientApp.hermes => [
+      (
+        label: 'Prefer editing files?',
+        caption: info.configPath,
+        code: hermesConfigSnippet(base, key, model),
+      ),
+    ],
+    ClientApp.openClaw => [
+      (
+        label: info.name,
+        caption: 'Paste into ${info.configPath}',
+        code: openClawSnippet(base, key, models),
+      ),
+    ],
+    ClientApp.codex => [
+      (
+        label: info.name,
+        caption: 'Paste into ${info.configPath}',
+        code: codexConfigSnippet(base, model),
+      ),
+      (
+        label: 'Your API key',
+        caption: 'Paste into $kCodexEnvPath',
+        code: codexEnvSnippet(key),
+      ),
+    ],
+  };
+}
 
 /// A minimal OpenAI-SDK example for "any app of your own".
 String pythonSnippet(String base, String key, String model) =>

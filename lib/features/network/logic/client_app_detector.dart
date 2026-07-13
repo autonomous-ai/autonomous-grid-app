@@ -7,7 +7,7 @@ import '../../../infrastructure/cli/host_environment.dart';
 
 /// A local AI client the user can point at a grid. Each one has a config file we
 /// know how to write ("Apply for me") and a download page for when it's absent.
-enum ClientApp { openClaw, hermes }
+enum ClientApp { openClaw, hermes, codex }
 
 /// Static facts about a [ClientApp] — display name, where to get it, and where
 /// its config lives. One source of truth so the dialog, detector and
@@ -57,16 +57,39 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
     configPath: '~/.hermes/config.yaml',
     executable: 'hermes',
   ),
+  ClientApp.codex: ClientAppInfo(
+    app: ClientApp.codex,
+    name: 'Codex',
+    downloadUrl: 'https://openai.com/vi-VN/codex/get-started/',
+    configDir: '.codex',
+    configPath: '~/.codex/config.toml',
+    executable: 'codex',
+  ),
 };
+
+/// Where Codex reads a key from: it has no `api_key` config field, so the
+/// provider names an environment variable ([gridApiKeyEnv]) and Codex loads it
+/// from this dotenv file — which is why the Codex setup writes two files.
+const String kCodexEnvPath = '~/.codex/.env';
 
 /// A short, plain-language walkthrough to wire [info]'s app to a grid: a [title]
 /// and numbered [steps]. Hermes has a friendly in-app flow (Settings → Model →
 /// Custom endpoint), so we walk that GUI; a file-based client is wired by pasting
 /// the config block. Either way the user drops the Base URL + Token (shown as
 /// copyable fields in the panel) into the blanks — so the steps name those two.
+/// Codex takes two files (config + key), so its steps name both.
 ({String title, List<String> steps}) appSetupGuide(
   ClientAppInfo info,
 ) => switch (info.app) {
+  ClientApp.codex => (
+    title: 'Add it to ${info.name}',
+    steps: [
+      'Open ${info.configPath} (create it if it isn\'t there)',
+      'Paste the first block below — it points Codex at this grid',
+      'Put the second block in $kCodexEnvPath — Codex reads your key there',
+      'Run codex again in your terminal; it now answers with this grid',
+    ],
+  ),
   ClientApp.hermes => (
     title: 'Set it up in Hermes Agent',
     steps: const [

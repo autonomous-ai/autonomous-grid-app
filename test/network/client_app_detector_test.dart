@@ -33,7 +33,7 @@ void main() {
 
   test('detect() returns apps in ClientApp.values order', () {
     final d = _detector(
-      dirs: {'$_home/.openclaw', '$_home/.hermes'},
+      dirs: {'$_home/.openclaw', '$_home/.hermes', '$_home/.codex'},
     );
     expect(d.detect().toList(), ClientApp.values);
   });
@@ -59,6 +59,14 @@ void main() {
       final joined = guide.steps.join(' | ');
       expect(joined, contains(info.configPath));
       expect(joined, contains('Restart ${info.name}'));
+    });
+
+    test('Codex names both files it needs — the config and the key', () {
+      final info = kClientApps[ClientApp.codex]!;
+      final guide = appSetupGuide(info);
+      final joined = guide.steps.join(' | ');
+      expect(joined, contains(info.configPath)); // ~/.codex/config.toml
+      expect(joined, contains(kCodexEnvPath)); // …and where the key goes
     });
   });
 }

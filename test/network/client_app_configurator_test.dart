@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/codex_agent/logic/codex_exec_args.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/network/logic/client_app_detector.dart';
+import 'package:toml/toml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 const _base = 'https://grid.example/relay/v1';
@@ -244,6 +246,73 @@ void main() {
       expect(lines, contains('# OPENAI_API_KEY=sk-example'));
       // …and a real, uncommented assignment is appended.
       expect(lines, contains('OPENAI_API_KEY=$_key'));
+    });
+  });
+
+  group('Codex', () {
+    Map<String, dynamic> readConfig() => TomlDocument.parse(
+          File('${home.path}/.codex/config.toml').readAsStringSync(),
+        ).toMap();
+
+    test('creates config.toml + .env pointing Codex at the grid', () async {
+      final result = await sut.apply(ClientApp.codex, _base, _key, [_model]);
+
+      expect(result, isA<ApplyOk>());
+      final toml = readConfig();
+      expect(toml['model'], _model);
+      expect(toml['model_provider'], kCodexProviderId);
+      final grid = (toml['model_providers'] as Map)[kCodexProviderId] as Map;
+      expect(grid['base_url'], _base);
+      expect(grid['env_key'], gridApiKeyEnv);
+      // Codex ≥ 0.141 refuses `wire_api = "chat"`.
+      expect(grid['wire_api'], 'responses');
+      // The key never lands in config.toml — Codex reads it from its dotenv.
+      expect(File('${home.path}/.codex/config.toml').readAsStringSync(),
+          isNot(contains(_key)));
+      expect(File('${home.path}/.codex/.env').readAsLinesSync(),
+          contains('$gridApiKeyEnv=$_key'));
+    });
+
+    test('keeps other providers and settings, backing the old file up',
+        () async {
+      final config = File('${home.path}/.codex/config.toml');
+      await config.create(recursive: true);
+      await config.writeAsString(
+        'model = "gpt-5"\n'
+        'approval_policy = "never"\n'
+        '\n'
+        '[model_providers.ollama]\n'
+        'name = "Ollama"\n'
+        'base_url = "http://127.0.0.1:11434/v1"\n',
+      );
+
+      await sut.apply(ClientApp.codex, _base, _key, [_model]);
+
+      final toml = readConfig();
+      final providers = toml['model_providers'] as Map;
+      expect(providers.containsKey('ollama'), isTrue); // untouched
+      expect((providers[kCodexProviderId] as Map)['base_url'], _base);
+      expect(toml['approval_policy'], 'never'); // unrelated setting survives
+      expect(toml['model'], _model); // repointed at the grid, as asked
+      expect(File('${config.path}.bak').existsSync(), isTrue);
+    });
+
+    test('re-applying upserts the key instead of duplicating it', () async {
+      await sut.apply(ClientApp.codex, _base, _key, [_model]);
+      await sut.apply(ClientApp.codex, _base, 'sk-new', [_model]);
+
+      final content = File('${home.path}/.codex/.env').readAsStringSync();
+      expect('$gridApiKeyEnv='.allMatches(content).length, 1);
+      expect(content, contains('$gridApiKeyEnv=sk-new'));
+    });
+
+    test('reports an error for a corrupt config instead of throwing', () async {
+      final config = File('${home.path}/.codex/config.toml');
+      await config.create(recursive: true);
+      await config.writeAsString('this is not = valid = toml [[[');
+
+      final result = await sut.apply(ClientApp.codex, _base, _key, [_model]);
+      expect(result, isA<ApplyError>());
     });
   });
 }
