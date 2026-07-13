@@ -5,9 +5,10 @@ import '../logic/agent_backend.dart';
 import '../logic/agent_tool.dart';
 import 'agent_setup_dialog.dart';
 
-/// The Chat-tab control that picks the agent backend: Off (normal chat), Codex,
-/// or Hermes. Selecting a backend whose tool isn't installed opens the one-time
-/// setup and only switches once that succeeds.
+/// The Chat-tab control that picks the agent backend: Off (normal chat) or
+/// Hermes — plus Codex in debug builds, where it's still selectable (see
+/// `AgentBackendX.isSelectable`). Selecting a backend whose tool isn't installed
+/// opens the one-time setup and only switches once that succeeds.
 ///
 /// Rendered as a dropdown-style button 56px tall so it lines up with the
 /// Grid/Model fields; the on-state fills blue with `onPrimary` (white) content
@@ -20,7 +21,7 @@ class AgentBackendPicker extends ConsumerWidget {
     final backend = ref.watch(agentBackendProvider);
     return MenuAnchor(
       menuChildren: [
-        for (final option in AgentBackend.values)
+        for (final option in AgentBackend.values.where((o) => o.isSelectable))
           MenuItemButton(
             leadingIcon: Icon(
               backend == option ? Icons.check : Icons.smart_toy_outlined,
@@ -78,8 +79,8 @@ class _PickerButton extends StatelessWidget {
     const icon = Icon(Icons.smart_toy_outlined, size: 18);
     return Tooltip(
       message:
-          'Agent (experimental): run this chat through Codex or Hermes, '
-          "using your grid's model.",
+          'Agent (experimental): let an agent answer this chat — it can read '
+          "files and run tasks, using your grid's model.",
       child: backend.isOn
           ? FilledButton.icon(
               onPressed: onTap,

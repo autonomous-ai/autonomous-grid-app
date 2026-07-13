@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
@@ -15,6 +16,16 @@ extension AgentBackendX on AgentBackend {
     AgentBackend.codex => 'Codex',
     AgentBackend.hermes => 'Hermes',
   };
+
+  /// Whether the user may pick this backend.
+  ///
+  /// Codex is hidden from shipped builds: codex ≥ 0.141 talks only to the
+  /// Responses API, while the grid relay and the local engine serve Chat
+  /// Completions, so every Codex send fails with a 404 on `/v1/responses`.
+  /// Offering it would be a lie. Kept selectable in debug so it can be tried
+  /// again the day the relay grows a `/v1/responses` endpoint.
+  /// TODO(BE): re-enable once the relay serves the Responses API.
+  bool get isSelectable => this != AgentBackend.codex || kDebugMode;
 
   bool get isOn => this != AgentBackend.off;
 
@@ -38,10 +49,12 @@ class AgentBackendController extends Notifier<AgentBackend> {
   @override
   AgentBackend build() {
     final saved = _parse(ref.read(chatPrefsProvider).agent);
+    // Don't resume onto a backend the user can no longer pick (Codex outside a
+    // debug build) — the picker would read "on" while every send failed.
+    if (!saved.isSelectable) return AgentBackend.off;
     final tool = saved.tool;
-    // Don't resume onto a backend whose tool was since removed — that would show
-    // the picker "on" while every send failed. Start Off and let the user re-arm
-    // it (which re-runs the install flow).
+    // Same for a backend whose tool was since removed. Start Off and let the
+    // user re-arm it (which re-runs the install flow).
     if (tool != null && !ref.read(agentToolInstalledProvider(tool))) {
       return AgentBackend.off;
     }
