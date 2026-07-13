@@ -42,7 +42,7 @@ permissions:
 # `main`) so every grid-app release compiles a known-good, reproducible CLI. Bump this
 # one line to ship a newer CLI: https://github.com/autonomous-ai/autonomous-grid/releases
 env:
-  CLI_VERSION: v0.1.14
+  CLI_VERSION: v0.1.15
   # PUBLIC repo that hosts client-facing release binaries (.dmg) + the Sparkle
   # appcast. Kept separate from this private source repo so the auto-update feed
   # is reachable without auth (a private repo's release assets 404 for anyone
