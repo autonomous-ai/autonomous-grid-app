@@ -2,13 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../features/auth/logic/session_controller.dart';
-
 /// Primary nav sections shown in the left sidebar (Tailscale-style).
 enum NavSection {
   networks(Icons.bolt, 'Grids'),
   howToUse(Icons.help_outline_rounded, 'How to use'),
-  provider(Icons.dns_outlined, 'Engines', providerOnly: true),
+  provider(Icons.dns_outlined, 'Engines'),
   chat(Icons.chat_bubble_outline_rounded, 'Chat', devOnly: false),
   overlord(
     Icons.monitor_heart_outlined,
@@ -21,15 +19,11 @@ enum NavSection {
   const NavSection(
     this.icon,
     this.label, {
-    this.providerOnly = false,
     this.devOnly = false,
     this.hidden = false,
   });
   final IconData icon;
   final String label;
-
-  /// Only available when the selected network grants the provider scope.
-  final bool providerOnly;
 
   /// Only available in dev (debug) builds — hidden in release/production.
   final bool devOnly;
@@ -39,18 +33,15 @@ enum NavSection {
   final bool hidden;
 }
 
-/// Sections visible for the currently selected network. Engines is hidden on
-/// consumer-only networks; admins and providers see it. Dev-only sections
-/// (Debug) are hidden outside debug builds.
+/// Sections visible in the sidebar. Engines is shown to everyone: installing an
+/// engine (Homebrew, llama.cpp, a model) is a local set-up that needs no
+/// permission on any grid — only *sharing* it does, and the Engines screen gates
+/// that step itself. Hiding the tab was what left consumers with no way to learn
+/// how the app works. Dev-only sections (Debug) stay hidden outside debug builds.
 final visibleNavSectionsProvider = Provider<List<NavSection>>((ref) {
-  final canManage =
-      ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
   return [
     for (final section in NavSection.values)
-      if (!section.hidden &&
-          (!section.providerOnly || canManage) &&
-          (!section.devOnly || kDebugMode))
-        section,
+      if (!section.hidden && (!section.devOnly || kDebugMode)) section,
   ];
 });
 
@@ -61,15 +52,7 @@ final navSectionProvider = NotifierProvider<NavSectionNotifier, NavSection>(
 
 class NavSectionNotifier extends Notifier<NavSection> {
   @override
-  NavSection build() {
-    // Switching to a consumer network hides the provider-only sections — don't
-    // strand the user on a now-invisible tab; fall back to Networks.
-    ref.listen(selectedNetworkProvider, (_, next) {
-      final canManage = next?.canManageProvider ?? false;
-      if (state.providerOnly && !canManage) state = NavSection.networks;
-    });
-    return NavSection.networks;
-  }
+  NavSection build() => NavSection.networks;
 
   void select(NavSection section) => state = section;
 }

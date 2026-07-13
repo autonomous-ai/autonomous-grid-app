@@ -89,12 +89,17 @@ class _ServeSection extends ConsumerWidget {
     ProviderRunState run,
   ) {
     if (!network.isProvider) {
-      // Admins arriving from the grid's "Start engine" land here first. Frame
-      // turning on engines as the opening step of the same guided path, not a
-      // cold gate. Non-admins just get the "ask the owner" note from the card.
+      // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
+      // consumer isn't allowed to), but installing the engine on this computer
+      // needs no permission from any grid — so still offer the set-up. That way
+      // a consumer can learn the app and get ready instead of hitting a wall,
+      // and an admin can install while turning sharing on.
       return [
-        if (network.role == NetworkRole.admin) const SizedBox(height: 16),
+        const SizedBox(height: 16),
         EnableProviderCard(network: network),
+        const SizedBox(height: 16),
+        const NodeSetupCard(),
+        const SizedBox(height: 16),
       ];
     }
     // One engine at a time: if one is already serving another grid, say so and

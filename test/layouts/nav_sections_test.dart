@@ -142,15 +142,25 @@ void main() {
     );
   });
 
-  test('switching to a consumer network resets a provider-only section', () {
+  test('consumer network still lists Engines', () {
+    // Installing an engine is a local set-up; only sharing it needs a role on
+    // the grid, and the Engines screen gates that step itself. Hiding the tab
+    // is what used to leave a consumer with no way to learn the app.
+    final container = containerWith('grid-con');
+
+    expect(
+      container.read(visibleNavSectionsProvider),
+      NavSection.values.where((s) => !s.hidden),
+    );
+  });
+
+  test('switching to a consumer network keeps you on Engines', () {
     final container = containerWith('grid-prov');
-    // Keep the notifier alive so its build() registers the reset listener.
     container.listen(navSectionProvider, (_, _) {});
 
     container.read(navSectionProvider.notifier).select(NavSection.provider);
-    expect(container.read(navSectionProvider), NavSection.provider);
-
     container.read(selectedNetworkProvider.notifier).select(consumer);
-    expect(container.read(navSectionProvider), NavSection.networks);
+
+    expect(container.read(navSectionProvider), NavSection.provider);
   });
 }

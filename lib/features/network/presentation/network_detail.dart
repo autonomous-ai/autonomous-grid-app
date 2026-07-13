@@ -14,6 +14,7 @@ import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
 import 'grid_overview_card.dart';
 import 'members_tab.dart';
+import 'rename_grid_dialog.dart';
 
 /// Right-hand detail pane for the selected network — Tailscale device-detail
 /// style: a status header over the grid's content. Admins and providers get a
@@ -139,6 +140,9 @@ class _Header extends ConsumerWidget {
                   ),
                   const SizedBox(width: 12),
                   GridBadges(network: network),
+                  // Renaming edits the grid's own title, so the pencil sits on
+                  // the title rather than among the header actions.
+                  if (network.isOwner) _RenameGridButton(network: network),
                 ],
               ),
             ),
@@ -165,25 +169,60 @@ class _Header extends ConsumerWidget {
   }
 }
 
-/// Provider-only body action: jump to the Engines tab to set up an engine (the
-/// real "Start engine" lives there once a model is ready — hence "Set up", not
-/// "Start"). Gated on the provider role by its call site.
-class _Actions extends ConsumerWidget {
-  const _Actions();
+/// The empty-grid card for someone who can host on it: says plainly *why* the
+/// grid can't do anything yet and what the next step is, instead of a lone
+/// "Set up engine" button with no context. Mirrors [_TryThisGrid], so the first
+/// screen always reads as one card with a headline, a reason and an action.
+/// (The real "Start engine" lives in Engines once a model is ready — hence
+/// "Set up", not "Start".)
+class _SetUpThisGrid extends ConsumerWidget {
+  const _SetUpThisGrid();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        FilledButton.icon(
-          onPressed: () =>
-              ref.read(navSectionProvider.notifier).select(NavSection.provider),
-          icon: const Icon(Icons.dns_outlined, size: 18),
-          label: const Text('Set up engine'),
-        ),
-      ],
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Get this grid running',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Your grid is empty — no AI model is running on it yet. Set up an '
+            'engine on this computer and pick a model, and the grid can answer '
+            'questions here and in your other apps.',
+            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: () => ref
+                    .read(navSectionProvider.notifier)
+                    .select(NavSection.provider),
+                icon: const Icon(Icons.dns_outlined, size: 18),
+                label: const Text('Set up engine'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => ref
+                    .read(navSectionProvider.notifier)
+                    .select(NavSection.howToUse),
+                icon: const Icon(Icons.help_outline_rounded, size: 18),
+                label: const Text('How it works'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -209,7 +248,7 @@ class _PrimaryAction extends ConsumerWidget {
         ref.watch(gridMediaCapabilitiesProvider).any;
     if (usable) return const _TryThisGrid();
     return network.canManageProvider
-        ? const _Actions()
+        ? const _SetUpThisGrid()
         : const _NothingServedYet();
   }
 }
@@ -288,6 +327,24 @@ class _NothingServedYet extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Owner-only title action: opens the rename dialog. Icon-only (a pencil next
+/// to the grid's name), so it carries a tooltip.
+class _RenameGridButton extends ConsumerWidget {
+  const _RenameGridButton({required this.network});
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      tooltip: 'Rename grid',
+      visualDensity: VisualDensity.compact,
+      color: AppPalette.textFaint,
+      icon: const Icon(Icons.edit_outlined, size: 16),
+      onPressed: () => RenameGridDialog.show(context, ref, network),
     );
   }
 }

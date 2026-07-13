@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/host_arch.dart';
-import '../../features/auth/logic/session_controller.dart';
 import '../../features/chat/presentation/chat_pane.dart';
 import '../../features/network/logic/create_network_controller.dart';
 import '../../features/debug/presentation/debug_view.dart';
@@ -110,19 +109,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 }
 
 /// Routes the active nav section to its pane. Networks is a two-column
-/// list/detail; the rest render their existing single view. Provider-only
-/// sections fall back to Networks when the selected network isn't a provider.
+/// list/detail; the rest render their existing single view. Every section is
+/// reachable on any grid — Engines gates the sharing step inside itself rather
+/// than disappearing from the sidebar.
 class _Content extends ConsumerWidget {
   const _Content({required this.section});
   final NavSection section;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final canManage =
-        ref.watch(selectedNetworkProvider)?.canManageProvider ?? false;
-    final effective =
-        section.providerOnly && !canManage ? NavSection.networks : section;
-    return switch (effective) {
+    return switch (section) {
       NavSection.networks => const NetworksPane(),
       NavSection.chat => const ChatPane(),
       NavSection.overlord => const OverlordView(),

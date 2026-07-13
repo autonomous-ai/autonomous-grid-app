@@ -53,5 +53,20 @@ void main() {
       expect(find.text('5'), findsOneWidget); // stats.models fallback
       expect(find.text('—'), findsOneWidget); // null uptime → em dash
     });
+
+    testWidgets('hides itself on a grid that serves nothing yet', (
+      tester,
+    ) async {
+      // Three zeros next to a 99.9% uptime read as broken, and crowd out the
+      // set-up card that tells a new owner what to actually do.
+      await _pumpStatsBar(
+        tester,
+        stats: const GridStats(models: 0, nodes: 0, uptimePct: 99.9),
+        resolved: const [],
+      );
+
+      expect(find.text('MODELS'), findsNothing);
+      expect(find.text('99.9%'), findsNothing);
+    });
   });
 }

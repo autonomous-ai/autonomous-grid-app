@@ -49,7 +49,10 @@ class CapabilityChip extends StatelessWidget {
   }
 }
 
-/// Stats bar showing Models / Nodes / Uptime headline numbers.
+/// Stats bar showing Models / Nodes / Uptime headline numbers. Hidden on a grid
+/// that serves nothing yet: "0 models, 0 nodes, 99.9% uptime" is noise a new
+/// user has to decode, and it buries the one thing that matters there — the
+/// setup card telling them what to do next.
 class StatsBar extends ConsumerWidget {
   const StatsBar({super.key, required this.stats});
   final GridStats stats;
@@ -64,6 +67,7 @@ class StatsBar extends ConsumerWidget {
     // `/models`) whenever it has entries, so the headline matches the section.
     final resolved = ref.watch(gridModelsProvider).length;
     final models = resolved > 0 ? resolved : stats.models;
+    if (models == 0 && stats.nodes == 0) return const SizedBox.shrink();
     return GlassCard(
       child: IntrinsicHeight(
         child: Row(

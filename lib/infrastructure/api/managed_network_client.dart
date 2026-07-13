@@ -43,6 +43,11 @@ class ManagedNetworkClient {
   /// The endpoint path appended to the control-plane base URL.
   static const String _path = 'v1/grid/managed-networks';
 
+  /// The generic network path. Editing a grid (`PATCH …/networks/{id}`) is
+  /// served here, not under `managed-networks` — the control plane keeps the
+  /// managed routes for provisioning (create / start / stop / members).
+  static const String _networksPath = 'v1/grid/networks';
+
   static Future<(ManagedNetwork?, ManagedNetworkError?)> create({
     required String apiUrl,
     required String sessionToken,
@@ -209,6 +214,63 @@ class ManagedNetworkClient {
     }
   }
 
+  /// Renames the grid [networkId] via `PATCH /v1/grid/networks/{network_id}`,
+  /// sending only `name` so the grid's type and status are left untouched.
+  /// Owner-only on the server (403 otherwise). Returns `(true, null)` on
+  /// success.
+  ///
+  /// The grid's id never changes, so everything keyed by it (tokens, joined
+  /// engines, the Base URL) keeps working — only the display name moves.
+  ///
+  /// TODO(BE): this endpoint accepts any `name` — unlike create, it applies no
+  /// length/character rule and no duplicate check. The app validates with
+  /// `gridNameError` first, but another client could still write a name that
+  /// create would have rejected.
+  static Future<(bool, ManagedNetworkError?)> rename({
+    required String apiUrl,
+    required String sessionToken,
+    required String networkId,
+    required String name,
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.patchUrl(renameEndpoint(apiUrl, networkId));
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers
+          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+      request.add(utf8.encode(jsonEncode({'name': name})));
+
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (
+          false,
+          ManagedNetworkError(
+            _renameErrorFor(response.statusCode, body),
+            statusCode: response.statusCode,
+            body: body,
+          ),
+        );
+      }
+      return (true, null);
+    } on TimeoutException {
+      return (
+        false,
+        const ManagedNetworkError("The server didn't respond in time. Try again.")
+      );
+    } on SocketException catch (e) {
+      return (
+        false,
+        ManagedNetworkError("Couldn't reach the Grid control plane: ${e.message}")
+      );
+    } on Object catch (e) {
+      return (false, ManagedNetworkError("Couldn't rename the grid: $e"));
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// Deletes the managed network [networkId] via
   /// `DELETE /v1/grid/managed-networks/{network_id}`. Owner-only on the server
   /// (403 otherwise). Returns `(true, null)` on success.
@@ -256,9 +318,18 @@ class ManagedNetworkClient {
 
   /// The full create-managed-network URL for [apiUrl] (which may or may not end
   /// in `/`). Public so callers can log the same URL the request hits.
-  static Uri endpoint(String apiUrl) {
+  static Uri endpoint(String apiUrl) => _url(apiUrl, _path);
+
+  /// The rename (PATCH) URL for [networkId]. Public so callers can log the same
+  /// URL the request hits.
+  static Uri renameEndpoint(String apiUrl, String networkId) =>
+      _url(apiUrl, '$_networksPath/$networkId');
+
+  /// [path] resolved against the control-plane base [apiUrl], which may or may
+  /// not end in `/`.
+  static Uri _url(String apiUrl, String path) {
     final base = apiUrl.endsWith('/') ? apiUrl : '$apiUrl/';
-    return Uri.parse('$base$_path');
+    return Uri.parse('$base$path');
   }
 
   /// The single-network URL for [networkId] (GET/DELETE). Public so callers can
@@ -299,6 +370,21 @@ class ManagedNetworkClient {
       403 => detail ?? 'Only the grid owner can delete this grid.',
       404 => detail ?? 'This grid is no longer available.',
       409 => detail ?? "This grid can't be deleted right now.",
+      502 || 503 => detail ?? 'The grid service is busy right now. Try again.',
+      _ => detail ?? 'Error $status.',
+    };
+  }
+
+  /// Rename-endpoint variant of [_errorFor] — owner-only, and the name may be
+  /// one the server won't take (a duplicate, or bad characters).
+  static String _renameErrorFor(int status, String body) {
+    final detail = _detailOf(body);
+    return switch (status) {
+      400 || 422 => detail ?? 'That name is not allowed. Try another.',
+      401 => 'Your session has expired. Sign in again.',
+      403 => detail ?? 'Only the grid owner can rename this grid.',
+      404 => detail ?? 'This grid is no longer available.',
+      409 => detail ?? 'You already have a grid with this name.',
       502 || 503 => detail ?? 'The grid service is busy right now. Try again.',
       _ => detail ?? 'Error $status.',
     };

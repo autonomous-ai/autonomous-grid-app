@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/enable_provider_controller.dart';
 
-/// Shown in the "Serve provider" section when the viewer administers a network
-/// but the token lacks `provider:poll`. One click grants the provider role and
-/// refreshes the token (see [EnableProviderController]). Non-admins just see
-/// why they can't serve.
+/// Shown on the Engines screen when the viewer can't share a model on the open
+/// grid yet. An admin gets a one-click "turn it on" (it grants the provider role
+/// and refreshes the token — see [EnableProviderController]); everyone else gets
+/// [_SharingNotAllowed], which points them at a grid they *can* share on.
 class EnableProviderCard extends ConsumerWidget {
   const EnableProviderCard({super.key, required this.network});
 
@@ -17,17 +18,7 @@ class EnableProviderCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-
-    if (network.role != NetworkRole.admin) {
-      return Text(
-        "You don't have permission to run an engine on this grid yet. "
-        "Ask the grid's owner to allow it.",
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      );
-    }
+    if (network.role != NetworkRole.admin) return const _SharingNotAllowed();
 
     final state = ref.watch(enableProviderControllerProvider);
     final running =
@@ -43,6 +34,43 @@ class EnableProviderCard extends ConsumerWidget {
       child: running != null
           ? _Running(log: running.log)
           : _Idle(network: network, error: failed?.message),
+    );
+  }
+}
+
+/// The "you may use this grid, but not share on it" state — a grid someone else
+/// owns and hasn't allowed you to host on. It's a card, not a bare line of text,
+/// because it must not dead-end: every signed-in user owns at least one grid, so
+/// it sends them there, and the engine set-up below stays available regardless.
+class _SharingNotAllowed extends ConsumerWidget {
+  const _SharingNotAllowed();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("You can use this grid, but not share on it"),
+          const SizedBox(height: 4),
+          Text(
+            "Its owner hasn't allowed you to run a model here. You can still "
+            'set up the engine below and share it on your own grid.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () =>
+                ref.read(navSectionProvider.notifier).select(NavSection.networks),
+            icon: const Icon(Icons.bolt, size: 16),
+            label: const Text('Open my grids'),
+          ),
+        ],
+      ),
     );
   }
 }
