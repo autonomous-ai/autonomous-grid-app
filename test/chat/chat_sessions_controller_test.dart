@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
+import 'package:grid_app/features/codex_agent/logic/agent_backend.dart';
+import 'package:grid_app/features/codex_agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
@@ -55,17 +57,23 @@ class _FakeSender implements ChatSender {
   }
 }
 
-/// A controller wired to a temp-dir store and a fake sender.
-({ProviderContainer container, ChatStore store, _FakeSender sender}) _harness(
-  Directory dir, {
-  required List<ChatSendUpdate> updates,
-}) {
+/// A controller wired to a temp-dir store, a fake relay sender and a fake agent
+/// (hermes) sender, so a test can assert which of the two a send was routed to.
+({
+  ProviderContainer container,
+  ChatStore store,
+  _FakeSender sender,
+  _FakeSender agent,
+})
+_harness(Directory dir, {required List<ChatSendUpdate> updates}) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
+  final agent = _FakeSender(updates);
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
       chatSenderProvider.overrideWithValue(sender),
+      hermesChatSenderProvider.overrideWithValue(agent),
       // Keep any saved input images in the temp dir, never the real grid home.
       mediaOutputsDirProvider.overrideWithValue(
         Directory('${dir.path}/outputs'),
@@ -78,7 +86,7 @@ class _FakeSender implements ChatSender {
     ],
   );
   addTearDown(container.dispose);
-  return (container: container, store: store, sender: sender);
+  return (container: container, store: store, sender: sender, agent: agent);
 }
 
 void main() {
@@ -213,6 +221,47 @@ void main() {
       'q2',
       'a1',
     ]);
+  });
+
+  test('agent mode routes a text turn through the agent sender', () async {
+    final h = _harness(
+      tmp,
+      updates: [
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+    h.container.read(agentBackendProvider.notifier).set(AgentBackend.hermes);
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+
+    expect(h.agent.modality, PlaygroundModality.text);
+    expect(h.sender.history, isNull);
+  });
+
+  test('an image model still generates while agent mode is on', () async {
+    final h = _harness(
+      tmp,
+      updates: [
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+    h.container.read(agentBackendProvider.notifier).set(AgentBackend.hermes);
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(
+          network: _credential(),
+          model: 'flux',
+          message: 'a stormy sky',
+          modality: PlaygroundModality.image,
+        );
+
+    // The (text-only) agent never sees it: the relay sender generates the image.
+    expect(h.agent.history, isNull);
+    expect(h.sender.modality, PlaygroundModality.image);
+    expect(h.sender.model, 'flux');
   });
 
   test('newChat starts a fresh compose without losing history', () async {

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
+import '../../playground/logic/playground_request.dart';
 import 'agent_tool.dart';
 
 /// Which backend drives a Chat-tab send. [off] uses the normal grid chat relay;
@@ -28,6 +29,15 @@ extension AgentBackendX on AgentBackend {
   bool get isSelectable => this != AgentBackend.codex || kDebugMode;
 
   bool get isOn => this != AgentBackend.off;
+
+  /// The backend that can actually serve [modality].
+  ///
+  /// Codex and Hermes only speak text, so a picked image/video model falls back
+  /// to [AgentBackend.off] — the relay's media sender. Without this an Agent-on
+  /// user who picked "Image generation" got words (or a relay 503) instead of a
+  /// picture, with no hint that Agent mode had swallowed the request.
+  AgentBackend forModality(PlaygroundModality modality) =>
+      modality == PlaygroundModality.text ? this : AgentBackend.off;
 
   /// The tool that backs this backend, or null for [off].
   AgentTool? get tool => switch (this) {

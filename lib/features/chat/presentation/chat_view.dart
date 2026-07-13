@@ -228,7 +228,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final loadingModels =
         ref.watch(gridOverviewProvider).isLoading &&
         ref.watch(networkModelsProvider).isLoading;
-    final agentMode = ref.watch(agentBackendProvider).isOn;
+    final backend = ref.watch(agentBackendProvider);
 
     _syncModelField(sessions.active, options, widget.network.networkId);
 
@@ -247,6 +247,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // rather than being stranded on a dead screen with only "Go to Engines".
     final hasModel = loadingModels || options.isNotEmpty;
     final modality = _modalityFor(options);
+    // An image/video model bypasses the (text-only) agent, so the in-flight
+    // bubble must show the media progress bar, not "Agent is working".
+    final agentMode = backend.forModality(modality).isOn;
     final needsImage = modality == PlaygroundModality.video;
     final canSend =
         !sessions.sending && (!needsImage || _attachments.isNotEmpty);

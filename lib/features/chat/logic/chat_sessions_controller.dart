@@ -135,22 +135,24 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
     _commit(conversation, phase: const SendBusy());
 
-    // Agent mode routes the turn through codex/hermes (text only) instead of the
-    // relay chat sender; everything downstream — folding updates, persistence —
-    // is identical because all three implement [ChatSender].
-    final backend = ref.read(agentBackendProvider);
+    // Agent mode routes the turn through codex/hermes instead of the relay chat
+    // sender; everything downstream — folding updates, persistence — is
+    // identical because all three implement [ChatSender]. The agents are
+    // text-only, so [forModality] keeps an image/video model on the relay
+    // sender — picking a generator still generates while Agent is on.
+    final backend = ref.read(agentBackendProvider).forModality(modality);
     final sender = switch (backend) {
       AgentBackend.off => ref.read(chatSenderProvider),
       AgentBackend.codex => ref.read(codexChatSenderProvider),
       AgentBackend.hermes => ref.read(hermesChatSenderProvider),
     };
-    final agentMode = backend.isOn;
     final updates = sender.send(
       network: network,
       model: model,
       history: conversation.messages,
-      modality: agentMode ? PlaygroundModality.text : modality,
-      attachments: agentMode ? const [] : attachments,
+      modality: modality,
+      // The agents can't see attached images; only the relay sender takes them.
+      attachments: backend.isOn ? const [] : attachments,
     );
 
     // Fold updates through a stored subscription so [stop] and disposal can
