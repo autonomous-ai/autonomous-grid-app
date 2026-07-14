@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/presentation/chat_history_list.dart';
+import '../../../features/command_palette/presentation/command_palette.dart';
 import '../../theme/app_theme.dart';
 import '../shell_state.dart';
 import 'sidebar_account.dart';
@@ -28,28 +29,6 @@ class AppSidebar extends ConsumerStatefulWidget {
 }
 
 class _AppSidebarState extends ConsumerState<AppSidebar> {
-  final _search = TextEditingController();
-  bool _searching = false;
-  String _query = '';
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  /// Show / hide the chat search box. Closing it clears the filter, so the full
-  /// history is back the moment the box goes away.
-  void _toggleSearch() {
-    setState(() {
-      _searching = !_searching;
-      if (!_searching) {
-        _search.clear();
-        _query = '';
-      }
-    });
-  }
-
   void _newChat() {
     ref.read(chatSessionsProvider.notifier).newChat();
     ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
@@ -82,19 +61,12 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _Brand(searching: _searching, onToggleSearch: _toggleSearch),
+                _Brand(onSearch: () => showCommandPalette(context)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (_searching) ...[
-                        _SearchField(
-                          controller: _search,
-                          onChanged: (value) => setState(() => _query = value),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
                       SidebarItem(
                         icon: Icons.edit_outlined,
                         label: 'New chat',
@@ -121,7 +93,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: ChatHistoryList(query: _query),
+                    child: const ChatHistoryList(),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -138,10 +110,9 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
 /// The wordmark row at the top — also the window's drag handle, and on macOS it
 /// leaves room for the traffic-light buttons above it.
 class _Brand extends StatelessWidget {
-  const _Brand({required this.searching, required this.onToggleSearch});
+  const _Brand({required this.onSearch});
 
-  final bool searching;
-  final VoidCallback onToggleSearch;
+  final VoidCallback onSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -163,52 +134,14 @@ class _Brand extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: searching ? 'Close search' : 'Search chats',
+              tooltip: 'Search everything  ⌘K',
               iconSize: 18,
               visualDensity: VisualDensity.compact,
-              color: searching
-                  ? AppPalette.textPrimary
-                  : AppPalette.textSecondary,
-              icon: Icon(
-                searching ? Icons.close_rounded : Icons.search_rounded,
-              ),
-              onPressed: onToggleSearch,
+              color: AppPalette.textSecondary,
+              icon: const Icon(Icons.search_rounded),
+              onPressed: onSearch,
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Filters the chat history by title as you type.
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.controller, required this.onChanged});
-
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(11),
-        boxShadow: AppGlass.cardShadow,
-      ),
-      child: TextField(
-        controller: controller,
-        autofocus: true,
-        onChanged: onChanged,
-        style: const TextStyle(fontSize: 13.5),
-        decoration: const InputDecoration(
-          filled: false,
-          hintText: 'Search chats',
-          prefixIcon: Icon(Icons.search_rounded, size: 17),
-          prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 34),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
         ),
       ),
     );

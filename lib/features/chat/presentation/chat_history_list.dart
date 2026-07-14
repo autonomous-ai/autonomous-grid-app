@@ -16,17 +16,16 @@ import '../logic/conversation.dart';
 /// while it answers — so the history is grouped by project rather than by the
 /// day it happened, which told you nothing about what it was for.
 ///
-/// [query] filters chat titles as the sidebar's search box types into it.
+/// Searching isn't here: it's in the palette (⌘K), which finds projects and
+/// scheduled tasks too.
 class ChatHistoryList extends ConsumerWidget {
-  const ChatHistoryList({super.key, this.query = ''});
-
-  final String query;
+  const ChatHistoryList({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sessions = ref.watch(chatSessionsProvider);
     final projects = ref.watch(projectsProvider);
-    final matches = _filter(sessions.conversations, query);
+    final matches = sessions.conversations;
 
     final loose = [
       for (final c in matches)
@@ -52,7 +51,6 @@ class ChatHistoryList extends ConsumerWidget {
                 for (final c in matches)
                   if (c.projectId == project.id) c,
               ],
-              searching: query.trim().isNotEmpty,
             ),
         const SidebarSectionLabel(label: 'Chats'),
         if (loose.isEmpty)
@@ -61,15 +59,6 @@ class ChatHistoryList extends ConsumerWidget {
           for (final chat in loose) _ChatRow(chat: chat),
       ],
     );
-  }
-
-  List<Conversation> _filter(List<Conversation> all, String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return all;
-    return [
-      for (final c in all)
-        if (c.title.toLowerCase().contains(q)) c,
-    ];
   }
 }
 
@@ -126,18 +115,10 @@ class _ProjectsHeader extends StatelessWidget {
 /// One project and the chats inside it. Collapsible, because a folder you're not
 /// working in today shouldn't cost you half the rail.
 class _ProjectGroup extends ConsumerStatefulWidget {
-  const _ProjectGroup({
-    required this.project,
-    required this.chats,
-    required this.searching,
-  });
+  const _ProjectGroup({required this.project, required this.chats});
 
   final Project project;
   final List<Conversation> chats;
-
-  /// While the user is searching, groups stay open — a match hidden inside a
-  /// collapsed folder would look like no match at all.
-  final bool searching;
 
   @override
   ConsumerState<_ProjectGroup> createState() => _ProjectGroupState();
@@ -155,7 +136,7 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
 
   @override
   Widget build(BuildContext context) {
-    final open = _open || widget.searching;
+    final open = _open;
     final missing = !widget.project.exists;
 
     return Column(

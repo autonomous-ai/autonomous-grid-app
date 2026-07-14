@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/chat/presentation/chat_pane.dart';
+import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/network/logic/create_network_controller.dart';
 import '../../features/network/presentation/how_to_use_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
@@ -79,31 +81,46 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       if (next != null) _resumeSharing();
     });
 
-    return Scaffold(
-      backgroundColor: AppPalette.windowBg,
-      body: Stack(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    // ⌘K from anywhere — the palette is how you find a chat, a project or a task
+    // without knowing which screen the app keeps it on.
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+            _openPalette,
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+            _openPalette,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: AppPalette.windowBg,
+          body: Stack(
             children: [
-              const AppSidebar(),
-              Expanded(
-                child: Column(
-                  children: [
-                    const AppTopBar(),
-                    const SessionExpiredBanner(),
-                    const GridProvisionBanner(),
-                    const Expanded(child: _SectionView()),
-                  ],
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const AppSidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const AppTopBar(),
+                        const SessionExpiredBanner(),
+                        const GridProvisionBanner(),
+                        const Expanded(child: _SectionView()),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+              const _SidebarCastShadow(),
             ],
           ),
-          const _SidebarCastShadow(),
-        ],
+        ),
       ),
     );
   }
+
+  void _openPalette() => showCommandPalette(context);
 }
 
 class _SidebarCastShadow extends StatelessWidget {
