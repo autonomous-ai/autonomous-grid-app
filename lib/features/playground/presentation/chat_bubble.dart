@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/theme/app_theme.dart';
 import '../logic/chat_message.dart';
 import 'message_content.dart';
 
@@ -14,17 +15,23 @@ class ChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isUser = message.role == ChatRole.user;
+    final radius = BorderRadius.only(
+      topLeft: const Radius.circular(14),
+      topRight: const Radius.circular(14),
+      bottomLeft: Radius.circular(isUser ? 14 : 6),
+      bottomRight: Radius.circular(isUser ? 6 : 14),
+    );
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
+        margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: const BoxConstraints(maxWidth: 520),
         decoration: BoxDecoration(
-          color: isUser
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          color: isUser ? AppPalette.accent : AppGlass.bubbleFill,
+          borderRadius: radius,
+          border: isUser ? null : Border.all(color: AppGlass.hair),
+          boxShadow: isUser ? null : AppGlass.cardShadow,
         ),
         child: MessageContent(
           text: message.text,
@@ -51,12 +58,14 @@ class GeneratingBubble extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
+        margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         constraints: const BoxConstraints(maxWidth: 320),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          color: AppGlass.bubbleFill,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppGlass.hair),
+          boxShadow: AppGlass.cardShadow,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

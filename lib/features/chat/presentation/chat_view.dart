@@ -29,6 +29,8 @@ const double _atBottomThreshold = 120;
 /// read; the transcript and the composer share this so they line up.
 const double _columnWidth = 760;
 
+const double _composerWidth = 780;
+
 /// The open conversation: the transcript (or, on a fresh chat, a greeting and a
 /// few things to try), with the composer at the foot. The composer owns the model
 /// choice, so what will answer is visible right where you type.
@@ -290,9 +292,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
         ),
         Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _columnWidth),
+            constraints: const BoxConstraints(maxWidth: _composerWidth),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
               child: ComposerSection(
                 gridName: widget.network.name,
                 messageController: _message,
@@ -367,7 +369,7 @@ class _Transcript extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: _columnWidth),
             child: ListView.builder(
               controller: scroll,
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
               itemCount: count,
               itemBuilder: (context, i) => i < messages.length
                   ? ChatBubble(message: messages[i])

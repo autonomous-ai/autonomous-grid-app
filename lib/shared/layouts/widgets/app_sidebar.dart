@@ -63,10 +63,10 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: DecoratedBox(
+        child: Container(
           decoration: const BoxDecoration(
             color: AppGlass.sidebarFill,
-            border: Border(right: BorderSide(color: AppPalette.divider)),
+            boxShadow: AppGlass.sidebarShadow,
           ),
           child: SizedBox(
             width: AppSidebar.width,
@@ -105,6 +105,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                               .read(shellSectionProvider.notifier)
                               .select(target),
                         ),
+                      const SizedBox(height: 6),
                     ],
                   ),
                 ),
@@ -114,7 +115,10 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                     child: ChatHistoryList(query: _query),
                   ),
                 ),
-                const Divider(height: 1),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Divider(height: 1),
+                ),
                 const SidebarAccount(),
               ],
             ),
@@ -138,7 +142,7 @@ class _Brand extends StatelessWidget {
     final topInset = Platform.isMacOS ? 32.0 : 12.0;
     return DragToMoveArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(18, topInset, 12, 12),
+        padding: EdgeInsets.fromLTRB(20, topInset, 12, 14),
         child: Row(
           children: [
             const Expanded(
@@ -146,7 +150,7 @@ class _Brand extends StatelessWidget {
                 'Grid',
                 style: TextStyle(
                   color: AppPalette.textPrimary,
-                  fontSize: 16,
+                  fontSize: 17,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -179,15 +183,27 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      autofocus: true,
-      onChanged: onChanged,
-      style: const TextStyle(fontSize: 13),
-      decoration: const InputDecoration(
-        hintText: 'Search chats',
-        prefixIcon: Icon(Icons.search_rounded, size: 17),
-        prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 34),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: AppPalette.divider),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      child: TextField(
+        controller: controller,
+        autofocus: true,
+        onChanged: onChanged,
+        style: const TextStyle(fontSize: 13),
+        decoration: const InputDecoration(
+          filled: false,
+          hintText: 'Search chats',
+          prefixIcon: Icon(Icons.search_rounded, size: 17),
+          prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 34),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+        ),
       ),
     );
   }

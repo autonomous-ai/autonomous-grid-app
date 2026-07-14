@@ -107,15 +107,15 @@ class _SidebarCastShadow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Positioned(
-      left: AppSidebar.width - 24,
+      left: AppSidebar.width,
       top: 0,
       bottom: 0,
-      width: 24,
+      width: 28,
       child: IgnorePointer(
         child: DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.transparent, Color(0x10000000)],
+              colors: [Color(0x12000000), Colors.transparent],
             ),
           ),
         ),

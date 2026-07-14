@@ -43,12 +43,15 @@ class _SidebarItemState extends State<SidebarItem> {
 
   @override
   Widget build(BuildContext context) {
-    const radius = BorderRadius.all(Radius.circular(9));
+    const radius = BorderRadius.all(Radius.circular(10));
     final strong = widget.selected || widget.emphasized;
     final ink = strong ? AppPalette.textPrimary : AppPalette.textSecondary;
     final fill = widget.selected
         ? AppSurface.selectedFill
         : (_hovered ? AppSurface.hoverFill : Colors.transparent);
+    final border = widget.selected
+        ? const BorderSide(color: Color(0x08000000))
+        : BorderSide.none;
 
     final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -56,7 +59,12 @@ class _SidebarItemState extends State<SidebarItem> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 130),
         curve: Curves.easeOut,
-        decoration: BoxDecoration(color: fill, borderRadius: radius),
+        margin: const EdgeInsets.symmetric(vertical: 1),
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: radius,
+          border: Border.fromBorderSide(border),
+        ),
         child: Material(
           color: Colors.transparent,
           borderRadius: radius,
@@ -64,7 +72,7 @@ class _SidebarItemState extends State<SidebarItem> {
             borderRadius: radius,
             onTap: widget.enabled ? widget.onTap : null,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
+              padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
               child: Row(
                 children: [
                   if (widget.icon != null) ...[

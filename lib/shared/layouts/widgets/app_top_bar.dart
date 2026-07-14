@@ -27,16 +27,47 @@ class AppTopBar extends ConsumerWidget {
     return DragToMoveArea(
       child: SizedBox(
         height: height,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 16, right: 14),
-          child: Row(
-            children: [
-              const Spacer(),
-              const HostingSummary(),
-              if (grid != null) _CurrentGridLabel(grid: grid),
-            ],
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            color: AppPalette.windowBg,
+            border: Border(bottom: BorderSide(color: Color(0x0A000000))),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 18),
+            child: Row(
+              children: [
+                const Spacer(),
+                const _StatusPill(child: HostingSummary()),
+                if (grid != null) ...[
+                  const SizedBox(width: 8),
+                  _StatusPill(child: _CurrentGridLabel(grid: grid)),
+                ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppPalette.divider),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: child,
       ),
     );
   }
@@ -69,7 +100,7 @@ class _CurrentGridLabel extends ConsumerWidget {
             color: running ? AppPalette.online : AppPalette.offline,
             size: 8,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 7),
           Flexible(
             child: Text.rich(
               TextSpan(

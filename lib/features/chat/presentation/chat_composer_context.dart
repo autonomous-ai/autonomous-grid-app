@@ -10,10 +10,10 @@ class _ContextStrip extends StatelessWidget {
     return DecoratedBox(
       decoration: const BoxDecoration(
         color: AppPalette.cardBg,
-        border: Border(bottom: BorderSide(color: AppGlass.hair)),
+        border: Border(bottom: BorderSide(color: AppPalette.divider)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 7, 18, 7),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
         child: Row(
           children: [
             const Icon(
@@ -22,7 +22,7 @@ class _ContextStrip extends StatelessWidget {
               color: AppPalette.textSecondary,
             ),
             const SizedBox(width: 6),
-            Flexible(child: _StripLabel(label: gridName)),
+            const Flexible(child: _StripLabel(label: 'Work Space')),
             const SizedBox(width: 14),
             const Icon(
               Icons.hub_outlined,
@@ -30,7 +30,7 @@ class _ContextStrip extends StatelessWidget {
               color: AppPalette.textSecondary,
             ),
             const SizedBox(width: 6),
-            const _StripLabel(label: 'Local'),
+            Flexible(child: _StripLabel(label: 'Grid $gridName')),
           ],
         ),
       ),

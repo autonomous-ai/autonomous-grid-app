@@ -35,18 +35,15 @@ class HostingSummary extends ConsumerWidget {
 
     final computers = online == 1 ? '1 computer' : '$online computers';
     final serves = models == 1 ? '1 model' : '$models models';
-    return Padding(
-      padding: const EdgeInsets.only(right: 16),
-      child: Tooltip(
-        message: '$computers hosting · $serves available',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _HostingStat(icon: Icons.dns_outlined, value: online),
-            const SizedBox(width: 12),
-            _HostingStat(icon: Icons.auto_awesome_outlined, value: models),
-          ],
-        ),
+    return Tooltip(
+      message: '$computers hosting · $serves available',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _HostingStat(icon: Icons.dns_outlined, value: online),
+          const SizedBox(width: 12),
+          _HostingStat(icon: Icons.auto_awesome_outlined, value: models),
+        ],
       ),
     );
   }
