@@ -4,6 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
 
+/// The category folder user-written skills live under, kept apart from Hermes's
+/// bundled skills and Grid's so an update can never overwrite them.
+///
+/// Skills here are the only ones the app authored, so the only ones it offers to
+/// edit — see [AgentSkill.isMine].
+const String kMySkillsCategory = 'my-skills';
+
 /// One thing the assistant knows how to do beyond talking — Hermes calls these
 /// "skills"; the app calls them plugins, because that's what they are to a user.
 ///
@@ -38,6 +45,11 @@ class AgentSkill {
     final parts = after.split('/');
     return parts.length > 1 ? parts.first : '';
   }
+
+  /// True when the user wrote this skill in the app (it lives under
+  /// [kMySkillsCategory]). Only these round-trip through the editor safely —
+  /// editing a bundled or Grid skill would be undone by the next update.
+  bool get isMine => category == kMySkillsCategory;
 }
 
 /// Reads the `name` / `description` out of a `SKILL.md` front-matter card.
@@ -80,6 +92,33 @@ String _unquote(String value) {
   final last = value[value.length - 1];
   final quoted = (first == '"' && last == '"') || (first == "'" && last == "'");
   return quoted ? value.substring(1, value.length - 1) : value;
+}
+
+/// Pulls the instructions back out of a `SKILL.md` — everything below the
+/// front-matter card and the `# Heading` the app writes — so the editor can
+/// reopen a skill pre-filled instead of forcing the user to rewrite the steps.
+String parseSkillInstructions(String markdown) {
+  final lines = markdown.split('\n');
+  var index = 0;
+
+  // Skip the first `---` … `---` card, if there is one.
+  if (index < lines.length && lines[index].trim() == '---') {
+    index++;
+    while (index < lines.length && lines[index].trim() != '---') {
+      index++;
+    }
+    if (index < lines.length) index++;
+  }
+
+  // Drop the blank line and the single `# Heading` the app writes above the body.
+  while (index < lines.length && lines[index].trim().isEmpty) {
+    index++;
+  }
+  if (index < lines.length && lines[index].trimLeft().startsWith('# ')) {
+    index++;
+  }
+
+  return lines.sublist(index).join('\n').trim();
 }
 
 /// Finds the skills installed for the agent by walking `~/.hermes/skills` for

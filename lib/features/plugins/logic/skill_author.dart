@@ -3,10 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
-
-/// Where a skill the user writes in the app lands: their own category, kept apart
-/// from Hermes's bundled skills and Grid's, so an update can never overwrite it.
-const String kMySkillsCategory = 'my-skills';
+import 'agent_skill.dart';
 
 /// A folder name for [title] — lowercase, dashes, nothing a filesystem will
 /// argue with. Empty when the title has no usable characters (the dialog blocks
@@ -48,8 +45,10 @@ class SkillAuthor {
 
   final String _home;
 
+  String get _skillsRoot => '$_home/.hermes/skills';
+
   Directory dirFor(String slug) =>
-      Directory('$_home/.hermes/skills/$kMySkillsCategory/$slug');
+      Directory('$_skillsRoot/$kMySkillsCategory/$slug');
 
   /// True when a skill of this name is already there — the dialog checks first
   /// rather than silently overwriting someone's work.
@@ -71,6 +70,46 @@ class SkillAuthor {
       ),
     );
     return dir;
+  }
+
+  /// The instructions currently in a skill, read back from its `SKILL.md` so the
+  /// editor can pre-fill them instead of starting blank.
+  Future<String> readInstructions(String path) async {
+    final markdown = await File('$path/SKILL.md').readAsString();
+    return parseSkillInstructions(markdown);
+  }
+
+  /// Rewrite one of the user's own skills. When the name changes the folder
+  /// moves with it, so the old one is removed — otherwise a rename would leave a
+  /// stale duplicate the agent would still read.
+  Future<Directory> edit({
+    required String previousSlug,
+    required String name,
+    required String description,
+    required String instructions,
+  }) async {
+    final dir = await create(
+      name: name,
+      description: description,
+      instructions: instructions,
+    );
+    if (skillSlug(name) != previousSlug) {
+      final old = dirFor(previousSlug);
+      if (old.existsSync()) await old.delete(recursive: true);
+    }
+    return dir;
+  }
+
+  /// Delete a skill's folder. Guards against a path outside the skills tree, so
+  /// a bad `path` can never take out something it shouldn't.
+  Future<void> delete(String path) async {
+    if (!path.startsWith('$_skillsRoot/')) {
+      throw ArgumentError(
+        'Refusing to delete outside the skills folder: $path',
+      );
+    }
+    final dir = Directory(path);
+    if (dir.existsSync()) await dir.delete(recursive: true);
   }
 }
 

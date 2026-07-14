@@ -89,5 +89,96 @@ void main() {
       // Same slug, different capitalisation — still taken.
       expect(author.exists('weekly REPORT'), isTrue);
     });
+
+    test(
+      'reads a skill\'s steps back so the editor can pre-fill them',
+      () async {
+        final author = SkillAuthor(home: home.path);
+        final dir = await author.create(
+          name: 'Weekly report',
+          description: 'd',
+          instructions: 'Read the folder.\nWrite ten lines.',
+        );
+
+        expect(
+          await author.readInstructions(dir.path),
+          'Read the folder.\nWrite ten lines.',
+        );
+      },
+    );
+
+    test(
+      'editing in place keeps the one folder and rewrites its card',
+      () async {
+        final author = SkillAuthor(home: home.path);
+        await author.create(
+          name: 'Weekly report',
+          description: 'old',
+          instructions: 'old steps',
+        );
+
+        await author.edit(
+          previousSlug: 'weekly-report',
+          name: 'Weekly report',
+          description: 'new',
+          instructions: 'new steps',
+        );
+
+        final markdown = File(
+          '${author.dirFor('weekly-report').path}/SKILL.md',
+        ).readAsStringSync();
+        expect(markdown, contains('description: new'));
+        expect(markdown, contains('new steps'));
+        // Still exactly one skill — no stray duplicate left behind.
+        expect(await AgentSkillScanner(home: home.path).scan(), hasLength(1));
+      },
+    );
+
+    test('renaming a skill moves its folder and leaves no duplicate', () async {
+      final author = SkillAuthor(home: home.path);
+      await author.create(
+        name: 'Old name',
+        description: 'd',
+        instructions: 'i',
+      );
+
+      await author.edit(
+        previousSlug: 'old-name',
+        name: 'New name',
+        description: 'd',
+        instructions: 'i',
+      );
+
+      expect(author.dirFor('old-name').existsSync(), isFalse);
+      expect(author.dirFor('new-name').existsSync(), isTrue);
+      final skills = await AgentSkillScanner(home: home.path).scan();
+      expect(skills.single.name, 'new-name');
+    });
+
+    test(
+      'deleting a skill removes its folder so the agent stops using it',
+      () async {
+        final author = SkillAuthor(home: home.path);
+        final dir = await author.create(
+          name: 'Weekly report',
+          description: 'd',
+          instructions: 'i',
+        );
+
+        await author.delete(dir.path);
+
+        expect(Directory(dir.path).existsSync(), isFalse);
+        expect(await AgentSkillScanner(home: home.path).scan(), isEmpty);
+      },
+    );
+
+    test('refuses to delete anything outside the skills folder', () async {
+      final author = SkillAuthor(home: home.path);
+      final outside = await Directory.systemTemp.createTemp('grid_outside');
+      addTearDown(() => outside.delete(recursive: true));
+
+      await expectLater(author.delete(outside.path), throwsArgumentError);
+      expect(outside.existsSync(), isTrue);
+    });
   });
 }

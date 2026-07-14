@@ -45,6 +45,54 @@ description: not part of the card
     });
   });
 
+  group('parseSkillInstructions', () {
+    test('reads the steps back, dropping the card and the heading', () {
+      const markdown = '''
+---
+name: weekly-report
+description: Use for status updates.
+---
+
+# Weekly report
+
+Read the folder.
+Write ten lines.''';
+
+      expect(
+        parseSkillInstructions(markdown),
+        'Read the folder.\nWrite ten lines.',
+      );
+    });
+
+    test('a hand-written skill with no card still yields its body', () {
+      expect(
+        parseSkillInstructions('# Notes\n\nJust do the thing.'),
+        'Just do the thing.',
+      );
+    });
+  });
+
+  group('AgentSkill.isMine', () {
+    test('flags a skill under my-skills as the user\'s own, editable', () {
+      const mine = AgentSkill(
+        name: 'notes',
+        description: '',
+        path: '/h/.hermes/skills/$kMySkillsCategory/notes',
+        fromGrid: false,
+      );
+      const bundled = AgentSkill(
+        name: 'refactor',
+        description: '',
+        path: '/h/.hermes/skills/software-development/refactor',
+        fromGrid: false,
+      );
+
+      expect(mine.isMine, isTrue);
+      expect(mine.category, kMySkillsCategory);
+      expect(bundled.isMine, isFalse);
+    });
+  });
+
   group('AgentSkillScanner', () {
     late Directory home;
 

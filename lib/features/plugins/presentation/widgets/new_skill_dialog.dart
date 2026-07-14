@@ -12,20 +12,63 @@ import '../../logic/skill_author.dart';
 /// a skill is relevant to what you just asked, so the dialog says so rather than
 /// leaving the user to guess why their skill never fires.
 Future<void> showNewSkillDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _NewSkillDialog());
+    showDialog<void>(context: context, builder: (_) => const _SkillDialog());
 
-class _NewSkillDialog extends ConsumerStatefulWidget {
-  const _NewSkillDialog();
+/// Reopens a skill the user wrote to change its wording or steps — the same
+/// form, pre-filled from what's on disk.
+///
+/// Offered only for their own skills (see [AgentSkill.isMine]): the only ones an
+/// edit can round-trip without the next Hermes update undoing it.
+Future<void> showEditSkillDialog(BuildContext context, AgentSkill skill) =>
+    showDialog<void>(
+      context: context,
+      builder: (_) => _SkillDialog(existing: skill),
+    );
+
+/// The shared create/edit form. [existing] null means create; otherwise it's an
+/// edit of that skill, pre-filled and saved back over the same folder.
+class _SkillDialog extends ConsumerStatefulWidget {
+  const _SkillDialog({this.existing});
+
+  final AgentSkill? existing;
 
   @override
-  ConsumerState<_NewSkillDialog> createState() => _NewSkillDialogState();
+  ConsumerState<_SkillDialog> createState() => _SkillDialogState();
 }
 
-class _NewSkillDialogState extends ConsumerState<_NewSkillDialog> {
+class _SkillDialogState extends ConsumerState<_SkillDialog> {
   final _name = TextEditingController();
   final _description = TextEditingController();
   final _instructions = TextEditingController();
   bool _saving = false;
+  bool _loading = false;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    if (existing == null) return;
+    _name.text = existing.name;
+    _description.text = existing.description;
+    _loading = true;
+    _prefillInstructions(existing);
+  }
+
+  Future<void> _prefillInstructions(AgentSkill skill) async {
+    try {
+      final text = await ref
+          .read(skillAuthorProvider)
+          .readInstructions(skill.path);
+      if (!mounted) return;
+      _instructions.text = text;
+    } on Object {
+      // Leave it blank — the user can still rewrite the steps from scratch.
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -37,48 +80,77 @@ class _NewSkillDialogState extends ConsumerState<_NewSkillDialog> {
 
   bool get _canSave =>
       !_saving &&
+      !_loading &&
       skillSlug(_name.text).isNotEmpty &&
       _description.text.trim().isNotEmpty &&
       _instructions.text.trim().isNotEmpty;
 
-  Future<void> _save() async {
+  Future<void> _save() {
+    final existing = widget.existing;
+    return existing == null ? _create() : _update(existing);
+  }
+
+  Future<void> _create() {
     final author = ref.read(skillAuthorProvider);
     final name = _name.text.trim();
     if (author.exists(name)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You already have a skill called "$name".')),
-      );
-      return;
+      _say('You already have a skill called "$name".');
+      return Future<void>.value();
     }
-
-    setState(() => _saving = true);
-    try {
-      await author.create(
+    return _write(
+      () => author.create(
         name: name,
         description: _description.text.trim(),
         instructions: _instructions.text,
-      );
+      ),
+      '"$name" is ready — the assistant can use it.',
+    );
+  }
+
+  Future<void> _update(AgentSkill existing) {
+    final author = ref.read(skillAuthorProvider);
+    final name = _name.text.trim();
+    final previousSlug = existing.path.split('/').last;
+    final renamed = skillSlug(name) != previousSlug;
+    if (renamed && author.exists(name)) {
+      _say('You already have a skill called "$name".');
+      return Future<void>.value();
+    }
+    return _write(
+      () => author.edit(
+        previousSlug: previousSlug,
+        name: name,
+        description: _description.text.trim(),
+        instructions: _instructions.text,
+      ),
+      '"$name" saved.',
+    );
+  }
+
+  Future<void> _write(Future<void> Function() action, String done) async {
+    setState(() => _saving = true);
+    try {
+      await action();
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Couldn't save the skill: $error")),
-      );
+      _say("Couldn't save the skill: $error");
       return;
     }
-
     ref.invalidate(agentSkillsProvider);
     if (!mounted) return;
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('"$name" is ready — the assistant can use it.')),
-    );
+    _say(done);
   }
+
+  void _say(String message) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('New skill'),
+      title: Text(_isEdit ? 'Edit skill' : 'New skill'),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -88,7 +160,7 @@ class _NewSkillDialogState extends ConsumerState<_NewSkillDialog> {
             children: [
               TextField(
                 controller: _name,
-                autofocus: true,
+                autofocus: !_isEdit,
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
                   labelText: 'Name',
@@ -109,14 +181,16 @@ class _NewSkillDialogState extends ConsumerState<_NewSkillDialog> {
               const SizedBox(height: 14),
               TextField(
                 controller: _instructions,
+                enabled: !_loading,
                 minLines: 5,
                 maxLines: 10,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'What should it do?',
-                  hintText:
-                      'Step by step, as you would explain it to a new '
-                      'colleague.',
+                  hintText: _loading
+                      ? 'Loading the current steps…'
+                      : 'Step by step, as you would explain it to a new '
+                            'colleague.',
                 ),
               ),
               const SizedBox(height: 14),
@@ -139,9 +213,14 @@ class _NewSkillDialogState extends ConsumerState<_NewSkillDialog> {
         ),
         FilledButton(
           onPressed: _canSave ? _save : null,
-          child: Text(_saving ? 'Saving…' : 'Create skill'),
+          child: Text(_saveLabel),
         ),
       ],
     );
+  }
+
+  String get _saveLabel {
+    if (_saving) return 'Saving…';
+    return _isEdit ? 'Save changes' : 'Create skill';
   }
 }

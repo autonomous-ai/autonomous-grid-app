@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../agent/logic/hermes_skill_installer.dart';
 import '../../logic/agent_skill.dart';
+import '../../logic/skill_author.dart';
 import 'extension_tile_surface.dart';
 import 'new_skill_dialog.dart';
 
@@ -27,68 +28,175 @@ class SkillList extends StatelessWidget {
   }
 }
 
-class _SkillRow extends StatelessWidget {
+class _SkillRow extends ConsumerStatefulWidget {
   const _SkillRow({required this.skill});
 
   final AgentSkill skill;
 
   @override
+  ConsumerState<_SkillRow> createState() => _SkillRowState();
+}
+
+class _SkillRowState extends ConsumerState<_SkillRow> {
+  bool _busy = false;
+
+  Future<void> _delete() async {
+    final skill = widget.skill;
+    final confirmed = await _confirmDeleteSkill(context, skill.name);
+    if (confirmed != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    var message = '${skill.name} deleted.';
+    try {
+      await ref.read(skillAuthorProvider).delete(skill.path);
+    } on Object catch (error) {
+      message = "Couldn't delete the skill: $error";
+    }
+    ref.invalidate(agentSkillsProvider);
+    if (mounted) setState(() => _busy = false);
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final skill = widget.skill;
     return ExtensionTileSurface(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const ExtensionIconBadge(icon: Icons.auto_awesome_outlined),
           const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        skill.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    if (skill.category.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        skill.category,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textFaint,
-                        ),
-                      ),
-                    ],
-                    if (skill.fromGrid) ...[
-                      const SizedBox(width: 8),
-                      const ExtensionTag(label: 'From Grid'),
-                    ],
-                  ],
-                ),
-                if (skill.description.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    skill.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppPalette.textSecondary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+          Expanded(child: _SkillInfo(skill: skill)),
+          if (!skill.fromGrid) ...[
+            const SizedBox(width: 8),
+            _SkillActions(skill: skill, busy: _busy, onDelete: _delete),
+          ],
         ],
       ),
     );
   }
+}
+
+/// The skill's name, its Hermes category, and one line of what it does.
+class _SkillInfo extends StatelessWidget {
+  const _SkillInfo({required this.skill});
+
+  final AgentSkill skill;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                skill.name,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (skill.category.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                skill.category,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textFaint,
+                ),
+              ),
+            ],
+            if (skill.fromGrid) ...[
+              const SizedBox(width: 8),
+              const ExtensionTag(label: 'From Grid'),
+            ],
+          ],
+        ),
+        if (skill.description.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            skill.description,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Edit (only the user's own skills) and delete (anything Grid doesn't manage).
+/// A Grid skill has neither — this whole row is hidden for it, since "Reinstall
+/// Grid's skills" is how those are managed.
+class _SkillActions extends StatelessWidget {
+  const _SkillActions({
+    required this.skill,
+    required this.busy,
+    required this.onDelete,
+  });
+
+  final AgentSkill skill;
+  final bool busy;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (skill.isMine)
+          IconButton(
+            tooltip: 'Edit',
+            iconSize: 18,
+            color: AppPalette.textSecondary,
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: busy ? null : () => showEditSkillDialog(context, skill),
+          ),
+        IconButton(
+          tooltip: 'Delete',
+          iconSize: 18,
+          color: AppPalette.textSecondary,
+          icon: const Icon(Icons.delete_outline_rounded),
+          onPressed: busy ? null : onDelete,
+        ),
+      ],
+    );
+  }
+}
+
+/// Removing a skill takes its folder with it, and the user may have written it,
+/// so ask before doing something they can't undo.
+Future<bool?> _confirmDeleteSkill(BuildContext context, String name) {
+  return showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete this skill?'),
+      content: Text(
+        '"$name" will be removed from this computer and the assistant will '
+        'stop using it. This cannot be undone.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// No skills at all — offer the two things that fix it rather than a blank page.
