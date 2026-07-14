@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/codex_agent/logic/agent_tool.dart';
+import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/models/logic/models_providers.dart';
 import 'package:grid_app/features/node_setup/logic/auto_host_controller.dart';
@@ -27,9 +27,7 @@ ProviderContainer _container({
             ? const [LocalModel(name: 'm.gguf', path: '/m.gguf', sizeBytes: 1)]
             : const [],
       ),
-      agentToolPathProvider(
-        AgentTool.hermes,
-      ).overrideWithValue(agent ? '/bin/hermes' : null),
+      hermesPathProvider.overrideWithValue(agent ? '/bin/hermes' : null),
     ],
   );
   addTearDown(container.dispose);

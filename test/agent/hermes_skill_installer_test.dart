@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/codex_agent/logic/hermes_skill_installer.dart';
+import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
 
 void main() {
   late Directory home;
@@ -44,24 +44,34 @@ void main() {
       '${home.path}/.hermes/skills/creative/grid-image-gen/scripts',
     );
     await leaked.create(recursive: true);
-    await File('${leaked.path}/generate.py').writeAsString('API_KEY = "eyJleaked"');
+    await File(
+      '${leaked.path}/generate.py',
+    ).writeAsString('API_KEY = "eyJleaked"');
 
     await HermesSkillInstaller(home: home.path).install();
 
     expect(
-      Directory('${home.path}/.hermes/skills/creative/grid-image-gen').existsSync(),
+      Directory(
+        '${home.path}/.hermes/skills/creative/grid-image-gen',
+      ).existsSync(),
       isFalse,
       reason: 'the leaked credential must be gone',
     );
-    expect(script().existsSync(), isTrue, reason: 'the clean skill replaces it');
+    expect(
+      script().existsSync(),
+      isTrue,
+      reason: 'the clean skill replaces it',
+    );
   });
 
-  test('is idempotent — a second install is a no-op that keeps the files',
-      () async {
-    final installer = HermesSkillInstaller(home: home.path);
-    await installer.install();
-    await installer.install();
+  test(
+    'is idempotent — a second install is a no-op that keeps the files',
+    () async {
+      final installer = HermesSkillInstaller(home: home.path);
+      await installer.install();
+      await installer.install();
 
-    expect(script().existsSync(), isTrue);
-  });
+      expect(script().existsSync(), isTrue);
+    },
+  );
 }

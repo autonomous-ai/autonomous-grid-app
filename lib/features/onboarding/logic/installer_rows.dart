@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../codex_agent/logic/agent_tool.dart';
+import '../../agent/logic/hermes_tool.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import '../../network/logic/create_network_controller.dart';
@@ -39,7 +39,7 @@ final installerRowsProvider = Provider<List<InstallerRow>>((ref) {
     _actionRow(
       InstallerStage.agent,
       SetupAction.installAgent,
-      installed: ref.watch(agentToolInstalledProvider(AgentTool.hermes)),
+      installed: ref.watch(hermesInstalledProvider),
       setup: setup,
     ),
     _shareRow(ref),
@@ -67,7 +67,7 @@ final installerNeededProvider = Provider<bool>((ref) {
   if (!ref.watch(supportsBuiltInEngineProvider)) return false;
   final engine = ref.watch(engineStatusProvider).llamaInstalled;
   final model = ref.watch(localModelsProvider).isNotEmpty;
-  final agent = ref.watch(agentToolInstalledProvider(AgentTool.hermes));
+  final agent = ref.watch(hermesInstalledProvider);
   return !(engine && model && agent);
 });
 

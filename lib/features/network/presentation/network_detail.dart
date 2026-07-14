@@ -37,7 +37,10 @@ class NetworkDetail extends ConsumerWidget {
     if (!network.canManageProvider) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [header, Expanded(child: _OverviewTab(network: network))],
+        children: [
+          header,
+          Expanded(child: _OverviewTab(network: network)),
+        ],
       );
     }
 
@@ -51,7 +54,10 @@ class NetworkDetail extends ConsumerWidget {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             dividerColor: Colors.transparent,
-            tabs: [Tab(text: 'Overview'), Tab(text: 'Members')],
+            tabs: [
+              Tab(text: 'Overview'),
+              Tab(text: 'Members'),
+            ],
           ),
           Expanded(
             child: TabBarView(
@@ -134,9 +140,13 @@ class _Header extends ConsumerWidget {
               child: Row(
                 children: [
                   Flexible(
-                    child: Text(network.name,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600, fontSize: 22)),
+                    child: Text(
+                      network.name,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 22,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   GridBadges(network: network),
@@ -160,8 +170,10 @@ class _Header extends ConsumerWidget {
           children: [
             StatusDot(color: color, size: 9),
             const SizedBox(width: 8),
-            Text(label,
-                style: theme.textTheme.bodyMedium?.copyWith(color: color)),
+            Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(color: color),
+            ),
           ],
         ),
       ],
@@ -207,15 +219,15 @@ class _SetUpThisGrid extends ConsumerWidget {
             children: [
               FilledButton.icon(
                 onPressed: () => ref
-                    .read(settingsTabProvider.notifier)
-                    .select(SettingsTab.engines),
+                    .read(shellSectionProvider.notifier)
+                    .select(ShellSection.engines),
                 icon: const Icon(Icons.dns_outlined, size: 18),
                 label: const Text('Set up engine'),
               ),
               OutlinedButton.icon(
                 onPressed: () => ref
-                    .read(settingsTabProvider.notifier)
-                    .select(SettingsTab.howToUse),
+                    .read(shellSectionProvider.notifier)
+                    .select(ShellSection.guide),
                 icon: const Icon(Icons.help_outline_rounded, size: 18),
                 label: const Text('How it works'),
               ),
@@ -244,7 +256,8 @@ class _PrimaryAction extends ConsumerWidget {
     if (overview.isLoading || overview.hasError) {
       return const SizedBox.shrink();
     }
-    final usable = ref.watch(gridHasChatProvider) ||
+    final usable =
+        ref.watch(gridHasChatProvider) ||
         ref.watch(gridMediaCapabilitiesProvider).any;
     if (usable) return const _TryThisGrid();
     return network.canManageProvider
@@ -292,8 +305,8 @@ class _TryThisGrid extends ConsumerWidget {
               ),
               OutlinedButton.icon(
                 onPressed: () => ref
-                    .read(settingsTabProvider.notifier)
-                    .select(SettingsTab.howToUse),
+                    .read(shellSectionProvider.notifier)
+                    .select(ShellSection.guide),
                 icon: const Icon(Icons.help_outline_rounded, size: 18),
                 label: const Text('How to use'),
               ),
@@ -398,7 +411,8 @@ class _DeleteGridButton extends ConsumerWidget {
               ? const SizedBox(
                   width: 12,
                   height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.delete_outline, size: 14),
           label: Text(deleting ? 'Deleting…' : 'Delete grid'),
         ),
@@ -419,11 +433,13 @@ class _DeleteGridButton extends ConsumerWidget {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
               style: FilledButton.styleFrom(
-                  backgroundColor: theme.colorScheme.error),
+                backgroundColor: theme.colorScheme.error,
+              ),
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Delete'),
             ),

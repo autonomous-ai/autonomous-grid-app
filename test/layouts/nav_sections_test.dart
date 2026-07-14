@@ -112,31 +112,31 @@ void main() {
     expect(consumerRole.roleLabel, 'Using');
   });
 
-  test('settings opens on Grids, the screen a returning admin reaches for', () {
+  test('the app opens on Chat — that is what it is for', () {
     final container = containerWith('grid-prov');
-    expect(container.read(settingsTabProvider), SettingsTab.grids);
+    expect(container.read(shellSectionProvider), ShellSection.chat);
   });
 
-  test('a deep-link switches the settings tab (no nested dialog)', () {
-    // Cards inside the settings dialog — "Set up engine", "How it works" —
-    // switch the tab rather than stacking another dialog on top.
+  test('a deep-link switches the open section', () {
+    // Cards elsewhere in the app — "Set up engine", "How it works" — switch the
+    // sidebar's section rather than opening a window on top of the one you're in.
     final container = containerWith('grid-prov');
-    container.listen(settingsTabProvider, (_, _) {});
+    container.listen(shellSectionProvider, (_, _) {});
 
-    container.read(settingsTabProvider.notifier).select(SettingsTab.engines);
-    expect(container.read(settingsTabProvider), SettingsTab.engines);
+    container.read(shellSectionProvider.notifier).select(ShellSection.engines);
+    expect(container.read(shellSectionProvider), ShellSection.engines);
 
-    container.read(settingsTabProvider.notifier).select(SettingsTab.howToUse);
-    expect(container.read(settingsTabProvider), SettingsTab.howToUse);
+    container.read(shellSectionProvider.notifier).select(ShellSection.guide);
+    expect(container.read(shellSectionProvider), ShellSection.guide);
   });
 
-  test('switching grid leaves the open settings tab alone', () {
+  test('switching grid leaves the open section alone', () {
     final container = containerWith('grid-prov');
-    container.listen(settingsTabProvider, (_, _) {});
-    container.read(settingsTabProvider.notifier).select(SettingsTab.engines);
+    container.listen(shellSectionProvider, (_, _) {});
+    container.read(shellSectionProvider.notifier).select(ShellSection.engines);
 
     container.read(selectedNetworkProvider.notifier).select(consumer);
 
-    expect(container.read(settingsTabProvider), SettingsTab.engines);
+    expect(container.read(shellSectionProvider), ShellSection.engines);
   });
 }

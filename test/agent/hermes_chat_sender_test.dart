@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/codex_agent/logic/codex_providers.dart';
-import 'package:grid_app/features/codex_agent/logic/hermes_chat_sender.dart';
+import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
-import 'package:grid_app/infrastructure/cli/codex_event.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/hermes_acp_service.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
@@ -69,7 +69,9 @@ class _FakeAcpSession implements HermesAcpSession {
   @override
   HermesAcpRun prompt(String text) {
     prompts.add(text);
-    final events = _turn < _turns.length ? _turns[_turn] : const <HermesAcpEvent>[];
+    final events = _turn < _turns.length
+        ? _turns[_turn]
+        : const <HermesAcpEvent>[];
     _turn++;
     return HermesAcpRun(
       events: Stream.fromIterable(events),
@@ -100,9 +102,9 @@ List<ChatMessage> _history(String text) => [
   ChatMessage(role: ChatRole.user, text: text),
 ];
 
-CodexActivity _step(String id, CodexActivityStatus status) => CodexActivity(
+AgentActivity _step(String id, AgentActivityStatus status) => AgentActivity(
   id: id,
-  kind: CodexActivityKind.command,
+  kind: AgentActivityKind.command,
   label: 'terminal: ls',
   status: status,
 );
@@ -116,8 +118,8 @@ void main() {
 
   test('streams the answer as it arrives, then joins the chunks', () async {
     final service = _FakeAcp.single([
-      HermesAcpActivity(_step('tc1', CodexActivityStatus.running)),
-      HermesAcpActivity(_step('tc1', CodexActivityStatus.done)),
+      HermesAcpActivity(_step('tc1', AgentActivityStatus.running)),
+      HermesAcpActivity(_step('tc1', AgentActivityStatus.done)),
       const HermesAcpMessage('PANGO'),
       const HermesAcpMessage('LIN'),
     ]);
@@ -138,9 +140,9 @@ void main() {
     expect(updates.last, isA<ChatSendSuccess>());
     expect((updates.last as ChatSendSuccess).reply.text, 'PANGOLIN');
     // The activity feed collapsed the started→done tool into one done step.
-    final steps = container.read(codexActivityProvider);
+    final steps = container.read(agentActivityProvider);
     expect(steps, hasLength(1));
-    expect(steps.single.status, CodexActivityStatus.done);
+    expect(steps.single.status, AgentActivityStatus.done);
     // Pointed Hermes at the grid.
     expect(File('${tmp.path}/.hermes/config.yaml').existsSync(), isTrue);
   });
@@ -213,7 +215,7 @@ void main() {
     expect(service.sessions.first.isClosed, isTrue, reason: 'old one closed');
   });
 
-  test('no hermes installed reports a friendly install line', () async {
+  test('no agent installed says so in plain language', () async {
     final container = _container(null, tmp);
 
     final updates = await container
@@ -226,12 +228,16 @@ void main() {
         .toList();
 
     expect(updates.single, isA<ChatSendFailure>());
-    expect((updates.single as ChatSendFailure).error, contains('Hermes'));
+    // Plain language, with the screen that fixes it — no binary names.
+    expect(
+      (updates.single as ChatSendFailure).error,
+      contains("isn't set up to answer chats yet"),
+    );
   });
 
   test('a turn with no answer text is a failure', () async {
     final service = _FakeAcp.single([
-      HermesAcpActivity(_step('tc1', CodexActivityStatus.done)),
+      HermesAcpActivity(_step('tc1', AgentActivityStatus.done)),
     ]);
     final container = _container(service, tmp);
 

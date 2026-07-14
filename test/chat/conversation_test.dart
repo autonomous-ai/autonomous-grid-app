@@ -68,7 +68,8 @@ void main() {
       final title = deriveConversationTitle([
         const ChatMessage(
           role: ChatRole.user,
-          text: 'Explain quantum tunnelling to me like I am five years old '
+          text:
+              'Explain quantum tunnelling to me like I am five years old '
               'please',
         ),
       ]);
@@ -100,15 +101,21 @@ void main() {
         _conversation(id: 'ancient', updatedAt: DateTime(2026, 1, 1)),
       ], now);
 
-      expect(groups.map((g) => g.label),
-          ['Today', 'Yesterday', 'Previous 7 days', 'Older']);
+      expect(groups.map((g) => g.label), [
+        'Today',
+        'Yesterday',
+        'Previous 7 days',
+        'Older',
+      ]);
       expect(groups.first.conversations.single.id, 'today');
       expect(groups.last.conversations.single.id, 'ancient');
     });
 
     test('returns nothing for an empty history', () {
-      expect(groupConversationsByRecency(const [], DateTime(2026, 7, 8)),
-          isEmpty);
+      expect(
+        groupConversationsByRecency(const [], DateTime(2026, 7, 8)),
+        isEmpty,
+      );
     });
   });
 }

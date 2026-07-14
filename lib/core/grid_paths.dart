@@ -60,16 +60,15 @@ class GridPaths {
 
   static File chatFile(String id) => File('${chatsDir.path}/$id.json');
 
-  /// The Chat tab's remembered selections (last grid, model, agent backend), so
-  /// reopening the app restores them. App-owned — the CLI never touches it.
+  /// The Chat tab's remembered selections (last grid, last model), so reopening
+  /// the app restores them. App-owned — the CLI never touches it.
   static File get chatPrefsFile => File('${home.path}/app/chat_prefs.json');
 
-  /// Working directory for the Chat tab's experimental Agent mode (codex). The
-  /// agent runs read-only here so its file tools have a stable, app-owned root
-  /// instead of pointing at the user's home. App-owned — the CLI never touches
-  /// it.
-  static Directory get codexWorkspaceDir =>
-      Directory('${home.path}/app/codex-workspace');
+  /// Working directory for the agent that answers chat. It runs read-only here
+  /// so its file tools have a stable, app-owned root instead of pointing at the
+  /// user's home. App-owned — the CLI never touches it.
+  static Directory get agentWorkspaceDir =>
+      Directory('${home.path}/app/agent-workspace');
 
   /// The CLI's own log directory (`~/.grid/logs`, e.g. `llama_llm_*.log`). The
   /// app drops its own diagnostic logs here too so everything a user might send

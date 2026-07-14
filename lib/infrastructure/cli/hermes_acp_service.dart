@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'codex_event.dart';
+import 'agent_event.dart';
 import 'hermes_permission_policy.dart';
 import 'host_environment.dart';
 
@@ -12,11 +12,11 @@ sealed class HermesAcpEvent {
   const HermesAcpEvent();
 }
 
-/// A shell command or tool call the agent ran — reuses [CodexActivity] so the
+/// A shell command or tool call the agent ran — reuses [AgentActivity] so the
 /// Chat tab's activity feed is identical across codex and hermes.
 class HermesAcpActivity extends HermesAcpEvent {
   const HermesAcpActivity(this.activity);
-  final CodexActivity activity;
+  final AgentActivity activity;
 }
 
 /// A chunk of the assistant's answer, streamed as it's generated.
@@ -126,7 +126,7 @@ class _HermesAcpSession implements HermesAcpSession {
   // Kind/title arrive only on the first tool_call; a later tool_call_update
   // carries just id + status, so remember them to keep the label. Cleared each
   // turn so one turn's tools don't bleed into the next.
-  final _tools = <String, CodexActivity>{};
+  final _tools = <String, AgentActivity>{};
 
   /// Spawn and run the handshake; completes when the session is ready to prompt.
   Future<void> open() async {
@@ -135,10 +135,7 @@ class _HermesAcpSession implements HermesAcpSession {
         _path,
         ['acp'],
         workingDirectory: _workdir,
-        environment: {
-          ...Platform.environment,
-          'PATH': HostEnvironment.path(),
-        },
+        environment: {...Platform.environment, 'PATH': HostEnvironment.path()},
       );
     } on ProcessException catch (e) {
       throw HermesAcpException('Hermes could not start: ${e.message}');
@@ -257,22 +254,22 @@ class _HermesAcpSession implements HermesAcpSession {
     switch (raw['sessionUpdate']) {
       case 'tool_call':
         final id = _str(raw['toolCallId']);
-        final activity = CodexActivity(
+        final activity = AgentActivity(
           id: id,
           kind: raw['kind'] == 'execute'
-              ? CodexActivityKind.command
-              : CodexActivityKind.tool,
+              ? AgentActivityKind.command
+              : AgentActivityKind.tool,
           label: _str(raw['title'], fallback: 'tool'),
-          status: CodexActivityStatus.running,
+          status: AgentActivityStatus.running,
         );
         _tools[id] = activity;
         events.add(HermesAcpActivity(activity));
       case 'tool_call_update':
         final id = _str(raw['toolCallId']);
         final prior = _tools[id];
-        final activity = CodexActivity(
+        final activity = AgentActivity(
           id: id,
-          kind: prior?.kind ?? CodexActivityKind.tool,
+          kind: prior?.kind ?? AgentActivityKind.tool,
           label: prior?.label ?? 'tool',
           status: _status(raw['status']),
         );
@@ -311,7 +308,9 @@ class _HermesAcpSession implements HermesAcpSession {
     );
     final optionId = decideHermesPermission(
       toolKind: toolKind,
-      options: _parsePermissionOptions(params is Map ? params['options'] : null),
+      options: _parsePermissionOptions(
+        params is Map ? params['options'] : null,
+      ),
     );
 
     final outcome = optionId != null
@@ -329,11 +328,12 @@ class _HermesAcpSession implements HermesAcpSession {
     if (!safeToolKinds.contains(toolKind)) {
       _events?.add(
         HermesAcpActivity(
-          CodexActivity(
+          AgentActivity(
             id: 'blocked-${message['id']}',
-            kind: CodexActivityKind.command,
-            label: 'Blocked: ${_str(toolCall is Map ? toolCall['title'] : null, fallback: toolKind)}',
-            status: CodexActivityStatus.failed,
+            kind: AgentActivityKind.command,
+            label:
+                'Blocked: ${_str(toolCall is Map ? toolCall['title'] : null, fallback: toolKind)}',
+            status: AgentActivityStatus.failed,
           ),
         ),
       );
@@ -383,10 +383,10 @@ Map<String, dynamic>? _tryDecode(String line) {
   }
 }
 
-CodexActivityStatus _status(Object? raw) => switch (raw) {
-  'failed' => CodexActivityStatus.failed,
-  'in_progress' || 'pending' => CodexActivityStatus.running,
-  _ => CodexActivityStatus.done,
+AgentActivityStatus _status(Object? raw) => switch (raw) {
+  'failed' => AgentActivityStatus.failed,
+  'in_progress' || 'pending' => AgentActivityStatus.running,
+  _ => AgentActivityStatus.done,
 };
 
 String _str(Object? raw, {String fallback = ''}) =>

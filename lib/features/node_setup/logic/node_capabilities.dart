@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/providers.dart';
-import '../../codex_agent/logic/agent_tool.dart';
+import '../../agent/logic/hermes_tool.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import '../../provider_node/logic/backend_detector.dart';
@@ -91,7 +91,7 @@ final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
     engine: EngineDetector().detect(),
     media: await mediaFuture,
     localModelCount: modelCount,
-    hasAgent: ref.read(agentToolInstalledProvider(AgentTool.hermes)),
+    hasAgent: ref.read(hermesInstalledProvider),
     recommendedModel: recommended,
   );
 });

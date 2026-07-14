@@ -6,7 +6,6 @@ import 'package:toml/toml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
-import '../../codex_agent/logic/codex_exec_args.dart' show gridApiKeyEnv;
 import 'app_guide_snippets.dart';
 import 'client_app_detector.dart';
 
@@ -43,7 +42,11 @@ class ClientAppConfigurator {
   final String _home;
 
   Future<ApplyResult> apply(
-      ClientApp app, String base, String key, List<String> models) {
+    ClientApp app,
+    String base,
+    String key,
+    List<String> models,
+  ) {
     // Guarantee a non-empty list so every downstream write has a default.
     final ids = models.isEmpty ? const [kGuideDefaultModel] : models;
     switch (app) {
@@ -59,7 +62,10 @@ class ClientAppConfigurator {
   }
 
   Future<ApplyResult> _applyOpenClaw(
-      String base, String key, List<String> models) async {
+    String base,
+    String key,
+    List<String> models,
+  ) async {
     final file = File('$_home/.openclaw/openclaw.json');
     try {
       final root = await _readJsonObject(file);
@@ -82,13 +88,17 @@ class ClientAppConfigurator {
 
       // Give a fresh install a working default, but never override a model the
       // user already chose.
-      final modelCfg =
-          _childMap(_childMap(_childMap(root, 'agents'), 'defaults'), 'model');
+      final modelCfg = _childMap(
+        _childMap(_childMap(root, 'agents'), 'defaults'),
+        'model',
+      );
       final setDefault = modelCfg['primary'] == null;
       if (setDefault) modelCfg['primary'] = 'grid/${models.first}';
 
       await _backupThenWrite(
-          file, const JsonEncoder.withIndent('  ').convert(root));
+        file,
+        const JsonEncoder.withIndent('  ').convert(root),
+      );
       return ApplyOk(
         'Added Grid to ${_display(file)}.',
         note: setDefault
@@ -101,7 +111,10 @@ class ClientAppConfigurator {
   }
 
   Future<ApplyResult> _applyHermes(
-      String base, String key, String model) async {
+    String base,
+    String key,
+    String model,
+  ) async {
     final config = File('$_home/.hermes/config.yaml');
     final env = File('$_home/.hermes/.env');
     try {
@@ -122,8 +135,9 @@ class ClientAppConfigurator {
           'default': model,
           'max_tokens': kHermesMaxTokens,
         };
-        final existingModel =
-            editor.parseAt(['model'], orElse: () => wrapAsYamlNode(null));
+        final existingModel = editor.parseAt([
+          'model',
+        ], orElse: () => wrapAsYamlNode(null));
         if (existingModel.value is Map) {
           connection.forEach((k, v) => editor.update(['model', k], v));
         } else {
@@ -144,7 +158,8 @@ class ClientAppConfigurator {
       }, 'Hermes');
       return ApplyOk(
         'Pointed Hermes at this grid (${_display(config)} + ${_display(env)}).',
-        note: 'If Hermes is already open, refresh its model list (or restart '
+        note:
+            'If Hermes is already open, refresh its model list (or restart '
             'it) to see this grid\'s models.',
       );
     } on Object catch (e) {
@@ -181,7 +196,9 @@ class ClientAppConfigurator {
       };
 
       await _backupThenWrite(
-          config, TomlDocument.fromMap(root).toString().trimRight());
+        config,
+        TomlDocument.fromMap(root).toString().trimRight(),
+      );
       await _upsertEnvVars(env, {gridApiKeyEnv: key}, 'Codex');
       return ApplyOk(
         'Pointed Codex at this grid (${_display(config)} + ${_display(env)}).',
@@ -198,7 +215,10 @@ class ClientAppConfigurator {
   /// Preserves every other line/comment and backs an existing file up to
   /// `<file>.bak` first.
   Future<void> _upsertEnvVars(
-      File env, Map<String, String> vars, String appName) async {
+    File env,
+    Map<String, String> vars,
+    String appName,
+  ) async {
     final lines = (await env.exists()) ? await env.readAsLines() : <String>[];
     final remaining = Map<String, String>.from(vars);
     final out = <String>[];
@@ -230,8 +250,12 @@ class ClientAppConfigurator {
   /// a duplicate. Base_url is a secondary match so a manually-renamed entry still
   /// gets reused. Other providers the user set stay intact; the list is created
   /// when it's absent.
-  void _upsertCustomProvider(YamlEditor editor,
-      {required String base, required String key, required String model}) {
+  void _upsertCustomProvider(
+    YamlEditor editor, {
+    required String base,
+    required String key,
+    required String model,
+  }) {
     final name = hermesProviderName(base);
     final entry = <String, String>{
       'name': name,
@@ -239,9 +263,9 @@ class ClientAppConfigurator {
       'api_key': key,
       'model': model,
     };
-    final existing =
-        editor.parseAt(['custom_providers'], orElse: () => wrapAsYamlNode(null))
-            .value;
+    final existing = editor.parseAt([
+      'custom_providers',
+    ], orElse: () => wrapAsYamlNode(null)).value;
     if (existing is! List) {
       editor.update(['custom_providers'], [entry]);
       return;
@@ -276,8 +300,9 @@ class ClientAppConfigurator {
   /// empty one when it's missing or not an object — so nested writes are safe.
   Map<String, dynamic> _childMap(Map<String, dynamic> parent, String key) {
     final existing = parent[key];
-    final map =
-        existing is Map ? Map<String, dynamic>.from(existing) : <String, dynamic>{};
+    final map = existing is Map
+        ? Map<String, dynamic>.from(existing)
+        : <String, dynamic>{};
     parent[key] = map;
     return map;
   }

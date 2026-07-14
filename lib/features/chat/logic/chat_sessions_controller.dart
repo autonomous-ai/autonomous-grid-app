@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../codex_agent/logic/agent_backend.dart';
-import '../../codex_agent/logic/codex_chat_sender.dart';
-import '../../codex_agent/logic/hermes_chat_sender.dart';
+import '../../agent/logic/agent_routing.dart';
+import '../../agent/logic/hermes_chat_sender.dart';
+import '../../agent/logic/hermes_tool.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
@@ -142,26 +142,19 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
     _commit(conversation, phase: const SendBusy());
 
-    // Agent mode routes the turn through codex/hermes instead of the relay chat
-    // sender; everything downstream — folding updates, persistence — is
-    // identical because all three implement [ChatSender]. The agents are
-    // text-only, so [forModality] keeps an image/video model on the relay
-    // sender — picking a generator still generates while Agent is on.
-    final backend = ref.read(agentBackendProvider).forModality(modality);
-    final sender = switch (backend) {
-      AgentBackend.off => ref.read(chatSenderProvider),
-      AgentBackend.codex => ref.read(codexChatSenderProvider),
-      AgentBackend.hermes => ref.read(hermesChatSenderProvider),
-    };
-    final updates = sender.send(
+    // Plain text goes through the agent (it can use tools and keeps the
+    // conversation's context); pictures — generating one, or a turn that carries
+    // attachments — go straight to the grid's chat API, which is the only one
+    // that can see or make them. Everything downstream (folding updates,
+    // persistence) is identical: both implement [ChatSender].
+    final updates = _senderFor(modality, attachments).send(
       network: network,
       model: model,
       history: conversation.messages,
       modality: modality,
-      // The agents can't see attached images; only the relay sender takes them.
-      attachments: backend.isOn ? const [] : attachments,
+      attachments: attachments,
       // Lets the agent sender keep one live session per conversation and send
-      // only the new turn (the relay sender ignores it).
+      // only the new turn (the API sender ignores it).
       conversationId: conversation.id,
     );
 
@@ -198,6 +191,22 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       cancelOnError: true,
     );
     return done.future;
+  }
+
+  /// Who answers this turn: the agent for plain text, the grid's chat API for
+  /// anything with a picture in it (and on a computer with no agent installed).
+  ChatSender _senderFor(
+    PlaygroundModality modality,
+    List<MediaAttachment> attachments,
+  ) {
+    final viaAgent = agentAnswersTurn(
+      modality: modality,
+      hasAttachments: attachments.isNotEmpty,
+      agentInstalled: ref.read(hermesInstalledProvider),
+    );
+    return viaAgent
+        ? ref.read(hermesChatSenderProvider)
+        : ref.read(chatSenderProvider);
   }
 
   /// Stop an in-flight reply, leaving the already-persisted user turn in place

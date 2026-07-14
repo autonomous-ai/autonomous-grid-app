@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/codex_agent/logic/codex_exec_args.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/features/network/logic/client_app_detector.dart';
 import 'package:toml/toml.dart';
@@ -27,16 +26,19 @@ void main() {
   test('OpenClaw snippet lists every grid model, first as the default', () {
     const ids = ['a-model', 'b-model', 'c-model'];
     final decoded = jsonDecode(openClawSnippet(_base, _key, ids)) as Map;
-    final grid = ((decoded['models'] as Map)['providers'] as Map)['grid'] as Map;
-    final listed =
-        (grid['models'] as List).map((m) => (m as Map)['id']).toList();
+    final grid =
+        ((decoded['models'] as Map)['providers'] as Map)['grid'] as Map;
+    final listed = (grid['models'] as List)
+        .map((m) => (m as Map)['id'])
+        .toList();
     expect(listed, ids); // all three, in order
     expect(decoded['agents']['defaults']['model']['primary'], 'grid/a-model');
   });
 
   test('OpenClaw snippet falls back to the default id for an empty grid', () {
     final decoded = jsonDecode(openClawSnippet(_base, _key, const [])) as Map;
-    final grid = ((decoded['models'] as Map)['providers'] as Map)['grid'] as Map;
+    final grid =
+        ((decoded['models'] as Map)['providers'] as Map)['grid'] as Map;
     expect((grid['models'] as List).single['id'], kGuideDefaultModel);
   });
 
@@ -59,11 +61,12 @@ void main() {
 
   group('Codex', () {
     test('config block is valid TOML selecting the grid provider', () {
-      final toml = TomlDocument.parse(codexConfigSnippet(_base, _model)).toMap();
+      final toml = TomlDocument.parse(
+        codexConfigSnippet(_base, _model),
+      ).toMap();
       expect(toml['model'], _model);
       expect(toml['model_provider'], kCodexProviderId);
-      final grid =
-          (toml['model_providers'] as Map)[kCodexProviderId] as Map;
+      final grid = (toml['model_providers'] as Map)[kCodexProviderId] as Map;
       expect(grid['base_url'], _base);
       // Codex ≥ 0.141 rejects `wire_api = "chat"` outright, so the provider must
       // stay on the Responses API.
@@ -80,25 +83,37 @@ void main() {
 
     test('appSnippets gives Codex both files: config then key', () {
       final blocks = appSnippets(
-          kClientApps[ClientApp.codex]!, _base, _key, const [_model]);
+        kClientApps[ClientApp.codex]!,
+        _base,
+        _key,
+        const [_model],
+      );
       expect(blocks.length, 2);
       expect(blocks.first.caption, contains('~/.codex/config.toml'));
-      expect(blocks.first.code, contains('[model_providers.$kCodexProviderId]'));
+      expect(
+        blocks.first.code,
+        contains('[model_providers.$kCodexProviderId]'),
+      );
       expect(blocks.last.caption, contains(kCodexEnvPath));
       expect(blocks.last.code, contains(_key));
     });
 
     test('appSnippets gives the file-based clients a single block', () {
       for (final app in [ClientApp.openClaw, ClientApp.hermes]) {
-        final blocks =
-            appSnippets(kClientApps[app]!, _base, _key, const [_model]);
+        final blocks = appSnippets(kClientApps[app]!, _base, _key, const [
+          _model,
+        ]);
         expect(blocks.single.code, contains(_base));
       }
     });
 
     test('appSnippets falls back to the default model for an empty grid', () {
-      final blocks =
-          appSnippets(kClientApps[ClientApp.codex]!, _base, _key, const []);
+      final blocks = appSnippets(
+        kClientApps[ClientApp.codex]!,
+        _base,
+        _key,
+        const [],
+      );
       expect(blocks.first.code, contains('model = "$kGuideDefaultModel"'));
     });
   });
@@ -143,13 +158,16 @@ void main() {
       expect(out, isNot(contains('first call the image/generate')));
     });
 
-    test('image + video grid includes both calls and the chain-to-video note', () {
-      final out = mediaSkillPrompt(_base, _key, image: true, video: true);
-      expect(out, contains('media/image/generate'));
-      expect(out, contains('media/video/i2v'));
-      expect(out, contains('images and videos'));
-      expect(out, contains('first call the image/generate endpoint above'));
-    });
+    test(
+      'image + video grid includes both calls and the chain-to-video note',
+      () {
+        final out = mediaSkillPrompt(_base, _key, image: true, video: true);
+        expect(out, contains('media/image/generate'));
+        expect(out, contains('media/video/i2v'));
+        expect(out, contains('images and videos'));
+        expect(out, contains('first call the image/generate endpoint above'));
+      },
+    );
   });
 
   group('media API curl', () {

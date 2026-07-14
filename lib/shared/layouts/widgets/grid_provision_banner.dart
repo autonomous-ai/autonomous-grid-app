@@ -19,8 +19,9 @@ class GridProvisionBanner extends ConsumerWidget {
     final state = ref.watch(createNetworkControllerProvider);
     return switch (state) {
       CreateNetworkSubmitting(auto: true) => const _CreatingBanner(),
-      CreateNetworkFailed(auto: true, :final message) =>
-        _FailedBanner(message: message),
+      CreateNetworkFailed(auto: true, :final message) => _FailedBanner(
+        message: message,
+      ),
       _ => const SizedBox.shrink(),
     };
   }
@@ -41,9 +42,10 @@ class _CreatingBanner extends StatelessWidget {
             child: Row(
               children: [
                 const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(

@@ -16,9 +16,8 @@ extension ClientAppX on ClientApp {
   /// Codex is hidden from shipped builds: codex ≥ 0.141 talks only to the
   /// Responses API, while the relay serves Chat Completions, so a grid wired
   /// into Codex answers every prompt with a 404 on `/v1/responses`. Offering it
-  /// would be a lie — same call as the Chat tab's Agent mode
-  /// (`AgentBackend.isSelectable`). Kept in debug so it can be tried again the
-  /// day the relay grows the endpoint.
+  /// would be a lie. Kept in debug so it can be tried again the day the relay
+  /// grows the endpoint.
   /// TODO(BE): unhide once the relay serves the Responses API.
   bool get isSelectable => this != ClientApp.codex || kDebugMode;
 }

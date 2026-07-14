@@ -4,28 +4,25 @@ import '../theme/app_theme.dart';
 
 /// How a [GlassCard] is dressed.
 enum GlassCardStyle {
-  /// A standard content card: indigo accent wash, tinted rim, accent glow, a
-  /// faint corner aura and a crisp top hairline.
+  /// A standard content card: white, a hairline rim, a soft lift.
   card,
 
-  /// The focal card on a screen (e.g. the running engine): a stronger wash, an
-  /// accent rim and a heavier glow so it leads the surfaces below it.
+  /// The focal card on a screen (e.g. the running engine): an accent wash and
+  /// rim so it leads the surfaces below it.
   hero,
 
-  /// A recessed inner surface — a darker fill with a hairline rim, no wash/glow.
+  /// A recessed inner surface — a tinted fill with a hairline rim, no wash/glow.
   /// For list tiles and inner boxes (a live banner, a log panel) nested inside a
   /// [card]/[hero], so they read as set *into* it.
   inset,
 }
 
-/// A content card in the app's "liquid glass" language — an opaque dark surface
-/// dressed with an indigo accent wash, tinted rim, accent glow and a soft corner
-/// aura (the web-16 card recipe, via [AppCard]).
+/// A content card: a white surface with a hairline rim and a soft lift, dressed
+/// with an accent wash when it leads the screen (the [AppCard] recipe).
 ///
-/// Unlike [GlassSurface] — the shell chrome's frosted *blur* over the wallpaper —
-/// content cards sit on the near-opaque panel, where a backdrop blur has nothing
-/// to refract and reads as a muddy grey. So a card earns its depth from the
-/// accent treatment instead: the colour comes from the brand, not a frost.
+/// Cards carry the dense content — a grid's details, an engine's state — so they
+/// stay quiet and let the text do the work; only the focal card on a screen wears
+/// the accent.
 class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,

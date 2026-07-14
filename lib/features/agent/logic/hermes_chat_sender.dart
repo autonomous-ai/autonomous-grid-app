@@ -9,13 +9,13 @@ import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
 import 'agent_prompt.dart';
-import 'agent_tool.dart';
-import 'codex_providers.dart';
+import 'hermes_tool.dart';
+import 'agent_providers.dart';
 import 'hermes_skill_installer.dart';
 
 /// The hermes ACP seam, or null when hermes is absent.
 final hermesAcpServiceProvider = Provider<HermesAcpService?>((ref) {
-  final path = ref.watch(agentToolPathProvider(AgentTool.hermes));
+  final path = ref.watch(hermesPathProvider);
   return path == null ? null : HermesAcpServiceImpl(path);
 });
 
@@ -34,7 +34,8 @@ class HermesConfigured extends Notifier<String?> {
   void set(String? key) => state = key;
 }
 
-/// The Agent-mode [ChatSender] backed by Hermes over ACP (Agent Client Protocol).
+/// The chat's default [ChatSender], backed by Hermes over ACP (Agent Client
+/// Protocol).
 ///
 /// It keeps **one live `hermes acp` session per conversation**. The process is
 /// spawned once, the handshake runs once, and each turn sends only the new
@@ -44,8 +45,8 @@ class HermesConfigured extends Notifier<String?> {
 /// more token-hungry the longer a chat ran.
 ///
 /// ACP streams `tool_call` / `agent_message_chunk` updates, so this feeds the
-/// same live activity feed ([codexActivityProvider]) codex uses and streams the
-/// answer into the bubble as it's generated.
+/// live activity feed ([agentActivityProvider]) and streams the answer into the
+/// bubble as it's generated.
 final hermesChatSenderProvider = Provider<ChatSender>((ref) {
   final sender = HermesChatSender(ref);
   ref.onDispose(sender.dispose);
@@ -91,13 +92,13 @@ class HermesChatSender implements ChatSender {
     String? conversationId,
   }) async* {
     if (modality != PlaygroundModality.text) {
-      yield const ChatSendFailure('Agent mode only supports text chat.');
+      yield const ChatSendFailure('The agent can only answer in text.');
       return;
     }
     if (_ref.read(hermesAcpServiceProvider) == null) {
       yield const ChatSendFailure(
-        "Hermes isn't installed for Agent mode. Pick Hermes again to install "
-        'it.',
+        "This computer isn't set up to answer chats yet. Open Settings ▸ "
+        'Engines to finish setting it up.',
       );
       return;
     }
@@ -115,13 +116,17 @@ class HermesChatSender implements ChatSender {
     final HermesAcpSession session;
     final String text;
     try {
-      final resolved = await _sessionFor(network, model, conversationId, history);
+      final resolved = await _sessionFor(
+        network,
+        model,
+        conversationId,
+        history,
+      );
       session = resolved.session;
       text = resolved.text;
     } on HermesAcpException {
       yield const ChatSendFailure(
-        "Couldn't start Hermes for Agent mode. Try again, or reinstall it from "
-        'the Agent picker.',
+        "Couldn't start the agent on this computer. Try sending again.",
       );
       return;
     }
@@ -140,7 +145,8 @@ class HermesChatSender implements ChatSender {
   ) async {
     final key = '${network.networkId}|$model|$conversationId';
     final live = _live;
-    final continues = live != null &&
+    final continues =
+        live != null &&
         !live.session.isClosed &&
         live.key == key &&
         history.length > live.seen;
@@ -167,7 +173,7 @@ class HermesChatSender implements ChatSender {
     String text,
     String model,
   ) async* {
-    final activityLog = _ref.read(codexActivityProvider.notifier)..clear();
+    final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'hermes acp -m $model (agent)');
 
@@ -202,7 +208,7 @@ class HermesChatSender implements ChatSender {
     yield const ChatSendFailure("The agent didn't return an answer.");
   }
 
-  /// Ensures `~/.hermes` points at [network] with [model] (idempotent, only
+  /// Ensure `~/.hermes` points at [network] with [model] (idempotent, only
   /// rewritten when the grid or model changed). Returns null on success, else a
   /// user-facing error line.
   Future<String?> _pointAtGrid(NetworkCredential network, String model) async {

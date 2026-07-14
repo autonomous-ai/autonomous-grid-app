@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
-import 'package:grid_app/features/codex_agent/logic/agent_tool.dart';
+import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/models/logic/models_providers.dart';
 import 'package:grid_app/features/node_setup/logic/auto_host_controller.dart';
@@ -41,7 +41,7 @@ Future<void> _pump(WidgetTester tester, InstallerState state) async {
         selectedNetworkProvider.overrideWith(_NoNetwork.new),
         engineStatusProvider.overrideWithValue(EngineStatus.notInstalled),
         localModelsProvider.overrideWithValue(const []),
-        agentToolPathProvider(AgentTool.hermes).overrideWithValue(null),
+        hermesPathProvider.overrideWithValue(null),
         installerControllerProvider.overrideWith(() => _FixedInstaller(state)),
       ],
       child: const MaterialApp(home: InstallerScreen()),
@@ -51,8 +51,9 @@ Future<void> _pump(WidgetTester tester, InstallerState state) async {
 }
 
 void main() {
-  testWidgets('shows every step of the job, so nothing is a surprise',
-      (tester) async {
+  testWidgets('shows every step of the job, so nothing is a surprise', (
+    tester,
+  ) async {
     await _pump(tester, const InstallerRunning());
 
     for (final stage in InstallerStage.values) {
@@ -68,8 +69,9 @@ void main() {
     expect(find.text('Try again'), findsNothing);
   });
 
-  testWidgets('a failure offers a retry and a way into the app',
-      (tester) async {
+  testWidgets('a failure offers a retry and a way into the app', (
+    tester,
+  ) async {
     await _pump(tester, const InstallerFailed());
 
     expect(find.text("Setup didn't finish"), findsOneWidget);

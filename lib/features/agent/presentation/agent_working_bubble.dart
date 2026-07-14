@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../logic/agent_providers.dart';
 
-import '../../../infrastructure/cli/codex_event.dart';
-import '../logic/codex_providers.dart';
-
-/// The "agent is working" bubble shown in the Chat tab while an Agent-mode
-/// (codex) run is in flight.
+/// The "agent is working" bubble shown in the chat while the agent is answering.
 ///
 /// Deliberately distinct from the media `GeneratingBubble` (an agent turn
 /// produces text, not a percentage): a spinner header plus a live feed of the
@@ -18,7 +16,7 @@ class AgentWorkingBubble extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final steps = ref.watch(codexActivityProvider);
+    final steps = ref.watch(agentActivityProvider);
     final theme = Theme.of(context);
     return Align(
       alignment: Alignment.centerLeft,
@@ -61,12 +59,12 @@ class AgentWorkingBubble extends ConsumerWidget {
 class _StepRow extends StatelessWidget {
   const _StepRow({required this.step});
 
-  final CodexActivity step;
+  final AgentActivity step;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final icon = step.kind == CodexActivityKind.command
+    final icon = step.kind == AgentActivityKind.command
         ? Icons.terminal
         : Icons.build_outlined;
     return Padding(
@@ -98,20 +96,24 @@ class _StepRow extends StatelessWidget {
 class _StatusDot extends StatelessWidget {
   const _StatusDot({required this.status});
 
-  final CodexActivityStatus status;
+  final AgentActivityStatus status;
 
   @override
   Widget build(BuildContext context) {
     switch (status) {
-      case CodexActivityStatus.running:
+      case AgentActivityStatus.running:
         return const SizedBox(
           width: 12,
           height: 12,
           child: CircularProgressIndicator(strokeWidth: 1.6),
         );
-      case CodexActivityStatus.done:
-        return const Icon(Icons.check_circle, size: 14, color: AppPalette.online);
-      case CodexActivityStatus.failed:
+      case AgentActivityStatus.done:
+        return const Icon(
+          Icons.check_circle,
+          size: 14,
+          color: AppPalette.online,
+        );
+      case AgentActivityStatus.failed:
         return Icon(
           Icons.error_outline,
           size: 14,

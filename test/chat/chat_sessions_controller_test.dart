@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
-import 'package:grid_app/features/codex_agent/logic/agent_backend.dart';
-import 'package:grid_app/features/codex_agent/logic/hermes_chat_sender.dart';
+import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
+import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
@@ -40,6 +40,7 @@ class _FakeSender implements ChatSender {
   List<ChatMessage>? history;
   String? model;
   PlaygroundModality? modality;
+  List<MediaAttachment>? attachments;
 
   @override
   Stream<ChatSendUpdate> send({
@@ -54,6 +55,7 @@ class _FakeSender implements ChatSender {
     this.history = history;
     this.model = model;
     this.modality = modality;
+    this.attachments = attachments;
     return Stream.fromIterable(updates);
   }
 }
@@ -66,7 +68,11 @@ class _FakeSender implements ChatSender {
   _FakeSender sender,
   _FakeSender agent,
 })
-_harness(Directory dir, {required List<ChatSendUpdate> updates}) {
+_harness(
+  Directory dir, {
+  required List<ChatSendUpdate> updates,
+  bool agentInstalled = false,
+}) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
   final agent = _FakeSender(updates);
@@ -79,8 +85,12 @@ _harness(Directory dir, {required List<ChatSendUpdate> updates}) {
       mediaOutputsDirProvider.overrideWithValue(
         Directory('${dir.path}/outputs'),
       ),
-      // The agent backend restores from prefs on build — keep it off the real
-      // `~/.grid` so a stored 'hermes' can't reroute the fake sender.
+      // Whether this computer has the agent — the one thing that decides who
+      // answers a plain text turn.
+      hermesPathProvider.overrideWithValue(
+        agentInstalled ? '/bin/hermes' : null,
+      ),
+      // Keep the remembered model off the real `~/.grid`.
       chatPrefsStoreProvider.overrideWithValue(
         ChatPrefsStore(file: File('${dir.path}/chat_prefs.json')),
       ),
@@ -224,14 +234,14 @@ void main() {
     ]);
   });
 
-  test('agent mode routes a text turn through the agent sender', () async {
+  test('a text turn goes through the agent when it is installed', () async {
     final h = _harness(
       tmp,
+      agentInstalled: true,
       updates: [
         const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
       ],
     );
-    h.container.read(agentBackendProvider.notifier).set(AgentBackend.hermes);
 
     await h.container
         .read(chatSessionsProvider.notifier)
@@ -241,14 +251,14 @@ void main() {
     expect(h.sender.history, isNull);
   });
 
-  test('an image model still generates while agent mode is on', () async {
+  test('an image model generates through the API, agent or not', () async {
     final h = _harness(
       tmp,
+      agentInstalled: true,
       updates: [
         const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
       ],
     );
-    h.container.read(agentBackendProvider.notifier).set(AgentBackend.hermes);
 
     await h.container
         .read(chatSessionsProvider.notifier)
@@ -259,10 +269,38 @@ void main() {
           modality: PlaygroundModality.image,
         );
 
-    // The (text-only) agent never sees it: the relay sender generates the image.
+    // The (text-only) agent never sees it: the API sender generates the image.
     expect(h.agent.history, isNull);
     expect(h.sender.modality, PlaygroundModality.image);
     expect(h.sender.model, 'flux');
+  });
+
+  test('a text turn with an attached image goes to the API', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      updates: [
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'what is in this picture?',
+          attachments: [
+            MediaAttachment(
+              filename: 'shot.png',
+              bytes: Uint8List.fromList([1, 2, 3]),
+            ),
+          ],
+        );
+
+    // Only the API sender can see a picture, so the agent must not swallow it.
+    expect(h.agent.history, isNull);
+    expect(h.sender.attachments, hasLength(1));
   });
 
   test('newChat starts a fresh compose without losing history', () async {

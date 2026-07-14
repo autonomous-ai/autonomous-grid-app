@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/theme/app_theme.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
@@ -12,10 +13,10 @@ import '../logic/grid_model_catalog.dart';
 typedef GridModelSelected =
     void Function(NetworkCredential grid, PlaygroundModelOption option);
 
-/// The Chat header's unified grid + model control. A single compact button (like
-/// the Agent picker) opens a searchable menu that lists every grid's models
-/// grouped under the grid's name — picking one switches the active grid and the
-/// model together, so the two old dropdowns collapse into one.
+/// The composer's model control. A compact pill opens a searchable menu that
+/// lists every grid's models grouped under the grid's name — picking one switches
+/// the active grid and the model together, so choosing "who answers" is one
+/// decision rather than two dropdowns.
 class GridModelPicker extends ConsumerStatefulWidget {
   const GridModelPicker({
     super.key,
@@ -63,8 +64,8 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
   }
 }
 
-/// The subtle button face that lives by the composer: a small muted model name
-/// and a caret — quiet, since the model rarely changes.
+/// The pill that sits in the composer: the model that will answer, and a caret.
+/// Quiet by design — it's a property of the message, not a call to action.
 class _TriggerButton extends StatelessWidget {
   const _TriggerButton({required this.label, required this.onTap});
 
@@ -73,31 +74,37 @@ class _TriggerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        foregroundColor: theme.colorScheme.onSurfaceVariant,
-        textStyle: theme.textTheme.bodySmall,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        minimumSize: const Size(0, 32),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.smart_toy_outlined, size: 15),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              softWrap: false,
-            ),
+    return Tooltip(
+      message: 'Choose which model answers',
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppPalette.textSecondary,
+          backgroundColor: AppPalette.cardBg,
+          side: const BorderSide(color: AppPalette.divider),
+          shape: const StadiumBorder(),
+          textStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
           ),
-          const Icon(Icons.arrow_drop_down, size: 18),
-        ],
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
+          ],
+        ),
       ),
     );
   }

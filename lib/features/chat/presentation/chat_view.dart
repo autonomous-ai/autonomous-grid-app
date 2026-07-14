@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
-import '../../../shared/layouts/widgets/settings_dialog.dart';
+import '../../agent/logic/agent_routing.dart';
+import '../../agent/logic/hermes_tool.dart';
+import '../../agent/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../codex_agent/logic/agent_backend.dart';
-import '../../codex_agent/presentation/agent_backend_picker.dart';
-import '../../codex_agent/presentation/agent_working_bubble.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../playground/logic/playground_models.dart';
@@ -20,19 +18,20 @@ import '../../playground/presentation/no_model_yet.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import 'chat_composer.dart';
+import 'chat_starters.dart';
 import 'grid_model_picker.dart';
-
-/// How many images may ride along on a single vision chat message.
-const int _maxChatImages = 4;
 
 /// How close to the end (px) still counts as "at the bottom" — within this, new
 /// messages auto-follow and the jump-to-latest button hides.
 const double _atBottomThreshold = 120;
 
-/// The open conversation: a model picker on top, the scrolling transcript, and
-/// the composer at the foot. Reuses the Playground's shared chat widgets and the
-/// modality routing (text / image / video), but reads and writes the persistent
-/// [chatSessionsProvider] instead of a throwaway transcript.
+/// How wide the conversation column gets on a big window. Long lines are hard to
+/// read; the transcript and the composer share this so they line up.
+const double _columnWidth = 760;
+
+/// The open conversation: the transcript (or, on a fresh chat, a greeting and a
+/// few things to try), with the composer at the foot. The composer owns the model
+/// choice, so what will answer is visible right where you type.
 class ChatView extends ConsumerStatefulWidget {
   const ChatView({super.key, required this.network});
 
@@ -48,9 +47,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
   final _scroll = ScrollController();
   final List<MediaAttachment> _attachments = [];
 
-  /// The `conversationId|gridId` the model field was last synced to, so
-  /// switching chats restores that chat's model and switching grids drops to the
-  /// new grid's first model — without clobbering a model being mid-typed.
+  /// The `conversationId|gridId` the model field was last synced to, so switching
+  /// chats restores that chat's model and switching grids drops to the new grid's
+  /// first model — without clobbering a model being mid-typed.
   String? _syncedKey;
   bool _synced = false;
 
@@ -74,9 +73,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // gating, hints) tracks the selection.
     _model.addListener(_onModelChanged);
     _scroll.addListener(_onScroll);
-    // Reopening the tab rebuilds this view; land on the latest turn rather than
-    // stranding the user at the top of the transcript.
+    // Reopening the section rebuilds this view; land on the latest turn rather
+    // than stranding the user at the top of the transcript.
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  @override
+  void dispose() {
+    _model.removeListener(_onModelChanged);
+    _scroll.removeListener(_onScroll);
+    _model.dispose();
+    _message.dispose();
+    _scroll.dispose();
+    super.dispose();
   }
 
   void _onScroll() {
@@ -101,16 +110,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final id = _model.text.trim();
     if (id.isEmpty || !_options.any((o) => o.id == id)) return;
     ref.read(chatPrefsProvider.notifier).setModel(id);
-  }
-
-  @override
-  void dispose() {
-    _model.removeListener(_onModelChanged);
-    _scroll.removeListener(_onScroll);
-    _model.dispose();
-    _message.dispose();
-    _scroll.dispose();
-    super.dispose();
   }
 
   /// Keep the model field in step with the open conversation and selected grid:
@@ -174,8 +173,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
     ref.read(selectedNetworkProvider.notifier).select(grid);
   }
 
-  /// The modality of the currently-selected option. Unknown / hand-typed ids
-  /// fall back to text (a plain chat model).
+  /// The modality of the currently-selected option. Unknown / hand-typed ids fall
+  /// back to text (a plain chat model).
   PlaygroundModality _modalityFor(List<PlaygroundModelOption> options) {
     final id = _model.text.trim();
     final match = options.where((o) => o.id == id);
@@ -199,13 +198,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   /// Pick an image to attach to the next message (vision input). Capped at
-  /// [_maxChatImages]; a cancelled picker is a no-op.
+  /// [maxChatImages]; a cancelled picker is a no-op.
   Future<void> _pickImage() async {
-    if (_attachments.length >= _maxChatImages) return;
+    if (_attachments.length >= maxChatImages) return;
     final attachment = await pickImageAttachment();
     if (attachment != null && mounted) {
       setState(() => _attachments.add(attachment));
     }
+  }
+
+  /// Drop a starter's prompt into the composer, ready to edit or send.
+  void _useStarter(String prompt) {
+    _message.text = prompt;
+    _message.selection = TextSelection.collapsed(offset: prompt.length);
   }
 
   void _scrollToBottom({bool animated = false}) {
@@ -229,7 +234,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final loadingModels =
         ref.watch(gridOverviewProvider).isLoading &&
         ref.watch(networkModelsProvider).isLoading;
-    final backend = ref.watch(agentBackendProvider);
 
     _syncModelField(sessions.active, options, widget.network.networkId);
 
@@ -243,307 +247,147 @@ class _ChatViewState extends ConsumerState<ChatView> {
       });
     });
 
-    // Nothing can answer yet: no model advertised on the grid. Keep the header
-    // (grid + model pickers) so the user can switch to a grid that has a model,
-    // rather than being stranded on a dead screen with only "Go to Engines".
-    final hasModel = loadingModels || options.isNotEmpty;
+    // Nothing can answer yet: no model advertised on the grid. Send the user to
+    // the screen that fixes it rather than leaving them at a dead input box.
+    if (!loadingModels && options.isEmpty) {
+      return NoModelYet(
+        canManage: widget.network.canManageProvider,
+        onGoToEngines: () => ref
+            .read(shellSectionProvider.notifier)
+            .select(ShellSection.engines),
+      );
+    }
+
     final modality = _modalityFor(options);
-    // An image/video model bypasses the (text-only) agent, so the in-flight
-    // bubble must show the media progress bar, not "Agent is working".
-    final agentMode = backend.forModality(modality).isOn;
+    // An image/video model, or a turn carrying attachments, bypasses the
+    // (text-only) agent — so the in-flight bubble must show the media progress
+    // bar, not "the agent is working".
+    final agentMode = agentAnswersTurn(
+      modality: modality,
+      hasAttachments: _attachments.isNotEmpty,
+      agentInstalled: ref.watch(hermesInstalledProvider),
+    );
     final needsImage = modality == PlaygroundModality.video;
     final canSend =
         !sessions.sending && (!needsImage || _attachments.isNotEmpty);
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
     final trailing = _trailingBubble(sessions.phase, agentMode);
+    final isNewChat = messages.isEmpty && !sessions.sending;
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (!hasModel)
-              Expanded(
-                child: NoModelYet(
-                  canManage: widget.network.canManageProvider,
-                  onGoToEngines: () =>
-                      showSettingsDialog(ref, SettingsTab.engines),
+        Expanded(
+          child: isNewChat
+              ? ChatStarters(greeting: _greeting(modality), onPick: _useStarter)
+              : _Transcript(
+                  scroll: _scroll,
+                  messages: messages,
+                  trailing: trailing,
+                  atBottom: _atBottom,
+                  onJumpToLatest: () => _scrollToBottom(animated: true),
                 ),
-              )
-            else
-              Expanded(
-                child: _ChatBody(
-                  // A brand-new chat centres the composer, ChatGPT-style; the
-                  // first message slides it down to the foot.
-                  isNewChat: messages.isEmpty && !sessions.sending,
-                  greeting: _greeting(modality),
-                  // The composer floats over the transcript; [bottomInset] is the
-                  // room to reserve for it (measured, so a tall composer never
-                  // hides the newest message). The top scrim clears the agent
-                  // pill above.
-                  transcriptBuilder: (bottomInset) => Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ListView.builder(
-                        controller: _scroll,
-                        padding: EdgeInsets.fromLTRB(20, 62, 20, bottomInset),
-                        itemCount:
-                            messages.length + (trailing != null ? 1 : 0),
-                        itemBuilder: (context, i) => i < messages.length
-                            ? ChatBubble(message: messages[i])
-                            : trailing ?? const SizedBox.shrink(),
-                      ),
-                      if (!_atBottom)
-                        Positioned(
-                          right: 16,
-                          bottom: bottomInset - 16,
-                          child: _JumpToLatestButton(
-                            onTap: () => _scrollToBottom(animated: true),
-                          ),
-                        ),
-                    ],
-                  ),
-                  composer: ComposerSection(
-                    messageController: _message,
-                    attachments: _attachments,
-                    modality: modality,
-                    needsImage: needsImage,
-                    sending: sessions.sending,
-                    canSend: canSend,
-                    error: sessions.error,
-                    modelPicker: GridModelPicker(
-                      currentModelId: _model.text,
-                      onSelect: _pickGridModel,
-                    ),
-                    onAddAttachment: (a) => setState(() => _attachments.add(a)),
-                    onPickImage: _pickImage,
-                    onRemoveAttachment: (i) =>
-                        setState(() => _attachments.removeAt(i)),
-                    onSend: () => _send(modality),
-                  ),
+        ),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _columnWidth),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              child: ComposerSection(
+                messageController: _message,
+                attachments: _attachments,
+                modality: modality,
+                needsImage: needsImage,
+                sending: sessions.sending,
+                canSend: canSend,
+                error: sessions.error,
+                modelPicker: GridModelPicker(
+                  currentModelId: _model.text,
+                  onSelect: _pickGridModel,
                 ),
-              ),
-          ],
-        ),
-        // A short fade at the very top so messages dissolve into the background
-        // as they scroll under the floating controls, instead of colliding.
-        const Positioned(top: 0, left: 0, right: 0, child: _TopScrim()),
-        // The Agent toggle floats over the top-right corner instead of a full
-        // header row.
-        const Positioned(
-          top: 10,
-          right: 14,
-          child: _FloatingPill(child: AgentBackendPicker()),
-        ),
-        // A model-less grid has no composer to host the model picker, so float
-        // it too — the user can still switch to a grid that serves a model.
-        if (!hasModel)
-          Positioned(
-            top: 10,
-            left: 14,
-            child: _FloatingPill(
-              child: GridModelPicker(
-                currentModelId: _model.text,
-                onSelect: _pickGridModel,
+                onAddAttachment: (a) => setState(() => _attachments.add(a)),
+                onPickImage: _pickImage,
+                onRemoveAttachment: (i) =>
+                    setState(() => _attachments.removeAt(i)),
+                onSend: () => _send(modality),
               ),
             ),
           ),
+        ),
       ],
     );
   }
 
   /// The bubble appended after the transcript for the in-flight turn: the media
-  /// progress bar while a generation streams, the agent's answer growing live as
-  /// it streams in, or a spinner while an agent works before its first token.
+  /// progress bar while a generation streams, the answer growing live as it
+  /// streams in, or a spinner while the agent works before its first token.
   Widget? _trailingBubble(SendPhase phase, bool agentMode) => switch (phase) {
     SendGenerating g => GeneratingBubble(phase: g),
-    SendStreaming(:final text) when text.isNotEmpty =>
-      ChatBubble(message: ChatMessage(role: ChatRole.assistant, text: text)),
+    SendStreaming(:final text) when text.isNotEmpty => ChatBubble(
+      message: ChatMessage(role: ChatRole.assistant, text: text),
+    ),
     SendStreaming() => const AgentWorkingBubble(),
     SendBusy() when agentMode => const AgentWorkingBubble(),
     _ => null,
   };
 
-  /// The headline shown above the centred composer on a fresh chat.
+  /// The headline shown above a fresh chat's starters.
   String _greeting(PlaygroundModality modality) => switch (modality) {
-    PlaygroundModality.image => 'Describe an image to generate',
+    PlaygroundModality.image => 'What should I draw?',
     PlaygroundModality.video => 'Attach an image, then describe the motion',
     PlaygroundModality.text => 'What can I help with?',
   };
 }
 
-/// The chat body, ChatGPT-style: a fresh chat shows the composer centred under a
-/// greeting; the first message slides the composer down to the foot and reveals
-/// the transcript above it. This widget choreographs the two layouts and the
-/// transition, and measures the (floating) composer so the transcript always
-/// leaves room for it — a multi-line draft or attached image never hides the
-/// newest message. [transcriptBuilder] is given that reserved bottom inset.
-class _ChatBody extends StatefulWidget {
-  const _ChatBody({
-    required this.isNewChat,
-    required this.greeting,
-    required this.transcriptBuilder,
-    required this.composer,
+/// The scrolling conversation, with a "jump to latest" button while the user has
+/// scrolled up into the history.
+class _Transcript extends StatelessWidget {
+  const _Transcript({
+    required this.scroll,
+    required this.messages,
+    required this.trailing,
+    required this.atBottom,
+    required this.onJumpToLatest,
   });
 
-  final bool isNewChat;
-  final String greeting;
-  final Widget Function(double bottomInset) transcriptBuilder;
-  final Widget composer;
-
-  @override
-  State<_ChatBody> createState() => _ChatBodyState();
-}
-
-class _ChatBodyState extends State<_ChatBody> {
-  // A sensible first guess (model picker + one input line) until the real
-  // composer reports its height on the first frame.
-  double _composerHeight = 120;
+  final ScrollController scroll;
+  final List<ChatMessage> messages;
+  final Widget? trailing;
+  final bool atBottom;
+  final VoidCallback onJumpToLatest;
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = _composerHeight + 24;
+    final count = messages.length + (trailing != null ? 1 : 0);
     return Stack(
       children: [
-        // The transcript fills the area, behind the composer. It's empty on a
-        // fresh chat, so fade + ignore it until the conversation starts.
-        Positioned.fill(
-          child: IgnorePointer(
-            ignoring: widget.isNewChat,
-            child: AnimatedOpacity(
-              opacity: widget.isNewChat ? 0 : 1,
-              duration: const Duration(milliseconds: 200),
-              child: widget.transcriptBuilder(bottomInset),
-            ),
-          ),
-        ),
-        // The composer: centred with a greeting on a fresh chat, pinned to the
-        // foot once it starts. The alignment animation is the "input slides down
-        // after the first message".
-        AnimatedAlign(
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeOutCubic,
-          alignment:
-              widget.isNewChat ? Alignment.center : Alignment.bottomCenter,
+        Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // The greeting exists only on a fresh chat; it collapses away as
-                // the composer moves down.
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOut,
-                  child: widget.isNewChat
-                      ? Padding(
-                          padding: const EdgeInsets.only(bottom: 20),
-                          child: Text(
-                            widget.greeting,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineSmall,
-                          ),
-                        )
-                      : const SizedBox(width: double.infinity),
-                ),
-                _MeasureSize(
-                  onChange: (size) {
-                    if ((size.height - _composerHeight).abs() > 0.5) {
-                      setState(() => _composerHeight = size.height);
-                    }
-                  },
-                  child: widget.composer,
-                ),
-              ],
+            constraints: const BoxConstraints(maxWidth: _columnWidth),
+            child: ListView.builder(
+              controller: scroll,
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              itemCount: count,
+              itemBuilder: (context, i) => i < messages.length
+                  ? ChatBubble(message: messages[i])
+                  : trailing ?? const SizedBox.shrink(),
             ),
           ),
         ),
+        if (!atBottom)
+          Positioned(
+            right: 20,
+            bottom: 12,
+            child: _JumpToLatestButton(onTap: onJumpToLatest),
+          ),
       ],
     );
   }
 }
 
-/// Reports its child's size after layout — used to reserve exactly the room the
-/// floating composer needs so the transcript never slides under it.
-class _MeasureSize extends SingleChildRenderObjectWidget {
-  const _MeasureSize({required this.onChange, required super.child});
-
-  final ValueChanged<Size> onChange;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _MeasureSizeRender(onChange);
-
-  @override
-  void updateRenderObject(BuildContext context, _MeasureSizeRender obj) =>
-      obj.onChange = onChange;
-}
-
-class _MeasureSizeRender extends RenderProxyBox {
-  _MeasureSizeRender(this.onChange);
-
-  ValueChanged<Size> onChange;
-  Size? _last;
-
-  @override
-  void performLayout() {
-    super.performLayout();
-    final next = child?.size ?? Size.zero;
-    if (next != _last) {
-      _last = next;
-      // Notify after the frame — never call back into setState during layout.
-      WidgetsBinding.instance.addPostFrameCallback((_) => onChange(next));
-    }
-  }
-}
-
-/// A short gradient at the top of the transcript that fades messages into the
-/// window background as they scroll up, so they don't collide with the floating
-/// controls. Non-interactive so it never eats taps.
-class _TopScrim extends StatelessWidget {
-  const _TopScrim();
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = Theme.of(context).scaffoldBackgroundColor;
-    return IgnorePointer(
-      child: Container(
-        height: 56,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [bg, bg.withAlpha(0)],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// An opaque, rounded surface for a control that floats over the transcript, so
-/// it stays legible above scrolling messages.
-class _FloatingPill extends StatelessWidget {
-  const _FloatingPill({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      elevation: 3,
-      shape: const StadiumBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: child,
-    );
-  }
-}
-
-/// A round "jump to latest" button shown while the user has scrolled up.
-/// Tapping animates back to the newest message so they never have to drag to the
-/// bottom by hand.
+/// A round "jump to latest" button shown while the user has scrolled up. Tapping
+/// animates back to the newest message so they never have to drag to the bottom
+/// by hand.
 class _JumpToLatestButton extends StatelessWidget {
   const _JumpToLatestButton({required this.onTap});
 
@@ -555,7 +399,7 @@ class _JumpToLatestButton extends StatelessWidget {
     return Tooltip(
       message: 'Jump to latest',
       child: Material(
-        color: scheme.surfaceContainerHighest,
+        color: scheme.surface,
         elevation: 3,
         shape: CircleBorder(side: BorderSide(color: scheme.outlineVariant)),
         clipBehavior: Clip.antiAlias,

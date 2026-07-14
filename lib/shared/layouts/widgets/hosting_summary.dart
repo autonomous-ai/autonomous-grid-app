@@ -23,7 +23,11 @@ class HostingSummary extends ConsumerWidget {
     if (grid == null) return const SizedBox.shrink();
 
     final nodes =
-        ref.watch(gridOverviewForProvider(grid.networkId)).asData?.value.nodes ??
+        ref
+            .watch(gridOverviewForProvider(grid.networkId))
+            .asData
+            ?.value
+            .nodes ??
         const <OverviewNode>[];
     final online = nodes.where((n) => n.online).length;
     final models = ref.watch(gridModelsProvider).length;

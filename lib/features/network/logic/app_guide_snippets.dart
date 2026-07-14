@@ -4,8 +4,12 @@
 /// grid's real relay BASE_URL / API_KEY — the same pair `grid info --env` prints.
 library;
 
-import '../../codex_agent/logic/codex_exec_args.dart' show gridApiKeyEnv;
 import 'client_app_detector.dart';
+
+/// Environment variable a client app reads the grid's API key from. Kept out of
+/// config files (and out of argv) so the token stays clear of shell history and
+/// the command log.
+const String gridApiKeyEnv = 'GRID_API_KEY';
 
 /// Fallback model id used only when the grid advertises none (no engine online /
 /// relay unreachable). The live model the grid actually serves is preferred — see
@@ -56,7 +60,8 @@ String hermesProviderName(String base) =>
 /// model, and a `max_tokens` cap — see [kHermesMaxTokens]) plus a
 /// `custom_providers` entry registering the grid as a named provider. Hermes
 /// reads it all here — no `.env`.
-String hermesConfigSnippet(String base, String key, String model) => 'model:\n'
+String hermesConfigSnippet(String base, String key, String model) =>
+    'model:\n'
     '  provider: custom\n'
     '  base_url: $base\n'
     '  api_key: $key\n'
@@ -83,7 +88,8 @@ const String kCodexProviderId = 'grid';
 ///
 /// Codex has no `api_key` config field — it reads the key from the environment
 /// variable named by `env_key` — so the key lives in [codexEnvSnippet], not here.
-String codexConfigSnippet(String base, String model) => 'model = "$model"\n'
+String codexConfigSnippet(String base, String model) =>
+    'model = "$model"\n'
     'model_provider = "$kCodexProviderId"\n'
     '\n'
     '[model_providers.$kCodexProviderId]\n'
@@ -155,8 +161,8 @@ String pythonSnippet(String base, String key, String model) =>
 String mediaNoun({required bool image, required bool video}) => image && video
     ? 'images and videos'
     : video
-        ? 'videos'
-        : 'images';
+    ? 'videos'
+    : 'images';
 
 /// A paste-ready instruction that has an *agent* client (Hermes / OpenClaw) build
 /// a reusable skill around a grid's media API. A media grid can't be wired as a
@@ -171,9 +177,11 @@ String mediaSkillPrompt(
   required bool video,
 }) {
   final out = StringBuffer()
-    ..writeln('Build a reusable skill I can run whenever I ask you to make '
-        '${mediaNoun(image: image, video: video)} with my Grid. The skill just '
-        'calls an HTTP API — you never create the media yourself.')
+    ..writeln(
+      'Build a reusable skill I can run whenever I ask you to make '
+      '${mediaNoun(image: image, video: video)} with my Grid. The skill just '
+      'calls an HTTP API — you never create the media yourself.',
+    )
     ..writeln()
     ..writeln('Base URL: $base')
     ..writeln('API key: $key')
@@ -182,56 +190,80 @@ String mediaSkillPrompt(
     ..writeln('  Authorization: Bearer $key')
     ..writeln('  Content-Type: application/json')
     ..writeln('  Accept: text/event-stream')
-    ..writeln("Don't send a model name — the grid picks it from \"capability\".")
+    ..writeln(
+      "Don't send a model name — the grid picks it from \"capability\".",
+    )
     ..writeln();
   if (image) {
     out
-      ..writeln('Make an image (text → image) — POST $base/media/image/generate')
-      ..writeln('  {"capability":"comfyui:image_generation","prompt":"<what to '
-          'draw>","width":1024,"height":1024,"steps":4}')
+      ..writeln(
+        'Make an image (text → image) — POST $base/media/image/generate',
+      )
+      ..writeln(
+        '  {"capability":"comfyui:image_generation","prompt":"<what to '
+        'draw>","width":1024,"height":1024,"steps":4}',
+      )
       ..writeln();
   }
   if (video) {
     out
       ..writeln('Make a video (image → video) — POST $base/media/video/i2v')
-      ..writeln('  {"capability":"comfyui:i2v","prompt":"<how it should move>",'
-          '"duration":"5s","aspect_ratio":"2:3","input_image":{"filename":'
-          '"in.png","content_base64":"<base64 of my source image>"}}')
-      ..writeln('  IMPORTANT: this animates a starting image I give you. You do '
-          'NOT need to open, view, or understand the image — just read the '
-          "file's raw bytes and base64-encode them into content_base64. Take the "
-          "motion from my words; if I don't describe it, use gentle, natural "
-          'motion. Never stop with "I can\'t see the image" — the grid looks at '
-          'it, not you.')
+      ..writeln(
+        '  {"capability":"comfyui:i2v","prompt":"<how it should move>",'
+        '"duration":"5s","aspect_ratio":"2:3","input_image":{"filename":'
+        '"in.png","content_base64":"<base64 of my source image>"}}',
+      )
+      ..writeln(
+        '  IMPORTANT: this animates a starting image I give you. You do '
+        'NOT need to open, view, or understand the image — just read the '
+        "file's raw bytes and base64-encode them into content_base64. Take the "
+        "motion from my words; if I don't describe it, use gentle, natural "
+        'motion. Never stop with "I can\'t see the image" — the grid looks at '
+        'it, not you.',
+      )
       ..writeln();
     if (image) {
       out
-        ..writeln('To make a video from a text idea (I gave no image): first call '
-            'the image/generate endpoint above, then feed that generated image '
-            'into the i2v call.')
+        ..writeln(
+          'To make a video from a text idea (I gave no image): first call '
+          'the image/generate endpoint above, then feed that generated image '
+          'into the i2v call.',
+        )
         ..writeln();
     }
   }
   out
     ..writeln('Read the reply as a Server-Sent Events stream, line by line:')
     ..writeln('  - lines look like `data: <json>`')
-    ..writeln('  - {"type":"progress","progress":<0-100>,"status":"..."} — show progress')
-    ..writeln('  - {"type":"result","output_files":[{"filename":"...",'
-        '"content_base64":"..."}]} — base64-decode each file to get the media')
+    ..writeln(
+      '  - {"type":"progress","progress":<0-100>,"status":"..."} — show progress',
+    )
+    ..writeln(
+      '  - {"type":"result","output_files":[{"filename":"...",'
+      '"content_base64":"..."}]} — base64-decode each file to get the media',
+    )
     ..writeln('  - {"error":"..."} — it failed; show me the message')
     ..writeln('  - `data: [DONE]` — the stream is finished')
     ..writeln()
-    ..writeln("Make the HTTPS call with `curl` (via a subprocess), not Python's "
-        'urllib — urllib fails on macOS with CERTIFICATE_VERIFY_FAILED. '
-        'Generation can take a few minutes, so allow a timeout of at least 5 '
-        'minutes.')
-    ..writeln('Save results to ~/Downloads with a unique, timestamped filename '
-        'so repeat runs never overwrite each other.')
-    ..writeln('After saving, show me the result inline — open or display the '
-        "file, don't just print its path. If your vision tool can't read the "
-        'file, open it in a browser/viewer instead.')
-    ..write('Before you tell me it works, run the skill once end-to-end and '
-        'confirm a non-empty file was written.');
+    ..writeln(
+      "Make the HTTPS call with `curl` (via a subprocess), not Python's "
+      'urllib — urllib fails on macOS with CERTIFICATE_VERIFY_FAILED. '
+      'Generation can take a few minutes, so allow a timeout of at least 5 '
+      'minutes.',
+    )
+    ..writeln(
+      'Save results to ~/Downloads with a unique, timestamped filename '
+      'so repeat runs never overwrite each other.',
+    )
+    ..writeln(
+      'After saving, show me the result inline — open or display the '
+      "file, don't just print its path. If your vision tool can't read the "
+      'file, open it in a browser/viewer instead.',
+    )
+    ..write(
+      'Before you tell me it works, run the skill once end-to-end and '
+      'confirm a non-empty file was written.',
+    );
   return out.toString();
 }
 
@@ -245,7 +277,8 @@ String mediaApiCurl(
   required bool image,
   required bool video,
 }) {
-  String call(String path, String body) => 'curl -N $base/$path \\\n'
+  String call(String path, String body) =>
+      'curl -N $base/$path \\\n'
       '  -H "Authorization: Bearer $key" \\\n'
       '  -H "Content-Type: application/json" \\\n'
       '  -H "Accept: text/event-stream" \\\n'

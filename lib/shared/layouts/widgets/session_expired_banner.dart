@@ -32,14 +32,17 @@ class _RefreshingRow extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2)),
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text('Refreshing your Grid session…',
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall),
+              child: Text(
+                'Refreshing your Grid session…',
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
             ),
           ],
         ),

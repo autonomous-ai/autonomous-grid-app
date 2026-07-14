@@ -25,9 +25,7 @@ class HermesSkillInstaller {
   /// Idempotent — safe to call every time the app points Hermes at a grid.
   Future<void> install() async {
     await Directory('${_skillDir.path}/scripts').create(recursive: true);
-    await File(
-      '${_skillDir.path}/SKILL.md',
-    ).writeAsString(_gridImageSkillMd);
+    await File('${_skillDir.path}/SKILL.md').writeAsString(_gridImageSkillMd);
     await File(
       '${_skillDir.path}/scripts/generate.py',
     ).writeAsString(_gridImageSkillScript);

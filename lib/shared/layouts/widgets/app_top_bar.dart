@@ -1,60 +1,39 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../../../features/app_update/logic/app_updater_service.dart';
-import '../../../features/auth/logic/auth_controller.dart';
-import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
-import '../../../features/provider_node/logic/provider_run_controller.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../app_info.dart';
+import '../../../features/auth/logic/session_controller.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/glass_surface.dart';
 import '../../widgets/status_dot.dart';
-import '../shell_state.dart';
 import 'hosting_summary.dart';
-import 'settings_dialog.dart';
 
-/// The Tailscale-style title bar: the active grid + account avatar sit on the
-/// right, with the left kept clear past the macOS window controls. Doubles as
-/// the window drag handle.
+/// The slim strip above the open section: which grid you're working in, and
+/// what's live on it (how many computers are hosting, how many models they
+/// serve). Doubles as the window's drag handle on the right of the window.
+///
+/// Deliberately quiet — the account and the navigation live in the sidebar, so
+/// nothing competes with the conversation below.
 class AppTopBar extends ConsumerWidget {
   const AppTopBar({super.key});
 
-  static const double height = 52;
+  static const double height = 46;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(sessionProvider);
-    final email = session.userEmail ?? '—';
-    // Leave room for the macOS traffic-light buttons under the hidden title bar.
-    final leftInset = Platform.isMacOS ? 78.0 : 16.0;
+    final grid = ref.watch(selectedNetworkProvider);
 
     return DragToMoveArea(
-      child: GlassSurface(
-        borderRadius: BorderRadius.zero,
-        border: const Border(bottom: BorderSide(color: AppGlass.border)),
-        padding: EdgeInsets.only(left: leftInset, right: 12),
-        child: SizedBox(
-          height: height,
+      child: SizedBox(
+        height: height,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 16, right: 14),
           child: Row(
             children: [
-              // Account avatar + active grid group on the right; the left stays
-              // clear of the macOS traffic-light buttons.
               const Spacer(),
               const HostingSummary(),
-              // A visible, labelled doorway to the settings screens — the app is
-              // just chat, so grids/engines/guide would otherwise hide behind an
-              // unlabelled avatar (they're in that menu too, keyed to a tab).
-              const _SettingsButton(),
-              const SizedBox(width: 4),
-              const _Account(),
-              const SizedBox(width: 12),
-              _AccountMenu(
-                  name: session.user['name'] as String? ?? email, email: email),
+              if (grid != null) _CurrentGridLabel(grid: grid),
             ],
           ),
         ),
@@ -63,233 +42,59 @@ class AppTopBar extends ConsumerWidget {
   }
 }
 
-/// The active grid shown at the right of the title bar — name + live
-/// Running / Stopped dot. The account email lives in the avatar menu now, so the
-/// bar stays uncluttered while still saying which grid you're working in.
-class _Account extends ConsumerWidget {
-  const _Account();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final grid = ref.watch(selectedNetworkProvider);
-    if (grid == null) return const SizedBox.shrink();
-    return _CurrentGridLabel(grid: grid);
-  }
-}
-
-/// The active grid at the right of the title bar — a live Running / Stopped dot,
-/// a faint "Grid ·" caption, then the grid name (shared cache with the list +
-/// detail). No box: it reads as a label, so you always know which grid you're
-/// working in without it competing with the window chrome.
+/// The active grid — a live Running / Stopped dot, a faint "Grid ·" caption, then
+/// the name. No box: it reads as a label, so you always know which grid answers
+/// your messages without it competing with the window chrome.
 class _CurrentGridLabel extends ConsumerWidget {
   const _CurrentGridLabel({required this.grid});
+
   final NetworkCredential grid;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final state =
-        ref.watch(gridOverviewForProvider(grid.networkId)).asData?.value.state;
+    final state = ref
+        .watch(gridOverviewForProvider(grid.networkId))
+        .asData
+        ?.value
+        .state;
     final running = state?.toLowerCase() == 'running';
     return ConstrainedBox(
-      // Cap the width and ellipsize so a long grid name can't overflow into the
-      // avatar or off the bar on a narrow window.
+      // Cap the width and ellipsize so a long grid name can't overflow the bar.
       constraints: const BoxConstraints(maxWidth: 280),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           StatusDot(
-              color: running ? AppPalette.online : AppPalette.offline, size: 8),
+            color: running ? AppPalette.online : AppPalette.offline,
+            size: 8,
+          ),
           const SizedBox(width: 8),
           Flexible(
             child: Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                  text: 'Grid · ',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: AppPalette.textSecondary),
-                ),
-                TextSpan(
-                  text: grid.name,
-                  style: theme.textTheme.titleSmall?.copyWith(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Grid · ',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.textSecondary,
+                    ),
+                  ),
+                  TextSpan(
+                    text: grid.name,
+                    style: theme.textTheme.titleSmall?.copyWith(
                       color: AppPalette.textPrimary,
-                      fontWeight: FontWeight.w600),
-                ),
-              ]),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The gear that opens the settings dialog (grids, engines, the guide). The one
-/// always-visible way in now that the sidebar is gone — a first-time user who
-/// needs to set up an engine shouldn't have to guess it lives behind the avatar.
-class _SettingsButton extends ConsumerWidget {
-  const _SettingsButton();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return IconButton(
-      tooltip: 'Settings — grids, engines, guide',
-      icon: const Icon(Icons.settings_outlined, size: 20),
-      color: AppPalette.textSecondary,
-      onPressed: () => showSettingsDialog(ref, SettingsTab.grids),
-    );
-  }
-}
-
-/// Avatar that opens an account menu: email, "Check for updates", the app
-/// version, and Sign out. Once a check has found a newer build the avatar wears
-/// a dot and the item reads "Update to …", so an update is noticed instead of
-/// having to be hunted for. Check outcomes are toasted app-wide by
-/// `UpdateToastScope`.
-class _AccountMenu extends ConsumerWidget {
-  const _AccountMenu({required this.name, required this.email});
-  final String name;
-  final String email;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
-    final updater = ref.read(appUpdaterServiceProvider);
-    final version = ref.watch(appVersionProvider).asData?.value;
-    final status = ref.watch(appUpdateStatusProvider).asData?.value;
-    final available = status is UpdateAvailable ? status : null;
-    return PopupMenuButton<String>(
-      tooltip: name,
-      offset: const Offset(0, 42),
-      onSelected: (value) async {
-        if (value == 'check_updates') {
-          await updater.checkForUpdates();
-          return;
-        }
-        // The settings screens live here now, each opening as a dialog.
-        for (final tab in SettingsTab.values) {
-          if (value == tab.name) {
-            await showSettingsDialog(ref, tab);
-            return;
-          }
-        }
-        if (value != 'logout') return;
-        final engineRunning =
-            ref.read(providerRunControllerProvider) is ProviderRunActive;
-        if (await _confirmSignOut(context, engineRunning: engineRunning)) {
-          await ref.read(authControllerProvider.notifier).logout();
-        }
-      },
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          enabled: false,
-          child: Text(email, style: const TextStyle(fontSize: 12.5)),
-        ),
-        const PopupMenuDivider(),
-        for (final tab in SettingsTab.values)
-          PopupMenuItem(
-            value: tab.name,
-            child: Row(
-              children: [
-                Icon(tab.icon, size: 18),
-                const SizedBox(width: 10),
-                Text(tab.label),
-              ],
-            ),
-          ),
-        const PopupMenuDivider(),
-        // Mirrors the macOS "Grid ▸ Check for Updates…" app-menu item — both
-        // routes offer the same action, and both always answer (a build with no
-        // update feed says so in a toast instead of doing nothing).
-        if (updater.isSupported)
-          PopupMenuItem(
-            value: 'check_updates',
-            child: Row(
-              children: [
-                Icon(Icons.system_update_alt,
-                    size: 18,
-                    color: available == null ? null : AppPalette.brandBolt),
-                const SizedBox(width: 10),
-                Text(available == null
-                    ? 'Check for updates'
-                    : 'Update to ${available.version ?? 'the latest version'}'),
-              ],
-            ),
-          ),
-        if (version != null)
-          PopupMenuItem(
-            enabled: false,
-            height: 32,
-            child: Text('Version $version',
-                style: const TextStyle(
-                    fontSize: 11.5, color: AppPalette.textFaint)),
-          ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: 'logout',
-          child: Row(
-            children: [
-              Icon(Icons.logout, size: 18),
-              SizedBox(width: 10),
-              Text('Sign out'),
-            ],
-          ),
-        ),
-      ],
-      child: _Avatar(initial: initial, updateAvailable: available != null),
-    );
-  }
-
-  Future<bool> _confirmSignOut(BuildContext context,
-      {required bool engineRunning}) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sign out?'),
-        content: Text(engineRunning
-            ? "You'll be signed out and need to sign in again. Your running "
-                'engine will be stopped.'
-            : "You'll be signed out and need to sign in again."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out'),
-          ),
-        ],
-      ),
-    );
-    return ok ?? false;
-  }
-}
-
-/// The account avatar, dotted while a newer build is waiting — the one hint the
-/// user gets before opening the menu, so an update doesn't stay hidden behind a
-/// click no one thinks to make.
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initial, required this.updateAvailable});
-  final String initial;
-  final bool updateAvailable;
-
-  @override
-  Widget build(BuildContext context) {
-    final avatar = CircleAvatar(
-      radius: 14,
-      backgroundColor: AppPalette.accentMuted,
-      child: Text(initial,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-    );
-    if (!updateAvailable) return avatar;
-    return Badge(
-      backgroundColor: AppPalette.brandBolt,
-      smallSize: 8,
-      child: avatar,
     );
   }
 }

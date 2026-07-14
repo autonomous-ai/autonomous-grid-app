@@ -12,7 +12,8 @@ import 'detail_widgets.dart';
 /// networkId so revealing one grid's key never uncovers another's.
 final _revealedKeysProvider =
     NotifierProvider<_RevealedKeysNotifier, Set<String>>(
-        _RevealedKeysNotifier.new);
+      _RevealedKeysNotifier.new,
+    );
 
 class _RevealedKeysNotifier extends Notifier<Set<String>> {
   @override
@@ -20,7 +21,8 @@ class _RevealedKeysNotifier extends Notifier<Set<String>> {
 
   void toggle(String networkId) {
     final next = {...state};
-    if (!next.add(networkId)) next.remove(networkId); // add() false ⇒ was present
+    // add() false ⇒ it was already there, so this is an un-reveal.
+    if (!next.add(networkId)) next.remove(networkId);
     state = next;
   }
 }
@@ -49,8 +51,9 @@ class _ConsumerEnvCardState extends ConsumerState<ConsumerEnvCard> {
   @override
   Widget build(BuildContext context) {
     final network = widget.network;
-    final revealed =
-        ref.watch(_revealedKeysProvider).contains(network.networkId);
+    final revealed = ref
+        .watch(_revealedKeysProvider)
+        .contains(network.networkId);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -163,7 +166,7 @@ class _HowToUseButton extends ConsumerWidget {
           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
         onPressed: () =>
-            ref.read(settingsTabProvider.notifier).select(SettingsTab.howToUse),
+            ref.read(shellSectionProvider.notifier).select(ShellSection.guide),
       ),
     );
   }
@@ -203,24 +206,30 @@ class EnvVarRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      color: AppPalette.textPrimary,
-                      fontFamily: 'monospace',
-                      fontSize: 13),
+                    color: AppPalette.textPrimary,
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 2),
-                Text(name,
-                    style: const TextStyle(
-                        color: AppPalette.textSecondary, fontSize: 11.5)),
+                Text(
+                  name,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontSize: 11.5,
+                  ),
+                ),
               ],
             ),
           ),
           if (secret)
             IconButton(
               icon: Icon(
-                  revealed
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  size: 15),
+                revealed
+                    ? Icons.visibility_off_rounded
+                    : Icons.visibility_rounded,
+                size: 15,
+              ),
               color: AppPalette.textSecondary,
               tooltip: revealed ? 'Hide' : 'Reveal',
               visualDensity: VisualDensity.compact,

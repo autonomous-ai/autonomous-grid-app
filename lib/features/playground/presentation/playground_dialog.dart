@@ -185,7 +185,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         canManage: network.canManageProvider,
         onGoToEngines: () {
           Navigator.of(context).pop();
-          ref.read(settingsTabProvider.notifier).select(SettingsTab.engines);
+          ref.read(shellSectionProvider.notifier).select(ShellSection.engines);
         },
       );
     }
@@ -356,4 +356,3 @@ class _LocalTestToggle extends StatelessWidget {
     );
   }
 }
-

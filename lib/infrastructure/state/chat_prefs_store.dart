@@ -5,51 +5,38 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
 
-/// The Chat tab's remembered selections — the grid, model, and agent backend the
-/// user last used — so reopening the app restores them instead of resetting to
-/// defaults.
-///
-/// [agent] is stored as a plain string (an `AgentBackend.name`) so this
-/// app-owned store stays free of any feature enum; the feature layer maps it
-/// back. All fields are optional: a field is null until the user first picks it.
+/// The chat's remembered selections — the grid and the model the user last used
+/// — so reopening the app restores them instead of resetting to defaults. Both
+/// fields are optional: a field is null until the user first picks it.
 class ChatPrefs {
-  const ChatPrefs({this.networkId, this.model, this.agent});
+  const ChatPrefs({this.networkId, this.model});
 
   /// No remembered selection yet — the state before the first launch that saves.
   static const empty = ChatPrefs();
 
   final String? networkId;
   final String? model;
-  final String? agent;
 
-  ChatPrefs copyWith({String? networkId, String? model, String? agent}) =>
-      ChatPrefs(
-        networkId: networkId ?? this.networkId,
-        model: model ?? this.model,
-        agent: agent ?? this.agent,
-      );
+  ChatPrefs copyWith({String? networkId, String? model}) => ChatPrefs(
+    networkId: networkId ?? this.networkId,
+    model: model ?? this.model,
+  );
 
   factory ChatPrefs.fromJson(Map<String, dynamic> json) => ChatPrefs(
     networkId: json['networkId'] as String?,
     model: json['model'] as String?,
-    agent: json['agent'] as String?,
   );
 
-  Map<String, Object?> toJson() => {
-    'networkId': networkId,
-    'model': model,
-    'agent': agent,
-  };
+  Map<String, Object?> toJson() => {'networkId': networkId, 'model': model};
 
   @override
   bool operator ==(Object other) =>
       other is ChatPrefs &&
       other.networkId == networkId &&
-      other.model == model &&
-      other.agent == agent;
+      other.model == model;
 
   @override
-  int get hashCode => Object.hash(networkId, model, agent);
+  int get hashCode => Object.hash(networkId, model);
 }
 
 /// Persists [ChatPrefs] as `~/.grid/app/chat_prefs.json`. App-owned (the CLI
@@ -94,9 +81,9 @@ final chatPrefsStoreProvider = Provider<ChatPrefsStore>(
 /// The live remembered Chat selections. Loaded once on start; each setter
 /// updates state and persists, so the selection survives an app restart.
 ///
-/// Written from three places that own a different piece — the grid switcher
-/// ([selectedNetworkProvider]), the model picker, and the agent picker
-/// ([agentBackendProvider]) — but read back as one object.
+/// Written from the two places that own a piece of it — the grid switcher
+/// ([selectedNetworkProvider]) and the model picker — but read back as one
+/// object.
 final chatPrefsProvider = NotifierProvider<ChatPrefsController, ChatPrefs>(
   ChatPrefsController.new,
 );
@@ -109,8 +96,6 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
       _update(state.copyWith(networkId: networkId));
 
   void setModel(String model) => _update(state.copyWith(model: model));
-
-  void setAgent(String agent) => _update(state.copyWith(agent: agent));
 
   void _update(ChatPrefs next) {
     if (next == state) return;

@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../auth/logic/session_controller.dart';
 import 'chat_view.dart';
-import 'conversation_sidebar.dart';
 
-/// The Chat section: a conversation-history rail on the left, the open
-/// conversation on the right (Ollama-style). Falls back to a nudge when no grid
-/// is selected, since a chat needs a grid to answer.
+/// The chat section: the open conversation, edge to edge. The history rail lives
+/// in the app sidebar, so this pane is only ever the conversation itself.
+///
+/// Falls back to a nudge when no grid is selected, since a chat needs a grid to
+/// answer.
 class ChatPane extends ConsumerWidget {
   const ChatPane({super.key});
 
@@ -16,32 +18,35 @@ class ChatPane extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final network = ref.watch(selectedNetworkProvider);
     if (network == null) return const _NoGrid();
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const ConversationSidebar(),
-        const VerticalDivider(width: 1),
-        Expanded(child: ChatView(network: network)),
-      ],
-    );
+    return ChatView(network: network);
   }
 }
 
-class _NoGrid extends StatelessWidget {
+class _NoGrid extends ConsumerWidget {
   const _NoGrid();
 
   @override
-  Widget build(BuildContext context) {
-    return const Center(
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.forum_outlined, size: 40, color: AppPalette.textFaint),
-          SizedBox(height: 12),
-          Text(
-            'Select a grid to start chatting.',
+          const Icon(
+            Icons.forum_outlined,
+            size: 40,
+            color: AppPalette.textFaint,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Pick a grid to chat with.',
             style: TextStyle(color: AppPalette.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: () => ref
+                .read(shellSectionProvider.notifier)
+                .select(ShellSection.grids),
+            child: const Text('Open grids'),
           ),
         ],
       ),

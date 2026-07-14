@@ -30,14 +30,11 @@ void main() {
 
     test('round-trips a saved selection through disk', () {
       final store = ChatPrefsStore(file: file);
-      store.save(
-        const ChatPrefs(networkId: 'grid-1', model: 'qwen', agent: 'hermes'),
-      );
+      store.save(const ChatPrefs(networkId: 'grid-1', model: 'qwen'));
 
       final loaded = ChatPrefsStore(file: file).load();
       expect(loaded.networkId, 'grid-1');
       expect(loaded.model, 'qwen');
-      expect(loaded.agent, 'hermes');
     });
 
     test('reads empty from a corrupt file instead of throwing', () {
@@ -54,12 +51,11 @@ void main() {
 
       notifier.setNetwork('grid-1');
       notifier.setModel('qwen');
-      notifier.setAgent('codex');
 
       // Every field survived the successive writes.
       expect(
         c.read(chatPrefsProvider),
-        const ChatPrefs(networkId: 'grid-1', model: 'qwen', agent: 'codex'),
+        const ChatPrefs(networkId: 'grid-1', model: 'qwen'),
       );
       // And it's on disk, not just in memory.
       expect(ChatPrefsStore(file: file).load().model, 'qwen');

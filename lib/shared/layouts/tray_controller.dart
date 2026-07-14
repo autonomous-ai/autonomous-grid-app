@@ -71,18 +71,25 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
     final networks = ref.read(sessionProvider).networks;
     final activeId = ref.read(selectedNetworkProvider)?.networkId;
 
-    await trayManager.setContextMenu(Menu(items: [
-      ..._gridItems(networks, activeId),
-      MenuItem.separator(),
-      MenuItem(key: _kSettings, label: 'Grid Settings'),
-    ]));
+    await trayManager.setContextMenu(
+      Menu(
+        items: [
+          ..._gridItems(networks, activeId),
+          MenuItem.separator(),
+          MenuItem(key: _kSettings, label: 'Grid Settings'),
+        ],
+      ),
+    );
   }
 
   /// The grids section: one row per grid. The active grid gets a gold lightning
   /// bolt, the rest a grey one — mirroring the connected vs. available split in
   /// the macOS Wi-Fi list, and matching the in-app grids list. Falls back to a
   /// hint when no grid is joined.
-  List<MenuItem> _gridItems(List<NetworkCredential> networks, String? activeId) {
+  List<MenuItem> _gridItems(
+    List<NetworkCredential> networks,
+    String? activeId,
+  ) {
     if (networks.isEmpty) {
       return [MenuItem(key: 'none', label: 'No grids yet', disabled: true)];
     }
