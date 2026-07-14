@@ -185,7 +185,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         canManage: network.canManageProvider,
         onGoToEngines: () {
           Navigator.of(context).pop();
-          ref.read(navSectionProvider.notifier).select(NavSection.provider);
+          ref.read(settingsTabProvider.notifier).select(SettingsTab.engines);
         },
       );
     }

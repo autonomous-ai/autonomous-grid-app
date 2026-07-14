@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
-import '../../../shared/theme/app_theme.dart';
+import '../../../shared/layouts/widgets/settings_dialog.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../codex_agent/logic/agent_backend.dart';
 import '../../codex_agent/presentation/agent_backend_picker.dart';
@@ -265,59 +266,63 @@ class _ChatViewState extends ConsumerState<ChatView> {
               Expanded(
                 child: NoModelYet(
                   canManage: widget.network.canManageProvider,
-                  onGoToEngines: () => ref
-                      .read(navSectionProvider.notifier)
-                      .select(NavSection.provider),
+                  onGoToEngines: () =>
+                      showSettingsDialog(ref, SettingsTab.engines),
                 ),
               )
-            else ...[
+            else
               Expanded(
-                child: messages.isEmpty
-                    ? _EmptyChat(hint: _emptyHint(modality))
-                    : Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          ListView.builder(
-                            controller: _scroll,
-                            // Top padding + the top scrim keep messages clear of
-                            // the floating controls as they scroll past.
-                            padding: const EdgeInsets.fromLTRB(20, 62, 20, 8),
-                            itemCount:
-                                messages.length + (trailing != null ? 1 : 0),
-                            itemBuilder: (context, i) => i < messages.length
-                                ? ChatBubble(message: messages[i])
-                                : trailing ?? const SizedBox.shrink(),
-                          ),
-                          if (!_atBottom)
-                            Positioned(
-                              right: 16,
-                              bottom: 12,
-                              child: _JumpToLatestButton(
-                                onTap: () => _scrollToBottom(animated: true),
-                              ),
-                            ),
-                        ],
+                child: _ChatBody(
+                  // A brand-new chat centres the composer, ChatGPT-style; the
+                  // first message slides it down to the foot.
+                  isNewChat: messages.isEmpty && !sessions.sending,
+                  greeting: _greeting(modality),
+                  // The composer floats over the transcript; [bottomInset] is the
+                  // room to reserve for it (measured, so a tall composer never
+                  // hides the newest message). The top scrim clears the agent
+                  // pill above.
+                  transcriptBuilder: (bottomInset) => Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ListView.builder(
+                        controller: _scroll,
+                        padding: EdgeInsets.fromLTRB(20, 62, 20, bottomInset),
+                        itemCount:
+                            messages.length + (trailing != null ? 1 : 0),
+                        itemBuilder: (context, i) => i < messages.length
+                            ? ChatBubble(message: messages[i])
+                            : trailing ?? const SizedBox.shrink(),
                       ),
-              ),
-              ComposerSection(
-                messageController: _message,
-                attachments: _attachments,
-                modality: modality,
-                needsImage: needsImage,
-                sending: sessions.sending,
-                canSend: canSend,
-                error: sessions.error,
-                modelPicker: GridModelPicker(
-                  currentModelId: _model.text,
-                  onSelect: _pickGridModel,
+                      if (!_atBottom)
+                        Positioned(
+                          right: 16,
+                          bottom: bottomInset - 16,
+                          child: _JumpToLatestButton(
+                            onTap: () => _scrollToBottom(animated: true),
+                          ),
+                        ),
+                    ],
+                  ),
+                  composer: ComposerSection(
+                    messageController: _message,
+                    attachments: _attachments,
+                    modality: modality,
+                    needsImage: needsImage,
+                    sending: sessions.sending,
+                    canSend: canSend,
+                    error: sessions.error,
+                    modelPicker: GridModelPicker(
+                      currentModelId: _model.text,
+                      onSelect: _pickGridModel,
+                    ),
+                    onAddAttachment: (a) => setState(() => _attachments.add(a)),
+                    onPickImage: _pickImage,
+                    onRemoveAttachment: (i) =>
+                        setState(() => _attachments.removeAt(i)),
+                    onSend: () => _send(modality),
+                  ),
                 ),
-                onAddAttachment: (a) => setState(() => _attachments.add(a)),
-                onPickImage: _pickImage,
-                onRemoveAttachment: (i) =>
-                    setState(() => _attachments.removeAt(i)),
-                onSend: () => _send(modality),
               ),
-            ],
           ],
         ),
         // A short fade at the very top so messages dissolve into the background
@@ -348,20 +353,149 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   /// The bubble appended after the transcript for the in-flight turn: the media
-  /// progress bar while a generation streams, or a spinner while an Agent
-  /// (codex) run works — never the media bar for an agent turn, which produces
-  /// text, not media.
+  /// progress bar while a generation streams, the agent's answer growing live as
+  /// it streams in, or a spinner while an agent works before its first token.
   Widget? _trailingBubble(SendPhase phase, bool agentMode) => switch (phase) {
     SendGenerating g => GeneratingBubble(phase: g),
+    SendStreaming(:final text) when text.isNotEmpty =>
+      ChatBubble(message: ChatMessage(role: ChatRole.assistant, text: text)),
+    SendStreaming() => const AgentWorkingBubble(),
     SendBusy() when agentMode => const AgentWorkingBubble(),
     _ => null,
   };
 
-  String _emptyHint(PlaygroundModality modality) => switch (modality) {
-    PlaygroundModality.image => 'Describe an image to generate.',
-    PlaygroundModality.video => 'Attach an image, then describe the motion.',
-    PlaygroundModality.text => 'Send a message to start chatting.',
+  /// The headline shown above the centred composer on a fresh chat.
+  String _greeting(PlaygroundModality modality) => switch (modality) {
+    PlaygroundModality.image => 'Describe an image to generate',
+    PlaygroundModality.video => 'Attach an image, then describe the motion',
+    PlaygroundModality.text => 'What can I help with?',
   };
+}
+
+/// The chat body, ChatGPT-style: a fresh chat shows the composer centred under a
+/// greeting; the first message slides the composer down to the foot and reveals
+/// the transcript above it. This widget choreographs the two layouts and the
+/// transition, and measures the (floating) composer so the transcript always
+/// leaves room for it — a multi-line draft or attached image never hides the
+/// newest message. [transcriptBuilder] is given that reserved bottom inset.
+class _ChatBody extends StatefulWidget {
+  const _ChatBody({
+    required this.isNewChat,
+    required this.greeting,
+    required this.transcriptBuilder,
+    required this.composer,
+  });
+
+  final bool isNewChat;
+  final String greeting;
+  final Widget Function(double bottomInset) transcriptBuilder;
+  final Widget composer;
+
+  @override
+  State<_ChatBody> createState() => _ChatBodyState();
+}
+
+class _ChatBodyState extends State<_ChatBody> {
+  // A sensible first guess (model picker + one input line) until the real
+  // composer reports its height on the first frame.
+  double _composerHeight = 120;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = _composerHeight + 24;
+    return Stack(
+      children: [
+        // The transcript fills the area, behind the composer. It's empty on a
+        // fresh chat, so fade + ignore it until the conversation starts.
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: widget.isNewChat,
+            child: AnimatedOpacity(
+              opacity: widget.isNewChat ? 0 : 1,
+              duration: const Duration(milliseconds: 200),
+              child: widget.transcriptBuilder(bottomInset),
+            ),
+          ),
+        ),
+        // The composer: centred with a greeting on a fresh chat, pinned to the
+        // foot once it starts. The alignment animation is the "input slides down
+        // after the first message".
+        AnimatedAlign(
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          alignment:
+              widget.isNewChat ? Alignment.center : Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // The greeting exists only on a fresh chat; it collapses away as
+                // the composer moves down.
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  child: widget.isNewChat
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 20),
+                          child: Text(
+                            widget.greeting,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+                _MeasureSize(
+                  onChange: (size) {
+                    if ((size.height - _composerHeight).abs() > 0.5) {
+                      setState(() => _composerHeight = size.height);
+                    }
+                  },
+                  child: widget.composer,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Reports its child's size after layout — used to reserve exactly the room the
+/// floating composer needs so the transcript never slides under it.
+class _MeasureSize extends SingleChildRenderObjectWidget {
+  const _MeasureSize({required this.onChange, required super.child});
+
+  final ValueChanged<Size> onChange;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _MeasureSizeRender(onChange);
+
+  @override
+  void updateRenderObject(BuildContext context, _MeasureSizeRender obj) =>
+      obj.onChange = onChange;
+}
+
+class _MeasureSizeRender extends RenderProxyBox {
+  _MeasureSizeRender(this.onChange);
+
+  ValueChanged<Size> onChange;
+  Size? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final next = child?.size ?? Size.zero;
+    if (next != _last) {
+      _last = next;
+      // Notify after the frame — never call back into setState during layout.
+      WidgetsBinding.instance.addPostFrameCallback((_) => onChange(next));
+    }
+  }
 }
 
 /// A short gradient at the top of the transcript that fades messages into the
@@ -407,9 +541,9 @@ class _FloatingPill extends StatelessWidget {
   }
 }
 
-/// A short gradient at the top of the transcript that fades messages into the
-/// while the user has scrolled up. Tapping animates back to the newest message
-/// so they never have to drag to the bottom by hand.
+/// A round "jump to latest" button shown while the user has scrolled up.
+/// Tapping animates back to the newest message so they never have to drag to the
+/// bottom by hand.
 class _JumpToLatestButton extends StatelessWidget {
   const _JumpToLatestButton({required this.onTap});
 
@@ -437,37 +571,6 @@ class _JumpToLatestButton extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The transcript placeholder before the first message — a quiet, centered
-/// prompt rather than an empty void.
-class _EmptyChat extends StatelessWidget {
-  const _EmptyChat({required this.hint});
-  final String hint;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.forum_outlined,
-            size: 40,
-            color: AppPalette.textFaint,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            hint,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: AppPalette.textSecondary,
-            ),
-          ),
-        ],
       ),
     );
   }

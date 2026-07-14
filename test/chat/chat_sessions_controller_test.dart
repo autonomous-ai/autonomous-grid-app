@@ -49,6 +49,7 @@ class _FakeSender implements ChatSender {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
+    String? conversationId,
   }) {
     this.history = history;
     this.model = model;

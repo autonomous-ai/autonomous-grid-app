@@ -14,7 +14,14 @@ import 'chat_store.dart';
 import 'conversation.dart';
 
 export '../../playground/logic/chat_message.dart'
-    show ChatRole, ChatMessage, ChatMedia, SendPhase, SendBusy, SendGenerating;
+    show
+        ChatRole,
+        ChatMessage,
+        ChatMedia,
+        SendPhase,
+        SendBusy,
+        SendGenerating,
+        SendStreaming;
 
 /// The Chat tab's whole state: every saved conversation (newest first), which
 /// one is open, and the in-flight send [phase] / [error]. A null [activeId]
@@ -153,6 +160,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       modality: modality,
       // The agents can't see attached images; only the relay sender takes them.
       attachments: backend.isOn ? const [] : attachments,
+      // Lets the agent sender keep one live session per conversation and send
+      // only the new turn (the relay sender ignores it).
+      conversationId: conversation.id,
     );
 
     // Fold updates through a stored subscription so [stop] and disposal can
@@ -169,6 +179,8 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             state = _withPhase(
               SendGenerating(progress: progress, status: status),
             );
+          case ChatSendStreaming(:final text):
+            state = _withPhase(SendStreaming(text));
           case ChatSendSuccess(:final reply):
             _commit(
               current.copyWith(

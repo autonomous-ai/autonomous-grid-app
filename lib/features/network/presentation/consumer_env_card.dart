@@ -163,7 +163,7 @@ class _HowToUseButton extends ConsumerWidget {
           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
         onPressed: () =>
-            ref.read(navSectionProvider.notifier).select(NavSection.howToUse),
+            ref.read(settingsTabProvider.notifier).select(SettingsTab.howToUse),
       ),
     );
   }

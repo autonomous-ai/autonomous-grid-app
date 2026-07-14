@@ -112,55 +112,31 @@ void main() {
     expect(consumerRole.roleLabel, 'Using');
   });
 
-  test('provider network shows every listed section', () {
+  test('settings opens on Grids, the screen a returning admin reaches for', () {
     final container = containerWith('grid-prov');
-    final sections = container.read(visibleNavSectionsProvider);
-    expect(sections, NavSection.values.where((s) => !s.hidden));
+    expect(container.read(settingsTabProvider), SettingsTab.grids);
   });
 
-  test('admin network shows every section without provider:poll', () {
-    final admin = _network(
-      'grid-adm',
-      'admin',
-      roles: const ['admin'],
-      scopes: const ['network:sync'],
-    );
-    final creds = CredentialsFile(networks: [admin], activeNetwork: 'grid-adm');
-    final container = ProviderContainer(
-      overrides: [
-        gridHomeStoreProvider.overrideWithValue(_FakeStore(creds)),
-        prefsOverride(),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    expect(admin.isProvider, isFalse);
-    expect(admin.canManageProvider, isTrue);
-    expect(
-      container.read(visibleNavSectionsProvider),
-      NavSection.values.where((s) => !s.hidden),
-    );
-  });
-
-  test('consumer network still lists Engines', () {
-    // Installing an engine is a local set-up; only sharing it needs a role on
-    // the grid, and the Engines screen gates that step itself. Hiding the tab
-    // is what used to leave a consumer with no way to learn the app.
-    final container = containerWith('grid-con');
-
-    expect(
-      container.read(visibleNavSectionsProvider),
-      NavSection.values.where((s) => !s.hidden),
-    );
-  });
-
-  test('switching to a consumer network keeps you on Engines', () {
+  test('a deep-link switches the settings tab (no nested dialog)', () {
+    // Cards inside the settings dialog — "Set up engine", "How it works" —
+    // switch the tab rather than stacking another dialog on top.
     final container = containerWith('grid-prov');
-    container.listen(navSectionProvider, (_, _) {});
+    container.listen(settingsTabProvider, (_, _) {});
 
-    container.read(navSectionProvider.notifier).select(NavSection.provider);
+    container.read(settingsTabProvider.notifier).select(SettingsTab.engines);
+    expect(container.read(settingsTabProvider), SettingsTab.engines);
+
+    container.read(settingsTabProvider.notifier).select(SettingsTab.howToUse);
+    expect(container.read(settingsTabProvider), SettingsTab.howToUse);
+  });
+
+  test('switching grid leaves the open settings tab alone', () {
+    final container = containerWith('grid-prov');
+    container.listen(settingsTabProvider, (_, _) {});
+    container.read(settingsTabProvider.notifier).select(SettingsTab.engines);
+
     container.read(selectedNetworkProvider.notifier).select(consumer);
 
-    expect(container.read(navSectionProvider), NavSection.provider);
+    expect(container.read(settingsTabProvider), SettingsTab.engines);
   });
 }

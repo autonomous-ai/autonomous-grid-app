@@ -207,15 +207,15 @@ class _SetUpThisGrid extends ConsumerWidget {
             children: [
               FilledButton.icon(
                 onPressed: () => ref
-                    .read(navSectionProvider.notifier)
-                    .select(NavSection.provider),
+                    .read(settingsTabProvider.notifier)
+                    .select(SettingsTab.engines),
                 icon: const Icon(Icons.dns_outlined, size: 18),
                 label: const Text('Set up engine'),
               ),
               OutlinedButton.icon(
                 onPressed: () => ref
-                    .read(navSectionProvider.notifier)
-                    .select(NavSection.howToUse),
+                    .read(settingsTabProvider.notifier)
+                    .select(SettingsTab.howToUse),
                 icon: const Icon(Icons.help_outline_rounded, size: 18),
                 label: const Text('How it works'),
               ),
@@ -292,8 +292,8 @@ class _TryThisGrid extends ConsumerWidget {
               ),
               OutlinedButton.icon(
                 onPressed: () => ref
-                    .read(navSectionProvider.notifier)
-                    .select(NavSection.howToUse),
+                    .read(settingsTabProvider.notifier)
+                    .select(SettingsTab.howToUse),
                 icon: const Icon(Icons.help_outline_rounded, size: 18),
                 label: const Text('How to use'),
               ),

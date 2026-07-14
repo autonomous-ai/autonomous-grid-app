@@ -36,6 +36,7 @@ class CodexChatSender implements ChatSender {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
+    String? conversationId,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('Agent mode only supports text chat.');

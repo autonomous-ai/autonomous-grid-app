@@ -29,6 +29,15 @@ class ChatSendGenerating extends ChatSendUpdate {
   final String status;
 }
 
+/// The assistant's text as it streams in, token by token (Agent mode). [text] is
+/// the *whole* reply so far — cumulative — so the UI redraws the growing bubble
+/// by replacing, not appending. Only the agent sender emits it; the relay chat
+/// is one blocking request, so it goes straight to [ChatSendSuccess].
+class ChatSendStreaming extends ChatSendUpdate {
+  const ChatSendStreaming(this.text);
+  final String text;
+}
+
 /// The request finished; [reply] is the assistant turn to append (text for
 /// chat, media for a generation).
 class ChatSendSuccess extends ChatSendUpdate {
@@ -60,6 +69,13 @@ abstract interface class ChatSender {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
+
+    /// The conversation this turn belongs to, when the caller has one. The agent
+    /// sender keeps one live session per conversation, so it can send only the
+    /// new turn and let the agent hold the context; switching conversation (a
+    /// different id) starts a fresh session. Null for one-off transcripts (the
+    /// Playground) and the relay sender, which are stateless.
+    String? conversationId,
   });
 }
 
@@ -104,6 +120,7 @@ class DefaultChatSender implements ChatSender {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
+    String? conversationId,
   }) {
     // The local smoke test and relay text both hit chat/completions; only the
     // base URL differs (the local engine has no `/relay/v1` prefix).

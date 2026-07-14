@@ -52,6 +52,13 @@ class SendGenerating extends SendPhase {
   final String status;
 }
 
+/// An agent reply is streaming in. [text] is the whole reply so far, so the
+/// trailing bubble grows live as tokens arrive. Empty until the first token.
+class SendStreaming extends SendPhase {
+  const SendStreaming(this.text);
+  final String text;
+}
+
 /// The full Playground transcript state: the messages, the current [phase], and
 /// the last error (cleared on the next send).
 class ChatState {

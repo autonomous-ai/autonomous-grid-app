@@ -14,6 +14,9 @@ import '../../app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass_surface.dart';
 import '../../widgets/status_dot.dart';
+import '../shell_state.dart';
+import 'hosting_summary.dart';
+import 'settings_dialog.dart';
 
 /// The Tailscale-style title bar: the active grid + account avatar sit on the
 /// right, with the left kept clear past the macOS window controls. Doubles as
@@ -42,6 +45,12 @@ class AppTopBar extends ConsumerWidget {
               // Account avatar + active grid group on the right; the left stays
               // clear of the macOS traffic-light buttons.
               const Spacer(),
+              const HostingSummary(),
+              // A visible, labelled doorway to the settings screens — the app is
+              // just chat, so grids/engines/guide would otherwise hide behind an
+              // unlabelled avatar (they're in that menu too, keyed to a tab).
+              const _SettingsButton(),
+              const SizedBox(width: 4),
               const _Account(),
               const SizedBox(width: 12),
               _AccountMenu(
@@ -117,6 +126,23 @@ class _CurrentGridLabel extends ConsumerWidget {
   }
 }
 
+/// The gear that opens the settings dialog (grids, engines, the guide). The one
+/// always-visible way in now that the sidebar is gone — a first-time user who
+/// needs to set up an engine shouldn't have to guess it lives behind the avatar.
+class _SettingsButton extends ConsumerWidget {
+  const _SettingsButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      tooltip: 'Settings — grids, engines, guide',
+      icon: const Icon(Icons.settings_outlined, size: 20),
+      color: AppPalette.textSecondary,
+      onPressed: () => showSettingsDialog(ref, SettingsTab.grids),
+    );
+  }
+}
+
 /// Avatar that opens an account menu: email, "Check for updates", the app
 /// version, and Sign out. Once a check has found a newer build the avatar wears
 /// a dot and the item reads "Update to …", so an update is noticed instead of
@@ -142,6 +168,13 @@ class _AccountMenu extends ConsumerWidget {
           await updater.checkForUpdates();
           return;
         }
+        // The settings screens live here now, each opening as a dialog.
+        for (final tab in SettingsTab.values) {
+          if (value == tab.name) {
+            await showSettingsDialog(ref, tab);
+            return;
+          }
+        }
         if (value != 'logout') return;
         final engineRunning =
             ref.read(providerRunControllerProvider) is ProviderRunActive;
@@ -154,6 +187,18 @@ class _AccountMenu extends ConsumerWidget {
           enabled: false,
           child: Text(email, style: const TextStyle(fontSize: 12.5)),
         ),
+        const PopupMenuDivider(),
+        for (final tab in SettingsTab.values)
+          PopupMenuItem(
+            value: tab.name,
+            child: Row(
+              children: [
+                Icon(tab.icon, size: 18),
+                const SizedBox(width: 10),
+                Text(tab.label),
+              ],
+            ),
+          ),
         const PopupMenuDivider(),
         // Mirrors the macOS "Grid ▸ Check for Updates…" app-menu item — both
         // routes offer the same action, and both always answer (a build with no

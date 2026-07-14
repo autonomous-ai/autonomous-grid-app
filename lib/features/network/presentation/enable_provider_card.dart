@@ -65,7 +65,7 @@ class _SharingNotAllowed extends ConsumerWidget {
           const SizedBox(height: 14),
           OutlinedButton.icon(
             onPressed: () =>
-                ref.read(navSectionProvider.notifier).select(NavSection.networks),
+                ref.read(settingsTabProvider.notifier).select(SettingsTab.grids),
             icon: const Icon(Icons.bolt, size: 16),
             label: const Text('Open my grids'),
           ),

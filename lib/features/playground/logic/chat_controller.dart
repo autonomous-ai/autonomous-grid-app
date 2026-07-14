@@ -67,6 +67,8 @@ class ChatController extends Notifier<ChatState> {
               messages: history,
               phase: SendGenerating(progress: progress, status: status),
             );
+          case ChatSendStreaming(:final text):
+            state = ChatState(messages: history, phase: SendStreaming(text));
           case ChatSendSuccess(:final reply):
             state = ChatState(messages: [...history, reply]);
           case ChatSendFailure(:final error):

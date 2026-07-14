@@ -7,7 +7,6 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../features/auth/logic/session_controller.dart';
 import '../../infrastructure/state/models/network_credential.dart';
-import 'shell_state.dart';
 
 /// Installs a macOS menu-bar (system tray) icon that reads like the Wi-Fi /
 /// Bluetooth menus: the joined grids as a checkable list — the active grid
@@ -107,7 +106,6 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
     final match = ref.read(sessionProvider).byName(networkId);
     if (match == null) return;
     ref.read(selectedNetworkProvider.notifier).select(match);
-    ref.read(navSectionProvider.notifier).select(NavSection.networks);
     _showWindow();
   }
 
