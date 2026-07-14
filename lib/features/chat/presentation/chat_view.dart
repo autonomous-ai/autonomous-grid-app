@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
+import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
 import '../../agent/logic/hermes_tool.dart';
+import '../../agent/presentation/agent_permission_card.dart';
 import '../../agent/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
@@ -275,6 +277,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
     final trailing = _trailingBubble(sessions.phase, agentMode);
     final isNewChat = messages.isEmpty && !sessions.sending;
+    // The agent has stopped and is asking before it touches this computer.
+    final permission = ref.watch(agentPermissionProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -290,6 +294,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   onJumpToLatest: () => _scrollToBottom(animated: true),
                 ),
         ),
+        if (permission != null)
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _composerWidth),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                child: AgentPermissionCard(request: permission),
+              ),
+            ),
+          ),
         Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: _composerWidth),
