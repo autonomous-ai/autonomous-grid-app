@@ -15,7 +15,8 @@ enum ShellSection {
   telegram(Icons.send_rounded, 'Telegram'),
   grids(Icons.bolt, 'Grids'),
   engines(Icons.dns_outlined, 'This computer'),
-  guide(Icons.help_outline_rounded, 'How to use');
+  guide(Icons.help_outline_rounded, 'How to use'),
+  debug(Icons.terminal_rounded, 'Debug');
 
   const ShellSection(this.icon, this.label);
 
@@ -37,12 +38,14 @@ const kSidebarSections = [ShellSection.scheduled, ShellSection.plugins];
 /// What Settings lists, in order — the screens you set up once.
 ///
 /// Grids leads: it's the one you come back to, and the only one you can't use the
-/// app without. The guide is last because you read it once.
+/// app without. The guide, then Debug, sit at the bottom: you read one once, and
+/// the other only when something has gone wrong.
 const kSettingsSections = [
   ShellSection.grids,
   ShellSection.engines,
   ShellSection.telegram,
   ShellSection.guide,
+  ShellSection.debug,
 ];
 
 /// Where Settings opens when the user asked for Settings rather than for one
@@ -62,5 +65,15 @@ class ShellSectionNotifier extends Notifier<ShellSection> {
   @override
   ShellSection build() => ShellSection.chat;
 
-  void select(ShellSection section) => state = section;
+  /// Switch to [section], remembering where we came from if we're entering
+  /// Settings — so "Back to app" can return to the work screen rather than
+  /// always dumping the user in Chat.
+  void select(ShellSection section) {
+    if (section.isSettings && !state.isSettings) previous = state;
+    state = section;
+  }
+
+  /// The work section the user was on before opening Settings — Chat by
+  /// default, or whichever of Grids/Activity/etc. they were looking at.
+  ShellSection previous = ShellSection.chat;
 }

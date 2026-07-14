@@ -72,14 +72,17 @@ class _SettingsHeader extends ConsumerWidget {
               children: [
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppGlass.surfaceFill,
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: AppGlass.cardShadow,
                   ),
                   child: TextButton.icon(
-                    onPressed: () => ref
-                        .read(shellSectionProvider.notifier)
-                        .select(ShellSection.chat),
+                    onPressed: () {
+                      final notifier = ref.read(shellSectionProvider.notifier);
+                      // Return to wherever the user was before Settings, not
+                      // always Chat — they might have been mid-task in Grids.
+                      notifier.select(notifier.previous);
+                    },
                     style: TextButton.styleFrom(
                       foregroundColor: AppPalette.textPrimary,
                       padding: const EdgeInsets.symmetric(horizontal: 12),

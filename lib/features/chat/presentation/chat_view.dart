@@ -333,6 +333,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 onRemoveAttachment: (i) =>
                     setState(() => _attachments.removeAt(i)),
                 onSend: () => _send(modality),
+                onStop: () => ref.read(chatSessionsProvider.notifier).stop(),
               ),
             ),
           ),

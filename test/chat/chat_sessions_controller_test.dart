@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -65,6 +66,30 @@ class _FakeSender implements ChatSender {
   }
 }
 
+/// A reply that streams and then just keeps going — what Stop exists for. The
+/// test drives it chunk by chunk, and [cancelled] records that stopping really
+/// tore the turn down instead of leaving it running behind the UI.
+class _OpenEndedSender implements ChatSender {
+  late final StreamController<ChatSendUpdate> _controller =
+      StreamController<ChatSendUpdate>(onCancel: () => cancelled = true);
+
+  bool cancelled = false;
+
+  void emit(ChatSendUpdate update) => _controller.add(update);
+
+  @override
+  Stream<ChatSendUpdate> send({
+    required NetworkCredential network,
+    required String model,
+    required List<ChatMessage> history,
+    PlaygroundModality modality = PlaygroundModality.text,
+    List<MediaAttachment> attachments = const [],
+    String? localBaseUrl,
+    String? workdir,
+    String? conversationId,
+  }) => _controller.stream;
+}
+
 /// The agent's own name for a session, handed back the moment it's asked for.
 class _FakeAgentTitle implements AgentSessionTitle {
   _FakeAgentTitle(this.title);
@@ -93,6 +118,7 @@ _harness(
   required List<ChatSendUpdate> updates,
   bool agentInstalled = false,
   String? agentName,
+  ChatSender? answering,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
@@ -101,8 +127,10 @@ _harness(
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
-      chatSenderProvider.overrideWithValue(sender),
-      hermesChatSenderProvider.overrideWithValue(agent),
+      // [answering] stands in for whoever replies, for a test that cares about
+      // the reply arriving over time rather than about who sent it.
+      chatSenderProvider.overrideWithValue(answering ?? sender),
+      hermesChatSenderProvider.overrideWithValue(answering ?? agent),
       agentSessionTitleProvider.overrideWithValue(agentTitle),
       // Keep any saved input images in the temp dir, never the real grid home.
       mediaOutputsDirProvider.overrideWithValue(
@@ -180,6 +208,70 @@ void main() {
       expect(reloaded.single.messages.last.text, 'hi back');
     },
   );
+
+  group('stop', () {
+    test('keeps what the assistant had already said — the user stopped because '
+        'they had read enough of it, not to throw it away', () async {
+      final answering = _OpenEndedSender();
+      final h = _harness(tmp, updates: const [], answering: answering);
+      final controller = h.container.read(chatSessionsProvider.notifier);
+
+      final sent = controller.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'explain grids',
+      );
+      await pumpEventQueue();
+      answering.emit(const ChatSendStreaming('A grid is your private'));
+      await pumpEventQueue();
+
+      controller.stop();
+      await sent;
+
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.sending, isFalse);
+      expect(
+        answering.cancelled,
+        isTrue,
+        reason: 'the turn is really torn down',
+      );
+
+      final messages = state.conversations.single.messages;
+      expect(messages.map((m) => m.role).toList(), [
+        ChatRole.user,
+        ChatRole.assistant,
+      ]);
+      expect(messages.last.text, 'A grid is your private');
+      // On disk too — a stopped answer survives closing the app.
+      expect(
+        ChatStore(directory: tmp).loadAll().single.messages.last.text,
+        'A grid is your private',
+      );
+    });
+
+    test(
+      'stopping before a single word arrived leaves no empty reply behind',
+      () async {
+        final answering = _OpenEndedSender();
+        final h = _harness(tmp, updates: const [], answering: answering);
+        final controller = h.container.read(chatSessionsProvider.notifier);
+
+        final sent = controller.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'explain grids',
+        );
+        await pumpEventQueue();
+
+        controller.stop();
+        await sent;
+
+        final state = h.container.read(chatSessionsProvider);
+        expect(state.sending, isFalse);
+        expect(state.conversations.single.messages.single.role, ChatRole.user);
+      },
+    );
+  });
 
   test(
     'a failure keeps the user message, sets the error and persists it',

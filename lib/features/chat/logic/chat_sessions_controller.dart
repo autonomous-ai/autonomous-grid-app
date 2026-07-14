@@ -310,11 +310,33 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         : ref.read(chatSenderProvider);
   }
 
-  /// Stop an in-flight reply, leaving the already-persisted user turn in place
-  /// and returning the composer to idle.
+  /// Stop an in-flight reply, keeping whatever the assistant had already said.
+  ///
+  /// The user's turn is persisted up front, but a half-written answer lives only
+  /// in [SendStreaming] — dropping it would wipe text the user is reading, and
+  /// they usually stop *because* they've read enough of it. Nothing streamed yet
+  /// (the agent still thinking) means there's nothing to keep.
   void stop() {
     _cancel();
-    if (state.sending) state = _withPhase(const SendIdle());
+    if (!state.sending) return;
+
+    final phase = state.phase;
+    final partial = phase is SendStreaming ? phase.text.trim() : '';
+    final current = state.active;
+    if (partial.isEmpty || current == null) {
+      state = _withPhase(const SendIdle());
+      return;
+    }
+    _commit(
+      current.copyWith(
+        updatedAt: DateTime.now(),
+        messages: [
+          ...current.messages,
+          ChatMessage(role: ChatRole.assistant, text: partial),
+        ],
+      ),
+      phase: const SendIdle(),
+    );
   }
 
   /// Settle the current send: drop the subscription and complete the future

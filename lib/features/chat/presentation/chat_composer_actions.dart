@@ -9,6 +9,7 @@ class _Actions extends StatelessWidget {
     required this.modelPicker,
     required this.onPickImage,
     required this.onSend,
+    required this.onStop,
   });
 
   final bool canAttach;
@@ -22,6 +23,10 @@ class _Actions extends StatelessWidget {
   final Widget modelPicker;
   final VoidCallback onPickImage;
   final VoidCallback onSend;
+
+  /// Cuts the reply off where it is. The same button as Send, because the thing
+  /// you reach for to stop something is the thing that started it.
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +47,12 @@ class _Actions extends StatelessWidget {
             children: [
               SizedBox(width: 140, height: 30, child: modelPicker),
               const SizedBox(width: 8),
-              _SendButton(sending: sending, canSend: canSend, onSend: onSend),
+              _SendButton(
+                sending: sending,
+                canSend: canSend,
+                onSend: onSend,
+                onStop: onStop,
+              ),
             ],
           ),
         ],
@@ -74,46 +84,49 @@ class _AttachButton extends StatelessWidget {
   }
 }
 
+/// Send — and, while an answer is coming, Stop.
+///
+/// It used to spin here, disabled, with no way out: a reply that had gone the
+/// wrong way had to be waited out. The button that started the turn is the one
+/// you reach for to end it, so it becomes Stop for as long as the turn runs.
+/// That the transcript already shows the work in flight is what frees this
+/// button to be an action instead of a progress light.
 class _SendButton extends StatelessWidget {
   const _SendButton({
     required this.sending,
     required this.canSend,
     required this.onSend,
+    required this.onStop,
   });
 
   final bool sending;
   final bool canSend;
   final VoidCallback onSend;
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: FilledButton(
-        onPressed: canSend ? onSend : null,
-        style: FilledButton.styleFrom(
-          shape: const CircleBorder(),
-          padding: EdgeInsets.zero,
-          backgroundColor: AppPalette.textPrimary,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(0xFF9B9B9B),
-          disabledForegroundColor: AppPalette.textFaint,
+    return Tooltip(
+      message: sending ? 'Stop' : 'Send',
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: FilledButton(
+          onPressed: sending ? onStop : (canSend ? onSend : null),
+          style: FilledButton.styleFrom(
+            shape: const CircleBorder(),
+            padding: EdgeInsets.zero,
+            backgroundColor: AppPalette.textPrimary,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: const Color(0xFF9B9B9B),
+            disabledForegroundColor: AppPalette.textFaint,
+          ),
+          child: Icon(
+            sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
+            size: sending ? 18 : 17,
+            semanticLabel: sending ? 'Stop' : 'Send',
+          ),
         ),
-        child: sending
-            ? const SizedBox(
-                width: 15,
-                height: 15,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : const Icon(
-                Icons.arrow_upward_rounded,
-                size: 17,
-                semanticLabel: 'Send',
-              ),
       ),
     );
   }

@@ -86,6 +86,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             _openPalette,
         const SingleActivator(LogicalKeyboardKey.keyK, control: true):
             _openPalette,
+        // ⌘, opens Settings — the macOS convention, so muscle memory works.
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true):
+            _openSettings,
       },
       child: Focus(
         autofocus: true,
@@ -102,6 +105,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _openPalette() => showCommandPalette(context);
+
+  void _openSettings() {
+    ref.read(shellSectionProvider.notifier).select(kDefaultSettingsSection);
+  }
 }
 
 class _MainShellBody extends StatelessWidget {

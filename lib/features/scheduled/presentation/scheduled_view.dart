@@ -92,12 +92,12 @@ class _Workspace extends ConsumerWidget {
   }
 }
 
-/// The list column's main action. Sized to the pills and the search box under it
-/// — one toolbar, one height.
+/// The list column's main action, sized to the search box under it.
 class _NewTaskButton extends StatelessWidget {
   const _NewTaskButton();
 
-  /// What the filter pills use (`PillChoice.height`), so the toolbar lines up.
+  /// Taller than the filter pills (34) on purpose — it's the column's one real
+  /// action, and it lines up with the search field below it.
   static const double _height = 44;
 
   @override

@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/command_log.dart';
+import '../../../infrastructure/cli/host_shell_service.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
@@ -65,6 +67,8 @@ class _Toolbar extends ConsumerWidget {
           ),
         ),
         const Spacer(),
+        const _OpenLogsButton(),
+        const SizedBox(width: 4),
         TextButton.icon(
           onPressed: count == 0
               ? null
@@ -73,6 +77,44 @@ class _Toolbar extends ConsumerWidget {
           label: const Text('Clear'),
         ),
       ],
+    );
+  }
+}
+
+/// Opens `~/.grid/logs` in the file manager.
+///
+/// The list above is only this session's commands, held in memory — the files on
+/// disk are what survive a crash and what a user can actually attach to a bug
+/// report. Without this they'd have to be told a hidden path to type into Finder.
+class _OpenLogsButton extends ConsumerWidget {
+  const _OpenLogsButton();
+
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    final directory = GridPaths.logsDir;
+    final messenger = ScaffoldMessenger.of(context);
+    // Nothing has been logged yet on a fresh install — the folder simply isn't
+    // there, and "couldn't open it" would be the wrong story.
+    if (!directory.existsSync()) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No logs yet — nothing has run.')),
+      );
+      return;
+    }
+    final opened = await ref
+        .read(hostShellServiceProvider)
+        .openFolder(directory.path);
+    if (opened) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text("Couldn't open ${directory.path}")),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return TextButton.icon(
+      onPressed: () => _open(context, ref),
+      icon: const Icon(Icons.folder_open_rounded, size: 16),
+      label: const Text('Open logs'),
     );
   }
 }

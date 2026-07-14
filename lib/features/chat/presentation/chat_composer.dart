@@ -33,6 +33,7 @@ class ComposerSection extends StatelessWidget {
     required this.onPickImage,
     required this.onRemoveAttachment,
     required this.onSend,
+    required this.onStop,
   });
 
   final TextEditingController messageController;
@@ -51,6 +52,9 @@ class ComposerSection extends StatelessWidget {
   final VoidCallback onPickImage;
   final ValueChanged<int> onRemoveAttachment;
   final VoidCallback onSend;
+
+  /// Ends the turn that's running — Send turns into Stop while one is.
+  final VoidCallback onStop;
 
   bool get _isText => modality == PlaygroundModality.text;
 
@@ -117,6 +121,7 @@ class ComposerSection extends StatelessWidget {
                 modelPicker: modelPicker,
                 onPickImage: onPickImage,
                 onSend: onSend,
+                onStop: onStop,
               ),
             ],
           ),
