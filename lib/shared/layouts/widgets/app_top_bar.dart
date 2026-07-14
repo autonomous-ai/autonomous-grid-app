@@ -28,10 +28,7 @@ class AppTopBar extends ConsumerWidget {
       child: SizedBox(
         height: height,
         child: DecoratedBox(
-          decoration: const BoxDecoration(
-            color: AppPalette.windowBg,
-            border: Border(bottom: BorderSide(color: Color(0x0A000000))),
-          ),
+          decoration: const BoxDecoration(color: AppPalette.windowBg),
           child: Padding(
             padding: const EdgeInsets.only(left: 16, right: 18),
             child: Row(
@@ -62,7 +59,6 @@ class _StatusPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppPalette.divider),
         boxShadow: AppGlass.cardShadow,
       ),
       child: Padding(

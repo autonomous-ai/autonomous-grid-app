@@ -56,7 +56,7 @@ Map<String, Object?> _editRequest({String? oldText = 'a\nb\n'}) => {
 };
 
 void main() {
-  group('the user decides what touches their computer', () {
+  group('by default the user decides what touches their computer', () {
     test('running a command is put to the user, not decided for them', () {
       final decision = decideHermesPermission(
         toolKind: 'execute',
@@ -70,6 +70,52 @@ void main() {
         decideHermesPermission(toolKind: 'edit', options: _editOptions),
         isA<HermesAskUser>(),
       );
+    });
+  });
+
+  group('the mode the user picked in the composer decides who is asked', () {
+    test('read only: it never runs anything and never changes a file', () {
+      for (final kind in ['execute', 'edit']) {
+        final decision = decideHermesPermission(
+          toolKind: kind,
+          options: _commandOptions,
+          mode: AgentApprovalMode.readOnly,
+        );
+        expect((decision as HermesRefuse).optionId, 'deny');
+      }
+    });
+
+    test('full access: no interruption — but the yes is still a one-off, never '
+        'the "always" Hermes would remember after the mode is switched '
+        'back', () {
+      final decision = decideHermesPermission(
+        toolKind: 'execute',
+        options: _commandOptions,
+        mode: AgentApprovalMode.full,
+      );
+      expect((decision as HermesAllow).optionId, 'allow_once');
+    });
+
+    test('reading is allowed in every mode — it interrupts nobody', () {
+      for (final mode in AgentApprovalMode.values) {
+        expect(
+          decideHermesPermission(
+            toolKind: 'read',
+            options: _commandOptions,
+            mode: mode,
+          ),
+          isA<HermesAllow>(),
+        );
+      }
+    });
+
+    test('a kind we cannot explain is refused even on full access', () {
+      final decision = decideHermesPermission(
+        toolKind: 'other',
+        options: _commandOptions,
+        mode: AgentApprovalMode.full,
+      );
+      expect(decision, isA<HermesRefuse>());
     });
   });
 

@@ -12,7 +12,7 @@ abstract final class AppPalette {
   static const panelBg = Color(0xFFF4F4F2); // sidebar column (warm paper)
   static const cardBg = Color(0xFFF4F4F2); // input fills, quiet cards
   static const cardBgHover = Color(0xFFEDEDEB);
-  static const divider = Color(0xFFE7E5E0);
+  static const divider = Color(0x12000000);
 
   static const accent = Color(0xFF2F5BEA); // primary action / selection
   static const accentMuted = Color(
@@ -59,6 +59,18 @@ abstract final class AppSurface {
     ),
     BoxShadow(color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 1)),
   ];
+
+  /// A quieter lift for the composer. It should feel docked, not like a card
+  /// hovering high above the transcript.
+  static const composerShadow = <BoxShadow>[
+    BoxShadow(
+      color: Color(0x10000000),
+      blurRadius: 14,
+      offset: Offset(0, 5),
+      spreadRadius: -8,
+    ),
+    BoxShadow(color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1)),
+  ];
 }
 
 /// Translucent Codex-like chrome surfaces: white fills, soft rims, and almost
@@ -68,7 +80,7 @@ abstract final class AppGlass {
   static const sidebarFill = Color(0xEEF5F5F3);
   static const surfaceFill = Color(0xFAFFFFFF);
   static const surfaceHoverFill = Color(0xFFFDFDFC);
-  static const hair = Color(0xFFE5E3DE);
+  static const hair = Color(0x0D000000);
   static const bubbleFill = Color(0xFFF3F3F1);
 
   static const shadow = <BoxShadow>[
@@ -83,10 +95,10 @@ abstract final class AppGlass {
 
   static const cardShadow = <BoxShadow>[
     BoxShadow(
-      color: Color(0x0F000000),
-      blurRadius: 14,
+      color: Color(0x12000000),
+      blurRadius: 16,
       offset: Offset(0, 7),
-      spreadRadius: -8,
+      spreadRadius: -9,
     ),
     BoxShadow(color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1)),
   ];
@@ -191,25 +203,22 @@ ThemeData buildAppTheme() {
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppPalette.divider),
+        borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppPalette.divider),
+        borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppPalette.accent),
+        borderSide: BorderSide.none,
       ),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: Colors.white,
       surfaceTintColor: Colors.transparent,
       elevation: 8,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: AppPalette.divider),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     ),
     menuTheme: MenuThemeData(
       style: MenuStyle(
@@ -217,20 +226,14 @@ ThemeData buildAppTheme() {
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: const WidgetStatePropertyAll(8),
         shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: AppPalette.divider),
-          ),
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: AppPalette.divider),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
@@ -244,10 +247,7 @@ ThemeData buildAppTheme() {
       actionTextColor: AppPalette.accent,
       closeIconColor: AppPalette.textSecondary,
       elevation: 10,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(13),
-        side: const BorderSide(color: AppPalette.divider),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
     ),
   );
 }

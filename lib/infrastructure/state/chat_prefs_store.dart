@@ -4,12 +4,18 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
+import '../cli/agent_event.dart';
 
-/// The chat's remembered selections — the grid and the model the user last used
-/// — so reopening the app restores them instead of resetting to defaults. Both
-/// fields are optional: a field is null until the user first picks it.
+/// The chat's remembered selections — the grid and the model the user last used,
+/// and how much they let the agent do — so reopening the app restores them
+/// instead of resetting to defaults. The grid and model are null until first
+/// picked; [approval] always has a value, and its default is the cautious one.
 class ChatPrefs {
-  const ChatPrefs({this.networkId, this.model});
+  const ChatPrefs({
+    this.networkId,
+    this.model,
+    this.approval = AgentApprovalMode.ask,
+  });
 
   /// No remembered selection yet — the state before the first launch that saves.
   static const empty = ChatPrefs();
@@ -17,26 +23,51 @@ class ChatPrefs {
   final String? networkId;
   final String? model;
 
-  ChatPrefs copyWith({String? networkId, String? model}) => ChatPrefs(
+  /// What the agent may do without asking. Deliberately remembered: a user who
+  /// turned the asking off shouldn't have it turned back on behind their back —
+  /// and one who never touched it stays on [AgentApprovalMode.ask].
+  final AgentApprovalMode approval;
+
+  ChatPrefs copyWith({
+    String? networkId,
+    String? model,
+    AgentApprovalMode? approval,
+  }) => ChatPrefs(
     networkId: networkId ?? this.networkId,
     model: model ?? this.model,
+    approval: approval ?? this.approval,
   );
 
   factory ChatPrefs.fromJson(Map<String, dynamic> json) => ChatPrefs(
     networkId: json['networkId'] as String?,
     model: json['model'] as String?,
+    approval: _approvalFrom(json['approval']),
   );
 
-  Map<String, Object?> toJson() => {'networkId': networkId, 'model': model};
+  Map<String, Object?> toJson() => {
+    'networkId': networkId,
+    'model': model,
+    'approval': approval.name,
+  };
+
+  /// A missing or unrecognised value reads as "ask" — a hand-edited file must
+  /// never quietly hand the agent more than the user granted.
+  static AgentApprovalMode _approvalFrom(Object? raw) {
+    for (final mode in AgentApprovalMode.values) {
+      if (mode.name == raw) return mode;
+    }
+    return AgentApprovalMode.ask;
+  }
 
   @override
   bool operator ==(Object other) =>
       other is ChatPrefs &&
       other.networkId == networkId &&
-      other.model == model;
+      other.model == model &&
+      other.approval == approval;
 
   @override
-  int get hashCode => Object.hash(networkId, model);
+  int get hashCode => Object.hash(networkId, model, approval);
 }
 
 /// Persists [ChatPrefs] as `~/.grid/app/chat_prefs.json`. App-owned (the CLI
@@ -96,6 +127,9 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
       _update(state.copyWith(networkId: networkId));
 
   void setModel(String model) => _update(state.copyWith(model: model));
+
+  void setApproval(AgentApprovalMode approval) =>
+      _update(state.copyWith(approval: approval));
 
   void _update(ChatPrefs next) {
     if (next == state) return;

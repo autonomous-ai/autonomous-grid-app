@@ -14,6 +14,7 @@ class LiquidGlass extends StatelessWidget {
     this.borderRadius,
     this.fill = AppGlass.surfaceFill,
     this.showShadow = true,
+    this.showBorder = false,
     this.shadow,
     this.clipBehavior = Clip.antiAlias,
   });
@@ -23,6 +24,7 @@ class LiquidGlass extends StatelessWidget {
   final BorderRadius? borderRadius;
   final Color fill;
   final bool showShadow;
+  final bool showBorder;
   final List<BoxShadow>? shadow;
   final Clip clipBehavior;
 
@@ -45,7 +47,7 @@ class LiquidGlass extends StatelessWidget {
           decoration: BoxDecoration(
             color: fill,
             borderRadius: radius,
-            border: Border.all(color: AppGlass.hair),
+            border: showBorder ? Border.all(color: AppGlass.hair) : null,
           ),
           child: content,
         ),

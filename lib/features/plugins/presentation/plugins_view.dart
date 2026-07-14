@@ -114,7 +114,7 @@ class _Toolbar extends ConsumerWidget {
         _RefreshButton(onPressed: onRefresh),
         const SizedBox(width: 8),
         MenuAnchor(
-          alignmentOffset: const Offset(-32, 8),
+          alignmentOffset: const Offset(0, 0),
           menuChildren: [
             _CreateMenuItem(
               icon: Icons.extension_outlined,
@@ -133,10 +133,7 @@ class _Toolbar extends ConsumerWidget {
             ),
             minimumSize: const WidgetStatePropertyAll(Size(184, 0)),
             shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppPalette.divider),
-              ),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
           ),
           builder: (context, controller, _) => _CreateMenuButton(
@@ -240,7 +237,7 @@ class _RefreshButton extends StatelessWidget {
             height: 34,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(11),
-              border: Border.all(color: AppPalette.divider),
+              boxShadow: AppGlass.cardShadow,
             ),
             child: const Icon(Icons.refresh_rounded, size: 17),
           ),
@@ -267,7 +264,6 @@ class _SearchField extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.divider),
         boxShadow: AppGlass.cardShadow,
       ),
       child: TextField(

@@ -29,6 +29,26 @@ class AgentActivity {
   final AgentActivityStatus status;
 }
 
+/// How much the user has agreed to let the agent do to this computer — chosen in
+/// the composer, and applied to every turn from then on.
+///
+/// It only governs the actions the agent *escalates*: running a command, and
+/// changing a file. Reading, searching and looking things up online are always
+/// allowed and never interrupt anyone.
+enum AgentApprovalMode {
+  /// Look, don't touch. The agent reads the project's files and answers about
+  /// them; it never runs anything and never changes anything.
+  readOnly,
+
+  /// Ask first: the agent stops and shows the command, or the change to the
+  /// file, and waits for a yes. The default — nothing happens behind your back.
+  ask,
+
+  /// Do it: commands run and files change without asking. Fastest, and the one
+  /// that can wreck things — the app says so where it's chosen.
+  full,
+}
+
 /// What the agent wants permission for.
 enum AgentPermissionKind {
   /// Run a command on this computer.

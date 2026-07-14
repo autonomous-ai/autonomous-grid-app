@@ -8,6 +8,7 @@ import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../../agent/presentation/agent_permission_card.dart';
+import '../../agent/presentation/approval_picker.dart';
 import '../../agent/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
@@ -320,6 +321,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 sending: sessions.sending,
                 canSend: canSend,
                 error: sessions.error,
+                // Only the agent can touch this computer — a picture is made by
+                // the grid, so there'd be nothing to approve.
+                approvalPicker: agentMode ? const ApprovalPicker() : null,
                 modelPicker: GridModelPicker(
                   currentModelId: _model.text,
                   onSelect: _pickGridModel,
@@ -424,8 +428,9 @@ class _JumpToLatestButton extends StatelessWidget {
       message: 'Jump to latest',
       child: Material(
         color: scheme.surface,
-        elevation: 3,
-        shape: CircleBorder(side: BorderSide(color: scheme.outlineVariant)),
+        elevation: 4,
+        shadowColor: const Color(0x1A000000),
+        shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,

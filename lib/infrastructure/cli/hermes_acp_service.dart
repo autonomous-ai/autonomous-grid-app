@@ -87,6 +87,11 @@ abstract interface class HermesAcpSession {
   /// it, see [HermesSessionService].
   String? get sessionId;
 
+  /// How much the agent is allowed to do without being asked. Set by the caller
+  /// before each turn from what the user chose in the composer, so switching the
+  /// mode takes effect on the very next message rather than the next session.
+  set approvalMode(AgentApprovalMode mode);
+
   /// Runs one user turn. Only one turn is in flight at a time — the caller
   /// awaits [HermesAcpRun.done] before the next.
   HermesAcpRun prompt(String text);
@@ -133,6 +138,13 @@ class _HermesAcpSession implements HermesAcpSession {
   String? _sessionId;
   bool _closed = false;
   final _ready = Completer<void>();
+
+  /// Ask before acting until told otherwise — the safe default if a caller ever
+  /// forgets to set it.
+  AgentApprovalMode _approvalMode = AgentApprovalMode.ask;
+
+  @override
+  set approvalMode(AgentApprovalMode mode) => _approvalMode = mode;
 
   @override
   bool get isClosed => _closed;
@@ -337,7 +349,12 @@ class _HermesAcpSession implements HermesAcpSession {
       fallback: toolKind,
     );
 
-    switch (decideHermesPermission(toolKind: toolKind, options: options)) {
+    final decision = decideHermesPermission(
+      toolKind: toolKind,
+      options: options,
+      mode: _approvalMode,
+    );
+    switch (decision) {
       case HermesAllow(:final optionId):
         answerPermission(id, optionId);
       case HermesRefuse(:final optionId):

@@ -14,7 +14,6 @@ class ExtensionTileSurface extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.divider),
         boxShadow: AppGlass.cardShadow,
       ),
       child: Padding(
@@ -40,7 +39,6 @@ class ExtensionIconBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
       ),
       child: Icon(icon, size: 16, color: AppPalette.textSecondary),
     );

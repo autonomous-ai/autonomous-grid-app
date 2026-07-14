@@ -27,6 +27,7 @@ class ComposerSection extends StatelessWidget {
     required this.sending,
     required this.canSend,
     required this.error,
+    required this.approvalPicker,
     required this.modelPicker,
     required this.onAddAttachment,
     required this.onPickImage,
@@ -41,6 +42,10 @@ class ComposerSection extends StatelessWidget {
   final bool sending;
   final bool canSend;
   final String? error;
+
+  /// The control for what the assistant may do to this computer, or null on a
+  /// turn nothing can (a picture is made by the grid, which has no filesystem).
+  final Widget? approvalPicker;
   final Widget modelPicker;
   final ValueChanged<MediaAttachment> onAddAttachment;
   final VoidCallback onPickImage;
@@ -68,9 +73,10 @@ class ComposerSection extends StatelessWidget {
           ),
         ],
         LiquidGlass(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           fill: AppGlass.surfaceFill,
-          shadow: AppSurface.shadow,
+          shadow: AppSurface.composerShadow,
+          showBorder: false,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -99,7 +105,7 @@ class ComposerSection extends StatelessWidget {
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   disabledBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.fromLTRB(18, 16, 18, 9),
+                  contentPadding: const EdgeInsets.fromLTRB(18, 17, 18, 20),
                 ),
               ),
               _Actions(
@@ -107,6 +113,7 @@ class ComposerSection extends StatelessWidget {
                     _isText && !sending && attachments.length < maxChatImages,
                 sending: sending,
                 canSend: canSend,
+                approvalPicker: approvalPicker,
                 modelPicker: modelPicker,
                 onPickImage: onPickImage,
                 onSend: onSend,

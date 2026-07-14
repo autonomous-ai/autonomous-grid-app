@@ -35,15 +35,10 @@ class _TaskField extends StatelessWidget {
         filled: true,
         fillColor: AppPalette.cardBg,
         contentPadding: EdgeInsets.fromLTRB(14, maxLines > 1 ? 14 : 12, 14, 12),
-        border: _fieldBorder(AppPalette.divider),
-        enabledBorder: _fieldBorder(AppPalette.divider),
-        focusedBorder: _fieldBorder(AppPalette.accent),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
       ),
     );
   }
-
-  OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
-    borderRadius: BorderRadius.circular(10),
-    borderSide: BorderSide(color: color),
-  );
 }

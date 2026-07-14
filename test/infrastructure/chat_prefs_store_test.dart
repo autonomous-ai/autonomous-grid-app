@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 
 void main() {
@@ -41,6 +42,26 @@ void main() {
       file.parent.createSync(recursive: true);
       file.writeAsStringSync('{ not json');
       expect(ChatPrefsStore(file: file).load(), ChatPrefs.empty);
+    });
+
+    test('what the agent may do survives a restart', () {
+      ChatPrefsStore(
+        file: file,
+      ).save(const ChatPrefs(approval: AgentApprovalMode.full));
+
+      expect(
+        ChatPrefsStore(file: file).load().approval,
+        AgentApprovalMode.full,
+      );
+    });
+
+    test('an unset or hand-edited approval reads as "ask" — a broken file must '
+        'never hand the agent more than the user granted', () {
+      expect(ChatPrefs.empty.approval, AgentApprovalMode.ask);
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync('{"approval": "sudo-everything"}');
+
+      expect(ChatPrefsStore(file: file).load().approval, AgentApprovalMode.ask);
     });
   });
 

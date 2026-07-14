@@ -5,6 +5,7 @@ class _Actions extends StatelessWidget {
     required this.canAttach,
     required this.sending,
     required this.canSend,
+    required this.approvalPicker,
     required this.modelPicker,
     required this.onPickImage,
     required this.onSend,
@@ -13,6 +14,11 @@ class _Actions extends StatelessWidget {
   final bool canAttach;
   final bool sending;
   final bool canSend;
+
+  /// What the assistant may do to this computer — null when nothing on this turn
+  /// can touch it (a picture goes to the grid, which has no filesystem), so the
+  /// control isn't offered where it would mean nothing.
+  final Widget? approvalPicker;
   final Widget modelPicker;
   final VoidCallback onPickImage;
   final VoidCallback onSend;
@@ -20,16 +26,25 @@ class _Actions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 9),
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
       child: Row(
         children: [
           _AttachButton(canAttach: canAttach, onPickImage: onPickImage),
           const SizedBox(width: 4),
-          const Expanded(child: _ApprovalHint()),
-          const SizedBox(width: 12),
-          SizedBox(width: 140, height: 32, child: modelPicker),
-          const SizedBox(width: 8),
-          _SendButton(sending: sending, canSend: canSend, onSend: onSend),
+          if (approvalPicker != null)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 178),
+              child: approvalPicker!,
+            ),
+          const Expanded(child: SizedBox()),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: 140, height: 30, child: modelPicker),
+              const SizedBox(width: 8),
+              _SendButton(sending: sending, canSend: canSend, onSend: onSend),
+            ],
+          ),
         ],
       ),
     );
@@ -45,43 +60,16 @@ class _AttachButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 34,
-      height: 34,
+      width: 32,
+      height: 32,
       child: IconButton(
         tooltip: canAttach ? 'Attach image' : 'Up to $maxChatImages images',
-        iconSize: 20,
+        iconSize: 19,
         visualDensity: VisualDensity.compact,
         color: AppPalette.textSecondary,
         icon: const Icon(Icons.add_rounded),
         onPressed: canAttach ? onPickImage : null,
       ),
-    );
-  }
-}
-
-class _ApprovalHint extends StatelessWidget {
-  const _ApprovalHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.verified_user_outlined,
-          size: 15,
-          color: AppPalette.textFaint,
-        ),
-        SizedBox(width: 5),
-        Flexible(
-          child: Text(
-            'Ask for approval',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -100,8 +88,8 @@ class _SendButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 34,
-      height: 34,
+      width: 32,
+      height: 32,
       child: FilledButton(
         onPressed: canSend ? onSend : null,
         style: FilledButton.styleFrom(
@@ -123,7 +111,7 @@ class _SendButton extends StatelessWidget {
               )
             : const Icon(
                 Icons.arrow_upward_rounded,
-                size: 18,
+                size: 17,
                 semanticLabel: 'Send',
               ),
       ),

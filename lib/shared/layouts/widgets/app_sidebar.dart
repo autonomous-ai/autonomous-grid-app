@@ -64,10 +64,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          decoration: const BoxDecoration(
-            color: AppGlass.sidebarFill,
-            border: Border(right: BorderSide(color: AppPalette.divider)),
-          ),
+          decoration: const BoxDecoration(color: AppGlass.sidebarFill),
           child: SizedBox(
             width: AppSidebar.width,
             child: Column(
@@ -187,7 +184,6 @@ class _SearchField extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: AppPalette.divider),
         boxShadow: AppGlass.cardShadow,
       ),
       child: TextField(

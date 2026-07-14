@@ -98,9 +98,9 @@ class _JobListState extends ConsumerState<JobList> {
             filled: true,
             fillColor: AppPalette.cardBg,
             contentPadding: const EdgeInsets.symmetric(vertical: 9),
-            border: _searchBorder(),
-            enabledBorder: _searchBorder(),
-            focusedBorder: _searchBorder(AppPalette.divider),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
           ),
         ),
         const SizedBox(height: 12),
@@ -123,12 +123,6 @@ class _JobListState extends ConsumerState<JobList> {
       ],
     );
   }
-
-  OutlineInputBorder _searchBorder([Color color = AppPalette.divider]) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: color),
-      );
 }
 
 class _NoMatches extends StatelessWidget {

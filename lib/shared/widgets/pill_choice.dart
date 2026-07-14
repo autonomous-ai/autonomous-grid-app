@@ -35,9 +35,6 @@ class PillChoice extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(11),
-            border: Border.all(
-              color: selected ? AppPalette.accent : AppPalette.divider,
-            ),
             boxShadow: selected ? AppGlass.cardShadow : null,
           ),
           child: Row(

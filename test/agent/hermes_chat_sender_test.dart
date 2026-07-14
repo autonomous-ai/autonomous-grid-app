@@ -12,6 +12,7 @@ import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/hermes_acp_service.dart';
+import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 NetworkCredential _credential() => const NetworkCredential(
@@ -65,8 +66,14 @@ class _FakeAcpSession implements HermesAcpSession {
   int _turn = 0;
   bool _closed = false;
 
+  /// The mode each turn was sent under.
+  final modes = <AgentApprovalMode>[];
+
   @override
   final String sessionId;
+
+  @override
+  set approvalMode(AgentApprovalMode mode) => modes.add(mode);
 
   @override
   bool get isClosed => _closed;
@@ -111,6 +118,9 @@ class _LiveAcpSession implements HermesAcpSession {
 
   @override
   final String sessionId = 'sess-live';
+
+  @override
+  set approvalMode(AgentApprovalMode mode) {}
 
   @override
   bool get isClosed => false;
@@ -172,6 +182,10 @@ ProviderContainer _container(HermesAcpService? service, Directory tmp) {
       agentWorkspaceDirProvider.overrideWithValue(Directory('${tmp.path}/ws')),
       clientAppConfiguratorProvider.overrideWithValue(
         ClientAppConfigurator(home: tmp.path),
+      ),
+      // The approval mode is read from here — never from the real `~/.grid`.
+      chatPrefsStoreProvider.overrideWithValue(
+        ChatPrefsStore(file: File('${tmp.path}/chat_prefs.json')),
       ),
     ],
   );
@@ -351,6 +365,52 @@ void main() {
     expect(updates.single, isA<ChatSendFailure>());
     expect(service.startCount, 0);
   });
+
+  test(
+    'every turn is sent under the mode showing in the composer — changing it '
+    'lands on the next message, not the next session',
+    () async {
+      final service = _FakeAcp([
+        [const HermesAcpMessage('a')],
+        [const HermesAcpMessage('b')],
+      ]);
+      final container = _container(service, tmp);
+      final sender = container.read(hermesChatSenderProvider);
+
+      await sender
+          .send(
+            network: _credential(),
+            model: 'm',
+            conversationId: 'c1',
+            history: _history('hi'),
+          )
+          .toList();
+
+      container
+          .read(chatPrefsProvider.notifier)
+          .setApproval(AgentApprovalMode.full);
+
+      await sender
+          .send(
+            network: _credential(),
+            model: 'm',
+            conversationId: 'c1',
+            history: const [
+              ChatMessage(role: ChatRole.user, text: 'hi'),
+              ChatMessage(role: ChatRole.assistant, text: 'a'),
+              ChatMessage(role: ChatRole.user, text: 'now do it'),
+            ],
+          )
+          .toList();
+
+      // Same (reused) session, but the second turn ran under the new mode.
+      expect(service.startCount, 1);
+      expect(service.sessions.single.modes, [
+        AgentApprovalMode.ask,
+        AgentApprovalMode.full,
+      ]);
+    },
+  );
 
   test('the agent asking to run a command stalls the turn and puts it to the '
       'user; their answer goes back down the same session', () async {

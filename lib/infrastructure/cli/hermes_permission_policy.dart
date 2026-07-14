@@ -52,20 +52,35 @@ class HermesAskUser extends HermesPermissionDecision {
   const HermesAskUser();
 }
 
-/// How to answer the permission request for a [toolKind]: safe kinds are allowed
-/// outright, the ones we can explain are put to the user, and anything else fails
-/// closed.
+/// How to answer the permission request for a [toolKind], under the [mode] the
+/// user chose in the composer: safe kinds are allowed outright, the ones we can
+/// explain follow the mode, and anything else fails closed.
+///
+/// Even on [AgentApprovalMode.full] the yes is a *one-off* — never Hermes's
+/// "always", which it would persist to its own config and honour long after the
+/// user switched the mode back.
 HermesPermissionDecision decideHermesPermission({
   required String toolKind,
   required List<HermesPermissionOption> options,
+  AgentApprovalMode mode = AgentApprovalMode.ask,
 }) {
-  if (safeToolKinds.contains(toolKind)) {
-    final allow = _byKind(options, const ['allow_once', 'allow_always']);
-    // No way to say yes → say no. Never fall through to "approve anyway".
-    return allow == null ? const HermesRefuse(null) : HermesAllow(allow);
+  if (safeToolKinds.contains(toolKind)) return _allowOrRefuse(options);
+
+  if (askableToolKinds.contains(toolKind)) {
+    return switch (mode) {
+      AgentApprovalMode.readOnly => HermesRefuse(refuseOption(options)),
+      AgentApprovalMode.ask => const HermesAskUser(),
+      AgentApprovalMode.full => _allowOrRefuse(options),
+    };
   }
-  if (askableToolKinds.contains(toolKind)) return const HermesAskUser();
   return HermesRefuse(refuseOption(options));
+}
+
+/// Yes, once — or no, when the agent offered no way to say yes. Never falls
+/// through to "approve anyway".
+HermesPermissionDecision _allowOrRefuse(List<HermesPermissionOption> options) {
+  final allow = _byKind(options, const ['allow_once', 'allow_always']);
+  return allow == null ? const HermesRefuse(null) : HermesAllow(allow);
 }
 
 /// The option that says no, or null when the agent offered none (the request is

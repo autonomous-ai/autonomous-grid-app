@@ -28,7 +28,6 @@ class AgentPermissionCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(color: AppPalette.accent.withValues(alpha: 0.45)),
         borderRadius: BorderRadius.circular(14),
         boxShadow: AppGlass.shadow,
       ),
@@ -59,42 +58,37 @@ class AgentPermissionCard extends ConsumerWidget {
               ),
             ),
           ),
-          DecoratedBox(
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: AppPalette.divider)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 9, 10, 10),
-              child: Row(
-                children: [
-                  // Flexible, so a narrow window shortens the countdown line
-                  // instead of pushing the buttons off the edge.
-                  Flexible(
-                    child: _Countdown(
-                      timeout: ref.watch(agentPermissionTimeoutProvider),
-                      style: theme.textTheme.bodySmall,
-                    ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 9, 10, 10),
+            child: Row(
+              children: [
+                // Flexible, so a narrow window shortens the countdown line
+                // instead of pushing the buttons off the edge.
+                Flexible(
+                  child: _Countdown(
+                    timeout: ref.watch(agentPermissionTimeoutProvider),
+                    style: theme.textTheme.bodySmall,
                   ),
-                  const SizedBox(width: 8),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () =>
+                      controller.answer(AgentPermissionChoice.refuse),
+                  child: const Text("Don't allow"),
+                ),
+                if (request.canAllowForChat)
                   TextButton(
                     onPressed: () =>
-                        controller.answer(AgentPermissionChoice.refuse),
-                    child: const Text("Don't allow"),
+                        controller.answer(AgentPermissionChoice.allowForChat),
+                    child: const Text('Allow in this chat'),
                   ),
-                  if (request.canAllowForChat)
-                    TextButton(
-                      onPressed: () =>
-                          controller.answer(AgentPermissionChoice.allowForChat),
-                      child: const Text('Allow in this chat'),
-                    ),
-                  const SizedBox(width: 4),
-                  FilledButton(
-                    onPressed: () =>
-                        controller.answer(AgentPermissionChoice.allowOnce),
-                    child: const Text('Allow once'),
-                  ),
-                ],
-              ),
+                const SizedBox(width: 4),
+                FilledButton(
+                  onPressed: () =>
+                      controller.answer(AgentPermissionChoice.allowOnce),
+                  child: const Text('Allow once'),
+                ),
+              ],
             ),
           ),
         ],
@@ -169,7 +163,7 @@ class _Command extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
+        boxShadow: AppGlass.cardShadow,
       ),
       child: SelectableText(
         command,
@@ -198,7 +192,7 @@ class _Diff extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.divider),
+        boxShadow: AppGlass.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

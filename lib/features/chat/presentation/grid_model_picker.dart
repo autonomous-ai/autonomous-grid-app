@@ -81,7 +81,7 @@ class _TriggerButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppPalette.textSecondary,
           backgroundColor: AppGlass.surfaceFill,
-          side: const BorderSide(color: AppGlass.hair),
+          side: BorderSide.none,
           shape: const StadiumBorder(),
           textStyle: const TextStyle(
             fontSize: 12.5,

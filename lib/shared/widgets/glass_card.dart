@@ -68,9 +68,6 @@ class GlassCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: _isInset ? AppCard.inset : AppCard.base,
             borderRadius: radius,
-            border: Border.all(
-              color: _isInset ? AppCard.insetHair : AppCard.hair,
-            ),
           ),
         ),
       ),

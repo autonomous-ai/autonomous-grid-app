@@ -58,7 +58,7 @@ class _SoftPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppPalette.divider),
+        boxShadow: AppGlass.cardShadow,
       ),
       child: Padding(padding: padding, child: child),
     );

@@ -136,6 +136,10 @@ class HermesChatSender implements ChatSender {
       return;
     }
 
+    // This turn runs under whatever the user has the composer set to *now* —
+    // switching the mode takes effect on the next message, not the next session.
+    session.approvalMode = _ref.read(agentApprovalModeProvider);
+
     // Hand the session's id to the caller: Hermes names its own sessions, and
     // the Chat tab uses that name for the conversation once it lands.
     if (session.sessionId case final id?) yield ChatSendAgentSession(id);
