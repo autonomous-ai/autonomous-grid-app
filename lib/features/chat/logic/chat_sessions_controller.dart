@@ -153,9 +153,12 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       updatedAt: DateTime.now(),
       messages: [...base.messages, userTurn],
     );
-    final conversation = withUser.copyWith(
-      title: deriveConversationTitle(withUser.messages),
-    );
+    // A chat is named once — from its first message, until the agent replaces
+    // that with a name for what it's actually about. Re-deriving on every turn
+    // would drag it back to the first line the user typed ("hi") and undo that.
+    final conversation = withUser.title == kNewConversationTitle
+        ? withUser.copyWith(title: deriveConversationTitle(withUser.messages))
+        : withUser;
     _commit(conversation, phase: const SendBusy());
 
     // Plain text goes through the agent (it can use tools and keeps the

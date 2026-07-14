@@ -15,30 +15,41 @@ class ChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isUser = message.role == ChatRole.user;
+    if (!isUser) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: MessageContent(
+            text: message.text,
+            media: message.media,
+            color: AppPalette.textPrimary,
+          ),
+        ),
+      );
+    }
+
     final radius = BorderRadius.only(
       topLeft: const Radius.circular(14),
       topRight: const Radius.circular(14),
-      bottomLeft: Radius.circular(isUser ? 14 : 6),
-      bottomRight: Radius.circular(isUser ? 6 : 14),
+      bottomLeft: const Radius.circular(14),
+      bottomRight: const Radius.circular(6),
     );
     return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: Alignment.centerRight,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: const BoxConstraints(maxWidth: 520),
         decoration: BoxDecoration(
-          color: isUser ? AppPalette.accent : AppGlass.bubbleFill,
+          color: AppPalette.accent,
           borderRadius: radius,
-          border: isUser ? null : Border.all(color: AppGlass.hair),
-          boxShadow: isUser ? null : AppGlass.cardShadow,
+          border: Border.all(color: AppPalette.accentMuted),
         ),
         child: MessageContent(
           text: message.text,
           media: message.media,
-          color: isUser
-              ? theme.colorScheme.onPrimary
-              : theme.colorScheme.onSurface,
+          color: theme.colorScheme.onPrimary,
         ),
       ),
     );

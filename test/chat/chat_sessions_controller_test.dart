@@ -491,8 +491,8 @@ void main() {
     );
   });
 
-  test('only the opening exchange names the chat — a later turn never renames '
-      'it under the user', () async {
+  test('only the opening exchange names the chat — a later turn keeps the name '
+      'instead of dragging it back to the first line typed', () async {
     final h = _harness(
       tmp,
       agentInstalled: true,
@@ -505,10 +505,16 @@ void main() {
     final controller = h.container.read(chatSessionsProvider.notifier);
 
     await controller.send(network: _credential(), model: 'm', message: 'hi');
+    await pumpEventQueue();
     await controller.send(network: _credential(), model: 'm', message: 'more');
     await pumpEventQueue();
 
+    // Named once, off the opening exchange...
     expect(h.agentTitle.asked, ['sess-1']);
+    // ...and the second turn didn't re-derive it back to 'hi'.
+    final conv = h.container.read(chatSessionsProvider).conversations.single;
+    expect(conv.title, 'Đọc thư mục dự án');
+    expect(ChatStore(directory: tmp).loadAll().single.title, conv.title);
   });
 
   test('a chat with no project sends no folder — the agent falls back to its '
