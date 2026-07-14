@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/logic/session_controller.dart';
-import '../../network/logic/create_network_controller.dart';
+import '../../network/logic/grid_sync_controller.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
 import '../../node_setup/logic/node_capabilities.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
@@ -47,8 +47,8 @@ final installerControllerProvider =
       InstallerController.new,
     );
 
-/// Drives first-run setup end to end: make the user a grid, install what this
-/// computer is missing (engine → model → assistant), then share it on the grid.
+/// Drives first-run setup end to end: make sure the user has a grid, install
+/// what this computer is missing (engine → model → assistant), then share it.
 ///
 /// It orchestrates rather than re-implements: each phase is an existing
 /// controller, so the installer screen and the Engines tab can never drift into
@@ -92,13 +92,12 @@ class InstallerController extends Notifier<InstallerState> {
     state = const InstallerIdle();
   }
 
-  /// The user's own grid — created on first sign-in. Everything downstream needs
-  /// one (you can't share an engine with nowhere to share it).
+  /// The user's grid, created for them on the server at sign-up. Pull the latest
+  /// grid list so it's here locally, then confirm one is selectable — everything
+  /// downstream needs a grid (you can't share an engine with nowhere to share it).
   Future<bool> _ensureGrid() async {
     if (ref.read(selectedNetworkProvider) != null) return true;
-    await ref
-        .read(createNetworkControllerProvider.notifier)
-        .createFirstGridIfNeeded();
+    await ref.read(gridSyncControllerProvider.notifier).sync();
     return ref.read(selectedNetworkProvider) != null;
   }
 

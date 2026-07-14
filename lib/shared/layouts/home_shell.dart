@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
-import '../../features/network/logic/create_network_controller.dart';
 import '../../features/node_setup/logic/auto_host_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
 import '../theme/app_theme.dart';
@@ -15,7 +14,6 @@ import 'settings_pane.dart';
 import 'shell_state.dart';
 import 'widgets/app_sidebar.dart';
 import 'widgets/app_top_bar.dart';
-import 'widgets/grid_provision_banner.dart';
 import 'widgets/section_view.dart';
 import 'widgets/session_expired_banner.dart';
 
@@ -38,12 +36,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // Post-frame so we never mutate state during the first build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // A user who never went through the installer (they skipped it, or they're
-      // a guest on someone else's grid) can still reach the shell owning no
-      // grid. No-ops once they own one.
-      ref
-          .read(createNetworkControllerProvider.notifier)
-          .createFirstGridIfNeeded();
       _resumeSharing();
       // Scheduled tasks run whether the app is open or not, and Hermes just
       // leaves the result in a file. Start looking for those results, so they
@@ -70,8 +62,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    // The starter grid is provisioned asynchronously, so on a first sign-in it
-    // can arrive after the frame above — resume once it does.
+    // The user's grid is synced from the server after sign-in, so it can land
+    // after the frame above — resume sharing once one does.
     ref.listen(selectedNetworkProvider, (_, next) {
       if (next != null) _resumeSharing();
     });
@@ -127,7 +119,6 @@ class _MainShellBody extends StatelessWidget {
             children: [
               const AppTopBar(),
               const SessionExpiredBanner(),
-              const GridProvisionBanner(),
               const Expanded(child: _SectionView()),
             ],
           ),

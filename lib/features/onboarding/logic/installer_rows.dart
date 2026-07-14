@@ -5,7 +5,7 @@ import '../../auth/logic/session_controller.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
-import '../../network/logic/create_network_controller.dart';
+import '../../network/logic/grid_sync_controller.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../node_setup/logic/node_setup_plan.dart';
@@ -92,12 +92,14 @@ InstallerRow _gridRow(Ref ref) {
       status: InstallStatus.done,
     );
   }
-  return switch (ref.watch(createNetworkControllerProvider)) {
-    CreateNetworkSubmitting() => const InstallerRow(
+  // The grid is created for the user on the server; here it's pulled in with
+  // `grid sync`, so that's what this row reflects until one lands locally.
+  return switch (ref.watch(gridSyncControllerProvider)) {
+    GridSyncRunning() => const InstallerRow(
       stage: InstallerStage.grid,
       status: InstallStatus.running,
     ),
-    CreateNetworkFailed(:final message) => InstallerRow(
+    GridSyncFailed(:final message) => InstallerRow(
       stage: InstallerStage.grid,
       status: InstallStatus.failed,
       message: message,
