@@ -74,7 +74,9 @@ class Conversation {
           ? json['title'] as String
           : kNewConversationTitle,
       model: json['model'] is String ? json['model'] as String : '',
-      projectId: json['projectId'] is String && (json['projectId'] as String).isNotEmpty
+      projectId:
+          json['projectId'] is String &&
+              (json['projectId'] as String).isNotEmpty
           ? json['projectId'] as String
           : null,
       createdAt: _parseDate(json['createdAt']),

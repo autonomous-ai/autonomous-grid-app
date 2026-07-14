@@ -12,6 +12,7 @@ import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
+import 'package:grid_app/features/projects/logic/project.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
@@ -41,6 +42,7 @@ class _FakeSender implements ChatSender {
   String? model;
   PlaygroundModality? modality;
   List<MediaAttachment>? attachments;
+  String? workdir;
 
   @override
   Stream<ChatSendUpdate> send({
@@ -50,12 +52,14 @@ class _FakeSender implements ChatSender {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
+    String? workdir,
     String? conversationId,
   }) {
     this.history = history;
     this.model = model;
     this.modality = modality;
     this.attachments = attachments;
+    this.workdir = workdir;
     return Stream.fromIterable(updates);
   }
 }
@@ -90,9 +94,12 @@ _harness(
       hermesPathProvider.overrideWithValue(
         agentInstalled ? '/bin/hermes' : null,
       ),
-      // Keep the remembered model off the real `~/.grid`.
+      // Keep the remembered model and the projects off the real `~/.grid`.
       chatPrefsStoreProvider.overrideWithValue(
         ChatPrefsStore(file: File('${dir.path}/chat_prefs.json')),
+      ),
+      projectsStoreProvider.overrideWithValue(
+        ProjectsStore(file: File('${dir.path}/projects.json')),
       ),
     ],
   );
@@ -378,5 +385,48 @@ void main() {
     final state = container.read(chatSessionsProvider);
     expect(state.conversations, hasLength(2));
     expect(state.activeId, 'new'); // newest-first
+  });
+
+  test('a chat opened inside a project sends that folder to the agent — which '
+      'is what lets it read the user\'s files', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      updates: [
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+    final project = h.container
+        .read(projectsProvider.notifier)
+        .add('${tmp.path}/my-notes');
+
+    h.container
+        .read(chatSessionsProvider.notifier)
+        .newChat(projectId: project.id);
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'what changed?');
+
+    expect(h.agent.workdir, project.path);
+    // And the chat remembers its project across a reload from disk.
+    final reloaded = ChatStore(directory: tmp).loadAll().single;
+    expect(reloaded.projectId, project.id);
+  });
+
+  test('a chat with no project sends no folder — the agent falls back to its '
+      'own', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      updates: [
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+
+    expect(h.agent.workdir, isNull);
   });
 }

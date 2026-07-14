@@ -38,10 +38,9 @@ class ChatHistoryList extends ConsumerWidget {
       children: [
         _ProjectsHeader(
           onAdd: () => addProjectFromPicker(ref),
-          onManage: () =>
-              ref.read(shellSectionProvider.notifier).select(
-                ShellSection.projects,
-              ),
+          onManage: () => ref
+              .read(shellSectionProvider.notifier)
+              .select(ShellSection.projects),
         ),
         if (projects.isEmpty)
           const _AddFirstProjectHint()
@@ -186,7 +185,8 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
           if (widget.chats.isEmpty)
             const _Hint(text: 'No chats yet', indented: true)
           else
-            for (final chat in widget.chats) _ChatRow(chat: chat, indented: true),
+            for (final chat in widget.chats)
+              _ChatRow(chat: chat, indented: true),
         ],
       ],
     );

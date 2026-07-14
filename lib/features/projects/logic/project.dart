@@ -62,8 +62,7 @@ class ProjectsStore {
       if (decoded is! List) return const [];
       return [
         for (final raw in decoded)
-          if (raw is Map<String, dynamic>)
-            ?Project.fromJson(raw),
+          if (raw is Map<String, dynamic>) ?Project.fromJson(raw),
       ];
     } on Object {
       return const [];
@@ -110,11 +109,10 @@ class ProjectsController extends Notifier<List<Project>> {
 
   /// Forget a project. The folder on disk is left alone — this is the app's
   /// list, not the user's files.
-  void remove(String id) =>
-      _commit([
-        for (final project in state)
-          if (project.id != id) project,
-      ]);
+  void remove(String id) => _commit([
+    for (final project in state)
+      if (project.id != id) project,
+  ]);
 
   void _commit(List<Project> next) {
     state = List.unmodifiable(next);

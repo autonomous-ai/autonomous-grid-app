@@ -8,9 +8,7 @@ import '../logic/project.dart';
 /// The OS picker is the whole flow — no path to type, no way to pick something
 /// that isn't there. Returns the project, or null when the user backed out.
 Future<Project?> addProjectFromPicker(WidgetRef ref) async {
-  final path = await getDirectoryPath(
-    confirmButtonText: 'Add project',
-  );
+  final path = await getDirectoryPath(confirmButtonText: 'Add project');
   if (path == null) return null;
   return ref.read(projectsProvider.notifier).add(path);
 }

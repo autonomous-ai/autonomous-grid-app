@@ -122,6 +122,7 @@ class HermesChatSender implements ChatSender {
         model,
         conversationId,
         history,
+        workdir,
       );
       session = resolved.session;
       text = resolved.text;
