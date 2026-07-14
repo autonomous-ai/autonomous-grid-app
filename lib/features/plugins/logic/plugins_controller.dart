@@ -59,10 +59,8 @@ class PluginsController extends AsyncNotifier<List<HermesPlugin>> {
   Future<String?> install(String identifier) =>
       _act((service) => service.install(identifier.trim()));
 
-  Future<String?> setEnabled(String name, {required bool enabled}) => _act(
-    (service) =>
-        enabled ? service.enable(name) : service.disable(name),
-  );
+  Future<String?> setEnabled(String name, {required bool enabled}) =>
+      _act((service) => enabled ? service.enable(name) : service.disable(name));
 
   Future<String?> remove(String name) => _act((s) => s.remove(name));
 

@@ -4,126 +4,84 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/error_box.dart';
-import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
-import '../../agent/logic/hermes_skill_installer.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../logic/agent_skill.dart';
+import '../logic/plugins_controller.dart';
+import 'widgets/add_plugin_dialog.dart';
+import 'widgets/new_skill_dialog.dart';
+import 'widgets/plugin_list.dart';
+import 'widgets/skill_list.dart';
 
-/// The Plugins screen: the extra things the assistant can do beyond talking —
-/// making an image on your grid, for one — and where each of them came from.
+/// What the assistant can do beyond talking, in two halves.
 ///
-/// It reads what's actually installed on this computer rather than a list the app
-/// keeps, so a plugin can't show up here unless the assistant can really use it.
-class PluginsView extends ConsumerWidget {
+/// **Plugins** are tool backends — a browser it can drive, a search provider it
+/// can query — shipped with Hermes or pulled from a Git repo, each with a switch.
+/// **Skills** are instructions for one job ("make an image on the grid"), which
+/// you can also write yourself.
+///
+/// Both lists are read from what's really installed, not from a list the app
+/// keeps, so nothing can show up here that the assistant can't actually use.
+class PluginsView extends ConsumerStatefulWidget {
   const PluginsView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(hermesInstalledProvider)) return const _NoAgent();
-
-    final skills = ref.watch(agentSkillsProvider);
-    return SectionScaffold(
-      title: 'Plugins',
-      subtitle:
-          'Extra abilities the assistant can use while it answers you. Grid '
-          'installs its own; anything you add by hand shows up here too.',
-      child: switch (skills) {
-        AsyncData(:final value) when value.isEmpty => const _NoPlugins(),
-        AsyncData(:final value) => _SkillList(skills: value),
-        AsyncError(:final error) => ErrorBox(
-          message: "Couldn't read the installed plugins: $error",
-        ),
-        _ => const Center(child: CircularProgressIndicator()),
-      },
-    );
-  }
+  ConsumerState<PluginsView> createState() => _PluginsViewState();
 }
 
-/// The installed plugins, with the action that (re)installs Grid's own.
-class _SkillList extends ConsumerWidget {
-  const _SkillList({required this.skills});
-
-  final List<AgentSkill> skills;
+class _PluginsViewState extends ConsumerState<PluginsView> {
+  final _search = TextEditingController();
+  String _query = '';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: ListView.separated(
-            padding: EdgeInsets.zero,
-            itemCount: skills.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, i) => _SkillCard(skill: skills[i]),
-          ),
-        ),
-        const SizedBox(height: 14),
-        const _ReinstallButton(),
-      ],
-    );
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
-}
 
-/// One plugin: what it does, where it lives, and who put it there.
-class _SkillCard extends StatelessWidget {
-  const _SkillCard({required this.skill});
+  bool _matches(String name, String description) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return name.toLowerCase().contains(q) ||
+        description.toLowerCase().contains(q);
+  }
 
-  final AgentSkill skill;
+  void _refresh() {
+    ref.invalidate(pluginsProvider);
+    ref.invalidate(agentSkillsProvider);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    if (!ref.watch(hermesInstalledProvider)) return const _NoAgent();
+
+    final tab = ref.watch(pluginsTabProvider);
+    return SectionScaffold(
+      title: 'Plugins',
+      subtitle:
+          'What the assistant can do beyond talking: plugins give it new tools, '
+          'skills teach it a job.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.extension_outlined, size: 18),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        skill.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    if (skill.fromGrid) ...[
-                      const SizedBox(width: 8),
-                      const _FromGridBadge(),
-                    ],
-                  ],
-                ),
-                if (skill.description.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    skill.description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppPalette.textSecondary,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 6),
-                Text(
-                  skill.path,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppPalette.textFaint,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ],
+          _Toolbar(tab: tab, onRefresh: _refresh),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _search,
+            onChanged: (value) => setState(() => _query = value),
+            style: const TextStyle(fontSize: 13),
+            decoration: InputDecoration(
+              hintText: tab == PluginsTab.plugins
+                  ? 'Search plugins'
+                  : 'Search skills',
+              prefixIcon: const Icon(Icons.search_rounded, size: 18),
             ),
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: tab == PluginsTab.plugins
+                ? _Plugins(matches: _matches)
+                : _Skills(matches: _matches),
           ),
         ],
       ),
@@ -131,70 +89,104 @@ class _SkillCard extends StatelessWidget {
   }
 }
 
-class _FromGridBadge extends StatelessWidget {
-  const _FromGridBadge();
+/// The tab switch, refresh, and the Create menu (a plugin from Git, or a skill
+/// you write yourself).
+class _Toolbar extends ConsumerWidget {
+  const _Toolbar({required this.tab, required this.onRefresh});
+
+  final PluginsTab tab;
+  final VoidCallback onRefresh;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppCard.tint18,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: const Text(
-        'From Grid',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: AppCard.accentStrong,
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      children: [
+        for (final option in PluginsTab.values)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(option.label),
+              selected: option == tab,
+              onSelected: (_) =>
+                  ref.read(pluginsTabProvider.notifier).select(option),
+            ),
+          ),
+        const Spacer(),
+        IconButton(
+          tooltip: 'Refresh',
+          iconSize: 18,
+          icon: const Icon(Icons.refresh_rounded),
+          onPressed: onRefresh,
         ),
+        const SizedBox(width: 4),
+        MenuAnchor(
+          menuChildren: [
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.extension_outlined, size: 18),
+              onPressed: () => showAddPluginDialog(context),
+              child: const Text('Add a plugin from Git'),
+            ),
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.auto_awesome_outlined, size: 18),
+              onPressed: () => showNewSkillDialog(context),
+              child: const Text('Write a skill'),
+            ),
+          ],
+          builder: (context, controller, _) => FilledButton.icon(
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Create'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The plugins half — Hermes's own list, with a switch each.
+class _Plugins extends ConsumerWidget {
+  const _Plugins({required this.matches});
+
+  final bool Function(String name, String description) matches;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return switch (ref.watch(pluginsProvider)) {
+      AsyncData(:final value) => PluginList(
+        plugins: [
+          for (final plugin in value)
+            if (matches(plugin.name, plugin.description)) plugin,
+        ],
       ),
-    );
+      AsyncError(:final error) => ErrorBox(
+        message: "Couldn't read the installed plugins: $error",
+      ),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
   }
 }
 
-/// Rewrites Grid's own plugins and re-reads the folder. Idempotent, so it's also
-/// the fix for a plugin someone deleted or edited by mistake.
-class _ReinstallButton extends ConsumerStatefulWidget {
-  const _ReinstallButton();
+/// The skills half — what's in the assistant's skills folder.
+class _Skills extends ConsumerWidget {
+  const _Skills({required this.matches});
+
+  final bool Function(String name, String description) matches;
 
   @override
-  ConsumerState<_ReinstallButton> createState() => _ReinstallButtonState();
-}
-
-class _ReinstallButtonState extends ConsumerState<_ReinstallButton> {
-  bool _busy = false;
-
-  Future<void> _reinstall() async {
-    setState(() => _busy = true);
-    var message = "Grid's plugins are up to date.";
-    try {
-      await ref.read(hermesSkillInstallerProvider).install();
-      ref.invalidate(agentSkillsProvider);
-    } on Object catch (error) {
-      message = "Couldn't install Grid's plugins: $error";
-    }
-    if (!mounted) return;
-    setState(() => _busy = false);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: _busy ? null : _reinstall,
-      icon: _busy
-          ? const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.refresh_rounded, size: 16),
-      label: Text(_busy ? 'Installing…' : "Reinstall Grid's plugins"),
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    return switch (ref.watch(agentSkillsProvider)) {
+      AsyncData(:final value) => SkillList(
+        skills: [
+          for (final skill in value)
+            if (matches(skill.name, skill.description)) skill,
+        ],
+      ),
+      AsyncError(:final error) => ErrorBox(
+        message: "Couldn't read the installed skills: $error",
+      ),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
   }
 }
 
@@ -206,7 +198,7 @@ class _NoAgent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return SectionScaffold(
       title: 'Plugins',
-      subtitle: 'Extra abilities the assistant can use while it answers you.',
+      subtitle: 'What the assistant can do beyond talking.',
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -226,29 +218,6 @@ class _NoAgent extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// The agent is installed but has no plugins — offer the one action that fixes
-/// it rather than a blank page.
-class _NoPlugins extends StatelessWidget {
-  const _NoPlugins();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'No plugins installed yet.',
-            style: TextStyle(color: AppPalette.textSecondary),
-          ),
-          SizedBox(height: 14),
-          _ReinstallButton(),
-        ],
       ),
     );
   }

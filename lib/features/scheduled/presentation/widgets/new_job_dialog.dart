@@ -5,6 +5,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/job_suggestions.dart';
 import '../../logic/scheduled_jobs_controller.dart';
+import 'scheduled_pill_choice.dart';
 
 part 'new_job_dialog_actions.dart';
 part 'new_job_dialog_fields.dart';

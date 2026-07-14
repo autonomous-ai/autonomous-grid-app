@@ -67,17 +67,19 @@ class _Workspace extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          width: 320,
+          width: 330,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const _NewTaskButton(),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Expanded(child: JobList(jobs: jobs)),
             ],
           ),
         ),
-        const VerticalDivider(width: 25),
+        const SizedBox(width: 14),
+        const VerticalDivider(width: 1),
+        const SizedBox(width: 30),
         Expanded(
           child: open == null
               ? const _PickOne()
@@ -96,6 +98,11 @@ class _NewTaskButton extends StatelessWidget {
     return FilledButton.icon(
       onPressed: () => showNewJobDialog(context),
       icon: const Icon(Icons.add_rounded, size: 18),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(33),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+      ),
       label: const Text('New task'),
     );
   }

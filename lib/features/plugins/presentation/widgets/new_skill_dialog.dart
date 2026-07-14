@@ -11,10 +11,8 @@ import '../../logic/skill_author.dart';
 /// That middle field is the one that matters — Hermes reads it to decide whether
 /// a skill is relevant to what you just asked, so the dialog says so rather than
 /// leaving the user to guess why their skill never fires.
-Future<void> showNewSkillDialog(BuildContext context) => showDialog<void>(
-  context: context,
-  builder: (_) => const _NewSkillDialog(),
-);
+Future<void> showNewSkillDialog(BuildContext context) =>
+    showDialog<void>(context: context, builder: (_) => const _NewSkillDialog());
 
 class _NewSkillDialog extends ConsumerStatefulWidget {
   const _NewSkillDialog();

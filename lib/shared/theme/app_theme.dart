@@ -231,15 +231,22 @@ ThemeData buildAppTheme() {
         side: const BorderSide(color: AppPalette.divider),
       ),
     ),
-    // A dark, rounded, floating toast — the one place the app goes dark, so a
-    // message that lands over white content is impossible to miss.
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: AppPalette.textPrimary,
-      contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13),
-      actionTextColor: const Color(0xFF9DB4FF),
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      width: 520,
+      backgroundColor: Colors.white,
+      contentTextStyle: const TextStyle(
+        color: AppPalette.textPrimary,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+      actionTextColor: AppPalette.accent,
+      closeIconColor: AppPalette.textSecondary,
+      elevation: 10,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(13),
+        side: const BorderSide(color: AppPalette.divider),
+      ),
     ),
   );
 }

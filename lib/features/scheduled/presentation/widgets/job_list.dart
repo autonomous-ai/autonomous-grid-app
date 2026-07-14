@@ -6,6 +6,9 @@ import '../../../../shared/widgets/status_dot.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/scheduled_job.dart';
 import '../../logic/scheduled_jobs_controller.dart';
+import 'scheduled_pill_choice.dart';
+
+part 'job_row.dart';
 
 /// Which tasks the list shows.
 enum JobFilter {
@@ -69,12 +72,14 @@ class _JobListState extends ConsumerState<JobList> {
       children: [
         Wrap(
           spacing: 8,
+          runSpacing: 8,
           children: [
             for (final filter in JobFilter.values)
-              ChoiceChip(
+              ScheduledPillChoice(
                 label: Text(filter.label),
                 selected: filter == _filter,
-                onSelected: (_) => setState(() => _filter = filter),
+                icon: filter == _filter ? Icons.check_rounded : null,
+                onTap: () => setState(() => _filter = filter),
               ),
           ],
         ),
@@ -83,10 +88,19 @@ class _JobListState extends ConsumerState<JobList> {
           controller: _search,
           onChanged: (value) => setState(() => _query = value),
           style: const TextStyle(fontSize: 13),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: 'Search tasks',
-            prefixIcon: Icon(Icons.search_rounded, size: 17),
-            prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 34),
+            prefixIcon: const Icon(Icons.search_rounded, size: 17),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 34,
+              minHeight: 34,
+            ),
+            filled: true,
+            fillColor: AppPalette.cardBg,
+            contentPadding: const EdgeInsets.symmetric(vertical: 9),
+            border: _searchBorder(),
+            enabledBorder: _searchBorder(),
+            focusedBorder: _searchBorder(AppPalette.divider),
           ),
         ),
         const SizedBox(height: 12),
@@ -109,78 +123,12 @@ class _JobListState extends ConsumerState<JobList> {
       ],
     );
   }
-}
 
-/// One task in the list: a state dot, its name, and when it next runs.
-class _JobRow extends StatelessWidget {
-  const _JobRow({
-    required this.job,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final ScheduledJob job;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final radius = BorderRadius.circular(10);
-    return Material(
-      color: selected ? AppSurface.selectedFill : Colors.transparent,
-      borderRadius: radius,
-      child: InkWell(
-        borderRadius: radius,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: StatusDot(color: _dotColor(job), size: 8),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      job.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      describeJobCron(job.cron),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Green while it's running to schedule, amber when the last run failed, grey
-  /// when the user paused it — the state you'd want to spot from across the list.
-  static Color _dotColor(ScheduledJob job) {
-    if (!job.enabled) return AppPalette.offline;
-    if (job.failed) return AppPalette.warn;
-    return AppPalette.online;
-  }
+  OutlineInputBorder _searchBorder([Color color = AppPalette.divider]) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: color),
+      );
 }
 
 class _NoMatches extends StatelessWidget {

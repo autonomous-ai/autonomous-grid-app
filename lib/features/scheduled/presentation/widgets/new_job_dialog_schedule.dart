@@ -15,7 +15,7 @@ class _CadenceRow extends StatelessWidget {
         runSpacing: 8,
         children: [
           for (final option in JobCadence.values)
-            _PillChoice(
+            ScheduledPillChoice(
               label: Text(option.label),
               selected: option == cadence,
               icon: option == cadence ? Icons.check_rounded : null,
@@ -52,66 +52,12 @@ class _WeekdayRow extends StatelessWidget {
         runSpacing: 6,
         children: [
           for (final entry in _days.entries)
-            _PillChoice(
+            ScheduledPillChoice(
               label: Text(entry.value),
               selected: entry.key == weekday,
               onTap: () => onChanged(entry.key),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _PillChoice extends StatelessWidget {
-  const _PillChoice({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.icon,
-  });
-
-  final Widget label;
-  final bool selected;
-  final VoidCallback onTap;
-  final IconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = selected ? Colors.white : AppPalette.textSecondary;
-    return Material(
-      color: selected ? AppPalette.accent : Colors.white,
-      borderRadius: BorderRadius.circular(9),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(9),
-        onTap: onTap,
-        child: Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(
-              color: selected ? AppPalette.accent : AppPalette.divider,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 15, color: foreground),
-                const SizedBox(width: 8),
-              ],
-              DefaultTextStyle.merge(
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-                child: label,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
