@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../shared/theme/app_theme.dart';
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
 import '../logic/session_expiry_controller.dart';
@@ -46,20 +47,20 @@ class LoginScreen extends ConsumerWidget {
             padding: const EdgeInsets.all(24),
             child: switch (state) {
               AuthAwaitingApproval(:final url) => _ApprovalView(
-                  url: url,
-                  onCancel: controller.cancel,
-                ),
-              AuthStarting() || AuthSuccess() =>
-                const _Busy(label: 'Signing in…'),
+                url: url,
+                onCancel: controller.cancel,
+              ),
+              AuthStarting() ||
+              AuthSuccess() => const _Busy(label: 'Signing in…'),
               AuthFailure(:final message) => _SignIn(
-                  onSignIn: controller.login,
-                  error: message,
-                  sessionExpired: sessionExpired,
-                ),
+                onSignIn: controller.login,
+                error: message,
+                sessionExpired: sessionExpired,
+              ),
               AuthIdle() => _SignIn(
-                  onSignIn: controller.login,
-                  sessionExpired: sessionExpired,
-                ),
+                onSignIn: controller.login,
+                sessionExpired: sessionExpired,
+              ),
             },
           ),
         ),
@@ -90,8 +91,12 @@ class _SignIn extends StatelessWidget {
       children: [
         // Full-bleed square icon (the purple glow reaches every edge), shown raw
         // so the border isn't clipped.
-        Image.asset('assets/brand/grid_logo_bg.png',
-            width: 72, height: 72, filterQuality: FilterQuality.medium),
+        Image.asset(
+          'assets/brand/grid_logo_bg.png',
+          width: 72,
+          height: 72,
+          filterQuality: FilterQuality.medium,
+        ),
         const SizedBox(height: 16),
         Text('Grid', style: theme.textTheme.headlineMedium),
         const SizedBox(height: 8),
@@ -100,8 +105,9 @@ class _SignIn extends StatelessWidget {
               ? 'Your session expired. Sign in again to continue.'
               : 'One private endpoint for the AI models you run.',
           textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 24),
         FilledButton.icon(
@@ -111,10 +117,13 @@ class _SignIn extends StatelessWidget {
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
-          Text(error!,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error),
-              textAlign: TextAlign.center),
+          Text(
+            error!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ],
     );
@@ -122,10 +131,7 @@ class _SignIn extends StatelessWidget {
 }
 
 class _ApprovalView extends StatelessWidget {
-  const _ApprovalView({
-    required this.url,
-    required this.onCancel,
-  });
+  const _ApprovalView({required this.url, required this.onCancel});
 
   final String url;
   final VoidCallback onCancel;
@@ -142,30 +148,29 @@ class _ApprovalView extends StatelessWidget {
         Text(
           'We opened Grid sign-in in your browser. Approve the sign-in there '
           'to continue.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 20),
         const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2)),
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             SizedBox(width: 12),
             Text('Waiting for approval…'),
           ],
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
         // Fallbacks, de-emphasized — the browser usually opened already.
         _BrowserFallback(url: url),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Center(
-          child: TextButton(
-            onPressed: onCancel,
-            child: const Text('Cancel'),
-          ),
+          child: TextButton(onPressed: onCancel, child: const Text('Cancel')),
         ),
       ],
     );
@@ -181,43 +186,118 @@ class _BrowserFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
-      childrenPadding: const EdgeInsets.only(bottom: 8),
+      // The fallback is two controls in a row; packed tight they read as one
+      // knot of UI. Give them room to be two separate things.
+      childrenPadding: const EdgeInsets.only(top: 6, bottom: 14),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
       title: const Text("Browser didn't open?"),
       children: [
         Align(
           alignment: Alignment.centerLeft,
-          child: FilledButton.tonalIcon(
+          // Quiet on purpose: the browser has usually opened already, and this
+          // is the way out when it didn't. A filled button here shouts louder
+          // than the sign-in the user is meant to go and approve.
+          child: OutlinedButton.icon(
             onPressed: () => _openInBrowser(url),
-            icon: const Icon(Icons.open_in_new, size: 18),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
             label: const Text('Open in browser'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppPalette.accent,
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: AppPalette.divider),
+              // Without this, Material pads the button out to a 48px tap target
+              // and it floats in a box half again its own height.
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: const Size(0, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(11),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 8),
-        _CopyField(label: 'URL', value: url),
+        const SizedBox(height: 14),
+        _CopyField(label: 'Or paste this link', value: url),
       ],
     );
   }
 }
 
+/// The sign-in link, and a button that copies it.
+///
+/// A quiet filled row rather than an outlined input: it isn't something to type
+/// into, and the boxed field was the only outlined control on the screen. The
+/// copy says so instead of leaving the user to guess whether it worked.
 class _CopyField extends StatelessWidget {
   const _CopyField({required this.label, required this.value});
 
   final String label;
   final String value;
 
+  void _copy(BuildContext context) {
+    Clipboard.setData(ClipboardData(text: value));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Link copied.')));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        suffixIcon: IconButton(
-          icon: const Icon(Icons.copy, size: 18),
-          tooltip: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: value)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textFaint,
+          ),
         ),
-      ),
-      child: Text(value, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 7),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppPalette.cardBg,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppPalette.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Copy link',
+                  iconSize: 17,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
+                  padding: EdgeInsets.zero,
+                  color: AppPalette.textSecondary,
+                  icon: const Icon(Icons.copy_rounded),
+                  onPressed: () => _copy(context),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
