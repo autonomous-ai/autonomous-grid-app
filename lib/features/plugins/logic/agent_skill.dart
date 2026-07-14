@@ -62,10 +62,7 @@ class AgentSkill {
     if (key == 'description' && description.isEmpty) description = value;
   }
 
-  return (
-    name: name.isEmpty ? fallbackName : name,
-    description: description,
-  );
+  return (name: name.isEmpty ? fallbackName : name, description: description);
 }
 
 String _unquote(String value) {
@@ -86,8 +83,8 @@ class AgentSkillScanner {
 
   Directory get root => Directory('$_home/.hermes/skills');
 
-  /// Every installed skill, newest-looking first is not a thing here — they're
-  /// sorted by name so the list is stable between refreshes.
+  /// Every installed skill, sorted by name so the list is stable between
+  /// refreshes.
   Future<List<AgentSkill>> scan() async {
     if (!root.existsSync()) return const [];
 

@@ -101,7 +101,7 @@ class ComposerSection extends StatelessWidget {
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   disabledBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+                  contentPadding: const EdgeInsets.fromLTRB(18, 17, 18, 10),
                 ),
               ),
               _Actions(

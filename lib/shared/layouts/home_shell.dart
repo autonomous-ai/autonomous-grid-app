@@ -11,9 +11,10 @@ import '../../features/network/presentation/how_to_use_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
 import '../../features/node_setup/logic/auto_host_controller.dart';
 import '../../features/plugins/presentation/plugins_view.dart';
+import '../../features/projects/presentation/projects_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
+import '../../features/scheduled/presentation/scheduled_view.dart';
 import '../theme/app_theme.dart';
-import '../widgets/coming_soon_view.dart';
 import 'shell_state.dart';
 import 'widgets/app_sidebar.dart';
 import 'widgets/app_top_bar.dart';
@@ -75,21 +76,49 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     return Scaffold(
       backgroundColor: AppPalette.windowBg,
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Stack(
         children: [
-          const AppSidebar(),
-          Expanded(
-            child: Column(
-              children: [
-                const AppTopBar(),
-                const SessionExpiredBanner(),
-                const GridProvisionBanner(),
-                const Expanded(child: _SectionView()),
-              ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AppSidebar(),
+              Expanded(
+                child: Column(
+                  children: [
+                    const AppTopBar(),
+                    const SessionExpiredBanner(),
+                    const GridProvisionBanner(),
+                    const Expanded(child: _SectionView()),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const _SidebarCastShadow(),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarCastShadow extends StatelessWidget {
+  const _SidebarCastShadow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Positioned(
+      left: AppSidebar.width - 1,
+      top: 0,
+      bottom: 0,
+      width: 24,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0x10000000), Colors.transparent],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -103,27 +132,9 @@ class _SectionView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (ref.watch(shellSectionProvider)) {
       ShellSection.chat => const ChatPane(),
-      ShellSection.scheduled => const ComingSoonView(
-        title: 'Scheduled',
-        subtitle: 'Plan work for the assistant to run later.',
-        icon: Icons.schedule_rounded,
-        points: [
-          'Set reminders for follow-up tasks.',
-          'Run recurring checks in the background.',
-          'Review what is queued before it runs.',
-        ],
-      ),
+      ShellSection.scheduled => const ScheduledView(),
       ShellSection.plugins => const PluginsView(),
-      ShellSection.projects => const ComingSoonView(
-        title: 'Projects',
-        subtitle: 'Keep assistant work grouped by codebase.',
-        icon: Icons.folder_open_rounded,
-        points: [
-          'Open recent project workspaces.',
-          'Keep chats and tasks tied to a folder.',
-          'Jump back into unfinished work quickly.',
-        ],
-      ),
+      ShellSection.projects => const ProjectsView(),
       ShellSection.grids => const NetworksPane(),
       ShellSection.engines => const ProviderView(),
       ShellSection.guide => const HowToUseView(),

@@ -20,23 +20,40 @@ class _Actions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 11),
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
       child: Row(
         children: [
-          IconButton(
-            tooltip: canAttach ? 'Attach image' : 'Up to $maxChatImages images',
-            iconSize: 19,
-            visualDensity: VisualDensity.compact,
-            color: AppPalette.textSecondary,
-            icon: const Icon(Icons.add_rounded),
-            onPressed: canAttach ? onPickImage : null,
-          ),
-          const _ApprovalHint(),
-          const Spacer(),
-          Flexible(child: modelPicker),
+          _AttachButton(canAttach: canAttach, onPickImage: onPickImage),
+          const SizedBox(width: 4),
+          const Expanded(child: _ApprovalHint()),
+          const SizedBox(width: 12),
+          SizedBox(width: 142, height: 32, child: modelPicker),
           const SizedBox(width: 8),
           _SendButton(sending: sending, canSend: canSend, onSend: onSend),
         ],
+      ),
+    );
+  }
+}
+
+class _AttachButton extends StatelessWidget {
+  const _AttachButton({required this.canAttach, required this.onPickImage});
+
+  final bool canAttach;
+  final VoidCallback onPickImage;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 34,
+      height: 34,
+      child: IconButton(
+        tooltip: canAttach ? 'Attach image' : 'Up to $maxChatImages images',
+        iconSize: 20,
+        visualDensity: VisualDensity.compact,
+        color: AppPalette.textSecondary,
+        icon: const Icon(Icons.add_rounded),
+        onPressed: canAttach ? onPickImage : null,
       ),
     );
   }
@@ -47,26 +64,24 @@ class _ApprovalHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Flexible(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.verified_user_outlined,
-            size: 15,
-            color: AppPalette.textFaint,
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.verified_user_outlined,
+          size: 15,
+          color: AppPalette.textFaint,
+        ),
+        SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            'Ask for approval',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
           ),
-          SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              'Ask for approval',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

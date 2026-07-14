@@ -64,6 +64,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
       decoration: const BoxDecoration(
         color: AppGlass.sidebarFill,
         border: Border(right: BorderSide(color: AppPalette.divider)),
+        boxShadow: AppSurface.sidebarShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -89,7 +90,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                   tooltip: sending ? 'Wait for the reply to finish' : null,
                   onTap: _newChat,
                 ),
-                for (final target in _navSections)
+                for (final target in kSidebarSections)
                   SidebarItem(
                     icon: target.icon,
                     label: target.label,
@@ -113,14 +114,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
       ),
     );
   }
-
-  /// The screens the rail links to. Chat isn't among them: you get there by
-  /// starting a chat or opening one from the history below.
-  static const _navSections = [
-    ShellSection.grids,
-    ShellSection.engines,
-    ShellSection.guide,
-  ];
 }
 
 /// The wordmark row at the top — also the window's drag handle, and on macOS it

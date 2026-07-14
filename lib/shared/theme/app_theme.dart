@@ -59,6 +59,17 @@ abstract final class AppSurface {
     ),
     BoxShadow(color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 1)),
   ];
+
+  /// The soft cast shadow between the navigation rail and content pane.
+  static const sidebarShadow = <BoxShadow>[
+    BoxShadow(
+      color: Color(0x12000000),
+      blurRadius: 24,
+      offset: Offset(10, 0),
+      spreadRadius: -18,
+    ),
+    BoxShadow(color: Color(0x08000000), blurRadius: 4, offset: Offset(1, 0)),
+  ];
 }
 
 /// Translucent Codex-like chrome surfaces: white fills, soft rims, and almost
@@ -72,10 +83,10 @@ abstract final class AppGlass {
 
   static const shadow = <BoxShadow>[
     BoxShadow(
-      color: Color(0x10000000),
-      blurRadius: 18,
-      offset: Offset(0, 8),
-      spreadRadius: -10,
+      color: Color(0x14000000),
+      blurRadius: 22,
+      offset: Offset(0, 10),
+      spreadRadius: -12,
     ),
     BoxShadow(color: Color(0x08000000), blurRadius: 3, offset: Offset(0, 1)),
   ];

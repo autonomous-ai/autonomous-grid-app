@@ -7,6 +7,7 @@ import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/provider_node/logic/provider_run_controller.dart';
 import '../../app_info.dart';
 import '../../theme/app_theme.dart';
+import '../shell_state.dart';
 
 /// The sidebar's foot: who's signed in, and the menu that hangs off it — check
 /// for updates, the app version, sign out.
@@ -33,6 +34,21 @@ class SidebarAccount extends ConsumerWidget {
       position: PopupMenuPosition.over,
       onSelected: (value) => _onSelected(context, ref, updater, value),
       itemBuilder: (context) => [
+        // The setup screens: which grids you can talk to, what this computer
+        // runs, how to point other apps at it. You touch them once, so they live
+        // here rather than taking up the sidebar.
+        for (final section in kAccountSections)
+          PopupMenuItem(
+            value: section.name,
+            child: Row(
+              children: [
+                Icon(section.icon, size: 18),
+                const SizedBox(width: 10),
+                Text(section.label),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
         if (updater.isSupported)
           PopupMenuItem(
             value: 'check_updates',
@@ -93,6 +109,12 @@ class SidebarAccount extends ConsumerWidget {
     if (value == 'check_updates') {
       await updater.checkForUpdates();
       return;
+    }
+    for (final section in kAccountSections) {
+      if (value == section.name) {
+        ref.read(shellSectionProvider.notifier).select(section);
+        return;
+      }
     }
     if (value != 'logout') return;
     final engineRunning =
