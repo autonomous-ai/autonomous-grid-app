@@ -74,6 +74,11 @@ abstract interface class HermesAcpSession {
   /// session rather than prompting a dead one.
   bool get isClosed;
 
+  /// Hermes's own id for this session, known once the handshake completed. It's
+  /// how the app looks the session up afterwards — to read the name Hermes gave
+  /// it, see [HermesSessionService].
+  String? get sessionId;
+
   /// Runs one user turn. Only one turn is in flight at a time — the caller
   /// awaits [HermesAcpRun.done] before the next.
   HermesAcpRun prompt(String text);
@@ -118,6 +123,9 @@ class _HermesAcpSession implements HermesAcpSession {
 
   @override
   bool get isClosed => _closed;
+
+  @override
+  String? get sessionId => _sessionId;
 
   // The turn in flight, or null between turns.
   StreamController<HermesAcpEvent>? _events;

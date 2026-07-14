@@ -296,7 +296,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
               child: ComposerSection(
-                gridName: widget.network.name,
                 messageController: _message,
                 attachments: _attachments,
                 modality: modality,

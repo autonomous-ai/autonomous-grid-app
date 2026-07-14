@@ -66,7 +66,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
         child: Container(
           decoration: const BoxDecoration(
             color: AppGlass.sidebarFill,
-            boxShadow: AppGlass.sidebarShadow,
+            border: Border(right: BorderSide(color: AppPalette.divider)),
           ),
           child: SizedBox(
             width: AppSidebar.width,

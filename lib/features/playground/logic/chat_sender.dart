@@ -38,6 +38,16 @@ class ChatSendStreaming extends ChatSendUpdate {
   final String text;
 }
 
+/// The agent opened a session for this turn — [sessionId] is the agent's own id
+/// for it. The Chat tab holds on to it so it can ask the agent, once it has
+/// answered, what it decided to call the conversation: the agent names its own
+/// sessions, and that name says far more than the user's first line ("hi").
+/// Only the agent sender emits it — an HTTP call to the grid has no session.
+class ChatSendAgentSession extends ChatSendUpdate {
+  const ChatSendAgentSession(this.sessionId);
+  final String sessionId;
+}
+
 /// The request finished; [reply] is the assistant turn to append (text for
 /// chat, media for a generation).
 class ChatSendSuccess extends ChatSendUpdate {
@@ -86,8 +96,9 @@ abstract interface class ChatSender {
 
 /// Wire [ChatSender] through the container so controllers stay testable — a
 /// fake sender (or fake transports underneath) swaps in without a live relay.
-final chatSenderProvider =
-    Provider<ChatSender>((ref) => DefaultChatSender(ref));
+final chatSenderProvider = Provider<ChatSender>(
+  (ref) => DefaultChatSender(ref),
+);
 
 /// Builds the user turn to append before sending. Any attached images are saved
 /// to [outputsDir] and carried on the turn so they show in the user's own
@@ -104,10 +115,9 @@ Future<ChatMessage> buildUserTurn({
   if (attachments.isEmpty) {
     return ChatMessage(role: ChatRole.user, text: text);
   }
-  final media = await saveMediaOutputs(
-    [for (final a in attachments) a.toMediaFile()],
-    outputsDir,
-  );
+  final media = await saveMediaOutputs([
+    for (final a in attachments) a.toMediaFile(),
+  ], outputsDir);
   return ChatMessage(role: ChatRole.user, text: text, media: media);
 }
 
@@ -152,8 +162,9 @@ class DefaultChatSender implements ChatSender {
         final edit = attachments.isNotEmpty;
         return _sendMedia(
           network: network,
-          operation:
-              edit ? MediaOperation.imageEdit : MediaOperation.imageGenerate,
+          operation: edit
+              ? MediaOperation.imageEdit
+              : MediaOperation.imageGenerate,
           payload: edit
               ? imageEditPayload(_lastPrompt(history), attachments)
               : imageGeneratePayload(_lastPrompt(history)),
@@ -183,7 +194,9 @@ class DefaultChatSender implements ChatSender {
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(CliCallKind.http, 'POST $endpoint');
 
-    final (reply, error) = await _ref.read(chatTransportProvider).complete(
+    final (reply, error) = await _ref
+        .read(chatTransportProvider)
+        .complete(
           endpoint: endpoint,
           apiKey: network.relayApiKey,
           model: model,
@@ -218,11 +231,9 @@ class DefaultChatSender implements ChatSender {
     MediaError? failure;
     List<MediaFile> result = const [];
     try {
-      final events = _ref.read(mediaTransportProvider).stream(
-            url: url,
-            apiKey: network.relayApiKey,
-            payload: payload,
-          );
+      final events = _ref
+          .read(mediaTransportProvider)
+          .stream(url: url, apiKey: network.relayApiKey, payload: payload);
       await for (final event in events) {
         switch (event) {
           case MediaProgress(:final progress, :final status):
@@ -248,8 +259,10 @@ class DefaultChatSender implements ChatSender {
       return;
     }
 
-    final saved =
-        await saveMediaOutputs(result, _ref.read(mediaOutputsDirProvider));
+    final saved = await saveMediaOutputs(
+      result,
+      _ref.read(mediaOutputsDirProvider),
+    );
     log.finish(id, exitCode: 200);
     if (saved.isEmpty) {
       yield const ChatSendFailure("The generated files couldn't be read.");

@@ -114,36 +114,108 @@ class _Toolbar extends ConsumerWidget {
         _RefreshButton(onPressed: onRefresh),
         const SizedBox(width: 8),
         MenuAnchor(
+          alignmentOffset: const Offset(-32, 8),
           menuChildren: [
-            MenuItemButton(
-              leadingIcon: const Icon(Icons.extension_outlined, size: 18),
+            _CreateMenuItem(
+              icon: Icons.extension_outlined,
+              label: 'Add a plugin from Git',
               onPressed: () => showAddPluginDialog(context),
-              child: const Text('Add a plugin from Git'),
             ),
-            MenuItemButton(
-              leadingIcon: const Icon(Icons.auto_awesome_outlined, size: 18),
+            _CreateMenuItem(
+              icon: Icons.auto_awesome_outlined,
+              label: 'Write a skill',
               onPressed: () => showNewSkillDialog(context),
-              child: const Text('Write a skill'),
             ),
           ],
-          builder: (context, controller, _) => FilledButton.icon(
-            onPressed: () =>
-                controller.isOpen ? controller.close() : controller.open(),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(104, 34),
-              shape: RoundedRectangleBorder(
+          style: MenuStyle(
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(vertical: 6),
+            ),
+            minimumSize: const WidgetStatePropertyAll(Size(184, 0)),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
+                side: const BorderSide(color: AppPalette.divider),
               ),
             ),
-            label: const Text('Create'),
+          ),
+          builder: (context, controller, _) => _CreateMenuButton(
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CreateMenuButton extends StatelessWidget {
+  const _CreateMenuButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppPalette.accent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(11),
+        onTap: onPressed,
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(11),
+            boxShadow: AppGlass.cardShadow,
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_rounded, size: 17, color: Colors.white),
+              SizedBox(width: 8),
+              Text(
+                'Create',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateMenuItem extends StatelessWidget {
+  const _CreateMenuItem({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuItemButton(
+      onPressed: onPressed,
+      style: const ButtonStyle(
+        padding: WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        ),
+        minimumSize: WidgetStatePropertyAll(Size(184, 40)),
+      ),
+      leadingIcon: Icon(icon, size: 17),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }

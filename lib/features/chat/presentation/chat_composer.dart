@@ -20,7 +20,6 @@ const int maxChatImages = 4;
 class ComposerSection extends StatelessWidget {
   const ComposerSection({
     super.key,
-    required this.gridName,
     required this.messageController,
     required this.attachments,
     required this.modality,
@@ -35,7 +34,6 @@ class ComposerSection extends StatelessWidget {
     required this.onSend,
   });
 
-  final String gridName;
   final TextEditingController messageController;
   final List<MediaAttachment> attachments;
   final PlaygroundModality modality;
@@ -77,7 +75,6 @@ class ComposerSection extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _ContextStrip(gridName: gridName),
               _Attachments(
                 isText: _isText,
                 attachments: attachments,
@@ -102,7 +99,7 @@ class ComposerSection extends StatelessWidget {
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   disabledBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.fromLTRB(18, 15, 18, 9),
+                  contentPadding: const EdgeInsets.fromLTRB(18, 16, 18, 9),
                 ),
               ),
               _Actions(

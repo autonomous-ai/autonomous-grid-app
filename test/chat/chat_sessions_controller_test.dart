@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
+import 'package:grid_app/features/agent/logic/agent_session_title.dart';
 import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
@@ -64,6 +65,20 @@ class _FakeSender implements ChatSender {
   }
 }
 
+/// The agent's own name for a session, handed back the moment it's asked for.
+class _FakeAgentTitle implements AgentSessionTitle {
+  _FakeAgentTitle(this.title);
+
+  final String? title;
+  final asked = <String>[];
+
+  @override
+  Future<String?> waitFor(String sessionId) async {
+    asked.add(sessionId);
+    return title;
+  }
+}
+
 /// A controller wired to a temp-dir store, a fake relay sender and a fake agent
 /// (hermes) sender, so a test can assert which of the two a send was routed to.
 ({
@@ -71,20 +86,24 @@ class _FakeSender implements ChatSender {
   ChatStore store,
   _FakeSender sender,
   _FakeSender agent,
+  _FakeAgentTitle agentTitle,
 })
 _harness(
   Directory dir, {
   required List<ChatSendUpdate> updates,
   bool agentInstalled = false,
+  String? agentName,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
   final agent = _FakeSender(updates);
+  final agentTitle = _FakeAgentTitle(agentName);
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
       chatSenderProvider.overrideWithValue(sender),
       hermesChatSenderProvider.overrideWithValue(agent),
+      agentSessionTitleProvider.overrideWithValue(agentTitle),
       // Keep any saved input images in the temp dir, never the real grid home.
       mediaOutputsDirProvider.overrideWithValue(
         Directory('${dir.path}/outputs'),
@@ -104,7 +123,13 @@ _harness(
     ],
   );
   addTearDown(container.dispose);
-  return (container: container, store: store, sender: sender, agent: agent);
+  return (
+    container: container,
+    store: store,
+    sender: sender,
+    agent: agent,
+    agentTitle: agentTitle,
+  );
 }
 
 void main() {
@@ -411,6 +436,79 @@ void main() {
     // And the chat remembers its project across a reload from disk.
     final reloaded = ChatStore(directory: tmp).loadAll().single;
     expect(reloaded.projectId, project.id);
+  });
+
+  test(
+    'the chat is named by the agent, not by the first thing typed',
+    () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        agentName: 'Kiểm tra thư mục dự án Flutter',
+        updates: [
+          const ChatSendAgentSession('sess-1'),
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+          ),
+        ],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+      // The name lands after the reply, so let the wait for it settle.
+      await pumpEventQueue();
+
+      final state = h.container.read(chatSessionsProvider);
+      final conv = state.conversations.single;
+      expect(h.agentTitle.asked, ['sess-1']);
+      expect(conv.title, 'Kiểm tra thư mục dự án Flutter');
+      // Renaming doesn't move the chat or steal the open one.
+      expect(state.activeId, conv.id);
+      // And the name is on disk, not just on screen.
+      expect(ChatStore(directory: tmp).loadAll().single.title, conv.title);
+    },
+  );
+
+  test('an unnamed session leaves the chat with the name it had', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+    await pumpEventQueue();
+
+    expect(
+      h.container.read(chatSessionsProvider).conversations.single.title,
+      'hi',
+    );
+  });
+
+  test('only the opening exchange names the chat — a later turn never renames '
+      'it under the user', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      agentName: 'Đọc thư mục dự án',
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+    final controller = h.container.read(chatSessionsProvider.notifier);
+
+    await controller.send(network: _credential(), model: 'm', message: 'hi');
+    await controller.send(network: _credential(), model: 'm', message: 'more');
+    await pumpEventQueue();
+
+    expect(h.agentTitle.asked, ['sess-1']);
   });
 
   test('a chat with no project sends no folder — the agent falls back to its '

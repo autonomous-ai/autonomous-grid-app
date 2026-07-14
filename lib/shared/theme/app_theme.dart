@@ -81,16 +81,6 @@ abstract final class AppGlass {
     BoxShadow(color: Color(0x07000000), blurRadius: 3, offset: Offset(0, 1)),
   ];
 
-  static const sidebarShadow = <BoxShadow>[
-    BoxShadow(
-      color: Color(0x16000000),
-      blurRadius: 30,
-      offset: Offset(10, 0),
-      spreadRadius: -22,
-    ),
-    BoxShadow(color: Color(0x0A000000), blurRadius: 1, offset: Offset(1, 0)),
-  ];
-
   static const cardShadow = <BoxShadow>[
     BoxShadow(
       color: Color(0x0F000000),

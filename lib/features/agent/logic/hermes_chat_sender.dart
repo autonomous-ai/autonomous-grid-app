@@ -133,6 +133,10 @@ class HermesChatSender implements ChatSender {
       return;
     }
 
+    // Hand the session's id to the caller: Hermes names its own sessions, and
+    // the Chat tab uses that name for the conversation once it lands.
+    if (session.sessionId case final id?) yield ChatSendAgentSession(id);
+
     yield* _runTurn(session, text, model);
   }
 

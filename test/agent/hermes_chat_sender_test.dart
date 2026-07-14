@@ -49,19 +49,22 @@ class _FakeAcp implements HermesAcpService {
 
   @override
   Future<HermesAcpSession> start({required String workdir}) async {
-    final session = _FakeAcpSession(_turns);
+    final session = _FakeAcpSession(_turns, 'sess-${sessions.length + 1}');
     sessions.add(session);
     return session;
   }
 }
 
 class _FakeAcpSession implements HermesAcpSession {
-  _FakeAcpSession(this._turns);
+  _FakeAcpSession(this._turns, this.sessionId);
 
   final List<List<HermesAcpEvent>> _turns;
   final prompts = <String>[];
   int _turn = 0;
   bool _closed = false;
+
+  @override
+  final String sessionId;
 
   @override
   bool get isClosed => _closed;

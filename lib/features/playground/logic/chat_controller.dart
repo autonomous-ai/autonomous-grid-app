@@ -14,8 +14,9 @@ export 'chat_message.dart' show ChatRole, ChatMessage, ChatMedia, ChatState;
 /// when the dialog closes. It builds the running transcript and delegates the
 /// actual dispatch to [ChatSender], folding each [ChatSendUpdate] into its
 /// state. The persistent, multi-conversation Chat tab shares the same sender.
-final chatControllerProvider =
-    NotifierProvider<ChatController, ChatState>(ChatController.new);
+final chatControllerProvider = NotifierProvider<ChatController, ChatState>(
+  ChatController.new,
+);
 
 class ChatController extends Notifier<ChatState> {
   StreamSubscription<ChatSendUpdate>? _sub;
@@ -46,7 +47,9 @@ class ChatController extends Notifier<ChatState> {
     final history = [...state.messages, userTurn];
     state = ChatState(messages: history, phase: const SendBusy());
 
-    final updates = ref.read(chatSenderProvider).send(
+    final updates = ref
+        .read(chatSenderProvider)
+        .send(
           network: network,
           model: model,
           history: history,
@@ -69,6 +72,10 @@ class ChatController extends Notifier<ChatState> {
             );
           case ChatSendStreaming(:final text):
             state = ChatState(messages: history, phase: SendStreaming(text));
+          // The Playground's transcript is throwaway and has no name, so the
+          // agent's session id is of no use to it.
+          case ChatSendAgentSession():
+            break;
           case ChatSendSuccess(:final reply):
             state = ChatState(messages: [...history, reply]);
           case ChatSendFailure(:final error):

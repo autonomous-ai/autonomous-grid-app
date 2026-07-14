@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agent/logic/agent_routing.dart';
+import '../../agent/logic/agent_session_title.dart';
 import '../../agent/logic/hermes_chat_sender.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../../playground/logic/chat_message.dart';
@@ -72,9 +73,16 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// until its first message, so the choice has to be held here until then.
   String? _draftProjectId;
 
+  /// Naming a chat outlives the send it started in (the agent writes the name
+  /// seconds later), so it has to know when there's no longer a state to write.
+  bool _disposed = false;
+
   @override
   ChatSessionsState build() {
-    ref.onDispose(_cancel);
+    ref.onDispose(() {
+      _disposed = true;
+      _cancel();
+    });
     final conversations = ref.read(chatStoreProvider).loadAll();
     return ChatSessionsState(
       conversations: conversations,
@@ -172,6 +180,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // Fold updates through a stored subscription so [stop] and disposal can
     // cancel an in-flight reply instead of letting it write back later.
     final done = _done = Completer<void>();
+    String? agentSessionId;
     _sub = updates.listen(
       (update) {
         // The conversation may have been deleted mid-flight — drop the update
@@ -185,14 +194,15 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             );
           case ChatSendStreaming(:final text):
             state = _withPhase(SendStreaming(text));
+          case ChatSendAgentSession(:final sessionId):
+            agentSessionId = sessionId;
           case ChatSendSuccess(:final reply):
-            _commit(
-              current.copyWith(
-                updatedAt: DateTime.now(),
-                messages: [...current.messages, reply],
-              ),
-              phase: const SendIdle(),
+            final answered = current.copyWith(
+              updatedAt: DateTime.now(),
+              messages: [...current.messages, reply],
             );
+            _commit(answered, phase: const SendIdle());
+            _adoptAgentName(answered, agentSessionId);
           case ChatSendFailure(:final error):
             state = _withPhase(const SendIdle(), error: error);
         }
@@ -202,6 +212,38 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       cancelOnError: true,
     );
     return done.future;
+  }
+
+  /// Let the agent name the chat, replacing the placeholder taken from the first
+  /// message ("hi") with what the conversation turned out to be about.
+  ///
+  /// The agent names a session once, off its opening exchange, so this only runs
+  /// on the first reply — a later turn (or reopening the chat weeks on) must not
+  /// rename a conversation the user already knows by its name.
+  void _adoptAgentName(Conversation conversation, String? sessionId) {
+    if (sessionId == null || conversation.messages.length != 2) return;
+    unawaited(_rename(conversation.id, sessionId));
+  }
+
+  /// Wait for the name, then swap it in — without re-sorting or stealing focus,
+  /// since by now the user may well be reading a different chat.
+  Future<void> _rename(String conversationId, String sessionId) async {
+    final title = await ref.read(agentSessionTitleProvider).waitFor(sessionId);
+    if (title == null || _disposed) return;
+
+    final current = _find(conversationId);
+    if (current == null || current.title == title) return;
+    final renamed = current.copyWith(title: title);
+    _store.save(renamed);
+    state = ChatSessionsState(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == conversationId) renamed else c,
+      ],
+      activeId: state.activeId,
+      phase: state.phase,
+      error: state.error,
+    );
   }
 
   /// Who answers this turn: the agent for plain text, the grid's chat API for
