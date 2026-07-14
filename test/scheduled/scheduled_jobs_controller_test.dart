@@ -6,7 +6,9 @@ import 'package:grid_app/features/agent/logic/agent_providers.dart';
 import 'package:grid_app/features/scheduled/logic/job_schedule.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_job.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_jobs_controller.dart';
+import 'package:grid_app/features/scheduled/logic/task_power_controller.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
+import 'package:grid_app/infrastructure/cli/hermes_task_policy.dart';
 
 /// A fake scheduler: records what it was asked to write, and hands back a store
 /// the test controls. No `hermes` process is spawned.
@@ -113,6 +115,11 @@ void main() {
           agentInstalled ? cron : null,
         ),
         agentWorkspaceDirProvider.overrideWithValue(workspace),
+        // What a task is allowed to do is written into Hermes's config — point
+        // that at the temp dir, never the real `~/.hermes`.
+        hermesTaskPolicyProvider.overrideWithValue(
+          agentInstalled ? HermesTaskPolicy(home: workspace.path) : null,
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -157,6 +164,61 @@ void main() {
     expect(h.cron.created?.schedule, '0 16 * * 5');
     expect(h.cron.created?.name, 'Weekly review');
     expect(h.cron.created?.workdir, workspace.path);
+  });
+
+  test('what a task is allowed to do is settled before it is saved — there is '
+      'nobody to ask at 8am', () async {
+    final h = harness();
+    await h.container.read(scheduledJobsProvider.future);
+
+    await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: 'Daily digest',
+          prompt: 'Summarise',
+          schedule: const JobSchedule(
+            cadence: JobCadence.everyDay,
+            hour: 8,
+            minute: 0,
+          ),
+        );
+
+    // Hermes's own config now says what the screen said it would.
+    final config = File('${workspace.path}/.hermes/config.yaml');
+    expect(config.existsSync(), isTrue);
+    expect(config.readAsStringSync(), contains('cron_mode: approve'));
+    expect(
+      await h.container.read(taskPowerProvider.future),
+      TaskPower.fullAccess,
+    );
+  });
+
+  test('a task saved with "no commands" leaves the scheduler with no terminal '
+      'at all — the limit is real, not a promise', () async {
+    final h = harness();
+    await h.container.read(scheduledJobsProvider.future);
+
+    await h.container
+        .read(taskPowerProvider.notifier)
+        .set(TaskPower.noCommands);
+    await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: 'Daily digest',
+          prompt: 'Summarise',
+          schedule: const JobSchedule(
+            cadence: JobCadence.everyDay,
+            hour: 8,
+            minute: 0,
+          ),
+        );
+
+    final config = File(
+      '${workspace.path}/.hermes/config.yaml',
+    ).readAsStringSync();
+    expect(config, contains('cron_mode: deny'));
+    expect(config, isNot(contains('terminal')));
+    expect(config, contains('file'), reason: 'it still reads your project');
   });
 
   test(

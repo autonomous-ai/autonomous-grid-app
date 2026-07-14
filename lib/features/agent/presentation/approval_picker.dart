@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/anchored_menu_position.dart';
 import '../logic/agent_permissions.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
@@ -20,6 +21,8 @@ class ApprovalPicker extends ConsumerStatefulWidget {
 }
 
 class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
+  static const _menuSize = Size(340, 292);
+
   final _menu = MenuController();
 
   void _select(AgentApprovalMode mode) {
@@ -27,12 +30,25 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
     _menu.close();
   }
 
+  void _toggleMenu(BuildContext context, MenuController controller) {
+    if (controller.isOpen) {
+      controller.close();
+      return;
+    }
+    controller.open(
+      position: anchoredMenuPosition(
+        context,
+        menuSize: _menuSize,
+        preferAbove: true,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final current = ref.watch(agentApprovalModeProvider);
     return MenuAnchor(
       controller: _menu,
-      alignmentOffset: const Offset(0, -282),
       style: MenuStyle(
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(vertical: 6),
@@ -55,7 +71,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
       ],
       builder: (context, controller, _) => _Trigger(
         mode: current,
-        onTap: () => controller.isOpen ? controller.close() : controller.open(),
+        onTap: () => _toggleMenu(context, controller),
       ),
     );
   }

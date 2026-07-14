@@ -39,11 +39,11 @@ abstract final class AppPalette {
 /// Centralized so every raised surface shares one recipe.
 abstract final class AppSurface {
   /// The sidebar row you're on.
-  static const selectedFill = Color(0x0D000000); // ~5% black
+  static const selectedFill = Color(0x0A000000); // ~4% black
 
   /// The sidebar row under the pointer — lighter than [selectedFill], so hover
   /// never reads as "selected".
-  static const hoverFill = Color(0x08000000); // ~3% black
+  static const hoverFill = Color(0x06000000); // ~2% black
 
   /// A recessed well inside a panel (e.g. the grid list column) — a faint darken
   /// that sets the column back without drawing a hard box around it.
@@ -77,7 +77,7 @@ abstract final class AppSurface {
 /// flat shadows. Kept separate from [AppCard] because these surfaces are chrome,
 /// not dense content cards.
 abstract final class AppGlass {
-  static const sidebarFill = Color(0xEEF5F5F3);
+  static const sidebarFill = Color(0xF2F7F7F5);
   static const surfaceFill = Color(0xFAFFFFFF);
   static const surfaceHoverFill = Color(0xFFFDFDFC);
   static const hair = Color(0x0D000000);

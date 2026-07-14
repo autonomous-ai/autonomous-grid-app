@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
@@ -32,7 +33,24 @@ class GridModelPicker extends ConsumerStatefulWidget {
 }
 
 class _GridModelPickerState extends ConsumerState<GridModelPicker> {
+  static const _menuSize = Size(340, 370);
+
   final _menu = MenuController();
+
+  void _toggleMenu(BuildContext context, MenuController controller) {
+    if (controller.isOpen) {
+      controller.close();
+      return;
+    }
+    controller.open(
+      position: anchoredMenuPosition(
+        context,
+        menuSize: _menuSize,
+        alignEnd: true,
+        preferAbove: true,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +69,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
       ],
       builder: (context, controller, _) => _TriggerButton(
         label: _triggerLabel(widget.currentModelId),
-        onTap: () => controller.isOpen ? controller.close() : controller.open(),
+        onTap: () => _toggleMenu(context, controller),
       ),
     );
   }

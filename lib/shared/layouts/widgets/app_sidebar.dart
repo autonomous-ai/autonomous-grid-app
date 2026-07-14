@@ -64,7 +64,19 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          decoration: const BoxDecoration(color: AppGlass.sidebarFill),
+          decoration: const BoxDecoration(
+            color: AppGlass.sidebarFill,
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                Color(0xFCFAFAF8),
+                AppGlass.sidebarFill,
+                Color(0xEEF4F4F2),
+              ],
+              stops: [0, 0.72, 1],
+            ),
+          ),
           child: SizedBox(
             width: AppSidebar.width,
             child: Column(
@@ -112,10 +124,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                     child: ChatHistoryList(query: _query),
                   ),
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Divider(height: 1),
-                ),
+                const SizedBox(height: 4),
                 const SidebarAccount(),
               ],
             ),
@@ -139,7 +148,7 @@ class _Brand extends StatelessWidget {
     final topInset = Platform.isMacOS ? 32.0 : 12.0;
     return DragToMoveArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, topInset, 12, 14),
+        padding: EdgeInsets.fromLTRB(20, topInset, 12, 15),
         child: Row(
           children: [
             const Expanded(
@@ -149,6 +158,7 @@ class _Brand extends StatelessWidget {
                   color: AppPalette.textPrimary,
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
                 ),
               ),
             ),

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../infrastructure/cli/hermes_task_policy.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/job_suggestions.dart';
 import '../../logic/scheduled_jobs_controller.dart';
+import '../../logic/task_power_controller.dart';
 import 'scheduled_pill_choice.dart';
+import 'task_power_bar.dart';
 
 part 'new_job_dialog_actions.dart';
 part 'new_job_dialog_fields.dart';
@@ -150,15 +153,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                 const SizedBox(height: 12),
                 _TimeRow(time: _time, onPick: _pickTime),
                 const SizedBox(height: 16),
-                Text(
-                  'Runs ${_schedule.describe().toLowerCase()}, on this '
-                  'computer, in your Projects folder.',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.35,
-                    color: AppPalette.textSecondary,
-                  ),
-                ),
+                _WhatItMayDo(schedule: _schedule),
                 const SizedBox(height: 22),
                 _DialogActions(
                   saving: _saving,
@@ -171,6 +166,59 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// When it runs, where — and what it's allowed to do while nobody is watching.
+/// The last part is the one the user can't guess, so it isn't left out.
+class _WhatItMayDo extends ConsumerWidget {
+  const _WhatItMayDo({required this.schedule});
+
+  final JobSchedule schedule;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final power = ref.watch(taskPowerProvider).value;
+    final risky = power == TaskPower.fullAccess;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Runs ${schedule.describe().toLowerCase()}, on this computer, in '
+          'your Projects folder.',
+          style: const TextStyle(
+            fontSize: 12.5,
+            height: 1.35,
+            color: AppPalette.textSecondary,
+          ),
+        ),
+        if (power != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                taskPowerIcon(power),
+                size: 14,
+                color: risky ? AppPalette.warn : AppPalette.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  taskPowerDetail(power),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    color: risky ? AppPalette.warn : AppPalette.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

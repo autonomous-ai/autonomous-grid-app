@@ -6,6 +6,7 @@ import '../../agent/logic/hermes_tool.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'task_delivery.dart';
+import 'task_power_controller.dart';
 
 /// The scheduler seam, or null when the agent isn't installed — there is nothing
 /// to schedule *on* then, and the screen says so instead of failing later.
@@ -78,14 +79,20 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     required String name,
     required String prompt,
     required JobSchedule schedule,
-  }) => _act(
-    (service) => service.create(
-      schedule: schedule.toCron(),
-      prompt: prompt,
-      name: name,
-      workdir: ref.read(agentWorkspaceDirProvider).path,
-    ),
-  );
+  }) async {
+    // Nobody is there to answer for a task that fires at 8am, so what it's
+    // allowed to do is settled here, before it can run at all — and it's what
+    // the screen said it would be.
+    await ref.read(taskPowerProvider.notifier).applyBeforeSaving();
+    return _act(
+      (service) => service.create(
+        schedule: schedule.toCron(),
+        prompt: prompt,
+        name: name,
+        workdir: ref.read(agentWorkspaceDirProvider).path,
+      ),
+    );
+  }
 
   Future<String?> pause(String id) => _act((s) => s.pause(id));
 

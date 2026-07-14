@@ -13,6 +13,7 @@ import 'widgets/job_list.dart';
 import 'widgets/job_suggestion_list.dart';
 import 'widgets/new_job_dialog.dart';
 import 'widgets/scheduler_banner.dart';
+import 'widgets/task_power_bar.dart';
 
 /// The Scheduled screen: work the assistant does on its own, on a timer.
 ///
@@ -36,6 +37,7 @@ class ScheduledView extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SchedulerBanner(),
+          const TaskPowerBar(),
           Expanded(
             child: switch (jobs) {
               AsyncData(:final value) when value.isEmpty => const _NoJobs(),
