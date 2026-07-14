@@ -112,7 +112,7 @@ class _SidebarCastShadow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Positioned(
-      left: AppSidebar.width - 1,
+      left: AppSidebar.width - 14,
       top: 0,
       bottom: 0,
       width: 14,
@@ -123,11 +123,11 @@ class _SidebarCastShadow extends StatelessWidget {
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
               colors: [
-                Color(0x12000000),
-                Color(0x07000000),
                 Colors.transparent,
+                Color(0x07000000),
+                Color(0x12000000),
               ],
-              stops: [0, 0.42, 1],
+              stops: [0, 0.46, 1],
             ),
           ),
         ),
