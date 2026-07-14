@@ -64,7 +64,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
       decoration: const BoxDecoration(
         color: AppGlass.sidebarFill,
         border: Border(right: BorderSide(color: AppPalette.divider)),
-        boxShadow: AppSurface.sidebarShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
