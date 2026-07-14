@@ -52,7 +52,7 @@ class _Steps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -111,7 +111,7 @@ class _Step extends StatelessWidget {
             padding: const EdgeInsets.only(top: 1),
             child: Text(
               text,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 color: AppPalette.textSecondary,
               ),

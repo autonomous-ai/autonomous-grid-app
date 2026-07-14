@@ -65,7 +65,7 @@ class _Clock extends ConsumerWidget {
     final now = ref.watch(overlordClockProvider).asData?.value;
     return Text(
       now == null ? '--:--:--' : _format(now),
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: OverlordTokens.mono,
         fontSize: 13,
         color: AppPalette.textSecondary,

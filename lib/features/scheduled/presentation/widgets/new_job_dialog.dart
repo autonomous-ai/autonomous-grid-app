@@ -112,7 +112,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       elevation: 18,
-      backgroundColor: Colors.white,
+      backgroundColor: AppCard.base,
       surfaceTintColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -200,7 +200,7 @@ class _WhatItMayDo extends ConsumerWidget {
         Text(
           'Runs ${schedule.describe().toLowerCase()}, on this computer, in '
           'your Projects folder.',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12.5,
             height: 1.35,
             color: AppPalette.textSecondary,
@@ -240,7 +240,7 @@ class _DialogTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Text(
+    return Text(
       'New scheduled task',
       style: TextStyle(
         color: AppPalette.textPrimary,

@@ -229,7 +229,7 @@ class _RefreshButton extends StatelessWidget {
     return Tooltip(
       message: 'Refresh',
       child: Material(
-        color: Colors.white,
+        color: AppGlass.surfaceFill,
         borderRadius: BorderRadius.circular(11),
         child: InkWell(
           borderRadius: BorderRadius.circular(11),
@@ -264,7 +264,7 @@ class _SearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppGlass.surfaceFill,
         borderRadius: BorderRadius.circular(14),
         boxShadow: AppGlass.cardShadow,
       ),
@@ -348,7 +348,7 @@ class _NoAgent extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               "This computer isn't set up to answer chats yet, so it has "
               'nothing to extend.',
               textAlign: TextAlign.center,

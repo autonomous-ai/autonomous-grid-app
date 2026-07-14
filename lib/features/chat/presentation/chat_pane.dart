@@ -31,13 +31,13 @@ class _NoGrid extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
+          Icon(
             Icons.forum_outlined,
             size: 40,
             color: AppPalette.textFaint,
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Pick a grid to chat with.',
             style: TextStyle(color: AppPalette.textSecondary),
           ),

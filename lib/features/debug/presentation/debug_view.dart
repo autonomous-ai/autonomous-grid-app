@@ -181,7 +181,7 @@ class _StatusIcon extends StatelessWidget {
         height: 16,
         child: CircularProgressIndicator(strokeWidth: 2),
       ),
-      CliCallStatus.success => const Icon(
+      CliCallStatus.success => Icon(
         Icons.check_circle,
         size: 16,
         color: AppPalette.online,
@@ -262,7 +262,7 @@ class _WhichGridCard extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.terminal, size: 16, color: AppPalette.textFaint),
+              Icon(Icons.terminal, size: 16, color: AppPalette.textFaint),
               const SizedBox(width: 8),
               Text('grid binary', style: theme.textTheme.titleSmall),
               const Spacer(),
@@ -317,7 +317,7 @@ class _WhichGridCard extends ConsumerWidget {
         if (report.gridAvailable) {
           return Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.check_circle,
                 size: 14,
                 color: AppPalette.online,

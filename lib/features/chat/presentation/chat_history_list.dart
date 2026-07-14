@@ -81,7 +81,7 @@ class _ProjectsHeader extends StatelessWidget {
               message: 'Manage projects',
               child: InkWell(
                 onTap: onManage,
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 4),
                   child: Text(
                     'Projects',
@@ -230,7 +230,7 @@ class _AddFirstProjectHint extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Add a folder and chat about the files in it.',
             style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
           ),
@@ -264,7 +264,7 @@ class _Hint extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(indented ? 26 : 10, 4, 10, 6),
       child: Text(
         text,
-        style: const TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
+        style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
       ),
     );
   }

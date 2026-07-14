@@ -285,7 +285,7 @@ class _ModelTile extends ConsumerWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const StatusDot(color: AppPalette.online, size: 7),
+              StatusDot(color: AppPalette.online, size: 7),
               const SizedBox(width: 6),
               Text(
                 'Running',

@@ -127,7 +127,7 @@ class _EnvHeader extends StatelessWidget {
                     color: AppPalette.textFaint,
                   ),
                   const SizedBox(width: 4),
-                  const Text(
+                  Text(
                     'API ACCESS (FOR DEVELOPERS)',
                     style: TextStyle(
                       color: AppPalette.textFaint,
@@ -205,7 +205,7 @@ class EnvVarRow extends StatelessWidget {
                   shown,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppPalette.textPrimary,
                     fontFamily: 'monospace',
                     fontSize: 13,
@@ -214,7 +214,7 @@ class EnvVarRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppPalette.textSecondary,
                     fontSize: 11.5,
                   ),

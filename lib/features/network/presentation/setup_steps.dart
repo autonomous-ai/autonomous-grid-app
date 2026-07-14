@@ -36,7 +36,7 @@ class SetupSteps extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppPalette.textPrimary,
                     fontSize: 13.5,
                     fontWeight: FontWeight.w700,
@@ -92,7 +92,7 @@ class _StepRow extends StatelessWidget {
             padding: const EdgeInsets.only(top: 1),
             child: Text(
               text,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppPalette.textSecondary,
                 fontSize: 12.5,
                 height: 1.4,

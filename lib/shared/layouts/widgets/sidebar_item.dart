@@ -49,16 +49,6 @@ class _SidebarItemState extends State<SidebarItem> {
     final fill = widget.selected
         ? AppSurface.selectedFill
         : (_hovered ? AppSurface.hoverFill : Colors.transparent);
-    final shadow = widget.selected
-        ? const [
-            BoxShadow(
-              color: Color(0x07000000),
-              blurRadius: 8,
-              offset: Offset(0, 1),
-              spreadRadius: -5,
-            ),
-          ]
-        : const <BoxShadow>[];
 
     final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -68,9 +58,9 @@ class _SidebarItemState extends State<SidebarItem> {
         curve: Curves.easeOut,
         margin: const EdgeInsets.symmetric(vertical: 1),
         decoration: BoxDecoration(
+          // Flat, like Codex — the selected row is a soft rounded fill, no lift.
           color: fill,
           borderRadius: radius,
-          boxShadow: shadow,
         ),
         child: Material(
           color: Colors.transparent,
@@ -150,7 +140,7 @@ class SidebarSectionLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 17, 10, 7),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppPalette.textFaint,
           fontSize: 11.2,
           fontWeight: FontWeight.w600,

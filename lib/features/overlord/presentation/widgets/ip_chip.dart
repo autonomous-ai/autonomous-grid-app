@@ -34,7 +34,7 @@ class IpChip extends StatelessWidget {
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: OverlordTokens.mono,
                     fontSize: 11.5,
                     color: AppPalette.textPrimary,
@@ -42,7 +42,7 @@ class IpChip extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 5),
-              const Icon(Icons.copy_outlined,
+              Icon(Icons.copy_outlined,
                   size: 11, color: AppPalette.textFaint),
             ],
           ),

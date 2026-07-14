@@ -149,7 +149,7 @@ class _CatalogTile extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle, size: 16, color: AppPalette.online),
+            Icon(Icons.check_circle, size: 16, color: AppPalette.online),
             const SizedBox(width: 6),
             Text(
               'Downloaded',

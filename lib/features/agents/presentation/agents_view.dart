@@ -110,10 +110,10 @@ class _StatusChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (!tool.runnable) {
-      return const _Chip(label: 'Not available yet', color: AppPalette.offline);
+      return _Chip(label: 'Not available yet', color: AppPalette.offline);
     }
     if (!installed) {
-      return const _Chip(label: 'Not installed', color: AppPalette.offline);
+      return _Chip(label: 'Not installed', color: AppPalette.offline);
     }
     // The version is a nice-to-have: an agent that won't say which build it is
     // still answers chats, so the chip must not wait on it.
@@ -144,7 +144,7 @@ class _Chip extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: AppPalette.textSecondary,
@@ -192,15 +192,15 @@ class _Working extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
+        const SizedBox(
           width: 15,
           height: 15,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        SizedBox(width: 10),
+        const SizedBox(width: 10),
         Text(
           'Installing…',
           style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),

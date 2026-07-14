@@ -197,7 +197,7 @@ class _SetUpThisGrid extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Get this grid running',
             style: TextStyle(
               fontSize: 15,
@@ -206,7 +206,7 @@ class _SetUpThisGrid extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Your grid is empty — no AI model is running on it yet. Set up an '
             'engine on this computer and pick a model, and the grid can answer '
             'questions here and in your other apps.',
@@ -280,7 +280,7 @@ class _TryThisGrid extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Use this grid',
             style: TextStyle(
               fontSize: 15,
@@ -289,7 +289,7 @@ class _TryThisGrid extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Send it a message here, or connect it to your own apps.',
             style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
           ),
@@ -328,7 +328,7 @@ class _NothingServedYet extends StatelessWidget {
     return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: Row(
-        children: const [
+        children: [
           Icon(Icons.cloud_off_outlined, size: 18, color: AppPalette.textFaint),
           SizedBox(width: 12),
           Expanded(
@@ -395,7 +395,7 @@ class _DeleteGridButton extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Divider(height: 1, color: AppPalette.divider),
+        Divider(height: 1, color: AppPalette.divider),
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: deleting ? null : () => _confirmAndDelete(context, ref),

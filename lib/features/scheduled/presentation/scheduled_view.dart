@@ -125,7 +125,7 @@ class _PickOne extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Text(
         'Pick a task to see what it does.',
         style: TextStyle(color: AppPalette.textFaint),
@@ -148,7 +148,7 @@ class _NoJobs extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              Text(
                 'No scheduled tasks yet.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -157,7 +157,7 @@ class _NoJobs extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'A task runs on this computer, reads your Projects folder, and '
                 'leaves you the answer.',
                 textAlign: TextAlign.center,
@@ -194,7 +194,7 @@ class _NoAgent extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               "This computer isn't set up to answer chats yet, so it has "
               'nothing to run a task with.',
               textAlign: TextAlign.center,

@@ -86,7 +86,7 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
         alignment: Alignment.topCenter,
         insetPadding: const EdgeInsets.only(top: 110, left: 24, right: 24),
         elevation: 20,
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.cardBg,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(
@@ -225,7 +225,7 @@ class _GroupLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppPalette.textFaint,
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
@@ -240,7 +240,7 @@ class _NoMatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.symmetric(vertical: 34),
       child: Text(
         'Nothing matches that.',

@@ -59,7 +59,7 @@ class GridCapabilitiesSection extends ConsumerWidget {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          const Text(
+          Text(
             'This grid can',
             style: TextStyle(
               fontFamily: kGridMono,

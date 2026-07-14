@@ -28,27 +28,27 @@ abstract final class OverlordTokens {
 
   // — shared mono text styles, sized to the dashboard's density —
 
-  static const cardTitle = TextStyle(
+  static TextStyle get cardTitle => TextStyle(
     fontFamily: mono,
     fontSize: 14,
     fontWeight: FontWeight.w700,
     color: AppPalette.textPrimary,
   );
 
-  static const sublabel = TextStyle(
+  static TextStyle get sublabel => TextStyle(
     fontFamily: mono,
     fontSize: 11,
     letterSpacing: 0.6,
     color: AppPalette.textFaint,
   );
 
-  static const meta = TextStyle(
+  static TextStyle get meta => TextStyle(
     fontFamily: mono,
     fontSize: 11.5,
     color: AppPalette.textSecondary,
   );
 
-  static const processLine = TextStyle(
+  static TextStyle get processLine => TextStyle(
     fontFamily: mono,
     fontSize: 11,
     color: AppPalette.textFaint,

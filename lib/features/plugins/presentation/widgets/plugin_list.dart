@@ -17,7 +17,7 @@ class PluginList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (plugins.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No plugins match that.',
           style: TextStyle(color: AppPalette.textFaint),

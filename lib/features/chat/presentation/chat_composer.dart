@@ -77,10 +77,12 @@ class ComposerSection extends StatelessWidget {
           ),
         ],
         LiquidGlass(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           fill: AppGlass.surfaceFill,
           shadow: AppSurface.composerShadow,
-          showBorder: false,
+          showBorder: true,
+          borderColor: AppGlass.lift,
+          borderWidth: 1.5,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

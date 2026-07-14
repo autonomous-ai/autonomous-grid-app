@@ -23,7 +23,7 @@ class PillChoice extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = selected ? Colors.white : AppPalette.textSecondary;
     return Material(
-      color: selected ? AppPalette.accent : Colors.white,
+      color: selected ? AppPalette.accent : AppGlass.surfaceFill,
       borderRadius: BorderRadius.circular(11),
       child: InkWell(
         borderRadius: BorderRadius.circular(11),

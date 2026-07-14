@@ -207,7 +207,7 @@ class OtherAppPanel extends StatelessWidget {
           Text(
             'Use a model your grid serves (e.g. $model). Every model on every '
             'machine answers at this one endpoint.',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppPalette.textFaint,
               fontSize: 12,
               height: 1.45,
@@ -264,7 +264,7 @@ class _MediaSkillCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppPalette.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -279,7 +279,7 @@ class _MediaSkillCard extends StatelessWidget {
             padding: const EdgeInsets.only(left: 24, right: 8, top: 2),
             child: Text(
               note,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppPalette.textFaint,
                 fontSize: 11.5,
                 height: 1.35,
@@ -366,7 +366,7 @@ class _ApplyBlock extends StatelessWidget {
           Text(
             'Grid can write this connection into $name for you, so it uses this '
             'grid as its model — no files to edit (a backup is kept).',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppPalette.textSecondary,
               fontSize: 12.5,
               height: 1.4,

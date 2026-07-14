@@ -58,7 +58,7 @@ class _NoAgent extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               "This computer isn't set up to answer chats yet, so there's "
               'nothing for a bot to answer with.',
               textAlign: TextAlign.center,

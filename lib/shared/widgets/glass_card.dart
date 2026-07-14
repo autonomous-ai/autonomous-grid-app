@@ -112,8 +112,8 @@ class GlassCard extends StatelessWidget {
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: style == GlassCardStyle.hero
-          ? const [AppCard.tint18, AppCard.tint10, Colors.transparent]
-          : const [AppCard.tint10, Colors.transparent],
+          ? [AppCard.tint18, AppCard.tint10, Colors.transparent]
+          : [AppCard.tint10, Colors.transparent],
       stops: style == GlassCardStyle.hero
           ? const [0.0, 0.3, 0.66]
           : const [0.0, 0.6],
@@ -128,7 +128,7 @@ class _Aura extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const IgnorePointer(
+    return IgnorePointer(
       child: SizedBox(
         width: 300,
         height: 300,
@@ -154,7 +154,7 @@ class _TopHairline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const IgnorePointer(
+    return IgnorePointer(
       child: SizedBox(
         height: 1,
         child: DecoratedBox(

@@ -18,7 +18,7 @@ class _DeliverRow extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Send the answer to',
           style: TextStyle(
             fontSize: 12.5,
@@ -137,13 +137,13 @@ class _TimeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Text('At', style: TextStyle(color: AppPalette.textSecondary)),
+        Text('At', style: TextStyle(color: AppPalette.textSecondary)),
         const SizedBox(width: 12),
         OutlinedButton.icon(
           onPressed: onPick,
           style: OutlinedButton.styleFrom(
             foregroundColor: AppPalette.accent,
-            side: const BorderSide(color: AppPalette.divider),
+            side: BorderSide(color: AppPalette.divider),
             minimumSize: const Size(0, 34),
             padding: const EdgeInsets.symmetric(horizontal: 14),
             shape: const StadiumBorder(),

@@ -59,7 +59,7 @@ class _HistoryLabel extends StatelessWidget {
     if (window == null) return const SizedBox.shrink();
     return Text(
       '${window!.inSeconds}s history',
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: OverlordTokens.mono,
         fontSize: 11,
         color: AppPalette.textFaint,

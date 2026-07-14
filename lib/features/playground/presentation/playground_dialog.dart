@@ -329,7 +329,7 @@ class _LocalTestToggle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
       child: Row(
         children: [
-          const Icon(Icons.bolt_outlined, size: 18, color: AppPalette.online),
+          Icon(Icons.bolt_outlined, size: 18, color: AppPalette.online),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

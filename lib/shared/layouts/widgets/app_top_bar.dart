@@ -29,20 +29,20 @@ class AppTopBar extends ConsumerWidget {
     return DragToMoveArea(
       child: SizedBox(
         height: height,
-        child: DecoratedBox(
-          decoration: const BoxDecoration(color: AppPalette.windowBg),
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16, right: 18),
-            child: Row(
-              children: [
-                const Spacer(),
-                const _StatusPill(child: HostingSummary()),
-                if (grid != null) ...[
-                  const SizedBox(width: 8),
-                  _CurrentGridMenu(grid: grid),
-                ],
+        // Seamless with the content, like Codex — no fill, no border, no blur.
+        // The pills simply float on the pane; the bar is just their row and the
+        // window's drag handle.
+        child: Padding(
+          padding: const EdgeInsets.only(left: 16, right: 18),
+          child: Row(
+            children: [
+              const Spacer(),
+              const _StatusPill(child: HostingSummary()),
+              if (grid != null) ...[
+                const SizedBox(width: 8),
+                _CurrentGridMenu(grid: grid),
               ],
-            ),
+            ],
           ),
         ),
       ),
@@ -59,8 +59,9 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppGlass.surfaceFill,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppGlass.hair),
         boxShadow: AppGlass.cardShadow,
       ),
       child: Padding(
@@ -124,7 +125,7 @@ class _CurrentGridMenuState extends ConsumerState<_CurrentGridMenu> {
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(vertical: 6),
         ),
-        backgroundColor: const WidgetStatePropertyAll(Colors.white),
+        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: const WidgetStatePropertyAll(8),
         minimumSize: const WidgetStatePropertyAll(Size(_menuWidth, 0)),
@@ -205,7 +206,7 @@ class _GridMenuContent extends StatelessWidget {
                 Size(_CurrentGridMenuState._menuWidth, 42),
               ),
             ),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 14),
               child: Row(
                 children: [
@@ -238,7 +239,7 @@ class _GridMenuHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.fromLTRB(14, 8, 14, 7),
       child: Text(
         'Switch grid',
@@ -308,7 +309,7 @@ class _GridMenuRow extends ConsumerWidget {
                     grid.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppPalette.textPrimary,
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
@@ -319,7 +320,7 @@ class _GridMenuRow extends ConsumerWidget {
                     _gridMeta(grid, nodes: nodes, models: models),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppPalette.textFaint,
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,

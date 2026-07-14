@@ -189,7 +189,7 @@ class _StarterContent extends StatelessWidget {
           starter.title,
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13.5,
             height: 1.12,
             fontWeight: FontWeight.w700,

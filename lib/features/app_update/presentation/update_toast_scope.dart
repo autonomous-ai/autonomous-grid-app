@@ -122,7 +122,7 @@ class _UpdateToast extends StatelessWidget {
                               details.message,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppPalette.textPrimary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -172,7 +172,7 @@ class _UpdateToast extends StatelessWidget {
           color: AppPalette.accent,
           message: 'Checking for updates...',
         ),
-        UpdateUpToDate() => const _ToastDetails(
+        UpdateUpToDate() => _ToastDetails(
           icon: Icons.check_circle_outline_rounded,
           color: AppPalette.online,
           message: "You're on the latest version.",
@@ -189,7 +189,7 @@ class _UpdateToast extends StatelessWidget {
           color: Theme.of(context).colorScheme.error,
           message: "Couldn't check for updates: $message",
         ),
-        UpdateUnsupported() => const _ToastDetails(
+        UpdateUnsupported() => _ToastDetails(
           icon: Icons.open_in_new_rounded,
           color: AppPalette.warn,
           message: "This copy of Grid can't update itself.",

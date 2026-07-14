@@ -107,7 +107,7 @@ class _ActionsState extends ConsumerState<_Actions> {
   ButtonStyle _outlinedStyle() => OutlinedButton.styleFrom(
     minimumSize: const Size(106, 34),
     shape: const StadiumBorder(),
-    side: const BorderSide(color: AppPalette.divider),
+    side: BorderSide(color: AppPalette.divider),
     textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
   );
 }

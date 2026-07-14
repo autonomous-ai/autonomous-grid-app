@@ -214,7 +214,7 @@ class _EngineBusyElsewhere extends ConsumerWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.dns, color: AppPalette.online, size: 20),
+                Icon(Icons.dns, color: AppPalette.online, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(

@@ -74,7 +74,7 @@ class _MetricChartPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: text,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: OverlordTokens.mono,
           fontSize: 8,
           color: AppPalette.textFaint,

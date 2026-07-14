@@ -132,7 +132,7 @@ class _Honesty extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 2),
                       child: Icon(
                         Icons.info_outline_rounded,
@@ -184,7 +184,7 @@ class _Step extends StatelessWidget {
             backgroundColor: AppPalette.cardBg,
             child: Text(
               '$number',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 color: AppPalette.textSecondary,

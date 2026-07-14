@@ -93,7 +93,7 @@ class _Shortcut extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         child: Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppPalette.textFaint,
             fontSize: 11.5,
             fontWeight: FontWeight.w600,

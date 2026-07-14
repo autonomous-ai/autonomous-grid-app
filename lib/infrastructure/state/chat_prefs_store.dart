@@ -1,20 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
 import '../cli/agent_event.dart';
 
 /// The chat's remembered selections — the grid and the model the user last used,
-/// and how much they let the agent do — so reopening the app restores them
-/// instead of resetting to defaults. The grid and model are null until first
-/// picked; [approval] always has a value, and its default is the cautious one.
+/// how much they let the agent do, and which theme they chose — so reopening the
+/// app restores them instead of resetting to defaults. The grid and model are
+/// null until first picked; [approval] and [themeMode] always have a value.
 class ChatPrefs {
   const ChatPrefs({
     this.networkId,
     this.model,
     this.approval = AgentApprovalMode.ask,
+    this.themeMode = ThemeMode.light,
   });
 
   /// No remembered selection yet — the state before the first launch that saves.
@@ -28,26 +30,34 @@ class ChatPrefs {
   /// and one who never touched it stays on [AgentApprovalMode.ask].
   final AgentApprovalMode approval;
 
+  /// The Light/Dark/System choice. Defaults to [ThemeMode.light] — the app ships
+  /// light, and a user who never touched it stays there.
+  final ThemeMode themeMode;
+
   ChatPrefs copyWith({
     String? networkId,
     String? model,
     AgentApprovalMode? approval,
+    ThemeMode? themeMode,
   }) => ChatPrefs(
     networkId: networkId ?? this.networkId,
     model: model ?? this.model,
     approval: approval ?? this.approval,
+    themeMode: themeMode ?? this.themeMode,
   );
 
   factory ChatPrefs.fromJson(Map<String, dynamic> json) => ChatPrefs(
     networkId: json['networkId'] as String?,
     model: json['model'] as String?,
     approval: _approvalFrom(json['approval']),
+    themeMode: _themeModeFrom(json['themeMode']),
   );
 
   Map<String, Object?> toJson() => {
     'networkId': networkId,
     'model': model,
     'approval': approval.name,
+    'themeMode': themeMode.name,
   };
 
   /// A missing or unrecognised value reads as "ask" — a hand-edited file must
@@ -59,15 +69,25 @@ class ChatPrefs {
     return AgentApprovalMode.ask;
   }
 
+  /// A missing or unrecognised value reads as [ThemeMode.light] — the app's
+  /// shipped default, so a corrupt/hand-edited file never lands somewhere odd.
+  static ThemeMode _themeModeFrom(Object? raw) {
+    for (final mode in ThemeMode.values) {
+      if (mode.name == raw) return mode;
+    }
+    return ThemeMode.light;
+  }
+
   @override
   bool operator ==(Object other) =>
       other is ChatPrefs &&
       other.networkId == networkId &&
       other.model == model &&
-      other.approval == approval;
+      other.approval == approval &&
+      other.themeMode == themeMode;
 
   @override
-  int get hashCode => Object.hash(networkId, model, approval);
+  int get hashCode => Object.hash(networkId, model, approval, themeMode);
 }
 
 /// Persists [ChatPrefs] as `~/.grid/app/chat_prefs.json`. App-owned (the CLI
@@ -131,9 +151,19 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
   void setApproval(AgentApprovalMode approval) =>
       _update(state.copyWith(approval: approval));
 
+  void setThemeMode(ThemeMode mode) =>
+      _update(state.copyWith(themeMode: mode));
+
   void _update(ChatPrefs next) {
     if (next == state) return;
     state = next;
     ref.read(chatPrefsStoreProvider).save(next);
   }
 }
+
+/// The remembered Light/Dark/System choice, as its own read-only slice so the app
+/// root can watch just the theme without rebuilding on every chat-pref change.
+/// Defaults to [ThemeMode.light].
+final themeModeProvider = Provider<ThemeMode>(
+  (ref) => ref.watch(chatPrefsProvider).themeMode,
+);

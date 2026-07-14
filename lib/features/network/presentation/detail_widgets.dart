@@ -32,7 +32,7 @@ class DetailSection extends StatelessWidget {
             children: [
               Text(
                 title.toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppPalette.textFaint,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -91,7 +91,7 @@ class AddressRow extends StatelessWidget {
                   value,
                   maxLines: maxLines,
                   overflow: maxLines == null ? null : TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppPalette.textPrimary,
                     fontFamily: 'monospace',
                     fontSize: 13,
@@ -100,7 +100,7 @@ class AddressRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppPalette.textSecondary,
                     fontSize: 11.5,
                   ),
@@ -131,7 +131,7 @@ class MetaRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppPalette.textSecondary,
               fontSize: 13,
             ),
@@ -141,7 +141,7 @@ class MetaRow extends StatelessWidget {
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppPalette.textPrimary,
                 fontSize: 13,
               ),
@@ -326,7 +326,7 @@ class GuideLabel extends StatelessWidget {
         children: [
           Text(
             text,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppPalette.textPrimary,
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -337,7 +337,7 @@ class GuideLabel extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 caption!,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppPalette.textFaint,
                   fontSize: 11.5,
                   height: 1.3,
@@ -371,7 +371,7 @@ class CodeBlock extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
             child: SelectableText(
               code,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppPalette.textPrimary,
                 fontFamily: 'monospace',
                 fontSize: 12.5,

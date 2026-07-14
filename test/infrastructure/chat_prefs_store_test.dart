@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
@@ -63,6 +64,22 @@ void main() {
 
       expect(ChatPrefsStore(file: file).load().approval, AgentApprovalMode.ask);
     });
+
+    test('the chosen theme survives a restart', () {
+      ChatPrefsStore(
+        file: file,
+      ).save(const ChatPrefs(themeMode: ThemeMode.dark));
+
+      expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.dark);
+    });
+
+    test('an unset or hand-edited theme reads as Light — the shipped default', () {
+      expect(ChatPrefs.empty.themeMode, ThemeMode.light);
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync('{"themeMode": "solarized"}');
+
+      expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.light);
+    });
   });
 
   group('chatPrefsProvider', () {
@@ -85,6 +102,16 @@ void main() {
     test('a fresh controller restores what a prior session saved', () {
       ChatPrefsStore(file: file).save(const ChatPrefs(networkId: 'grid-9'));
       expect(container().read(chatPrefsProvider).networkId, 'grid-9');
+    });
+
+    test('themeModeProvider reflects the setter and defaults to Light', () {
+      final c = container();
+      expect(c.read(themeModeProvider), ThemeMode.light);
+
+      c.read(chatPrefsProvider.notifier).setThemeMode(ThemeMode.system);
+      expect(c.read(themeModeProvider), ThemeMode.system);
+      // Persisted, not just in memory.
+      expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.system);
     });
   });
 }

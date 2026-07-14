@@ -89,7 +89,7 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'This grid works like one AI provider. Pick the app you want to use '
           'it in — Grid can fill in the connection for you.',
           style: TextStyle(
@@ -204,7 +204,7 @@ class _AppChip extends StatelessWidget {
                 Container(
                   width: 7,
                   height: 7,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                       color: AppPalette.online, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 6),
