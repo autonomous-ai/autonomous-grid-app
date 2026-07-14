@@ -11,13 +11,37 @@ import '../../widgets/anchored_menu_position.dart';
 import '../shell_state.dart';
 
 const _accountMenuWidth = 232.0;
-const _accountMenuSize = Size(_accountMenuWidth, 200);
+
+// The menu hangs *above* the account row, and it's positioned by subtracting its
+// own height from the anchor — so a height that doesn't match what's drawn leaves
+// the menu floating in mid-air (or sitting on top of the row). These are the same
+// numbers the rows below are built from, and [_accountMenuHeight] adds up exactly
+// the rows that are actually rendered — so adding or removing an entry can't put
+// the menu back in the air.
+const _menuRowHeight = 44.0;
+const _menuDividerHeight = 11.0;
+const _menuVersionHeight = 26.0;
+const _menuPadding = 6.0;
 
 /// The menu entries that aren't a section — kept apart from `ShellSection.name`
 /// so a section can never collide with one.
 const _settingsValue = 'settings';
 const _updatesValue = 'check_updates';
 const _logoutValue = 'logout';
+
+/// What the menu will actually measure, given what it's about to show: Settings,
+/// a divider, the update row (not on platforms without an updater), the version
+/// (only once it's read), a divider, Sign out.
+Size _accountMenuSize({required bool updater, required bool version}) => Size(
+  _accountMenuWidth,
+  _menuPadding * 2 +
+      _menuRowHeight +
+      _menuDividerHeight +
+      (updater ? _menuRowHeight : 0) +
+      (version ? _menuVersionHeight : 0) +
+      _menuDividerHeight +
+      _menuRowHeight,
+);
 
 /// The sidebar's foot: who's signed in, and the menu that hangs off it — check
 /// for updates, the app version, sign out.
@@ -35,7 +59,11 @@ class SidebarAccount extends ConsumerStatefulWidget {
 class _SidebarAccountState extends ConsumerState<SidebarAccount> {
   final _menu = MenuController();
 
-  void _toggleMenu(BuildContext context, MenuController controller) {
+  void _toggleMenu(
+    BuildContext context,
+    MenuController controller,
+    Size menuSize,
+  ) {
     if (controller.isOpen) {
       controller.close();
       return;
@@ -43,7 +71,7 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     controller.open(
       position: anchoredMenuPosition(
         context,
-        menuSize: _accountMenuSize,
+        menuSize: menuSize,
         margin: 8,
         gap: 8,
         preferAbove: true,
@@ -60,40 +88,50 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     final version = ref.watch(appVersionProvider).asData?.value;
     final status = ref.watch(appUpdateStatusProvider).asData?.value;
     final available = status is UpdateAvailable ? status : null;
+    final menuSize = _accountMenuSize(
+      updater: updater.isSupported,
+      version: version != null,
+    );
 
-    return MenuAnchor(
-      controller: _menu,
-      style: MenuStyle(
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 6),
+    // The padding sits *outside* the anchor on purpose: MenuAnchor measures its
+    // whole subtree, so a padded wrapper would make it hang off a box 15px taller
+    // than the pill you can see — and the menu would float above nothing.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 9),
+      child: MenuAnchor(
+        controller: _menu,
+        style: MenuStyle(
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(vertical: _menuPadding),
+          ),
+          backgroundColor: const WidgetStatePropertyAll(Colors.white),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          elevation: const WidgetStatePropertyAll(8),
+          minimumSize: const WidgetStatePropertyAll(Size(_accountMenuWidth, 0)),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
         ),
-        backgroundColor: const WidgetStatePropertyAll(Colors.white),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(8),
-        minimumSize: const WidgetStatePropertyAll(Size(_accountMenuWidth, 0)),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-      ),
-      menuChildren: [
-        _AccountMenuContent(
-          version: version,
-          updateAvailable: available,
-          updaterSupported: updater.isSupported,
-          onSelected: (value) => _onSelected(context, ref, updater, value),
-        ),
-      ],
-      builder: (context, controller, _) => Tooltip(
-        message: 'Account',
-        child: Semantics(
-          button: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _toggleMenu(context, controller),
-            child: _AccountRow(
-              name: name,
-              email: email,
-              updateAvailable: available != null,
+        menuChildren: [
+          _AccountMenuContent(
+            version: version,
+            updateAvailable: available,
+            updaterSupported: updater.isSupported,
+            onSelected: (value) => _onSelected(context, ref, updater, value),
+          ),
+        ],
+        builder: (context, controller, _) => Tooltip(
+          message: 'Account',
+          child: Semantics(
+            button: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _toggleMenu(context, controller, menuSize),
+              child: _AccountRow(
+                name: name,
+                email: email,
+                updateAvailable: available != null,
+              ),
             ),
           ),
         ),
@@ -229,7 +267,20 @@ class _AccountMenuItem extends StatelessWidget {
       style: ButtonStyle(
         padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         overlayColor: WidgetStatePropertyAll(AppSurface.hoverFill),
-        minimumSize: const WidgetStatePropertyAll(Size(_accountMenuWidth, 44)),
+        // Pinned, not merely a minimum: the menu is positioned by adding these
+        // heights up, so a row that quietly grows — or shrinks — moves the whole
+        // menu. `visualDensity` is the one that bites: Flutter defaults it to
+        // *compact* on desktop, which takes 8px off every row (44 → 36) and left
+        // the menu hanging 32px above the pill on macOS while looking right in a
+        // test running as Android.
+        visualDensity: VisualDensity.standard,
+        minimumSize: const WidgetStatePropertyAll(
+          Size(_accountMenuWidth, _menuRowHeight),
+        ),
+        maximumSize: const WidgetStatePropertyAll(
+          Size(double.infinity, _menuRowHeight),
+        ),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -263,14 +314,17 @@ class _AccountVersion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
-      child: Text(
-        'Version $version',
-        style: const TextStyle(
-          fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          color: AppPalette.textFaint,
+    return SizedBox(
+      height: _menuVersionHeight,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 2, 18, 8),
+        child: Text(
+          'Version $version',
+          style: const TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textFaint,
+          ),
         ),
       ),
     );
@@ -282,14 +336,20 @@ class _AccountMenuDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 5),
-      child: Divider(height: 1),
+    return const SizedBox(
+      height: _menuDividerHeight,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 5),
+        child: Divider(height: 1),
+      ),
     );
   }
 }
 
 /// The clickable face of the account menu: initial, name, email.
+///
+/// The pill and nothing else — it *is* the anchor the menu hangs off, so any
+/// padding around it belongs to the parent (see [SidebarAccount.build]).
 class _AccountRow extends StatelessWidget {
   const _AccountRow({
     required this.name,
@@ -304,45 +364,38 @@ class _AccountRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 9),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(11),
-          color: const Color(0x08000000),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x06000000),
-              blurRadius: 10,
-              offset: Offset(0, 2),
-              spreadRadius: -7,
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 7, 7, 7),
-          child: Row(
-            children: [
-              _Avatar(initial: initial, updateAvailable: updateAvailable),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  email,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppPalette.textSecondary,
-                    fontSize: 12.5,
-                  ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(11),
+        color: const Color(0x08000000),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+            spreadRadius: -7,
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 7, 7, 7),
+        child: Row(
+          children: [
+            _Avatar(initial: initial, updateAvailable: updateAvailable),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                email,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppPalette.textSecondary,
+                  fontSize: 12.5,
                 ),
               ),
-              const Icon(
-                Icons.more_horiz,
-                size: 18,
-                color: AppPalette.textFaint,
-              ),
-            ],
-          ),
+            ),
+            const Icon(Icons.more_horiz, size: 18, color: AppPalette.textFaint),
+          ],
         ),
       ),
     );
