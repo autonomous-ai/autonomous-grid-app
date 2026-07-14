@@ -98,7 +98,7 @@ class _NewTaskButton extends StatelessWidget {
   const _NewTaskButton();
 
   /// What the filter pills use (`PillChoice.height`), so the toolbar lines up.
-  static const double _height = 34;
+  static const double _height = 44;
 
   @override
   Widget build(BuildContext context) {
