@@ -92,8 +92,13 @@ class _Workspace extends ConsumerWidget {
   }
 }
 
+/// The list column's main action. Sized to the pills and the search box under it
+/// — one toolbar, one height.
 class _NewTaskButton extends StatelessWidget {
   const _NewTaskButton();
+
+  /// What the filter pills use (`PillChoice.height`), so the toolbar lines up.
+  static const double _height = 34;
 
   @override
   Widget build(BuildContext context) {
@@ -101,8 +106,12 @@ class _NewTaskButton extends StatelessWidget {
       onPressed: () => showNewJobDialog(context),
       icon: const Icon(Icons.add_rounded, size: 18),
       style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(33),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        // Without this, Material pads the button out to a 48px tap target and
+        // the capsule floats in a box half again its own height.
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        minimumSize: const Size.fromHeight(_height),
+        maximumSize: const Size.fromHeight(_height),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
         textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
       ),
       label: const Text('New task'),

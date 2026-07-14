@@ -94,6 +94,17 @@ void main() {
     );
   });
 
+  test('"settings" finds Settings — a user who forgot whether the thing they '
+      'want is called Grids or This computer types that', () {
+    final groups = search('settin');
+
+    expect(
+      groups.single.items.whereType<OpenSettingsCommand>(),
+      isNotEmpty,
+      reason: 'the setup screens now live behind one door, and it has a name',
+    );
+  });
+
   test(
     'a project offers a chat started inside it — the point of a project',
     () {

@@ -11,7 +11,13 @@ import '../../widgets/anchored_menu_position.dart';
 import '../shell_state.dart';
 
 const _accountMenuWidth = 232.0;
-const _accountMenuSize = Size(_accountMenuWidth, 246);
+const _accountMenuSize = Size(_accountMenuWidth, 200);
+
+/// The menu entries that aren't a section — kept apart from `ShellSection.name`
+/// so a section can never collide with one.
+const _settingsValue = 'settings';
+const _updatesValue = 'check_updates';
+const _logoutValue = 'logout';
 
 /// The sidebar's foot: who's signed in, and the menu that hangs off it — check
 /// for updates, the app version, sign out.
@@ -102,17 +108,15 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     String value,
   ) async {
     _menu.close();
-    if (value == 'check_updates') {
+    if (value == _updatesValue) {
       await updater.checkForUpdates();
       return;
     }
-    for (final section in kAccountSections) {
-      if (value == section.name) {
-        ref.read(shellSectionProvider.notifier).select(section);
-        return;
-      }
+    if (value == _settingsValue) {
+      ref.read(shellSectionProvider.notifier).select(kDefaultSettingsSection);
+      return;
     }
-    if (value != 'logout') return;
+    if (value != _logoutValue) return;
     final engineRunning =
         ref.read(providerRunControllerProvider) is ProviderRunActive;
     if (!context.mounted) return;
@@ -172,15 +176,14 @@ class _AccountMenuContent extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // The setup screens: which grids you can talk to, what this computer
-          // runs, how to point other apps at it. You touch them once, so they
-          // live here rather than taking up the sidebar.
-          for (final section in kAccountSections)
-            _AccountMenuItem(
-              icon: section.icon,
-              label: section.label,
-              onPressed: () => onSelected(section.name),
-            ),
+          // One door to the setup screens — grids, this computer, Telegram, the
+          // guide. They were four loose menu entries; a menu is a bad place to
+          // keep things you have to come back to.
+          _AccountMenuItem(
+            icon: Icons.settings_outlined,
+            label: 'Settings',
+            onPressed: () => onSelected(_settingsValue),
+          ),
           const _AccountMenuDivider(),
           if (updaterSupported)
             _AccountMenuItem(
@@ -191,14 +194,14 @@ class _AccountMenuContent extends StatelessWidget {
               label: updateAvailable == null
                   ? 'Check for updates'
                   : 'Update to ${updateAvailable?.version ?? 'the latest'}',
-              onPressed: () => onSelected('check_updates'),
+              onPressed: () => onSelected(_updatesValue),
             ),
           if (version != null) _AccountVersion(version: version!),
           const _AccountMenuDivider(),
           _AccountMenuItem(
             icon: Icons.logout,
             label: 'Sign out',
-            onPressed: () => onSelected('logout'),
+            onPressed: () => onSelected(_logoutValue),
           ),
         ],
       ),

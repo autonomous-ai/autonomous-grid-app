@@ -6,23 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
-import '../../features/chat/presentation/chat_pane.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
-import '../../features/messaging/presentation/telegram_view.dart';
 import '../../features/network/logic/create_network_controller.dart';
-import '../../features/network/presentation/how_to_use_view.dart';
-import '../../features/network/presentation/networks_pane.dart';
 import '../../features/node_setup/logic/auto_host_controller.dart';
-import '../../features/plugins/presentation/plugins_view.dart';
-import '../../features/projects/presentation/projects_view.dart';
-import '../../features/provider_node/presentation/provider_view.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
-import '../../features/scheduled/presentation/scheduled_view.dart';
 import '../theme/app_theme.dart';
+import 'settings_pane.dart';
 import 'shell_state.dart';
 import 'widgets/app_sidebar.dart';
 import 'widgets/app_top_bar.dart';
 import 'widgets/grid_provision_banner.dart';
+import 'widgets/section_view.dart';
 import 'widgets/session_expired_banner.dart';
 
 /// The main app frame: the sidebar on the left, the open section on the right.
@@ -97,8 +91,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         autofocus: true,
         child: Scaffold(
           backgroundColor: AppPalette.windowBg,
-          body: section == ShellSection.grids
-              ? const NetworksPane(fullScreen: true)
+          // The setup screens live together in Settings, which takes the window
+          // — the sidebar is for the work you came to do, not the plumbing.
+          body: section.isSettings
+              ? SettingsPane(section: section)
               : const _MainShellBody(),
         ),
       ),
@@ -167,21 +163,11 @@ class _SidebarCastShadow extends StatelessWidget {
   }
 }
 
-/// The pane the sidebar drives — chat, or one of the three screens behind it.
+/// The pane the sidebar drives — chat, or one of the screens behind it.
 class _SectionView extends ConsumerWidget {
   const _SectionView();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return switch (ref.watch(shellSectionProvider)) {
-      ShellSection.chat => const ChatPane(),
-      ShellSection.scheduled => const ScheduledView(),
-      ShellSection.plugins => const PluginsView(),
-      ShellSection.projects => const ProjectsView(),
-      ShellSection.telegram => const TelegramView(),
-      ShellSection.grids => const NetworksPane(),
-      ShellSection.engines => const ProviderView(),
-      ShellSection.guide => const HowToUseView(),
-    };
-  }
+  Widget build(BuildContext context, WidgetRef ref) =>
+      SectionView(section: ref.watch(shellSectionProvider));
 }

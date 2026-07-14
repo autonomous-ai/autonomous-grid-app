@@ -186,7 +186,13 @@ class _ChatRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.read(chatSessionsProvider.notifier);
-    final selected = ref.watch(chatSessionsProvider).activeId == chat.id;
+    // Highlighted only while you're actually *in* the chat: on Plugins or
+    // Scheduled the open screen is the one to mark, and two lit rows in one rail
+    // would leave you guessing which page you're looking at. The chat stays the
+    // one you come back to — it just doesn't claim to be on screen.
+    final selected =
+        ref.watch(chatSessionsProvider).activeId == chat.id &&
+        ref.watch(shellSectionProvider) == ShellSection.chat;
 
     return Padding(
       padding: EdgeInsets.only(left: indented ? 16 : 0),

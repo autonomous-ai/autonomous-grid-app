@@ -134,6 +134,8 @@ void runCommand(WidgetRef ref, CommandItem item) {
       shell.select(ShellSection.scheduled);
     case AddProjectCommand():
       addProjectFromPicker(ref);
+    case OpenSettingsCommand():
+      shell.select(kDefaultSettingsSection);
     case GoToCommand(:final section):
       shell.select(section);
   }

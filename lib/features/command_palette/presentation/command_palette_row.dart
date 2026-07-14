@@ -110,5 +110,6 @@ IconData commandIcon(CommandItem item) => switch (item) {
   NewChatCommand() => Icons.edit_outlined,
   OpenTaskCommand() => Icons.schedule_rounded,
   AddProjectCommand() => Icons.create_new_folder_outlined,
+  OpenSettingsCommand() => Icons.settings_outlined,
   GoToCommand(:final section) => section.icon,
 };

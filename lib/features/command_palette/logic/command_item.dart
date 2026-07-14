@@ -64,6 +64,16 @@ class AddProjectCommand extends CommandItem {
   String get label => 'Add a project';
 }
 
+/// Open Settings — the screens you set up once, now behind one door. Its own
+/// command because "settings" is what a user types when they can't remember
+/// whether the thing they want is called Grids, Telegram or This computer.
+class OpenSettingsCommand extends CommandItem {
+  const OpenSettingsCommand();
+
+  @override
+  String get label => 'Settings';
+}
+
 /// Jump to one of the app's screens.
 class GoToCommand extends CommandItem {
   const GoToCommand(this.section);
@@ -114,6 +124,7 @@ List<CommandGroup> searchCommands({
     const NewChatCommand(),
     for (final project in projects) NewChatCommand(project: project),
     const AddProjectCommand(),
+    const OpenSettingsCommand(),
     for (final section in ShellSection.values) GoToCommand(section),
   ];
   final taskItems = [for (final job in tasks) OpenTaskCommand(job)];
