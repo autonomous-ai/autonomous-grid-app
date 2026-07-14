@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../logic/installer_controller.dart';
-import '../../logic/installer_rows.dart';
 
 /// The installer's title, its "x of N steps" counter, and a progress bar.
 ///
@@ -24,7 +23,6 @@ class InstallerHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final download = ref.watch(installerDownloadProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -35,7 +33,7 @@ class InstallerHeader extends ConsumerWidget {
           children: [
             Expanded(
               child: Text(
-                _subtitle(download?.pct),
+                _subtitle,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -67,16 +65,15 @@ class InstallerHeader extends ConsumerWidget {
     _ => 'Setting up your AI',
   };
 
-  /// One honest line about what is happening. While a model downloads, the
-  /// percentage goes here — it's the one step long enough for a user to wonder
-  /// whether anything is happening at all.
-  String _subtitle(double? downloadPct) => switch (state) {
+  /// One honest line about what is happening. The heavy model download is no
+  /// longer part of this screen — it runs in the background once the user is in —
+  /// so setup here is quick, and "done" means ready to chat, not yet sharing.
+  String get _subtitle => switch (state) {
     InstallerFailed() =>
       'You can try again, or go in and use an engine someone else shares.',
-    InstallerDone() => 'Your computer is ready and shared on your grid.',
-    InstallerRunning() when downloadPct != null =>
-      'Downloading the model — ${downloadPct.toStringAsFixed(0)}% done.',
-    InstallerRunning() => 'This takes a few minutes. You can leave it running.',
+    InstallerDone() => "You're all set — your model keeps downloading in the "
+        'background.',
+    InstallerRunning() => 'This only takes a moment.',
     _ => 'Grid will set this computer up for you.',
   };
 }

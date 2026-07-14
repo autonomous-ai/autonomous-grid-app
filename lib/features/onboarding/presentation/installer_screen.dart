@@ -10,8 +10,9 @@ import 'widgets/installer_header.dart';
 import 'widgets/installer_step_row.dart';
 
 /// First-run setup, as a screen the user watches rather than a chore hidden in
-/// a banner: make them a grid, install the engine, download a model, install the
-/// assistant, and put it all on their grid.
+/// a banner: make sure they have a grid, install the engine, and install the
+/// assistant — enough to start chatting. The model (several GB) is not here; it
+/// downloads in the background afterwards, with its progress in the top bar.
 ///
 /// It starts on its own — a new user has nothing to decide — and says at every
 /// moment which step is running, what's left, and what went wrong.

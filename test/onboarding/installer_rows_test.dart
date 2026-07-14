@@ -59,6 +59,12 @@ void main() {
       final c = _container(canHost: false);
       expect(c.read(installerNeededProvider), isFalse);
     });
+
+    test('missing only the model does not hold the user at the installer — it '
+        'downloads in the background', () {
+      final c = _container(engine: true, agent: true);
+      expect(c.read(installerNeededProvider), isFalse);
+    });
   });
 
   group('rows read the machine, not a flag', () {
@@ -67,22 +73,24 @@ void main() {
 
       expect(_statusOf(c, InstallerStage.engine), InstallStatus.done);
       expect(_statusOf(c, InstallerStage.agent), InstallStatus.done);
-      // Nothing has downloaded the model yet.
-      expect(_statusOf(c, InstallerStage.model), InstallStatus.pending);
     });
 
     test('a fresh machine has every install step pending', () {
       final c = _container();
 
       expect(_statusOf(c, InstallerStage.engine), InstallStatus.pending);
-      expect(_statusOf(c, InstallerStage.model), InstallStatus.pending);
       expect(_statusOf(c, InstallerStage.agent), InstallStatus.pending);
     });
 
-    test('the checklist is the five stages, in order', () {
+    test('the checklist is the three stages, in order — no model, no share', () {
       final rows = _container().read(installerRowsProvider);
 
       expect(rows.map((r) => r.stage), InstallerStage.values);
+      expect(InstallerStage.values, [
+        InstallerStage.grid,
+        InstallerStage.engine,
+        InstallerStage.agent,
+      ]);
     });
   });
 }

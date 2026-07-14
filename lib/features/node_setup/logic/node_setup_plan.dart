@@ -59,6 +59,7 @@ String _fallbackModelSpec({bool? isMacOS}) => (isMacOS ?? Platform.isMacOS)
 List<SetupStep> buildSetupPlan(
   NodeCapabilities caps, {
   bool includeMedia = kMediaSetupEnabled,
+  bool includeModel = true,
   bool? isMacOS,
 }) {
   final steps = <SetupStep>[];
@@ -73,17 +74,12 @@ List<SetupStep> buildSetupPlan(
     ));
   }
 
-  if (!caps.hasModels) {
-    final model = caps.recommendedModel;
-    final spec = model?.label ?? _fallbackModelSpec(isMacOS: isMacOS);
-    final display = model?.repoFile ?? spec;
-    steps.add(SetupStep(
-      action: SetupAction.pullModel,
-      title: 'Download a model',
-      detail: 'A ready-to-use AI model ($display) — can be several GB.',
-      args: ['pull', spec],
-      isDownload: true,
-    ));
+  // The first-run installer sets [includeModel] false and downloads the model in
+  // the background instead (see BackgroundModelController), so the user reaches
+  // chat without waiting several GB. The manual Engines-tab setup keeps it.
+  if (includeModel) {
+    final model = modelPullStep(caps, isMacOS: isMacOS);
+    if (model != null) steps.add(model);
   }
 
   // The agent is what lets chat use tools, so a first run installs it too — no
@@ -120,4 +116,24 @@ List<SetupStep> buildSetupPlan(
   }
 
   return steps;
+}
+
+/// The model-download step for [caps], or null when a model is already on disk.
+///
+/// Shared by [buildSetupPlan] and the background downloader so both pull the
+/// same model: the CLI catalog's pick ([NodeCapabilities.recommendedModel]),
+/// falling back to [_fallbackModelSpec] so a node never ends up with an engine
+/// but no model.
+SetupStep? modelPullStep(NodeCapabilities caps, {bool? isMacOS}) {
+  if (caps.hasModels) return null;
+  final model = caps.recommendedModel;
+  final spec = model?.label ?? _fallbackModelSpec(isMacOS: isMacOS);
+  final display = model?.repoFile ?? spec;
+  return SetupStep(
+    action: SetupAction.pullModel,
+    title: 'Download a model',
+    detail: 'A ready-to-use AI model ($display) — can be several GB.',
+    args: ['pull', spec],
+    isDownload: true,
+  );
 }

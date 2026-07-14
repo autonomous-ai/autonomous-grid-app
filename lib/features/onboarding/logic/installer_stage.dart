@@ -6,11 +6,8 @@
 enum InstallerStage {
   grid('Set up your grid', 'Your own private space for AI.'),
   engine('Install the AI engine', 'The software that runs AI on this computer.'),
-  model('Download an AI model', "The AI itself. It's a few GB, so this is the "
-      'longest step.'),
   agent('Install the assistant', 'The part that can use tools and act on what '
-      'you ask.'),
-  share('Share this computer', 'Puts your AI on your grid, so you can use it.');
+      'you ask.');
 
   const InstallerStage(this.title, this.detail);
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../features/network/logic/grid_overview_provider.dart';
+import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../theme/app_theme.dart';
@@ -37,6 +38,7 @@ class AppTopBar extends ConsumerWidget {
           child: Row(
             children: [
               const Spacer(),
+              const _ModelDownloadPill(),
               const _StatusPill(child: HostingSummary()),
               if (grid != null) ...[
                 const SizedBox(width: 8),
@@ -46,6 +48,94 @@ class AppTopBar extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The background model download, shown in the top bar so a user who went
+/// straight into chat can see their own model arriving. Nothing when idle or
+/// done; on a failure it becomes a tap-through to the Engines tab to retry.
+class _ModelDownloadPill extends ConsumerWidget {
+  const _ModelDownloadPill();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return switch (ref.watch(backgroundModelControllerProvider)) {
+      ModelDownloadRunning(:final progress) => Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: _StatusPill(child: _DownloadingLabel(pct: progress?.pct)),
+      ),
+      ModelDownloadFailed() => Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Tooltip(
+          message: 'Open Engines to try again',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => ref
+                .read(shellSectionProvider.notifier)
+                .select(ShellSection.engines),
+            child: const _StatusPill(child: _DownloadFailedLabel()),
+          ),
+        ),
+      ),
+      _ => const SizedBox.shrink(),
+    };
+  }
+}
+
+class _DownloadingLabel extends StatelessWidget {
+  const _DownloadingLabel({required this.pct});
+
+  final double? pct;
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = this.pct;
+    final label = pct == null
+        ? 'Downloading model…'
+        : 'Downloading model · ${pct.round()}%';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DownloadFailedLabel extends StatelessWidget {
+  const _DownloadFailedLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final error = Theme.of(context).colorScheme.error;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.error_outline_rounded, size: 14, color: error),
+        const SizedBox(width: 6),
+        Text(
+          'Model download failed',
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: error,
+          ),
+        ),
+      ],
     );
   }
 }

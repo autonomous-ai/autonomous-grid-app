@@ -149,4 +149,20 @@ void main() {
     final pull = plan.firstWhere((s) => s.action == SetupAction.pullModel);
     expect(pull.args, ['pull', 'qwen36-35b-a3b-mtp']);
   });
+
+  test('the first-run installer plan leaves the model out — it downloads in '
+      'the background so the user gets in sooner', () {
+    final plan = buildSetupPlan(_caps(), includeModel: false);
+    expect(_actions(plan), [
+      SetupAction.installLlama,
+      SetupAction.installAgent,
+    ]);
+  });
+
+  test('modelPullStep is null once a model is on disk, present otherwise', () {
+    expect(modelPullStep(_caps(models: 1)), isNull);
+    final step = modelPullStep(_caps());
+    expect(step?.action, SetupAction.pullModel);
+    expect(step?.args, ['pull', 'qwen36-35b-a3b-mtp']);
+  });
 }

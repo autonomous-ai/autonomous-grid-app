@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_sync_controller.dart';
-import '../../node_setup/logic/auto_host_controller.dart';
 import '../../node_setup/logic/node_capabilities.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../node_setup/logic/node_setup_plan.dart';
@@ -47,8 +46,10 @@ final installerControllerProvider =
       InstallerController.new,
     );
 
-/// Drives first-run setup end to end: make sure the user has a grid, install
-/// what this computer is missing (engine → model → assistant), then share it.
+/// Drives first-run setup up to the point the user can chat: make sure they have
+/// a grid, then install the engine and the assistant. The model is deliberately
+/// left out — it's several GB, so it downloads in the background afterwards (see
+/// BackgroundModelController), and sharing waits for it there too.
 ///
 /// It orchestrates rather than re-implements: each phase is an existing
 /// controller, so the installer screen and the Engines tab can never drift into
@@ -57,8 +58,10 @@ class InstallerController extends Notifier<InstallerState> {
   @override
   InstallerState build() => const InstallerIdle();
 
-  /// Runs the whole sequence. Stops at the first step that fails — a later step
-  /// depends on the one before it (no engine, nothing to share).
+  /// Runs the sequence up to a usable app. Stops at the first step that fails —
+  /// a later step depends on the one before it (no grid, nothing to set up on).
+  /// Sharing and the model download are left to the background once the user is
+  /// in, so this finishes as soon as the engine and assistant are installed.
   Future<void> run() async {
     if (state is InstallerRunning) return;
     state = const InstallerRunning();
@@ -69,12 +72,6 @@ class InstallerController extends Notifier<InstallerState> {
     }
 
     if (!await _installWhatsMissing()) {
-      state = const InstallerFailed();
-      return;
-    }
-
-    await ref.read(autoHostControllerProvider.notifier).startIfReady();
-    if (ref.read(autoHostControllerProvider) is AutoHostFailed) {
       state = const InstallerFailed();
       return;
     }
@@ -101,11 +98,13 @@ class InstallerController extends Notifier<InstallerState> {
     return ref.read(selectedNetworkProvider) != null;
   }
 
-  /// Installs only the gaps: the engine, a model, the assistant. A machine that
-  /// already has one of them skips it (the row shows as done).
+  /// Installs the gaps that must be in place before the user goes in: the engine
+  /// and the assistant. The model is excluded ([buildSetupPlan] with
+  /// `includeModel: false`) — it downloads in the background. A machine that
+  /// already has a piece skips it (the row shows as done).
   Future<bool> _installWhatsMissing() async {
     final caps = await ref.read(nodeCapabilitiesProvider.future);
-    final plan = buildSetupPlan(caps);
+    final plan = buildSetupPlan(caps, includeModel: false);
     if (plan.isEmpty) return true;
 
     await ref.read(nodeSetupControllerProvider.notifier).run(plan);

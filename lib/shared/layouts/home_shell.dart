@@ -8,6 +8,7 @@ import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/node_setup/logic/auto_host_controller.dart';
+import '../../features/node_setup/logic/background_model_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
@@ -37,6 +38,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _resumeSharing();
+      // The heavy model download isn't part of first-run setup any more: kick it
+      // off in the background so the user can chat while it lands, with its
+      // progress in the top bar. No-ops when there's nothing to download.
+      unawaited(
+        ref.read(backgroundModelControllerProvider.notifier).startIfNeeded(),
+      );
       // Scheduled tasks run whether the app is open or not, and Hermes just
       // leaves the result in a file. Start looking for those results, so they
       // land in Chat instead of sitting somewhere the user never looks.
