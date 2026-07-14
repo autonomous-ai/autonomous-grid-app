@@ -2,6 +2,16 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Grid (local)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "macos",
+      "toolArgs": [
+        "--dart-define=GRID_APPCAST_URL=https://github.com/autonomous-ecm/autonomous-grid-app-downloads/releases/latest/download/appcast.xml"
+      ]
+    },
+    {
       "name": "Grid (prod)",
       "request": "launch",
       "type": "dart",

@@ -57,6 +57,11 @@ Future<void> _runTurn(
         stdout.write(text);
       case HermesAcpActivity(:final activity):
         stdout.writeln('\n[tool ${activity.label} ${activity.status.name}]');
+      case HermesAcpPermission(:final request):
+        // The probe's prompts don't escalate; if one ever does, cancel it so the
+        // turn doesn't stall waiting on an answer that never comes.
+        stdout.writeln('\n[permission requested: ${request.summary} — cancelling]');
+        session.answerPermission(request.id, null);
     }
   });
   try {
