@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../logic/agent_skill.dart';
 import '../../logic/skill_author.dart';
+import '../../logic/skill_generator.dart';
 
 /// Writes a new skill: a name, one line saying *when* to use it, and the
 /// instructions themselves.
@@ -42,6 +43,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
   final _instructions = TextEditingController();
   bool _saving = false;
   bool _loading = false;
+  bool _drafting = false;
 
   bool get _isEdit => widget.existing != null;
 
@@ -81,9 +83,34 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
   bool get _canSave =>
       !_saving &&
       !_loading &&
+      !_drafting &&
       skillSlug(_name.text).isNotEmpty &&
       _description.text.trim().isNotEmpty &&
       _instructions.text.trim().isNotEmpty;
+
+  /// Fill the form from a rough idea in the Name field, using whatever model can
+  /// already answer. The user edits the draft before saving — it's a head start,
+  /// not a commit.
+  Future<void> _draftWithAi() async {
+    final idea = _name.text.trim();
+    if (idea.isEmpty) {
+      _say('Type a rough idea in Name first — even a few words.');
+      return;
+    }
+
+    setState(() => _drafting = true);
+    try {
+      final draft = await ref.read(skillGeneratorProvider).generate(idea);
+      if (!mounted) return;
+      _name.text = draft.name;
+      _description.text = draft.description;
+      _instructions.text = draft.instructions;
+    } on SkillGenerationException catch (error) {
+      if (mounted) _say(error.message);
+    } finally {
+      if (mounted) setState(() => _drafting = false);
+    }
+  }
 
   Future<void> _save() {
     final existing = widget.existing;
@@ -160,6 +187,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
             children: [
               TextField(
                 controller: _name,
+                enabled: !_drafting,
                 autofocus: !_isEdit,
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
@@ -167,9 +195,14 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
                   hintText: 'Weekly report',
                 ),
               ),
+              if (!_isEdit) ...[
+                const SizedBox(height: 8),
+                _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
+              ],
               const SizedBox(height: 14),
               TextField(
                 controller: _description,
+                enabled: !_drafting,
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
                   labelText: 'When should the assistant use it?',
@@ -181,7 +214,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
               const SizedBox(height: 14),
               TextField(
                 controller: _instructions,
-                enabled: !_loading,
+                enabled: !_loading && !_drafting,
                 minLines: 5,
                 maxLines: 10,
                 onChanged: (_) => setState(() {}),
@@ -208,7 +241,9 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          onPressed: (_saving || _drafting)
+              ? null
+              : () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         FilledButton(
@@ -222,5 +257,35 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
   String get _saveLabel {
     if (_saving) return 'Saving…';
     return _isEdit ? 'Save changes' : 'Create skill';
+  }
+}
+
+/// Drafts the whole form from the name using AI — a head start for someone who
+/// knows what they want but not how to phrase it as a skill.
+class _AiDraftButton extends StatelessWidget {
+  const _AiDraftButton({required this.busy, required this.onPressed});
+
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Tooltip(
+        message: 'Fill in the rest from the name using AI',
+        child: TextButton.icon(
+          onPressed: busy ? null : onPressed,
+          icon: busy
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.auto_awesome_rounded, size: 16),
+          label: Text(busy ? 'Drafting…' : 'Draft with AI'),
+        ),
+      ),
+    );
   }
 }
