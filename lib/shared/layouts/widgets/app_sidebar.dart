@@ -91,6 +91,9 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                     child: const ChatHistoryList(),
                   ),
                 ),
+                // A full-width hairline sets the account off as the rail's foot,
+                // the way Codex separates its signed-in user from the list above.
+                const Divider(height: 1, thickness: 1),
                 const SizedBox(height: 4),
                 const SidebarAccount(),
               ],
