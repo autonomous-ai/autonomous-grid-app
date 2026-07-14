@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum ShellSection {
   chat(Icons.chat_bubble_outline_rounded, 'Chat'),
   scheduled(Icons.schedule_rounded, 'Scheduled'),
+  agents(Icons.smart_toy_outlined, 'Agents'),
   plugins(Icons.extension_outlined, 'Plugins'),
   projects(Icons.folder_open_rounded, 'Projects'),
   telegram(Icons.send_rounded, 'Telegram'),
@@ -33,7 +34,13 @@ enum ShellSection {
 /// Chat isn't among them (you get there by starting a chat or opening one), and
 /// neither is Projects — your projects *are* the rail below, each holding its
 /// chats; this section is the screen that manages them, opened from that header.
-const kSidebarSections = [ShellSection.scheduled, ShellSection.plugins];
+/// Agents before Plugins: which assistant does the work, then the tools you give
+/// it.
+const kSidebarSections = [
+  ShellSection.scheduled,
+  ShellSection.agents,
+  ShellSection.plugins,
+];
 
 /// What Settings lists, in order — the screens you set up once.
 ///

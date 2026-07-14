@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../features/agents/presentation/agents_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
 import '../../../features/debug/presentation/debug_view.dart';
 import '../../../features/messaging/presentation/telegram_view.dart';
@@ -25,6 +26,7 @@ class SectionView extends StatelessWidget {
     return switch (section) {
       ShellSection.chat => const ChatPane(),
       ShellSection.scheduled => const ScheduledView(),
+      ShellSection.agents => const AgentsView(),
       ShellSection.plugins => const PluginsView(),
       ShellSection.projects => const ProjectsView(),
       ShellSection.telegram => const TelegramView(),
