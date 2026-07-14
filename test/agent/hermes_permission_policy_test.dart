@@ -133,14 +133,21 @@ void main() {
       );
     });
 
-    test('"allow in this chat" is the session grant, never the forever one', () {
-      expect(
-        optionIdForChoice(AgentPermissionChoice.allowForChat, _commandOptions),
-        'allow_session',
-        reason: 'allow_always persists in Hermes config with no way to undo it '
-            'from this app, so it is never handed out',
-      );
-    });
+    test(
+      '"allow in this chat" is the session grant, never the forever one',
+      () {
+        expect(
+          optionIdForChoice(
+            AgentPermissionChoice.allowForChat,
+            _commandOptions,
+          ),
+          'allow_session',
+          reason:
+              'allow_always persists in Hermes config with no way to undo it '
+              'from this app, so it is never handed out',
+        );
+      },
+    );
 
     test('a file edit has no "in this chat" grant to give', () {
       expect(

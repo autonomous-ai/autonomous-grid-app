@@ -27,9 +27,10 @@ class AgentPermissionCard extends ConsumerWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: AppPalette.windowBg,
+        color: Colors.white,
         border: Border.all(color: AppPalette.accent.withValues(alpha: 0.45)),
         borderRadius: BorderRadius.circular(14),
+        boxShadow: AppGlass.shadow,
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -37,9 +38,7 @@ class AgentPermissionCard extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _Header(
-            icon: isCommand
-                ? Icons.terminal_rounded
-                : Icons.edit_note_rounded,
+            icon: isCommand ? Icons.terminal_rounded : Icons.edit_note_rounded,
             title: isCommand
                 ? 'Run this on your computer?'
                 : 'Change this file?',
@@ -52,38 +51,50 @@ class AgentPermissionCard extends ConsumerWidget {
                 child: isCommand
                     ? _Command(command: request.command ?? '')
                     : _Diff(
-                        lines: buildEditDiff(request.oldText, request.newText ?? ''),
+                        lines: buildEditDiff(
+                          request.oldText,
+                          request.newText ?? '',
+                        ),
                       ),
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 10, 10),
-            child: Row(
-              children: [
-                _Countdown(
-                  timeout: ref.watch(agentPermissionTimeoutProvider),
-                  style: theme.textTheme.bodySmall,
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () =>
-                      controller.answer(AgentPermissionChoice.refuse),
-                  child: const Text("Don't allow"),
-                ),
-                if (request.canAllowForChat)
+          DecoratedBox(
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: AppPalette.divider)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 9, 10, 10),
+              child: Row(
+                children: [
+                  // Flexible, so a narrow window shortens the countdown line
+                  // instead of pushing the buttons off the edge.
+                  Flexible(
+                    child: _Countdown(
+                      timeout: ref.watch(agentPermissionTimeoutProvider),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   TextButton(
                     onPressed: () =>
-                        controller.answer(AgentPermissionChoice.allowForChat),
-                    child: const Text('Allow in this chat'),
+                        controller.answer(AgentPermissionChoice.refuse),
+                    child: const Text("Don't allow"),
                   ),
-                const SizedBox(width: 4),
-                FilledButton(
-                  onPressed: () =>
-                      controller.answer(AgentPermissionChoice.allowOnce),
-                  child: const Text('Allow once'),
-                ),
-              ],
+                  if (request.canAllowForChat)
+                    TextButton(
+                      onPressed: () =>
+                          controller.answer(AgentPermissionChoice.allowForChat),
+                      child: const Text('Allow in this chat'),
+                    ),
+                  const SizedBox(width: 4),
+                  FilledButton(
+                    onPressed: () =>
+                        controller.answer(AgentPermissionChoice.allowOnce),
+                    child: const Text('Allow once'),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -158,6 +169,7 @@ class _Command extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppPalette.divider),
       ),
       child: SelectableText(
         command,
@@ -186,6 +198,7 @@ class _Diff extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppPalette.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -237,6 +250,8 @@ class _Countdown extends StatelessWidget {
       duration: timeout,
       builder: (context, seconds, _) => Text(
         'No answer in ${seconds.ceil()}s means no',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: style?.copyWith(color: AppPalette.textFaint),
       ),
     );

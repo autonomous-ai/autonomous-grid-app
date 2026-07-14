@@ -41,6 +41,12 @@ List<DiffLine> buildEditDiff(
     tail++;
   }
 
+  // Nothing between the common opening and closing lines: no change at all, so
+  // no context lines either — they'd read as a change that isn't there.
+  if (head == before.length - tail && head == after.length - tail) {
+    return const [];
+  }
+
   final lines = <DiffLine>[
     for (var i = (head - context).clamp(0, head); i < head; i++)
       DiffLine(DiffLineKind.context, before[i]),
@@ -59,10 +65,7 @@ List<DiffLine> buildEditDiff(
   if (lines.length <= maxLines) return lines;
   final shown = lines.take(maxLines).toList();
   final hidden = lines.length - maxLines;
-  return [
-    ...shown,
-    DiffLine(DiffLineKind.context, '… and $hidden more lines'),
-  ];
+  return [...shown, DiffLine(DiffLineKind.context, '… and $hidden more lines')];
 }
 
 /// Splits into lines without inventing a trailing empty one for the final

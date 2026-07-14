@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/command_log.dart';
@@ -176,12 +178,19 @@ class HermesChatSender implements ChatSender {
   }
 
   /// Run one turn: stream the answer into the bubble as it arrives, mirror tool
-  /// steps into the activity feed, and end with the finished reply.
+  /// steps into the activity feed, put the agent's permission requests to the
+  /// user, and end with the finished reply.
+  ///
+  /// Driven by an explicit subscription rather than `await for` inside an
+  /// `async*`: a generator suspended on `await for` isn't torn down until its
+  /// source emits again, so Stop would leave the agent running (and a permission
+  /// card pinned) until it happened to say something. Here, cancelling the
+  /// stream kills the turn there and then.
   Stream<ChatSendUpdate> _runTurn(
     HermesAcpSession session,
     String text,
     String model,
-  ) async* {
+  ) {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
     final permissions = _ref.read(agentPermissionProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
@@ -189,43 +198,57 @@ class HermesChatSender implements ChatSender {
 
     final run = session.prompt(text);
     final answer = StringBuffer();
+    final updates = StreamController<ChatSendUpdate>();
     var settled = false;
-    try {
-      await for (final event in run.events) {
+
+    final events = run.events.listen(
+      (event) {
         switch (event) {
           case HermesAcpActivity(:final activity):
             activityLog.upsert(activity);
           case HermesAcpPermission(:final request):
-            // The agent has stopped and is waiting on the user; the answer goes
-            // straight back down the same session.
+            // The agent has stopped and is waiting on the user; their answer
+            // goes straight back down the same session.
             permissions.ask(
               request,
               (optionId) => session.answerPermission(request.id, optionId),
             );
           case HermesAcpMessage(:final text):
             answer.write(text);
-            yield ChatSendStreaming(answer.toString());
+            updates.add(ChatSendStreaming(answer.toString()));
         }
-      }
-      settled = true;
-    } finally {
-      // Nothing is waiting on an answer once the turn is over — a card left
-      // pinned in the chat would be a button that does nothing.
+      },
+      onDone: () async {
+        await run.done;
+        settled = true;
+        // Nothing is waiting on an answer once the turn is over — a card left
+        // pinned in the chat would be a button that does nothing.
+        permissions.clear();
+
+        final reply = answer.toString().trim();
+        log.finish(logId, error: reply.isEmpty ? 'no output' : null);
+        updates.add(
+          reply.isEmpty
+              ? const ChatSendFailure("The agent didn't return an answer.")
+              : ChatSendSuccess(
+                  ChatMessage(role: ChatRole.assistant, text: reply),
+                ),
+        );
+        await updates.close();
+      },
+    );
+
+    // The user hit Stop (or left the chat). A clean finish lands here too — via
+    // the close above, with [settled] already set — and must *not* tear the
+    // session down: the next turn reuses it.
+    updates.onCancel = () async {
+      await events.cancel();
+      if (settled) return;
       permissions.clear();
-      // Only kill on an early exit (the stream was cancelled); a clean finish
-      // must not tear down the session — the next turn reuses it.
-      if (!settled) run.kill();
-    }
-    await run.done;
-
-    final reply = answer.toString().trim();
-    log.finish(logId, error: reply.isEmpty ? 'no output' : null);
-
-    if (reply.isNotEmpty) {
-      yield ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: reply));
-      return;
-    }
-    yield const ChatSendFailure("The agent didn't return an answer.");
+      run.kill();
+      log.finish(logId, error: 'stopped');
+    };
+    return updates.stream;
   }
 
   /// Ensure `~/.hermes` points at [network] with [model] (idempotent, only

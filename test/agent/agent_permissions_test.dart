@@ -72,16 +72,21 @@ void main() {
     expect(steps.single.status, AgentActivityStatus.failed);
   });
 
-  test('no answer at all is a no — the card never becomes a dead button', () async {
-    final container = _container(timeout: const Duration(milliseconds: 10));
-    final answers = <String?>[];
+  test(
+    'no answer at all is a no — the card never becomes a dead button',
+    () async {
+      final container = _container(timeout: const Duration(milliseconds: 10));
+      final answers = <String?>[];
 
-    container.read(agentPermissionProvider.notifier).ask(_command(), answers.add);
-    await Future<void>.delayed(const Duration(milliseconds: 30));
+      container
+          .read(agentPermissionProvider.notifier)
+          .ask(_command(), answers.add);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
 
-    expect(answers, ['deny']);
-    expect(container.read(agentPermissionProvider), isNull);
-  });
+      expect(answers, ['deny']);
+      expect(container.read(agentPermissionProvider), isNull);
+    },
+  );
 
   test('when the turn ends the ask goes away, unanswered', () {
     final container = _container();

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agent/logic/agent_permissions.dart';
 import 'package:grid_app/features/agent/logic/agent_providers.dart';
 import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
@@ -84,8 +86,84 @@ class _FakeAcpSession implements HermesAcpSession {
   }
 
   @override
+  void answerPermission(Object requestId, String? optionId) {}
+
+  @override
   Future<void> close() async => _closed = true;
 }
+
+/// A session whose turn stays open, so a test can drive events into a live turn
+/// — a permission request stalls the agent until it's answered, which a canned
+/// list of events can't express.
+class _LiveAcp implements HermesAcpService {
+  final session = _LiveAcpSession();
+
+  @override
+  Future<HermesAcpSession> start({required String workdir}) async => session;
+}
+
+class _LiveAcpSession implements HermesAcpSession {
+  final events = StreamController<HermesAcpEvent>();
+  final _done = Completer<void>();
+
+  /// Every permission answered, as (request id, chosen option).
+  final answers = <(Object, String?)>[];
+
+  @override
+  final String sessionId = 'sess-live';
+
+  @override
+  bool get isClosed => false;
+
+  @override
+  HermesAcpRun prompt(String text) =>
+      HermesAcpRun(events: events.stream, done: _done.future, kill: _end);
+
+  @override
+  void answerPermission(Object requestId, String? optionId) =>
+      answers.add((requestId, optionId));
+
+  /// The turn ends: what the agent was going to say, then done.
+  void finish(String reply) {
+    events.add(HermesAcpMessage(reply));
+    _end();
+  }
+
+  /// Killing the turn settles it, as closing the real process does.
+  void _end() {
+    if (_done.isCompleted) return;
+    events.close();
+    _done.complete();
+  }
+
+  @override
+  Future<void> close() async => _end();
+}
+
+/// Wait until the turn is actually live — the sender writes Hermes's config and
+/// starts the session first, and that's file I/O, which a drained microtask
+/// queue says nothing about.
+Future<void> _untilListening(_LiveAcp service) async {
+  for (var i = 0; i < 500 && !service.session.events.hasListener; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+  expect(
+    service.session.events.hasListener,
+    isTrue,
+    reason: 'turn never began',
+  );
+}
+
+const _permission = AgentPermission(
+  id: 7,
+  kind: AgentPermissionKind.command,
+  summary: 'Delete the build folder',
+  command: 'rm -rf build',
+  options: [
+    (optionId: 'allow_once', kind: 'allow_once'),
+    (optionId: 'deny', kind: 'reject_once'),
+  ],
+);
 
 ProviderContainer _container(HermesAcpService? service, Directory tmp) {
   final container = ProviderContainer(
@@ -272,5 +350,64 @@ void main() {
 
     expect(updates.single, isA<ChatSendFailure>());
     expect(service.startCount, 0);
+  });
+
+  test('the agent asking to run a command stalls the turn and puts it to the '
+      'user; their answer goes back down the same session', () async {
+    final service = _LiveAcp();
+    final container = _container(service, tmp);
+
+    final updates = <ChatSendUpdate>[];
+    final finished = container
+        .read(hermesChatSenderProvider)
+        .send(
+          network: _credential(),
+          model: 'm',
+          history: _history('clean the build folder'),
+        )
+        .listen(updates.add)
+        .asFuture<void>();
+
+    // Mid-turn, the agent asks. It's now in front of the user, and the turn is
+    // still open — nothing ran.
+    await _untilListening(service);
+    service.session.events.add(const HermesAcpPermission(_permission));
+    await pumpEventQueue();
+    expect(container.read(agentPermissionProvider)?.command, 'rm -rf build');
+    expect(service.session.answers, isEmpty);
+
+    container
+        .read(agentPermissionProvider.notifier)
+        .answer(AgentPermissionChoice.allowOnce);
+    expect(service.session.answers, [(7, 'allow_once')]);
+
+    service.session.finish('Cleaned it.');
+    await finished;
+
+    // The turn is over: nothing is left waiting on an answer.
+    expect(container.read(agentPermissionProvider), isNull);
+    expect((updates.last as ChatSendSuccess).reply.text, 'Cleaned it.');
+  });
+
+  test('a stopped turn takes its unanswered question with it', () async {
+    final service = _LiveAcp();
+    final container = _container(service, tmp);
+
+    final sub = container
+        .read(hermesChatSenderProvider)
+        .send(network: _credential(), model: 'm', history: _history('go'))
+        .listen((_) {});
+
+    await _untilListening(service);
+    service.session.events.add(const HermesAcpPermission(_permission));
+    await pumpEventQueue();
+    expect(container.read(agentPermissionProvider), isNotNull);
+
+    // The user hit stop.
+    await sub.cancel();
+    await pumpEventQueue();
+
+    expect(container.read(agentPermissionProvider), isNull);
+    expect(service.session.answers, isEmpty);
   });
 }

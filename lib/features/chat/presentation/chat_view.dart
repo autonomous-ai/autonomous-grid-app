@@ -297,7 +297,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
         if (permission != null)
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _composerWidth),
+              constraints: BoxConstraints(
+                maxWidth: _composerWidth,
+                maxHeight: _permissionCardHeight(context),
+              ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                 child: AgentPermissionCard(request: permission),
@@ -346,6 +349,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
     SendBusy() when agentMode => const AgentWorkingBubble(),
     _ => null,
   };
+
+  double _permissionCardHeight(BuildContext context) {
+    final height = MediaQuery.sizeOf(context).height * 0.42;
+    return height.clamp(240.0, 380.0);
+  }
 
   /// The headline shown above a fresh chat's starters.
   String _greeting(PlaygroundModality modality) => switch (modality) {
