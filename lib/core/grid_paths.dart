@@ -68,6 +68,11 @@ class GridPaths {
   /// "inside", so the assistant may read them. App-owned.
   static File get projectsFile => File('${home.path}/app/projects.json');
 
+  /// Which scheduled-task results have already been put into Chat, so a finished
+  /// run is delivered once and not again on every launch. App-owned.
+  static File get taskDeliveryFile =>
+      File('${home.path}/app/task_delivery.json');
+
   /// Working directory for the agent that answers chat. It runs read-only here
   /// so its file tools have a stable, app-owned root instead of pointing at the
   /// user's home. App-owned — the CLI never touches it.

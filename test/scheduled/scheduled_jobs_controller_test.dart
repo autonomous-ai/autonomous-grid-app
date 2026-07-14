@@ -28,6 +28,9 @@ class _FakeCron implements HermesCronService {
   Future<String?> readJobsJson() async => jobsJson;
 
   @override
+  Future<List<CronOutput>> readOutputs(String jobId) async => const [];
+
+  @override
   Future<void> create({
     required String schedule,
     required String prompt,

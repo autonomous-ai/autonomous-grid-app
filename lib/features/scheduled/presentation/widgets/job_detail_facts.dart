@@ -28,7 +28,7 @@ class _Facts extends StatelessWidget {
   static String _when(DateTime? time, bool enabled) {
     if (!enabled) return 'Paused — nothing scheduled';
     if (time == null) return 'Not scheduled yet';
-    return _stamp(time);
+    return jobTimeLabel(time);
   }
 
   static String _lastRun(ScheduledJob job) {
@@ -37,13 +37,7 @@ class _Facts extends StatelessWidget {
     final status = job.failed
         ? 'failed'
         : (job.lastStatus ?? 'finished').toLowerCase();
-    return '${_stamp(at)} — $status';
-  }
-
-  static String _stamp(DateTime time) {
-    final d = time.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(d.day)}/${two(d.month)} at ${two(d.hour)}:${two(d.minute)}';
+    return '${jobTimeLabel(at)} — $status';
   }
 }
 

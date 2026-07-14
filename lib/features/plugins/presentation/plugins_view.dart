@@ -114,7 +114,7 @@ class _Toolbar extends ConsumerWidget {
         _RefreshButton(onPressed: onRefresh),
         const SizedBox(width: 8),
         MenuAnchor(
-          alignmentOffset: const Offset(0, 0),
+          alignmentOffset: const Offset(-70, 8),
           menuChildren: [
             _CreateMenuItem(
               icon: Icons.extension_outlined,
@@ -128,6 +128,7 @@ class _Toolbar extends ConsumerWidget {
             ),
           ],
           style: MenuStyle(
+            alignment: AlignmentDirectional.bottomStart,
             padding: const WidgetStatePropertyAll(
               EdgeInsets.symmetric(vertical: 6),
             ),
@@ -141,6 +142,7 @@ class _Toolbar extends ConsumerWidget {
                 controller.isOpen ? controller.close() : controller.open(),
           ),
         ),
+        const SizedBox(width: 14),
       ],
     );
   }

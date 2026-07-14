@@ -99,6 +99,15 @@ JobSchedule? parseJobCron(String expression) {
 String describeJobCron(String expression) =>
     parseJobCron(expression)?.describe() ?? expression;
 
+/// A day and time as the user reads it (`14/07 at 08:00`), in their own zone.
+/// Shared by the task's facts and by the results it delivers into Chat, so the
+/// same run is never stamped two different ways.
+String jobTimeLabel(DateTime time) {
+  final local = time.toLocal();
+  return '${_two(local.day)}/${_two(local.month)} at '
+      '${_two(local.hour)}:${_two(local.minute)}';
+}
+
 /// Cron's weekday numbering: Sunday is 0, not 7.
 int _cronWeekday(int weekday) => weekday == DateTime.sunday ? 0 : weekday;
 

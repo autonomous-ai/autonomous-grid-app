@@ -5,6 +5,7 @@ import '../../agent/logic/agent_providers.dart';
 import '../../agent/logic/hermes_tool.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
+import 'task_delivery.dart';
 
 /// The scheduler seam, or null when the agent isn't installed — there is nothing
 /// to schedule *on* then, and the screen says so instead of failing later.
@@ -19,6 +20,19 @@ final hermesCronServiceProvider = Provider<HermesCronService?>((ref) {
 final schedulerRunningProvider = FutureProvider<bool>((ref) async {
   final service = ref.watch(hermesCronServiceProvider);
   return service != null && await service.schedulerRunning();
+});
+
+/// What a task's runs have produced, oldest first — read back from Hermes, which
+/// writes one file per run. Refetches whenever a sweep delivers something new, so
+/// the screen and the chat never disagree about what the task has found.
+final jobOutputsProvider = FutureProvider.family<List<CronOutput>, String>((
+  ref,
+  jobId,
+) async {
+  ref.watch(taskDeliveryProvider);
+  final service = ref.watch(hermesCronServiceProvider);
+  if (service == null) return const [];
+  return service.readOutputs(jobId);
 });
 
 /// Which job the detail pane shows. Null until the user picks one (or creates

@@ -48,7 +48,8 @@ void main() {
   testWidgets('the menu says what each mode really costs', (tester) async {
     await pump(tester);
 
-    await tester.tap(find.byType(TextButton));
+    // The pill in the composer, which shows the mode in force.
+    await tester.tap(find.text('Ask before acting'));
     await tester.pumpAndSettle();
 
     expect(find.text('Read only'), findsOneWidget);
@@ -68,7 +69,8 @@ void main() {
   ) async {
     final container = await pump(tester);
 
-    await tester.tap(find.byType(TextButton));
+    // The pill in the composer, which shows the mode in force.
+    await tester.tap(find.text('Ask before acting'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Full access'));
     await tester.pumpAndSettle();

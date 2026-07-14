@@ -13,6 +13,22 @@ class HermesCronException implements Exception {
   String toString() => 'HermesCronException: $message';
 }
 
+/// One finished run of a scheduled job: when it ran, and what it produced.
+typedef CronOutput = ({DateTime at, String text});
+
+/// When a run happened, read off the name Hermes gives its output file
+/// (`2026-07-14_08-00-00.md`, in this computer's own time). Null when the name
+/// isn't one — an unreadable file is skipped rather than dated "now", which would
+/// shuffle it to the top of the results as if it had just happened.
+DateTime? parseCronOutputTime(String fileName) {
+  final match = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.md$',
+  ).firstMatch(fileName);
+  if (match == null) return null;
+  final parts = [for (var i = 1; i <= 6; i++) int.parse(match.group(i)!)];
+  return DateTime(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+}
+
 /// The seam onto Hermes's own scheduler (`hermes cron`).
 ///
 /// Hermes already schedules and runs the jobs — the app doesn't reimplement any
@@ -21,6 +37,12 @@ class HermesCronException implements Exception {
 abstract interface class HermesCronService {
   /// The raw contents of Hermes's job store, or null when it has none yet.
   Future<String?> readJobsJson();
+
+  /// What the job's runs produced, oldest first. Hermes writes one file per run
+  /// under `~/.hermes/cron/output/<job>/`; this is the only record of a result
+  /// delivered "local", so it's where the app collects them from. Empty when the
+  /// job has never run.
+  Future<List<CronOutput>> readOutputs(String jobId);
 
   /// Create a job. [schedule] is a cron expression; [workdir] is the folder the
   /// job runs in (Projects), so a task can read the user's files.
@@ -89,6 +111,24 @@ class HermesCronServiceImpl implements HermesCronService {
     'local',
     if (workdir != null) ...['--workdir', workdir],
   ]);
+
+  @override
+  Future<List<CronOutput>> readOutputs(String jobId) async {
+    final dir = Directory('${_cronDir.path}/output/$jobId');
+    if (!dir.existsSync()) return const [];
+
+    final runs = <CronOutput>[];
+    for (final entry in dir.listSync()) {
+      if (entry is! File || !entry.path.endsWith('.md')) continue;
+      final at = parseCronOutputTime(entry.uri.pathSegments.last);
+      if (at == null) continue;
+      final text = (await entry.readAsString()).trim();
+      if (text.isEmpty) continue;
+      runs.add((at: at, text: text));
+    }
+    runs.sort((a, b) => a.at.compareTo(b.at));
+    return runs;
+  }
 
   @override
   Future<void> pause(String id) => _run(['cron', 'pause', id]);

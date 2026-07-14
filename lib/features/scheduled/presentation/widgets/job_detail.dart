@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../infrastructure/cli/hermes_cron_service.dart';
+import '../../../../shared/layouts/shell_state.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/error_box.dart';
+import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/scheduled_job.dart';
 import '../../logic/scheduled_jobs_controller.dart';
+import '../../logic/task_delivery.dart';
 
 part 'job_detail_actions.dart';
 part 'job_detail_facts.dart';
+part 'job_detail_results.dart';
 
 /// The open task: what it asks the assistant to do, when it runs, how the last
 /// run went — and the three things you can do to it.
@@ -39,6 +45,8 @@ class JobDetail extends ConsumerWidget {
         ),
         const SizedBox(height: 18),
         _Facts(job: job),
+        const SizedBox(height: 22),
+        _Results(job: job),
         const SizedBox(height: 18),
         _Actions(job: job),
       ],

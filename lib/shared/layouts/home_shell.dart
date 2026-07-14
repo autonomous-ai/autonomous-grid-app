@@ -13,6 +13,7 @@ import '../../features/node_setup/logic/auto_host_controller.dart';
 import '../../features/plugins/presentation/plugins_view.dart';
 import '../../features/projects/presentation/projects_view.dart';
 import '../../features/provider_node/presentation/provider_view.dart';
+import '../../features/scheduled/logic/task_delivery.dart';
 import '../../features/scheduled/presentation/scheduled_view.dart';
 import '../theme/app_theme.dart';
 import 'shell_state.dart';
@@ -47,6 +48,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           .read(createNetworkControllerProvider.notifier)
           .createFirstGridIfNeeded();
       _resumeSharing();
+      // Scheduled tasks run whether the app is open or not, and Hermes just
+      // leaves the result in a file. Start looking for those results, so they
+      // land in Chat instead of sitting somewhere the user never looks.
+      ref.read(taskDeliveryProvider.notifier).start();
       // The launch update check lives here, not at startup: the shell is only
       // reached once first-run setup is done or skipped, so Sparkle's "restart
       // to update" prompt can't land on top of a model download.

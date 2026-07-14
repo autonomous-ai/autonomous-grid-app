@@ -128,6 +128,51 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Put work the assistant did on its own into the chat: the result of a
+  /// scheduled task, delivered into the conversation with id [id] (created,
+  /// named [title], the first time that task produces anything).
+  ///
+  /// It arrives like any other message the assistant sent — but it must never
+  /// take over: whatever chat is open stays open, and a reply in flight is left
+  /// alone. The task's chat simply appears in the sidebar (newest first, like
+  /// every other), for the user to read when they want to.
+  void deliverFromAgent({
+    required String id,
+    required String title,
+    required String text,
+    required DateTime at,
+  }) {
+    if (text.trim().isEmpty) return;
+
+    final existing = _find(id);
+    final message = ChatMessage(role: ChatRole.assistant, text: text.trim());
+    final conversation =
+        (existing ??
+                Conversation(
+                  id: id,
+                  title: title,
+                  model: '',
+                  createdAt: at,
+                  updatedAt: at,
+                ))
+            .copyWith(
+              updatedAt: at,
+              messages: [...?existing?.messages, message],
+            );
+
+    _store.save(conversation);
+    state = ChatSessionsState(
+      conversations: [
+        if (existing == null) conversation,
+        for (final c in state.conversations)
+          if (c.id == id) conversation else c,
+      ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
+      activeId: state.activeId,
+      phase: state.phase,
+      error: state.error,
+    );
+  }
+
   Future<void> send({
     required NetworkCredential network,
     required String model,
