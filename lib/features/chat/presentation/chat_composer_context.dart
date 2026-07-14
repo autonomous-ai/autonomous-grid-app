@@ -9,11 +9,11 @@ class _ContextStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: const BoxDecoration(
-        color: AppSurface.hoverFill,
+        color: AppPalette.cardBg,
         border: Border(bottom: BorderSide(color: AppGlass.hair)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 9, 18, 8),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
         child: Row(
           children: [
             const Icon(
@@ -30,7 +30,7 @@ class _ContextStrip extends StatelessWidget {
               color: AppPalette.textSecondary,
             ),
             const SizedBox(width: 6),
-            const _StripLabel(label: 'Private grid'),
+            const _StripLabel(label: 'Local'),
           ],
         ),
       ),
@@ -52,7 +52,7 @@ class _StripLabel extends StatelessWidget {
       style: const TextStyle(
         color: AppPalette.textPrimary,
         fontSize: 12.5,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w500,
       ),
     );
   }

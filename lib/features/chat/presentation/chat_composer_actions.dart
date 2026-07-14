@@ -28,7 +28,7 @@ class _Actions extends StatelessWidget {
             iconSize: 19,
             visualDensity: VisualDensity.compact,
             color: AppPalette.textSecondary,
-            icon: const Icon(Icons.add_photo_alternate_outlined),
+            icon: const Icon(Icons.add_rounded),
             onPressed: canAttach ? onPickImage : null,
           ),
           const _ApprovalHint(),
@@ -59,7 +59,7 @@ class _ApprovalHint extends StatelessWidget {
           SizedBox(width: 5),
           Flexible(
             child: Text(
-              'Ask before changes',
+              'Ask for approval',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),

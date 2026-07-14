@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// The screens the sidebar switches between. Chat is the app — the rest is the
-/// plumbing behind it (the grids you can talk to, the computer that answers, and
-/// how to point other apps at it), one click away rather than buried in a menu.
+/// The screens the app can show in its main pane.
+///
+/// Two groups, and the split is deliberate: the sidebar lists what you *do* every
+/// day (chat, and the three things that shape how the agent answers), while the
+/// account menu holds the plumbing you set up once (which grids you can talk to,
+/// what this computer runs, how to point other apps at it).
 enum ShellSection {
   chat(Icons.chat_bubble_outline_rounded, 'Chat'),
+  scheduled(Icons.schedule_rounded, 'Scheduled'),
+  plugins(Icons.extension_outlined, 'Plugins'),
+  projects(Icons.folder_open_rounded, 'Projects'),
   grids(Icons.bolt, 'Grids'),
   engines(Icons.dns_outlined, 'This computer'),
   guide(Icons.help_outline_rounded, 'How to use');
@@ -15,6 +21,21 @@ enum ShellSection {
   final IconData icon;
   final String label;
 }
+
+/// What the sidebar lists, in order. Chat isn't among them: you get there by
+/// starting a chat or opening one from the history below.
+const kSidebarSections = [
+  ShellSection.scheduled,
+  ShellSection.plugins,
+  ShellSection.projects,
+];
+
+/// What the account menu lists — the setup screens, out of the daily path.
+const kAccountSections = [
+  ShellSection.grids,
+  ShellSection.engines,
+  ShellSection.guide,
+];
 
 /// The open section. Chat on launch — that's what the app is for.
 ///

@@ -21,7 +21,7 @@ class ChatStarters extends StatelessWidget {
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 620;
         return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(24, compact ? 40 : 72, 24, 28),
+          padding: EdgeInsets.fromLTRB(24, compact ? 36 : 68, 24, 28),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 760),
@@ -34,7 +34,7 @@ class ChatStarters extends StatelessWidget {
                     greeting,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium?.copyWith(
-                      fontSize: compact ? 27 : 32,
+                      fontSize: compact ? 26 : 30,
                       fontWeight: FontWeight.w500,
                       height: 1.12,
                     ),
@@ -48,7 +48,7 @@ class ChatStarters extends StatelessWidget {
                       for (final starter in _starters)
                         _StarterCard(
                           starter: starter,
-                          width: compact ? 156 : 172,
+                          width: compact ? 158 : 170,
                           onTap: () => onPick(starter.prompt),
                         ),
                     ],
@@ -69,9 +69,9 @@ class _Glyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Icon(
-      Icons.cloud_queue_rounded,
-      size: 43,
-      color: AppPalette.textFaint,
+      Icons.cloud_outlined,
+      size: 45,
+      color: Color(0xFFB8B8B8),
       semanticLabel: 'Grid',
     );
   }
@@ -102,14 +102,14 @@ const _starters = [
   _Starter(
     icon: Icons.architecture_rounded,
     color: Color(0xFF8A3FFC),
-    title: 'Build a new feature',
-    prompt: 'Help me build a new feature: ',
+    title: 'Build a new feature, app, or tool',
+    prompt: 'Help me build a new feature, app, or tool: ',
   ),
   _Starter(
     icon: Icons.manage_search_rounded,
     color: Color(0xFF16A34A),
-    title: 'Review and suggest changes',
-    prompt: 'Review this code and suggest improvements:\n\n',
+    title: 'Review code and suggest changes',
+    prompt: 'Review this code and suggest changes:\n\n',
   ),
   _Starter(
     icon: Icons.local_fire_department_outlined,
@@ -151,7 +151,7 @@ class _StarterCardState extends State<_StarterCard> {
         child: LiquidGlass(
           borderRadius: radius,
           fill: _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill,
-          showShadow: _hovered,
+          showShadow: true,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -159,7 +159,7 @@ class _StarterCardState extends State<_StarterCard> {
               onTap: widget.onTap,
               child: SizedBox(
                 width: widget.width,
-                height: 112,
+                height: 110,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
                   child: _StarterContent(starter: widget.starter),
@@ -190,7 +190,7 @@ class _StarterContent extends StatelessWidget {
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 13.5,
             height: 1.2,
             fontWeight: FontWeight.w600,
             color: AppPalette.textPrimary,

@@ -70,7 +70,7 @@ class ComposerSection extends StatelessWidget {
           ),
         ],
         LiquidGlass(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           fill: AppGlass.surfaceFill,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -121,8 +121,8 @@ class ComposerSection extends StatelessWidget {
   }
 
   String _inputHint(PlaygroundModality modality) => switch (modality) {
-    PlaygroundModality.image => 'Describe the image to make…',
-    PlaygroundModality.video => 'Describe the motion…',
+    PlaygroundModality.image => 'Describe the image to create',
+    PlaygroundModality.video => 'Describe the motion',
     PlaygroundModality.text => 'Ask anything',
   };
 }

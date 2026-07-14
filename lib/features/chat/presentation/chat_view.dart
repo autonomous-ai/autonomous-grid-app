@@ -334,9 +334,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   /// The headline shown above a fresh chat's starters.
   String _greeting(PlaygroundModality modality) => switch (modality) {
-    PlaygroundModality.image => 'What should I draw?',
+    PlaygroundModality.image => 'What should we create?',
     PlaygroundModality.video => 'Attach an image, then describe the motion',
-    PlaygroundModality.text => 'What should we build?',
+    PlaygroundModality.text => 'What should we create?',
   };
 }
 
