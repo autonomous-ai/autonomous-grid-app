@@ -84,7 +84,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(Icons.check_circle, color: AppPalette.online, size: 18),
+              Icon(Icons.check_circle, color: AppPalette.online, size: 18),
               const SizedBox(width: 8),
               Expanded(child: Text('Downloaded ${state.file}')),
             ],

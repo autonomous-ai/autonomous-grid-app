@@ -331,7 +331,7 @@ class _DoneBody extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const Icon(Icons.check_circle, color: AppPalette.online, size: 18),
+            Icon(Icons.check_circle, color: AppPalette.online, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -348,7 +348,7 @@ class _DoneBody extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 6),
             child: Row(
               children: [
-                const Icon(Icons.check, size: 16, color: AppPalette.online),
+                Icon(Icons.check, size: 16, color: AppPalette.online),
                 const SizedBox(width: 8),
                 Expanded(
                     child: Text(step.title, style: theme.textTheme.bodySmall)),

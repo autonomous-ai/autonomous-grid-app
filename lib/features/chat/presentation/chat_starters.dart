@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/liquid_glass.dart';
 
 /// A fresh chat's empty state: a greeting and four things to try. Tapping one
 /// drops its prompt into the composer, so a first-time user has something to send
@@ -140,29 +139,45 @@ class _StarterCardState extends State<_StarterCard> {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(12);
+    final radius = BorderRadius.circular(14);
+    // On hover the card lifts: it tints its rim to the starter's own colour,
+    // deepens the shadow, and rises a couple of pixels — so it reads as a real,
+    // pickable surface instead of a ghost on the near-white pane.
+    final borderColor = _hovered
+        ? widget.starter.color.withValues(alpha: 0.55)
+        : AppGlass.hair;
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
+        duration: const Duration(milliseconds: 160),
         curve: Curves.easeOut,
-        decoration: BoxDecoration(borderRadius: radius),
-        child: LiquidGlass(
+        // Rise on hover — a paint transform, so neighbours never shift.
+        transform: Matrix4.translationValues(0, _hovered ? -3 : 0, 0),
+        transformAlignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppCard.base,
           borderRadius: radius,
-          fill: _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill,
-          shadow: AppGlass.cardShadow,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: radius,
-              onTap: widget.onTap,
-              child: SizedBox(
-                width: widget.width,
-                height: 108,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
-                  child: _StarterContent(starter: widget.starter),
+          // Rim stays 1.5px at rest and on hover — only its colour animates, so
+          // the content never nudges by the half-pixel a width change would add.
+          border: Border.all(color: borderColor, width: 1.5),
+          boxShadow: _hovered ? AppCard.shadow : AppGlass.cardShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: radius,
+            onTap: widget.onTap,
+            hoverColor: Colors.transparent,
+            child: SizedBox(
+              width: widget.width,
+              height: 112,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+                child: _StarterContent(
+                  starter: widget.starter,
+                  hovered: _hovered,
                 ),
               ),
             ),
@@ -174,22 +189,35 @@ class _StarterCardState extends State<_StarterCard> {
 }
 
 class _StarterContent extends StatelessWidget {
-  const _StarterContent({required this.starter});
+  const _StarterContent({required this.starter, required this.hovered});
 
   final _Starter starter;
+  final bool hovered;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(starter.icon, size: 18, color: starter.color),
+        // The icon sits in a soft tinted chip — a small spot of the starter's
+        // colour that gives each card a point of focus and lifts it off white.
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: starter.color.withValues(alpha: hovered ? 0.18 : 0.12),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(starter.icon, size: 17, color: starter.color),
+        ),
         const Spacer(),
         Text(
           starter.title,
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13.5,
             height: 1.12,
             fontWeight: FontWeight.w700,

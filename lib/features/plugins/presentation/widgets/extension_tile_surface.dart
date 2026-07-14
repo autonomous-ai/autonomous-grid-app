@@ -12,7 +12,7 @@ class ExtensionTileSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppGlass.surfaceFill,
         borderRadius: BorderRadius.circular(14),
         boxShadow: AppGlass.cardShadow,
       ),
@@ -61,7 +61,7 @@ class ExtensionTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
           color: AppCard.accentStrong,

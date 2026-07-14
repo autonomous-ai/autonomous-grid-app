@@ -98,7 +98,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
             const SizedBox(height: 8),
             Text(
               _type.description,
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppPalette.textSecondary, fontSize: 12),
             ),
             if (error != null) ...[

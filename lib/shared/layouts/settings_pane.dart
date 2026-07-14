@@ -65,7 +65,7 @@ class _SettingsHeader extends ConsumerWidget {
       child: SizedBox(
         height: 54,
         child: DecoratedBox(
-          decoration: const BoxDecoration(color: AppPalette.windowBg),
+          decoration: BoxDecoration(color: AppPalette.windowBg),
           child: Padding(
             padding: EdgeInsets.fromLTRB(left, 10, 18, 8),
             child: Row(
@@ -98,7 +98,7 @@ class _SettingsHeader extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text(
+                Text(
                   'Settings',
                   style: TextStyle(
                     color: AppPalette.textSecondary,

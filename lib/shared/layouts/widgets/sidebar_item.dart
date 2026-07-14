@@ -40,6 +40,12 @@ class SidebarItem extends StatefulWidget {
 
 class _SidebarItemState extends State<SidebarItem> {
   bool _hovered = false;
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (!widget.enabled || _pressed == value) return;
+    setState(() => _pressed = value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,81 +55,88 @@ class _SidebarItemState extends State<SidebarItem> {
     final fill = widget.selected
         ? AppSurface.selectedFill
         : (_hovered ? AppSurface.hoverFill : Colors.transparent);
-    final shadow = widget.selected
-        ? const [
-            BoxShadow(
-              color: Color(0x07000000),
-              blurRadius: 8,
-              offset: Offset(0, 1),
-              spreadRadius: -5,
-            ),
-          ]
-        : const <BoxShadow>[];
 
     final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 130),
+      // Press feedback: the row dips slightly under the pointer and springs
+      // back on release. A transform, so it never nudges neighbouring rows.
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1,
+        duration: const Duration(milliseconds: 110),
         curve: Curves.easeOut,
-        margin: const EdgeInsets.symmetric(vertical: 1),
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: radius,
-          boxShadow: shadow,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: radius,
-          child: InkWell(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 130),
+          curve: Curves.easeOut,
+          margin: const EdgeInsets.symmetric(vertical: 1),
+          decoration: BoxDecoration(
+            // Flat, like Codex — the selected row is a soft rounded fill, no lift.
+            color: fill,
             borderRadius: radius,
-            onTap: widget.enabled ? widget.onTap : null,
-            child: SizedBox(
-              height: 36,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 0, 5, 0),
-                child: Row(
-                  children: [
-                    if (widget.icon != null) ...[
-                      Icon(widget.icon, size: 16, color: ink),
-                      const SizedBox(width: 10),
-                    ],
-                    Expanded(
-                      child: Text(
-                        widget.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        strutStyle: const StrutStyle(
-                          fontSize: 13.5,
-                          height: 1.25,
-                          forceStrutHeight: true,
-                        ),
-                        style: TextStyle(
-                          color: ink,
-                          fontSize: 13.7,
-                          height: 1.25,
-                          fontWeight: strong
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        ),
-                      ),
-                    ),
-                    // Keep the action mounted so hovering never changes text
-                    // metrics or row height.
-                    SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: IgnorePointer(
-                        ignoring: !_hovered,
-                        child: AnimatedOpacity(
-                          opacity: _hovered ? 1 : 0,
-                          duration: const Duration(milliseconds: 100),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: radius,
+            child: InkWell(
+              borderRadius: radius,
+              onTap: widget.enabled ? widget.onTap : null,
+              onTapDown: (_) => _setPressed(true),
+              onTapUp: (_) => _setPressed(false),
+              onTapCancel: () => _setPressed(false),
+              child: SizedBox(
+                height: 36,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 0, 5, 0),
+                  child: Row(
+                    children: [
+                      if (widget.icon != null) ...[
+                        // A whisper of drift on hover, so the icon feels alive
+                        // as the pointer lands — nudged right, never resized.
+                        AnimatedSlide(
+                          offset: Offset(_hovered ? 0.12 : 0, 0),
+                          duration: const Duration(milliseconds: 130),
                           curve: Curves.easeOut,
-                          child: widget.trailing,
+                          child: Icon(widget.icon, size: 16, color: ink),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          strutStyle: const StrutStyle(
+                            fontSize: 13.5,
+                            height: 1.25,
+                            forceStrutHeight: true,
+                          ),
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: 13.7,
+                            height: 1.25,
+                            fontWeight: strong
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                      // Keep the action mounted so hovering never changes text
+                      // metrics or row height.
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: IgnorePointer(
+                          ignoring: !_hovered,
+                          child: AnimatedOpacity(
+                            opacity: _hovered ? 1 : 0,
+                            duration: const Duration(milliseconds: 100),
+                            curve: Curves.easeOut,
+                            child: widget.trailing,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -150,7 +163,7 @@ class SidebarSectionLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 17, 10, 7),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppPalette.textFaint,
           fontSize: 11.2,
           fontWeight: FontWeight.w600,

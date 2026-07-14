@@ -54,7 +54,7 @@ class ComingSoonView extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(top: 4),
                         child: Icon(
                           Icons.circle,
@@ -89,7 +89,7 @@ class _NotYetBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppPalette.divider),
       ),
-      child: const Text(
+      child: Text(
         'Not available yet',
         style: TextStyle(
           fontSize: 12,

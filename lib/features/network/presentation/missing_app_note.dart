@@ -22,7 +22,7 @@ class MissingAppNote extends StatelessWidget {
           Text(
             "You don't have $name yet. Install it first, then paste the "
             'connection below.',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppPalette.textSecondary,
               fontSize: 12.5,
               height: 1.4,
@@ -60,7 +60,7 @@ class NeedsChatModelNote extends StatelessWidget {
         "grid only makes images or video, so it can't be that model — set one "
         'up first (run `$command model`, or add a provider API key in $appName), '
         'then paste the prompt below.',
-        style: const TextStyle(
+        style: TextStyle(
           color: AppPalette.textSecondary,
           fontSize: 12.5,
           height: 1.4,

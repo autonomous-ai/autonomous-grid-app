@@ -78,7 +78,7 @@ class _BigValue extends StatelessWidget {
         children: [
           TextSpan(
             text: value,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: OverlordTokens.mono,
               fontSize: 32,
               fontWeight: FontWeight.w700,
@@ -88,7 +88,7 @@ class _BigValue extends StatelessWidget {
           ),
           TextSpan(
             text: ' $unit',
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: OverlordTokens.mono,
               fontSize: 12.5,
               color: AppPalette.textSecondary,

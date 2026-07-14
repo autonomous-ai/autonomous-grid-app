@@ -92,7 +92,7 @@ class _StatusIcon extends StatelessWidget {
         height: 16,
         child: CircularProgressIndicator(strokeWidth: 2),
       ),
-      InstallStatus.done => const Icon(
+      InstallStatus.done => Icon(
         Icons.check_circle,
         size: 18,
         color: AppPalette.online,

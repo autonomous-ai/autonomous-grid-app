@@ -69,7 +69,7 @@ class _AddPluginDialogState extends ConsumerState<_AddPluginDialog> {
               ),
             ),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'This downloads the repository onto this computer and lets the '
               "assistant run it. Only add plugins from people you trust.",
               style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),

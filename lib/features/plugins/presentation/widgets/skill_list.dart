@@ -209,7 +209,7 @@ class _Empty extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'No skills installed yet.',
             style: TextStyle(color: AppPalette.textSecondary),
           ),

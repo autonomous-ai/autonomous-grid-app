@@ -36,7 +36,7 @@ class CapabilityChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: kGridMono,
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
@@ -100,7 +100,7 @@ class _StatCell extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: kGridMono,
                 fontSize: 11,
                 letterSpacing: 0.6,
@@ -112,7 +112,7 @@ class _StatCell extends StatelessWidget {
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: kGridMono,
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
@@ -143,7 +143,7 @@ class SectionHeading extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: kGridMono,
             fontSize: 19,
             fontWeight: FontWeight.w700,
@@ -153,7 +153,7 @@ class SectionHeading extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           subtitle,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: kGridMono,
             fontSize: 13,
             color: AppPalette.textSecondary,
@@ -209,7 +209,7 @@ class ModelTile extends StatelessWidget {
             child: Text(
               model.id,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: kGridMono,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -259,7 +259,7 @@ class NodeTile extends StatelessWidget {
                 Text(
                   node.name,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: kGridMono,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -271,7 +271,7 @@ class NodeTile extends StatelessWidget {
                   specs.join('  ·  '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: kGridMono,
                     fontSize: 12,
                     color: AppPalette.textSecondary,
@@ -355,7 +355,7 @@ class _Pill extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: kGridMono,
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
@@ -421,7 +421,7 @@ class OverviewMessage extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: kGridMono,
                 fontSize: 13,
                 color: AppPalette.textSecondary,

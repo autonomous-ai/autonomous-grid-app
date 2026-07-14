@@ -27,7 +27,7 @@ class AgentPermissionCard extends ConsumerWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppCard.base,
         borderRadius: BorderRadius.circular(14),
         boxShadow: AppGlass.shadow,
       ),
@@ -167,7 +167,7 @@ class _Command extends StatelessWidget {
       ),
       child: SelectableText(
         command,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'monospace',
           fontSize: 12.5,
           height: 1.45,

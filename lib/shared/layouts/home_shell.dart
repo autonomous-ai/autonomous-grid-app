@@ -116,56 +116,23 @@ class _MainShellBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    // No cast shadow between the rail and the pane — the sidebar's own right
+    // hairline is the separator, the way Codex draws it. Flat and clean.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const AppSidebar(),
-            Expanded(
-              child: Column(
-                children: [
-                  const AppTopBar(),
-                  const SessionExpiredBanner(),
-                  const GridProvisionBanner(),
-                  const Expanded(child: _SectionView()),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const _SidebarCastShadow(),
-      ],
-    );
-  }
-}
-
-class _SidebarCastShadow extends StatelessWidget {
-  const _SidebarCastShadow();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Positioned(
-      left: AppSidebar.width - 14,
-      top: 0,
-      bottom: 0,
-      width: 14,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                Colors.transparent,
-                Color(0x07000000),
-                Color(0x12000000),
-              ],
-              stops: [0, 0.46, 1],
-            ),
+        const AppSidebar(),
+        Expanded(
+          child: Column(
+            children: [
+              const AppTopBar(),
+              const SessionExpiredBanner(),
+              const GridProvisionBanner(),
+              const Expanded(child: _SectionView()),
+            ],
           ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -223,13 +223,13 @@ class _Empty extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.folder_open_rounded,
               size: 34,
               color: AppPalette.textFaint,
             ),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'No projects yet.',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
@@ -237,7 +237,7 @@ class _Empty extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Add a folder — a codebase, a pile of notes, a set of documents — '
               'and every chat you open inside it can answer about those files.',
               textAlign: TextAlign.center,

@@ -204,7 +204,7 @@ class _BrowserFallback extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               foregroundColor: AppPalette.accent,
               backgroundColor: Colors.white,
-              side: const BorderSide(color: AppPalette.divider),
+              side: BorderSide(color: AppPalette.divider),
               // Without this, Material pads the button out to a 48px tap target
               // and it floats in a box half again its own height.
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -252,7 +252,7 @@ class _CopyField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.w600,
             color: AppPalette.textFaint,
@@ -273,7 +273,7 @@ class _CopyField extends StatelessWidget {
                     value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       color: AppPalette.textSecondary,
                     ),

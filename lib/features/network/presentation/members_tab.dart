@@ -128,7 +128,7 @@ class _Header extends StatelessWidget {
       children: [
         Text(
           count == null ? 'Members' : 'Members ($count)',
-          style: const TextStyle(
+          style: TextStyle(
             color: AppPalette.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -167,7 +167,7 @@ class _MemberTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 18,
             backgroundColor: AppPalette.cardBgHover,
             child: Icon(
@@ -181,7 +181,7 @@ class _MemberTile extends StatelessWidget {
             child: Text(
               member.email,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppPalette.textPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -255,7 +255,7 @@ class _Message extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppPalette.textSecondary,
                 fontSize: 13,
               ),

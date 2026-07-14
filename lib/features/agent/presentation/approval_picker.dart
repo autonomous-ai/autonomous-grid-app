@@ -53,7 +53,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(vertical: 6),
         ),
-        backgroundColor: const WidgetStatePropertyAll(Colors.white),
+        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: const WidgetStatePropertyAll(8),
         shape: WidgetStatePropertyAll(
@@ -115,7 +115,7 @@ class _Trigger extends StatelessWidget {
                     approvalLabel(mode),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppPalette.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -123,7 +123,7 @@ class _Trigger extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 2),
-                const Icon(
+                Icon(
                   Icons.expand_more_rounded,
                   size: 14,
                   color: AppPalette.textFaint,
@@ -142,7 +142,7 @@ class _MenuHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.fromLTRB(14, 8, 14, 9),
       child: Text(
         'What may the assistant do on this computer?',

@@ -49,7 +49,7 @@ class TelegramConnectedPanel extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.person_outline_rounded,
                       size: 16,
                       color: AppPalette.textSecondary,

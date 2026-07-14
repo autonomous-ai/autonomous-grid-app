@@ -39,22 +39,17 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
     final section = ref.watch(shellSectionProvider);
     final sending = ref.watch(chatSessionsProvider).sending;
 
+    // Codex keeps the rail flat and quiet: a near-white fill set apart from the
+    // content by a single hairline on its right edge — no gradient, no cast
+    // shadow, and only a whisper of backdrop blur so a maximised window still
+    // reads as one clean surface.
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          decoration: const BoxDecoration(
+        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
             color: AppGlass.sidebarFill,
-            gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                Color(0xFCFAFAF8),
-                AppGlass.sidebarFill,
-                Color(0xEEF4F4F2),
-              ],
-              stops: [0, 0.72, 1],
-            ),
+            border: Border(right: BorderSide(color: AppPalette.divider)),
           ),
           child: SizedBox(
             width: AppSidebar.width,
@@ -96,6 +91,9 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                     child: const ChatHistoryList(),
                   ),
                 ),
+                // A full-width hairline sets the account off as the rail's foot,
+                // the way Codex separates its signed-in user from the list above.
+                const Divider(height: 1, thickness: 1),
                 const SizedBox(height: 4),
                 const SidebarAccount(),
               ],
@@ -122,7 +120,7 @@ class _Brand extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(20, topInset, 12, 15),
         child: Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
                 'Grid',
                 style: TextStyle(

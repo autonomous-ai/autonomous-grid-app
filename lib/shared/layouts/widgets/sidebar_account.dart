@@ -104,7 +104,7 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
           padding: const WidgetStatePropertyAll(
             EdgeInsets.symmetric(vertical: _menuPadding),
           ),
-          backgroundColor: const WidgetStatePropertyAll(Colors.white),
+          backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
           surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
           elevation: const WidgetStatePropertyAll(8),
           minimumSize: const WidgetStatePropertyAll(Size(_accountMenuWidth, 0)),
@@ -223,6 +223,10 @@ class _AccountMenuContent extends StatelessWidget {
             onPressed: () => onSelected(_settingsValue),
           ),
           const _AccountMenuDivider(),
+          // Appearance picker hidden for now — the theme system stays live and
+          // defaults to Light. Re-enable: re-add the import of
+          // 'theme_mode_picker.dart' and drop `const ThemeModePicker()` +
+          // a `const _AccountMenuDivider()` back in here.
           if (updaterSupported)
             _AccountMenuItem(
               icon: Icons.system_update_alt,
@@ -252,13 +256,15 @@ class _AccountMenuItem extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
-    this.iconColor = AppPalette.textSecondary,
+    this.iconColor,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
-  final Color iconColor;
+
+  /// Defaults to [AppPalette.textSecondary] (theme-aware) when null.
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -286,14 +292,14 @@ class _AccountMenuItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: iconColor),
+            Icon(icon, size: 18, color: iconColor ?? AppPalette.textSecondary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppPalette.textPrimary,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w600,
@@ -320,7 +326,7 @@ class _AccountVersion extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(18, 2, 18, 8),
         child: Text(
           'Version $version',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.w600,
             color: AppPalette.textFaint,
@@ -367,12 +373,15 @@ class _AccountRow extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(11),
-        color: const Color(0x08000000),
-        boxShadow: const [
+        color: AppSurface.recess,
+        boxShadow: [
           BoxShadow(
-            color: Color(0x06000000),
+            color: AppTheme.pick(
+              const Color(0x06000000),
+              const Color(0x40000000),
+            ),
             blurRadius: 10,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
             spreadRadius: -7,
           ),
         ],
@@ -388,13 +397,13 @@ class _AccountRow extends StatelessWidget {
                 email,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppPalette.textSecondary,
                   fontSize: 12.5,
                 ),
               ),
             ),
-            const Icon(Icons.more_horiz, size: 18, color: AppPalette.textFaint),
+            Icon(Icons.more_horiz, size: 18, color: AppPalette.textFaint),
           ],
         ),
       ),

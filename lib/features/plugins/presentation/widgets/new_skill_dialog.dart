@@ -194,7 +194,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
                 ),
               ),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 'Saved with your own skills, so a Hermes update never '
                 'overwrites it.',
                 style: TextStyle(
