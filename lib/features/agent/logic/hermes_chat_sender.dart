@@ -97,8 +97,8 @@ class HermesChatSender implements ChatSender {
     }
     if (_ref.read(hermesAcpServiceProvider) == null) {
       yield const ChatSendFailure(
-        "This computer isn't set up to answer chats yet. Open Settings ▸ "
-        'Engines to finish setting it up.',
+        "This computer isn't set up to answer chats yet. Open the account menu "
+        '▸ This computer to finish setting it up.',
       );
       return;
     }

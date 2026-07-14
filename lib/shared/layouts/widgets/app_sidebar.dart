@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,57 +60,67 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
     final section = ref.watch(shellSectionProvider);
     final sending = ref.watch(chatSessionsProvider).sending;
 
-    return Container(
-      width: AppSidebar.width,
-      decoration: const BoxDecoration(
-        color: AppGlass.sidebarFill,
-        border: Border(right: BorderSide(color: AppPalette.divider)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Brand(searching: _searching, onToggleSearch: _toggleSearch),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            color: AppGlass.sidebarFill,
+            border: Border(right: BorderSide(color: AppPalette.divider)),
+          ),
+          child: SizedBox(
+            width: AppSidebar.width,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_searching) ...[
-                  _SearchField(
-                    controller: _search,
-                    onChanged: (value) => setState(() => _query = value),
+                _Brand(searching: _searching, onToggleSearch: _toggleSearch),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_searching) ...[
+                        _SearchField(
+                          controller: _search,
+                          onChanged: (value) => setState(() => _query = value),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      SidebarItem(
+                        icon: Icons.edit_outlined,
+                        label: 'New chat',
+                        emphasized: true,
+                        enabled: !sending,
+                        tooltip: sending
+                            ? 'Wait for the reply to finish'
+                            : null,
+                        onTap: _newChat,
+                      ),
+                      for (final target in kSidebarSections)
+                        SidebarItem(
+                          icon: target.icon,
+                          label: target.label,
+                          selected: section == target,
+                          onTap: () => ref
+                              .read(shellSectionProvider.notifier)
+                              .select(target),
+                        ),
+                      const SidebarSectionLabel(label: 'Chats'),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                ],
-                SidebarItem(
-                  icon: Icons.edit_outlined,
-                  label: 'New chat',
-                  emphasized: true,
-                  enabled: !sending,
-                  tooltip: sending ? 'Wait for the reply to finish' : null,
-                  onTap: _newChat,
                 ),
-                for (final target in kSidebarSections)
-                  SidebarItem(
-                    icon: target.icon,
-                    label: target.label,
-                    selected: section == target,
-                    onTap: () =>
-                        ref.read(shellSectionProvider.notifier).select(target),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: ChatHistoryList(query: _query),
                   ),
-                const SidebarSectionLabel(label: 'Chats'),
+                ),
+                const Divider(height: 1),
+                const SidebarAccount(),
               ],
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: ChatHistoryList(query: _query),
-            ),
-          ),
-          const Divider(height: 1),
-          const SidebarAccount(),
-        ],
+        ),
       ),
     );
   }
@@ -128,7 +139,7 @@ class _Brand extends StatelessWidget {
     final topInset = Platform.isMacOS ? 32.0 : 12.0;
     return DragToMoveArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(16, topInset, 8, 6),
+        padding: EdgeInsets.fromLTRB(18, topInset, 12, 12),
         child: Row(
           children: [
             const Expanded(
@@ -136,15 +147,14 @@ class _Brand extends StatelessWidget {
                 'Grid',
                 style: TextStyle(
                   color: AppPalette.textPrimary,
-                  fontSize: 17,
+                  fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
                 ),
               ),
             ),
             IconButton(
               tooltip: searching ? 'Close search' : 'Search chats',
-              iconSize: 17,
+              iconSize: 18,
               visualDensity: VisualDensity.compact,
               color: searching
                   ? AppPalette.textPrimary

@@ -21,7 +21,7 @@ class ChatStarters extends StatelessWidget {
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 620;
         return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(24, compact ? 36 : 68, 24, 28),
+          padding: EdgeInsets.fromLTRB(24, compact ? 34 : 66, 24, 28),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 760),
@@ -34,12 +34,12 @@ class ChatStarters extends StatelessWidget {
                     greeting,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium?.copyWith(
-                      fontSize: compact ? 26 : 30,
-                      fontWeight: FontWeight.w500,
-                      height: 1.12,
+                      fontSize: compact ? 27 : 31,
+                      fontWeight: FontWeight.w700,
+                      height: 1.08,
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 30),
                   Wrap(
                     alignment: WrapAlignment.center,
                     spacing: 12,
@@ -140,18 +140,18 @@ class _StarterCardState extends State<_StarterCard> {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(13);
+    final radius = BorderRadius.circular(12);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedScale(
-        scale: _hovered ? 1.015 : 1,
+      child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOut,
+        decoration: BoxDecoration(borderRadius: radius),
         child: LiquidGlass(
           borderRadius: radius,
           fill: _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill,
-          showShadow: true,
+          shadow: AppGlass.cardShadow,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -159,9 +159,9 @@ class _StarterCardState extends State<_StarterCard> {
               onTap: widget.onTap,
               child: SizedBox(
                 width: widget.width,
-                height: 110,
+                height: 108,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
                   child: _StarterContent(starter: widget.starter),
                 ),
               ),
@@ -191,8 +191,8 @@ class _StarterContent extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontSize: 13.5,
-            height: 1.2,
-            fontWeight: FontWeight.w600,
+            height: 1.12,
+            fontWeight: FontWeight.w700,
             color: AppPalette.textPrimary,
           ),
         ),

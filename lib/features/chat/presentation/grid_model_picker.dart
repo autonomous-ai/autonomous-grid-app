@@ -85,7 +85,7 @@ class _TriggerButton extends StatelessWidget {
           shape: const StadiumBorder(),
           textStyle: const TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 9),
           minimumSize: const Size.fromHeight(32),

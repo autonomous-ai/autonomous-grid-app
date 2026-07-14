@@ -70,7 +70,7 @@ class ComposerSection extends StatelessWidget {
           ),
         ],
         LiquidGlass(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(17),
           fill: AppGlass.surfaceFill,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -101,7 +101,7 @@ class ComposerSection extends StatelessWidget {
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   disabledBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.fromLTRB(18, 17, 18, 10),
+                  contentPadding: const EdgeInsets.fromLTRB(18, 16, 18, 9),
                 ),
               ),
               _Actions(

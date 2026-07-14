@@ -29,6 +29,15 @@ class AgentSkill {
   /// Installed by Grid itself (as opposed to something the user added by hand),
   /// so the UI can say where it came from instead of leaving the user guessing.
   final bool fromGrid;
+
+  /// The folder Hermes files it under ("productivity", "grid", "my-skills"), or
+  /// empty for a skill sitting loose at the top. Hermes ships ~70 of them, so the
+  /// category is what makes the list readable.
+  String get category {
+    final after = path.split('/skills/').last;
+    final parts = after.split('/');
+    return parts.length > 1 ? parts.first : '';
+  }
 }
 
 /// Reads the `name` / `description` out of a `SKILL.md` front-matter card.

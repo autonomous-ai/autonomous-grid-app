@@ -53,41 +53,45 @@ class _SidebarItemState extends State<SidebarItem> {
     final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: fill,
-        borderRadius: radius,
-        child: InkWell(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 130),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(color: fill, borderRadius: radius),
+        child: Material(
+          color: Colors.transparent,
           borderRadius: radius,
-          onTap: widget.enabled ? widget.onTap : null,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
-            child: Row(
-              children: [
-                if (widget.icon != null) ...[
-                  Icon(widget.icon, size: 16, color: ink),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(
-                  child: Text(
-                    widget.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: ink,
-                      fontSize: 13,
-                      fontWeight: strong ? FontWeight.w600 : FontWeight.w500,
+          child: InkWell(
+            borderRadius: radius,
+            onTap: widget.enabled ? widget.onTap : null,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
+              child: Row(
+                children: [
+                  if (widget.icon != null) ...[
+                    Icon(widget.icon, size: 16, color: ink),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: ink,
+                        fontSize: 13,
+                        fontWeight: strong ? FontWeight.w600 : FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-                // The slot keeps its size whether or not the trailing action is
-                // showing, so hovering a row never resizes it (which made the
-                // list jump).
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: _hovered ? widget.trailing : null,
-                ),
-              ],
+                  // The slot keeps its size whether or not the trailing action is
+                  // showing, so hovering a row never resizes it.
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: _hovered ? widget.trailing : null,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -109,7 +113,7 @@ class SidebarSectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 16, 10, 6),
+      padding: const EdgeInsets.fromLTRB(10, 18, 10, 8),
       child: Text(
         label,
         style: const TextStyle(

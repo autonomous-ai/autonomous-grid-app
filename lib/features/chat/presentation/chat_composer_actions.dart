@@ -20,14 +20,14 @@ class _Actions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 9),
       child: Row(
         children: [
           _AttachButton(canAttach: canAttach, onPickImage: onPickImage),
           const SizedBox(width: 4),
           const Expanded(child: _ApprovalHint()),
           const SizedBox(width: 12),
-          SizedBox(width: 142, height: 32, child: modelPicker),
+          SizedBox(width: 140, height: 32, child: modelPicker),
           const SizedBox(width: 8),
           _SendButton(sending: sending, canSend: canSend, onSend: onSend),
         ],
@@ -100,8 +100,8 @@ class _SendButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 36,
-      height: 36,
+      width: 34,
+      height: 34,
       child: FilledButton(
         onPressed: canSend ? onSend : null,
         style: FilledButton.styleFrom(
@@ -109,7 +109,7 @@ class _SendButton extends StatelessWidget {
           padding: EdgeInsets.zero,
           backgroundColor: AppPalette.textPrimary,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppPalette.cardBgHover,
+          disabledBackgroundColor: const Color(0xFF9B9B9B),
           disabledForegroundColor: AppPalette.textFaint,
         ),
         child: sending

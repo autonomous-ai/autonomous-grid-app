@@ -9,10 +9,10 @@ import 'package:flutter/material.dart';
 /// contrast-check, §11) than two half-tuned ones.
 abstract final class AppPalette {
   static const windowBg = Color(0xFFFFFFFF); // the conversation / content area
-  static const panelBg = Color(0xFFF7F7F5); // sidebar column (warm paper)
-  static const cardBg = Color(0xFFF3F3F0); // input fills, quiet cards
-  static const cardBgHover = Color(0xFFEBEBE7);
-  static const divider = Color(0xFFE4E3DE);
+  static const panelBg = Color(0xFFF8F8F7); // sidebar column (warm paper)
+  static const cardBg = Color(0xFFF4F4F2); // input fills, quiet cards
+  static const cardBgHover = Color(0xFFEDEDEB);
+  static const divider = Color(0xFFE7E5E0);
 
   static const accent = Color(0xFF2F5BEA); // primary action / selection
   static const accentMuted = Color(
@@ -39,11 +39,11 @@ abstract final class AppPalette {
 /// Centralized so every raised surface shares one recipe.
 abstract final class AppSurface {
   /// The sidebar row you're on.
-  static const selectedFill = Color(0x0F000000); // ~6% black
+  static const selectedFill = Color(0x0A000000); // ~4% black
 
   /// The sidebar row under the pointer — lighter than [selectedFill], so hover
   /// never reads as "selected".
-  static const hoverFill = Color(0x08000000); // ~3% black
+  static const hoverFill = Color(0x06000000); // ~2% black
 
   /// A recessed well inside a panel (e.g. the grid list column) — a faint darken
   /// that sets the column back without drawing a hard box around it.
@@ -65,19 +65,29 @@ abstract final class AppSurface {
 /// flat shadows. Kept separate from [AppCard] because these surfaces are chrome,
 /// not dense content cards.
 abstract final class AppGlass {
-  static const sidebarFill = AppPalette.panelBg;
+  static const sidebarFill = Color(0xF2F8F8F7);
   static const surfaceFill = Color(0xFFFFFFFF);
   static const surfaceHoverFill = Color(0xFFFDFDFC);
-  static const hair = Color(0xFFE8E7E2);
+  static const hair = Color(0xFFE5E3DE);
 
   static const shadow = <BoxShadow>[
     BoxShadow(
-      color: Color(0x14000000),
-      blurRadius: 22,
-      offset: Offset(0, 10),
-      spreadRadius: -12,
+      color: Color(0x12000000),
+      blurRadius: 18,
+      offset: Offset(0, 8),
+      spreadRadius: -10,
     ),
-    BoxShadow(color: Color(0x08000000), blurRadius: 3, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x07000000), blurRadius: 3, offset: Offset(0, 1)),
+  ];
+
+  static const cardShadow = <BoxShadow>[
+    BoxShadow(
+      color: Color(0x0F000000),
+      blurRadius: 14,
+      offset: Offset(0, 7),
+      spreadRadius: -8,
+    ),
+    BoxShadow(color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1)),
   ];
 }
 

@@ -1,0 +1,131 @@
+import 'dart:io';
+
+import 'host_environment.dart';
+
+/// Raised when a `hermes cron` command fails, carrying the line the CLI printed
+/// so the controller can humanize it instead of inventing a message.
+class HermesCronException implements Exception {
+  const HermesCronException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'HermesCronException: $message';
+}
+
+/// The seam onto Hermes's own scheduler (`hermes cron`).
+///
+/// Hermes already schedules and runs the jobs — the app doesn't reimplement any
+/// of that. It writes jobs through the CLI, reads them back from Hermes's store,
+/// and checks that the thing which fires them (Hermes's gateway) is alive.
+abstract interface class HermesCronService {
+  /// The raw contents of Hermes's job store, or null when it has none yet.
+  Future<String?> readJobsJson();
+
+  /// Create a job. [schedule] is a cron expression; [workdir] is the folder the
+  /// job runs in (Projects), so a task can read the user's files.
+  Future<void> create({
+    required String schedule,
+    required String prompt,
+    required String name,
+    String? workdir,
+  });
+
+  Future<void> pause(String id);
+  Future<void> resume(String id);
+  Future<void> remove(String id);
+
+  /// Queue [id] to run on the scheduler's next tick (seconds away), so the user
+  /// can try a task without waiting for its time to come round.
+  Future<void> runNow(String id);
+
+  /// Whether the scheduler that fires jobs is alive. Jobs are stored either way;
+  /// without it they simply never run — so the UI has to be able to say so.
+  Future<bool> schedulerRunning();
+
+  /// Start the scheduler (Hermes's background gateway service).
+  Future<void> startScheduler();
+}
+
+/// Real implementation: spawns the `hermes` binary and reads its cron store.
+class HermesCronServiceImpl implements HermesCronService {
+  HermesCronServiceImpl(this.binPath, {String? home})
+    : _home = home ?? Platform.environment['HOME'] ?? '';
+
+  /// Absolute path to the hermes binary (it isn't on a GUI app's default PATH).
+  final String binPath;
+  final String _home;
+
+  /// How fresh the scheduler's heartbeat must be to count as alive. Hermes
+  /// touches it every ~10s; a minute of slack absorbs a busy machine without
+  /// calling a dead scheduler alive.
+  static const _heartbeatMaxAge = Duration(seconds: 60);
+
+  Directory get _cronDir => Directory('$_home/.hermes/cron');
+
+  @override
+  Future<String?> readJobsJson() async {
+    final file = File('${_cronDir.path}/jobs.json');
+    if (!file.existsSync()) return null;
+    return file.readAsString();
+  }
+
+  @override
+  Future<void> create({
+    required String schedule,
+    required String prompt,
+    required String name,
+    String? workdir,
+  }) => _run([
+    'cron',
+    'create',
+    schedule,
+    prompt,
+    '--name',
+    name,
+    // Keep the answer on this computer: no messaging platform is wired up, and
+    // silently posting a result somewhere would be a surprise.
+    '--deliver',
+    'local',
+    if (workdir != null) ...['--workdir', workdir],
+  ]);
+
+  @override
+  Future<void> pause(String id) => _run(['cron', 'pause', id]);
+
+  @override
+  Future<void> resume(String id) => _run(['cron', 'resume', id]);
+
+  @override
+  Future<void> remove(String id) => _run(['cron', 'remove', id]);
+
+  @override
+  Future<void> runNow(String id) => _run(['cron', 'run', id]);
+
+  @override
+  Future<bool> schedulerRunning() async {
+    // The heartbeat file, not `hermes gateway status`: it's a single stat
+    // instead of a process spawn, so the screen can check it on every refresh.
+    final beat = File('${_cronDir.path}/ticker_heartbeat');
+    if (!beat.existsSync()) return false;
+    final seconds = double.tryParse((await beat.readAsString()).trim());
+    if (seconds == null) return false;
+    final last = DateTime.fromMillisecondsSinceEpoch((seconds * 1000).round());
+    return DateTime.now().difference(last) < _heartbeatMaxAge;
+  }
+
+  @override
+  Future<void> startScheduler() => _run(['gateway', 'start']);
+
+  Future<void> _run(List<String> args) async {
+    final result = await Process.run(
+      binPath,
+      args,
+      environment: {...Platform.environment, 'PATH': HostEnvironment.path()},
+    );
+    if (result.exitCode == 0) return;
+    final stderr = (result.stderr as String).trim();
+    final stdout = (result.stdout as String).trim();
+    throw HermesCronException(stderr.isNotEmpty ? stderr : stdout);
+  }
+}

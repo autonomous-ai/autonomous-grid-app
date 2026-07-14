@@ -13,7 +13,7 @@ class _ContextStrip extends StatelessWidget {
         border: Border(bottom: BorderSide(color: AppGlass.hair)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+        padding: const EdgeInsets.fromLTRB(18, 7, 18, 7),
         child: Row(
           children: [
             const Icon(
@@ -52,7 +52,7 @@ class _StripLabel extends StatelessWidget {
       style: const TextStyle(
         color: AppPalette.textPrimary,
         fontSize: 12.5,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w600,
       ),
     );
   }

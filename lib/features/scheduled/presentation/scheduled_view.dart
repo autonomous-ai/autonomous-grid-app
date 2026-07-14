@@ -1,29 +1,197 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../shared/widgets/coming_soon_view.dart';
+import '../../../shared/layouts/shell_state.dart';
+import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/error_box.dart';
+import '../../../shared/widgets/section_scaffold.dart';
+import '../../agent/logic/hermes_tool.dart';
+import '../logic/scheduled_job.dart';
+import '../logic/scheduled_jobs_controller.dart';
+import 'widgets/job_detail.dart';
+import 'widgets/job_list.dart';
+import 'widgets/job_suggestion_list.dart';
+import 'widgets/new_job_dialog.dart';
+import 'widgets/scheduler_banner.dart';
 
-/// The Scheduled screen: work you hand the assistant to run on its own, on a
-/// timer, instead of sitting in the chat waiting for it.
+/// The Scheduled screen: work the assistant does on its own, on a timer.
 ///
-/// Not built yet — this states that plainly rather than shipping buttons that
-/// don't do anything. TODO(BE): needs a job store + a runner that can wake the
-/// agent while the app is idle.
-class ScheduledView extends StatelessWidget {
+/// The tasks are Hermes's own scheduled jobs — the app writes them through
+/// `hermes cron` and reads them back from its store, so it never keeps a second
+/// list that could drift from what actually runs.
+class ScheduledView extends ConsumerWidget {
   const ScheduledView({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return const ComingSoonView(
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(hermesInstalledProvider)) return const _NoAgent();
+
+    final jobs = ref.watch(scheduledJobsProvider);
+    return SectionScaffold(
       title: 'Scheduled',
       subtitle:
-          'Tasks the assistant runs on its own — every morning, every hour, on '
-          'the day you pick.',
-      icon: Icons.schedule_rounded,
-      points: [
-        'Hand it a task and a time — "summarise my notes every Monday".',
-        'Let it run on your grid while you get on with something else.',
-        'Come back to the answer waiting for you in a chat.',
+          'Tasks the assistant runs on its own — every morning, every Friday, '
+          'whenever you say. The answer is waiting when you come back.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SchedulerBanner(),
+          Expanded(
+            child: switch (jobs) {
+              AsyncData(:final value) when value.isEmpty => const _NoJobs(),
+              AsyncData(:final value) => _Workspace(jobs: value),
+              AsyncError(:final error) => ErrorBox(
+                message: "Couldn't read your scheduled tasks: $error",
+              ),
+              _ => const Center(child: CircularProgressIndicator()),
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The two-pane working view: the tasks on the left, the open one on the right.
+class _Workspace extends ConsumerWidget {
+  const _Workspace({required this.jobs});
+
+  final List<ScheduledJob> jobs;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedId = ref.watch(selectedJobIdProvider);
+    final open = jobs.where((job) => job.id == selectedId).firstOrNull;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 320,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _NewTaskButton(),
+              const SizedBox(height: 12),
+              Expanded(child: JobList(jobs: jobs)),
+            ],
+          ),
+        ),
+        const VerticalDivider(width: 25),
+        Expanded(
+          child: open == null
+              ? const _PickOne()
+              : JobDetail(key: ValueKey(open.id), job: open),
+        ),
       ],
+    );
+  }
+}
+
+class _NewTaskButton extends StatelessWidget {
+  const _NewTaskButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: () => showNewJobDialog(context),
+      icon: const Icon(Icons.add_rounded, size: 18),
+      label: const Text('New task'),
+    );
+  }
+}
+
+/// Nothing open in the right pane yet.
+class _PickOne extends StatelessWidget {
+  const _PickOne();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Text(
+        'Pick a task to see what it does.',
+        style: TextStyle(color: AppPalette.textFaint),
+      ),
+    );
+  }
+}
+
+/// No tasks yet — offer three to start from, plus the blank form.
+class _NoJobs extends StatelessWidget {
+  const _NoJobs();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'No scheduled tasks yet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'A task runs on this computer, reads your Projects folder, and '
+                'leaves you the answer.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppPalette.textSecondary),
+              ),
+              const SizedBox(height: 22),
+              const JobSuggestionList(),
+              const SizedBox(height: 18),
+              Center(
+                child: OutlinedButton.icon(
+                  onPressed: () => showNewJobDialog(context),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Write my own'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Nothing on this computer can run a task yet.
+class _NoAgent extends ConsumerWidget {
+  const _NoAgent();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SectionScaffold(
+      title: 'Scheduled',
+      subtitle: 'Tasks the assistant runs on its own, on a timer.',
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "This computer isn't set up to answer chats yet, so it has "
+              'nothing to run a task with.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppPalette.textSecondary),
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: () => ref
+                  .read(shellSectionProvider.notifier)
+                  .select(ShellSection.engines),
+              child: const Text('Set up this computer'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

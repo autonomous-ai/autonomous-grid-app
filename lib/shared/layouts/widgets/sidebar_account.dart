@@ -171,24 +171,37 @@ class _AccountRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-      child: Row(
-        children: [
-          _Avatar(initial: initial, updateAvailable: updateAvailable),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              email,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppPalette.textSecondary,
-                fontSize: 12.5,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(11),
+          color: AppSurface.hoverFill,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 7, 7, 7),
+          child: Row(
+            children: [
+              _Avatar(initial: initial, updateAvailable: updateAvailable),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontSize: 12.5,
+                  ),
+                ),
               ),
-            ),
+              const Icon(
+                Icons.more_horiz,
+                size: 18,
+                color: AppPalette.textFaint,
+              ),
+            ],
           ),
-          const Icon(Icons.more_horiz, size: 18, color: AppPalette.textFaint),
-        ],
+        ),
       ),
     );
   }
