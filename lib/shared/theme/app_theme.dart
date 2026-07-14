@@ -39,11 +39,11 @@ abstract final class AppPalette {
 /// Centralized so every raised surface shares one recipe.
 abstract final class AppSurface {
   /// The sidebar row you're on.
-  static const selectedFill = Color(0x0A000000); // ~4% black
+  static const selectedFill = Color(0x0D000000); // ~5% black
 
   /// The sidebar row under the pointer — lighter than [selectedFill], so hover
   /// never reads as "selected".
-  static const hoverFill = Color(0x06000000); // ~2% black
+  static const hoverFill = Color(0x08000000); // ~3% black
 
   /// A recessed well inside a panel (e.g. the grid list column) — a faint darken
   /// that sets the column back without drawing a hard box around it.
@@ -64,12 +64,12 @@ abstract final class AppSurface {
   /// hovering high above the transcript.
   static const composerShadow = <BoxShadow>[
     BoxShadow(
-      color: Color(0x10000000),
-      blurRadius: 14,
-      offset: Offset(0, 5),
+      color: Color(0x16000000),
+      blurRadius: 18,
+      offset: Offset(0, 7),
       spreadRadius: -8,
     ),
-    BoxShadow(color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x0A000000), blurRadius: 3, offset: Offset(0, 1)),
   ];
 }
 
@@ -85,22 +85,22 @@ abstract final class AppGlass {
 
   static const shadow = <BoxShadow>[
     BoxShadow(
-      color: Color(0x12000000),
-      blurRadius: 22,
-      offset: Offset(0, 10),
+      color: Color(0x18000000),
+      blurRadius: 24,
+      offset: Offset(0, 11),
       spreadRadius: -10,
     ),
-    BoxShadow(color: Color(0x07000000), blurRadius: 3, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 1)),
   ];
 
   static const cardShadow = <BoxShadow>[
     BoxShadow(
-      color: Color(0x12000000),
-      blurRadius: 16,
-      offset: Offset(0, 7),
+      color: Color(0x18000000),
+      blurRadius: 18,
+      offset: Offset(0, 8),
       spreadRadius: -9,
     ),
-    BoxShadow(color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x0A000000), blurRadius: 3, offset: Offset(0, 1)),
   ];
 }
 
