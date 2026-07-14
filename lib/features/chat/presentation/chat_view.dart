@@ -294,6 +294,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
               child: ComposerSection(
+                gridName: widget.network.name,
                 messageController: _message,
                 attachments: _attachments,
                 modality: modality,
@@ -335,7 +336,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   String _greeting(PlaygroundModality modality) => switch (modality) {
     PlaygroundModality.image => 'What should I draw?',
     PlaygroundModality.video => 'Attach an image, then describe the motion',
-    PlaygroundModality.text => 'What can I help with?',
+    PlaygroundModality.text => 'What should we build?',
   };
 }
 

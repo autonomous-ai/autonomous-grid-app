@@ -73,21 +73,35 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     return Scaffold(
       backgroundColor: AppPalette.windowBg,
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const AppSidebar(),
-          Expanded(
-            child: Column(
-              children: [
-                const AppTopBar(),
-                const SessionExpiredBanner(),
-                const GridProvisionBanner(),
-                const Expanded(child: _SectionView()),
-              ],
-            ),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppPalette.windowBg,
+              AppPalette.windowBg,
+              AppPalette.cardBg,
+            ],
+            stops: [0, 0.58, 1],
           ),
-        ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const AppSidebar(),
+            Expanded(
+              child: Column(
+                children: [
+                  const AppTopBar(),
+                  const SessionExpiredBanner(),
+                  const GridProvisionBanner(),
+                  const Expanded(child: _SectionView()),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

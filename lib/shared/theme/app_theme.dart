@@ -61,6 +61,30 @@ abstract final class AppSurface {
   ];
 }
 
+/// Translucent surfaces for the chat-first shell: a frosted fill, a bright
+/// lens edge, and a soft shadow. Kept separate from [AppCard] because these
+/// surfaces are chrome, not dense content cards.
+abstract final class AppGlass {
+  static const sidebarFill = Color(0xCCF7F7F5);
+  static const surfaceFill = Color(0xD9FFFFFF);
+  static const surfaceHoverFill = Color(0xF2FFFFFF);
+  static const rim = Color(0x99FFFFFF);
+  static const hair = Color(0x1A000000);
+  static const lens = Color(0x66FFFFFF);
+  static const wash = Color(0x082F5BEA);
+  static const warmWash = Color(0x08C98A00);
+
+  static const shadow = <BoxShadow>[
+    BoxShadow(
+      color: Color(0x14000000),
+      blurRadius: 30,
+      offset: Offset(0, 14),
+      spreadRadius: -14,
+    ),
+    BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
+  ];
+}
+
 /// Content-card recipe — a white surface with a hairline rim and a soft lift.
 /// Distinct from [AppSurface] (the chrome): cards carry dense content, so they stay
 /// quiet and let the text do the work. Applied via [GlassCard].

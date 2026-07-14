@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/liquid_glass.dart';
 
 /// A fresh chat's empty state: a greeting and four things to try. Tapping one
 /// drops its prompt into the composer, so a first-time user has something to send
@@ -16,47 +17,62 @@ class ChatStarters extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.bolt_rounded,
-                size: 34,
-                color: AppPalette.textFaint,
-                semanticLabel: 'Grid',
-              ),
-              const SizedBox(height: 16),
-              Text(
-                greeting,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // Wrap, not a Row: on a narrow window the cards reflow onto a
-              // second line instead of overflowing.
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 12,
-                runSpacing: 12,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 620;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(24, compact ? 40 : 72, 24, 28),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final starter in _starters)
-                    _StarterCard(
-                      starter: starter,
-                      onTap: () => onPick(starter.prompt),
+                  const _Glyph(),
+                  const SizedBox(height: 18),
+                  Text(
+                    greeting,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontSize: compact ? 27 : 32,
+                      fontWeight: FontWeight.w500,
+                      height: 1.12,
                     ),
+                  ),
+                  const SizedBox(height: 32),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final starter in _starters)
+                        _StarterCard(
+                          starter: starter,
+                          width: compact ? 156 : 172,
+                          onTap: () => onPick(starter.prompt),
+                        ),
+                    ],
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
+    );
+  }
+}
+
+class _Glyph extends StatelessWidget {
+  const _Glyph();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Icon(
+      Icons.cloud_queue_rounded,
+      size: 43,
+      color: AppPalette.textFaint,
+      semanticLabel: 'Grid',
     );
   }
 }
@@ -65,43 +81,54 @@ class ChatStarters extends StatelessWidget {
 class _Starter {
   const _Starter({
     required this.icon,
+    required this.color,
     required this.title,
     required this.prompt,
   });
 
   final IconData icon;
+  final Color color;
   final String title;
   final String prompt;
 }
 
 const _starters = [
   _Starter(
-    icon: Icons.lightbulb_outline_rounded,
-    title: 'Explain something',
-    prompt: 'Explain in plain language: ',
+    icon: Icons.travel_explore_rounded,
+    color: Color(0xFF2F80ED),
+    title: 'Explore and understand code',
+    prompt: 'Explore this code and explain how it works:\n\n',
   ),
   _Starter(
-    icon: Icons.edit_note_rounded,
-    title: 'Write a draft',
-    prompt: 'Write a first draft of ',
+    icon: Icons.architecture_rounded,
+    color: Color(0xFF8A3FFC),
+    title: 'Build a new feature',
+    prompt: 'Help me build a new feature: ',
   ),
   _Starter(
-    icon: Icons.code_rounded,
-    title: 'Help with code',
-    prompt: 'Help me with this code:\n\n',
+    icon: Icons.manage_search_rounded,
+    color: Color(0xFF16A34A),
+    title: 'Review and suggest changes',
+    prompt: 'Review this code and suggest improvements:\n\n',
   ),
   _Starter(
-    icon: Icons.auto_awesome_outlined,
-    title: 'Brainstorm ideas',
-    prompt: 'Give me ten ideas for ',
+    icon: Icons.local_fire_department_outlined,
+    color: Color(0xFFF97316),
+    title: 'Fix a bug or failure',
+    prompt: 'Help me debug this issue:\n\n',
   ),
 ];
 
 /// One tappable suggestion card.
 class _StarterCard extends StatefulWidget {
-  const _StarterCard({required this.starter, required this.onTap});
+  const _StarterCard({
+    required this.starter,
+    required this.width,
+    required this.onTap,
+  });
 
   final _Starter starter;
+  final double width;
   final VoidCallback onTap;
 
   @override
@@ -113,42 +140,63 @@ class _StarterCardState extends State<_StarterCard> {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(14);
+    final radius = BorderRadius.circular(13);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: _hovered ? AppPalette.cardBg : Colors.white,
-        borderRadius: radius,
-        child: InkWell(
+      child: AnimatedScale(
+        scale: _hovered ? 1.015 : 1,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOut,
+        child: LiquidGlass(
           borderRadius: radius,
-          onTap: widget.onTap,
-          child: Container(
-            width: 168,
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-            decoration: BoxDecoration(
+          fill: _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill,
+          showShadow: _hovered,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
               borderRadius: radius,
-              border: Border.all(color: AppPalette.divider),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(widget.starter.icon, size: 18, color: AppPalette.accent),
-                const SizedBox(height: 14),
-                Text(
-                  widget.starter.title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppPalette.textPrimary,
-                  ),
+              onTap: widget.onTap,
+              child: SizedBox(
+                width: widget.width,
+                height: 112,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+                  child: _StarterContent(starter: widget.starter),
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _StarterContent extends StatelessWidget {
+  const _StarterContent({required this.starter});
+
+  final _Starter starter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(starter.icon, size: 18, color: starter.color),
+        const Spacer(),
+        Text(
+          starter.title,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 14,
+            height: 1.2,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 }
