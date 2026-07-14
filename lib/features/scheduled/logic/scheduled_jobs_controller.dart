@@ -79,6 +79,7 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     required String name,
     required String prompt,
     required JobSchedule schedule,
+    bool toTelegram = false,
   }) async {
     // Nobody is there to answer for a task that fires at 8am, so what it's
     // allowed to do is settled here, before it can run at all — and it's what
@@ -90,6 +91,7 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
         prompt: prompt,
         name: name,
         workdir: ref.read(agentWorkspaceDirProvider).path,
+        deliver: toTelegram ? kDeliverTelegram : kDeliverLocal,
       ),
     );
   }

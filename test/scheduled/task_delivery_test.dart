@@ -39,6 +39,7 @@ class FakeCron implements HermesCronService {
     required String prompt,
     required String name,
     String? workdir,
+    String deliver = kDeliverLocal,
   }) async {}
 
   @override

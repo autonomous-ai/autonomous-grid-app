@@ -12,6 +12,7 @@ enum ShellSection {
   scheduled(Icons.schedule_rounded, 'Scheduled'),
   plugins(Icons.extension_outlined, 'Plugins'),
   projects(Icons.folder_open_rounded, 'Projects'),
+  telegram(Icons.send_rounded, 'Telegram'),
   grids(Icons.bolt, 'Grids'),
   engines(Icons.dns_outlined, 'This computer'),
   guide(Icons.help_outline_rounded, 'How to use');
@@ -31,6 +32,7 @@ const kSidebarSections = [ShellSection.scheduled, ShellSection.plugins];
 
 /// What the account menu lists — the setup screens, out of the daily path.
 const kAccountSections = [
+  ShellSection.telegram,
   ShellSection.grids,
   ShellSection.engines,
   ShellSection.guide,

@@ -1,5 +1,69 @@
 part of 'new_job_dialog.dart';
 
+/// Where the answer lands when the task has run.
+///
+/// Telegram is only offered once a bot is actually connected — an option that
+/// silently does nothing is worse than no option at all. The row says why it's
+/// out of reach, and where to fix that.
+class _DeliverRow extends ConsumerWidget {
+  const _DeliverRow({required this.toTelegram, required this.onChanged});
+
+  final bool toTelegram;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connected = ref.watch(telegramProvider).value is TelegramConnected;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Send the answer to',
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ScheduledPillChoice(
+              label: const Text('This app'),
+              selected: !toTelegram,
+              icon: !toTelegram ? Icons.check_rounded : null,
+              onTap: () => onChanged(false),
+            ),
+            Tooltip(
+              message: connected
+                  ? 'Your Telegram chat with the bot'
+                  : 'Connect a Telegram bot first (account menu ▸ Telegram)',
+              child: ScheduledPillChoice(
+                label: Text(
+                  'Telegram',
+                  style: TextStyle(
+                    color: connected ? null : AppPalette.textFaint,
+                  ),
+                ),
+                selected: toTelegram,
+                icon: toTelegram ? Icons.check_rounded : null,
+                onTap: () => connected
+                    ? onChanged(true)
+                    : ref
+                          .read(shellSectionProvider.notifier)
+                          .select(ShellSection.telegram),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _CadenceRow extends StatelessWidget {
   const _CadenceRow({required this.cadence, required this.onChanged});
 

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/hermes_task_policy.dart';
+import '../../../../shared/layouts/shell_state.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../messaging/logic/telegram_controller.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/job_suggestions.dart';
 import '../../logic/scheduled_jobs_controller.dart';
@@ -42,6 +44,10 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   late TimeOfDay _time;
   late int _weekday;
   bool _saving = false;
+
+  /// Where the answer lands. Off by default: this app is where the user is
+  /// standing, and posting to Telegram before they asked would be a surprise.
+  bool _toTelegram = false;
 
   @override
   void initState() {
@@ -89,6 +95,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
           name: _name.text.trim(),
           prompt: _prompt.text.trim(),
           schedule: _schedule,
+          toTelegram: _toTelegram,
         );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -152,6 +159,11 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                 ],
                 const SizedBox(height: 12),
                 _TimeRow(time: _time, onPick: _pickTime),
+                const SizedBox(height: 12),
+                _DeliverRow(
+                  toTelegram: _toTelegram,
+                  onChanged: (value) => setState(() => _toTelegram = value),
+                ),
                 const SizedBox(height: 16),
                 _WhatItMayDo(schedule: _schedule),
                 const SizedBox(height: 22),

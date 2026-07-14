@@ -8,6 +8,7 @@ import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/chat/presentation/chat_pane.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
+import '../../features/messaging/presentation/telegram_view.dart';
 import '../../features/network/logic/create_network_controller.dart';
 import '../../features/network/presentation/how_to_use_view.dart';
 import '../../features/network/presentation/networks_pane.dart';
@@ -81,6 +82,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       if (next != null) _resumeSharing();
     });
 
+    final section = ref.watch(shellSectionProvider);
+
     // ⌘K from anywhere — the palette is how you find a chat, a project or a task
     // without knowing which screen the app keeps it on.
     return CallbackShortcuts(
@@ -94,33 +97,44 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         autofocus: true,
         child: Scaffold(
           backgroundColor: AppPalette.windowBg,
-          body: Stack(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const AppSidebar(),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        const AppTopBar(),
-                        const SessionExpiredBanner(),
-                        const GridProvisionBanner(),
-                        const Expanded(child: _SectionView()),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const _SidebarCastShadow(),
-            ],
-          ),
+          body: section == ShellSection.grids
+              ? const NetworksPane(fullScreen: true)
+              : const _MainShellBody(),
         ),
       ),
     );
   }
 
   void _openPalette() => showCommandPalette(context);
+}
+
+class _MainShellBody extends StatelessWidget {
+  const _MainShellBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const AppSidebar(),
+            Expanded(
+              child: Column(
+                children: [
+                  const AppTopBar(),
+                  const SessionExpiredBanner(),
+                  const GridProvisionBanner(),
+                  const Expanded(child: _SectionView()),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const _SidebarCastShadow(),
+      ],
+    );
+  }
 }
 
 class _SidebarCastShadow extends StatelessWidget {
@@ -164,6 +178,7 @@ class _SectionView extends ConsumerWidget {
       ShellSection.scheduled => const ScheduledView(),
       ShellSection.plugins => const PluginsView(),
       ShellSection.projects => const ProjectsView(),
+      ShellSection.telegram => const TelegramView(),
       ShellSection.grids => const NetworksPane(),
       ShellSection.engines => const ProviderView(),
       ShellSection.guide => const HowToUseView(),

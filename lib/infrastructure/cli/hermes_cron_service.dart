@@ -13,6 +13,14 @@ class HermesCronException implements Exception {
   String toString() => 'HermesCronException: $message';
 }
 
+/// Keep the answer on this computer: Hermes writes it to a file and the app
+/// delivers it into the task's chat.
+const String kDeliverLocal = 'local';
+
+/// Send the answer to the user's Telegram bot chat — the one thing that makes a
+/// scheduled task useful when you're away from the machine.
+const String kDeliverTelegram = 'telegram';
+
 /// One finished run of a scheduled job: when it ran, and what it produced.
 typedef CronOutput = ({DateTime at, String text});
 
@@ -45,12 +53,15 @@ abstract interface class HermesCronService {
   Future<List<CronOutput>> readOutputs(String jobId);
 
   /// Create a job. [schedule] is a cron expression; [workdir] is the folder the
-  /// job runs in (Projects), so a task can read the user's files.
+  /// job runs in (Projects), so a task can read the user's files; [deliver] is
+  /// where the answer goes — [kDeliverLocal] (this app reads it off disk) or
+  /// [kDeliverTelegram] (Hermes sends it to the user's bot chat).
   Future<void> create({
     required String schedule,
     required String prompt,
     required String name,
     String? workdir,
+    String deliver = kDeliverLocal,
   });
 
   Future<void> pause(String id);
@@ -98,6 +109,7 @@ class HermesCronServiceImpl implements HermesCronService {
     required String prompt,
     required String name,
     String? workdir,
+    String deliver = kDeliverLocal,
   }) => _run([
     'cron',
     'create',
@@ -105,10 +117,10 @@ class HermesCronServiceImpl implements HermesCronService {
     prompt,
     '--name',
     name,
-    // Keep the answer on this computer: no messaging platform is wired up, and
-    // silently posting a result somewhere would be a surprise.
+    // Where the answer goes is the user's choice, made when they wrote the task
+    // — never a surprise post to somewhere they didn't pick.
     '--deliver',
-    'local',
+    deliver,
     if (workdir != null) ...['--workdir', workdir],
   ]);
 

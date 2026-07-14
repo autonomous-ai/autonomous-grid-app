@@ -19,7 +19,14 @@ class _FakeCron implements HermesCronService {
   String? failWith;
 
   final calls = <String>[];
-  ({String schedule, String prompt, String name, String? workdir})? created;
+  ({
+    String schedule,
+    String prompt,
+    String name,
+    String? workdir,
+    String deliver,
+  })?
+  created;
 
   void _maybeFail() {
     final message = failWith;
@@ -38,6 +45,7 @@ class _FakeCron implements HermesCronService {
     required String prompt,
     required String name,
     String? workdir,
+    String deliver = kDeliverLocal,
   }) async {
     calls.add('create');
     _maybeFail();
@@ -46,6 +54,7 @@ class _FakeCron implements HermesCronService {
       prompt: prompt,
       name: name,
       workdir: workdir,
+      deliver: deliver,
     );
   }
 
@@ -164,6 +173,25 @@ void main() {
     expect(h.cron.created?.schedule, '0 16 * * 5');
     expect(h.cron.created?.name, 'Weekly review');
     expect(h.cron.created?.workdir, workspace.path);
+  });
+
+  test('the answer goes where the user picked — this app by default, Telegram '
+      'only when they said so', () async {
+    final h = harness();
+    await h.container.read(scheduledJobsProvider.future);
+    final controller = h.container.read(scheduledJobsProvider.notifier);
+    const daily = JobSchedule(cadence: JobCadence.everyDay, hour: 8, minute: 0);
+
+    await controller.create(name: 'Digest', prompt: 'p', schedule: daily);
+    expect(h.cron.created?.deliver, kDeliverLocal);
+
+    await controller.create(
+      name: 'Digest',
+      prompt: 'p',
+      schedule: daily,
+      toTelegram: true,
+    );
+    expect(h.cron.created?.deliver, kDeliverTelegram);
   });
 
   test('what a task is allowed to do is settled before it is saved — there is '

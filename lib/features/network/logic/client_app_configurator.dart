@@ -6,6 +6,7 @@ import 'package:toml/toml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../../infrastructure/cli/env_file.dart';
 import 'app_guide_snippets.dart';
 import 'client_app_detector.dart';
 
@@ -209,39 +210,13 @@ class ClientAppConfigurator {
     }
   }
 
-  /// Upserts `KEY=value` lines in a dotenv file, replacing an existing
-  /// uncommented assignment in place (commented `# KEY=` template lines are left
-  /// alone) and appending any that are new under a Grid header naming [appName].
-  /// Preserves every other line/comment and backs an existing file up to
-  /// `<file>.bak` first.
+  /// Point [appName]'s dotenv at the grid, merging into whatever is already
+  /// there — see [EnvFile].
   Future<void> _upsertEnvVars(
     File env,
     Map<String, String> vars,
     String appName,
-  ) async {
-    final lines = (await env.exists()) ? await env.readAsLines() : <String>[];
-    final remaining = Map<String, String>.from(vars);
-    final out = <String>[];
-    for (final line in lines) {
-      final key = remaining.keys.firstWhere(
-        (k) => RegExp('^\\s*${RegExp.escape(k)}\\s*=').hasMatch(line),
-        orElse: () => '',
-      );
-      if (key.isEmpty) {
-        out.add(line);
-        continue;
-      }
-      out.add('$key=${remaining.remove(key)}');
-    }
-    if (remaining.isNotEmpty) {
-      if (out.isNotEmpty && out.last.trim().isNotEmpty) out.add('');
-      out.add('# Added by Grid — points $appName at this grid');
-      remaining.forEach((k, v) => out.add('$k=$v'));
-    }
-    await env.parent.create(recursive: true);
-    if (await env.exists()) await env.copy('${env.path}.bak');
-    await env.writeAsString('${out.join('\n')}\n');
-  }
+  ) => EnvFile(env).upsert(vars, addedBy: 'points $appName at this grid');
 
   /// Registers this grid as a Hermes named provider under `custom_providers`,
   /// upserting by provider **name** (the grid host, e.g. `grid.autonomous.ai`) so
