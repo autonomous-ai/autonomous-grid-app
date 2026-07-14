@@ -22,13 +22,12 @@ enum ShellSection {
   final String label;
 }
 
-/// What the sidebar lists, in order. Chat isn't among them: you get there by
-/// starting a chat or opening one from the history below.
-const kSidebarSections = [
-  ShellSection.scheduled,
-  ShellSection.plugins,
-  ShellSection.projects,
-];
+/// What the sidebar's nav lists, in order.
+///
+/// Chat isn't among them (you get there by starting a chat or opening one), and
+/// neither is Projects — your projects *are* the rail below, each holding its
+/// chats; this section is the screen that manages them, opened from that header.
+const kSidebarSections = [ShellSection.scheduled, ShellSection.plugins];
 
 /// What the account menu lists — the setup screens, out of the daily path.
 const kAccountSections = [

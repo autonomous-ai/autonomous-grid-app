@@ -70,6 +70,11 @@ abstract interface class ChatSender {
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
 
+    /// The folder the agent may read while it answers — the project this chat was
+    /// opened inside. Null falls back to the app's own working folder, and the
+    /// API sender ignores it entirely (a relay call has no filesystem).
+    String? workdir,
+
     /// The conversation this turn belongs to, when the caller has one. The agent
     /// sender keeps one live session per conversation, so it can send only the
     /// new turn and let the agent hold the context; switching conversation (a
@@ -120,6 +125,8 @@ class DefaultChatSender implements ChatSender {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
+    // A relay call has no filesystem — the project folder means nothing here.
+    String? workdir,
     String? conversationId,
   }) {
     // The local smoke test and relay text both hit chat/completions; only the

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/glass_card.dart';
 import '../../logic/hermes_plugin.dart';
 import '../../logic/plugins_controller.dart';
+import 'extension_tile_surface.dart';
 
 /// The plugins Hermes knows about: what each one is, and a switch that turns it
 /// on for the assistant. A plugin pulled from Git can also be removed; a bundled
@@ -71,16 +71,11 @@ class _PluginRowState extends ConsumerState<_PluginRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final plugin = widget.plugin;
-    return GlassCard(
-      style: GlassCardStyle.inset,
-      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+    return ExtensionTileSurface(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: Icon(Icons.extension_outlined, size: 18),
-          ),
+          const ExtensionIconBadge(icon: Icons.extension_outlined),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -108,7 +103,7 @@ class _PluginRowState extends ConsumerState<_PluginRow> {
                     ],
                     if (!plugin.bundled) ...[
                       const SizedBox(width: 8),
-                      const _Tag(label: 'From Git'),
+                      const ExtensionTag(label: 'From Git'),
                     ],
                   ],
                 ),
@@ -135,33 +130,75 @@ class _PluginRowState extends ConsumerState<_PluginRow> {
               icon: const Icon(Icons.delete_outline_rounded),
               onPressed: _busy ? null : _remove,
             ),
-          Switch(value: plugin.enabled, onChanged: _busy ? null : _toggle),
+          _PluginSwitch(value: plugin.enabled, busy: _busy, onChanged: _toggle),
         ],
       ),
     );
   }
 }
 
-/// A small caption chip — where a plugin came from.
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label});
+class _PluginSwitch extends StatelessWidget {
+  const _PluginSwitch({
+    required this.value,
+    required this.busy,
+    required this.onChanged,
+  });
 
-  final String label;
+  final bool value;
+  final bool busy;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppCard.tint18,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: AppCard.accentStrong,
+    final label = value ? 'Turn off plugin' : 'Turn on plugin';
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        toggled: value,
+        label: label,
+        child: GestureDetector(
+          onTap: busy ? null : () => onChanged(!value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+            width: 46,
+            height: 28,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: value ? AppPalette.accent : AppPalette.offline,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: value ? AppGlass.cardShadow : null,
+            ),
+            child: busy
+                ? const Center(
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                : AnimatedAlign(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOut,
+                    alignment: value
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
         ),
       ),
     );

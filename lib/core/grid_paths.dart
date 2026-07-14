@@ -64,6 +64,10 @@ class GridPaths {
   /// the app restores them. App-owned — the CLI never touches it.
   static File get chatPrefsFile => File('${home.path}/app/chat_prefs.json');
 
+  /// The folders the user added as projects — the ones a chat can be opened
+  /// "inside", so the assistant may read them. App-owned.
+  static File get projectsFile => File('${home.path}/app/projects.json');
+
   /// Working directory for the agent that answers chat. It runs read-only here
   /// so its file tools have a stable, app-owned root instead of pointing at the
   /// user's home. App-owned — the CLI never touches it.

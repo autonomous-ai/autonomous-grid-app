@@ -105,7 +105,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                               .read(shellSectionProvider.notifier)
                               .select(target),
                         ),
-                      const SidebarSectionLabel(label: 'Chats'),
                     ],
                   ),
                 ),

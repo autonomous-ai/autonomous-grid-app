@@ -13,6 +13,7 @@ class Conversation {
     required this.createdAt,
     required this.updatedAt,
     this.messages = const [],
+    this.projectId,
   });
 
   final String id;
@@ -28,6 +29,11 @@ class Conversation {
   final DateTime updatedAt;
   final List<ChatMessage> messages;
 
+  /// The project (a folder on this computer) this chat was opened inside, or
+  /// null for a chat that belongs to no project. It decides which files the
+  /// assistant may read while answering — see `Project`.
+  final String? projectId;
+
   Conversation copyWith({
     String? title,
     String? model,
@@ -40,12 +46,14 @@ class Conversation {
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     messages: messages ?? this.messages,
+    projectId: projectId,
   );
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,
     'model': model,
+    'projectId': projectId,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
     'messages': [for (final m in messages) _messageToJson(m)],
@@ -66,6 +74,9 @@ class Conversation {
           ? json['title'] as String
           : kNewConversationTitle,
       model: json['model'] is String ? json['model'] as String : '',
+      projectId: json['projectId'] is String && (json['projectId'] as String).isNotEmpty
+          ? json['projectId'] as String
+          : null,
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
       messages: [

@@ -10,6 +10,7 @@ import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_request.dart';
+import '../../projects/logic/project.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
 
@@ -67,6 +68,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   StreamSubscription<ChatSendUpdate>? _sub;
   Completer<void>? _done;
 
+  /// The project a not-yet-saved chat belongs to. A new chat isn't persisted
+  /// until its first message, so the choice has to be held here until then.
+  String? _draftProjectId;
+
   @override
   ChatSessionsState build() {
     ref.onDispose(_cancel);
@@ -79,10 +84,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
 
   ChatStore get _store => ref.read(chatStoreProvider);
 
-  /// Open a fresh, empty compose. Not persisted until the first message, so
-  /// clicking "New chat" repeatedly never litters the history with blanks.
-  void newChat() {
+  /// Open a fresh, empty compose, optionally inside [projectId] — the folder the
+  /// assistant may read while answering it. Not persisted until the first
+  /// message, so clicking "New chat" repeatedly never litters the history with
+  /// blanks.
+  void newChat({String? projectId}) {
     if (state.sending) return;
+    _draftProjectId = projectId;
     state = ChatSessionsState(conversations: state.conversations);
   }
 
@@ -153,6 +161,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       history: conversation.messages,
       modality: modality,
       attachments: attachments,
+      // The chat's project, so the agent answers with that folder open. Null for
+      // a chat that belongs to no project (it falls back to the app's folder).
+      workdir: ref.read(projectByIdProvider(conversation.projectId))?.path,
       // Lets the agent sender keep one live session per conversation and send
       // only the new turn (the API sender ignores it).
       conversationId: conversation.id,
@@ -230,7 +241,8 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     _finish();
   }
 
-  /// The open conversation, or a fresh (unsaved) one seeded with [model].
+  /// The open conversation, or a fresh (unsaved) one seeded with [model] and the
+  /// project the user started it in.
   Conversation _activeOrNew(String model) {
     final active = state.active;
     if (active != null) return active;
@@ -241,6 +253,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       model: model,
       createdAt: now,
       updatedAt: now,
+      projectId: _draftProjectId,
     );
   }
 

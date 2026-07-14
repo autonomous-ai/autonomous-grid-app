@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/glass_card.dart';
 import '../../../agent/logic/hermes_skill_installer.dart';
 import '../../logic/agent_skill.dart';
+import 'extension_tile_surface.dart';
 import 'new_skill_dialog.dart';
 
 /// The skills installed for the assistant — instructions it follows for one job
@@ -35,16 +35,11 @@ class _SkillRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GlassCard(
-      style: GlassCardStyle.inset,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    return ExtensionTileSurface(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: Icon(Icons.auto_awesome_outlined, size: 17),
-          ),
+          const ExtensionIconBadge(icon: Icons.auto_awesome_outlined),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -72,7 +67,7 @@ class _SkillRow extends StatelessWidget {
                     ],
                     if (skill.fromGrid) ...[
                       const SizedBox(width: 8),
-                      const _Tag(label: 'From Grid'),
+                      const ExtensionTag(label: 'From Grid'),
                     ],
                   ],
                 ),
@@ -91,31 +86,6 @@ class _SkillRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppCard.tint18,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: AppCard.accentStrong,
-        ),
       ),
     );
   }

@@ -89,6 +89,7 @@ class HermesChatSender implements ChatSender {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     String? localBaseUrl,
+    String? workdir,
     String? conversationId,
   }) async* {
     if (modality != PlaygroundModality.text) {
@@ -142,8 +143,12 @@ class HermesChatSender implements ChatSender {
     String model,
     String? conversationId,
     List<ChatMessage> history,
+    String? workdir,
   ) async {
-    final key = '${network.networkId}|$model|$conversationId';
+    // The folder is part of the key: moving a chat to another project must start
+    // a fresh session, or the agent would keep reading the old folder.
+    final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
+    final key = '${network.networkId}|$model|$conversationId|$root';
     final live = _live;
     final continues =
         live != null &&
@@ -158,9 +163,7 @@ class HermesChatSender implements ChatSender {
 
     await live?.session.close();
     final service = _ref.read(hermesAcpServiceProvider)!;
-    final session = await service.start(
-      workdir: _ref.read(agentWorkspaceDirProvider).path,
-    );
+    final session = await service.start(workdir: root);
     _live = _LiveSession(session: session, key: key, seen: history.length);
     // A fresh session has no context, so replay the history into the first turn.
     return (session: session, text: buildAgentPrompt(history));

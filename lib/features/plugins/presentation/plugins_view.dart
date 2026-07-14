@@ -10,6 +10,7 @@ import '../logic/agent_skill.dart';
 import '../logic/plugins_controller.dart';
 import 'widgets/add_plugin_dialog.dart';
 import 'widgets/new_skill_dialog.dart';
+import 'widgets/plugin_pill_choice.dart';
 import 'widgets/plugin_list.dart';
 import 'widgets/skill_list.dart';
 
@@ -66,16 +67,12 @@ class _PluginsViewState extends ConsumerState<PluginsView> {
         children: [
           _Toolbar(tab: tab, onRefresh: _refresh),
           const SizedBox(height: 12),
-          TextField(
+          _SearchField(
             controller: _search,
+            hintText: tab == PluginsTab.plugins
+                ? 'Search plugins'
+                : 'Search skills',
             onChanged: (value) => setState(() => _query = value),
-            style: const TextStyle(fontSize: 13),
-            decoration: InputDecoration(
-              hintText: tab == PluginsTab.plugins
-                  ? 'Search plugins'
-                  : 'Search skills',
-              prefixIcon: const Icon(Icons.search_rounded, size: 18),
-            ),
           ),
           const SizedBox(height: 14),
           Expanded(
@@ -104,21 +101,18 @@ class _Toolbar extends ConsumerWidget {
         for (final option in PluginsTab.values)
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(option.label),
+            child: PluginPillChoice(
+              label: option.label,
               selected: option == tab,
-              onSelected: (_) =>
-                  ref.read(pluginsTabProvider.notifier).select(option),
+              icon: option == PluginsTab.plugins
+                  ? Icons.extension_rounded
+                  : Icons.auto_awesome_rounded,
+              onTap: () => ref.read(pluginsTabProvider.notifier).select(option),
             ),
           ),
         const Spacer(),
-        IconButton(
-          tooltip: 'Refresh',
-          iconSize: 18,
-          icon: const Icon(Icons.refresh_rounded),
-          onPressed: onRefresh,
-        ),
-        const SizedBox(width: 4),
+        _RefreshButton(onPressed: onRefresh),
+        const SizedBox(width: 8),
         MenuAnchor(
           menuChildren: [
             MenuItemButton(
@@ -136,10 +130,91 @@ class _Toolbar extends ConsumerWidget {
             onPressed: () =>
                 controller.isOpen ? controller.close() : controller.open(),
             icon: const Icon(Icons.add_rounded, size: 18),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(104, 34),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             label: const Text('Create'),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _RefreshButton extends StatelessWidget {
+  const _RefreshButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Refresh',
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(11),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: onPressed,
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: AppPalette.divider),
+            ),
+            child: const Icon(Icons.refresh_rounded, size: 17),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.hintText,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppPalette.divider),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        style: const TextStyle(fontSize: 13),
+        decoration: InputDecoration(
+          filled: false,
+          hintText: hintText,
+          prefixIcon: const Icon(Icons.search_rounded, size: 18),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
+        ),
+      ),
     );
   }
 }
