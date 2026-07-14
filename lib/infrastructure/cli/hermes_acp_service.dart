@@ -25,6 +25,14 @@ class HermesAcpMessage extends HermesAcpEvent {
   final String text;
 }
 
+/// The agent is waiting on the user: it wants to run a command or change a file.
+/// The turn is stalled until [HermesAcpSession.answerPermission] is called with
+/// the request's id — see [decideHermesPermission].
+class HermesAcpPermission extends HermesAcpEvent {
+  const HermesAcpPermission(this.request);
+  final AgentPermission request;
+}
+
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
 class HermesAcpRun {
@@ -82,6 +90,11 @@ abstract interface class HermesAcpSession {
   /// Runs one user turn. Only one turn is in flight at a time — the caller
   /// awaits [HermesAcpRun.done] before the next.
   HermesAcpRun prompt(String text);
+
+  /// Answer a [HermesAcpPermission] the agent is waiting on: [optionId] is the
+  /// choice it offered, or null to cancel it (which the agent reads as no). The
+  /// turn resumes — or doesn't — on this call.
+  void answerPermission(Object requestId, String? optionId);
 
   /// Kills the process and releases the session.
   Future<void> close();
@@ -291,9 +304,10 @@ class _HermesAcpSession implements HermesAcpSession {
     }
   }
 
-  // Server → client requests. Permission prompts go through the policy — the
-  // dangerous commands and file edits the agent escalates are refused (see
-  // [decideHermesPermission]). Everything else is acknowledged.
+  // Server → client requests. Permission prompts go through the policy: reads
+  // are allowed, a command or a file change is put to the user (see
+  // [decideHermesPermission]), and anything else is refused. Everything that
+  // isn't a permission prompt is acknowledged.
   void _respond(Map<String, dynamic> message) {
     final method = message['method'];
     if (method is String && method.contains('permission')) {
@@ -308,53 +322,68 @@ class _HermesAcpSession implements HermesAcpSession {
   }
 
   void _respondToPermission(Map<String, dynamic> message) {
+    final id = message['id'] as Object;
     final params = message['params'];
     final toolCall = params is Map ? params['toolCall'] : null;
     final toolKind = _str(
       toolCall is Map ? toolCall['kind'] : null,
       fallback: 'other',
     );
-    final optionId = decideHermesPermission(
-      toolKind: toolKind,
-      options: _parsePermissionOptions(
-        params is Map ? params['options'] : null,
-      ),
+    final options = parsePermissionOptions(
+      params is Map ? params['options'] : null,
+    );
+    final label = _str(
+      toolCall is Map ? toolCall['title'] : null,
+      fallback: toolKind,
     );
 
-    final outcome = optionId != null
-        ? {'outcome': 'selected', 'optionId': optionId}
-        : {'outcome': 'cancelled'};
-    _write({
-      'jsonrpc': '2.0',
-      'id': message['id'],
-      'result': {'outcome': outcome},
-    });
-
-    // A refused action isn't silent: show it in the activity feed, so the user
-    // sees the agent tried something and was blocked — not just an answer that
-    // quietly couldn't do what they asked.
-    if (!safeToolKinds.contains(toolKind)) {
-      _events?.add(
-        HermesAcpActivity(
-          AgentActivity(
-            id: 'blocked-${message['id']}',
-            kind: AgentActivityKind.command,
-            label:
-                'Blocked: ${_str(toolCall is Map ? toolCall['title'] : null, fallback: toolKind)}',
-            status: AgentActivityStatus.failed,
-          ),
-        ),
-      );
+    switch (decideHermesPermission(toolKind: toolKind, options: options)) {
+      case HermesAllow(:final optionId):
+        answerPermission(id, optionId);
+      case HermesRefuse(:final optionId):
+        answerPermission(id, optionId);
+        _blocked(id, label);
+      case HermesAskUser():
+        final events = _events;
+        final request = parseAgentPermission(id: id, params: params);
+        // Nobody to ask (no turn listening), or a request we can't put into
+        // words: refuse it. Never approve what we can't show the user.
+        if (events == null || events.isClosed || request == null) {
+          answerPermission(id, refuseOption(options));
+          _blocked(id, label);
+          return;
+        }
+        events.add(HermesAcpPermission(request));
     }
   }
 
-  List<HermesPermissionOption> _parsePermissionOptions(Object? raw) {
-    if (raw is! List) return const [];
-    return [
-      for (final option in raw)
-        if (option is Map)
-          (optionId: _str(option['optionId']), kind: _str(option['kind'])),
-    ];
+  @override
+  void answerPermission(Object requestId, String? optionId) {
+    _write({
+      'jsonrpc': '2.0',
+      'id': requestId,
+      'result': {
+        'outcome': optionId != null
+            ? {'outcome': 'selected', 'optionId': optionId}
+            : {'outcome': 'cancelled'},
+      },
+    });
+  }
+
+  /// A refused action isn't silent: show it in the activity feed, so the user
+  /// sees the agent tried something and didn't get to do it — not just an answer
+  /// that quietly couldn't do what they asked.
+  void _blocked(Object requestId, String label) {
+    _events?.add(
+      HermesAcpActivity(
+        AgentActivity(
+          id: 'blocked-$requestId',
+          kind: AgentActivityKind.command,
+          label: 'Blocked: $label',
+          status: AgentActivityStatus.failed,
+        ),
+      ),
+    );
   }
 
   /// Close the active turn's stream and complete its future. Safe to call more

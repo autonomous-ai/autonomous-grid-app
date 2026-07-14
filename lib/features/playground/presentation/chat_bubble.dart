@@ -13,7 +13,6 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final isUser = message.role == ChatRole.user;
     if (!isUser) {
       return Align(
@@ -39,17 +38,17 @@ class ChatBubble extends StatelessWidget {
       alignment: Alignment.centerRight,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
         constraints: const BoxConstraints(maxWidth: 520),
         decoration: BoxDecoration(
-          color: AppPalette.accent,
+          color: AppGlass.bubbleFill,
           borderRadius: radius,
-          border: Border.all(color: AppPalette.accentMuted),
+          border: Border.all(color: AppGlass.hair),
         ),
         child: MessageContent(
           text: message.text,
           media: message.media,
-          color: theme.colorScheme.onPrimary,
+          color: AppPalette.textPrimary,
         ),
       ),
     );

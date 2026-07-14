@@ -50,8 +50,8 @@ class PillChoice extends StatelessWidget {
               DefaultTextStyle.merge(
                 style: TextStyle(
                   color: foreground,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
                 ),
                 child: label,
               ),

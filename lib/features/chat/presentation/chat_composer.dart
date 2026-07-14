@@ -88,7 +88,7 @@ class ComposerSection extends StatelessWidget {
                 maxLines: 6,
                 enabled: !sending,
                 textInputAction: TextInputAction.send,
-                style: const TextStyle(fontSize: 14.5),
+                style: const TextStyle(fontSize: 15),
                 onSubmitted: (_) {
                   if (canSend) onSend();
                 },

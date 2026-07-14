@@ -8,6 +8,7 @@ import '../../network/logic/client_app_detector.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
+import 'agent_permissions.dart';
 import 'agent_prompt.dart';
 import 'hermes_tool.dart';
 import 'agent_providers.dart';
@@ -182,6 +183,7 @@ class HermesChatSender implements ChatSender {
     String model,
   ) async* {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
+    final permissions = _ref.read(agentPermissionProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'hermes acp -m $model (agent)');
 
@@ -193,6 +195,13 @@ class HermesChatSender implements ChatSender {
         switch (event) {
           case HermesAcpActivity(:final activity):
             activityLog.upsert(activity);
+          case HermesAcpPermission(:final request):
+            // The agent has stopped and is waiting on the user; the answer goes
+            // straight back down the same session.
+            permissions.ask(
+              request,
+              (optionId) => session.answerPermission(request.id, optionId),
+            );
           case HermesAcpMessage(:final text):
             answer.write(text);
             yield ChatSendStreaming(answer.toString());
@@ -200,6 +209,9 @@ class HermesChatSender implements ChatSender {
       }
       settled = true;
     } finally {
+      // Nothing is waiting on an answer once the turn is over — a card left
+      // pinned in the chat would be a button that does nothing.
+      permissions.clear();
       // Only kill on an early exit (the stream was cancelled); a clean finish
       // must not tear down the session — the next turn reuses it.
       if (!settled) run.kill();

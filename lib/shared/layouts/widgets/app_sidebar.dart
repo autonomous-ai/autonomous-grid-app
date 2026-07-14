@@ -194,7 +194,7 @@ class _SearchField extends StatelessWidget {
         controller: controller,
         autofocus: true,
         onChanged: onChanged,
-        style: const TextStyle(fontSize: 13),
+        style: const TextStyle(fontSize: 13.5),
         decoration: const InputDecoration(
           filled: false,
           hintText: 'Search chats',

@@ -39,11 +39,11 @@ abstract final class AppPalette {
 /// Centralized so every raised surface shares one recipe.
 abstract final class AppSurface {
   /// The sidebar row you're on.
-  static const selectedFill = Color(0x0D000000); // ~5% black
+  static const selectedFill = Color(0x0A000000); // ~4% black
 
   /// The sidebar row under the pointer — lighter than [selectedFill], so hover
   /// never reads as "selected".
-  static const hoverFill = Color(0x08000000); // ~3% black
+  static const hoverFill = Color(0x06000000); // ~2% black
 
   /// A recessed well inside a panel (e.g. the grid list column) — a faint darken
   /// that sets the column back without drawing a hard box around it.
@@ -156,6 +156,8 @@ ThemeData buildAppTheme() {
     error: Color(0xFFB3261E),
   );
 
+  final textTheme = _appTextTheme();
+
   return ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
@@ -169,10 +171,8 @@ ThemeData buildAppTheme() {
       space: 1,
     ),
     splashFactory: InkRipple.splashFactory,
-    textTheme: const TextTheme().apply(
-      bodyColor: AppPalette.textPrimary,
-      displayColor: AppPalette.textPrimary,
-    ),
+    textTheme: textTheme,
+    primaryTextTheme: textTheme,
     iconTheme: const IconThemeData(color: AppPalette.textSecondary, size: 18),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.all(Colors.white),
@@ -238,7 +238,7 @@ ThemeData buildAppTheme() {
       backgroundColor: Colors.white,
       contentTextStyle: const TextStyle(
         color: AppPalette.textPrimary,
-        fontSize: 13,
+        fontSize: 13.5,
         fontWeight: FontWeight.w600,
       ),
       actionTextColor: AppPalette.accent,
@@ -249,5 +249,34 @@ ThemeData buildAppTheme() {
         side: const BorderSide(color: AppPalette.divider),
       ),
     ),
+  );
+}
+
+TextTheme _appTextTheme() {
+  const base = TextStyle(
+    fontFamily: '.AppleSystemUIFont',
+    fontFamilyFallback: ['SF Pro Text', 'Helvetica Neue', 'Arial'],
+    color: AppPalette.textPrimary,
+    letterSpacing: 0,
+    height: 1.34,
+    fontWeight: FontWeight.w400,
+  );
+
+  return TextTheme(
+    displayLarge: base.copyWith(fontSize: 57, fontWeight: FontWeight.w600),
+    displayMedium: base.copyWith(fontSize: 45, fontWeight: FontWeight.w600),
+    displaySmall: base.copyWith(fontSize: 36, fontWeight: FontWeight.w600),
+    headlineLarge: base.copyWith(fontSize: 32, fontWeight: FontWeight.w600),
+    headlineMedium: base.copyWith(fontSize: 29, fontWeight: FontWeight.w600),
+    headlineSmall: base.copyWith(fontSize: 25, fontWeight: FontWeight.w600),
+    titleLarge: base.copyWith(fontSize: 22, fontWeight: FontWeight.w600),
+    titleMedium: base.copyWith(fontSize: 17, fontWeight: FontWeight.w600),
+    titleSmall: base.copyWith(fontSize: 14.5, fontWeight: FontWeight.w600),
+    bodyLarge: base.copyWith(fontSize: 16.5),
+    bodyMedium: base.copyWith(fontSize: 15),
+    bodySmall: base.copyWith(fontSize: 13.5, color: AppPalette.textSecondary),
+    labelLarge: base.copyWith(fontSize: 14.5, fontWeight: FontWeight.w600),
+    labelMedium: base.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+    labelSmall: base.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
   );
 }

@@ -49,9 +49,6 @@ class _SidebarItemState extends State<SidebarItem> {
     final fill = widget.selected
         ? AppSurface.selectedFill
         : (_hovered ? AppSurface.hoverFill : Colors.transparent);
-    final border = widget.selected
-        ? const BorderSide(color: Color(0x08000000))
-        : BorderSide.none;
 
     final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -60,45 +57,60 @@ class _SidebarItemState extends State<SidebarItem> {
         duration: const Duration(milliseconds: 130),
         curve: Curves.easeOut,
         margin: const EdgeInsets.symmetric(vertical: 1),
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: radius,
-          border: Border.fromBorderSide(border),
-        ),
+        decoration: BoxDecoration(color: fill, borderRadius: radius),
         child: Material(
           color: Colors.transparent,
           borderRadius: radius,
           child: InkWell(
             borderRadius: radius,
             onTap: widget.enabled ? widget.onTap : null,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-              child: Row(
-                children: [
-                  if (widget.icon != null) ...[
-                    Icon(widget.icon, size: 16, color: ink),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Text(
-                      widget.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: ink,
-                        fontSize: 13,
-                        fontWeight: strong ? FontWeight.w600 : FontWeight.w500,
+            child: SizedBox(
+              height: 38,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 0, 6, 0),
+                child: Row(
+                  children: [
+                    if (widget.icon != null) ...[
+                      Icon(widget.icon, size: 16, color: ink),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        strutStyle: const StrutStyle(
+                          fontSize: 13.5,
+                          height: 1.25,
+                          forceStrutHeight: true,
+                        ),
+                        style: TextStyle(
+                          color: ink,
+                          fontSize: 13.5,
+                          height: 1.25,
+                          fontWeight: strong
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
                       ),
                     ),
-                  ),
-                  // The slot keeps its size whether or not the trailing action is
-                  // showing, so hovering a row never resizes it.
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: _hovered ? widget.trailing : null,
-                  ),
-                ],
+                    // Keep the action mounted so hovering never changes text
+                    // metrics or row height.
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: IgnorePointer(
+                        ignoring: !_hovered,
+                        child: AnimatedOpacity(
+                          opacity: _hovered ? 1 : 0,
+                          duration: const Duration(milliseconds: 100),
+                          curve: Curves.easeOut,
+                          child: widget.trailing,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -126,7 +138,7 @@ class SidebarSectionLabel extends StatelessWidget {
         label,
         style: const TextStyle(
           color: AppPalette.textFaint,
-          fontSize: 11,
+          fontSize: 11.5,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.2,
         ),

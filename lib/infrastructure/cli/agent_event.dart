@@ -1,3 +1,5 @@
+import 'hermes_permission_policy.dart';
+
 /// What kind of step the agent is running.
 enum AgentActivityKind { command, tool }
 
@@ -25,4 +27,73 @@ class AgentActivity {
   /// Short human label — the shell command, or the tool name.
   final String label;
   final AgentActivityStatus status;
+}
+
+/// What the agent wants permission for.
+enum AgentPermissionKind {
+  /// Run a command on this computer.
+  command,
+
+  /// Write to a file — [AgentPermission.oldText] / [AgentPermission.newText]
+  /// are what it looks like now and what it would become.
+  edit,
+}
+
+/// What the user answered.
+enum AgentPermissionChoice {
+  /// Just this once.
+  allowOnce,
+
+  /// Every time in this chat, without asking again.
+  allowForChat,
+
+  /// No.
+  refuse,
+}
+
+/// Something the agent can't do without the user's say-so: a command it wants to
+/// run, or a change it wants to make to a file. It is *waiting* on the answer —
+/// nothing happens until one comes back (and if none does, the answer is no).
+///
+/// Lives beside [AgentActivity] because the agent transport (Hermes over ACP)
+/// raises these mid-turn; the chat puts them in front of the user.
+class AgentPermission {
+  const AgentPermission({
+    required this.id,
+    required this.kind,
+    required this.summary,
+    required this.options,
+    this.command,
+    this.path,
+    this.oldText,
+    this.newText,
+  });
+
+  /// The transport's id for the request, echoed back with the answer. Opaque.
+  final Object id;
+
+  final AgentPermissionKind kind;
+
+  /// One plain line saying what it's for — the agent's own reason for the
+  /// command ("Delete the build folder"), or what it would do to the file.
+  final String summary;
+
+  /// The command line, for [AgentPermissionKind.command].
+  final String? command;
+
+  /// The file, for [AgentPermissionKind.edit].
+  final String? path;
+
+  /// The file's current contents, or null when it doesn't exist yet.
+  final String? oldText;
+
+  /// What the agent wants the file to contain.
+  final String? newText;
+
+  final List<HermesPermissionOption> options;
+
+  /// Whether the agent offered a "stop asking me in this chat" option — it isn't
+  /// offered for file edits, so the choice must not be shown for them.
+  bool get canAllowForChat =>
+      options.any((o) => o.optionId == kAllowForChatOption);
 }
