@@ -2,15 +2,28 @@ import 'package:flutter/material.dart';
 
 /// A small colored status dot with a soft glow — the online/offline indicator
 /// used across the list and detail panes.
+///
+/// Set [pulsing] to give a live/"alive" state a slow breathing halo instead of a
+/// static dot. The pulse only animates an overflowing glow, never the dot's own
+/// box, so it stays cheap and never nudges neighbouring widgets.
 class StatusDot extends StatelessWidget {
-  const StatusDot({super.key, required this.color, this.size = 9});
+  const StatusDot({
+    super.key,
+    required this.color,
+    this.size = 9,
+    this.pulsing = false,
+  });
 
   final Color color;
   final double size;
 
+  /// When true, a halo breathes out behind the dot to signal live activity.
+  /// Defaults to false so every existing call site stays static.
+  final bool pulsing;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final dot = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -18,6 +31,75 @@ class StatusDot extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 5),
+        ],
+      ),
+    );
+    if (!pulsing) return dot;
+    return _PulseHalo(color: color, size: size, child: dot);
+  }
+}
+
+/// A soft halo that expands and fades behind [child] on an endless loop — the
+/// "alive" micro-interaction. Sits in an [IgnorePointer] and centres the halo so
+/// it grows around the dot without shifting layout.
+class _PulseHalo extends StatefulWidget {
+  const _PulseHalo({
+    required this.color,
+    required this.size,
+    required this.child,
+  });
+
+  final Color color;
+  final double size;
+  final Widget child;
+
+  @override
+  State<_PulseHalo> createState() => _PulseHaloState();
+}
+
+class _PulseHaloState extends State<_PulseHalo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: widget.size,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          IgnorePointer(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final t = _controller.value; // 0..1
+                final scale = 1 + t * 1.6;
+                final opacity = (1 - t) * 0.45;
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: widget.size,
+                    height: widget.size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: widget.color.withValues(alpha: opacity),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          widget.child,
         ],
       ),
     );

@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// The agents the app knows about — the ones that can be put in charge of a
 /// chat, and the ones that are coming.
 ///
@@ -13,18 +15,24 @@ enum AgentTool {
         'Runs on this computer. Uses your model, reads the project '
         'folder you point it at, and can run tools.',
     runnable: true,
+    accent: Color(0xFF2F5BEA),
+    icon: Icons.bolt_rounded,
   ),
   codex(
     id: 'codex',
     name: 'Codex',
     tagline: "OpenAI's coding agent.",
     runnable: false,
+    accent: Color(0xFF16A34A),
+    icon: Icons.terminal_rounded,
   ),
   openclaw(
     id: 'openclaw',
     name: 'OpenClaw',
     tagline: 'An open-source agent.',
     runnable: false,
+    accent: Color(0xFFF97316),
+    icon: Icons.pets_rounded,
   );
 
   const AgentTool({
@@ -32,6 +40,8 @@ enum AgentTool {
     required this.name,
     required this.tagline,
     required this.runnable,
+    required this.accent,
+    required this.icon,
   });
 
   /// What `grid agent install` calls it.
@@ -45,6 +55,13 @@ enum AgentTool {
   /// Whether the app can actually install and run it today. False means the
   /// screen shows it as planned — no install button, no toggle.
   final bool runnable;
+
+  /// The agent's own colour — its icon chip's tint and the rim it lifts to on
+  /// hover, so each row reads as its own thing rather than a repeated robot.
+  final Color accent;
+
+  /// A glyph that hints at what the agent is, instead of one shared robot icon.
+  final IconData icon;
 }
 
 /// The agent that answers chats today. Named rather than assumed, so the day a
