@@ -56,6 +56,7 @@ class _FakeSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? instructions,
   }) {
     this.history = history;
     this.model = model;
@@ -87,6 +88,7 @@ class _OpenEndedSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? instructions,
   }) => _controller.stream;
 }
 

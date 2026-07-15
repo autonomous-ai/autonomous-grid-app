@@ -12,7 +12,12 @@ import '../../../core/grid_paths.dart';
 /// message. It's the folder the agent runs in (its working directory), nothing
 /// more — it doesn't copy or upload anything.
 class Project {
-  const Project({required this.id, required this.name, required this.path});
+  const Project({
+    required this.id,
+    required this.name,
+    required this.path,
+    this.instructions = '',
+  });
 
   final String id;
 
@@ -20,7 +25,18 @@ class Project {
   final String name;
   final String path;
 
-  Map<String, Object?> toJson() => {'id': id, 'name': name, 'path': path};
+  /// Standing house rules the assistant follows in this project's chats — the
+  /// app's equivalent of a repo's `AGENTS.md`. Prepended to the agent's first
+  /// turn so every chat opened here starts with the same guidance ("write in
+  /// Vietnamese", "this is a Flutter app, use Dart idioms"). Empty means none.
+  final String instructions;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'path': path,
+    if (instructions.isNotEmpty) 'instructions': instructions,
+  };
 
   static Project? fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -28,12 +44,23 @@ class Project {
     if (id is! String || id.isEmpty) return null;
     if (path is! String || path.isEmpty) return null;
     final name = json['name'];
+    final instructions = json['instructions'];
     return Project(
       id: id,
       name: name is String && name.isNotEmpty ? name : folderName(path),
       path: path,
+      instructions: instructions is String ? instructions : '',
     );
   }
+
+  /// A copy with [name] or [instructions] changed; id and path are the project's
+  /// identity and never move.
+  Project copyWith({String? name, String? instructions}) => Project(
+    id: id,
+    name: name ?? this.name,
+    path: path,
+    instructions: instructions ?? this.instructions,
+  );
 
   /// Whether the folder is still there. A project whose folder was moved or
   /// deleted stays in the list but is shown as missing — silently dropping it
@@ -105,6 +132,19 @@ class ProjectsController extends Notifier<List<Project>> {
     );
     _commit([...state, project]);
     return project;
+  }
+
+  /// Set the standing rules the assistant follows in [id]'s chats. Trimmed;
+  /// passing blank clears them. A project that isn't there any more is a no-op.
+  void setInstructions(String id, String instructions) {
+    final trimmed = instructions.trim();
+    _commit([
+      for (final project in state)
+        if (project.id == id)
+          project.copyWith(instructions: trimmed)
+        else
+          project,
+    ]);
   }
 
   /// Forget a project. The folder on disk is left alone — this is the app's

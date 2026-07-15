@@ -215,6 +215,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // attachments — go straight to the grid's chat API, which is the only one
     // that can see or make them. Everything downstream (folding updates,
     // persistence) is identical: both implement [ChatSender].
+    final project = ref.read(projectByIdProvider(conversation.projectId));
     final updates = _senderFor(modality, attachments).send(
       network: network,
       model: model,
@@ -223,7 +224,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       attachments: attachments,
       // The chat's project, so the agent answers with that folder open. Null for
       // a chat that belongs to no project (it falls back to the app's folder).
-      workdir: ref.read(projectByIdProvider(conversation.projectId))?.path,
+      workdir: project?.path,
+      // The project's house rules, prepended to the agent's first turn.
+      instructions: project?.instructions,
       // Lets the agent sender keep one live session per conversation and send
       // only the new turn (the API sender ignores it).
       conversationId: conversation.id,

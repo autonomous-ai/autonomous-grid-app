@@ -96,6 +96,7 @@ class HermesChatSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? instructions,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
@@ -128,6 +129,7 @@ class HermesChatSender implements ChatSender {
         conversationId,
         history,
         workdir,
+        instructions,
       );
       session = resolved.session;
       text = resolved.text;
@@ -158,6 +160,7 @@ class HermesChatSender implements ChatSender {
     String? conversationId,
     List<ChatMessage> history,
     String? workdir,
+    String? instructions,
   ) async {
     // The folder is part of the key: moving a chat to another project must start
     // a fresh session, or the agent would keep reading the old folder.
@@ -179,8 +182,12 @@ class HermesChatSender implements ChatSender {
     final service = _ref.read(hermesAcpServiceProvider)!;
     final session = await service.start(workdir: root);
     _live = _LiveSession(session: session, key: key, seen: history.length);
-    // A fresh session has no context, so replay the history into the first turn.
-    return (session: session, text: buildAgentPrompt(history));
+    // A fresh session has no context, so replay the history into the first turn
+    // — led by the project's house rules, so the agent starts on the same page.
+    return (
+      session: session,
+      text: withProjectInstructions(buildAgentPrompt(history), instructions),
+    );
   }
 
   /// Run one turn: stream the answer into the bubble as it arrives, mirror tool

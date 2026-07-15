@@ -82,4 +82,49 @@ void main() {
     expect(c.read(projectByIdProvider('nope')), isNull);
     expect(c.read(projectByIdProvider(null)), isNull);
   });
+
+  test('a project starts with no agent rules', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+    expect(project.instructions, isEmpty);
+  });
+
+  test('agent rules are trimmed, persisted, and reloaded next launch', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+
+    c
+        .read(projectsProvider.notifier)
+        .setInstructions(project.id, '  Answer in Vietnamese.  ');
+
+    expect(
+      c.read(projectByIdProvider(project.id))?.instructions,
+      'Answer in Vietnamese.',
+    );
+    // Survives a relaunch (a fresh controller reading the same store).
+    expect(
+      container().read(projectsProvider).single.instructions,
+      'Answer in Vietnamese.',
+    );
+  });
+
+  test('blank agent rules clear them and drop out of the saved file', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+    c.read(projectsProvider.notifier).setInstructions(project.id, 'Be brief.');
+
+    c.read(projectsProvider.notifier).setInstructions(project.id, '   ');
+
+    expect(c.read(projectByIdProvider(project.id))?.instructions, isEmpty);
+    expect(file.readAsStringSync(), isNot(contains('instructions')));
+  });
+
+  test('setting rules on a missing project is a no-op, not a crash', () {
+    final c = container();
+    c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+
+    c.read(projectsProvider.notifier).setInstructions('nope', 'Hi.');
+
+    expect(c.read(projectsProvider).single.instructions, isEmpty);
+  });
 }

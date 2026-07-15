@@ -282,5 +282,6 @@ class _NeverSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? instructions,
   }) => throw StateError('a delivered result must not call the model');
 }

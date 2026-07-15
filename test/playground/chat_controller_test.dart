@@ -103,6 +103,7 @@ class _OpenStreamSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? instructions,
   }) =>
       controller.stream;
 }
