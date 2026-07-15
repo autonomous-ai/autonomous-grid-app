@@ -54,9 +54,16 @@ class ChatHistoryList extends ConsumerWidget {
             ),
         const SidebarSectionLabel(label: 'Chats'),
         if (loose.isEmpty)
-          const _Hint(text: 'Chats outside a project show up here.')
+          const _Hint(
+            text: 'Chats outside a project show up here.',
+            indented: true,
+          )
         else
-          for (final chat in loose) _ChatRow(chat: chat),
+          // Indented like a project's chats so every conversation's title sits
+          // in the same column, whether or not it belongs to a project — the
+          // "Chats" and "Projects" labels stay at the outer edge, their contents
+          // line up one step in.
+          for (final chat in loose) _ChatRow(chat: chat, indented: true),
       ],
     );
   }
@@ -201,7 +208,12 @@ class _ChatRow extends ConsumerWidget {
         ref.watch(shellSectionProvider) == ShellSection.chat;
 
     return Padding(
-      padding: EdgeInsets.only(left: indented ? 16 : 0),
+      // Line a project's chats up under the project *name*, not under its
+      // folder icon: the row's own 10px inset + a 16px icon + a 10px gap put the
+      // name's text at 36px, so a 26px indent here lands the chat's text in the
+      // same column. Codex keeps this one clean left edge; anything else makes
+      // the list read as ragged.
+      padding: EdgeInsets.only(left: indented ? 26 : 0),
       child: SidebarItem(
         label: chat.title,
         selected: selected,
