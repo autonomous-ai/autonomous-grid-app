@@ -24,39 +24,85 @@ NetworkCredential _network(String id, String name) => NetworkCredential(
   expiresAt: 0,
 );
 
-GridOverview _overviewWith(String modelId) => GridOverview(
-  stats: const GridStats(models: 1, nodes: 1),
-  models: [OverviewModel(id: modelId, modality: 'text')],
-  nodes: const [],
-);
-
 void main() {
   final foo = _network('grid-foo', 'Foo');
 
   group('gridModelGroupFrom', () {
-    test('a ready overview maps to a ready group with its options', () {
+    test('a ready /models list maps to a ready group with its options', () {
       final group = gridModelGroupFrom(
         foo,
-        AsyncData(_overviewWith('maker/m1')),
+        const AsyncData(['maker/m1']),
+        const [],
       );
       expect(group.grid.networkId, 'grid-foo');
       expect(group.status, GridModelStatus.ready);
       expect(group.options.single.id, 'maker/m1');
     });
 
-    test('an errored overview maps to offline with no options', () {
+    test('the auto routing model from /models is listed like any other — the '
+        'whole reason this reads /models instead of the overview', () {
+      final group = gridModelGroupFrom(
+        foo,
+        const AsyncData(['auto', 'maker/m1']),
+        const [],
+      );
+      expect(group.options.map((o) => o.id), ['auto', 'maker/m1']);
+    });
+
+    test('node media capabilities add the Image/Video modes on top of the '
+        'served models', () {
+      final group = gridModelGroupFrom(
+        foo,
+        const AsyncData(['maker/m1']),
+        const ['comfyui:i2v'],
+      );
+      expect(group.options.map((o) => o.id), contains('maker/m1'));
+      expect(group.options.map((o) => o.label), contains('Image → video'));
+    });
+
+    test('an errored /models list maps to offline with no options', () {
       final group = gridModelGroupFrom(
         foo,
         AsyncError(const GridOverviewUnavailable('down'), StackTrace.empty),
+        const [],
       );
       expect(group.status, GridModelStatus.offline);
       expect(group.options, isEmpty);
     });
 
-    test('a loading overview maps to loading', () {
-      final group = gridModelGroupFrom(foo, const AsyncLoading());
+    test('a loading /models list maps to loading', () {
+      final group = gridModelGroupFrom(foo, const AsyncLoading(), const []);
       expect(group.status, GridModelStatus.loading);
       expect(group.options, isEmpty);
+    });
+  });
+
+  group('mediaCapabilitiesOf', () {
+    test('flattens a ready overview\'s node capabilities', () {
+      final overview = AsyncData(
+        GridOverview(
+          stats: const GridStats(models: 0, nodes: 1),
+          models: const [],
+          nodes: const [
+            OverviewNode(
+              name: 'n1',
+              online: true,
+              models: ['comfyui:i2v', 'maker/m1'],
+            ),
+          ],
+        ),
+      );
+      expect(mediaCapabilitiesOf(overview), ['comfyui:i2v', 'maker/m1']);
+    });
+
+    test('is empty while the overview is loading or offline', () {
+      expect(mediaCapabilitiesOf(const AsyncLoading()), isEmpty);
+      expect(
+        mediaCapabilitiesOf(
+          AsyncError(const GridOverviewUnavailable('x'), StackTrace.empty),
+        ),
+        isEmpty,
+      );
     });
   });
 

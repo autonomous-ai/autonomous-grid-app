@@ -4,36 +4,57 @@ import '../../../infrastructure/api/relay_api_client.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../auth/logic/session_controller.dart';
 
-/// Models advertised on the selected network, via the relay's OpenAI-style
-/// `GET {relayBaseUrl}/models` (the `inference:models` scope).
+/// Models a grid serves, via the relay's OpenAI-style `GET {relayBaseUrl}/models`
+/// (the `inference:models` scope). Keyed by network id so every grid in the
+/// picker can be probed in parallel, independent of which one is selected.
 ///
-/// Returns empty — never throws — when no provider is online, the token lacks
-/// the inference scope, or the relay is unreachable. Callers (the Playground's
-/// model picker, the grid overview's node list) keep a graceful fallback in
-/// those cases so the UI never blanks out. The HTTP itself lives in
-/// [RelayApiClient]; this provider only orchestrates and logs the call.
+/// This is the **canonical list of what you can chat with** — it carries
+/// everything the relay actually serves, including the `auto` auto-routing model
+/// (ADR 0013), which the node-derived `/grid/overview` does not advertise. The
+/// chat model picker reads this so a routing-only grid (no local engine, just
+/// `auto`) still lists a model instead of showing "No models available".
+///
+/// Returns empty — never throws — when no provider is online, the token lacks the
+/// inference scope, or the relay is unreachable, so the UI never blanks out.
+final networkModelsForProvider = FutureProvider.autoDispose
+    .family<List<String>, String>((ref, networkId) async {
+      final match = ref
+          .watch(sessionProvider)
+          .networks
+          .where((n) => n.networkId == networkId);
+      if (match.isEmpty) return const [];
+      final network = match.first;
+
+      final log = ref.read(commandLogProvider.notifier);
+      final client = ref.read(relayApiClientProvider);
+      final id = log.begin(
+        CliCallKind.http,
+        'GET ${network.relayBaseUrl}/models',
+      );
+      try {
+        final ids = await client.models(
+          baseUrl: network.relayBaseUrl,
+          apiKey: network.relayApiKey,
+        );
+        log.finish(id, exitCode: 200);
+        return ids;
+      } on RelayUnavailable catch (e) {
+        log.finish(
+          id,
+          exitCode: e.statusCode,
+          error: e.statusCode == null ? '${e.cause ?? 'unreachable'}' : null,
+        );
+        return const [];
+      }
+    });
+
+/// The selected grid's served models — [networkModelsForProvider] bound to
+/// whichever grid is open. Kept as its own name because several callers only
+/// ever care about the current grid.
 final networkModelsProvider = FutureProvider.autoDispose<List<String>>((
   ref,
 ) async {
   final network = ref.watch(selectedNetworkProvider);
   if (network == null) return const [];
-
-  final log = ref.read(commandLogProvider.notifier);
-  final client = ref.read(relayApiClientProvider);
-  final id = log.begin(CliCallKind.http, 'GET ${network.relayBaseUrl}/models');
-  try {
-    final ids = await client.models(
-      baseUrl: network.relayBaseUrl,
-      apiKey: network.relayApiKey,
-    );
-    log.finish(id, exitCode: 200);
-    return ids;
-  } on RelayUnavailable catch (e) {
-    log.finish(
-      id,
-      exitCode: e.statusCode,
-      error: e.statusCode == null ? '${e.cause ?? 'unreachable'}' : null,
-    );
-    return const [];
-  }
+  return ref.watch(networkModelsForProvider(network.networkId).future);
 });
