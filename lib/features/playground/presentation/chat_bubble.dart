@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/chat_message.dart';
 import 'message_content.dart';
+import 'message_sources.dart';
 
 /// One transcript turn — the user's message (accent, right-aligned) or the
 /// assistant's reply (surface, left-aligned). Renders text and/or inline media
@@ -19,10 +20,19 @@ class ChatBubble extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: MessageContent(
-            text: message.text,
-            media: message.media,
-            color: AppPalette.textPrimary,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              MessageContent(
+                text: message.text,
+                media: message.media,
+                color: AppPalette.textPrimary,
+              ),
+              if (message.sources.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                MessageSources(sources: message.sources),
+              ],
+            ],
           ),
         ),
       );

@@ -1,3 +1,4 @@
+import '../../../infrastructure/cli/agent_event.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/message_media.dart';
 
@@ -155,10 +156,13 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   'media': [
     for (final m in message.media) {'path': m.path, 'kind': m.kind.name},
   ],
+  if (message.sources.isNotEmpty)
+    'sources': [for (final s in message.sources) s.toJson()],
 };
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
   final rawMedia = json['media'];
+  final rawSources = json['sources'];
   return ChatMessage(
     role: json['role'] == ChatRole.assistant.name
         ? ChatRole.assistant
@@ -169,6 +173,11 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
         for (final m in rawMedia)
           if (m is Map<String, dynamic> && m['path'] is String)
             ChatMedia(path: m['path'] as String, kind: _parseKind(m['kind'])),
+    ],
+    sources: [
+      if (rawSources is List)
+        for (final s in rawSources)
+          if (s is Map<String, dynamic>) ?WebSource.fromJson(s),
     ],
   );
 }

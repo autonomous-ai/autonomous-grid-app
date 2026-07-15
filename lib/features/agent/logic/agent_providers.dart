@@ -40,3 +40,30 @@ class AgentActivityLog extends Notifier<List<AgentActivity>> {
     state = List.unmodifiable(next);
   }
 }
+
+/// The web pages the in-flight agent run has cited so far, deduplicated by url
+/// and kept in the order they were found. The "agent is working" bubble shows
+/// them live; `HermesChatSender` clears it at the start of each send, adds each
+/// batch as Hermes reports it, and pins the final list onto the answer so the
+/// citations persist under the message.
+final agentSourcesProvider = NotifierProvider<AgentSourcesLog, List<WebSource>>(
+  AgentSourcesLog.new,
+);
+
+class AgentSourcesLog extends Notifier<List<WebSource>> {
+  @override
+  List<WebSource> build() => const [];
+
+  void clear() => state = const [];
+
+  /// Append [sources], skipping any url already collected this turn.
+  void addAll(List<WebSource> sources) {
+    final seen = {for (final s in state) s.url};
+    final fresh = [
+      for (final s in sources)
+        if (seen.add(s.url)) s,
+    ];
+    if (fresh.isEmpty) return;
+    state = List.unmodifiable([...state, ...fresh]);
+  }
+}

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../playground/presentation/message_sources.dart';
 import '../logic/agent_providers.dart';
 
 /// The "agent is working" bubble shown in the chat while the agent is answering.
@@ -17,6 +18,7 @@ class AgentWorkingBubble extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final steps = ref.watch(agentActivityProvider);
+    final sources = ref.watch(agentSourcesProvider);
     final theme = Theme.of(context);
     return Align(
       alignment: Alignment.centerLeft,
@@ -48,6 +50,10 @@ class AgentWorkingBubble extends ConsumerWidget {
               const SizedBox(height: 10),
               for (final step in steps) _StepRow(step: step),
             ],
+            if (sources.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              MessageSources(sources: sources),
+            ],
           ],
         ),
       ),
@@ -64,9 +70,11 @@ class _StepRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final icon = step.kind == AgentActivityKind.command
-        ? Icons.terminal
-        : Icons.build_outlined;
+    final icon = switch (step.kind) {
+      AgentActivityKind.command => Icons.terminal,
+      AgentActivityKind.web => Icons.public,
+      AgentActivityKind.tool => Icons.build_outlined,
+    };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(

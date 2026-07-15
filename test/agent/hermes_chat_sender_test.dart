@@ -242,6 +242,50 @@ void main() {
     expect(File('${tmp.path}/.hermes/config.yaml').existsSync(), isTrue);
   });
 
+  test(
+    'web sources found mid-turn are pinned onto the answer and shown live',
+    () async {
+      const sources = [
+        WebSource(title: 'Flutter', url: 'https://flutter.dev'),
+        WebSource(title: 'Dart', url: 'https://dart.dev'),
+      ];
+      final service = _FakeAcp.single([
+        HermesAcpActivity(
+          AgentActivity(
+            id: 'w1',
+            kind: AgentActivityKind.web,
+            label: 'web search: flutter',
+            status: AgentActivityStatus.done,
+          ),
+        ),
+        const HermesAcpSources(sources),
+        const HermesAcpMessage('Here you go.'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(
+            network: _credential(),
+            model: 'm',
+            history: _history('flutter news'),
+          )
+          .toList();
+
+      // The citations ride on the persisted answer…
+      final reply = (updates.last as ChatSendSuccess).reply;
+      expect(reply.sources.map((s) => s.url), [
+        'https://flutter.dev',
+        'https://dart.dev',
+      ]);
+      // …and were exposed live for the working bubble.
+      expect(container.read(agentSourcesProvider).map((s) => s.url), [
+        'https://flutter.dev',
+        'https://dart.dev',
+      ]);
+    },
+  );
+
   test('one live session per conversation — later turns send only the new '
       'message', () async {
     final service = _FakeAcp([

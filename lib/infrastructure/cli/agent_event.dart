@@ -1,7 +1,8 @@
 import 'hermes_permission_policy.dart';
 
-/// What kind of step the agent is running.
-enum AgentActivityKind { command, tool }
+/// What kind of step the agent is running — a shell command, a look-up on the
+/// web, or any other tool. The kind picks the icon in the activity feed.
+enum AgentActivityKind { command, web, tool }
 
 /// Lifecycle of one agent step, driving its live status indicator.
 enum AgentActivityStatus { running, done, failed }
@@ -27,6 +28,64 @@ class AgentActivity {
   /// Short human label — the shell command, or the tool name.
   final String label;
   final AgentActivityStatus status;
+}
+
+/// A web page the agent consulted while answering — one citation shown under the
+/// reply, so an answer built from the web says where it came from instead of
+/// asking the user to take it on faith.
+class WebSource {
+  const WebSource({required this.title, required this.url});
+
+  /// The page's own title, or its host when the search returned none — the label
+  /// the user reads on the chip.
+  final String title;
+
+  /// What opens when the chip is clicked.
+  final String url;
+
+  /// The bare host ("example.com", the leading `www.` dropped) — a compact
+  /// secondary label under the title.
+  String get host {
+    final parsed = Uri.tryParse(url);
+    final host = parsed?.host ?? '';
+    return host.startsWith('www.') ? host.substring(4) : host;
+  }
+
+  Map<String, Object?> toJson() => {'title': title, 'url': url};
+
+  static WebSource? fromJson(Map<String, dynamic> json) {
+    final url = json['url'];
+    if (url is! String || url.isEmpty) return null;
+    final title = json['title'];
+    return WebSource(
+      title: title is String && title.isNotEmpty ? title : url,
+      url: url,
+    );
+  }
+}
+
+/// Pulls the citations out of Hermes's `web_search` tool result — the lines it
+/// formats as `• Title — https://url`. The `Web results: N` header and the
+/// indented description lines are skipped, a bullet with no link isn't a
+/// citation and is dropped, and duplicate urls collapse to the first. Order is
+/// preserved so the list reads in the agent's own ranking.
+List<WebSource> parseWebSearchSources(String content) {
+  const bullet = '•';
+  const separator = ' — ';
+  final sources = <WebSource>[];
+  final seen = <String>{};
+  for (final rawLine in content.split('\n')) {
+    final line = rawLine.trim();
+    if (!line.startsWith(bullet)) continue;
+    final body = line.substring(bullet.length).trim();
+    final cut = body.lastIndexOf(separator);
+    final title = cut >= 0 ? body.substring(0, cut).trim() : body;
+    final url = cut >= 0 ? body.substring(cut + separator.length).trim() : body;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) continue;
+    if (!seen.add(url)) continue;
+    sources.add(WebSource(title: title.isEmpty ? url : title, url: url));
+  }
+  return List.unmodifiable(sources);
 }
 
 /// How much the user has agreed to let the agent do to this computer — chosen in
