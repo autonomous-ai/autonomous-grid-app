@@ -78,7 +78,6 @@ class _JobListState extends ConsumerState<JobList> {
               ScheduledPillChoice(
                 label: Text(filter.label),
                 selected: filter == _filter,
-                icon: filter == _filter ? Icons.check_rounded : null,
                 onTap: () => setState(() => _filter = filter),
               ),
           ],

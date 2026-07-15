@@ -34,7 +34,6 @@ class _DeliverRow extends ConsumerWidget {
             ScheduledPillChoice(
               label: const Text('This app'),
               selected: !toTelegram,
-              icon: !toTelegram ? Icons.check_rounded : null,
               onTap: () => onChanged(false),
             ),
             Tooltip(
@@ -49,7 +48,6 @@ class _DeliverRow extends ConsumerWidget {
                   ),
                 ),
                 selected: toTelegram,
-                icon: toTelegram ? Icons.check_rounded : null,
                 onTap: () => connected
                     ? onChanged(true)
                     : ref
@@ -82,7 +80,6 @@ class _CadenceRow extends StatelessWidget {
             ScheduledPillChoice(
               label: Text(option.label),
               selected: option == cadence,
-              icon: option == cadence ? Icons.check_rounded : null,
               onTap: () => onChanged(option),
             ),
         ],
