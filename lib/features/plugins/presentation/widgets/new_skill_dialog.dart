@@ -176,65 +176,80 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return AlertDialog(
-      title: Text(_isEdit ? 'Edit skill' : 'New skill'),
+      backgroundColor: AppPalette.windowBg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      titlePadding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
+      contentPadding: const EdgeInsets.fromLTRB(28, 14, 28, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(28, 10, 22, 22),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _isEdit ? 'Edit skill' : 'New skill',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _isEdit
+                ? 'Change what it does, or when the assistant reaches for it.'
+                : 'Teach the assistant one job, in your own words.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ],
+      ),
       content: SizedBox(
-        width: 520,
+        width: 540,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
+              const SizedBox(height: 10),
+              _Field(
+                label: 'Name',
                 controller: _name,
+                hint: 'Weekly report',
                 enabled: !_drafting,
                 autofocus: !_isEdit,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'Weekly report',
-                ),
               ),
               if (!_isEdit) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
               ],
-              const SizedBox(height: 14),
-              TextField(
+              const SizedBox(height: 20),
+              _Field(
+                label: 'When should the assistant use it?',
                 controller: _description,
+                hint:
+                    'Use whenever I ask for a status report or a weekly '
+                    'summary.',
                 enabled: !_drafting,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  labelText: 'When should the assistant use it?',
-                  hintText:
-                      'Use whenever I ask for a status report or a weekly '
-                      'summary.',
-                ),
               ),
-              const SizedBox(height: 14),
-              TextField(
+              const SizedBox(height: 20),
+              _Field(
+                label: 'What should it do?',
                 controller: _instructions,
+                hint: _loading
+                    ? 'Loading the current steps…'
+                    : 'Step by step, as you would explain it to a new '
+                          'colleague.',
                 enabled: !_loading && !_drafting,
-                minLines: 5,
-                maxLines: 10,
+                minLines: 6,
+                maxLines: 12,
                 onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  labelText: 'What should it do?',
-                  hintText: _loading
-                      ? 'Loading the current steps…'
-                      : 'Step by step, as you would explain it to a new '
-                            'colleague.',
-                ),
               ),
-              const SizedBox(height: 14),
-              Text(
-                'Saved with your own skills, so a Hermes update never '
-                'overwrites it.',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: AppPalette.textSecondary,
-                ),
-              ),
+              const SizedBox(height: 20),
+              const _SavedNote(),
+              const SizedBox(height: 4),
             ],
           ),
         ),
@@ -246,8 +261,12 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
               : () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
+        const SizedBox(width: 4),
         FilledButton(
           onPressed: _canSave ? _save : null,
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          ),
           child: Text(_saveLabel),
         ),
       ],
@@ -257,6 +276,116 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
   String get _saveLabel {
     if (_saving) return 'Saving…';
     return _isEdit ? 'Save changes' : 'Create skill';
+  }
+}
+
+/// A labelled input: the label sits above its field, and the field is a soft,
+/// borderless capsule — roomier and calmer than a floating-label box, so three
+/// of them stacked don't read as a wall.
+class _Field extends StatelessWidget {
+  const _Field({
+    required this.label,
+    required this.controller,
+    required this.hint,
+    this.enabled = true,
+    this.autofocus = false,
+    this.minLines = 1,
+    this.maxLines = 1,
+    this.onChanged,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final bool enabled;
+  final bool autofocus;
+  final int minLines;
+  final int maxLines;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ),
+        TextField(
+          controller: controller,
+          enabled: enabled,
+          autofocus: autofocus,
+          minLines: minLines,
+          maxLines: maxLines,
+          onChanged: onChanged,
+          style: const TextStyle(fontSize: 14, height: 1.4),
+          decoration: _fieldDecoration(hint),
+        ),
+      ],
+    );
+  }
+}
+
+/// The soft, borderless field surface — filled with the card tint, a rounded
+/// capsule, and one accent hairline only while focused.
+InputDecoration _fieldDecoration(String hint) {
+  OutlineInputBorder border(Color color, [double width = 1]) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: width == 0
+            ? BorderSide.none
+            : BorderSide(color: color, width: width),
+      );
+  return InputDecoration(
+    hintText: hint,
+    filled: true,
+    fillColor: AppPalette.cardBg,
+    hintStyle: TextStyle(
+      fontSize: 14,
+      height: 1.4,
+      color: AppPalette.textFaint,
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    border: border(Colors.transparent, 0),
+    enabledBorder: border(Colors.transparent, 0),
+    disabledBorder: border(Colors.transparent, 0),
+    focusedBorder: border(AppPalette.accent, 1.5),
+  );
+}
+
+/// The reassurance line under the form — set off with a small lock so it reads
+/// as a quiet aside, not another field.
+class _SavedNote extends StatelessWidget {
+  const _SavedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.lock_outline_rounded, size: 15, color: AppPalette.textFaint),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Saved with your own skills, so a Hermes update never overwrites '
+            'it.',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
