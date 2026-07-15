@@ -59,6 +59,7 @@ class _McpRowState extends ConsumerState<_McpRow> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final server = widget.server;
     return ExtensionTileSurface(
       child: Row(
@@ -97,6 +98,7 @@ class _McpInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,6 +171,7 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

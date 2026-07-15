@@ -10,6 +10,7 @@ class ExtensionTileSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // follow theme flips — reads AppGlass tokens.
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppGlass.surfaceFill,
@@ -32,6 +33,7 @@ class ExtensionIconBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // follow theme flips — reads AppPalette tokens.
     return Container(
       width: 30,
       height: 30,
@@ -53,6 +55,7 @@ class ExtensionTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // follow theme flips — reads AppCard tokens.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(

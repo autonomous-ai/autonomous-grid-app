@@ -177,6 +177,8 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Dialog/overlay content: watch brightness so tokens re-color on theme flip.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return AlertDialog(
       backgroundColor: AppPalette.windowBg,
@@ -285,6 +287,8 @@ class _SavedNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Dialog/overlay content: watch brightness so tokens re-color on theme flip.
+    AppTheme.watch(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

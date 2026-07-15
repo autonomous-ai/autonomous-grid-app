@@ -16,6 +16,7 @@ class PluginList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     if (plugins.isEmpty) {
       return Center(
         child: Text(
@@ -69,6 +70,7 @@ class _PluginRowState extends ConsumerState<_PluginRow> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final theme = Theme.of(context);
     final plugin = widget.plugin;
     return ExtensionTileSurface(
@@ -150,6 +152,7 @@ class _PluginSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette/AppGlass
     final label = value ? 'Turn off plugin' : 'Turn on plugin';
     return Tooltip(
       message: label,

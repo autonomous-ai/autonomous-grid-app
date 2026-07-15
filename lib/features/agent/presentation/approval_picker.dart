@@ -46,6 +46,8 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
 
   @override
   Widget build(BuildContext context) {
+    // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
+    AppTheme.watch(context);
     final current = ref.watch(agentApprovalModeProvider);
     return MenuAnchor(
       controller: _menu,
@@ -86,6 +88,7 @@ class _Trigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     return Tooltip(
       message: approvalDetail(mode),
       child: Material(
@@ -142,6 +145,8 @@ class _MenuHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Menu content — detached from the anchor's rebuilds; watch theme itself.
+    AppTheme.watch(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(14, 8, 14, 9),
       child: Text(
@@ -170,6 +175,8 @@ class _ModeItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Menu content — detached from the anchor's rebuilds; watch theme itself.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final risky = mode == AgentApprovalMode.full;
     return MenuItemButton(
@@ -190,7 +197,7 @@ class _ModeItem extends StatelessWidget {
           width: 324,
           padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
           decoration: BoxDecoration(
-            color: selected ? const Color(0x062F5BEA) : Colors.transparent,
+            color: selected ? AppCard.tint10 : Colors.transparent,
             borderRadius: BorderRadius.circular(11),
           ),
           child: Row(
@@ -246,6 +253,8 @@ class _ModeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Menu content — detached from the anchor's rebuilds; watch theme itself.
+    AppTheme.watch(context);
     final risky = mode == AgentApprovalMode.full;
     final color = risky ? AppPalette.warn : AppPalette.textSecondary;
     return Container(

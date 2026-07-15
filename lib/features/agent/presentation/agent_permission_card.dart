@@ -21,6 +21,7 @@ class AgentPermissionCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context); // rebuild on theme flip — reads card/glass tokens
     final theme = Theme.of(context);
     final controller = ref.read(agentPermissionProvider.notifier);
     final isCommand = request.kind == AgentPermissionKind.command;
@@ -111,6 +112,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip — reads palette tokens
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
@@ -158,6 +160,7 @@ class _Command extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip — reads palette/glass tokens
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -190,6 +193,7 @@ class _Countdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip — builder reads textFaint
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: timeout.inSeconds.toDouble(), end: 0),
       duration: timeout,

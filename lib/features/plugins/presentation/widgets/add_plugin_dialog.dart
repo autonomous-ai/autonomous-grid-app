@@ -50,6 +50,8 @@ class _AddPluginDialogState extends ConsumerState<_AddPluginDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Dialog/overlay content: watch brightness so tokens re-color on theme flip.
+    AppTheme.watch(context);
     return AlertDialog(
       title: const Text('Add a plugin'),
       content: SizedBox(

@@ -15,6 +15,7 @@ class DiffView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -39,6 +40,7 @@ class _DiffRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     final (prefix, color) = switch (line.kind) {
       DiffLineKind.added => ('+', AppPalette.online),
       DiffLineKind.removed => ('-', Theme.of(context).colorScheme.error),

@@ -174,6 +174,7 @@ class _CreateMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // follow theme flips — reads AppPalette/AppGlass tokens.
     return Material(
       color: AppPalette.accent,
       borderRadius: BorderRadius.circular(11),
@@ -245,6 +246,7 @@ class _RefreshButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // follow theme flips — reads AppGlass tokens.
     return Tooltip(
       message: 'Refresh',
       child: Material(
@@ -281,6 +283,7 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // follow theme flips — reads AppGlass tokens.
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppGlass.surfaceFill,
@@ -383,6 +386,7 @@ class _NoAgent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context); // follow theme flips — reads AppPalette.textSecondary.
     return SectionScaffold(
       title: 'Plugins',
       subtitle: 'What the assistant can do beyond talking.',

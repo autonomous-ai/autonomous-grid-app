@@ -16,6 +16,7 @@ class AgentChangesBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context); // rebuild on theme flip — reads palette tokens
     final changes = ref.watch(agentChangesProvider);
     if (changes.isEmpty) return const SizedBox.shrink();
     return Container(
@@ -76,6 +77,7 @@ class _UndoAllButtonState extends ConsumerState<_UndoAllButton> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip — reads accent token
     // A soft accent-tinted pill, not the solid blue tonal button — it sat too
     // loud on this quiet bar. Still reads as the primary action next to Review.
     return Material(
@@ -127,6 +129,9 @@ class _ChangesDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Dialog content is a detached overlay — no top-down rebuild reaches it, so
+    // it must watch the theme itself to repaint its palette tokens on a flip.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final changes = ref.watch(agentChangesProvider);
     return AlertDialog(
@@ -239,6 +244,8 @@ class _NewTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Lives inside the detached changes dialog — watch so it repaints on a flip.
+    AppTheme.watch(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(

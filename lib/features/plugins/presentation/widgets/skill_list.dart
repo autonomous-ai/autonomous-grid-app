@@ -86,6 +86,7 @@ class _SkillInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,6 +149,7 @@ class _SkillActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -205,6 +207,7 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -47,6 +47,7 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     final tool = widget.tool;
     final theme = Theme.of(context);
     // Only Hermes can be installed today, so it's the only one whose presence is
@@ -236,6 +237,7 @@ class _StatusChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     if (!tool.runnable) {
       return _Chip(label: 'Not available yet', color: AppPalette.offline);
     }
@@ -267,6 +269,7 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -322,6 +325,7 @@ class _Working extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

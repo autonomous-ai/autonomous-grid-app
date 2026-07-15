@@ -129,6 +129,8 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Dialog/overlay content: watch brightness so tokens re-color on theme flip.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return AlertDialog(
       backgroundColor: AppPalette.windowBg,

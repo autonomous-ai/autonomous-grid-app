@@ -108,6 +108,7 @@ class _StatusDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip — reads AppPalette.online
     switch (status) {
       case AgentActivityStatus.running:
         return const SizedBox(
