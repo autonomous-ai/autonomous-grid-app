@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -577,25 +579,35 @@ class _DropHint extends StatelessWidget {
   Widget build(BuildContext context) {
     return Positioned.fill(
       child: IgnorePointer(
-        child: ColoredBox(
-          color: AppPalette.accentMuted,
-          child: Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: AppPalette.windowBg,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: AppSurface.composerShadow,
-              ),
-              child: Padding(
+        // A soft blur over the chat with just a whisper of the action colour —
+        // liquid glass, per the style baseline, not a flat blue wall.
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppPalette.accent.withValues(alpha: 0.06),
+            ),
+            child: Center(
+              child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 22,
                   vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: AppPalette.windowBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppPalette.accent.withValues(alpha: 0.28),
+                    width: 1.5,
+                  ),
+                  boxShadow: AppSurface.composerShadow,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       Icons.file_download_outlined,
+                      size: 20,
                       color: AppPalette.accent,
                     ),
                     const SizedBox(width: 10),
