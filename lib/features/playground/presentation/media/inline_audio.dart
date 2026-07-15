@@ -64,7 +64,10 @@ class _InlineAudioState extends State<InlineAudio> {
 
     final theme = Theme.of(context);
     final maxMs = _duration.inMilliseconds.toDouble();
-    final value = _position.inMilliseconds.toDouble().clamp(0, maxMs).toDouble();
+    final value = _position.inMilliseconds
+        .toDouble()
+        .clamp(0, maxMs)
+        .toDouble();
 
     return MediaFrame(
       padding: const EdgeInsets.fromLTRB(4, 4, 14, 4),
@@ -87,10 +90,12 @@ class _InlineAudioState extends State<InlineAudio> {
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     trackHeight: 3,
-                    overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 12),
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 12,
+                    ),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 6,
+                    ),
                   ),
                   child: Slider(
                     value: value,
@@ -103,10 +108,14 @@ class _InlineAudioState extends State<InlineAudio> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(formatMediaDuration(_position),
-                          style: theme.textTheme.labelSmall),
-                      Text(formatMediaDuration(_duration),
-                          style: theme.textTheme.labelSmall),
+                      Text(
+                        formatMediaDuration(_position),
+                        style: theme.textTheme.labelSmall,
+                      ),
+                      Text(
+                        formatMediaDuration(_duration),
+                        style: theme.textTheme.labelSmall,
+                      ),
                     ],
                   ),
                 ),

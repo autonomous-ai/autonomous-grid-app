@@ -56,14 +56,13 @@ Map<String, dynamic> imageGeneratePayload(
   int width = kDefaultImageSize,
   int height = kDefaultImageSize,
   int steps = kDefaultImageSteps,
-}) =>
-    {
-      'capability': MediaOperation.imageGenerate.capability,
-      'prompt': prompt,
-      'width': width,
-      'height': height,
-      'steps': steps,
-    };
+}) => {
+  'capability': MediaOperation.imageGenerate.capability,
+  'prompt': prompt,
+  'width': width,
+  'height': height,
+  'steps': steps,
+};
 
 /// Image-edit body for `media/image/edit`: a prompt plus one to three source
 /// images (relay rejects more than three).
@@ -71,13 +70,12 @@ Map<String, dynamic> imageEditPayload(
   String prompt,
   List<MediaAttachment> images, {
   int steps = kDefaultImageSteps,
-}) =>
-    {
-      'capability': MediaOperation.imageEdit.capability,
-      'prompt': prompt,
-      'steps': steps,
-      'input_images': [for (final image in images) image.toMediaFile().toJson()],
-    };
+}) => {
+  'capability': MediaOperation.imageEdit.capability,
+  'prompt': prompt,
+  'steps': steps,
+  'input_images': [for (final image in images) image.toMediaFile().toJson()],
+};
 
 /// Image-to-video body for `media/video/i2v`: a prompt plus a single source
 /// image the model animates.
@@ -86,11 +84,10 @@ Map<String, dynamic> i2vPayload(
   MediaAttachment image, {
   String duration = '5s',
   String aspectRatio = '2:3',
-}) =>
-    {
-      'capability': MediaOperation.i2v.capability,
-      'prompt': prompt,
-      'duration': duration,
-      'aspect_ratio': aspectRatio,
-      'input_image': image.toMediaFile().toJson(),
-    };
+}) => {
+  'capability': MediaOperation.i2v.capability,
+  'prompt': prompt,
+  'duration': duration,
+  'aspect_ratio': aspectRatio,
+  'input_image': image.toMediaFile().toJson(),
+};

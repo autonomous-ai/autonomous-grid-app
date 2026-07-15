@@ -53,7 +53,9 @@ class MediaFrame extends StatelessWidget {
           borderRadius: kMediaRadius,
           border: Border.all(color: AppPalette.divider),
         ),
-        child: padding == null ? child : Padding(padding: padding!, child: child),
+        child: padding == null
+            ? child
+            : Padding(padding: padding!, child: child),
       ),
     );
   }
@@ -107,8 +109,9 @@ class MediaErrorBox extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           TextButton(

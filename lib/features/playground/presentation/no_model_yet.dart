@@ -39,7 +39,7 @@ class NoModelYet extends StatelessWidget {
               canManage
                   ? 'Start an engine on this grid to chat with a model.'
                   : 'Wait for someone on this grid to bring a model online, or '
-                      'ask the grid owner to run one.',
+                        'ask the grid owner to run one.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

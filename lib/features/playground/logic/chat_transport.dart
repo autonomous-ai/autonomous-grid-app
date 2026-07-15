@@ -52,27 +52,36 @@ class HttpChatTransport implements ChatTransport {
       if (apiKey.isNotEmpty) {
         request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
       }
-      request.add(utf8.encode(jsonEncode({
-        'model': model,
-        'messages': messages,
-        'stream': false,
-      })));
+      request.add(
+        utf8.encode(
+          jsonEncode({'model': model, 'messages': messages, 'stream': false}),
+        ),
+      );
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 180));
+      final response = await request.close().timeout(
+        const Duration(seconds: 180),
+      );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
         return (
           null,
-          ChatTransportError(_briefError(body),
-              statusCode: response.statusCode),
+          ChatTransportError(
+            _briefError(body),
+            statusCode: response.statusCode,
+          ),
         );
       }
       return (extractAssistantText(jsonDecode(body)), null);
     } on TimeoutException {
-      return (null, const ChatTransportError("The model didn't respond in time."));
+      return (
+        null,
+        const ChatTransportError("The model didn't respond in time."),
+      );
     } on SocketException catch (e) {
-      return (null, ChatTransportError("Couldn't reach the model: ${e.message}"));
+      return (
+        null,
+        ChatTransportError("Couldn't reach the model: ${e.message}"),
+      );
     } on Object catch (e) {
       return (null, ChatTransportError("Couldn't reach the model: $e"));
     } finally {
@@ -87,7 +96,9 @@ class HttpChatTransport implements ChatTransport {
       final decoded = jsonDecode(body);
       if (decoded is Map) {
         final error = decoded['error'];
-        if (error is Map && error['message'] != null) return '${error['message']}';
+        if (error is Map && error['message'] != null) {
+          return '${error['message']}';
+        }
         if (error != null) return '$error';
         final detail = decoded['detail'];
         if (detail is String && detail.trim().isNotEmpty) return detail.trim();
@@ -101,5 +112,6 @@ class HttpChatTransport implements ChatTransport {
 }
 
 /// The chat transport used by the Playground. Override in tests with a fake.
-final chatTransportProvider =
-    Provider<ChatTransport>((ref) => const HttpChatTransport());
+final chatTransportProvider = Provider<ChatTransport>(
+  (ref) => const HttpChatTransport(),
+);

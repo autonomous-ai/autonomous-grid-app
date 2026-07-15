@@ -66,8 +66,9 @@ class AttachmentBar extends StatelessWidget {
         if (hint != null) ...[
           Text(
             hint!,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 8),
         ],
@@ -81,8 +82,7 @@ class AttachmentBar extends StatelessWidget {
                 size: _thumbSize,
                 onRemove: () => onRemoveAt(i),
               ),
-            if (!full && showAddTile)
-              _AddTile(size: _thumbSize, onTap: _pick),
+            if (!full && showAddTile) _AddTile(size: _thumbSize, onTap: _pick),
           ],
         ),
       ],

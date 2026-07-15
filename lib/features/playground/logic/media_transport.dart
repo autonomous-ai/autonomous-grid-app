@@ -33,7 +33,8 @@ class HttpMediaTransport implements MediaTransport {
     required String apiKey,
     required Map<String, dynamic> payload,
   }) async* {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final request = await client.postUrl(Uri.parse(url));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
@@ -88,5 +89,6 @@ class HttpMediaTransport implements MediaTransport {
 }
 
 /// The media transport used by the Playground. Override in tests with a fake.
-final mediaTransportProvider =
-    Provider<MediaTransport>((ref) => const HttpMediaTransport());
+final mediaTransportProvider = Provider<MediaTransport>(
+  (ref) => const HttpMediaTransport(),
+);

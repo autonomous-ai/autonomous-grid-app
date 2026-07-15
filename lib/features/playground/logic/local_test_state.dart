@@ -6,8 +6,9 @@ import '../../provider_node/logic/provider_run_controller.dart';
 /// relay. Kept in app state (not widget state) so it survives tab switches, and
 /// auto-resets to off the moment the local provider stops — so it never targets
 /// a dead server. Driven off [localProviderEndpointProvider].
-final useLocalTestProvider =
-    NotifierProvider<UseLocalTestNotifier, bool>(UseLocalTestNotifier.new);
+final useLocalTestProvider = NotifierProvider<UseLocalTestNotifier, bool>(
+  UseLocalTestNotifier.new,
+);
 
 class UseLocalTestNotifier extends Notifier<bool> {
   @override

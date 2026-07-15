@@ -80,10 +80,10 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
 /// wired to its live model list and node capabilities.
 final playgroundModelsProvider =
     Provider.autoDispose<List<PlaygroundModelOption>>((ref) {
-  final nodes = ref.watch(gridOverviewProvider).asData?.value.nodes ??
-      const <OverviewNode>[];
-  return playgroundOptionsFrom(
-    ref.watch(gridModelsProvider),
-    [for (final node in nodes) ...node.models],
-  );
-});
+      final nodes =
+          ref.watch(gridOverviewProvider).asData?.value.nodes ??
+          const <OverviewNode>[];
+      return playgroundOptionsFrom(ref.watch(gridModelsProvider), [
+        for (final node in nodes) ...node.models,
+      ]);
+    });

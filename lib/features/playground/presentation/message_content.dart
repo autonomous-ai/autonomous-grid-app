@@ -27,8 +27,9 @@ class MessageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final segments =
-        text.isEmpty ? const <MessageSegment>[] : parseMessageSegments(text);
+    final segments = text.isEmpty
+        ? const <MessageSegment>[]
+        : parseMessageSegments(text);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -48,15 +49,12 @@ class MessageContent extends StatelessWidget {
   Widget _segment(BuildContext context, MessageSegment segment) {
     return switch (segment) {
       TextSegment(:final text) => SelectionArea(
-          child: GptMarkdown(
-            text,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: color),
-            onLinkTap: (url, _) => openExternalUrl(url),
-          ),
+        child: GptMarkdown(
+          text,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+          onLinkTap: (url, _) => openExternalUrl(url),
         ),
+      ),
       // A file the agent wrote to disk (a generated image/video): render it from
       // the file, the same way saved outputs are shown, rather than as a link
       // the OS can't open.
@@ -65,7 +63,9 @@ class MessageContent extends StatelessWidget {
           media: ChatMedia(path: localMediaPath(url), kind: kind),
         ),
       MediaSegment(:final url, kind: MediaKind.image) => InlineImage(url: url),
-      MediaSegment(:final url, kind: MediaKind.video) => InlineVideo(source: url),
+      MediaSegment(:final url, kind: MediaKind.video) => InlineVideo(
+        source: url,
+      ),
       MediaSegment(:final url, kind: MediaKind.audio) => InlineAudio(url: url),
     };
   }

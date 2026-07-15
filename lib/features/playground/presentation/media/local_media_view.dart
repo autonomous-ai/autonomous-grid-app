@@ -21,10 +21,10 @@ class LocalMediaView extends StatelessWidget {
       MediaKind.image => _LocalImage(path: media.path, href: href),
       MediaKind.video => InlineVideo(source: media.path, openHref: href),
       MediaKind.audio => MediaErrorBox(
-          url: href,
-          icon: Icons.audiotrack_outlined,
-          label: media.path.split('/').last,
-        ),
+        url: href,
+        icon: Icons.audiotrack_outlined,
+        label: media.path.split('/').last,
+      ),
     };
   }
 }

@@ -22,11 +22,28 @@ class MediaSegment extends MessageSegment {
 }
 
 const _imageExt = {
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'apng', 'heic',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'svg',
+  'avif',
+  'apng',
+  'heic',
 };
 const _videoExt = {'mp4', 'mov', 'webm', 'mkv', 'm4v', 'avi', 'ogv', '3gp'};
 const _audioExt = {
-  'mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'flac', 'opus', 'weba',
+  'mp3',
+  'wav',
+  'm4a',
+  'aac',
+  'ogg',
+  'oga',
+  'flac',
+  'opus',
+  'weba',
 };
 
 /// Markdown image, then markdown link, then bare URL / local path — in that

@@ -10,8 +10,9 @@ import 'message_media.dart';
 /// Where generated media is written — `~/.grid/outputs` by default (the same
 /// place the CLI saves them). Overridden in tests with a temp dir so they never
 /// touch the real grid home.
-final mediaOutputsDirProvider =
-    Provider<Directory>((ref) => GridPaths.outputsDir);
+final mediaOutputsDirProvider = Provider<Directory>(
+  (ref) => GridPaths.outputsDir,
+);
 
 /// Writes relay [files] to [dir] (cli.py:1125) and returns them as renderable
 /// [ChatMedia]. Non-media or empty files are skipped. Each name is
@@ -43,7 +44,7 @@ String _unusedPath(String dir, String filename) {
   final dot = safe.lastIndexOf('.');
   final stem = dot > 0 ? safe.substring(0, dot) : safe;
   final ext = dot > 0 ? safe.substring(dot) : '';
-  for (var n = 2;; n++) {
+  for (var n = 2; ; n++) {
     candidate = '$dir/$stem ($n)$ext';
     if (!File(candidate).existsSync()) return candidate;
   }

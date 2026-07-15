@@ -51,5 +51,44 @@ void main() {
       final segs = parseMessageSegments('https://x.com/a.png?w=10&token=z');
       expect(_mediaAt(segs, 0).kind, MediaKind.image);
     });
+
+    test('a bare local image path becomes an image segment', () {
+      // What the agent writes after generating an image.
+      final segs = parseMessageSegments(
+        'File: /Users/me/Downloads/output_image_001.png',
+      );
+      expect(_mediaAt(segs, 1).kind, MediaKind.image);
+      expect(_mediaAt(segs, 1).url, '/Users/me/Downloads/output_image_001.png');
+    });
+
+    test('a local video path becomes a video segment', () {
+      final segs = parseMessageSegments('/Users/me/clips/a.mp4');
+      expect(_mediaAt(segs, 0).kind, MediaKind.video);
+    });
+
+    test('a non-media local path is left as text', () {
+      final segs = parseMessageSegments('saved to /Users/me/notes.txt');
+      expect(segs, hasLength(1));
+      expect(segs.first, isA<TextSegment>());
+    });
+
+    test('a markdown link to a local media file is lifted to media', () {
+      final segs = parseMessageSegments('[open](/Users/me/a.png)');
+      expect(segs, hasLength(1));
+      expect(_mediaAt(segs, 0).kind, MediaKind.image);
+    });
+  });
+
+  group('local media helpers', () {
+    test('classifies bare paths and file:// as local, http as not', () {
+      expect(isLocalMediaUrl('/Users/me/a.png'), isTrue);
+      expect(isLocalMediaUrl('file:///Users/me/a.png'), isTrue);
+      expect(isLocalMediaUrl('https://x.com/a.png'), isFalse);
+    });
+
+    test('decodes a file:// url to a plain path', () {
+      expect(localMediaPath('file:///Users/me/a%20b.png'), '/Users/me/a b.png');
+      expect(localMediaPath('/Users/me/a.png'), '/Users/me/a.png');
+    });
   });
 }
