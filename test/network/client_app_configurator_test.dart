@@ -129,6 +129,31 @@ void main() {
       expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
       expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
       expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
+      // A fresh config still enables the browser toolset, so the agent can open
+      // web pages rather than being stuck on bot-blocked HTTP fetches.
+      expect(
+        editor.parseAt(['toolsets']).value,
+        containsAll(<String>['hermes-cli', 'web', 'browser']),
+      );
+    });
+
+    test('turns on the browser toolset without dropping the ones already '
+        'enabled, and re-applying does not duplicate it', () async {
+      final config = File('${home.path}/.hermes/config.yaml');
+      await config.create(recursive: true);
+      await config.writeAsString(
+        'toolsets:\n'
+        '  - hermes-cli\n'
+        '  - web\n'
+        'model:\n'
+        '  provider: ollama-launch\n',
+      );
+
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]); // re-apply
+
+      final list = YamlEditor(readConfig()).parseAt(['toolsets']).value as List;
+      expect(list, ['hermes-cli', 'web', 'browser']);
     });
 
     test(
@@ -352,6 +377,34 @@ void main() {
 
       final result = await sut.apply(ClientApp.codex, _base, _key, [_model]);
       expect(result, isA<ApplyError>());
+    });
+  });
+
+  group('ensureBrowserToolset', () {
+    test('appends browser to an existing toolsets list, keeping the rest', () {
+      final editor = YamlEditor('toolsets:\n  - hermes-cli\n  - web\n');
+      ensureBrowserToolset(editor);
+      expect(editor.parseAt(['toolsets']).value, [
+        'hermes-cli',
+        'web',
+        'browser',
+      ]);
+    });
+
+    test('is a no-op when browser is already enabled', () {
+      final editor = YamlEditor('toolsets:\n  - web\n  - browser\n');
+      ensureBrowserToolset(editor);
+      expect(editor.parseAt(['toolsets']).value, ['web', 'browser']);
+    });
+
+    test('seeds a sensible list when there is no toolsets key yet', () {
+      final editor = YamlEditor('model:\n  provider: custom\n');
+      ensureBrowserToolset(editor);
+      expect(editor.parseAt(['toolsets']).value, [
+        'hermes-cli',
+        'web',
+        'browser',
+      ]);
     });
   });
 }

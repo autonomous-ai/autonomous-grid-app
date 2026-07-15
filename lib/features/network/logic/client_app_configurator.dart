@@ -121,14 +121,16 @@ class ClientAppConfigurator {
     try {
       final text = (await config.exists()) ? await config.readAsString() : '';
 
-      // No config yet → write a fresh one straight from the snippet. Otherwise
-      // surgically repoint the existing `model:` block at the grid, preserving
-      // every other setting and comment (yaml_edit edits in place).
+      // No config yet → start from the snippet. Otherwise surgically repoint the
+      // existing `model:` block at the grid, preserving every other setting and
+      // comment (yaml_edit edits in place). Either way, a final pass makes sure
+      // the `browser` toolset is on so the agent can actually open web pages.
+      final YamlEditor editor;
       if (text.trim().isEmpty) {
         await config.parent.create(recursive: true);
-        await _backupThenWrite(config, hermesConfigSnippet(base, key, model));
+        editor = YamlEditor(hermesConfigSnippet(base, key, model));
       } else {
-        final editor = YamlEditor(text);
+        editor = YamlEditor(text);
         final connection = <String, Object>{
           'provider': 'custom',
           'base_url': base,
@@ -145,8 +147,9 @@ class ClientAppConfigurator {
           editor.update(['model'], connection);
         }
         _upsertCustomProvider(editor, base: base, key: key, model: model);
-        await _backupThenWrite(config, editor.toString().trimRight());
       }
+      ensureBrowserToolset(editor);
+      await _backupThenWrite(config, editor.toString().trimRight());
 
       // Also drop the pair into `.env`: Hermes reads OPENAI_BASE_URL +
       // OPENAI_API_KEY as a direct custom endpoint (docs: "when base_url is set,
@@ -293,6 +296,28 @@ class ClientAppConfigurator {
       : file.path;
 
   String _reason(Object e) => e is FormatException ? e.message : '$e';
+}
+
+/// Ensure Hermes's `toolsets:` enables the `browser` toolset, which drives a
+/// real headless Chromium (`browser_navigate`).
+///
+/// Without it the agent has only HTTP web fetch (`web_search` / `web_extract`),
+/// which sites like VNExpress block outright (406, bot detection) — a real
+/// browser renders the page and gets through. Applied on every Hermes config
+/// write so a non-technical user never has to enable it by hand. Idempotent and
+/// non-destructive: it appends `browser` to an existing list, leaving the user's
+/// other toolsets intact, and seeds a sensible default when there's none yet.
+void ensureBrowserToolset(YamlEditor editor) {
+  const browser = 'browser';
+  final toolsets = editor.parseAt([
+    'toolsets',
+  ], orElse: () => wrapAsYamlNode(null)).value;
+  if (toolsets is! List) {
+    editor.update(['toolsets'], const ['hermes-cli', 'web', browser]);
+    return;
+  }
+  if (toolsets.contains(browser)) return;
+  editor.appendToList(['toolsets'], browser);
 }
 
 /// The app-config writer, so widgets get it via `ref.read`.
