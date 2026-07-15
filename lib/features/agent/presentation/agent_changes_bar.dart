@@ -76,16 +76,43 @@ class _UndoAllButtonState extends ConsumerState<_UndoAllButton> {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.tonalIcon(
-      onPressed: _busy ? null : _undoAll,
-      icon: _busy
-          ? const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.undo_rounded, size: 16),
-      label: const Text('Undo all'),
+    // A soft accent-tinted pill, not the solid blue tonal button — it sat too
+    // loud on this quiet bar. Still reads as the primary action next to Review.
+    return Material(
+      color: AppPalette.accent.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(11),
+        onTap: _busy ? null : _undoAll,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_busy)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppPalette.accent,
+                  ),
+                )
+              else
+                Icon(Icons.undo_rounded, size: 16, color: AppPalette.accent),
+              const SizedBox(width: 8),
+              Text(
+                'Undo all',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.accent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
