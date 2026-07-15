@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../network/logic/grid_overview_provider.dart';
+import '../../network/logic/network_models_provider.dart';
 import '../../network/logic/node_display.dart';
 import 'playground_request.dart';
 
@@ -78,12 +79,21 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
 
 /// The selectable options for the currently selected grid — [playgroundOptionsFrom]
 /// wired to its live model list and node capabilities.
+///
+/// The model list is the relay's OpenAI-standard `/models` ([networkModelsProvider]),
+/// the canonical list of what the grid serves — so the `auto` auto-routing model
+/// shows here too, not just node-advertised engines. The overview is read only
+/// for the node comfyui capabilities behind the Image/Video modes (those never
+/// appear in `/models`).
 final playgroundModelsProvider =
     Provider.autoDispose<List<PlaygroundModelOption>>((ref) {
+      final ids =
+          ref.watch(networkModelsProvider).asData?.value ?? const <String>[];
       final nodes =
           ref.watch(gridOverviewProvider).asData?.value.nodes ??
           const <OverviewNode>[];
-      return playgroundOptionsFrom(ref.watch(gridModelsProvider), [
-        for (final node in nodes) ...node.models,
-      ]);
+      return playgroundOptionsFrom(
+        [for (final id in ids) OverviewModel(id: id)],
+        [for (final node in nodes) ...node.models],
+      );
     });
