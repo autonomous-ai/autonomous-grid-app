@@ -627,4 +627,48 @@ void main() {
 
     expect(h.agent.workdir, isNull);
   });
+
+  group('setActiveModel', () {
+    test('remembers the picked model on the open chat and persists it — so '
+        'leaving and returning restores it, not the grid default', () async {
+      final h = _harness(
+        tmp,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+          ),
+        ],
+      );
+      final controller = h.container.read(chatSessionsProvider.notifier);
+      await controller.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'q',
+      );
+      final before = h.container.read(chatSessionsProvider).active!;
+
+      controller.setActiveModel('deepreinforce-ai/ornith-1.0-35b');
+
+      final after = h.container.read(chatSessionsProvider).active!;
+      expect(after.model, 'deepreinforce-ai/ornith-1.0-35b');
+      // Picking a model must not bump the chat to the top of the sidebar.
+      expect(after.updatedAt, before.updatedAt);
+      // Persisted, so a reload (next launch) keeps the choice.
+      expect(
+        ChatStore(directory: tmp).loadAll().single.model,
+        'deepreinforce-ai/ornith-1.0-35b',
+      );
+    });
+
+    test('is a no-op for a not-yet-saved compose — nothing to persist yet', () {
+      final h = _harness(tmp, updates: const []);
+      final controller = h.container.read(chatSessionsProvider.notifier);
+      controller.newChat();
+
+      controller.setActiveModel('ornith-35b');
+
+      expect(h.container.read(chatSessionsProvider).active, isNull);
+      expect(ChatStore(directory: tmp).loadAll(), isEmpty);
+    });
+  });
 }

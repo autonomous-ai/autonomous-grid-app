@@ -131,13 +131,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _rememberModel();
   }
 
-  /// Persist the selection once it's a real option (not a name being typed) so a
-  /// new chat and the next launch default to it instead of the grid's first
-  /// model.
+  /// Persist the selection once it's a real option (not a name being typed):
+  /// onto the open chat, so leaving and returning restores *its* model rather
+  /// than a default; and into the shared prefs, so a new chat and the next
+  /// launch default to it too.
   void _rememberModel() {
     final id = _model.text.trim();
     if (id.isEmpty || !_options.any((o) => o.id == id)) return;
     ref.read(chatPrefsProvider.notifier).setModel(id);
+    ref.read(chatSessionsProvider.notifier).setActiveModel(id);
   }
 
   /// Keep the model field in step with the open conversation and selected grid:
@@ -162,6 +164,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
       return;
     }
     if (!_synced || key != _syncedKey) {
+      // Wait for the grid's real model list before resolving. Navigating back to
+      // the chat rebuilds this view and refetches the models, so they arrive
+      // empty for a frame; syncing against that empty list would mark the chat
+      // "synced" and then fall through to the default, dropping its own model.
+      if (options.isEmpty) return;
       _synced = true;
       _syncedKey = key;
       final stored = active?.model ?? '';

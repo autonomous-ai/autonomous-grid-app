@@ -113,6 +113,28 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     state = ChatSessionsState(conversations: state.conversations, activeId: id);
   }
 
+  /// Remember the model chosen for the open conversation, so leaving the chat and
+  /// coming back — or reopening it later — restores *that* choice, not the grid's
+  /// default. A no-op for a not-yet-saved compose (its model rides the first
+  /// send) and while a reply is streaming. Leaves `updatedAt` untouched, so
+  /// picking a model never re-sorts the sidebar.
+  void setActiveModel(String model) {
+    if (state.sending || model.isEmpty) return;
+    final active = state.active;
+    if (active == null || active.model == model) return;
+    final updated = active.copyWith(model: model);
+    _store.save(updated);
+    state = ChatSessionsState(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == updated.id) updated else c,
+      ],
+      activeId: state.activeId,
+      phase: state.phase,
+      error: state.error,
+    );
+  }
+
   /// Delete a conversation from disk and state, falling back to the newest
   /// remaining one (or a new compose) when the open one is removed.
   void deleteConversation(String id) {
