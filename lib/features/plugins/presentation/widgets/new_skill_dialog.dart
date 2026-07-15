@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/labeled_field.dart';
 import '../../logic/agent_skill.dart';
 import '../../logic/skill_author.dart';
 import '../../logic/skill_generator.dart';
@@ -212,7 +213,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 10),
-              _Field(
+              LabeledField(
                 label: 'Name',
                 controller: _name,
                 hint: 'Weekly report',
@@ -223,7 +224,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
               const SizedBox(height: 10),
               _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
               const SizedBox(height: 20),
-              _Field(
+              LabeledField(
                 label: 'When should the assistant use it?',
                 controller: _description,
                 hint:
@@ -233,7 +234,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 20),
-              _Field(
+              LabeledField(
                 label: 'What should it do?',
                 controller: _instructions,
                 hint: _loading
@@ -275,88 +276,6 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
     if (_saving) return 'Saving…';
     return _isEdit ? 'Save changes' : 'Create skill';
   }
-}
-
-/// A labelled input: the label sits above its field, and the field is a soft,
-/// borderless capsule — roomier and calmer than a floating-label box, so three
-/// of them stacked don't read as a wall.
-class _Field extends StatelessWidget {
-  const _Field({
-    required this.label,
-    required this.controller,
-    required this.hint,
-    this.enabled = true,
-    this.autofocus = false,
-    this.minLines = 1,
-    this.maxLines = 1,
-    this.onChanged,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final String hint;
-  final bool enabled;
-  final bool autofocus;
-  final int minLines;
-  final int maxLines;
-  final ValueChanged<String>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 2, bottom: 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: AppPalette.textSecondary,
-            ),
-          ),
-        ),
-        TextField(
-          controller: controller,
-          enabled: enabled,
-          autofocus: autofocus,
-          minLines: minLines,
-          maxLines: maxLines,
-          onChanged: onChanged,
-          style: const TextStyle(fontSize: 14, height: 1.4),
-          decoration: _fieldDecoration(hint),
-        ),
-      ],
-    );
-  }
-}
-
-/// The soft, borderless field surface — filled with the card tint, a rounded
-/// capsule, and one accent hairline only while focused.
-InputDecoration _fieldDecoration(String hint) {
-  OutlineInputBorder border(Color color, [double width = 1]) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: width == 0
-            ? BorderSide.none
-            : BorderSide(color: color, width: width),
-      );
-  return InputDecoration(
-    hintText: hint,
-    filled: true,
-    fillColor: AppPalette.cardBg,
-    hintStyle: TextStyle(
-      fontSize: 14,
-      height: 1.4,
-      color: AppPalette.textFaint,
-    ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-    border: border(Colors.transparent, 0),
-    enabledBorder: border(Colors.transparent, 0),
-    disabledBorder: border(Colors.transparent, 0),
-    focusedBorder: border(AppPalette.accent, 1.5),
-  );
 }
 
 /// The reassurance line under the form — set off with a small lock so it reads
