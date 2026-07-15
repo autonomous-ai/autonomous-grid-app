@@ -57,6 +57,9 @@ Future<void> _runTurn(
         stdout.write(text);
       case HermesAcpActivity(:final activity):
         stdout.writeln('\n[tool ${activity.label} ${activity.status.name}]');
+      case HermesAcpEdit(:final request):
+        // Auto-applied edit (no approval needed); just note it for the probe.
+        stdout.writeln('\n[edit applied: ${request.summary}]');
       case HermesAcpPermission(:final request):
         // The probe's prompts don't escalate; if one ever does, cancel it so the
         // turn doesn't stall waiting on an answer that never comes.
