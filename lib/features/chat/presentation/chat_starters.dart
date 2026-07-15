@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
@@ -15,6 +16,8 @@ class ChatStarters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette tokens (the subtitle) — follow theme flips.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -28,14 +31,25 @@ class ChatStarters extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const _Glyph(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   Text(
                     greeting,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium?.copyWith(
                       fontSize: compact ? 27 : 31,
                       fontWeight: FontWeight.w700,
-                      height: 1.08,
+                      height: 1.06,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Text(
+                    'Pick a starting point, or just start typing.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      height: 1.3,
+                      color: AppPalette.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 30),
@@ -47,7 +61,7 @@ class ChatStarters extends StatelessWidget {
                       for (final starter in _starters)
                         _StarterCard(
                           starter: starter,
-                          width: compact ? 158 : 170,
+                          width: compact ? 166 : 178,
                           onTap: () => onPick(starter.prompt),
                         ),
                     ],
@@ -67,14 +81,40 @@ class _Glyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Follow the theme so this decorative mark re-colours on a Light/Dark flip
-    // instead of staying a fixed grey that reads wrong on the opposite surface.
+    // Follow the theme so this mark re-tints on a Light/Dark flip.
     AppTheme.watch(context);
-    return Icon(
-      Icons.cloud_outlined,
-      size: 45,
-      color: AppPalette.textFaint,
-      semanticLabel: 'Grid',
+    // The brand bolt in a soft indigo→violet chip — Grid's own mark, and the one
+    // spot of colour up here. A grey cloud said nothing about code; the bolt ties
+    // the greeting to the app and gives the empty state a warm focal point.
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppPalette.accent,
+            Color.lerp(AppPalette.accent, const Color(0xFF7A3CF0), 0.5)!,
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppPalette.accent.withValues(alpha: 0.38),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: -8,
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: const Icon(
+        LucideIcons.zap,
+        size: 25,
+        color: Colors.white,
+        semanticLabel: 'Grid',
+      ),
     );
   }
 }
@@ -83,40 +123,61 @@ class _Glyph extends StatelessWidget {
 class _Starter {
   const _Starter({
     required this.icon,
-    required this.color,
+    required this.lightColor,
+    required this.darkColor,
     required this.title,
+    required this.description,
     required this.prompt,
   });
 
   final IconData icon;
-  final Color color;
+
+  /// The accent colours, per surface — the dark values are lifted so the chip and
+  /// icon keep their contrast on charcoal instead of muddying.
+  final Color lightColor;
+  final Color darkColor;
   final String title;
+
+  /// A quiet second line under the title — says what the card actually does, so
+  /// each one reads as an offer rather than just a label.
+  final String description;
   final String prompt;
+
+  /// The starter's accent for the live theme.
+  Color get color => AppTheme.pick(lightColor, darkColor);
 }
 
 const _starters = [
   _Starter(
-    icon: Icons.travel_explore_rounded,
-    color: Color(0xFF2F80ED),
-    title: 'Explore and understand code',
+    icon: LucideIcons.searchCode,
+    lightColor: Color(0xFF2F80ED),
+    darkColor: Color(0xFF5B9BF5),
+    title: 'Explore & understand code',
+    description: 'Walk through how it works',
     prompt: 'Explore this code and explain how it works:\n\n',
   ),
   _Starter(
-    icon: Icons.architecture_rounded,
-    color: Color(0xFF8A3FFC),
-    title: 'Build a new feature, app, or tool',
+    icon: LucideIcons.draftingCompass,
+    lightColor: Color(0xFF8A3FFC),
+    darkColor: Color(0xFFA66CFF),
+    title: 'Build a feature or app',
+    description: 'Start something new',
     prompt: 'Help me build a new feature, app, or tool: ',
   ),
   _Starter(
-    icon: Icons.manage_search_rounded,
-    color: Color(0xFF16A34A),
-    title: 'Review code and suggest changes',
+    icon: LucideIcons.scanSearch,
+    lightColor: Color(0xFF16A34A),
+    darkColor: Color(0xFF35C46B),
+    title: 'Review & suggest changes',
+    description: 'Get a second pair of eyes',
     prompt: 'Review this code and suggest changes:\n\n',
   ),
   _Starter(
-    icon: Icons.local_fire_department_outlined,
-    color: Color(0xFFF97316),
+    icon: LucideIcons.bug,
+    lightColor: Color(0xFFF97316),
+    darkColor: Color(0xFFFB9A4B),
     title: 'Fix a bug or failure',
+    description: 'Track down what broke',
     prompt: 'Help me debug this issue:\n\n',
   ),
 ];
@@ -144,7 +205,7 @@ class _StarterCardState extends State<_StarterCard> {
   Widget build(BuildContext context) {
     // Reads AppCard/AppGlass tokens — follow theme flips even when not hovering.
     AppTheme.watch(context);
-    final radius = BorderRadius.circular(14);
+    final radius = BorderRadius.circular(16);
     // On hover the card lifts: it tints its rim to the starter's own colour,
     // deepens the shadow, and rises a couple of pixels — so it reads as a real,
     // pickable surface instead of a ghost on the near-white pane.
@@ -177,9 +238,9 @@ class _StarterCardState extends State<_StarterCard> {
             hoverColor: Colors.transparent,
             child: SizedBox(
               width: widget.width,
-              height: 112,
+              height: 128,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 15),
                 child: _StarterContent(
                   starter: widget.starter,
                   hovered: _hovered,
@@ -201,34 +262,80 @@ class _StarterContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Reads AppPalette.textPrimary — follow theme flips.
+    // Reads AppPalette tokens — follow theme flips.
     AppTheme.watch(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Stack(
       children: [
-        // The icon sits in a soft tinted chip — a small spot of the starter's
-        // colour that gives each card a point of focus and lifts it off white.
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: starter.color.withValues(alpha: hovered ? 0.18 : 0.12),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Icon(starter.icon, size: 17, color: starter.color),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // The icon sits in a soft tinted chip — a small spot of the starter's
+            // colour that gives each card a point of focus and lifts it off the
+            // pane. It swells a hair on hover so the card feels responsive.
+            AnimatedScale(
+              scale: hovered ? 1.06 : 1,
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
+              alignment: Alignment.topLeft,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: starter.color.withValues(alpha: hovered ? 0.20 : 0.13),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(starter.icon, size: 18, color: starter.color),
+              ),
+            ),
+            const Spacer(),
+            Text(
+              starter.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.16,
+                letterSpacing: -0.1,
+                fontWeight: FontWeight.w600,
+                color: AppPalette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 3),
+            // The quiet second line — hidden on the narrowest cards where the
+            // title may wrap to two lines, so the two never collide.
+            Text(
+              starter.description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.3,
+                color: AppPalette.textFaint,
+              ),
+            ),
+          ],
         ),
-        const Spacer(),
-        Text(
-          starter.title,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13.5,
-            height: 1.12,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.textPrimary,
+        // A directional cue that fades in on hover: this card takes you somewhere
+        // (it prefills the composer). Tinted to the starter's own colour.
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: AnimatedSlide(
+            offset: Offset(hovered ? 0 : -0.25, 0),
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            child: AnimatedOpacity(
+              opacity: hovered ? 1 : 0,
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              child: Icon(
+                LucideIcons.arrowRight,
+                size: 15,
+                color: starter.color,
+              ),
+            ),
           ),
         ),
       ],
