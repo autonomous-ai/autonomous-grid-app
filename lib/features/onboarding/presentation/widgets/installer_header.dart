@@ -65,14 +65,15 @@ class InstallerHeader extends ConsumerWidget {
     _ => 'Setting up your AI',
   };
 
-  /// One honest line about what is happening. The heavy model download is no
-  /// longer part of this screen — it runs in the background once the user is in —
-  /// so setup here is quick, and "done" means ready to chat, not yet sharing.
+  /// One honest line about what is happening. Setup here is quick — just the
+  /// assistant — and "done" leads to choosing how the grid gets a model, so it
+  /// mustn't promise a model download that only the "run local" choice starts.
   String get _subtitle => switch (state) {
     InstallerFailed() =>
       'You can try again, or go in and use an engine someone else shares.',
-    InstallerDone() => "You're all set — your model keeps downloading in the "
-        'background.',
+    InstallerDone() =>
+      "You're all set — next, choose how your grid gets a "
+          'model.',
     InstallerRunning() => 'This only takes a moment.',
     _ => 'Grid will set this computer up for you.',
   };

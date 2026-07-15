@@ -46,10 +46,12 @@ final installerControllerProvider =
       InstallerController.new,
     );
 
-/// Drives first-run setup up to the point the user can chat: make sure they have
-/// a grid, then install the engine and the assistant. The model is deliberately
-/// left out — it's several GB, so it downloads in the background afterwards (see
-/// BackgroundModelController), and sharing waits for it there too.
+/// Drives first-run setup up to the point the user can be *asked* how their grid
+/// gets a model: make sure they have a grid, then install the assistant. The
+/// engine and the model are deliberately left out — running a model on this
+/// computer is now a choice the user makes on the screen after this one (see
+/// `OnboardingChoiceScreen`), so nothing here commits a several-GB download on a
+/// machine that might use a hosted model or someone else's instead.
 ///
 /// It orchestrates rather than re-implements: each phase is an existing
 /// controller, so the installer screen and the Engines tab can never drift into
@@ -71,7 +73,7 @@ class InstallerController extends Notifier<InstallerState> {
       return;
     }
 
-    if (!await _installWhatsMissing()) {
+    if (!await _installAssistant()) {
       state = const InstallerFailed();
       return;
     }
@@ -98,13 +100,19 @@ class InstallerController extends Notifier<InstallerState> {
     return ref.read(selectedNetworkProvider) != null;
   }
 
-  /// Installs the gaps that must be in place before the user goes in: the engine
-  /// and the assistant. The model is excluded ([buildSetupPlan] with
-  /// `includeModel: false`) — it downloads in the background. A machine that
-  /// already has a piece skips it (the row shows as done).
-  Future<bool> _installWhatsMissing() async {
+  /// Installs the one thing that must be in place before the user goes in: the
+  /// assistant. The engine and the model are excluded ([buildSetupPlan] with
+  /// `includeEngine: false, includeModel: false`) — the engine is installed only
+  /// if the user chooses to run a model locally on the next screen, and the model
+  /// downloads in the background after that. A machine that already has the
+  /// assistant skips it (the row shows as done, the plan is empty).
+  Future<bool> _installAssistant() async {
     final caps = await ref.read(nodeCapabilitiesProvider.future);
-    final plan = buildSetupPlan(caps, includeModel: false);
+    final plan = buildSetupPlan(
+      caps,
+      includeEngine: false,
+      includeModel: false,
+    );
     if (plan.isEmpty) return true;
 
     await ref.read(nodeSetupControllerProvider.notifier).run(plan);

@@ -60,18 +60,24 @@ List<SetupStep> buildSetupPlan(
   NodeCapabilities caps, {
   bool includeMedia = kMediaSetupEnabled,
   bool includeModel = true,
+  bool includeEngine = true,
   bool? isMacOS,
 }) {
   final steps = <SetupStep>[];
 
-  if (!caps.engine.llamaInstalled) {
-    steps.add(const SetupStep(
-      action: SetupAction.installLlama,
-      title: 'Install the built-in engine',
-      detail: 'The software that runs AI models on this computer.',
-      args: ['engine', 'install', 'llama.cpp'],
-      isDownload: false,
-    ));
+  // The first-run installer sets [includeEngine] false: the built-in engine is
+  // now a deliberate choice ("run a model on this computer"), not something every
+  // Mac installs up front — so it's installed only when the user picks that path.
+  if (includeEngine && !caps.engine.llamaInstalled) {
+    steps.add(
+      const SetupStep(
+        action: SetupAction.installLlama,
+        title: 'Install the built-in engine',
+        detail: 'The software that runs AI models on this computer.',
+        args: ['engine', 'install', 'llama.cpp'],
+        isDownload: false,
+      ),
+    );
   }
 
   // The first-run installer sets [includeModel] false and downloads the model in
@@ -85,34 +91,40 @@ List<SetupStep> buildSetupPlan(
   // The agent is what lets chat use tools, so a first run installs it too — no
   // Homebrew needed: `grid agent install` fetches it into ~/.grid.
   if (!caps.hasAgent) {
-    steps.add(const SetupStep(
-      action: SetupAction.installAgent,
-      title: 'Install the assistant',
-      detail: 'The part that can use tools and act on what you ask.',
-      args: ['agent', 'install', 'hermes'],
-      isDownload: false,
-    ));
+    steps.add(
+      const SetupStep(
+        action: SetupAction.installAgent,
+        title: 'Install the assistant',
+        detail: 'The part that can use tools and act on what you ask.',
+        args: ['agent', 'install', 'hermes'],
+        isDownload: false,
+      ),
+    );
   }
 
   if (includeMedia && !caps.hasMediaEngine) {
-    steps.add(const SetupStep(
-      action: SetupAction.installComfy,
-      title: 'Install the media engine',
-      detail: 'The software that generates images on this computer.',
-      args: ['engine', 'install', 'comfyui'],
-      isDownload: false,
-    ));
+    steps.add(
+      const SetupStep(
+        action: SetupAction.installComfy,
+        title: 'Install the media engine',
+        detail: 'The software that generates images on this computer.',
+        args: ['engine', 'install', 'comfyui'],
+        isDownload: false,
+      ),
+    );
   }
 
   if (includeMedia &&
       !(caps.media.bundle(defaultMediaBundle)?.isComplete ?? false)) {
-    steps.add(const SetupStep(
-      action: SetupAction.pullMediaBundle,
-      title: 'Download image models',
-      detail: 'Model files for image generation — several GB.',
-      args: ['engine', 'pull', defaultMediaBundle],
-      isDownload: true,
-    ));
+    steps.add(
+      const SetupStep(
+        action: SetupAction.pullMediaBundle,
+        title: 'Download image models',
+        detail: 'Model files for image generation — several GB.',
+        args: ['engine', 'pull', defaultMediaBundle],
+        isDownload: true,
+      ),
+    );
   }
 
   return steps;

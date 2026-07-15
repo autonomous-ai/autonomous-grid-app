@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/providers.dart';
+import '../../../infrastructure/state/onboarding_store.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import 'auto_host_controller.dart';
@@ -38,6 +39,17 @@ class ModelDownloadFailed extends ModelDownloadState {
   final String message;
 }
 
+/// Whether the automatic model download may run: only once the user has chosen
+/// to run a model on this computer (onboarding's "run local" path).
+///
+/// Before onboarding branched, any Mac with the engine and no model downloaded
+/// one automatically. Now that's a deliberate choice — a user who picked a
+/// hosted provider or chose to wait for a teammate must not be handed a
+/// several-GB download they said no to. Overridable in tests.
+final localModelChosenProvider = Provider<bool>(
+  (ref) => ref.watch(onboardingDecisionProvider) == OnboardingDecision.local,
+);
+
 final backgroundModelControllerProvider =
     NotifierProvider<BackgroundModelController, ModelDownloadState>(
       BackgroundModelController.new,
@@ -47,9 +59,10 @@ final backgroundModelControllerProvider =
 /// the user reaches chat without waiting several GB. On success it shares the
 /// model on the grid ([AutoHostController]).
 ///
-/// Runs at most once per session, and only on a machine that can host, already
-/// has the engine, and has no model yet — a consumer-only computer, or one still
-/// missing its engine, is left alone.
+/// Runs at most once per session, and only when the user chose to run a model on
+/// this computer and the machine can host, already has the engine, and has no
+/// model yet — a computer that picked a hosted provider, is waiting for a
+/// teammate, or is still missing its engine is left alone.
 class BackgroundModelController extends Notifier<ModelDownloadState> {
   bool _attempted = false;
 
@@ -61,6 +74,9 @@ class BackgroundModelController extends Notifier<ModelDownloadState> {
   Future<void> startIfNeeded() async {
     if (_attempted) return;
     if (!ref.read(supportsBuiltInEngineProvider)) return;
+    // Only when the user chose to run a model on this computer — not on a machine
+    // that picked a hosted provider or is waiting for a teammate.
+    if (!ref.read(localModelChosenProvider)) return;
     if (!ref.read(engineStatusProvider).llamaInstalled) return;
     if (ref.read(localModelsProvider).isNotEmpty) return;
 

@@ -19,27 +19,27 @@ NodeCapabilities _caps({
   int models = 0,
   bool agent = false,
   CatalogModel? recommended = _model,
-}) =>
-    NodeCapabilities(
-      textBackends: backends,
-      engine: engineInstalled
-          ? const EngineStatus(llamaInstalled: true)
-          : EngineStatus.notInstalled,
-      media: media,
-      localModelCount: models,
-      hasAgent: agent,
-      recommendedModel: recommended,
-    );
+}) => NodeCapabilities(
+  textBackends: backends,
+  engine: engineInstalled
+      ? const EngineStatus(llamaInstalled: true)
+      : EngineStatus.notInstalled,
+  media: media,
+  localModelCount: models,
+  hasAgent: agent,
+  recommendedModel: recommended,
+);
 
-DetectedBackend _ollama(
-        {List<String> models = const ['gemma'], bool running = true}) =>
-    DetectedBackend(
-      kind: BackendKind.ollama,
-      label: 'Ollama',
-      baseUrl: 'http://localhost:11434/v1',
-      models: models,
-      running: running,
-    );
+DetectedBackend _ollama({
+  List<String> models = const ['gemma'],
+  bool running = true,
+}) => DetectedBackend(
+  kind: BackendKind.ollama,
+  label: 'Ollama',
+  baseUrl: 'http://localhost:11434/v1',
+  models: models,
+  running: running,
+);
 
 const _completeMedia = MediaStatus(
   installed: true,
@@ -106,16 +106,22 @@ void main() {
     ]);
   });
 
-  test('with media enabled, a machine with Ollama still installs everything', () {
-    final plan = buildSetupPlan(_caps(backends: [_ollama()]), includeMedia: true);
-    expect(_actions(plan), [
-      SetupAction.installLlama,
-      SetupAction.pullModel,
-      SetupAction.installAgent,
-      SetupAction.installComfy,
-      SetupAction.pullMediaBundle,
-    ]);
-  });
+  test(
+    'with media enabled, a machine with Ollama still installs everything',
+    () {
+      final plan = buildSetupPlan(
+        _caps(backends: [_ollama()]),
+        includeMedia: true,
+      );
+      expect(_actions(plan), [
+        SetupAction.installLlama,
+        SetupAction.pullModel,
+        SetupAction.installAgent,
+        SetupAction.installComfy,
+        SetupAction.pullMediaBundle,
+      ]);
+    },
+  );
 
   test('falls back to a default model when the catalog recommends none', () {
     final plan = buildSetupPlan(_caps(recommended: null), isMacOS: true);
@@ -150,14 +156,32 @@ void main() {
     expect(pull.args, ['pull', 'qwen36-35b-a3b-mtp']);
   });
 
-  test('the first-run installer plan leaves the model out — it downloads in '
-      'the background so the user gets in sooner', () {
+  test('leaving the model out still installs the engine and assistant', () {
     final plan = buildSetupPlan(_caps(), includeModel: false);
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.installAgent,
     ]);
   });
+
+  test('the first-run installer plan is the assistant only — no engine, no '
+      'model — so running a model locally stays a deliberate choice', () {
+    final plan = buildSetupPlan(
+      _caps(),
+      includeEngine: false,
+      includeModel: false,
+    );
+    expect(_actions(plan), [SetupAction.installAgent]);
+  });
+
+  test(
+    'the "run local" choice installs the engine but still not the model — it '
+    'downloads in the background after the choice',
+    () {
+      final plan = buildSetupPlan(_caps(agent: true), includeModel: false);
+      expect(_actions(plan), [SetupAction.installLlama]);
+    },
+  );
 
   test('modelPullStep is null once a model is on disk, present otherwise', () {
     expect(modelPullStep(_caps(models: 1)), isNull);

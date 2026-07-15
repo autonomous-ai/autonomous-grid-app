@@ -72,6 +72,12 @@ class GridPaths {
   /// with `/`. App-owned; the CLI never touches it.
   static File get promptsFile => File('${home.path}/app/prompts.json');
 
+  /// The first-run onboarding choice (run a model locally, use a cloud provider,
+  /// or set up later) — remembered so a user who already picked a path isn't
+  /// asked again on every launch, including the paths that install nothing.
+  /// App-owned; the CLI never touches it.
+  static File get onboardingFile => File('${home.path}/app/onboarding.json');
+
   /// Which scheduled-task results have already been put into Chat, so a finished
   /// run is delivered once and not again on every launch. App-owned.
   static File get taskDeliveryFile =>
