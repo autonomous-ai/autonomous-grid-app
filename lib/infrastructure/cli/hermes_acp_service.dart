@@ -33,6 +33,14 @@ class HermesAcpPermission extends HermesAcpEvent {
   final AgentPermission request;
 }
 
+/// The agent edited a file without the user being asked — Full access let it
+/// through. Carries the same [AgentPermission] (path, old and new text) an ask
+/// would, so the change can be recorded for undo even when nobody approved it.
+class HermesAcpEdit extends HermesAcpEvent {
+  const HermesAcpEdit(this.request);
+  final AgentPermission request;
+}
+
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
 class HermesAcpRun {
@@ -357,6 +365,15 @@ class _HermesAcpSession implements HermesAcpSession {
     switch (decision) {
       case HermesAllow(:final optionId):
         answerPermission(id, optionId);
+        // Full access approved an edit without asking — still surface it so the
+        // change can be recorded for undo. Reads are nothing to undo.
+        if (toolKind == 'edit') {
+          final request = parseAgentPermission(id: id, params: params);
+          final events = _events;
+          if (request != null && events != null && !events.isClosed) {
+            events.add(HermesAcpEdit(request));
+          }
+        }
       case HermesRefuse(:final optionId):
         answerPermission(id, optionId);
         _blocked(id, label);

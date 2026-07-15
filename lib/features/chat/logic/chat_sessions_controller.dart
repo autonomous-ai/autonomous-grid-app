@@ -92,6 +92,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
 
   ChatStore get _store => ref.read(chatStoreProvider);
 
+  /// The project a not-yet-saved chat is being composed in, so the `@`-mention
+  /// menu can list that folder before the chat is persisted.
+  String? get draftProjectId => _draftProjectId;
+
   /// Open a fresh, empty compose, optionally inside [projectId] — the folder the
   /// assistant may read while answering it. Not persisted until the first
   /// message, so clicking "New chat" repeatedly never litters the history with

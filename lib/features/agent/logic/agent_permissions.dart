@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/hermes_permission_policy.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
+import 'agent_changes.dart';
 import 'agent_providers.dart';
 
 /// How much the agent may do without asking — the user's choice in the composer,
@@ -71,7 +72,19 @@ class AgentPermissionController extends Notifier<AgentPermission?> {
     state = null;
     respond(optionIdForChoice(choice, request.options));
 
-    if (choice != AgentPermissionChoice.refuse) return;
+    if (choice != AgentPermissionChoice.refuse) {
+      // The user approved a file edit — record it so it can be undone.
+      if (request.kind == AgentPermissionKind.edit) {
+        ref
+            .read(agentChangesProvider.notifier)
+            .record(
+              path: request.path ?? '',
+              before: request.oldText,
+              after: request.newText ?? '',
+            );
+      }
+      return;
+    }
     ref
         .read(agentActivityProvider.notifier)
         .upsert(

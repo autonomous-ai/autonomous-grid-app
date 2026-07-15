@@ -68,6 +68,10 @@ class GridPaths {
   /// "inside", so the assistant may read them. App-owned.
   static File get projectsFile => File('${home.path}/app/projects.json');
 
+  /// The user's saved prompts — reusable messages they insert into the composer
+  /// with `/`. App-owned; the CLI never touches it.
+  static File get promptsFile => File('${home.path}/app/prompts.json');
+
   /// Which scheduled-task results have already been put into Chat, so a finished
   /// run is delivered once and not again on every launch. App-owned.
   static File get taskDeliveryFile =>

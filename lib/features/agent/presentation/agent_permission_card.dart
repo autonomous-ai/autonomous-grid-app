@@ -5,6 +5,7 @@ import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/agent_permissions.dart';
 import '../logic/edit_diff.dart';
+import 'diff_view.dart';
 
 /// The assistant has stopped mid-answer and is asking before it touches this
 /// computer: a command it wants to run, or a change it wants to make to a file.
@@ -49,7 +50,7 @@ class AgentPermissionCard extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                 child: isCommand
                     ? _Command(command: request.command ?? '')
-                    : _Diff(
+                    : DiffView(
                         lines: buildEditDiff(
                           request.oldText,
                           request.newText ?? '',
@@ -179,56 +180,6 @@ class _Command extends StatelessWidget {
 }
 
 /// The change, line by line: what goes, what arrives.
-class _Diff extends StatelessWidget {
-  const _Diff({required this.lines});
-
-  final List<DiffLine> lines;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: AppGlass.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [for (final line in lines) _DiffRow(line: line)],
-      ),
-    );
-  }
-}
-
-class _DiffRow extends StatelessWidget {
-  const _DiffRow({required this.line});
-
-  final DiffLine line;
-
-  @override
-  Widget build(BuildContext context) {
-    final (prefix, color) = switch (line.kind) {
-      DiffLineKind.added => ('+', AppPalette.online),
-      DiffLineKind.removed => ('-', Theme.of(context).colorScheme.error),
-      DiffLineKind.context => (' ', AppPalette.textFaint),
-    };
-    return Text(
-      '$prefix ${line.text}',
-      softWrap: false,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontFamily: 'monospace',
-        fontSize: 12,
-        height: 1.5,
-        color: color,
-      ),
-    );
-  }
-}
-
 /// How long is left to answer. The agent doesn't wait forever, and a card that
 /// quietly stopped working would be worse than one that says so.
 class _Countdown extends StatelessWidget {

@@ -4,11 +4,12 @@ import '../../../infrastructure/cli/hermes_plugin_service.dart';
 import '../../agent/logic/hermes_tool.dart';
 import 'hermes_plugin.dart';
 
-/// Which half of the screen is open: the plugins (tool backends) or the skills
-/// (instructions the agent follows).
+/// Which section of the screen is open: the plugins (tool backends), the skills
+/// (instructions the agent follows), or the MCP servers (external tool sources).
 enum PluginsTab {
   plugins('Plugins'),
-  skills('Skills');
+  skills('Skills'),
+  mcp('MCP');
 
   const PluginsTab(this.label);
 

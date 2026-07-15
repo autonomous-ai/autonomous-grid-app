@@ -10,6 +10,8 @@ import '../../network/logic/client_app_detector.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
+import '../../../infrastructure/cli/agent_event.dart';
+import 'agent_changes.dart';
 import 'agent_permissions.dart';
 import 'agent_prompt.dart';
 import 'hermes_tool.dart';
@@ -217,6 +219,10 @@ class HermesChatSender implements ChatSender {
               request,
               (optionId) => session.answerPermission(request.id, optionId),
             );
+          case HermesAcpEdit(:final request):
+            // Full access applied an edit without asking — record it so the
+            // user can still undo it.
+            _recordEdit(request);
           case HermesAcpMessage(:final text):
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
@@ -253,6 +259,20 @@ class HermesChatSender implements ChatSender {
       log.finish(logId, error: 'stopped');
     };
     return updates.stream;
+  }
+
+  /// Record an edit the agent made so it can be undone. A create has no old text
+  /// (undo deletes the file); a change carries the original to restore.
+  void _recordEdit(AgentPermission request) {
+    final path = request.path;
+    if (path == null || path.isEmpty) return;
+    _ref
+        .read(agentChangesProvider.notifier)
+        .record(
+          path: path,
+          before: request.oldText,
+          after: request.newText ?? '',
+        );
   }
 
   /// Ensure `~/.hermes` points at [network] with [model] (idempotent, only

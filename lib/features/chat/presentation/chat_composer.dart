@@ -32,6 +32,8 @@ class ComposerSection extends StatelessWidget {
     required this.onAddAttachment,
     required this.onPickImage,
     required this.onRemoveAttachment,
+    required this.onOpenPrompts,
+    required this.promptsSaveInput,
     required this.onSend,
     required this.onStop,
   });
@@ -51,6 +53,12 @@ class ComposerSection extends StatelessWidget {
   final ValueChanged<MediaAttachment> onAddAttachment;
   final VoidCallback onPickImage;
   final ValueChanged<int> onRemoveAttachment;
+
+  /// Opens the saved-prompt menu, or — when there's already text — saves it as a
+  /// new prompt. [promptsSaveInput] says which, so the button's icon and tooltip
+  /// match what tapping it will do.
+  final VoidCallback onOpenPrompts;
+  final bool promptsSaveInput;
   final VoidCallback onSend;
 
   /// Ends the turn that's running — Send turns into Stop while one is.
@@ -122,6 +130,8 @@ class ComposerSection extends StatelessWidget {
                 approvalPicker: approvalPicker,
                 modelPicker: modelPicker,
                 onPickImage: onPickImage,
+                onOpenPrompts: onOpenPrompts,
+                promptsSaveInput: promptsSaveInput,
                 onSend: onSend,
                 onStop: onStop,
               ),

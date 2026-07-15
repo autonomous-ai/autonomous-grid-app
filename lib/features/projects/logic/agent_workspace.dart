@@ -30,12 +30,25 @@ class WorkspaceEntry {
 /// Finder agree.
 ///
 /// Refresh with `ref.invalidate` after the user has been off adding files.
-final workspaceEntriesProvider = FutureProvider<List<WorkspaceEntry>>((
-  ref,
-) async {
-  final dir = ref.watch(agentWorkspaceDirProvider);
-  final entries = <WorkspaceEntry>[];
+final workspaceEntriesProvider = FutureProvider<List<WorkspaceEntry>>(
+  (ref) => readWorkspaceEntries(ref.watch(agentWorkspaceDirProvider)),
+);
 
+/// The top-level entries of any [dir] — the same listing as
+/// [workspaceEntriesProvider] but for a folder chosen at call time, so the
+/// `@`-mention menu can list whichever project a chat is open in. A missing or
+/// unreadable folder lists nothing rather than throwing.
+final workdirEntriesProvider =
+    FutureProvider.family<List<WorkspaceEntry>, String>(
+      (ref, path) => readWorkspaceEntries(Directory(path)),
+    );
+
+/// List [dir]'s immediate children — folders first, then files, each group
+/// alphabetical (the order a file manager shows). OS dotfiles are skipped. Not
+/// recursive: a deep tree would make the caller slow for little gain.
+Future<List<WorkspaceEntry>> readWorkspaceEntries(Directory dir) async {
+  if (!dir.existsSync()) return const [];
+  final entries = <WorkspaceEntry>[];
   await for (final entity in dir.list(followLinks: false)) {
     final name = entity.path.split('/').last;
     // Skip the dotfiles the OS leaves behind (.DS_Store) — they aren't the
@@ -58,7 +71,7 @@ final workspaceEntriesProvider = FutureProvider<List<WorkspaceEntry>>((
     return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   });
   return entries;
-});
+}
 
 /// A short, human size for a file ("4.2 MB"). Folders have none.
 String workspaceSizeLabel(WorkspaceEntry entry) {

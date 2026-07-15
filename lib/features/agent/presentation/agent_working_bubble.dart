@@ -108,11 +108,7 @@ class _StatusDot extends StatelessWidget {
           child: CircularProgressIndicator(strokeWidth: 1.6),
         );
       case AgentActivityStatus.done:
-        return Icon(
-          Icons.check_circle,
-          size: 14,
-          color: AppPalette.online,
-        );
+        return Icon(Icons.check_circle, size: 14, color: AppPalette.online);
       case AgentActivityStatus.failed:
         return Icon(
           Icons.error_outline,

@@ -7,8 +7,12 @@ import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../logic/agent_skill.dart';
+import '../logic/mcp_controller.dart';
+import '../logic/mcp_server.dart';
 import '../logic/plugins_controller.dart';
+import 'widgets/add_mcp_dialog.dart';
 import 'widgets/add_plugin_dialog.dart';
+import 'widgets/mcp_list.dart';
 import 'widgets/new_skill_dialog.dart';
 import 'widgets/plugin_pill_choice.dart';
 import 'widgets/plugin_list.dart';
@@ -50,6 +54,7 @@ class _PluginsViewState extends ConsumerState<PluginsView> {
   void _refresh() {
     ref.invalidate(pluginsProvider);
     ref.invalidate(agentSkillsProvider);
+    ref.invalidate(mcpServersProvider);
   }
 
   @override
@@ -69,16 +74,20 @@ class _PluginsViewState extends ConsumerState<PluginsView> {
           const SizedBox(height: 12),
           _SearchField(
             controller: _search,
-            hintText: tab == PluginsTab.plugins
-                ? 'Search plugins'
-                : 'Search skills',
+            hintText: switch (tab) {
+              PluginsTab.plugins => 'Search plugins',
+              PluginsTab.skills => 'Search skills',
+              PluginsTab.mcp => 'Search MCP servers',
+            },
             onChanged: (value) => setState(() => _query = value),
           ),
           const SizedBox(height: 14),
           Expanded(
-            child: tab == PluginsTab.plugins
-                ? _Plugins(matches: _matches)
-                : _Skills(matches: _matches),
+            child: switch (tab) {
+              PluginsTab.plugins => _Plugins(matches: _matches),
+              PluginsTab.skills => _Skills(matches: _matches),
+              PluginsTab.mcp => _Mcp(matches: _matches),
+            },
           ),
         ],
       ),
@@ -86,8 +95,15 @@ class _PluginsViewState extends ConsumerState<PluginsView> {
   }
 }
 
-/// The tab switch, refresh, and the Create menu (a plugin from Git, or a skill
-/// you write yourself).
+/// The tab's pill icon.
+IconData _tabIcon(PluginsTab tab) => switch (tab) {
+  PluginsTab.plugins => Icons.extension_rounded,
+  PluginsTab.skills => Icons.auto_awesome_rounded,
+  PluginsTab.mcp => Icons.hub_rounded,
+};
+
+/// The tab switch, refresh, and the Create menu (a plugin from Git, a skill you
+/// write yourself, or an MCP server).
 class _Toolbar extends ConsumerWidget {
   const _Toolbar({required this.tab, required this.onRefresh});
 
@@ -104,9 +120,7 @@ class _Toolbar extends ConsumerWidget {
             child: PluginPillChoice(
               label: option.label,
               selected: option == tab,
-              icon: option == PluginsTab.plugins
-                  ? Icons.extension_rounded
-                  : Icons.auto_awesome_rounded,
+              icon: _tabIcon(option),
               onTap: () => ref.read(pluginsTabProvider.notifier).select(option),
             ),
           ),
@@ -125,6 +139,11 @@ class _Toolbar extends ConsumerWidget {
               icon: Icons.auto_awesome_outlined,
               label: 'Write a skill',
               onPressed: () => showNewSkillDialog(context),
+            ),
+            _CreateMenuItem(
+              icon: Icons.hub_outlined,
+              label: 'Add an MCP server',
+              onPressed: () => showAddMcpDialog(context),
             ),
           ],
           style: MenuStyle(
@@ -329,6 +348,29 @@ class _Skills extends ConsumerWidget {
       ),
       AsyncError(:final error) => ErrorBox(
         message: "Couldn't read the installed skills: $error",
+      ),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+  }
+}
+
+/// The MCP half — the external tool servers Hermes is configured to load.
+class _Mcp extends ConsumerWidget {
+  const _Mcp({required this.matches});
+
+  final bool Function(String name, String description) matches;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return switch (ref.watch(mcpServersProvider)) {
+      AsyncData(:final value) => McpList(
+        servers: [
+          for (final server in value)
+            if (matches(server.name, mcpServerSummary(server))) server,
+        ],
+      ),
+      AsyncError(:final error) => ErrorBox(
+        message: "Couldn't read the MCP servers: $error",
       ),
       _ => const Center(child: CircularProgressIndicator()),
     };

@@ -8,6 +8,8 @@ class _Actions extends StatelessWidget {
     required this.approvalPicker,
     required this.modelPicker,
     required this.onPickImage,
+    required this.onOpenPrompts,
+    required this.promptsSaveInput,
     required this.onSend,
     required this.onStop,
   });
@@ -22,6 +24,8 @@ class _Actions extends StatelessWidget {
   final Widget? approvalPicker;
   final Widget modelPicker;
   final VoidCallback onPickImage;
+  final VoidCallback onOpenPrompts;
+  final bool promptsSaveInput;
   final VoidCallback onSend;
 
   /// Cuts the reply off where it is. The same button as Send, because the thing
@@ -35,6 +39,11 @@ class _Actions extends StatelessWidget {
       child: Row(
         children: [
           _AttachButton(canAttach: canAttach, onPickImage: onPickImage),
+          _PromptsButton(
+            enabled: !sending,
+            savesInput: promptsSaveInput,
+            onPressed: onOpenPrompts,
+          ),
           const SizedBox(width: 4),
           if (approvalPicker != null)
             ConstrainedBox(
@@ -79,6 +88,43 @@ class _AttachButton extends StatelessWidget {
         color: AppPalette.textSecondary,
         icon: const Icon(Icons.add_rounded),
         onPressed: canAttach ? onPickImage : null,
+      ),
+    );
+  }
+}
+
+/// Opens the saved-prompt menu, or saves the current draft as a prompt.
+///
+/// One button with two honest jobs: with the box empty it browses prompts (drops
+/// a `/` in to open the menu); with a draft typed it offers to keep that draft
+/// for reuse. The icon and tooltip switch so the user knows which before tapping.
+class _PromptsButton extends StatelessWidget {
+  const _PromptsButton({
+    required this.enabled,
+    required this.savesInput,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final bool savesInput;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: IconButton(
+        tooltip: savesInput ? 'Save as a prompt' : 'Insert a saved prompt',
+        iconSize: 18,
+        visualDensity: VisualDensity.compact,
+        color: AppPalette.textSecondary,
+        icon: Icon(
+          savesInput
+              ? Icons.bookmark_add_outlined
+              : Icons.bookmark_outline_rounded,
+        ),
+        onPressed: enabled ? onPressed : null,
       ),
     );
   }

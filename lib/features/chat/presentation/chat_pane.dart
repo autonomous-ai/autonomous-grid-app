@@ -31,11 +31,7 @@ class _NoGrid extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.forum_outlined,
-            size: 40,
-            color: AppPalette.textFaint,
-          ),
+          Icon(Icons.forum_outlined, size: 40, color: AppPalette.textFaint),
           const SizedBox(height: 12),
           Text(
             'Pick a grid to chat with.',
