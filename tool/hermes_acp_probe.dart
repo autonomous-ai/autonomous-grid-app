@@ -60,6 +60,9 @@ Future<void> _runTurn(
       case HermesAcpEdit(:final request):
         // Auto-applied edit (no approval needed); just note it for the probe.
         stdout.writeln('\n[edit applied: ${request.summary}]');
+      case HermesAcpSources(:final sources):
+        // Web-search citations gathered during the turn; note the count.
+        stdout.writeln('\n[sources: ${sources.length}]');
       case HermesAcpPermission(:final request):
         // The probe's prompts don't escalate; if one ever does, cancel it so the
         // turn doesn't stall waiting on an answer that never comes.
