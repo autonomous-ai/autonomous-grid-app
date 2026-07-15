@@ -7,15 +7,29 @@ import '../logic/member_providers.dart';
 
 /// Modal to invite a member to a managed grid via the control-plane API.
 /// Open with [AddMemberDialog.show]; it refreshes the members list itself.
+///
+/// [initialEmail] pre-fills the field — onboarding passes the inviter's own
+/// domain (`@company.com`) so they only type the teammate's name — with the
+/// cursor at the start, ready for that name.
 class AddMemberDialog extends ConsumerStatefulWidget {
-  const AddMemberDialog({super.key, required this.networkId});
+  const AddMemberDialog({
+    super.key,
+    required this.networkId,
+    this.initialEmail,
+  });
 
   final String networkId;
+  final String? initialEmail;
 
-  static Future<void> show(BuildContext context, String networkId) {
+  static Future<void> show(
+    BuildContext context,
+    String networkId, {
+    String? initialEmail,
+  }) {
     return showDialog<void>(
       context: context,
-      builder: (_) => AddMemberDialog(networkId: networkId),
+      builder: (_) =>
+          AddMemberDialog(networkId: networkId, initialEmail: initialEmail),
     );
   }
 
@@ -24,7 +38,9 @@ class AddMemberDialog extends ConsumerStatefulWidget {
 }
 
 class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
-  final _email = TextEditingController();
+  late final _email = TextEditingController(text: widget.initialEmail ?? '')
+    // Sit before a pre-filled `@domain` so the first keystroke is the name.
+    ..selection = const TextSelection.collapsed(offset: 0);
   bool _submitting = false;
   String? _error;
 
@@ -63,10 +79,12 @@ class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
 
     ref.invalidate(networkMembersProvider(widget.networkId));
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Invited $email.'),
-      duration: const Duration(seconds: 3),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Invited $email.'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override

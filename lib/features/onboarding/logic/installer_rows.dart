@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/logic/session_controller.dart';
 import '../../agent/logic/hermes_tool.dart';
-import '../../models/logic/engine_status.dart';
 import '../../network/logic/grid_sync_controller.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
@@ -13,21 +12,16 @@ import 'installer_stage.dart';
 /// The installer checklist.
 ///
 /// Each row's status is derived from what is *actually* on the machine — the
-/// engine binary, the agent — not from a flag the installer sets. So a step
-/// can't claim "done" when it isn't, and a machine that already had the engine
-/// shows it ticked without installing twice. The model isn't here: it downloads
-/// in the background after the user is in (see BackgroundModelController).
+/// agent binary, the selected grid — not from a flag the installer sets. So a
+/// step can't claim "done" when it isn't, and a machine that already had the
+/// assistant shows it ticked without installing twice. Neither the engine nor
+/// the model is here: running a model on this computer is a choice the user makes
+/// on the screen after setup (see `OnboardingChoiceScreen`).
 final installerRowsProvider = Provider<List<InstallerRow>>((ref) {
   final setup = ref.watch(nodeSetupControllerProvider);
 
   return [
     _gridRow(ref),
-    _actionRow(
-      InstallerStage.engine,
-      SetupAction.installLlama,
-      installed: ref.watch(engineStatusProvider).llamaInstalled,
-      setup: setup,
-    ),
     _actionRow(
       InstallerStage.agent,
       SetupAction.installAgent,
@@ -47,14 +41,15 @@ final installerLogProvider = Provider<List<String>>((ref) {
   };
 });
 
-/// Whether this computer still needs setting up as a host.
+/// Whether this computer still needs the first-run installer.
+///
+/// Only a missing assistant holds the user here now. The engine and model aren't
+/// gates: running a model on this computer is a choice on the screen after this
+/// one, and the model downloads in the background once the user is in. A machine
+/// that can't host the built-in engine at all never sees the installer.
 final installerNeededProvider = Provider<bool>((ref) {
   if (!ref.watch(supportsBuiltInEngineProvider)) return false;
-  final engine = ref.watch(engineStatusProvider).llamaInstalled;
-  final agent = ref.watch(hermesInstalledProvider);
-  // The model isn't a gate: it downloads in the background once the user is in,
-  // so only a missing engine or assistant holds them at the installer.
-  return !(engine && agent);
+  return !ref.watch(hermesInstalledProvider);
 });
 
 /// Whether to show the installer instead of the app.

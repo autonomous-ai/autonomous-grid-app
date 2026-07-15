@@ -21,12 +21,12 @@ const _model = CatalogModel(
 const _localModel = LocalModel(name: 'm.gguf', path: '/m.gguf', sizeBytes: 1);
 
 NodeCapabilities _caps({int models = 0}) => NodeCapabilities(
-      textBackends: const [],
-      engine: const EngineStatus(llamaInstalled: true),
-      media: MediaStatus.notInstalled,
-      localModelCount: models,
-      recommendedModel: _model,
-    );
+  textBackends: const [],
+  engine: const EngineStatus(llamaInstalled: true),
+  media: MediaStatus.notInstalled,
+  localModelCount: models,
+  recommendedModel: _model,
+);
 
 /// Records whether sharing was attempted, without touching the real grid or
 /// `~/.grid` — the real controller reads the selected network off disk.
@@ -43,12 +43,17 @@ ProviderContainer _container({
   required FakeGridCliService cli,
   bool canHost = true,
   bool engineInstalled = true,
+  bool localChosen = true,
   List<LocalModel> models = const [],
   _FakeAutoHost? autoHost,
 }) {
   final container = ProviderContainer(
     overrides: [
       supportsBuiltInEngineProvider.overrideWithValue(canHost),
+      // The download is now gated on the user having chosen "run local"; the
+      // real value comes off the persisted onboarding decision (off disk), so
+      // tests set it explicitly to stay deterministic.
+      localModelChosenProvider.overrideWithValue(localChosen),
       engineStatusProvider.overrideWithValue(
         engineInstalled
             ? const EngineStatus(llamaInstalled: true, llamaPath: '/bin/llama')
@@ -69,10 +74,13 @@ void main() {
   test('downloads the recommended model, then shares it, when the engine is '
       'ready and no model is on disk', () async {
     final cli = FakeGridCliService()
-      ..stubPull(const ['pull', 'qwen'], const [
-        DownloadProgress(doneMb: 100, totalMb: 200, pct: 50),
-        DownloadProgress(doneMb: 200, totalMb: 200, pct: 100),
-      ]);
+      ..stubPull(
+        const ['pull', 'qwen'],
+        const [
+          DownloadProgress(doneMb: 100, totalMb: 200, pct: 50),
+          DownloadProgress(doneMb: 200, totalMb: 200, pct: 100),
+        ],
+      );
     final autoHost = _FakeAutoHost();
     final container = _container(cli: cli, autoHost: autoHost);
 
@@ -87,21 +95,44 @@ void main() {
     expect(autoHost.shared, isTrue);
   });
 
-  test('does nothing — no download — when a model is already on disk', () async {
-    final container = _container(
-      cli: FakeGridCliService(),
-      models: const [_localModel],
-    );
+  test(
+    'does nothing — no download — when a model is already on disk',
+    () async {
+      final container = _container(
+        cli: FakeGridCliService(),
+        models: const [_localModel],
+      );
 
-    await container
-        .read(backgroundModelControllerProvider.notifier)
-        .startIfNeeded();
+      await container
+          .read(backgroundModelControllerProvider.notifier)
+          .startIfNeeded();
 
-    expect(
-      container.read(backgroundModelControllerProvider),
-      isA<ModelDownloadIdle>(),
-    );
-  });
+      expect(
+        container.read(backgroundModelControllerProvider),
+        isA<ModelDownloadIdle>(),
+      );
+    },
+  );
+
+  test(
+    'does nothing when the user did not choose to run a model locally — a '
+    'cloud-provider or invite user is never handed a several-GB download',
+    () async {
+      final container = _container(
+        cli: FakeGridCliService(),
+        localChosen: false,
+      );
+
+      await container
+          .read(backgroundModelControllerProvider.notifier)
+          .startIfNeeded();
+
+      expect(
+        container.read(backgroundModelControllerProvider),
+        isA<ModelDownloadIdle>(),
+      );
+    },
+  );
 
   test('leaves a machine that cannot host alone', () async {
     final container = _container(cli: FakeGridCliService(), canHost: false);
