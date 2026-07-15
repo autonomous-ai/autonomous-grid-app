@@ -220,10 +220,8 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
                 autofocus: !_isEdit,
                 onChanged: (_) => setState(() {}),
               ),
-              if (!_isEdit) ...[
-                const SizedBox(height: 10),
-                _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
-              ],
+              const SizedBox(height: 10),
+              _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
               const SizedBox(height: 20),
               _Field(
                 label: 'When should the assistant use it?',
