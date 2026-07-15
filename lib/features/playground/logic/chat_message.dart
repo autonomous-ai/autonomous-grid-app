@@ -1,3 +1,4 @@
+import '../../../infrastructure/cli/agent_event.dart';
 import 'message_media.dart';
 
 /// Who authored a transcript message.
@@ -20,11 +21,17 @@ class ChatMessage {
     required this.role,
     this.text = '',
     this.media = const [],
+    this.sources = const [],
   });
 
   final ChatRole role;
   final String text;
   final List<ChatMedia> media;
+
+  /// Web pages an agent turn cited while answering — shown as clickable sources
+  /// under the reply. Empty for user turns and for answers built without the
+  /// web.
+  final List<WebSource> sources;
 }
 
 /// What the controller is doing right now — modelled as a sealed hierarchy so

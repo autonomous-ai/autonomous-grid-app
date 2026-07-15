@@ -41,6 +41,14 @@ class HermesAcpEdit extends HermesAcpEvent {
   final AgentPermission request;
 }
 
+/// The pages a web look-up turned up, parsed from a `web_search` tool result.
+/// The chat collects these across the turn and shows them as citations under
+/// the answer, so a reply built from the web says where it came from.
+class HermesAcpSources extends HermesAcpEvent {
+  const HermesAcpSources(this.sources);
+  final List<WebSource> sources;
+}
+
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
 class HermesAcpRun {
@@ -297,9 +305,7 @@ class _HermesAcpSession implements HermesAcpSession {
         final id = _str(raw['toolCallId']);
         final activity = AgentActivity(
           id: id,
-          kind: raw['kind'] == 'execute'
-              ? AgentActivityKind.command
-              : AgentActivityKind.tool,
+          kind: _activityKind(raw['kind']),
           label: _str(raw['title'], fallback: 'tool'),
           status: AgentActivityStatus.running,
         );
@@ -308,14 +314,23 @@ class _HermesAcpSession implements HermesAcpSession {
       case 'tool_call_update':
         final id = _str(raw['toolCallId']);
         final prior = _tools[id];
+        final kind = prior?.kind ?? _activityKind(raw['kind']);
         final activity = AgentActivity(
           id: id,
-          kind: prior?.kind ?? AgentActivityKind.tool,
+          kind: kind,
           label: prior?.label ?? 'tool',
           status: _status(raw['status']),
         );
         _tools[id] = activity;
         events.add(HermesAcpActivity(activity));
+        // A finished web look-up carries its results in the tool content — lift
+        // them out as citations to show under the answer.
+        if (kind == AgentActivityKind.web) {
+          final sources = parseWebSearchSources(
+            _toolContentText(raw['content']),
+          );
+          if (sources.isNotEmpty) events.add(HermesAcpSources(sources));
+        }
       case 'agent_message_chunk':
         final content = raw['content'];
         if (content is Map && content['text'] is String) {
@@ -459,6 +474,30 @@ AgentActivityStatus _status(Object? raw) => switch (raw) {
   'in_progress' || 'pending' => AgentActivityStatus.running,
   _ => AgentActivityStatus.done,
 };
+
+/// Maps an ACP tool kind to a feed [AgentActivityKind]: `execute` is a shell
+/// command, `fetch` is a web look-up (search / open a page), everything else a
+/// generic tool.
+AgentActivityKind _activityKind(Object? kind) => switch (kind) {
+  'execute' => AgentActivityKind.command,
+  'fetch' => AgentActivityKind.web,
+  _ => AgentActivityKind.tool,
+};
+
+/// Flattens an ACP tool `content` array to its plain text — each block is
+/// `{type: content, content: {type: text, text: …}}`. Used to read a finished
+/// web search's results out of its content.
+String _toolContentText(Object? content) {
+  if (content is! List) return '';
+  final buffer = StringBuffer();
+  for (final block in content) {
+    if (block is Map && block['content'] is Map) {
+      final inner = block['content'] as Map;
+      if (inner['text'] is String) buffer.writeln(inner['text'] as String);
+    }
+  }
+  return buffer.toString();
+}
 
 String _str(Object? raw, {String fallback = ''}) =>
     raw is String ? raw : fallback;

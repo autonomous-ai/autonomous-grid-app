@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 
 Conversation _conversation({
   String id = 'c1',
@@ -47,6 +48,32 @@ void main() {
       final media = restored.messages.last.media.single;
       expect(media.path, '/tmp/cat.png');
       expect(media.kind, MediaKind.image);
+    });
+
+    test('round-trips an agent turn with its web sources', () {
+      final original = _conversation(
+        messages: [
+          const ChatMessage(role: ChatRole.user, text: 'latest flutter news'),
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'Here is what I found.',
+            sources: [
+              WebSource(title: 'Flutter', url: 'https://flutter.dev'),
+              WebSource(title: 'Dart', url: 'https://dart.dev'),
+            ],
+          ),
+        ],
+      );
+
+      final restored = Conversation.fromJson(original.toJson());
+
+      final sources = restored.messages.last.sources;
+      expect(sources.map((s) => s.url), [
+        'https://flutter.dev',
+        'https://dart.dev',
+      ]);
+      // A plain text turn stays sourceless rather than gaining an empty list.
+      expect(restored.messages.first.sources, isEmpty);
     });
 
     test('throws when the id is missing so the store can skip the file', () {

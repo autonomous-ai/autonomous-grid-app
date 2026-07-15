@@ -205,6 +205,7 @@ class HermesChatSender implements ChatSender {
     String model,
   ) {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
+    final sourcesLog = _ref.read(agentSourcesProvider.notifier)..clear();
     final permissions = _ref.read(agentPermissionProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'hermes acp -m $model (agent)');
@@ -230,6 +231,10 @@ class HermesChatSender implements ChatSender {
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
             _recordEdit(request);
+          case HermesAcpSources(:final sources):
+            // A web look-up finished — collect its pages to cite under the
+            // answer once the turn lands.
+            sourcesLog.addAll(sources);
           case HermesAcpMessage(:final text):
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
@@ -248,7 +253,11 @@ class HermesChatSender implements ChatSender {
           reply.isEmpty
               ? const ChatSendFailure("The agent didn't return an answer.")
               : ChatSendSuccess(
-                  ChatMessage(role: ChatRole.assistant, text: reply),
+                  ChatMessage(
+                    role: ChatRole.assistant,
+                    text: reply,
+                    sources: _ref.read(agentSourcesProvider),
+                  ),
                 ),
         );
         await updates.close();
