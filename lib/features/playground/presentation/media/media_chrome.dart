@@ -10,10 +10,21 @@ const double kMediaMaxHeight = 320;
 final BorderRadius kMediaRadius = BorderRadius.circular(10);
 
 /// Open [url] in the user's browser / default handler. Best-effort.
+///
+/// A local file path (`/Users/…/x.png`) or a schemeless value is opened as a
+/// `file://` URI — otherwise the OS has no handler and refuses it (macOS error
+/// -50), which is exactly what a bare path used to hit.
 Future<void> openExternalUrl(String url) async {
-  final uri = Uri.tryParse(url);
+  final uri = _launchableUri(url);
   if (uri == null) return;
   await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+Uri? _launchableUri(String url) {
+  if (url.startsWith('/')) return Uri.file(url);
+  final uri = Uri.tryParse(url);
+  if (uri == null) return null;
+  return uri.hasScheme ? uri : Uri.file(url);
 }
 
 /// `m:ss` (or `h:mm:ss`) for player timestamps; `--:--` while unknown.

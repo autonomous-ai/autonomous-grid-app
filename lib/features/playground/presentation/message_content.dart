@@ -57,6 +57,13 @@ class MessageContent extends StatelessWidget {
             onLinkTap: (url, _) => openExternalUrl(url),
           ),
         ),
+      // A file the agent wrote to disk (a generated image/video): render it from
+      // the file, the same way saved outputs are shown, rather than as a link
+      // the OS can't open.
+      MediaSegment(:final url, :final kind) when isLocalMediaUrl(url) =>
+        LocalMediaView(
+          media: ChatMedia(path: localMediaPath(url), kind: kind),
+        ),
       MediaSegment(:final url, kind: MediaKind.image) => InlineImage(url: url),
       MediaSegment(:final url, kind: MediaKind.video) => InlineVideo(source: url),
       MediaSegment(:final url, kind: MediaKind.audio) => InlineAudio(url: url),

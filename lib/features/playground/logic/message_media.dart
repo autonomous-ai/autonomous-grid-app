@@ -29,15 +29,25 @@ const _audioExt = {
   'mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'flac', 'opus', 'weba',
 };
 
-/// Markdown image, then markdown link, then bare URL — in that priority order so
-/// a link's own URL is never mistaken for a bare media URL.
+/// Markdown image, then markdown link, then bare URL / local path — in that
+/// priority order so a link's own URL is never mistaken for a bare media URL.
 final _mediaPattern = RegExp(
   r'!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)' // 1: markdown image url
   r'|'
-  r'\[[^\]]*\]\(\s*[^)\s]+[^)]*\)' // markdown link → kept as text
+  r'\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)' // 2: markdown link url
   r'|'
-  r'(https?://[^\s<>()\[\]"]+)', // 2: bare url
+  r'(file://[^\s<>()\[\]"]+|https?://[^\s<>()\[\]"]+|/[^\s<>()\[\]"]+)', // 3
 );
+
+/// Whether [url] points at a file on this machine — a bare absolute path or a
+/// `file://` URI, as opposed to something fetched over the network.
+bool isLocalMediaUrl(String url) =>
+    url.startsWith('/') || url.startsWith('file://');
+
+/// The on-disk path for a local media [url] (see [isLocalMediaUrl]) — a `file://`
+/// URI is decoded, a bare path is returned as-is.
+String localMediaPath(String url) =>
+    url.startsWith('file://') ? Uri.parse(url).toFilePath() : url;
 
 /// Parse [text] into ordered segments. Always returns at least one segment.
 List<MessageSegment> parseMessageSegments(String text) {
@@ -66,14 +76,28 @@ List<MessageSegment> parseMessageSegments(String text) {
       continue;
     }
 
-    final bareUrl = match.group(2);
+    // A markdown link is lifted only when it points at a *local* media file —
+    // a link the OS can't open on click, so showing it is strictly better. A
+    // network media link stays a link (the user chose to link, not embed it).
+    final linkUrl = match.group(2);
+    if (linkUrl != null) {
+      final kind = mediaKindForPath(linkUrl);
+      if (kind != null && isLocalMediaUrl(linkUrl)) {
+        addMedia(linkUrl, kind);
+        continue;
+      }
+      buffer.write(match.group(0));
+      continue;
+    }
+
+    final bareUrl = match.group(3);
     final kind = bareUrl == null ? null : mediaKindForPath(bareUrl);
     if (bareUrl != null && kind != null) {
       addMedia(bareUrl, kind);
       continue;
     }
 
-    // Markdown link, or a non-media bare URL: keep verbatim for markdown.
+    // A non-media bare URL or path: keep verbatim for markdown.
     buffer.write(match.group(0));
   }
   buffer.write(text.substring(last));
