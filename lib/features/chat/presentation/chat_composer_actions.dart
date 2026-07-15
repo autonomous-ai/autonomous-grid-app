@@ -78,7 +78,9 @@ class _AttachButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppPalette.textSecondary — follow theme flips
+    AppTheme.watch(
+      context,
+    ); // reads AppPalette.textSecondary — follow theme flips
     return SizedBox(
       width: 32,
       height: 32,
@@ -112,7 +114,9 @@ class _PromptsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppPalette.textSecondary — follow theme flips
+    AppTheme.watch(
+      context,
+    ); // reads AppPalette.textSecondary — follow theme flips
     return SizedBox(
       width: 32,
       height: 32,
@@ -154,7 +158,9 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppTheme.pick/AppPalette tokens — follow theme flips
+    AppTheme.watch(
+      context,
+    ); // reads AppTheme.pick/AppPalette tokens — follow theme flips
     return Tooltip(
       message: sending ? 'Stop' : 'Send',
       child: SizedBox(
@@ -172,12 +178,23 @@ class _SendButton extends StatelessWidget {
               AppPalette.textPrimary,
               const Color(0xFFF5F5F5),
             ),
-            foregroundColor: AppTheme.pick(Colors.white, const Color(0xFF0A0A0A)),
-            disabledBackgroundColor: AppTheme.pick(
-              const Color(0xFF9B9B9B),
-              const Color(0xFF3A3A3A),
+            foregroundColor: AppTheme.pick(
+              Colors.white,
+              const Color(0xFF0A0A0A),
             ),
-            disabledForegroundColor: AppPalette.textFaint,
+            // Disabled reads as *quiet*, not as a heavy grey knob: a soft fill
+            // that sits a step off the composer's own surface, with a faint icon
+            // — so "can't send yet" is legible without pulling the eye. The old
+            // #9B9B9B was a dark solid grey that looked like an active button
+            // dimmed. Warm-biased in light to match the app's paper tone.
+            disabledBackgroundColor: AppTheme.pick(
+              const Color(0xFFE7E7E4),
+              const Color(0xFF2A2A2A),
+            ),
+            disabledForegroundColor: AppTheme.pick(
+              const Color(0xFFB7B6AF),
+              const Color(0xFF5C5C57),
+            ),
           ),
           child: Icon(
             sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,

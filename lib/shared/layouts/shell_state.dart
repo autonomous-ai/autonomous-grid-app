@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The screens the app can show in its main pane.
 ///
@@ -7,17 +8,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// day (chat, and the things that shape how the agent answers), while the
 /// plumbing you set up once — which grids you can talk to, what this computer
 /// runs, Telegram, how to point other apps at it — lives behind Settings.
+///
+/// Icons are Lucide throughout, so the nav, the settings rail and the sidebar all
+/// speak one visual language.
 enum ShellSection {
-  chat(Icons.chat_bubble_outline_rounded, 'Chat'),
-  scheduled(Icons.schedule_rounded, 'Scheduled'),
-  agents(Icons.smart_toy_outlined, 'Agents'),
-  plugins(Icons.extension_outlined, 'Plugins'),
-  projects(Icons.folder_open_rounded, 'Projects'),
-  telegram(Icons.send_rounded, 'Telegram'),
-  grids(Icons.bolt, 'Grids'),
-  engines(Icons.dns_outlined, 'This computer'),
-  guide(Icons.help_outline_rounded, 'How to use'),
-  debug(Icons.terminal_rounded, 'Debug');
+  chat(LucideIcons.messageSquare, 'Chat'),
+  scheduled(LucideIcons.calendarClock, 'Scheduled'),
+  agents(LucideIcons.bot, 'Agents'),
+  plugins(LucideIcons.puzzle, 'Plugins'),
+  projects(LucideIcons.folderOpen, 'Projects'),
+  telegram(LucideIcons.send, 'Telegram'),
+  grids(LucideIcons.zap, 'Grids'),
+  engines(LucideIcons.server, 'This computer'),
+  guide(LucideIcons.circleHelp, 'How to use'),
+  debug(LucideIcons.terminal, 'Debug');
 
   const ShellSection(this.icon, this.label);
 

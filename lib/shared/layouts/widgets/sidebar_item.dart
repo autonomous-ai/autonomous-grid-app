@@ -51,10 +51,12 @@ class _SidebarItemState extends State<SidebarItem> {
   Widget build(BuildContext context) {
     const radius = BorderRadius.all(Radius.circular(8));
     final strong = widget.selected || widget.emphasized;
-    // The emphasized row (New chat) is the rail's main action, so its icon is
-    // tinted with the accent to invite the click; everything else stays in ink.
+    // A row's icon carries the accent whenever the row stands out — the selected
+    // nav item and the emphasized action (New chat) both — so the accent reads
+    // as "this is the one", matching the selected row's rail. Everything else
+    // stays in ink.
     final ink = strong ? AppPalette.textPrimary : AppPalette.textSecondary;
-    final iconInk = widget.emphasized && widget.enabled
+    final iconInk = (widget.selected || widget.emphasized) && widget.enabled
         ? AppPalette.accent
         : ink;
     // The emphasized row carries a whisper of accent wash so it reads as the
@@ -108,10 +110,18 @@ class _SidebarItemState extends State<SidebarItem> {
                               offset: Offset(_hovered ? 0.12 : 0, 0),
                               duration: const Duration(milliseconds: 130),
                               curve: Curves.easeOut,
-                              child: Icon(
-                                widget.icon,
-                                size: 16,
-                                color: iconInk,
+                              // Tween the colour so selecting a row eases its icon
+                              // into the accent rather than snapping — in step
+                              // with the rail that slides in alongside it.
+                              child: TweenAnimationBuilder<Color?>(
+                                tween: ColorTween(end: iconInk),
+                                duration: const Duration(milliseconds: 160),
+                                curve: Curves.easeOut,
+                                builder: (context, color, _) => Icon(
+                                  widget.icon,
+                                  size: 16,
+                                  color: color ?? iconInk,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 10),

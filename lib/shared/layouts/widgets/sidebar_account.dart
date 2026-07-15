@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../features/app_update/logic/app_updater_service.dart';
 import '../../../features/auth/logic/auth_controller.dart';
@@ -236,7 +237,7 @@ class _AccountMenuContent extends StatelessWidget {
           // guide. They were four loose menu entries; a menu is a bad place to
           // keep things you have to come back to.
           _AccountMenuItem(
-            icon: Icons.settings_outlined,
+            icon: LucideIcons.settings,
             label: 'Settings',
             onPressed: () => onSelected(_settingsValue),
           ),
@@ -247,7 +248,7 @@ class _AccountMenuContent extends StatelessWidget {
           const _AccountMenuDivider(),
           if (updaterSupported)
             _AccountMenuItem(
-              icon: Icons.system_update_alt,
+              icon: LucideIcons.downloadCloud,
               iconColor: updateAvailable == null
                   ? AppPalette.textSecondary
                   : AppPalette.brandBolt,
@@ -259,7 +260,7 @@ class _AccountMenuContent extends StatelessWidget {
           if (version != null) _AccountVersion(version: version!),
           const _AccountMenuDivider(),
           _AccountMenuItem(
-            icon: Icons.logout,
+            icon: LucideIcons.logOut,
             label: 'Sign out',
             onPressed: () => onSelected(_logoutValue),
           ),
@@ -457,7 +458,7 @@ class _AccountRowState extends State<_AccountRow> {
                 duration: const Duration(milliseconds: 130),
                 curve: Curves.easeOut,
                 child: Icon(
-                  Icons.more_horiz,
+                  LucideIcons.ellipsis,
                   size: 18,
                   color: _hovered
                       ? AppPalette.textSecondary

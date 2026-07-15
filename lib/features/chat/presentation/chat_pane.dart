@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -33,7 +34,11 @@ class _NoGrid extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.forum_outlined, size: 40, color: AppPalette.textFaint),
+          Icon(
+            LucideIcons.messagesSquare,
+            size: 40,
+            color: AppPalette.textFaint,
+          ),
           const SizedBox(height: 12),
           Text(
             'Pick a grid to chat with.',

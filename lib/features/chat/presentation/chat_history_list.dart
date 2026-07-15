@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
@@ -112,7 +113,7 @@ class _ProjectsHeader extends StatelessWidget {
             constraints: const BoxConstraints.tightFor(width: 26, height: 26),
             padding: EdgeInsets.zero,
             color: AppPalette.textSecondary,
-            icon: const Icon(Icons.add_rounded),
+            icon: const Icon(LucideIcons.plus),
             onPressed: onAdd,
           ),
         ],
@@ -154,9 +155,13 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SidebarItem(
+          // Lucide's outline folders — thinner and rounder than Material's, and
+          // the shape the design mocks use: closed while collapsed, open once
+          // expanded (folderX for a folder that's gone missing) so the icon
+          // itself tells you the group's state.
           icon: missing
-              ? Icons.folder_off_outlined
-              : (open ? Icons.folder_open_rounded : Icons.folder_rounded),
+              ? LucideIcons.folderX
+              : (open ? LucideIcons.folderOpen : LucideIcons.folder),
           label: widget.project.name,
           tooltip: missing
               ? "This folder isn't there any more: ${widget.project.path}"
@@ -169,17 +174,40 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
             iconSize: 15,
             splashRadius: 14,
             color: AppPalette.textSecondary,
-            icon: const Icon(Icons.add_rounded),
+            icon: const Icon(LucideIcons.plus),
             onPressed: _newChatHere,
           ),
         ),
-        if (open) ...[
-          if (widget.chats.isEmpty)
-            const _Hint(text: 'No chats yet', indented: true)
-          else
-            for (final chat in widget.chats)
-              _ChatRow(chat: chat, indented: true),
-        ],
+        // Expanding/collapsing animates the group's height so the rows below
+        // glide instead of jumping; each chat inside then fades in and drifts up
+        // into place, staggered a hair so they arrive as a wave rather than all
+        // at once. Collapsing just shrinks the height (the rows leave with it).
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: open
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (widget.chats.isEmpty)
+                      const _RevealItem(
+                        index: 0,
+                        child: _Hint(text: 'No chats yet', indented: true),
+                      )
+                    else
+                      for (var i = 0; i < widget.chats.length; i++)
+                        _RevealItem(
+                          index: i,
+                          child: _ChatRow(
+                            chat: widget.chats[i],
+                            indented: true,
+                          ),
+                        ),
+                  ],
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
     );
   }
@@ -228,7 +256,7 @@ class _ChatRow extends ConsumerWidget {
           iconSize: 14,
           splashRadius: 14,
           color: AppPalette.textFaint,
-          icon: const Icon(Icons.delete_outline_rounded),
+          icon: const Icon(LucideIcons.trash2),
           onPressed: () => controller.deleteConversation(chat.id),
         ),
       ),
@@ -262,11 +290,56 @@ class _AddFirstProjectHint extends ConsumerWidget {
               minimumSize: const Size(0, 30),
               visualDensity: VisualDensity.compact,
             ),
-            icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+            icon: const Icon(LucideIcons.folderPlus, size: 16),
             label: const Text('Add a project'),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Fades a freshly-revealed row in while drifting it up into place. Mounted only
+/// when a project expands, so its one-shot entry animation plays each time the
+/// group opens; the [index] staggers the start so a list of chats arrives as a
+/// gentle wave rather than all together.
+///
+/// It's entry-only — collapsing is handled by the parent's [AnimatedSize]
+/// shrinking the group's height, which carries these rows out with it.
+class _RevealItem extends StatefulWidget {
+  const _RevealItem({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_RevealItem> createState() => _RevealItemState();
+}
+
+class _RevealItemState extends State<_RevealItem> {
+  @override
+  Widget build(BuildContext context) {
+    // A total window a touch longer than one row's animation, so staggering the
+    // start by index still lands every row inside it. Capped so a long list
+    // never feels slow — past the eighth row there's no extra delay.
+    const step = 0.12;
+    final begin = (widget.index.clamp(0, 8) * step).toDouble();
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(widget.index),
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 460),
+      curve: Interval(begin, 1, curve: Curves.easeOutCubic),
+      builder: (context, t, child) {
+        return Opacity(
+          opacity: t,
+          // Start ~8px low and rise to rest — the "up" in fade-in-up.
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 8),
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
     );
   }
 }

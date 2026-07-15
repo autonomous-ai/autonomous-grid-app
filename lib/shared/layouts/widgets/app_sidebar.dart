@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../features/chat/logic/chat_sessions_controller.dart';
@@ -68,7 +69,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SidebarItem(
-                        icon: Icons.edit_outlined,
+                        icon: LucideIcons.squarePen,
                         label: 'New chat',
                         emphasized: true,
                         enabled: !sending,
@@ -145,7 +146,7 @@ class _Brand extends StatelessWidget {
               iconSize: 18,
               visualDensity: VisualDensity.compact,
               color: AppPalette.textSecondary,
-              icon: const Icon(Icons.search_rounded),
+              icon: const Icon(LucideIcons.search),
               onPressed: onSearch,
             ),
           ],
