@@ -64,7 +64,7 @@ class _SoftPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppCard.base,
         borderRadius: BorderRadius.circular(16),
         boxShadow: AppGlass.cardShadow,
       ),

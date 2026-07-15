@@ -57,6 +57,7 @@ class _HostingStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

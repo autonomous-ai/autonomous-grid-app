@@ -18,6 +18,50 @@ abstract final class AppTheme {
 
   /// Pick between a light and a dark value for the current brightness.
   static T pick<T>(T light, T dark) => isDark ? dark : light;
+
+  /// Registers the calling widget to rebuild whenever [brightness] flips, and
+  /// returns the current value.
+  ///
+  /// The color tokens read [brightness] `.value` directly — a plain field read
+  /// the element tree can't see — so a widget that only reads tokens has no
+  /// tracked reason to rebuild when the theme changes. Worse, the app is full of
+  /// `const` chrome (`const AppSidebar()`, `const _MainShellBody()`), and a
+  /// `const` child is reference-identical across a parent's rebuild, so Flutter
+  /// short-circuits it: rebuilding from the top never reaches the sidebar, and it
+  /// stays on the old palette until something *else* (a Riverpod change from
+  /// clicking a row) happens to rebuild it.
+  ///
+  /// Calling this at the top of a chrome widget's `build` fixes that at the root:
+  /// it depends on the [_BrightnessScope] inherited widget, whose notifier is
+  /// [brightness]. An `InheritedNotifier` marks its dependents dirty *directly*
+  /// when the notifier fires — it doesn't rebuild through the widget tree — so
+  /// every `const` boundary in between is irrelevant. This is exactly how
+  /// `Theme.of(context)` makes a widget follow the theme.
+  static Brightness watch(BuildContext context) {
+    context.dependOnInheritedWidgetOfExactType<_BrightnessScope>();
+    return brightness.value;
+  }
+}
+
+/// Wraps the app so any descendant that calls [AppTheme.watch] rebuilds when the
+/// brightness flips — regardless of the `const` widgets in between. Mount it once,
+/// high in the tree (see `grid_app.dart`).
+class BrightnessScope extends StatelessWidget {
+  const BrightnessScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _BrightnessScope(
+      notifier: AppTheme.brightness,
+      child: child,
+    );
+  }
+}
+
+class _BrightnessScope extends InheritedNotifier<ValueNotifier<Brightness>> {
+  const _BrightnessScope({required super.notifier, required super.child});
 }
 
 /// The app's palette — a warm paper white with near-black ink in light, a deep

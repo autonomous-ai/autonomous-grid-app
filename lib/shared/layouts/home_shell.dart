@@ -69,6 +69,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Re-colour the whole shell the instant the theme flips. The shell and its
+    // `const` children (the sidebar, the main body) read their colours from a
+    // global the element tree can't track, so without an explicit dependency they
+    // only repaint when some other change rebuilds them — the "click a row and
+    // then it changes" symptom. Subscribing here rebuilds sidebar + pane together.
+    AppTheme.watch(context);
+
     // The user's grid is synced from the server after sign-in, so it can land
     // after the frame above — resume sharing once one does.
     ref.listen(selectedNetworkProvider, (_, next) {

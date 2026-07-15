@@ -78,6 +78,7 @@ class _AttachButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette.textSecondary — follow theme flips
     return SizedBox(
       width: 32,
       height: 32,
@@ -111,6 +112,7 @@ class _PromptsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette.textSecondary — follow theme flips
     return SizedBox(
       width: 32,
       height: 32,
@@ -152,6 +154,7 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppTheme.pick/AppPalette tokens — follow theme flips
     return Tooltip(
       message: sending ? 'Stop' : 'Send',
       child: SizedBox(
@@ -162,9 +165,18 @@ class _SendButton extends StatelessWidget {
           style: FilledButton.styleFrom(
             shape: const CircleBorder(),
             padding: EdgeInsets.zero,
-            backgroundColor: AppPalette.textPrimary,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: const Color(0xFF9B9B9B),
+            // A high-contrast knob: dark-on-light in light mode, light-on-dark in
+            // dark mode. Using textPrimary as the fill made a near-white circle
+            // with a white icon in dark mode — the button vanished.
+            backgroundColor: AppTheme.pick(
+              AppPalette.textPrimary,
+              const Color(0xFFF5F5F5),
+            ),
+            foregroundColor: AppTheme.pick(Colors.white, const Color(0xFF0A0A0A)),
+            disabledBackgroundColor: AppTheme.pick(
+              const Color(0xFF9B9B9B),
+              const Color(0xFF3A3A3A),
+            ),
             disabledForegroundColor: AppPalette.textFaint,
           ),
           child: Icon(

@@ -577,6 +577,8 @@ class _DropHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Follow the theme so this re-colours the instant the user flips Light/Dark.
+    AppTheme.watch(context);
     return Positioned.fill(
       child: IgnorePointer(
         // A soft blur over the chat with just a whisper of the action colour —

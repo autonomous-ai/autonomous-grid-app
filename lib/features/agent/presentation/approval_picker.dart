@@ -89,7 +89,7 @@ class _Trigger extends StatelessWidget {
     return Tooltip(
       message: approvalDetail(mode),
       child: Material(
-        color: Colors.white,
+        color: AppGlass.surfaceFill,
         borderRadius: BorderRadius.circular(999),
         child: InkWell(
           borderRadius: BorderRadius.circular(999),

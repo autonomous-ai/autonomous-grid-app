@@ -36,6 +36,11 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
 
   @override
   Widget build(BuildContext context) {
+    // Subscribe to the app brightness so the rail re-colours the instant the
+    // theme flips. Without this the sidebar is `const`-mounted and reads its
+    // colours from a global the element tree can't see, so it only repainted
+    // when some *other* change (clicking a row) happened to rebuild it.
+    AppTheme.watch(context);
     final section = ref.watch(shellSectionProvider);
     final sending = ref.watch(chatSessionsProvider).sending;
 

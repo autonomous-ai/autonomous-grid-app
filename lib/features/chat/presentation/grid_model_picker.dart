@@ -92,6 +92,7 @@ class _TriggerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette/AppGlass tokens — follow theme flips
     return Tooltip(
       message: 'Choose which model answers',
       child: OutlinedButton(

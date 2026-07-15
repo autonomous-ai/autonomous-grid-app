@@ -67,10 +67,13 @@ class _Glyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Icon(
+    // Follow the theme so this decorative mark re-colours on a Light/Dark flip
+    // instead of staying a fixed grey that reads wrong on the opposite surface.
+    AppTheme.watch(context);
+    return Icon(
       Icons.cloud_outlined,
       size: 45,
-      color: Color(0xFFB8B8B8),
+      color: AppPalette.textFaint,
       semanticLabel: 'Grid',
     );
   }
@@ -139,6 +142,8 @@ class _StarterCardState extends State<_StarterCard> {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppCard/AppGlass tokens — follow theme flips even when not hovering.
+    AppTheme.watch(context);
     final radius = BorderRadius.circular(14);
     // On hover the card lifts: it tints its rim to the starter's own colour,
     // deepens the shadow, and rises a couple of pixels — so it reads as a real,
@@ -196,6 +201,8 @@ class _StarterContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette.textPrimary — follow theme flips.
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

@@ -42,9 +42,15 @@ class GridApp extends ConsumerWidget {
 ///
 /// The value is set *synchronously* during build, before the child paints, so a
 /// token read this frame already sees the right brightness (no one-frame flash of
-/// the wrong palette). This is safe because nothing rebuilds off the notifier —
-/// the tokens read `.value` directly, and `MaterialApp` already rebuilds this
-/// subtree whenever the resolved theme changes.
+/// the wrong palette).
+///
+/// It reads `Theme.of(context)`, so the framework rebuilds it whenever the
+/// resolved theme changes — including when the user picks Light/Dark from the
+/// account menu, which flips `MaterialApp.themeMode`. Setting the notifier here
+/// fires it, and [BrightnessScope] (wrapped around [child]) marks every widget
+/// that called [AppTheme.watch] dirty — reaching them past the app's `const`
+/// chrome, which a top-down rebuild can't (a `const` child is reference-identical
+/// across its parent's rebuild, so Flutter skips it).
 class _BrightnessSync extends StatelessWidget {
   const _BrightnessSync({required this.child});
 
@@ -53,6 +59,6 @@ class _BrightnessSync extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.brightness.value = Theme.of(context).brightness;
-    return child;
+    return BrightnessScope(child: child);
   }
 }

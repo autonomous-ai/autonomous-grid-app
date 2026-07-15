@@ -29,6 +29,8 @@ class FileMentionMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Lives in a detached overlay above the composer — follow theme flips itself.
+    AppTheme.watch(context);
     final entries = ref.watch(workdirEntriesProvider(workdir));
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -111,6 +113,8 @@ class _FileRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Overlay-menu content — no top-down rebuild reaches it, so watch the theme.
+    AppTheme.watch(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -155,6 +159,8 @@ class _Message extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Overlay-menu content — no top-down rebuild reaches it, so watch the theme.
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       child: Text(

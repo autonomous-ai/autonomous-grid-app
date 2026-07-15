@@ -25,6 +25,11 @@ class AppTopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Follow the app brightness so the bar's pills re-colour the instant the
+    // theme flips — it reads colour tokens from a global the element tree can't
+    // track, and the provider it watches doesn't change on a theme switch, so
+    // without this it would stay on the old palette until the grid changed.
+    AppTheme.watch(context);
     final grid = ref.watch(selectedNetworkProvider);
 
     return DragToMoveArea(
@@ -90,6 +95,7 @@ class _DownloadingLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final pct = this.pct;
     final label = pct == null
         ? 'Downloading model…'
@@ -147,6 +153,10 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Subscribe to the brightness directly: the pill is `const`-mounted under the
+    // top bar, so the bar's own rebuild is short-circuited before it reaches here
+    // — without this the pill keeps its old fill/rim when the theme flips.
+    AppTheme.watch(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppGlass.surfaceFill,
@@ -208,6 +218,9 @@ class _CurrentGridMenuState extends ConsumerState<_CurrentGridMenu> {
 
   @override
   Widget build(BuildContext context) {
+    // Re-tint the pill and recompute the MenuStyle on a theme flip; the menu's
+    // contents subscribe separately (they live in a detached overlay).
+    AppTheme.watch(context);
     final grids = ref.watch(sessionProvider).networks;
     return MenuAnchor(
       controller: _menu,
@@ -258,6 +271,9 @@ class _GridMenuContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // This subtree renders in the MenuAnchor overlay, detached from the top bar,
+    // so subscribe here to re-colour the open menu the instant the theme flips.
+    AppTheme.watch(context);
     return SizedBox(
       width: _CurrentGridMenuState._menuWidth,
       child: Column(
@@ -329,6 +345,7 @@ class _GridMenuHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(14, 8, 14, 7),
       child: Text(
@@ -356,6 +373,7 @@ class _GridMenuRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final overview = ref
         .watch(gridOverviewForProvider(grid.networkId))
         .asData
@@ -374,7 +392,9 @@ class _GridMenuRow extends ConsumerWidget {
       style: ButtonStyle(
         padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         backgroundColor: WidgetStatePropertyAll(
-          selected ? const Color(0x062F5BEA) : Colors.transparent,
+          // Theme-aware accent wash — a fixed 2% indigo would all but vanish on
+          // the dark menu; the token carries a stronger tint for dark.
+          selected ? AppCard.tint10 : Colors.transparent,
         ),
         overlayColor: WidgetStatePropertyAll(AppSurface.hoverFill),
         minimumSize: const WidgetStatePropertyAll(
@@ -451,6 +471,7 @@ class _CurrentGridLabel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final state = ref
         .watch(gridOverviewForProvider(grid.networkId))

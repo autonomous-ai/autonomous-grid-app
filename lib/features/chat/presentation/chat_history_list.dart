@@ -72,6 +72,8 @@ class _ProjectsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette tokens — follow theme flips.
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 12, 2, 2),
       child: Row(
@@ -136,6 +138,8 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette.textSecondary — follow theme flips.
+    AppTheme.watch(context);
     final open = _open;
     final missing = !widget.project.exists;
 
@@ -185,6 +189,8 @@ class _ChatRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Reads AppPalette.textFaint — follow theme flips.
+    AppTheme.watch(context);
     final controller = ref.read(chatSessionsProvider.notifier);
     // Highlighted only while you're actually *in* the chat: on Plugins or
     // Scheduled the open screen is the one to mark, and two lit rows in one rail
@@ -225,6 +231,8 @@ class _AddFirstProjectHint extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Reads AppPalette.textFaint — follow theme flips.
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 2, 10, 6),
       child: Column(
@@ -260,6 +268,8 @@ class _Hint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette.textFaint — follow theme flips.
+    AppTheme.watch(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(indented ? 26 : 10, 4, 10, 6),
       child: Text(

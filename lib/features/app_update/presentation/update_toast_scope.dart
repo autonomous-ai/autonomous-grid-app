@@ -105,7 +105,7 @@ class _UpdateToast extends StatelessWidget {
                   constraints: const BoxConstraints(maxWidth: 560),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppGlass.surfaceFill,
                       borderRadius: BorderRadius.circular(15),
                       border: Border.all(color: AppPalette.divider),
                       boxShadow: AppGlass.shadow,

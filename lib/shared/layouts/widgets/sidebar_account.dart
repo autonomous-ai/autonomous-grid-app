@@ -9,6 +9,7 @@ import '../../app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/anchored_menu_position.dart';
 import '../shell_state.dart';
+import 'theme_mode_picker.dart';
 
 const _accountMenuWidth = 232.0;
 
@@ -22,6 +23,11 @@ const _menuRowHeight = 44.0;
 const _menuDividerHeight = 11.0;
 const _menuVersionHeight = 26.0;
 const _menuPadding = 6.0;
+// The Appearance segmented control (ThemeModePicker): its outer padding (6+8),
+// the "Appearance" label row, and the three-way segment control. Measured (not
+// estimated) via a widget test so the menu that hangs off the account row — it's
+// positioned by summing these heights — stays put once this block is shown.
+const _menuThemeHeight = 107.0;
 
 /// The menu entries that aren't a section — kept apart from `ShellSection.name`
 /// so a section can never collide with one.
@@ -36,6 +42,8 @@ Size _accountMenuSize({required bool updater, required bool version}) => Size(
   _accountMenuWidth,
   _menuPadding * 2 +
       _menuRowHeight +
+      _menuDividerHeight +
+      _menuThemeHeight +
       _menuDividerHeight +
       (updater ? _menuRowHeight : 0) +
       (version ? _menuVersionHeight : 0) +
@@ -81,6 +89,13 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
 
   @override
   Widget build(BuildContext context) {
+    // The account row and its menu read colour tokens from a global the element
+    // tree can't track, and the providers watched here don't change on a theme
+    // flip — so subscribe to the brightness to re-tint the row and recompute the
+    // MenuStyle when the theme changes. (The menu's *contents* subscribe too, in
+    // _AccountMenuContent: they live in a detached overlay this build can't reach
+    // once the menu is open.)
+    AppTheme.watch(context);
     final session = ref.watch(sessionProvider);
     final email = session.userEmail ?? '—';
     final name = session.user['name'] as String? ?? email;
@@ -208,6 +223,11 @@ class _AccountMenuContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // This subtree lives in the MenuAnchor's overlay — detached from the sidebar,
+    // so a theme flip won't reach it top-down. Depend on the brightness directly
+    // (BrightnessScope is an ancestor of the overlay too) so the open menu and
+    // every row in it re-colour the instant the theme changes.
+    AppTheme.watch(context);
     return SizedBox(
       width: _accountMenuWidth,
       child: Column(
@@ -223,10 +243,10 @@ class _AccountMenuContent extends StatelessWidget {
             onPressed: () => onSelected(_settingsValue),
           ),
           const _AccountMenuDivider(),
-          // Appearance picker hidden for now — the theme system stays live and
-          // defaults to Light. Re-enable: re-add the import of
-          // 'theme_mode_picker.dart' and drop `const ThemeModePicker()` +
-          // a `const _AccountMenuDivider()` back in here.
+          // Light / Dark / System, as a segmented control. The theme system was
+          // always live; this is the control that drives it.
+          const ThemeModePicker(),
+          const _AccountMenuDivider(),
           if (updaterSupported)
             _AccountMenuItem(
               icon: Icons.system_update_alt,

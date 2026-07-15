@@ -27,6 +27,8 @@ class _NoGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Follow the theme so this re-colours the instant the user flips Light/Dark.
+    AppTheme.watch(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
