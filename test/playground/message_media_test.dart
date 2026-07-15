@@ -77,6 +77,26 @@ void main() {
       expect(segs, hasLength(1));
       expect(_mediaAt(segs, 0).kind, MediaKind.image);
     });
+
+    test('a local media path wrapped in inline-code backticks still lifts', () {
+      // The agent often reports files as `**File:** ` + a backtick-wrapped path.
+      final segs = parseMessageSegments(
+        '**File:** `/Users/me/Downloads/grid_video_001.mp4`  ',
+      );
+      final media = segs.whereType<MediaSegment>().single;
+      expect(media.kind, MediaKind.video);
+      expect(media.url, '/Users/me/Downloads/grid_video_001.mp4');
+    });
+
+    test('the image skill\'s #media: marker is rendered inline', () {
+      // The grid-image-gen skill replies with this exact shape.
+      final segs = parseMessageSegments(
+        '[File: /Users/me/Downloads/img_001.png](#media:/Users/me/Downloads/img_001.png)',
+      );
+      expect(segs, hasLength(1));
+      expect(_mediaAt(segs, 0).kind, MediaKind.image);
+      expect(_mediaAt(segs, 0).url, '/Users/me/Downloads/img_001.png');
+    });
   });
 
   group('local media helpers', () {

@@ -53,7 +53,10 @@ final _mediaPattern = RegExp(
   r'|'
   r'\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)' // 2: markdown link url
   r'|'
-  r'(file://[^\s<>()\[\]"]+|https?://[^\s<>()\[\]"]+|/[^\s<>()\[\]"]+)', // 3
+  // 3: bare url or local path. The char class excludes backticks so a path
+  // wrapped in inline code (`/x.mp4`) stops at the closing backtick instead of
+  // swallowing it into the extension.
+  r'(file://[^\s<>()\[\]"`]+|https?://[^\s<>()\[\]"`]+|/[^\s<>()\[\]"`]+)',
 );
 
 /// Whether [url] points at a file on this machine — a bare absolute path or a
@@ -96,11 +99,16 @@ List<MessageSegment> parseMessageSegments(String text) {
     // A markdown link is lifted only when it points at a *local* media file —
     // a link the OS can't open on click, so showing it is strictly better. A
     // network media link stays a link (the user chose to link, not embed it).
+    // The image skill marks its result with a `#media:<path>` href; strip that
+    // marker before classifying.
     final linkUrl = match.group(2);
     if (linkUrl != null) {
-      final kind = mediaKindForPath(linkUrl);
-      if (kind != null && isLocalMediaUrl(linkUrl)) {
-        addMedia(linkUrl, kind);
+      final target = linkUrl.startsWith('#media:')
+          ? linkUrl.substring('#media:'.length)
+          : linkUrl;
+      final kind = mediaKindForPath(target);
+      if (kind != null && isLocalMediaUrl(target)) {
+        addMedia(target, kind);
         continue;
       }
       buffer.write(match.group(0));

@@ -78,8 +78,15 @@ Default output dir is `~/Downloads`. The script prints `Saved: <path>` for each
 image and exits non-zero on failure.
 
 ## Show the result
-After it saves a file, show the image to the user inline — reply with
-`[File: <path>](#media:<path>)` using the saved path.
+The script prints `Saved: <path>` for each image. Show every saved image to the
+user by putting it on its own line as a markdown image, exactly:
+
+    ![image](<path>)
+
+using the absolute saved path — e.g. `![image](/Users/you/Downloads/output_image_001.png)`.
+The Grid app turns that line into the picture itself. Do **not** say you "opened
+it in the app" or that they should "look at the screen": the image appears only
+if your reply contains that `![image](<path>)` line. One line per saved image.
 
 ## If it fails
 - Exit code 2 = the grid isn't configured. Tell the user to open Grid, pick a
