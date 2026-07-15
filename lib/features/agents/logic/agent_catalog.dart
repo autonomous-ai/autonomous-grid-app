@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/theme/app_theme.dart';
+
 /// The agents the app knows about — the ones that can be put in charge of a
 /// chat, and the ones that are coming.
 ///
@@ -15,7 +17,7 @@ enum AgentTool {
         'Runs on this computer. Uses your model, reads the project '
         'folder you point it at, and can run tools.',
     runnable: true,
-    accent: Color(0xFF2F5BEA),
+    accent: AppPalette.accent,
     icon: Icons.bolt_rounded,
   ),
   codex(

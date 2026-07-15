@@ -21,6 +21,11 @@ class PillChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Follow theme flips: an unselected pill is often built inside a `const`-ish
+    // toolbar loop with no runtime arg to force a rebuild, so without watching it
+    // stays on one theme's surface color (a dark chip left on a light page). See
+    // AppTheme.watch.
+    AppTheme.watch(context);
     final foreground = selected ? Colors.white : AppPalette.textSecondary;
     return Material(
       color: selected ? AppPalette.accent : AppGlass.surfaceFill,

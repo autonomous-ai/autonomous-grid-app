@@ -77,6 +77,10 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                             : null,
                         onTap: _newChat,
                       ),
+                      // A hair of air between the one thing you *do* (start a
+                      // chat) and the screens you *go to*, so they read as two
+                      // groups without needing a divider between them.
+                      const SizedBox(height: 4),
                       for (final target in kSidebarSections)
                         SidebarItem(
                           icon: target.icon,

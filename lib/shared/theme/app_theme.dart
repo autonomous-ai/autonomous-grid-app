@@ -53,10 +53,7 @@ class BrightnessScope extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _BrightnessScope(
-      notifier: AppTheme.brightness,
-      child: child,
-    );
+    return _BrightnessScope(notifier: AppTheme.brightness, child: child);
   }
 }
 
@@ -140,6 +137,17 @@ abstract final class AppSurface {
   /// never reads as "selected".
   static Color get hoverFill =>
       AppTheme.pick(const Color(0x07000000), const Color(0x0DFFFFFF));
+
+  /// A whisper of the accent, washed under the rail's primary action ("New
+  /// chat") so it invites the click without hardening into a button. Kept faint
+  /// (~8% in light, a touch stronger in dark so it reads on charcoal).
+  static Color get accentWash =>
+      AppTheme.pick(const Color(0x142F5BEA), const Color(0x242F5BEA));
+
+  /// The same wash a step stronger, for the primary action under the pointer —
+  /// so hovering it still reads as a change without ever looking "selected".
+  static Color get accentWashHover =>
+      AppTheme.pick(const Color(0x1F2F5BEA), const Color(0x332F5BEA));
 
   /// A recessed well inside a panel (e.g. the grid list column).
   static Color get recess =>
@@ -433,7 +441,9 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       isDense: true,
       filled: true,
       fillColor: scheme.surfaceContainerHighest,
-      hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.7)),
+      hintStyle: TextStyle(
+        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+      ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),

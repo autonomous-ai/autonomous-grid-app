@@ -394,6 +394,10 @@ class _AccountRow extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(11),
         color: AppSurface.recess,
+        // A hairline rim so the pill reads as its own surface at the rail's foot,
+        // rather than dissolving into the recess behind it — the same edge
+        // language the rest of the chrome uses.
+        border: Border.all(color: AppPalette.divider),
         boxShadow: [
           BoxShadow(
             color: AppTheme.pick(
@@ -439,9 +443,40 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final avatar = CircleAvatar(
-      radius: 13,
-      backgroundColor: AppPalette.accentMuted,
+    // The one spot of colour at the rail's foot, so it earns a little depth: a
+    // soft indigo gradient (accent → a shade toward violet) under a hairline ring
+    // and a low accent-tinted glow. Still 26px and flat to the eye — the lift is
+    // all edge and shadow, in keeping with the rest of the chrome.
+    final avatar = Container(
+      width: 26,
+      height: 26,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomRight,
+          colors: [
+            AppPalette.accentMuted,
+            Color.lerp(AppPalette.accentMuted, const Color(0xFF7A3CF0), 0.42)!,
+          ],
+        ),
+        border: Border.all(
+          color: AppTheme.pick(
+            const Color(0x22FFFFFF),
+            const Color(0x1FFFFFFF),
+          ),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppPalette.accent.withValues(alpha: 0.32),
+            blurRadius: 7,
+            offset: const Offset(0, 2),
+            spreadRadius: -2,
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
       child: Text(
         initial,
         style: const TextStyle(
