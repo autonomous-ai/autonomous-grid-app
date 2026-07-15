@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/grid_paths.dart';
+
 /// One file the agent changed this session — enough to show the change and put it
 /// back the way it was.
 ///
@@ -48,23 +50,32 @@ class AgentChangesController extends Notifier<List<AgentChange>> {
   /// Note that the agent changed [path] from [before] to [after]. The first
   /// [before] seen for a file wins, so undoing restores the pre-agent original
   /// even after several edits; [after] tracks the latest so the diff stays
-  /// current. Relative paths are ignored — undo must write the right file, and
-  /// only an absolute path names it unambiguously.
+  /// current. A leading `~` is expanded to the home folder first — Hermes reports
+  /// the path the agent typed, and it routinely writes to `~/Downloads/...` —
+  /// after which anything still not absolute is ignored, since only an absolute
+  /// path lets undo write the right file back.
   void record({
     required String path,
     required String? before,
     required String after,
   }) {
-    if (!_isAbsolute(path)) return;
-    final existing = state.indexWhere((change) => change.path == path);
+    final resolved = expandHome(path, GridPaths.userHome);
+    if (!_isAbsolute(resolved)) return;
+    final existing = state.indexWhere((change) => change.path == resolved);
     if (existing >= 0) {
       state = [
         for (final change in state)
-          if (change.path == path) change.copyWith(after: after) else change,
+          if (change.path == resolved)
+            change.copyWith(after: after)
+          else
+            change,
       ];
       return;
     }
-    state = [...state, AgentChange(path: path, before: before, after: after)];
+    state = [
+      ...state,
+      AgentChange(path: resolved, before: before, after: after),
+    ];
   }
 
   /// Put [change] back — restore its original contents, or delete it when the
@@ -117,4 +128,15 @@ class AgentChangesController extends Notifier<List<AgentChange>> {
 
   static bool _isAbsolute(String path) =>
       path.startsWith('/') || RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(path);
+}
+
+/// Expands a leading `~` to [home] so `~/Downloads/x.txt` names a real, absolute
+/// file. Hermes reports the path the agent typed verbatim and it routinely uses
+/// `~` for the home folder; left as-is the change would go unrecorded (no undo),
+/// and undoing it would write a literal `~` folder. A path that isn't
+/// `~`-anchored is returned unchanged.
+String expandHome(String path, String home) {
+  if (path == '~') return home;
+  if (path.startsWith('~/')) return '$home${path.substring(1)}';
+  return path;
 }

@@ -33,6 +33,38 @@ void main() {
     expect(c.state, isEmpty);
   });
 
+  test('expands a ~ path so a file the agent wrote to ~/Downloads is recorded '
+      'and undoable, not silently dropped', () {
+    final home = Platform.environment['HOME']!;
+    final c = controller();
+
+    c.record(
+      path: '~/Downloads/hello_world_all_languages.txt',
+      before: null,
+      after: 'hi',
+    );
+
+    expect(c.state, hasLength(1));
+    expect(
+      c.state.single.path,
+      '$home/Downloads/hello_world_all_languages.txt',
+    );
+  });
+
+  test(
+    'expandHome turns a leading ~ into the home dir, leaves the rest alone',
+    () {
+      expect(
+        expandHome('~/Downloads/a.txt', '/Users/me'),
+        '/Users/me/Downloads/a.txt',
+      );
+      expect(expandHome('~', '/Users/me'), '/Users/me');
+      expect(expandHome('/etc/hosts', '/Users/me'), '/etc/hosts');
+      // A bare `~name` is not a home reference — left untouched.
+      expect(expandHome('~notes', '/Users/me'), '~notes');
+    },
+  );
+
   test('a second edit to a file keeps the original before, updates after', () {
     final c = controller();
     c.record(path: path('a.txt'), before: 'v1', after: 'v2');
