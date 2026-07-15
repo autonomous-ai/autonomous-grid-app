@@ -91,6 +91,11 @@ abstract interface class ChatSender {
     /// different id) starts a fresh session. Null for one-off transcripts (the
     /// Playground) and the relay sender, which are stateless.
     String? conversationId,
+
+    /// The project's standing rules for the agent, prepended to the first turn
+    /// of a session (the app's `AGENTS.md`). Null/blank for a chat in no project
+    /// and ignored by the relay sender, which has no agent to instruct.
+    String? instructions,
   });
 }
 
@@ -138,6 +143,8 @@ class DefaultChatSender implements ChatSender {
     // A relay call has no filesystem — the project folder means nothing here.
     String? workdir,
     String? conversationId,
+    // The relay has no agent to instruct, so project rules are irrelevant here.
+    String? instructions,
   }) {
     // The local smoke test and relay text both hit chat/completions; only the
     // base URL differs (the local engine has no `/relay/v1` prefix).

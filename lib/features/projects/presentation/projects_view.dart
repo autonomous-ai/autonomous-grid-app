@@ -9,6 +9,7 @@ import '../../../shared/widgets/section_scaffold.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../logic/project.dart';
 import 'add_project.dart';
+import 'project_instructions_dialog.dart';
 
 /// The Projects screen: the folders on this computer the assistant may read.
 ///
@@ -116,6 +117,8 @@ class _ProjectCard extends ConsumerWidget {
                         : AppPalette.textSecondary,
                   ),
                 ),
+                if (!missing && project.instructions.trim().isNotEmpty)
+                  const _RulesBadge(),
               ],
             ),
           ),
@@ -180,6 +183,7 @@ class _Actions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hasRules = project.instructions.trim().isNotEmpty;
     return Wrap(
       spacing: 6,
       children: [
@@ -190,6 +194,14 @@ class _Actions extends ConsumerWidget {
             color: AppPalette.textSecondary,
             icon: const Icon(Icons.add_comment_outlined),
             onPressed: () => _newChat(ref),
+          ),
+        if (!missing)
+          IconButton(
+            tooltip: hasRules ? 'Edit agent rules' : 'Add agent rules',
+            iconSize: 18,
+            color: hasRules ? AppPalette.accent : AppPalette.textSecondary,
+            icon: const Icon(Icons.rule_rounded),
+            onPressed: () => showProjectInstructionsDialog(context, project),
           ),
         if (!missing)
           IconButton(
@@ -207,6 +219,33 @@ class _Actions extends ConsumerWidget {
           onPressed: () => _forget(context, ref),
         ),
       ],
+    );
+  }
+}
+
+/// Marks a project that carries standing rules for the agent, so it's obvious
+/// at a glance which folders steer the assistant.
+class _RulesBadge extends StatelessWidget {
+  const _RulesBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.rule_rounded, size: 13, color: AppPalette.accent),
+          const SizedBox(width: 5),
+          Text(
+            'Agent rules set',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.accent,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
