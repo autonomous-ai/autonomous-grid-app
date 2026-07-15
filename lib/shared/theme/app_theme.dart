@@ -153,6 +153,11 @@ abstract final class AppSurface {
   static Color get recess =>
       AppTheme.pick(const Color(0x08000000), const Color(0x0FFFFFFF));
 
+  /// The recessed well under the pointer — a step lighter than [recess], so a
+  /// hoverable surface (the account pill) lifts a touch to say it's clickable.
+  static Color get recessHover =>
+      AppTheme.pick(const Color(0x12000000), const Color(0x1AFFFFFF));
+
   /// Soft drop shadow that lifts a floating surface (the composer) off the page.
   /// Deeper/darker in dark mode where a light lift would look like a glow.
   static List<BoxShadow> get shadow => AppTheme.pick(

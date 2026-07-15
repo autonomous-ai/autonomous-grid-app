@@ -135,18 +135,16 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
             onSelected: (value) => _onSelected(context, ref, updater, value),
           ),
         ],
-        builder: (context, controller, _) => Tooltip(
-          message: 'Account',
-          child: Semantics(
-            button: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _toggleMenu(context, controller, menuSize),
-              child: _AccountRow(
-                name: name,
-                email: email,
-                updateAvailable: available != null,
-              ),
+        builder: (context, controller, _) => Semantics(
+          button: true,
+          label: 'Account',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _toggleMenu(context, controller, menuSize),
+            child: _AccountRow(
+              name: name,
+              email: email,
+              updateAvailable: available != null,
             ),
           ),
         ),
@@ -376,7 +374,12 @@ class _AccountMenuDivider extends StatelessWidget {
 ///
 /// The pill and nothing else — it *is* the anchor the menu hangs off, so any
 /// padding around it belongs to the parent (see [SidebarAccount.build]).
-class _AccountRow extends StatelessWidget {
+///
+/// Stateful for the hover feedback: with no menu bar tooltip any more, the pill
+/// has to say "click me" on its own — so it lifts its fill, firms its rim and
+/// darkens the ⋯ under the pointer, and dips a hair on press. The same motion
+/// vocabulary the nav rows use.
+class _AccountRow extends StatefulWidget {
   const _AccountRow({
     required this.name,
     required this.email,
@@ -388,47 +391,81 @@ class _AccountRow extends StatelessWidget {
   final bool updateAvailable;
 
   @override
+  State<_AccountRow> createState() => _AccountRowState();
+}
+
+class _AccountRowState extends State<_AccountRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final name = widget.name;
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(11),
-        color: AppSurface.recess,
-        // A hairline rim so the pill reads as its own surface at the rail's foot,
-        // rather than dissolving into the recess behind it — the same edge
-        // language the rest of the chrome uses.
-        border: Border.all(color: AppPalette.divider),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.pick(
-              const Color(0x06000000),
-              const Color(0x40000000),
-            ),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-            spreadRadius: -7,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 130),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(11),
+          // Lifts a step under the pointer so the pill reads as clickable.
+          color: _hovered ? AppSurface.recessHover : AppSurface.recess,
+          // A hairline rim so the pill reads as its own surface at the rail's
+          // foot, rather than dissolving into the recess behind it — the same
+          // edge language the rest of the chrome uses. Firms up a touch on hover.
+          border: Border.all(
+            color: _hovered ? AppGlass.hair : AppPalette.divider,
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 7, 7, 7),
-        child: Row(
-          children: [
-            _Avatar(initial: initial, updateAvailable: updateAvailable),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Text(
-                email,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppPalette.textSecondary,
-                  fontSize: 12.5,
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.pick(
+                const Color(0x06000000),
+                const Color(0x40000000),
+              ),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+              spreadRadius: -7,
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 7, 7, 7),
+          child: Row(
+            children: [
+              _Avatar(
+                initial: initial,
+                updateAvailable: widget.updateAvailable,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  widget.email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
-            ),
-            Icon(Icons.more_horiz, size: 18, color: AppPalette.textFaint),
-          ],
+              // The ⋯ warms from faint to secondary on hover — a small "there's
+              // a menu here" nudge that drifts up a hair as the pointer lands.
+              AnimatedSlide(
+                offset: Offset(0, _hovered ? -0.06 : 0),
+                duration: const Duration(milliseconds: 130),
+                curve: Curves.easeOut,
+                child: Icon(
+                  Icons.more_horiz,
+                  size: 18,
+                  color: _hovered
+                      ? AppPalette.textSecondary
+                      : AppPalette.textFaint,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
