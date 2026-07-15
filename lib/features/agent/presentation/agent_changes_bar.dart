@@ -213,16 +213,18 @@ class _NewTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: AppPalette.accentMuted,
+        // A light accent tint, not the solid avatar fill — the old fill was
+        // near-indigo under near-indigo text, so the label all but vanished.
+        color: AppPalette.accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         'New file',
         style: TextStyle(
           fontSize: 11,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: AppPalette.accent,
         ),
       ),
