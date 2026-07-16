@@ -11,7 +11,8 @@ import 'models_providers.dart';
 
 final modelPullControllerProvider =
     NotifierProvider<ModelPullController, ModelPullState>(
-        ModelPullController.new);
+      ModelPullController.new,
+    );
 
 /// Splits the download box into individual `<repo>:<file>` specs — one per line.
 /// Blank lines and surrounding whitespace are ignored; order is preserved and
@@ -96,7 +97,8 @@ class ModelPullController extends Notifier<ModelPullState> {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ModelPullFailed(
-          "Grid's background helper isn't available — please restart the app.");
+        "Grid's background helper isn't available — please restart the app.",
+      );
       return;
     }
 
@@ -104,22 +106,31 @@ class ModelPullController extends Notifier<ModelPullState> {
     for (var i = 0; i < specs.length; i++) {
       final spec = specs[i];
       state = ModelPulling(spec: spec, current: i + 1, total: specs.length);
-      final failed = await _runOne(service, spec, current: i + 1, total: specs.length);
+      final failed = await _runOne(
+        service,
+        spec,
+        current: i + 1,
+        total: specs.length,
+      );
 
       // [cancel] already reset the state to idle; don't clobber it.
       if (_cancelled) return;
       if (failed) {
-        state = ModelPullFailed(specs.length == 1
-            ? "Couldn't download the model — check your internet connection and "
-                'that the model name is correct, then try again.'
-            : "Couldn't download '$spec' — check your internet connection and "
-                'that every line is correct, then try again.');
+        state = ModelPullFailed(
+          specs.length == 1
+              ? "Couldn't download the model — check your internet connection and "
+                    'that the model name is correct, then try again.'
+              : "Couldn't download '$spec' — check your internet connection and "
+                    'that every line is correct, then try again.',
+        );
         return;
       }
     }
 
     // Refresh the on-disk list and confirm every requested file actually landed.
+    // The `.part` is gone (renamed to `.gguf`) now, so rescan the downloads too.
     ref.invalidate(localModelsProvider);
+    ref.invalidate(downloadingModelsProvider);
     final models = ref.read(localModelsProvider);
     final targets = [
       for (final spec in specs)
@@ -131,8 +142,9 @@ class ModelPullController extends Notifier<ModelPullState> {
       state = ModelPullDone(_doneLabel(targets, specs));
     } else {
       state = const ModelPullFailed(
-          "The download finished but the model couldn't be found afterwards. "
-          'Check the model name and try again.');
+        "The download finished but the model couldn't be found afterwards. "
+        'Check the model name and try again.',
+      );
     }
   }
 
@@ -151,16 +163,22 @@ class ModelPullController extends Notifier<ModelPullState> {
       if (!completer.isCompleted) completer.complete();
     }
 
-    _sub = service.pull(['pull', spec]).listen(
-      (progress) => state =
-          ModelPulling(spec: spec, progress: progress, current: current, total: total),
-      onError: (Object _) {
-        failed = true;
-        settle();
-      },
-      onDone: settle,
-      cancelOnError: true,
-    );
+    _sub = service
+        .pull(['pull', spec])
+        .listen(
+          (progress) => state = ModelPulling(
+            spec: spec,
+            progress: progress,
+            current: current,
+            total: total,
+          ),
+          onError: (Object _) {
+            failed = true;
+            settle();
+          },
+          onDone: settle,
+          cancelOnError: true,
+        );
 
     await completer.future;
     await _sub?.cancel();

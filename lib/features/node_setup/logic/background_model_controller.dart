@@ -79,6 +79,11 @@ class BackgroundModelController extends Notifier<ModelDownloadState> {
     if (!ref.read(localModelChosenProvider)) return;
     if (!ref.read(engineStatusProvider).llamaInstalled) return;
     if (ref.read(localModelsProvider).isNotEmpty) return;
+    // A download is already on disk as a `.gguf.part`. Whether it's still running
+    // or was interrupted, kicking off a fresh pull here would duplicate the work
+    // — or, worse, write the same part-file concurrently and corrupt it. Leave it
+    // to resume from the Engines tab.
+    if (ref.read(downloadingModelsProvider).isNotEmpty) return;
 
     final service = ref.read(gridCliServiceProvider);
     if (service == null) return;
@@ -104,6 +109,7 @@ class BackgroundModelController extends Notifier<ModelDownloadState> {
     }
 
     ref.invalidate(localModelsProvider);
+    ref.invalidate(downloadingModelsProvider);
     ref.invalidate(nodeCapabilitiesProvider);
     state = const ModelDownloadDone();
 

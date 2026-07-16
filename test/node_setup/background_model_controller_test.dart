@@ -45,6 +45,7 @@ ProviderContainer _container({
   bool engineInstalled = true,
   bool localChosen = true,
   List<LocalModel> models = const [],
+  List<DownloadingModel> downloading = const [],
   _FakeAutoHost? autoHost,
 }) {
   final container = ProviderContainer(
@@ -60,6 +61,9 @@ ProviderContainer _container({
             : EngineStatus.notInstalled,
       ),
       localModelsProvider.overrideWithValue(models),
+      // Kept off the real `~/.grid`: tests say explicitly whether a `.part` is
+      // mid-flight, so the guard is exercised deterministically and offline.
+      downloadingModelsProvider.overrideWithValue(downloading),
       gridCliServiceProvider.overrideWithValue(cli),
       nodeCapabilitiesProvider.overrideWith((ref) async => _caps()),
       if (autoHost != null)
@@ -101,6 +105,37 @@ void main() {
       final container = _container(
         cli: FakeGridCliService(),
         models: const [_localModel],
+      );
+
+      await container
+          .read(backgroundModelControllerProvider.notifier)
+          .startIfNeeded();
+
+      expect(
+        container.read(backgroundModelControllerProvider),
+        isA<ModelDownloadIdle>(),
+      );
+    },
+  );
+
+  test(
+    'does nothing when a download is already partway on disk — never a second '
+    'pull writing over the same part-file',
+    () async {
+      final cli = FakeGridCliService()
+        ..stubPull(
+          const ['pull', 'qwen'],
+          const [DownloadProgress(doneMb: 100, totalMb: 200, pct: 50)],
+        );
+      final container = _container(
+        cli: cli,
+        downloading: const [
+          DownloadingModel(
+            name: 'file.gguf',
+            path: '/m/file.gguf.part',
+            bytesSoFar: 1024,
+          ),
+        ],
       );
 
       await container

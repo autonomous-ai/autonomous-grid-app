@@ -76,15 +76,24 @@ class GridHomeStore {
     final out = <LocalModel>[];
     for (final entity in dir.listSync()) {
       if (entity is! File || !entity.path.endsWith('.gguf')) continue;
-      out.add(LocalModel(
-        name: entity.uri.pathSegments.last,
-        path: entity.path,
-        sizeBytes: entity.lengthSync(),
-      ));
+      out.add(
+        LocalModel(
+          name: entity.uri.pathSegments.last,
+          path: entity.path,
+          sizeBytes: entity.lengthSync(),
+        ),
+      );
     }
     out.sort((a, b) => a.name.compareTo(b.name));
     return out;
   }
+
+  /// Scan `~/.grid/models/*.part` for models still downloading — a transfer the
+  /// CLI hasn't finished and renamed to `.gguf`. Kept apart from
+  /// [listLocalModels] so a half-downloaded model reads as "on its way", not as
+  /// an empty computer that needs a fresh pull.
+  List<DownloadingModel> listDownloadingModels() =>
+      scanDownloadingModels(GridPaths.modelsDir);
 
   /// Scan `~/.grid/outputs/*` for generated media.
   List<MediaOutput> listOutputs() {
@@ -93,10 +102,9 @@ class GridHomeStore {
     final out = <MediaOutput>[];
     for (final entity in dir.listSync()) {
       if (entity is! File) continue;
-      out.add(MediaOutput(
-        path: entity.path,
-        filename: entity.uri.pathSegments.last,
-      ));
+      out.add(
+        MediaOutput(path: entity.path, filename: entity.uri.pathSegments.last),
+      );
     }
     out.sort((a, b) => b.filename.compareTo(a.filename));
     return out;
@@ -151,8 +159,11 @@ class GridHomeStore {
 
   /// Tail of a resumed engine's log (`<engine_id>.log`), so the running card can
   /// show real context after a restart. Empty when missing/unreadable.
-  List<String> readEngineRunLog(String gridId, String engineId,
-      {int maxLines = 400}) {
+  List<String> readEngineRunLog(
+    String gridId,
+    String engineId, {
+    int maxLines = 400,
+  }) {
     final file = GridPaths.engineRunLogFile(gridId, engineId);
     if (!file.existsSync()) return const [];
     try {

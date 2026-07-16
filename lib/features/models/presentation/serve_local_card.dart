@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/parsers/download_progress.dart';
+import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/log_view.dart';
+import '../../node_setup/logic/background_model_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
@@ -17,14 +19,22 @@ import '../logic/models_providers.dart';
 import 'context_length_field.dart';
 import 'model_manager_dialog.dart';
 
-/// A model download in flight — from the node-setup auto-download (its
-/// "Download a model" step) or a manual pull in the model manager — reduced to
-/// what the engine block needs. Outer null means nothing is downloading; a null
-/// [pct] means "downloading, percent not known yet".
-({int? pct})? _modelDownloadStatus(ModelPullState pull, NodeSetupState setup) {
+/// A model download actively in flight — a manual pull in the model manager, the
+/// node-setup auto-download, or the background first-run download — reduced to
+/// what the engine block needs. Outer null means no live download; a null [pct]
+/// means "downloading, percent not known yet". A partial `.gguf.part` sitting on
+/// disk with no live stream is *not* this — that's [_resumeSection]'s job.
+({int? pct})? _modelDownloadStatus(
+  ModelPullState pull,
+  NodeSetupState setup,
+  ModelDownloadState background,
+) {
   if (pull is ModelPulling) return (pct: _pctOf(pull.progress));
   if (setup is NodeSetupRunning && setup.current.isDownload) {
     return (pct: _pctOf(setup.progress));
+  }
+  if (background is ModelDownloadRunning) {
+    return (pct: _pctOf(background.progress));
   }
   return null;
 }
@@ -81,11 +91,14 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     final ctxSize =
         _ctxSize ?? (max != null ? defaultContextLength(max) : null);
     // --advertise-as is always sent; derive from the model name if left blank.
-    ref.read(providerRunControllerProvider.notifier).startLocal(
+    ref
+        .read(providerRunControllerProvider.notifier)
+        .startLocal(
           network: widget.network.networkId,
           model: model,
-          advertiseAs:
-              advertise.isEmpty ? deriveAdvertiseName(model) : advertise,
+          advertiseAs: advertise.isEmpty
+              ? deriveAdvertiseName(model)
+              : advertise,
           ctxSize: ctxSize,
         );
   }
@@ -98,7 +111,13 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     final download = _modelDownloadStatus(
       ref.watch(modelPullControllerProvider),
       ref.watch(nodeSetupControllerProvider),
+      ref.watch(backgroundModelControllerProvider),
     );
+    // A `.gguf.part` on disk with no live stream: a download that was
+    // interrupted and can pick up where it left off.
+    final partial = download == null
+        ? ref.watch(downloadingModelsProvider).firstOrNull
+        : null;
 
     // Default to the first model; keep selection valid if the list changes. A
     // model is keyed by the file we serve (a split set's first shard).
@@ -114,11 +133,15 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _engineSection(context, theme,
-          llamaInstalled: llamaInstalled,
-          download: download,
-          groups: groups,
-          selected: selected),
+      children: _engineSection(
+        context,
+        theme,
+        llamaInstalled: llamaInstalled,
+        download: download,
+        partial: partial,
+        groups: groups,
+        selected: selected,
+      ),
     );
   }
 
@@ -128,51 +151,88 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   ///    without the engine even when a model is on disk, so a leftover GGUF from
   ///    a removed engine must NOT present a dead "Start local engine" — gate
   ///    on the engine, not on whether a model happens to exist;
-  /// 3. engine installed but no model → prompt to download one;
-  /// 4. engine installed + a model ready → the serve controls.
+  /// 3. a download stalled partway (a `.gguf.part` on disk) → offer to resume it,
+  ///    rather than pretend the computer is empty;
+  /// 4. engine installed but no model → prompt to download one;
+  /// 5. engine installed + a model ready → the serve controls.
   List<Widget> _engineSection(
     BuildContext context,
     ThemeData theme, {
     required bool llamaInstalled,
     required ({int? pct})? download,
+    required DownloadingModel? partial,
     required List<ModelGroup> groups,
     required ModelGroup? selected,
   }) {
     if (download != null) return _downloadingSection(theme, download.pct);
     if (!llamaInstalled) return const [_EngineSetupSection()];
+    if (selected == null && partial != null) {
+      return _resumeSection(context, theme, partial);
+    }
     if (selected == null) return _downloadPromptSection(context, theme);
     return _serveControls(groups, selected);
   }
 
+  /// A download stopped partway — the app quit, or the transfer dropped — leaving
+  /// a `.gguf.part` on disk. Say so honestly (how much landed, no fake percent)
+  /// and point at the manager, where downloading the same model resumes from
+  /// where it left off instead of starting over.
+  List<Widget> _resumeSection(
+    BuildContext context,
+    ThemeData theme,
+    DownloadingModel partial,
+  ) => [
+    Text(
+      'A model download stopped partway — '
+      '${partial.gbSoFar.toStringAsFixed(1)} GB is already here. '
+      'Download it again to finish; it carries on from where it left off.',
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    ),
+    const SizedBox(height: 12),
+    Align(
+      alignment: Alignment.centerLeft,
+      child: FilledButton.icon(
+        onPressed: () => showModelManager(context),
+        icon: const Icon(Icons.download_outlined, size: 18),
+        label: const Text('Finish downloading'),
+      ),
+    ),
+  ];
+
   /// A model is downloading (node setup or a manual pull): show progress in
   /// place of the download button, since the live bar + Cancel are below.
   List<Widget> _downloadingSection(ThemeData theme, int? pct) => [
-        Text(
-          'Downloading a model — this can take a few minutes.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    Text(
+      'Downloading a model — this can take a few minutes.',
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    ),
+    const SizedBox(height: 12),
+    Align(
+      alignment: Alignment.centerLeft,
+      child: FilledButton.icon(
+        // Not tappable — it reflects the download already running below.
+        onPressed: null,
+        icon: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            // Not tappable — it reflects the download already running below.
-            onPressed: null,
-            icon: const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            label: Text(pct != null ? 'Downloading… $pct%' : 'Downloading…'),
-          ),
-        ),
-      ];
+        label: Text(pct != null ? 'Downloading… $pct%' : 'Downloading…'),
+      ),
+    ),
+  ];
 
-  List<Widget> _downloadPromptSection(BuildContext context, ThemeData theme) => [
+  List<Widget> _downloadPromptSection(BuildContext context, ThemeData theme) =>
+      [
         Text(
           'No models on this computer yet. Download one to start serving.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 12),
         Align(
@@ -186,61 +246,60 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
       ];
 
   List<Widget> _serveControls(List<ModelGroup> groups, ModelGroup selected) => [
-        DropdownButtonFormField<String>(
-          initialValue: selected.primary.name,
-          decoration: const InputDecoration(
-            labelText: 'Local model',
-            border: OutlineInputBorder(),
+    DropdownButtonFormField<String>(
+      initialValue: selected.primary.name,
+      decoration: const InputDecoration(
+        labelText: 'Local model',
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        for (final group in groups)
+          DropdownMenuItem(
+            value: group.primary.name,
+            child: Text(
+              group.isSplit
+                  ? '${group.displayName} · ${group.partCount} parts'
+                  : group.displayName,
+            ),
           ),
-          items: [
-            for (final group in groups)
-              DropdownMenuItem(
-                value: group.primary.name,
-                child: Text(group.isSplit
-                    ? '${group.displayName} · ${group.partCount} parts'
-                    : group.displayName),
-              ),
-          ],
-          // Reset the context choice so the slider falls back to the new
-          // model's own maximum instead of carrying over the previous one.
-          onChanged: (value) => setState(() {
-            _model = value;
-            _ctxSize = null;
-          }),
-        ),
-        const SizedBox(height: 12),
-        AdvertiseAsField(
-          controller: _advertise,
-          hintText: 'Qwen3.6-35B-A3B',
-        ),
-        const SizedBox(height: 12),
-        ContextLengthField(
-          model: selected.primary.name,
-          value: _ctxSize,
-          onChanged: (tokens) => setState(() => _ctxSize = tokens),
-        ),
-        const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              FilledButton.icon(
-                onPressed: () => _start(selected.primary.name),
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Start local engine'),
-              ),
-              TextButton.icon(
-                onPressed: () => showModelManager(context),
-                icon: const Icon(Icons.tune, size: 18),
-                label: const Text('Download or manage models'),
-              ),
-            ],
+      ],
+      // Reset the context choice so the slider falls back to the new
+      // model's own maximum instead of carrying over the previous one.
+      onChanged: (value) => setState(() {
+        _model = value;
+        _ctxSize = null;
+      }),
+    ),
+    const SizedBox(height: 12),
+    AdvertiseAsField(controller: _advertise, hintText: 'Qwen3.6-35B-A3B'),
+    const SizedBox(height: 12),
+    ContextLengthField(
+      model: selected.primary.name,
+      value: _ctxSize,
+      onChanged: (tokens) => setState(() => _ctxSize = tokens),
+    ),
+    const SizedBox(height: 16),
+    Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          FilledButton.icon(
+            onPressed: () => _start(selected.primary.name),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Start local engine'),
           ),
-        ),
-      ];
+          TextButton.icon(
+            onPressed: () => showModelManager(context),
+            icon: const Icon(Icons.tune, size: 18),
+            label: const Text('Download or manage models'),
+          ),
+        ],
+      ),
+    ),
+  ];
 }
 
 /// Shown in the built-in engine block when the engine isn't set up on this
@@ -338,7 +397,10 @@ class _EngineSetupActions extends ConsumerWidget {
       alignment: Alignment.centerLeft,
       child: FilledButton.icon(
         onPressed: notifier.run,
-        icon: Icon(isFailed ? Icons.refresh : Icons.download_outlined, size: 18),
+        icon: Icon(
+          isFailed ? Icons.refresh : Icons.download_outlined,
+          size: 18,
+        ),
         label: Text(isFailed ? 'Try again' : 'Set up built-in engine'),
       ),
     );
