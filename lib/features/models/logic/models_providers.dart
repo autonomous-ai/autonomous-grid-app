@@ -11,6 +11,15 @@ final localModelsProvider = Provider<List<LocalModel>>((ref) {
   return ref.watch(gridHomeStoreProvider).listLocalModels();
 });
 
+/// Models still downloading — a `<name>.gguf.part` the CLI hasn't finished and
+/// renamed to `.gguf` yet. Lets the UI tell "a model is on its way" apart from
+/// "no model", and lets the auto-download stand down instead of starting a
+/// second pull over a part-file. Invalidate alongside [localModelsProvider] to
+/// rescan (a `.part` becomes a `.gguf` the moment it completes).
+final downloadingModelsProvider = Provider<List<DownloadingModel>>((ref) {
+  return ref.watch(gridHomeStoreProvider).listDownloadingModels();
+});
+
 /// The same models, grouped so a split GGUF's parts read as one servable model.
 /// The model list, the serve picker and delete all work off this so they stay
 /// consistent — one model, one row, one action.
@@ -22,8 +31,10 @@ final modelGroupsProvider = Provider<List<ModelGroup>>((ref) {
 /// `grid ctx --json <model>`. Keyed by the GGUF filename (as listed by
 /// [localModelsProvider]). Null when the CLI is unavailable or the model's
 /// context can't be read — callers then fall back to the engine's own default.
-final modelMaxContextProvider =
-    FutureProvider.family<int?, String>((ref, model) async {
+final modelMaxContextProvider = FutureProvider.family<int?, String>((
+  ref,
+  model,
+) async {
   final service = ref.watch(gridCliServiceProvider);
   if (service == null) return null;
   final result = await service.run(['ctx', '--json', model]);
