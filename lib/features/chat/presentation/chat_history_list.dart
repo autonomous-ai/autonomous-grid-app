@@ -191,6 +191,8 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
               ? "This folder isn't there any more: ${widget.project.path}"
               : widget.project.path,
           onTap: () => setState(() => _open = !_open),
+          // Two actions here (options menu + new chat), so reserve room for both.
+          trailingWidth: 48,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

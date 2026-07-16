@@ -17,6 +17,7 @@ class SidebarItem extends StatefulWidget {
     this.enabled = true,
     this.emphasized = false,
     this.trailing,
+    this.trailingWidth = 24,
     this.tooltip,
   });
 
@@ -32,6 +33,10 @@ class SidebarItem extends StatefulWidget {
 
   /// Revealed on hover (e.g. a conversation's delete button).
   final Widget? trailing;
+
+  /// Width reserved for [trailing]. Defaults to one 24px action; a row with two
+  /// (like a project's menu + new-chat) passes a wider value so neither clips.
+  final double trailingWidth;
   final String? tooltip;
 
   @override
@@ -149,7 +154,7 @@ class _SidebarItemState extends State<SidebarItem> {
                           // Keep the action mounted so hovering never changes text
                           // metrics or row height.
                           SizedBox(
-                            width: 24,
+                            width: widget.trailingWidth,
                             height: 24,
                             child: IgnorePointer(
                               ignoring: !_hovered,
