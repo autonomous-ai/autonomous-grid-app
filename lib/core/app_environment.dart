@@ -33,8 +33,9 @@ class AppEnvironment {
 
   // Compile-time `--dart-define` values (empty string when not passed). Must use
   // literal names — `String.fromEnvironment` requires a const literal argument.
-  static const _controlPlaneDefine =
-      String.fromEnvironment('GRID_CONTROL_PLANE_URL');
+  static const _controlPlaneDefine = String.fromEnvironment(
+    'GRID_CONTROL_PLANE_URL',
+  );
   static const _websiteDefine = String.fromEnvironment('GRID_WEBSITE_URL');
 
   static const _prodControlPlaneUrl = 'https://api-grid.autonomous.ai/';
@@ -56,6 +57,14 @@ class AppEnvironment {
   /// True when a dev override is pointing the app at a non-prod backend — use it
   /// to surface a "you're on staging" hint in the UI if desired.
   static bool get isStagingOverride => _devOverride(controlPlaneEnvKey) != null;
+
+  /// True in a developer build (debug/profile), false in a shipped release.
+  ///
+  /// The gate for internal-only surfaces — the Grids and Debug settings tabs —
+  /// so an end user never meets raw grid management or the CLI log. A shipped
+  /// `flutter build` is always release, so those tabs can no more appear for a
+  /// real user than staging can be reached (see [_devOverride]).
+  static bool get isDeveloperMode => !kReleaseMode;
 
   /// The overrides to forward into the spawned `grid` CLI's environment, so the
   /// CLI targets the same backend as the app. Empty in release (build = prod).

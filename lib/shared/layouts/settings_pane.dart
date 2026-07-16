@@ -141,19 +141,20 @@ class _SettingsNav extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: [
             for (final target in kSettingsSections)
-              if (compact)
-                _NavIcon(
-                  target: target,
-                  selected: target == section,
-                  onTap: () => onSelect(target),
-                )
-              else
-                SidebarItem(
-                  icon: target.icon,
-                  label: target.label,
-                  selected: target == section,
-                  onTap: () => onSelect(target),
-                ),
+              if (target.isVisibleForBuild)
+                if (compact)
+                  _NavIcon(
+                    target: target,
+                    selected: target == section,
+                    onTap: () => onSelect(target),
+                  )
+                else
+                  SidebarItem(
+                    icon: target.icon,
+                    label: target.label,
+                    selected: target == section,
+                    onTap: () => onSelect(target),
+                  ),
           ],
         ),
       ),

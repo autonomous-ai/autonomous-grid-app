@@ -125,7 +125,8 @@ List<CommandGroup> searchCommands({
     for (final project in projects) NewChatCommand(project: project),
     const AddProjectCommand(),
     const OpenSettingsCommand(),
-    for (final section in ShellSection.values) GoToCommand(section),
+    for (final section in ShellSection.values)
+      if (section.isVisibleForBuild) GoToCommand(section),
   ];
   final taskItems = [for (final job in tasks) OpenTaskCommand(job)];
 
