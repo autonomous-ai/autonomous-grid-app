@@ -10,9 +10,8 @@ import '../../infrastructure/state/models/network_credential.dart';
 
 /// Installs a macOS menu-bar (system tray) icon that reads like the Wi-Fi /
 /// Bluetooth menus: the joined grids as a checkable list — the active grid
-/// marked with a gold lightning bolt, the rest grey — with **Grid Settings**
-/// (opens the app) at the bottom. Clicking a grid selects it and shows the
-/// window. No-op off macOS; renders [child] unchanged.
+/// marked with a gold lightning bolt, the rest grey. Clicking a grid selects it
+/// and shows the window. No-op off macOS; renders [child] unchanged.
 class TrayScope extends ConsumerStatefulWidget {
   const TrayScope({super.key, required this.child});
 
@@ -23,7 +22,6 @@ class TrayScope extends ConsumerStatefulWidget {
 }
 
 class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
-  static const _kSettings = 'settings';
   static const _gridPrefix = 'grid:';
 
   // SF Symbol names drawn as tinted icons by our vendored tray_manager patch
@@ -64,21 +62,14 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   }
 
   /// Rebuilds the context menu so it reads like the macOS Wi-Fi / Bluetooth
-  /// menu: the joined grids as a flat, checkable list, with **Grid Settings**
-  /// (opens the app) at the bottom.
+  /// menu: the joined grids as a flat, checkable list.
   Future<void> _rebuildMenu() async {
     if (!_ready) return;
     final networks = ref.read(sessionProvider).networks;
     final activeId = ref.read(selectedNetworkProvider)?.networkId;
 
     await trayManager.setContextMenu(
-      Menu(
-        items: [
-          ..._gridItems(networks, activeId),
-          MenuItem.separator(),
-          MenuItem(key: _kSettings, label: 'Grid Settings'),
-        ],
-      ),
+      Menu(items: _gridItems(networks, activeId)),
     );
   }
 
@@ -127,10 +118,6 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   void onTrayMenuItemClick(MenuItem menuItem) {
     final key = menuItem.key;
     if (key == null) return;
-    if (key == _kSettings) {
-      _showWindow();
-      return;
-    }
     if (key.startsWith(_gridPrefix)) {
       _selectGrid(key.substring(_gridPrefix.length));
     }
