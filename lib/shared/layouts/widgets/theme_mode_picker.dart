@@ -77,6 +77,10 @@ class _Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The theme picker of all things must follow the theme: without this the
+    // segment you just switched to keeps the old palette until something else
+    // rebuilds it.
+    AppTheme.watch(context);
     final foreground = selected ? Colors.white : AppPalette.textSecondary;
     return Material(
       color: selected ? AppPalette.accent : Colors.transparent,

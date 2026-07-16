@@ -12,8 +12,9 @@ import 'free_port.dart';
 import 'node_name.dart';
 
 /// Inference backends found on the machine (Ollama, LM Studio, llama.cpp).
-final backendsProvider =
-    FutureProvider<List<DetectedBackend>>((ref) => BackendDetector().detect());
+final backendsProvider = FutureProvider<List<DetectedBackend>>(
+  (ref) => BackendDetector().detect(),
+);
 
 /// How the built-in engine's local port is chosen — a free OS-assigned port by
 /// default, overridable in tests. See [findFreePort] for why we don't rely on
@@ -23,26 +24,30 @@ final freePortFinderProvider = Provider<FreePortFinder>((_) => findFreePort);
 /// How long to wait after a successful join before re-syncing the grid list.
 /// Gives the just-joined engine a moment to register on the grid so the sync
 /// reflects it; overridable in tests to run without the real delay.
-final syncDelayAfterJoinProvider =
-    Provider<Duration>((_) => const Duration(seconds: 5));
+final syncDelayAfterJoinProvider = Provider<Duration>(
+  (_) => const Duration(seconds: 5),
+);
 
 /// Cap on any `grid leave` wait so a hung/slow relay can never strand the UI on
 /// "Engine running" (or block sign-out/quit). Shared by [ProviderRunController]'s
 /// stop and shutdown paths; overridable in tests to avoid a real multi-second
 /// wait.
-final leaveTimeoutProvider =
-    Provider<Duration>((_) => const Duration(seconds: 6));
+final leaveTimeoutProvider = Provider<Duration>(
+  (_) => const Duration(seconds: 6),
+);
 
 /// The name this machine joins a grid under (the node name on the grid page and
 /// the stable engine id for stop/reconcile) — the machine's own name via
 /// [deriveNodeName], so two machines don't both show as "grid-app". Overridable
 /// in tests for a deterministic id. See [deriveNodeName].
-final nodeNameProvider =
-    Provider<String>((_) => deriveNodeName(Platform.localHostname));
+final nodeNameProvider = Provider<String>(
+  (_) => deriveNodeName(Platform.localHostname),
+);
 
 final providerRunControllerProvider =
     NotifierProvider<ProviderRunController, ProviderRunState>(
-        ProviderRunController.new);
+      ProviderRunController.new,
+    );
 
 /// What the running engine is serving (gguf or remote model id), or null when
 /// nothing is serving. Lets the model manager refuse to delete a model in use.
@@ -64,8 +69,9 @@ final localProviderEndpointProvider = Provider<String?>((ref) {
 
 /// `127.0.0.1:8081` / `localhost:8081` in httpx log lines, or the
 /// `llama_llm_8081.log` filename the provider prints on spawn.
-final _localPortPattern =
-    RegExp(r'(?:localhost|127\.0\.0\.1):(\d{2,5})|llama_\w*?(\d{2,5})\.log');
+final _localPortPattern = RegExp(
+  r'(?:localhost|127\.0\.0\.1):(\d{2,5})|llama_\w*?(\d{2,5})\.log',
+);
 
 int? _parseLocalPort(List<String> log) {
   for (final line in log.reversed) {
@@ -176,8 +182,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
 
     _service = service;
     _grid = gridId;
-    final log =
-        store.readEngineRunLog(gridId, record.engineId, maxLines: _maxLogLines);
+    final log = store.readEngineRunLog(
+      gridId,
+      record.engineId,
+      maxLines: _maxLogLines,
+    );
     state = ProviderRunActive(
       grid: gridId,
       starting: false,
@@ -205,13 +214,17 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     int? ctxSize,
   }) async {
     Future<List<String>> buildArgs() async => [
-          'join', network,
-          '--serve', model,
-          '--endpoint-port', '${await ref.read(freePortFinderProvider)()}',
-          ..._advertiseArgs(advertiseAs),
-          ..._ctxArgs(ctxSize),
-          '--name', _engineName,
-        ];
+      'join',
+      network,
+      '--serve',
+      model,
+      '--endpoint-port',
+      '${await ref.read(freePortFinderProvider)()}',
+      ..._advertiseArgs(advertiseAs),
+      ..._ctxArgs(ctxSize),
+      '--name',
+      _engineName,
+    ];
     return _start(
       await buildArgs(),
       grid: network,
@@ -230,12 +243,16 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }) {
     return _start(
       [
-        'join', network,
-        '--at', endpoint,
-        '-m', model,
+        'join',
+        network,
+        '--at',
+        endpoint,
+        '-m',
+        model,
         ..._advertiseArgs(advertiseAs),
         ..._ctxArgs(_externalCtxSize),
-        '--name', _engineName,
+        '--name',
+        _engineName,
       ],
       grid: network,
       model: model,
@@ -262,10 +279,13 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }) {
     return _start(
       [
-        'join', network,
-        '--api', kind,
+        'join',
+        network,
+        '--api',
+        kind,
         for (final model in models) ...['-m', model],
-        '--name', _engineName,
+        '--name',
+        _engineName,
       ],
       grid: network,
       model: models.isEmpty ? kind : models.join(', '),
@@ -275,8 +295,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
 
   List<String> _advertiseArgs(String? advertiseAs) =>
       (advertiseAs != null && advertiseAs.isNotEmpty)
-          ? ['--advertise-as', advertiseAs]
-          : const [];
+      ? ['--advertise-as', advertiseAs]
+      : const [];
 
   /// `--ctx-size <n>` when a context length is set, else nothing (the engine
   /// uses its own default). Shared by the local and external join paths.
@@ -286,12 +306,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// [rebuildForPortConflict] (local engine only) rebuilds the join args with a
   /// freshly-picked port, so a "port already in use" abort self-heals on a
   /// second port instead of failing.
-  Future<void> _start(List<String> args,
-      {required String grid,
-      String? model,
-      bool retried = false,
-      Map<String, String>? environment,
-      Future<List<String>> Function()? rebuildForPortConflict}) async {
+  Future<void> _start(
+    List<String> args, {
+    required String grid,
+    String? model,
+    bool retried = false,
+    Map<String, String>? environment,
+    Future<List<String>> Function()? rebuildForPortConflict,
+  }) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
@@ -310,8 +332,12 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     _grid = grid;
     _stopping = false;
     final log = <String>[];
-    state =
-        ProviderRunActive(grid: grid, log: const [], starting: true, model: model);
+    state = ProviderRunActive(
+      grid: grid,
+      log: const [],
+      starting: true,
+      model: model,
+    );
 
     _process = await service.start(args, environment: environment);
     _process!.lines.listen((line) {
@@ -321,7 +347,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       }
       // Still "starting" until `join` exits 0 — the engine serves detached after.
       state = ProviderRunActive(
-          grid: grid, log: List.unmodifiable(log), starting: true, model: model);
+        grid: grid,
+        log: List.unmodifiable(log),
+        starting: true,
+        model: model,
+      );
     });
 
     final exitCode = await _process!.exitCode;
@@ -333,29 +363,44 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     if (exitCode == 0) {
       // `grid join` launched the engine in the background; it's serving now.
       state = ProviderRunActive(
-          grid: grid, log: List.unmodifiable(log), starting: false, model: model);
+        grid: grid,
+        log: List.unmodifiable(log),
+        starting: false,
+        model: model,
+      );
       _syncGridSoon();
       return;
     }
 
-    final failure =
-        log.isNotEmpty ? log.last : 'engine failed to start (exit $exitCode).';
+    final failure = log.isNotEmpty
+        ? log.last
+        : 'engine failed to start (exit $exitCode).';
     final lowerFailure = failure.toLowerCase();
     // A leftover engine from a previous session blocks the join with the same
     // `--name`. Drop it with `grid leave` and retry once, so the user isn't
     // stuck unable to start (and unable to stop a run the app never tracked).
     if (!retried && lowerFailure.contains('already joined')) {
       await _leaveEngine(service, grid);
-      return _start(args,
-          grid: grid, model: model, retried: true, environment: environment);
+      return _start(
+        args,
+        grid: grid,
+        model: model,
+        retried: true,
+        environment: environment,
+      );
     }
     // Another process grabbed the chosen port between picking it and the engine
     // binding it. Rebuild the args with a fresh free port and retry once.
     if (!retried &&
         rebuildForPortConflict != null &&
         lowerFailure.contains('already in use')) {
-      return _start(await rebuildForPortConflict(),
-          grid: grid, model: model, retried: true, environment: environment);
+      return _start(
+        await rebuildForPortConflict(),
+        grid: grid,
+        model: model,
+        retried: true,
+        environment: environment,
+      );
     }
     _grid = null;
     state = ProviderRunFailed(failure);
@@ -417,7 +462,10 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     _grid = null;
     if (service != null && grid != null) {
       try {
-        await _leaveEngine(service, grid).timeout(ref.read(leaveTimeoutProvider));
+        await _leaveEngine(
+          service,
+          grid,
+        ).timeout(ref.read(leaveTimeoutProvider));
       } on Object {
         // A slow/failed leave must not block the Stop action's UI settling.
       }
@@ -447,7 +495,10 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       };
       for (final grid in grids) {
         try {
-          await _leaveEngine(service, grid).timeout(ref.read(leaveTimeoutProvider));
+          await _leaveEngine(
+            service,
+            grid,
+          ).timeout(ref.read(leaveTimeoutProvider));
         } on Object {
           // Best-effort: a failed/slow leave must not block the caller.
         }

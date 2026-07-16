@@ -10,8 +10,9 @@ import 'device_login_parser.dart';
 import 'session_controller.dart';
 import 'session_expiry_controller.dart';
 
-final authControllerProvider =
-    NotifierProvider<AuthController, AuthState>(AuthController.new);
+final authControllerProvider = NotifierProvider<AuthController, AuthState>(
+  AuthController.new,
+);
 
 /// Drives `grid login --no-browser`: spawns it, surfaces the device-login URL +
 /// code as they stream in, and resolves on the process exit code (cli/auth.py).
@@ -91,8 +92,15 @@ class AuthController extends Notifier<AuthState> {
   static String _friendlyLoginError(List<String> errorLines) {
     final raw = errorLines.join('\n').toLowerCase();
     const networkHints = [
-      'network', 'connection', 'connect', 'timed out', 'timeout',
-      'resolve', 'unreachable', 'dns', 'socket',
+      'network',
+      'connection',
+      'connect',
+      'timed out',
+      'timeout',
+      'resolve',
+      'unreachable',
+      'dns',
+      'socket',
     ];
     if (networkHints.any(raw.contains)) {
       return "Couldn't reach Grid's servers — check your internet connection "

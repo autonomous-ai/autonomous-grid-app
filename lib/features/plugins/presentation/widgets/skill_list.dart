@@ -222,7 +222,7 @@ class _Empty extends StatelessWidget {
             children: [
               FilledButton.icon(
                 onPressed: () => showNewSkillDialog(context),
-                icon: const Icon(Icons.add_rounded, size: 16),
+                icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
                 label: const Text('Write a skill'),
               ),
               const ReinstallGridSkillsButton(),
@@ -274,7 +274,7 @@ class _ReinstallGridSkillsButtonState
               height: 14,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.refresh_rounded, size: 16),
+          : const Icon(Icons.refresh_rounded, size: AppControl.iconSize),
       label: Text(_busy ? 'Installing…' : "Reinstall Grid's skills"),
     );
   }

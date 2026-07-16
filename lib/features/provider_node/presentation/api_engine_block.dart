@@ -30,7 +30,8 @@ class ApiEngineBlock extends ConsumerWidget {
     return EngineBlock(
       icon: Icons.cloud_outlined,
       title: 'Cloud Provider',
-      subtitle: 'Share models from a hosted provider using your own API key. '
+      subtitle:
+          'Share models from a hosted provider using your own API key. '
           'No local model download required.',
       child: _ApiEngineForm(network: network, engines: available),
     );
@@ -62,12 +63,13 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
   bool _replaceKey = false;
 
   ApiEngine get _engine => widget.engines.firstWhere(
-        (e) => e.provider.kind == _kind,
-        orElse: () => widget.engines.first,
-      );
+    (e) => e.provider.kind == _kind,
+    orElse: () => widget.engines.first,
+  );
 
-  static Set<String> _allModels(ApiEngine engine) =>
-      {for (final model in engine.models) model.advertised};
+  static Set<String> _allModels(ApiEngine engine) => {
+    for (final model in engine.models) model.advertised,
+  };
 
   /// A stored key covers this start only while the user hasn't asked to replace it.
   bool get _usingStoredKey => _engine.hasStoredKey && !_replaceKey;
@@ -119,7 +121,9 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
         if (_selected.contains(model.advertised)) model.advertised,
     ];
     final serveAll = chosen.length == engine.models.length;
-    ref.read(providerRunControllerProvider.notifier).startApiEngine(
+    ref
+        .read(providerRunControllerProvider.notifier)
+        .startApiEngine(
           network: widget.network.networkId,
           kind: engine.provider.kind,
           envVar: engine.provider.envVar,
@@ -163,7 +167,8 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
             '${engine.provider.label}’s current models · list updated '
             '${_prettyDate(engine.lastVerified)}. Update Grid to refresh it.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
         const SizedBox(height: 12),
@@ -171,7 +176,8 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
           'Your key stays on this computer. When grid requests use these '
           'models, prompts are sent to ${engine.provider.label} for inference.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 16),
         Align(
@@ -275,8 +281,11 @@ class _KeyField extends StatelessWidget {
     if (usingStoredKey) {
       return Row(
         children: [
-          Icon(Icons.check_circle_outline,
-              size: 18, color: theme.colorScheme.primary),
+          Icon(
+            Icons.check_circle_outline,
+            size: 18,
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(child: Text('Using your saved ${provider.label} key')),
           TextButton(
@@ -302,8 +311,11 @@ class _KeyField extends StatelessWidget {
             border: const OutlineInputBorder(),
             // Cap the toggle so it doesn't inflate the field above the theme's
             // field height (a bare IconButton is 48, the field is 44).
-            suffixIconConstraints:
-                const BoxConstraints(minWidth: 44, maxWidth: 44, maxHeight: 44),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 44,
+              maxWidth: 44,
+              maxHeight: 44,
+            ),
             suffixIcon: IconButton(
               tooltip: obscure ? 'Show key' : 'Hide key',
               iconSize: 20,
@@ -360,8 +372,10 @@ class _ModelMultiSelect extends StatelessWidget {
               model: model,
               width: constraints.maxWidth,
               checked: selected.contains(model.advertised),
-              onToggle: () =>
-                  onToggle(model.advertised, !selected.contains(model.advertised)),
+              onToggle: () => onToggle(
+                model.advertised,
+                !selected.contains(model.advertised),
+              ),
             ),
         ],
       ),
@@ -447,9 +461,12 @@ class _ModelMenuRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(model.vendorName),
-              Text(_meta(model),
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                _meta(model),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
@@ -464,8 +481,18 @@ class _ModelMenuRow extends StatelessWidget {
 }
 
 const _monthAbbr = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 /// `2026-07-08` → `8 Jul 2026`; returns the input unchanged if it isn't an ISO

@@ -317,11 +317,7 @@ class _WhichGridCard extends ConsumerWidget {
         if (report.gridAvailable) {
           return Row(
             children: [
-              Icon(
-                Icons.check_circle,
-                size: 14,
-                color: AppPalette.online,
-              ),
+              Icon(Icons.check_circle, size: 14, color: AppPalette.online),
               const SizedBox(width: 8),
               Expanded(
                 child: SelectableText(

@@ -99,19 +99,14 @@ class _JobListState extends ConsumerState<JobList> {
           controller: _search,
           onChanged: (value) => setState(() => _query = value),
           style: const TextStyle(fontSize: 13),
-          decoration: InputDecoration(
+          // Rim, fill and the accent focus ring all come from
+          // inputDecorationTheme — this field used to null out all three borders
+          // and read as a bare grey slab with no sign of focus.
+          decoration: const InputDecoration(
             hintText: 'Search tasks',
-            prefixIcon: const Icon(Icons.search_rounded, size: 17),
-            prefixIconConstraints: const BoxConstraints(
-              minWidth: 34,
-              minHeight: 34,
-            ),
-            filled: true,
-            fillColor: AppPalette.cardBg,
-            contentPadding: const EdgeInsets.symmetric(vertical: 9),
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
+            prefixIcon: Icon(Icons.search_rounded, size: AppControl.iconSize),
+            prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 34),
+            contentPadding: EdgeInsets.symmetric(vertical: 9),
           ),
         ),
         const SizedBox(height: 12),

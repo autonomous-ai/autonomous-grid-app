@@ -26,17 +26,7 @@ class _DialogActions extends StatelessWidget {
         // visually apart from the commit-to-a-schedule button on the right.
         OutlinedButton.icon(
           onPressed: canSave ? onTryNow : null,
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 38),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            side: BorderSide(color: AppPalette.divider),
-            shape: const StadiumBorder(),
-            textStyle: const TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          icon: const Icon(Icons.play_arrow_rounded, size: 18),
+          icon: const Icon(Icons.play_arrow_rounded, size: AppControl.iconSize),
           label: const Text('Try it now'),
         ),
         const Spacer(),
@@ -47,10 +37,6 @@ class _DialogActions extends StatelessWidget {
         const SizedBox(width: 8),
         FilledButton(
           onPressed: canSave ? onSave : null,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(124, 38),
-            shape: const StadiumBorder(),
-          ),
           child: Text(saving ? 'Saving…' : 'Schedule it'),
         ),
       ],

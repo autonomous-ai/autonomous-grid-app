@@ -36,9 +36,8 @@ class GettingStartedCoach extends ConsumerWidget {
               color: AppPalette.textFaint,
               tooltip: 'Dismiss',
               visualDensity: VisualDensity.compact,
-              onPressed: () => ref
-                  .read(gettingStartedDismissedProvider.notifier)
-                  .dismiss(),
+              onPressed: () =>
+                  ref.read(gettingStartedDismissedProvider.notifier).dismiss(),
             ),
           ],
         ),
@@ -66,7 +65,10 @@ class _Steps extends StatelessWidget {
         SizedBox(height: 10),
         _Step(n: '1', text: 'Pick a grid from the list on the left.'),
         SizedBox(height: 6),
-        _Step(n: '2', text: 'Tap “Try it” to send a message and see the answer.'),
+        _Step(
+          n: '2',
+          text: 'Tap “Try it” to send a message and see the answer.',
+        ),
         SizedBox(height: 10),
         Text(
           'Want to share your own computer’s AI? Tap “+ New grid”.',
@@ -111,10 +113,7 @@ class _Step extends StatelessWidget {
             padding: const EdgeInsets.only(top: 1),
             child: Text(
               text,
-              style: TextStyle(
-                fontSize: 13,
-                color: AppPalette.textSecondary,
-              ),
+              style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
             ),
           ),
         ),

@@ -49,8 +49,10 @@ class NodeSetupCard extends ConsumerWidget {
               children: [
                 const Icon(Icons.hub_outlined),
                 const SizedBox(width: 8),
-                Text('Set up this computer to run AI',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Set up this computer to run AI',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -72,9 +74,10 @@ class _IdleBody extends ConsumerWidget {
       loading: () => const Row(
         children: [
           SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2)),
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
           SizedBox(width: 12),
           Text('Inspecting this computer…'),
         ],
@@ -102,14 +105,19 @@ class _PlanPreview extends ConsumerWidget {
       children: [
         _CapabilitySummary(caps: caps),
         const SizedBox(height: 16),
-        Text('Setting up automatically — installing what\'s missing:',
-            style: theme.textTheme.titleSmall),
+        Text(
+          'Setting up automatically — installing what\'s missing:',
+          style: theme.textTheme.titleSmall,
+        ),
         const SizedBox(height: 8),
         for (final step in plan) _StepTile(step: step),
         const SizedBox(height: 8),
-        Text('Downloads can be several GB; they run while the app stays open.',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        Text(
+          'Downloads can be several GB; they run while the app stays open.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerLeft,
@@ -186,17 +194,22 @@ class _StepTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(step.isDownload ? Icons.download_outlined : Icons.build_outlined,
-              size: 18),
+          Icon(
+            step.isDownload ? Icons.download_outlined : Icons.build_outlined,
+            size: 18,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(step.title, style: theme.textTheme.bodyMedium),
-                Text(step.detail,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                Text(
+                  step.detail,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -220,9 +233,10 @@ class _RunningBody extends ConsumerWidget {
         Row(
           children: [
             const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2)),
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -240,7 +254,8 @@ class _RunningBody extends ConsumerWidget {
         if (progress != null) ...[
           const SizedBox(height: 8),
           LinearProgressIndicator(
-              value: progress.isIndeterminate ? null : progress.pct! / 100),
+            value: progress.isIndeterminate ? null : progress.pct! / 100,
+          ),
           const SizedBox(height: 4),
           Text(_progressLabel(progress), style: theme.textTheme.bodySmall),
         ],
@@ -270,17 +285,21 @@ class _FailedBody extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Icon(gentle ? Icons.info_outline : Icons.error_outline,
-                color:
-                    gentle ? theme.colorScheme.primary : theme.colorScheme.error,
-                size: 18),
+            Icon(
+              gentle ? Icons.info_outline : Icons.error_outline,
+              color: gentle
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.error,
+              size: 18,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                  gentle
-                      ? "This computer can't host its own engine yet"
-                      : 'Setup stopped at "${state.step.title}"',
-                  style: theme.textTheme.titleSmall),
+                gentle
+                    ? "This computer can't host its own engine yet"
+                    : 'Setup stopped at "${state.step.title}"',
+                style: theme.textTheme.titleSmall,
+              ),
             ),
           ],
         ),
@@ -296,9 +315,12 @@ class _FailedBody extends ConsumerWidget {
           ),
           const SizedBox(height: 6),
         ],
-        Text(state.message,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        Text(
+          state.message,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         if (state.log.isNotEmpty) ...[
           const SizedBox(height: 12),
           SizedBox(height: 160, child: LogView(lines: state.log)),
@@ -351,7 +373,8 @@ class _DoneBody extends ConsumerWidget {
                 Icon(Icons.check, size: 16, color: AppPalette.online),
                 const SizedBox(width: 8),
                 Expanded(
-                    child: Text(step.title, style: theme.textTheme.bodySmall)),
+                  child: Text(step.title, style: theme.textTheme.bodySmall),
+                ),
               ],
             ),
           ),

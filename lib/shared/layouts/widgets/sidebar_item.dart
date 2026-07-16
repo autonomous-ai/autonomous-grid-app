@@ -54,6 +54,10 @@ class _SidebarItemState extends State<SidebarItem> {
 
   @override
   Widget build(BuildContext context) {
+    // The sidebar is mounted as `const AppSidebar()`, so a rebuild from the top
+    // never reaches these rows — exactly the case AppTheme.watch exists for.
+    // Without it the rail keeps the palette it was first painted with.
+    AppTheme.watch(context);
     const radius = BorderRadius.all(Radius.circular(8));
     final strong = widget.selected || widget.emphasized;
     // A row's icon carries the accent whenever the row stands out — the selected
@@ -224,6 +228,8 @@ class SidebarSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same reason as the row above: const chrome reading a token.
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 17, 10, 7),
       child: Text(

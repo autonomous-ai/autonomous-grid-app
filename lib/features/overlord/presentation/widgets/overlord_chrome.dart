@@ -41,16 +41,19 @@ class _Brand extends StatelessWidget {
       children: [
         Text(
           'Overlord',
-          style: theme.textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.w600, fontSize: 20),
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: 20,
+          ),
         ),
         const SizedBox(width: 10),
         const StatusDot(color: OverlordTokens.accent, size: 6),
         const SizedBox(width: 6),
         Text(
           'live',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: AppPalette.textFaint),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: AppPalette.textFaint,
+          ),
         ),
       ],
     );

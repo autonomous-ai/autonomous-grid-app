@@ -160,7 +160,9 @@ class _Command extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // rebuild on theme flip — reads palette/glass tokens
+    AppTheme.watch(
+      context,
+    ); // rebuild on theme flip — reads palette/glass tokens
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

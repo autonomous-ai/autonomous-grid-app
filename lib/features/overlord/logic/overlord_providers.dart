@@ -17,7 +17,9 @@ final overlordSnapshotProvider = StreamProvider.autoDispose<OverlordSnapshot>(
 );
 
 /// Wall-clock tick for the header (`04:25:30`), once per second.
-final overlordClockProvider = StreamProvider.autoDispose<DateTime>((ref) async* {
+final overlordClockProvider = StreamProvider.autoDispose<DateTime>((
+  ref,
+) async* {
   yield DateTime.now();
   yield* Stream<DateTime>.periodic(
     const Duration(seconds: 1),

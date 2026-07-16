@@ -95,9 +95,7 @@ Future<bool> _liveInstanceResponds() async {
       _kSingleInstancePort,
       timeout: const Duration(milliseconds: 500),
     );
-    final first = await socket.first.timeout(
-      const Duration(milliseconds: 500),
-    );
+    final first = await socket.first.timeout(const Duration(milliseconds: 500));
     return first.isNotEmpty && first.first == _kAliveByte;
   } on Object {
     return false;

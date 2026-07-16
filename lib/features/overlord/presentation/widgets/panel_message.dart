@@ -21,11 +21,7 @@ class PanelMessage extends StatelessWidget {
           children: [
             Icon(icon, size: 30, color: AppPalette.textFaint),
             const SizedBox(height: 12),
-            Text(
-              text,
-              textAlign: TextAlign.center,
-              style: OverlordTokens.meta,
-            ),
+            Text(text, textAlign: TextAlign.center, style: OverlordTokens.meta),
           ],
         ),
       ),

@@ -48,9 +48,6 @@ abstract final class OverlordTokens {
     color: AppPalette.textSecondary,
   );
 
-  static TextStyle get processLine => TextStyle(
-    fontFamily: mono,
-    fontSize: 11,
-    color: AppPalette.textFaint,
-  );
+  static TextStyle get processLine =>
+      TextStyle(fontFamily: mono, fontSize: 11, color: AppPalette.textFaint);
 }

@@ -40,9 +40,9 @@ class BackendDetector {
     Future<List<String>?> Function(String baseUrl)? probeModels,
     bool Function(String path)? fileExists,
     bool Function(String name)? hasExecutable,
-  })  : _probeModels = probeModels ?? _httpProbeModels,
-        _fileExists = fileExists ?? _defaultFileExists,
-        _hasExecutable = hasExecutable ?? _defaultHasExecutable;
+  }) : _probeModels = probeModels ?? _httpProbeModels,
+       _fileExists = fileExists ?? _defaultFileExists,
+       _hasExecutable = hasExecutable ?? _defaultHasExecutable;
 
   final Future<List<String>?> Function(String baseUrl) _probeModels;
   final bool Function(String path) _fileExists;
@@ -56,39 +56,47 @@ class BackendDetector {
 
     final ollama = await _probeModels(_ollamaBase);
     if (ollama != null) {
-      found.add(DetectedBackend(
-        kind: BackendKind.ollama,
-        label: 'Ollama',
-        baseUrl: _ollamaBase,
-        models: ollama,
-      ));
+      found.add(
+        DetectedBackend(
+          kind: BackendKind.ollama,
+          label: 'Ollama',
+          baseUrl: _ollamaBase,
+          models: ollama,
+        ),
+      );
     } else if (_hasExecutable('ollama')) {
       // Installed but not serving yet — surface it so the user can start it from
       // the app (the "Run Ollama" button) instead of it looking absent.
-      found.add(const DetectedBackend(
-        kind: BackendKind.ollama,
-        label: 'Ollama',
-        baseUrl: _ollamaBase,
-        running: false,
-      ));
+      found.add(
+        const DetectedBackend(
+          kind: BackendKind.ollama,
+          label: 'Ollama',
+          baseUrl: _ollamaBase,
+          running: false,
+        ),
+      );
     }
 
     final lmStudio = await _probeModels(_lmStudioBase);
     if (lmStudio != null) {
-      found.add(DetectedBackend(
-        kind: BackendKind.lmStudio,
-        label: 'LM Studio',
-        baseUrl: _lmStudioBase,
-        models: lmStudio,
-      ));
+      found.add(
+        DetectedBackend(
+          kind: BackendKind.lmStudio,
+          label: 'LM Studio',
+          baseUrl: _lmStudioBase,
+          models: lmStudio,
+        ),
+      );
     }
 
     if (_fileExists(GridPaths.llamaServerBin.path)) {
-      found.add(const DetectedBackend(
-        kind: BackendKind.llamaCpp,
-        label: 'llama.cpp (grid)',
-        baseUrl: '',
-      ));
+      found.add(
+        const DetectedBackend(
+          kind: BackendKind.llamaCpp,
+          label: 'llama.cpp (grid)',
+          baseUrl: '',
+        ),
+      );
     }
 
     return found;
@@ -102,7 +110,8 @@ class BackendDetector {
   /// Absolute path to executable [name] on the augmented host PATH, or null when
   /// it isn't installed. Delegates to [HostEnvironment.findExecutable] so the
   /// packaged GUI app finds Homebrew/login-shell tools its minimal PATH misses.
-  static String? findOnPath(String name) => HostEnvironment.findExecutable(name);
+  static String? findOnPath(String name) =>
+      HostEnvironment.findExecutable(name);
 
   /// GET `{baseUrl}/models` and return the model ids, or null if unreachable.
   static Future<List<String>?> _httpProbeModels(String baseUrl) async {
@@ -111,7 +120,9 @@ class BackendDetector {
       final request = await client
           .getUrl(Uri.parse('$baseUrl/models'))
           .timeout(const Duration(seconds: 2));
-      final response = await request.close().timeout(const Duration(seconds: 2));
+      final response = await request.close().timeout(
+        const Duration(seconds: 2),
+      );
       if (response.statusCode != 200) return null;
       final body = await response.transform(utf8.decoder).join();
       final decoded = jsonDecode(body);

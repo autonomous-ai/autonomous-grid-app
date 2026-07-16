@@ -59,7 +59,9 @@ class HostEnvironment {
     add(GridPaths.binDir.path);
 
     final home = Platform.environment['HOME'] ?? '';
-    if (home.isNotEmpty) add('$home/.local/bin'); // uv tool / pipx (where `grid` lives)
+    if (home.isNotEmpty) {
+      add('$home/.local/bin'); // uv tool / pipx (where `grid` lives)
+    }
 
     if (!Platform.isWindows) {
       // Both Homebrew prefixes plus the standard system dirs — the set a GUI

@@ -174,7 +174,9 @@ class _CreateMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // follow theme flips — reads AppPalette/AppGlass tokens.
+    AppTheme.watch(
+      context,
+    ); // follow theme flips — reads AppPalette/AppGlass tokens.
     return Material(
       color: AppPalette.accent,
       borderRadius: BorderRadius.circular(11),
@@ -386,7 +388,9 @@ class _NoAgent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(context); // follow theme flips — reads AppPalette.textSecondary.
+    AppTheme.watch(
+      context,
+    ); // follow theme flips — reads AppPalette.textSecondary.
     return SectionScaffold(
       title: 'Plugins',
       subtitle: 'What the assistant can do beyond talking.',

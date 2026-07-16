@@ -51,9 +51,7 @@ final supportsBuiltInEngineProvider = Provider<bool>(
 );
 
 final autoHostControllerProvider =
-    NotifierProvider<AutoHostController, AutoHostState>(
-      AutoHostController.new,
-    );
+    NotifierProvider<AutoHostController, AutoHostState>(AutoHostController.new);
 
 class AutoHostController extends Notifier<AutoHostState> {
   /// Sharing is attempted once per session. A user who stops the engine meant to
@@ -91,7 +89,9 @@ class AutoHostController extends Notifier<AutoHostState> {
     _attempted = true;
     final model = models.first.primary.name;
 
-    if (!network.isProvider && !await _becomeProvider(network.networkId)) return;
+    if (!network.isProvider && !await _becomeProvider(network.networkId)) {
+      return;
+    }
 
     state = const AutoHostRunning('Sharing this computer on your grid…');
     await runner.startLocal(

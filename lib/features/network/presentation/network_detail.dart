@@ -221,14 +221,17 @@ class _SetUpThisGrid extends ConsumerWidget {
                 onPressed: () => ref
                     .read(shellSectionProvider.notifier)
                     .select(ShellSection.engines),
-                icon: const Icon(Icons.dns_outlined, size: 18),
+                icon: const Icon(Icons.dns_outlined, size: AppControl.iconSize),
                 label: const Text('Set up engine'),
               ),
               OutlinedButton.icon(
                 onPressed: () => ref
                     .read(shellSectionProvider.notifier)
                     .select(ShellSection.guide),
-                icon: const Icon(Icons.help_outline_rounded, size: 18),
+                icon: const Icon(
+                  Icons.help_outline_rounded,
+                  size: AppControl.iconSize,
+                ),
                 label: const Text('How it works'),
               ),
             ],
@@ -300,14 +303,20 @@ class _TryThisGrid extends ConsumerWidget {
             children: [
               FilledButton.icon(
                 onPressed: () => openPlaygroundDialog(context, ref),
-                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                icon: const Icon(
+                  Icons.chat_bubble_outline,
+                  size: AppControl.iconSize,
+                ),
                 label: const Text('Try it'),
               ),
               OutlinedButton.icon(
                 onPressed: () => ref
                     .read(shellSectionProvider.notifier)
                     .select(ShellSection.guide),
-                icon: const Icon(Icons.help_outline_rounded, size: 18),
+                icon: const Icon(
+                  Icons.help_outline_rounded,
+                  size: AppControl.iconSize,
+                ),
                 label: const Text('How to use'),
               ),
             ],
@@ -372,7 +381,7 @@ class _AddMemberButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return FilledButton.icon(
       onPressed: () => AddMemberDialog.show(context, network.networkId),
-      icon: const Icon(Icons.person_add_alt_1, size: 16),
+      icon: const Icon(Icons.person_add_alt_1, size: AppControl.iconSize),
       label: const Text('Add member'),
     );
   }
@@ -399,13 +408,12 @@ class _DeleteGridButton extends ConsumerWidget {
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: deleting ? null : () => _confirmAndDelete(context, ref),
+          // Deliberately small and muted (see above) — the compact scale, with
+          // the faint label colour that keeps it from reading as "danger".
           style: TextButton.styleFrom(
             foregroundColor: AppPalette.textFaint,
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: const TextStyle(fontSize: 12),
+            minimumSize: const Size(0, AppControl.heightSmall),
+            padding: AppControl.paddingSmall,
           ),
           icon: deleting
               ? const SizedBox(
@@ -413,7 +421,7 @@ class _DeleteGridButton extends ConsumerWidget {
                   height: 12,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.delete_outline, size: 14),
+              : const Icon(Icons.delete_outline, size: AppControl.iconSize),
           label: Text(deleting ? 'Deleting…' : 'Delete grid'),
         ),
       ],

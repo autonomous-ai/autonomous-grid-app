@@ -47,11 +47,7 @@ class _SchedulerBannerState extends ConsumerState<SchedulerBanner> {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            size: 18,
-            color: AppPalette.warn,
-          ),
+          Icon(Icons.warning_amber_rounded, size: 18, color: AppPalette.warn),
           const SizedBox(width: 10),
           const Expanded(
             child: Text(

@@ -62,8 +62,7 @@ class _ActionsState extends ConsumerState<_Actions> {
                   (c) => c.runNow(job.id),
                   'Running it now — the answer lands in a moment.',
                 ),
-          style: _filledStyle(),
-          icon: const Icon(Icons.play_arrow_rounded, size: 18),
+          icon: const Icon(Icons.play_arrow_rounded, size: AppControl.iconSize),
           label: const Text('Run now'),
         ),
         OutlinedButton.icon(
@@ -75,40 +74,26 @@ class _ActionsState extends ConsumerState<_Actions> {
                         (c) => c.resume(job.id),
                         'Running to schedule again.',
                       ),
-          style: _outlinedStyle(),
           icon: Icon(
             job.enabled ? Icons.pause_rounded : Icons.play_circle_outline,
-            size: 18,
+            size: AppControl.iconSize,
           ),
           label: Text(job.enabled ? 'Pause' : 'Resume'),
         ),
+        // The only style left: Delete earns the error colour. Everything else
+        // (height, shape, label) comes from the app's button themes.
         TextButton.icon(
           onPressed: _busy ? null : _confirmDelete,
           style: TextButton.styleFrom(
             foregroundColor: Theme.of(context).colorScheme.error,
-            minimumSize: const Size(96, 34),
-            textStyle: const TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
           ),
-          icon: const Icon(Icons.delete_outline_rounded, size: 18),
+          icon: const Icon(
+            Icons.delete_outline_rounded,
+            size: AppControl.iconSize,
+          ),
           label: const Text('Delete'),
         ),
       ],
     );
   }
-
-  ButtonStyle _filledStyle() => FilledButton.styleFrom(
-    minimumSize: const Size(124, 34),
-    shape: const StadiumBorder(),
-    textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-  );
-
-  ButtonStyle _outlinedStyle() => OutlinedButton.styleFrom(
-    minimumSize: const Size(106, 34),
-    shape: const StadiumBorder(),
-    side: BorderSide(color: AppPalette.divider),
-    textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-  );
 }

@@ -16,7 +16,7 @@ import 'dart:io';
 /// packaging time; we compute where it sits from [Platform.resolvedExecutable].
 class GridResolver {
   GridResolver({this.configuredPath, String? Function()? pathLookup})
-      : _pathLookup = pathLookup ?? _resolveFromSystem;
+    : _pathLookup = pathLookup ?? _resolveFromSystem;
 
   /// Path the user pinned in settings, if any.
   final String? configuredPath;

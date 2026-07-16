@@ -25,9 +25,12 @@ class SectionScaffold extends StatelessWidget {
           Text(title, style: theme.textTheme.headlineSmall),
           if (subtitle != null) ...[
             const SizedBox(height: 4),
-            Text(subtitle!,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            Text(
+              subtitle!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
           const SizedBox(height: 16),
           const Divider(height: 1),
@@ -51,13 +54,19 @@ class ComingSoon extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.construction_outlined,
-              size: 40, color: theme.colorScheme.onSurfaceVariant),
+          Icon(
+            Icons.construction_outlined,
+            size: 40,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(height: 12),
-          Text(message,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );

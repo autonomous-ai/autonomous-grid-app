@@ -43,10 +43,12 @@ class RemoteModeGridCliService implements GridCliService {
   Future<CliResult> run(List<String> args) => _inner.run(_remote(args));
 
   @override
-  Future<GridProcess> start(List<String> args,
-          {Map<String, String>? environment}) =>
-      _inner.start(_remote(args), environment: environment);
+  Future<GridProcess> start(
+    List<String> args, {
+    Map<String, String>? environment,
+  }) => _inner.start(_remote(args), environment: environment);
 
   @override
-  Stream<DownloadProgress> pull(List<String> args) => _inner.pull(_remote(args));
+  Stream<DownloadProgress> pull(List<String> args) =>
+      _inner.pull(_remote(args));
 }

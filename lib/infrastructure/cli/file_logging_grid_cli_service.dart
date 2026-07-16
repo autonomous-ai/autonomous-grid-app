@@ -36,8 +36,10 @@ class FileLoggingGridCliService implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args,
-      {Map<String, String>? environment}) async {
+  Future<GridProcess> start(
+    List<String> args, {
+    Map<String, String>? environment,
+  }) async {
     // Only [args] is recorded; [environment] (which may hold a secret) is not.
     final entry = _log.begin(_display(args));
     final GridProcess process;
@@ -50,10 +52,12 @@ class FileLoggingGridCliService implements GridCliService {
     // Log the exit independently of the caller draining `lines`, mirroring
     // [LoggingGridCliService]. [CliLogEntry.end] is idempotent, so whichever of
     // the exit and stream-completion happens first closes the section.
-    unawaited(process.exitCode.then(
-      (code) => entry.end(exitCode: code),
-      onError: (Object e) => entry.end(error: e.toString()),
-    ));
+    unawaited(
+      process.exitCode.then(
+        (code) => entry.end(exitCode: code),
+        onError: (Object e) => entry.end(error: e.toString()),
+      ),
+    );
     return GridProcess(
       lines: _teeLines(process.lines, entry),
       exitCode: process.exitCode,

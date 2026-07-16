@@ -92,24 +92,23 @@ class _TriggerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppPalette/AppGlass tokens — follow theme flips
+    AppTheme.watch(
+      context,
+    ); // reads AppPalette/AppGlass tokens — follow theme flips
     return Tooltip(
       message: 'Choose which model answers',
       child: OutlinedButton(
         onPressed: onTap,
+        // Deliberately a pill, not a push button: it names the current model
+        // inside the composer's chrome, so it stays stadium-shaped and filled
+        // rather than taking the app's bordered-button shape.
         style: OutlinedButton.styleFrom(
           foregroundColor: AppPalette.textSecondary,
           backgroundColor: AppGlass.surfaceFill,
           side: BorderSide.none,
           shape: const StadiumBorder(),
-          textStyle: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          minimumSize: const Size.fromHeight(32),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.compact,
+          padding: AppControl.paddingSmall,
+          minimumSize: const Size.fromHeight(AppControl.height),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

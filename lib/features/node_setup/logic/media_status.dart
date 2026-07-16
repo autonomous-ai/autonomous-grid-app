@@ -74,7 +74,11 @@ class MediaDetector {
         if (bundle != null) bundles.add(bundle);
       }
     }
-    return MediaStatus(installed: installed, running: running, bundles: bundles);
+    return MediaStatus(
+      installed: installed,
+      running: running,
+      bundles: bundles,
+    );
   }
 
   static bool _yesAfterColon(String line) {

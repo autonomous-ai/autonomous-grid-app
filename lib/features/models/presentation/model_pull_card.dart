@@ -31,7 +31,8 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
     super.dispose();
   }
 
-  void _pull() => ref.read(modelPullControllerProvider.notifier).pull(_spec.text);
+  void _pull() =>
+      ref.read(modelPullControllerProvider.notifier).pull(_spec.text);
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +53,8 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
           keyboardType: TextInputType.multiline,
           decoration: const InputDecoration(
             labelText: 'Model to download',
-            helperText: 'Format  owner/repo:file.gguf — one per line. For a '
+            helperText:
+                'Format  owner/repo:file.gguf — one per line. For a '
                 'split model, paste every part.',
             helperMaxLines: 2,
             hintText: 'unsloth/…-GGUF:…-00001-of-00005.gguf',
@@ -64,21 +66,26 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
-            onPressed: () => launchUrl(Uri.parse(_huggingFaceGgufUrl),
-                mode: LaunchMode.externalApplication),
-            icon: const Icon(Icons.open_in_new, size: 15),
+            onPressed: () => launchUrl(
+              Uri.parse(_huggingFaceGgufUrl),
+              mode: LaunchMode.externalApplication,
+            ),
+            icon: const Icon(Icons.open_in_new, size: AppControl.iconSize),
             label: const Text('Browse models on Hugging Face'),
+            // Reads as a link under the field, not a button: no padding, so its
+            // label lines up with the field's edge above it.
             style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                textStyle: const TextStyle(fontSize: 12.5)),
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, AppControl.heightSmall),
+            ),
           ),
         ),
         const SizedBox(height: 4),
         Text(
           'Models are large — often several GB — and download in the background.',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         if (state is ModelPullDone) ...[
           const SizedBox(height: 10),
@@ -92,15 +99,19 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
           const SizedBox(height: 4),
           Text(
             'Ready to use. Close this, then start the engine to serve it.',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
         if (state is ModelPullFailed) ...[
           const SizedBox(height: 8),
-          Text(state.message,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error)),
+          Text(
+            state.message,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
         ],
         const SizedBox(height: 16),
         Align(
@@ -109,7 +120,10 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
             listenable: _spec,
             builder: (context, _) => FilledButton.icon(
               onPressed: _spec.text.trim().isEmpty ? null : _pull,
-              icon: const Icon(Icons.download_outlined, size: 18),
+              icon: const Icon(
+                Icons.download_outlined,
+                size: AppControl.iconSize,
+              ),
               label: Text(state is ModelPullFailed ? 'Try again' : 'Download'),
             ),
           ),
@@ -127,16 +141,18 @@ class _ProgressView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final progress = state.progress;
-    final fraction =
-        (progress != null && !progress.isIndeterminate) ? progress.pct! / 100 : null;
+    final fraction = (progress != null && !progress.isIndeterminate)
+        ? progress.pct! / 100
+        : null;
 
     final label = switch (progress) {
       null => 'Starting download…',
       _ when progress.isIndeterminate =>
         '${progress.doneMb.toStringAsFixed(1)} MB',
-      _ => '${progress.doneMb.toStringAsFixed(1)} / '
-          '${progress.totalMb!.toStringAsFixed(1)} MB '
-          '(${progress.pct!.toStringAsFixed(1)}%)',
+      _ =>
+        '${progress.doneMb.toStringAsFixed(1)} / '
+            '${progress.totalMb!.toStringAsFixed(1)} MB '
+            '(${progress.pct!.toStringAsFixed(1)}%)',
     };
 
     final multi = state.total > 1;
@@ -149,26 +165,31 @@ class _ProgressView extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Expanded(
-              child: Text(heading, style: theme.textTheme.bodyMedium),
-            ),
+            Expanded(child: Text(heading, style: theme.textTheme.bodyMedium)),
             const SizedBox(width: 8),
             TextButton.icon(
               onPressed: () =>
                   ref.read(modelPullControllerProvider.notifier).cancel(),
-              icon: const Icon(Icons.close, size: 16),
+              icon: const Icon(Icons.close, size: AppControl.iconSize),
               label: const Text('Cancel'),
+              // Inline beside the progress heading; the error colour marks it as
+              // the destructive way out of a running download.
               style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: theme.colorScheme.error),
+                minimumSize: const Size(0, AppControl.heightSmall),
+                padding: AppControl.paddingSmall,
+                foregroundColor: theme.colorScheme.error,
+              ),
             ),
           ],
         ),
         const SizedBox(height: 4),
-        Text(state.spec,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        Text(
+          state.spec,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 10),
         LinearProgressIndicator(value: fraction),
         const SizedBox(height: 6),

@@ -30,7 +30,9 @@ Future<void> main() async {
     stderr.writeln('handshake FAILED: $e');
     exit(1);
   }
-  stdout.writeln('handshake OK — session is live (isClosed=${session.isClosed})');
+  stdout.writeln(
+    'handshake OK — session is live (isClosed=${session.isClosed})',
+  );
 
   await _runTurn(session, 'Say the single word: ping', label: 'turn 1');
   stdout.writeln('after turn 1: isClosed=${session.isClosed} (must be false)');
@@ -63,10 +65,19 @@ Future<void> _runTurn(
       case HermesAcpSources(:final sources):
         // Web-search citations gathered during the turn; note the count.
         stdout.writeln('\n[sources: ${sources.length}]');
+      case HermesAcpPlan(:final entries):
+        // The agent's todo plan, resent whole on every change. The probe's
+        // prompts are one-liners that shouldn't produce one — note it if they do.
+        stdout.writeln('\n[plan: ${entries.length} step(s)]');
+        for (final entry in entries) {
+          stdout.writeln('  - ${entry.content} (${entry.status.name})');
+        }
       case HermesAcpPermission(:final request):
         // The probe's prompts don't escalate; if one ever does, cancel it so the
         // turn doesn't stall waiting on an answer that never comes.
-        stdout.writeln('\n[permission requested: ${request.summary} — cancelling]');
+        stdout.writeln(
+          '\n[permission requested: ${request.summary} — cancelling]',
+        );
         session.answerPermission(request.id, null);
     }
   });

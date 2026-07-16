@@ -88,25 +88,32 @@ class _ListHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 18, 12, 14),
       child: Row(
         children: [
-          Text('Grids',
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
+          Text(
+            'Grids',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              fontSize: 20,
+            ),
+          ),
           const SizedBox(width: 8),
-          Text('$count',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: AppPalette.textFaint)),
+          Text(
+            '$count',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppPalette.textFaint,
+            ),
+          ),
           const Spacer(),
           const _SyncButton(),
           const SizedBox(width: 4),
           FilledButton.icon(
             onPressed: () => CreateNetworkDialog.show(context),
-            icon: const Icon(Icons.add, size: 18),
+            icon: const Icon(Icons.add, size: AppControl.iconSize),
             label: const Text('New grid'),
+            // Inline in the tight list header, beside the sync icon — the
+            // compact scale keeps the row from growing around it.
             style: FilledButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              textStyle:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              minimumSize: const Size(0, AppControl.heightSmall),
+              padding: AppControl.paddingSmall,
             ),
           ),
         ],
@@ -128,7 +135,8 @@ class _SyncButton extends ConsumerWidget {
       switch (next) {
         case GridSyncDone():
           messenger.showSnackBar(
-              const SnackBar(content: Text('Grids up to date.')));
+            const SnackBar(content: Text('Grids up to date.')),
+          );
         case GridSyncFailed(:final message):
           messenger.showSnackBar(SnackBar(content: Text(message)));
         case GridSyncIdle():
@@ -201,12 +209,15 @@ class _NetworkTile extends ConsumerWidget {
                 Icon(Icons.bolt, size: 18, color: markColor),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(network.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: fg,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500)),
+                  child: Text(
+                    network.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 GridBadge(network: network, onAccent: selected),
@@ -233,8 +244,10 @@ class _Empty extends StatelessWidget {
       return Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('No grids match your search.',
-              style: TextStyle(color: AppPalette.textSecondary)),
+          child: Text(
+            'No grids match your search.',
+            style: TextStyle(color: AppPalette.textSecondary),
+          ),
         ),
       );
     }
@@ -244,23 +257,30 @@ class _Empty extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.bolt,
-                size: 36, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.bolt,
+              size: 36,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 14),
-            Text("You don't have any grids yet",
-                style: theme.textTheme.titleSmall, textAlign: TextAlign.center),
+            Text(
+              "You don't have any grids yet",
+              style: theme.textTheme.titleSmall,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 6),
             Text(
               'A grid is your private network for running and using AI models. '
               'Create one to get started.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: AppPalette.textSecondary),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppPalette.textSecondary,
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () => CreateNetworkDialog.show(context),
-              icon: const Icon(Icons.add, size: 18),
+              icon: const Icon(Icons.add, size: AppControl.iconSize),
               label: const Text('Create your first grid'),
             ),
           ],

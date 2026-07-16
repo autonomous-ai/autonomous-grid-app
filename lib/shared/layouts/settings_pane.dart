@@ -83,17 +83,15 @@ class _SettingsHeader extends ConsumerWidget {
                       // always Chat — they might have been mid-task in Grids.
                       notifier.select(notifier.previous);
                     },
+                    // Back reads as navigation, not an action, so it carries ink
+                    // rather than the accent a TextButton defaults to.
                     style: TextButton.styleFrom(
                       foregroundColor: AppPalette.textPrimary,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      minimumSize: const Size(0, 34),
-                      shape: const StadiumBorder(),
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
                     ),
-                    icon: const Icon(Icons.arrow_back_rounded, size: 17),
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      size: AppControl.iconSize,
+                    ),
                     label: const Text('Back to app'),
                   ),
                 ),

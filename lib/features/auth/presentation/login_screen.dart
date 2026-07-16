@@ -342,8 +342,7 @@ class _SignIn extends StatefulWidget {
   State<_SignIn> createState() => _SignInState();
 }
 
-class _SignInState extends State<_SignIn>
-    with SingleTickerProviderStateMixin {
+class _SignInState extends State<_SignIn> with SingleTickerProviderStateMixin {
   late final AnimationController _intro = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 460),
@@ -356,10 +355,10 @@ class _SignInState extends State<_SignIn>
 
   // A gentle rise — 12px up into place. easeOutCubic settles softly instead of
   // stopping dead.
-  late final Animation<Offset> _slide =
-      Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero).animate(
-        CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic),
-      );
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.06),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic));
 
   @override
   void dispose() {
@@ -702,10 +701,10 @@ class _ApprovalViewState extends State<_ApprovalView>
     curve: Curves.easeOut,
   );
 
-  late final Animation<Offset> _slide =
-      Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero).animate(
-        CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic),
-      );
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.06),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic));
 
   @override
   void dispose() {
@@ -1074,9 +1073,7 @@ class _HandshakeStep extends StatelessWidget {
                 // completion (_railFilled) — which is exactly what the *next*
                 // step reads as its prevDone. So each full segment is one colour.
                 Expanded(
-                  child: isFirst
-                      ? const SizedBox()
-                      : _rail(filled: prevDone),
+                  child: isFirst ? const SizedBox() : _rail(filled: prevDone),
                 ),
                 _dot(),
                 Expanded(
@@ -1228,18 +1225,11 @@ class _VerifyCode extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.link_rounded,
-            size: 13,
-            color: AppPalette.textFaint,
-          ),
+          Icon(Icons.link_rounded, size: 13, color: AppPalette.textFaint),
           const SizedBox(width: 7),
           Text(
             'Verify code ',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: AppPalette.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
           ),
           Text(
             userCode,
@@ -1254,10 +1244,7 @@ class _VerifyCode extends StatelessWidget {
           ),
           Text(
             '  ·  ${_thisDeviceLabel()}',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: AppPalette.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
           ),
         ],
       ),
@@ -1485,10 +1472,7 @@ class _FallbackBody extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             'Open this link manually to continue:',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppPalette.textSecondary,
-            ),
+            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
           ),
           const SizedBox(height: 12),
           // The primary way out — copy the link, in the accent so it reads as

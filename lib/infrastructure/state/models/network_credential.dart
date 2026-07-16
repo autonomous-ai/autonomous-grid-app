@@ -86,11 +86,11 @@ class NetworkCredential {
   /// avoids the words Public/Private, which are reserved for grid *visibility*
   /// ([visibilityLabel]) — reusing them for roles read as a settings collision.
   String get roleLabel => switch (role) {
-        NetworkRole.admin => 'Owner',
-        NetworkRole.provider => 'Sharing',
-        NetworkRole.consumer => 'Using',
-        NetworkRole.member => 'Member',
-      };
+    NetworkRole.admin => 'Owner',
+    NetworkRole.provider => 'Sharing',
+    NetworkRole.consumer => 'Using',
+    NetworkRole.member => 'Member',
+  };
 
   /// Whether the grid is publicly visible. Heads-up: the wire values read
   /// backwards, so this is deliberately checked against `providers`, not

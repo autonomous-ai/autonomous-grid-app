@@ -68,7 +68,9 @@ class ComposerSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppGlass/AppSurface tokens — follow theme flips
+    AppTheme.watch(
+      context,
+    ); // reads AppGlass/AppSurface tokens — follow theme flips
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

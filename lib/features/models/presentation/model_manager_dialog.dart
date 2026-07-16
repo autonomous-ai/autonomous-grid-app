@@ -192,8 +192,8 @@ class _ModelTile extends ConsumerWidget {
     final serving = ref.watch(servingModelProvider);
     final inUse = group.fileNames.any((name) => isModelInUse(name, serving));
     final deleteState = ref.watch(modelDeleteControllerProvider);
-    final deleting = deleteState is ModelDeleting &&
-        deleteState.label == group.displayName;
+    final deleting =
+        deleteState is ModelDeleting && deleteState.label == group.displayName;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),

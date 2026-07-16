@@ -6,11 +6,7 @@
 /// See CLI_Integration_Contract §3.4. This is the single genuinely fragile
 /// parser — on a miss, callers fall back to an indeterminate spinner.
 class DownloadProgress {
-  const DownloadProgress({
-    required this.doneMb,
-    this.totalMb,
-    this.pct,
-  });
+  const DownloadProgress({required this.doneMb, this.totalMb, this.pct});
 
   final double doneMb;
   final double? totalMb;
@@ -18,8 +14,9 @@ class DownloadProgress {
 
   bool get isIndeterminate => pct == null;
 
-  static final RegExp _full =
-      RegExp(r'([\d.]+)\s*/\s*([\d.]+)\s*MB\s*\(\s*([\d.]+)%\)');
+  static final RegExp _full = RegExp(
+    r'([\d.]+)\s*/\s*([\d.]+)\s*MB\s*\(\s*([\d.]+)%\)',
+  );
   static final RegExp _mbOnly = RegExp(r'([\d.]+)\s*MB');
 
   /// [chunk] is one segment after splitting the raw stderr on `\r`.

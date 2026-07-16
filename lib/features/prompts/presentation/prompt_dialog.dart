@@ -150,9 +150,6 @@ class _PromptDialogState extends ConsumerState<_PromptDialog> {
         const SizedBox(width: 4),
         FilledButton(
           onPressed: _canSave ? _save : null,
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          ),
           child: Text(_isEdit ? 'Save changes' : 'Create prompt'),
         ),
       ],

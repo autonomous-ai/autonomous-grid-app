@@ -31,7 +31,8 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
     super.initState();
     // Drop any state from a previous open so we start on the form.
     Future.microtask(
-        () => ref.read(createNetworkControllerProvider.notifier).reset());
+      () => ref.read(createNetworkControllerProvider.notifier).reset(),
+    );
   }
 
   @override
@@ -52,10 +53,12 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
       if (next is! CreateNetworkDone) return;
       Navigator.of(context).pop();
       final warning = next.joinWarning;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(warning ?? 'Grid “${next.network.name}” created.'),
-        duration: const Duration(seconds: 3),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(warning ?? 'Grid “${next.network.name}” created.'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
     });
 
     final state = ref.watch(createNetworkControllerProvider);
@@ -98,8 +101,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
             const SizedBox(height: 8),
             Text(
               _type.description,
-              style: TextStyle(
-                  color: AppPalette.textSecondary, fontSize: 12),
+              style: TextStyle(color: AppPalette.textSecondary, fontSize: 12),
             ),
             if (error != null) ...[
               const SizedBox(height: 14),
@@ -148,8 +150,10 @@ class _ErrorBanner extends StatelessWidget {
           Icon(Icons.error_outline, size: 16, color: color),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(message,
-                style: TextStyle(color: color, fontSize: 12.5)),
+            child: Text(
+              message,
+              style: TextStyle(color: color, fontSize: 12.5),
+            ),
           ),
         ],
       ),

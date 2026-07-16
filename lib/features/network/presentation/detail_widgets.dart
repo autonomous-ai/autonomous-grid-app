@@ -131,20 +131,14 @@ class MetaRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(
-              color: AppPalette.textSecondary,
-              fontSize: 13,
-            ),
+            style: TextStyle(color: AppPalette.textSecondary, fontSize: 13),
           ),
           const Spacer(),
           Flexible(
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: TextStyle(
-                color: AppPalette.textPrimary,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: AppPalette.textPrimary, fontSize: 13),
             ),
           ),
         ],
@@ -296,14 +290,15 @@ class CopyButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return FilledButton.tonalIcon(
       onPressed: () => copyToClipboard(context, value),
-      icon: const Icon(Icons.copy_rounded, size: 15),
+      icon: const Icon(Icons.copy_rounded, size: AppControl.iconSize),
       label: Text(label),
+      // Only the accent tint (fill/label/rim) is this button's own — it sits in
+      // a card corner, so it stays on the compact scale; the rest is the theme.
       style: FilledButton.styleFrom(
         backgroundColor: AppPalette.accent.withValues(alpha: 0.16),
         foregroundColor: AppPalette.accent,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        minimumSize: const Size(0, AppControl.heightSmall),
+        padding: AppControl.paddingSmall,
         side: BorderSide(color: AppPalette.accent.withValues(alpha: 0.5)),
       ),
     );

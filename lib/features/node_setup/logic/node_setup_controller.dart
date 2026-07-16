@@ -11,7 +11,8 @@ import 'node_setup_plan.dart';
 
 final nodeSetupControllerProvider =
     NotifierProvider<NodeSetupController, NodeSetupState>(
-        NodeSetupController.new);
+      NodeSetupController.new,
+    );
 
 sealed class NodeSetupState {
   const NodeSetupState();
@@ -118,7 +119,10 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       _logFile.startStep(i + 1, steps.length, steps[i].title);
       _memo(log, '▸ ${steps[i].title}');
       state = NodeSetupRunning(
-          steps: steps, index: i, log: List.unmodifiable(log));
+        steps: steps,
+        index: i,
+        log: List.unmodifiable(log),
+      );
 
       final ok = steps[i].isDownload
           ? await _runDownload(service, steps, i, log)
@@ -127,9 +131,11 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       if (!ok) {
         _logFile.endStep('failed');
         final failure = state;
-        _logFile.endRun(failure is NodeSetupFailed
-            ? 'FAILED — ${failure.step.title}: ${failure.message}'
-            : 'stopped');
+        _logFile.endRun(
+          failure is NodeSetupFailed
+              ? 'FAILED — ${failure.step.title}: ${failure.message}'
+              : 'stopped',
+        );
         return; // failure state already set
       }
       _logFile.endStep('done');
@@ -159,7 +165,10 @@ class NodeSetupController extends Notifier<NodeSetupState> {
       if (_cancelled || state is! NodeSetupRunning) return;
       _output(log, line);
       state = NodeSetupRunning(
-          steps: steps, index: i, log: List.unmodifiable(log));
+        steps: steps,
+        index: i,
+        log: List.unmodifiable(log),
+      );
     });
 
     final exit = await process.exitCode;
@@ -193,13 +202,17 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   /// boundary (§6). Everything outside [_unsupportedMarkers] keeps the CLI's own
   /// last line as a genuine [error].
   static ({String message, NodeSetupFailureKind kind}) _describeFailure(
-      SetupStep step, List<String> log, int exit) {
+    SetupStep step,
+    List<String> log,
+    int exit,
+  ) {
     final raw = log.isNotEmpty ? log.last : '';
     final lowered = raw.toLowerCase();
     if (_unsupportedMarkers.any(lowered.contains)) {
       return (
         kind: NodeSetupFailureKind.unsupported,
-        message: "This computer can't run AI models on its own hardware. You "
+        message:
+            "This computer can't run AI models on its own hardware. You "
             'can still use an engine shared by another computer on your grid.',
       );
     }
@@ -269,7 +282,9 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   /// Append to the in-memory UI log only, capped at [_maxLogLines].
   void _memo(List<String> log, String text) {
     log.add(text);
-    if (log.length > _maxLogLines) log.removeRange(0, log.length - _maxLogLines);
+    if (log.length > _maxLogLines) {
+      log.removeRange(0, log.length - _maxLogLines);
+    }
   }
 
   void _refresh() {

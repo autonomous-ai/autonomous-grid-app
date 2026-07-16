@@ -54,6 +54,10 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // const-constructed and reads AppCard tokens — without this it never
+    // rebuilds on a theme flip and keeps the palette it was first built with.
+    // See AppTheme.watch.
+    AppTheme.watch(context);
     final radius =
         borderRadius ??
         BorderRadius.circular(_isInset ? AppCard.insetRadius : AppCard.radius);
@@ -128,6 +132,9 @@ class _Aura extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // const child of a const card — it needs its own watch or the aura keeps the
+    // first theme's tint. See AppTheme.watch.
+    AppTheme.watch(context);
     return IgnorePointer(
       child: SizedBox(
         width: 300,
@@ -154,6 +161,8 @@ class _TopHairline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same as _Aura: a const child reading a token needs its own watch.
+    AppTheme.watch(context);
     return IgnorePointer(
       child: SizedBox(
         height: 1,

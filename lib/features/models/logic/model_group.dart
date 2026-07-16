@@ -68,8 +68,7 @@ class ModelGroup {
   int get partCount => files.length;
 
   /// A split set is only servable once every declared part is present.
-  bool get isComplete =>
-      expectedParts == null || partCount >= expectedParts!;
+  bool get isComplete => expectedParts == null || partCount >= expectedParts!;
 
   List<String> get fileNames => [for (final file in files) file.name];
 }
@@ -82,7 +81,9 @@ List<ModelGroup> groupLocalModels(List<LocalModel> models) {
   final order = <String>[];
   final buckets = <String, List<LocalModel>>{};
   for (final model in models) {
-    final key = isSplitShard(model.name) ? stripSplitSuffix(model.name) : model.name;
+    final key = isSplitShard(model.name)
+        ? stripSplitSuffix(model.name)
+        : model.name;
     final bucket = buckets[key];
     if (bucket == null) {
       buckets[key] = [model];
@@ -96,24 +97,31 @@ List<ModelGroup> groupLocalModels(List<LocalModel> models) {
   for (final key in order) {
     final files = buckets[key]!;
     if (!isSplitShard(files.first.name)) {
-      groups.add(ModelGroup(
-        displayName: files.first.name,
-        files: List.unmodifiable(files),
-        primary: files.first,
-        isSplit: false,
-      ));
+      groups.add(
+        ModelGroup(
+          displayName: files.first.name,
+          files: List.unmodifiable(files),
+          primary: files.first,
+          isSplit: false,
+        ),
+      );
       continue;
     }
     final sorted = [...files]
-      ..sort((a, b) => (splitShardIndex(a.name) ?? 0)
-          .compareTo(splitShardIndex(b.name) ?? 0));
-    groups.add(ModelGroup(
-      displayName: key,
-      files: List.unmodifiable(sorted),
-      primary: sorted.first,
-      isSplit: true,
-      expectedParts: splitShardCount(sorted.first.name),
-    ));
+      ..sort(
+        (a, b) => (splitShardIndex(a.name) ?? 0).compareTo(
+          splitShardIndex(b.name) ?? 0,
+        ),
+      );
+    groups.add(
+      ModelGroup(
+        displayName: key,
+        files: List.unmodifiable(sorted),
+        primary: sorted.first,
+        isSplit: true,
+        expectedParts: splitShardCount(sorted.first.name),
+      ),
+    );
   }
   return groups;
 }

@@ -134,8 +134,12 @@ class ClientAppPanel extends StatelessWidget {
     return [
       SetupSteps(title: guide.title, steps: guide.steps),
       const SizedBox(height: 16),
-      for (final (i, block)
-          in appSnippets(info, baseUrl, apiKey, models).indexed) ...[
+      for (final (i, block) in appSnippets(
+        info,
+        baseUrl,
+        apiKey,
+        models,
+      ).indexed) ...[
         if (i > 0) const SizedBox(height: 12),
         GuideLabel(block.label, caption: block.caption),
         CodeBlock(code: block.code),
@@ -151,7 +155,8 @@ class ClientAppPanel extends StatelessWidget {
       _MediaSkillCard(
         icon: Icons.image_outlined,
         title: 'Have ${info.name} build an image skill',
-        note: 'Paste this into ${info.name} — it writes a reusable skill that '
+        note:
+            'Paste this into ${info.name} — it writes a reusable skill that '
             'makes images with this grid.',
         prompt: mediaSkillPrompt(baseUrl, apiKey, image: true, video: false),
       ),
@@ -161,7 +166,8 @@ class ClientAppPanel extends StatelessWidget {
       _MediaSkillCard(
         icon: Icons.videocam_outlined,
         title: 'Have ${info.name} build a video skill',
-        note: 'Paste this into ${info.name} — it writes a reusable skill that '
+        note:
+            'Paste this into ${info.name} — it writes a reusable skill that '
             'turns an image into a short video with this grid.',
         prompt: mediaSkillPrompt(baseUrl, apiKey, image: false, video: true),
       ),

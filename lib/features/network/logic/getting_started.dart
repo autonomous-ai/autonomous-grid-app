@@ -19,7 +19,8 @@ final hasManageableGridProvider = Provider<bool>((ref) {
 /// [showGettingStartedProvider]).
 final gettingStartedDismissedProvider =
     NotifierProvider<GettingStartedDismissed, bool>(
-        GettingStartedDismissed.new);
+      GettingStartedDismissed.new,
+    );
 
 class GettingStartedDismissed extends Notifier<bool> {
   @override

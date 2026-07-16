@@ -133,12 +133,13 @@ class _UpdateToast extends StatelessWidget {
                             const SizedBox(width: 10),
                             TextButton(
                               onPressed: onDownload,
+                              // Compact: the toast is a thin strip, not a page.
                               style: TextButton.styleFrom(
-                                minimumSize: const Size(0, 30),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
+                                minimumSize: const Size(
+                                  0,
+                                  AppControl.heightSmall,
                                 ),
-                                visualDensity: VisualDensity.compact,
+                                padding: AppControl.paddingSmall,
                               ),
                               child: const Text('Download'),
                             ),

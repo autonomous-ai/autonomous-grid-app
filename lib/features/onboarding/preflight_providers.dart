@@ -22,14 +22,16 @@ final preflightProvider = FutureProvider<PreflightReport>((ref) async {
   // reports the session is gone, flag it so the app prompts a re-login instead
   // of silently failing every later command.
   if (report.gridAvailable && service != null) {
-    unawaited(service.run(['sync']).then((result) {
-      if (disposed) return;
-      if (result.sessionExpired) {
-        unawaited(ref.read(sessionExpiryProvider.notifier).onExpired());
-        return;
-      }
-      ref.invalidate(sessionProvider);
-    }));
+    unawaited(
+      service.run(['sync']).then((result) {
+        if (disposed) return;
+        if (result.sessionExpired) {
+          unawaited(ref.read(sessionExpiryProvider.notifier).onExpired());
+          return;
+        }
+        ref.invalidate(sessionProvider);
+      }),
+    );
   }
   return report;
 });

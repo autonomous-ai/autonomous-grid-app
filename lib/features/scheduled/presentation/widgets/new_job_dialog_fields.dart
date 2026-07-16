@@ -34,11 +34,7 @@ class _ExampleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(
-          Icons.auto_awesome_rounded,
-          size: 14,
-          color: AppPalette.textFaint,
-        ),
+        Icon(Icons.auto_awesome_rounded, size: 14, color: AppPalette.textFaint),
         const SizedBox(width: 7),
         Text(
           'Try:',
@@ -55,10 +51,7 @@ class _ExampleRow extends StatelessWidget {
             runSpacing: 7,
             children: [
               for (final example in kJobSuggestions)
-                _ExampleChip(
-                  label: example.name,
-                  onTap: () => onPick(example),
-                ),
+                _ExampleChip(label: example.name, onTap: () => onPick(example)),
             ],
           ),
         ),
@@ -161,40 +154,21 @@ class _TaskFieldState extends State<_TaskField> {
           ),
         ),
         const SizedBox(height: 7),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          decoration: BoxDecoration(
-            color: AppPalette.cardBg,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _focused ? AppPalette.accent : AppPalette.divider,
-              width: _focused ? 1.5 : 1,
-            ),
-          ),
-          child: TextField(
-            controller: widget.controller,
-            focusNode: _focus,
-            autofocus: widget.autofocus,
-            minLines: widget.minLines,
-            maxLines: widget.maxLines,
-            onChanged: (_) => widget.onChanged(),
-            style: const TextStyle(fontSize: 14.5, height: 1.35),
-            decoration: InputDecoration(
-              hintText: widget.hint,
-              hintStyle: TextStyle(
-                color: AppPalette.textFaint,
-                fontSize: 14,
-                height: 1.35,
-              ),
-              isDense: true,
-              filled: false,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 13,
-                vertical: 12,
-              ),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
+        // The rim and its accent focus ring come from inputDecorationTheme, so
+        // this only says what's specific to the field: how tall, and its hint.
+        TextField(
+          controller: widget.controller,
+          focusNode: _focus,
+          autofocus: widget.autofocus,
+          minLines: widget.minLines,
+          maxLines: widget.maxLines,
+          onChanged: (_) => widget.onChanged(),
+          style: const TextStyle(fontSize: 14.5, height: 1.35),
+          decoration: InputDecoration(
+            hintText: widget.hint,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 11,
             ),
           ),
         ),

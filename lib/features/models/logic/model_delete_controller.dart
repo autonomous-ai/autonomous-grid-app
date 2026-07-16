@@ -5,7 +5,8 @@ import 'models_providers.dart';
 
 final modelDeleteControllerProvider =
     NotifierProvider<ModelDeleteController, ModelDeleteState>(
-        ModelDeleteController.new);
+      ModelDeleteController.new,
+    );
 
 sealed class ModelDeleteState {
   const ModelDeleteState();
@@ -45,9 +46,11 @@ class ModelDeleteController extends Notifier<ModelDeleteState> {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = ModelDeleteFailed(
-          label: label,
-          message: "Grid's background helper isn't available — please restart "
-              'the app.');
+        label: label,
+        message:
+            "Grid's background helper isn't available — please restart "
+            'the app.',
+      );
       return false;
     }
 
@@ -62,8 +65,9 @@ class ModelDeleteController extends Notifier<ModelDeleteState> {
         // Rescan so the list reflects whatever was already removed.
         ref.invalidate(localModelsProvider);
         state = ModelDeleteFailed(
-            label: label,
-            message: "Couldn't delete this model. Please try again.");
+          label: label,
+          message: "Couldn't delete this model. Please try again.",
+        );
         return false;
       }
     }

@@ -92,7 +92,9 @@ class _MetricChartPainter extends CustomPainter {
     for (var i = 0; i < history.length; i++) {
       final v = history[i].clamp(0, 100).toDouble() / 100;
       final point = Offset(i * dx, size.height - v * size.height);
-      i == 0 ? path.moveTo(point.dx, point.dy) : path.lineTo(point.dx, point.dy);
+      i == 0
+          ? path.moveTo(point.dx, point.dy)
+          : path.lineTo(point.dx, point.dy);
     }
 
     final fill = Path.from(path)

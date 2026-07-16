@@ -85,7 +85,10 @@ abstract interface class GridCliService {
   /// instead of as argv keeps them out of the command line — and so out of the
   /// Debug tab and the CLI transcript, which log only [args] (mirrors the CLI's
   /// own "never a flag — a key on the command line leaks into shell history").
-  Future<GridProcess> start(List<String> args, {Map<String, String>? environment});
+  Future<GridProcess> start(
+    List<String> args, {
+    Map<String, String>? environment,
+  });
 
   /// Run `models pull` / `media pull`, surfacing parsed download progress.
   Stream<DownloadProgress> pull(List<String> args);

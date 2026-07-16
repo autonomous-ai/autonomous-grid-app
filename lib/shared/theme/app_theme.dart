@@ -418,6 +418,11 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
   final textTheme = _appTextTheme(scheme.onSurface, scheme.onSurfaceVariant);
 
   return ThemeData(
+    filledButtonTheme: FilledButtonThemeData(style: _filledButtonStyle()),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: _outlinedButtonStyle(scheme),
+    ),
+    textButtonTheme: TextButtonThemeData(style: _textButtonStyle()),
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
@@ -442,6 +447,11 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       ),
       trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
     ),
+    // A text field must show where the keyboard is going. This used to set
+    // BorderSide.none on all three states, so every field that took the theme
+    // default — most of the app — had no focus ring at all: you could not tell
+    // a focused field from an idle one. macOS rings the focused control in the
+    // accent; that's what these borders restore.
     inputDecorationTheme: InputDecorationTheme(
       isDense: true,
       filled: true,
@@ -450,18 +460,11 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
         color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
-      ),
+      border: _fieldBorder(scheme.outline),
+      enabledBorder: _fieldBorder(scheme.outline),
+      focusedBorder: _fieldBorder(AppPalette.accent, width: 1.5),
+      errorBorder: _fieldBorder(scheme.error),
+      focusedErrorBorder: _fieldBorder(scheme.error, width: 1.5),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: menuFill,
@@ -500,6 +503,98 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     ),
   );
 }
+
+/// The one set of numbers every button in the app is built from.
+///
+/// macOS controls are compact, squarish and quiet: a 13pt semibold label in a
+/// ~32px capsule with a small radius — not the tall, wide, fully-round buttons
+/// Material defaults to. Before this existed each call site invented its own,
+/// which is how the app ended up with seven button heights, three shape systems
+/// and six label sizes. Change a number here, not at a call site.
+abstract final class AppControl {
+  /// Standard control height. macOS's regular push button sits at 32; the app's
+  /// own most-used value was 34, and 32 reads correctly next to a 13pt label.
+  static const double height = 32;
+
+  /// A compact control (inline actions inside a dense row or a card header).
+  static const double heightSmall = 28;
+
+  /// Corner radius. Apple's push buttons are gently rounded, not stadium — a
+  /// pill reads as a "chip" on macOS, not as a button.
+  static const double radius = 8;
+
+  /// The label. 13pt semibold is the macOS control font.
+  static const double fontSize = 13;
+  static const FontWeight fontWeight = FontWeight.w600;
+
+  /// A leading glyph inside a button, sized to sit on the cap height of a 13pt
+  /// label rather than tower over it.
+  static const double iconSize = 16;
+
+  /// Horizontal breathing room. Apple pads a push button generously sideways and
+  /// barely at all vertically — the height is what sets the touch target.
+  static const EdgeInsets padding = EdgeInsets.symmetric(horizontal: 14);
+  static const EdgeInsets paddingSmall = EdgeInsets.symmetric(horizontal: 10);
+}
+
+/// A text field's rim at one state. Radius matches [AppControl.radius] so a
+/// field and the button next to it are cut from the same shape language.
+OutlineInputBorder _fieldBorder(Color color, {double width = 1}) =>
+    OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppControl.radius),
+      borderSide: BorderSide(color: color, width: width),
+    );
+
+/// The label style shared by every button, carrying the system font: a
+/// `ButtonStyle.textStyle` does **not** inherit `fontFamily` from the text
+/// theme, so a button that sets only a size silently drops SF Pro.
+const TextStyle _buttonTextStyle = TextStyle(
+  fontFamily: '.AppleSystemUIFont',
+  fontFamilyFallback: ['SF Pro Text', 'Helvetica Neue', 'Arial'],
+  fontSize: AppControl.fontSize,
+  fontWeight: AppControl.fontWeight,
+  letterSpacing: 0,
+);
+
+RoundedRectangleBorder get _buttonShape => RoundedRectangleBorder(
+  borderRadius: BorderRadius.circular(AppControl.radius),
+);
+
+/// The primary action: a solid accent capsule.
+ButtonStyle _filledButtonStyle() => FilledButton.styleFrom(
+  minimumSize: const Size(0, AppControl.height),
+  padding: AppControl.padding,
+  shape: _buttonShape,
+  textStyle: _buttonTextStyle,
+  // Material pads every button out to a 48px tap target — on a desktop app
+  // that leaves a 32px button floating in a 48px box and wrecks every row it
+  // sits in.
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  visualDensity: VisualDensity.standard,
+);
+
+/// The secondary action: a hairline rim, no fill — Apple's "bordered" button.
+ButtonStyle _outlinedButtonStyle(ColorScheme scheme) =>
+    OutlinedButton.styleFrom(
+      minimumSize: const Size(0, AppControl.height),
+      padding: AppControl.padding,
+      shape: _buttonShape,
+      textStyle: _buttonTextStyle,
+      side: BorderSide(color: scheme.outline),
+      foregroundColor: scheme.onSurface,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.standard,
+    );
+
+/// The tertiary action: text only, for the quiet way out of a dialog.
+ButtonStyle _textButtonStyle() => TextButton.styleFrom(
+  minimumSize: const Size(0, AppControl.height),
+  padding: AppControl.paddingSmall,
+  shape: _buttonShape,
+  textStyle: _buttonTextStyle,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  visualDensity: VisualDensity.standard,
+);
 
 TextTheme _appTextTheme(Color primary, Color secondary) {
   final base = TextStyle(

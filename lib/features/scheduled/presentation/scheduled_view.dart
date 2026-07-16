@@ -109,23 +109,19 @@ class _Workspace extends ConsumerWidget {
 class _NewTaskButton extends StatelessWidget {
   const _NewTaskButton();
 
-  /// Taller than the filter pills (34) on purpose — it's the column's one real
-  /// action, and it lines up with the search field below it.
-  static const double _height = 44;
+  /// Taller than a standard control on purpose — it's the column's one real
+  /// action, and it lines up with the search field below it. The only thing this
+  /// button overrides; shape, label and padding come from the app's button theme.
+  static const double _height = 40;
 
   @override
   Widget build(BuildContext context) {
     return FilledButton.icon(
       onPressed: () => showNewJobDialog(context),
-      icon: const Icon(Icons.add_rounded, size: 18),
+      icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
       style: FilledButton.styleFrom(
-        // Without this, Material pads the button out to a 48px tap target and
-        // the capsule floats in a box half again its own height.
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         minimumSize: const Size.fromHeight(_height),
         maximumSize: const Size.fromHeight(_height),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
       ),
       label: const Text('New task'),
     );

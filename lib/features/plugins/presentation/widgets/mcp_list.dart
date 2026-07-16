@@ -188,7 +188,7 @@ class _Empty extends StatelessWidget {
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: () => showAddMcpDialog(context),
-            icon: const Icon(Icons.add_rounded, size: 16),
+            icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
             label: const Text('Add an MCP server'),
           ),
         ],

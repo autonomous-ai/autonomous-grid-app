@@ -79,6 +79,8 @@ class FakeOverlordRepository implements OverlordRepository {
 
   int _jitterInt(int spread) => _rng.nextInt(spread * 2 + 1) - spread;
 
-  List<double> _roll(List<double> history, double next) =>
-      [...history.skip(1), next];
+  List<double> _roll(List<double> history, double next) => [
+    ...history.skip(1),
+    next,
+  ];
 }

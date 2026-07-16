@@ -19,19 +19,24 @@ class GridOverview {
     return GridOverview(
       state: grid is Map ? grid['state'] as String? : null,
       stats: GridStats.fromJson(
-          j['stats'] is Map ? (j['stats'] as Map).cast<String, dynamic>() : const {}),
+        j['stats'] is Map
+            ? (j['stats'] as Map).cast<String, dynamic>()
+            : const {},
+      ),
       models: _list(j['models'], OverviewModel.fromJson),
       nodes: _list(j['nodes'], OverviewNode.fromJson),
     );
   }
 
-  static List<T> _list<T>(Object? raw, T Function(Map<String, dynamic>) parse) =>
-      raw is List
-          ? raw
-              .whereType<Map>()
-              .map((m) => parse(m.cast<String, dynamic>()))
-              .toList()
-          : const [];
+  static List<T> _list<T>(
+    Object? raw,
+    T Function(Map<String, dynamic>) parse,
+  ) => raw is List
+      ? raw
+            .whereType<Map>()
+            .map((m) => parse(m.cast<String, dynamic>()))
+            .toList()
+      : const [];
 }
 
 class GridStats {
@@ -48,11 +53,11 @@ class GridStats {
   final double? uptimePct;
 
   factory GridStats.fromJson(Map<String, dynamic> j) => GridStats(
-        models: (j['models'] as num?)?.toInt() ?? 0,
-        nodes: (j['nodes'] as num?)?.toInt() ?? 0,
-        concurrentCapacity: (j['concurrent_capacity'] as num?)?.toInt(),
-        uptimePct: (j['uptime_pct'] as num?)?.toDouble(),
-      );
+    models: (j['models'] as num?)?.toInt() ?? 0,
+    nodes: (j['nodes'] as num?)?.toInt() ?? 0,
+    concurrentCapacity: (j['concurrent_capacity'] as num?)?.toInt(),
+    uptimePct: (j['uptime_pct'] as num?)?.toDouble(),
+  );
 }
 
 class OverviewModel {
@@ -75,16 +80,16 @@ class OverviewModel {
   final String? status;
 
   factory OverviewModel.fromJson(Map<String, dynamic> j) => OverviewModel(
-        id: '${j['id'] ?? ''}',
-        name: j['name'] as String?,
-        maker: j['maker'] as String?,
-        modality: j['modality'] as String?,
-        contextLength: (j['context_length'] as num?)?.toInt(),
-        pricing: j['pricing'] is Map
-            ? ModelPricing.fromJson((j['pricing'] as Map).cast<String, dynamic>())
-            : null,
-        status: j['status'] as String?,
-      );
+    id: '${j['id'] ?? ''}',
+    name: j['name'] as String?,
+    maker: j['maker'] as String?,
+    modality: j['modality'] as String?,
+    contextLength: (j['context_length'] as num?)?.toInt(),
+    pricing: j['pricing'] is Map
+        ? ModelPricing.fromJson((j['pricing'] as Map).cast<String, dynamic>())
+        : null,
+    status: j['status'] as String?,
+  );
 }
 
 class ModelPricing {
@@ -95,10 +100,10 @@ class ModelPricing {
   final double? outputPer1m;
 
   factory ModelPricing.fromJson(Map<String, dynamic> j) => ModelPricing(
-        unit: j['unit'] as String?,
-        inputPer1m: (j['input_per_1m'] as num?)?.toDouble(),
-        outputPer1m: (j['output_per_1m'] as num?)?.toDouble(),
-      );
+    unit: j['unit'] as String?,
+    inputPer1m: (j['input_per_1m'] as num?)?.toDouble(),
+    outputPer1m: (j['output_per_1m'] as num?)?.toDouble(),
+  );
 }
 
 class OverviewNode {
@@ -145,20 +150,20 @@ class OverviewNode {
   final bool online;
 
   factory OverviewNode.fromJson(Map<String, dynamic> j) => OverviewNode(
-        name: '${j['name'] ?? ''}',
-        device: j['device'] as String?,
-        chip: j['chip'] as String?,
-        memoryGb: (j['memory_gb'] as num?)?.toInt(),
-        vramGb: (j['vram_gb'] as num?)?.toDouble(),
-        vramTotalMb: (j['vram_total_mb'] as num?)?.toDouble(),
-        deviceClass: j['device_class'] as String?,
-        model: j['model'] as String?,
-        models: j['models'] is List
-            ? [for (final m in j['models'] as List) '$m']
-            : const [],
-        engine: j['engine'] as String?,
-        throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
-        maxConcurrency: (j['max_concurrency'] as num?)?.toInt(),
-        online: j['online'] == true,
-      );
+    name: '${j['name'] ?? ''}',
+    device: j['device'] as String?,
+    chip: j['chip'] as String?,
+    memoryGb: (j['memory_gb'] as num?)?.toInt(),
+    vramGb: (j['vram_gb'] as num?)?.toDouble(),
+    vramTotalMb: (j['vram_total_mb'] as num?)?.toDouble(),
+    deviceClass: j['device_class'] as String?,
+    model: j['model'] as String?,
+    models: j['models'] is List
+        ? [for (final m in j['models'] as List) '$m']
+        : const [],
+    engine: j['engine'] as String?,
+    throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
+    maxConcurrency: (j['max_concurrency'] as num?)?.toInt(),
+    online: j['online'] == true,
+  );
 }

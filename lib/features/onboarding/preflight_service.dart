@@ -49,7 +49,8 @@ class PreflightService {
     // a SIGKILL (exit -9) is almost always Gatekeeper/AMFI blocking a helper
     // that isn't signed/notarized or still carries the download quarantine flag;
     // say so in plain terms instead of a cryptic "exit -9".
-    final gridError = _signalError(result.exitCode) ??
+    final gridError =
+        _signalError(result.exitCode) ??
         diagnoseCliFailure(
           '${result.stdout}\n${result.stderr}'.split('\n'),
           headline: "The grid CLI couldn't start (exit ${result.exitCode}).",

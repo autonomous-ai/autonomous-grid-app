@@ -14,7 +14,11 @@ import 'app_guide_panels.dart';
 /// Rendered full-page by [HowToUseView]; it owns the selection + "Apply for me"
 /// state. Takes the grid's real relay BASE_URL / API_KEY, pre-filled everywhere.
 class AppGuideContent extends ConsumerStatefulWidget {
-  const AppGuideContent({super.key, required this.baseUrl, required this.apiKey});
+  const AppGuideContent({
+    super.key,
+    required this.baseUrl,
+    required this.apiKey,
+  });
 
   final String baseUrl;
   final String apiKey;
@@ -35,10 +39,10 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
   ApplyPhase _phase = const ApplyIdle();
 
   void _select(ClientApp? app) => setState(() {
-        _touched = true;
-        _selected = app;
-        _phase = const ApplyIdle();
-      });
+    _touched = true;
+    _selected = app;
+    _phase = const ApplyIdle();
+  });
 
   /// Writes the grid's connection into the selected client's config
   /// (`~/.hermes/config.yaml` / `~/.openclaw/openclaw.json`) via
@@ -67,8 +71,10 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
     final installed = ref.watch(installedClientAppsProvider);
     final selected = _touched
         ? _selected
-        : kSelectableClientApps
-            .firstWhere(installed.contains, orElse: () => ClientApp.openClaw);
+        : kSelectableClientApps.firstWhere(
+            installed.contains,
+            orElse: () => ClientApp.openClaw,
+          );
 
     // Every chat model the grid serves — OpenClaw lists them all; the first is
     // the default named in single-model snippets/apply. Falls back to the
@@ -93,7 +99,10 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
           'This grid works like one AI provider. Pick the app you want to use '
           'it in — Grid can fill in the connection for you.',
           style: TextStyle(
-              color: AppPalette.textSecondary, fontSize: 13, height: 1.45),
+            color: AppPalette.textSecondary,
+            fontSize: 13,
+            height: 1.45,
+          ),
         ),
         const SizedBox(height: 16),
         _AppSelector(
@@ -195,7 +204,8 @@ class _AppChip extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: selected ? AppPalette.accent : AppPalette.divider),
+              color: selected ? AppPalette.accent : AppPalette.divider,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -205,7 +215,9 @@ class _AppChip extends StatelessWidget {
                   width: 7,
                   height: 7,
                   decoration: BoxDecoration(
-                      color: AppPalette.online, shape: BoxShape.circle),
+                    color: AppPalette.online,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 6),
               ],

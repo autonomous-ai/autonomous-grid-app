@@ -32,21 +32,27 @@ class PreflightScreen extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.warning_amber_rounded,
-                  size: 48, color: theme.colorScheme.error),
+              Icon(
+                Icons.warning_amber_rounded,
+                size: 48,
+                color: theme.colorScheme.error,
+              ),
               const SizedBox(height: 16),
               Text('Grid needs setup', style: theme.textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
                 report.gridError != null
                     ? "Grid is installed but couldn't start. Fix the issue "
-                        'below, then check again.'
+                          'below, then check again.'
                     : "Grid needs its background helper installed before it can "
-                        'run. Install it using the steps below, then check again.',
+                          'run. Install it using the steps below, then check again.',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
-              _CheckRow(label: 'Grid background helper', ok: report.gridAvailable),
+              _CheckRow(
+                label: 'Grid background helper',
+                ok: report.gridAvailable,
+              ),
               if (report.gridError != null) ...[
                 const SizedBox(height: 16),
                 ErrorBox(message: report.gridError!),
@@ -59,8 +65,9 @@ class PreflightScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Text(
                   'On macOS or Linux, run this in a terminal:',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 _InstallCommand(command: _installCommand),
@@ -75,8 +82,10 @@ class PreflightScreen extends ConsumerWidget {
                   ),
                   const SizedBox(width: 12),
                   OutlinedButton.icon(
-                    onPressed: () => launchUrl(Uri.parse(_helpUrl),
-                        mode: LaunchMode.externalApplication),
+                    onPressed: () => launchUrl(
+                      Uri.parse(_helpUrl),
+                      mode: LaunchMode.externalApplication,
+                    ),
                     icon: const Icon(Icons.help_outline, size: 18),
                     label: const Text('Get help'),
                   ),
@@ -122,7 +131,9 @@ class _InstallCommand extends StatelessWidget {
               Clipboard.setData(ClipboardData(text: command));
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                    content: Text('Copied'), duration: Duration(seconds: 1)),
+                  content: Text('Copied'),
+                  duration: Duration(seconds: 1),
+                ),
               );
             },
           ),

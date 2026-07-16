@@ -136,20 +136,12 @@ class _TimeRow extends StatelessWidget {
       children: [
         Text('At', style: TextStyle(color: AppPalette.textSecondary)),
         const SizedBox(width: 12),
+        // The time reads as the value it is, so it keeps the accent; the rest of
+        // the button comes from the app's outlined-button theme.
         OutlinedButton.icon(
           onPressed: onPick,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppPalette.accent,
-            side: BorderSide(color: AppPalette.divider),
-            minimumSize: const Size(0, 34),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            shape: const StadiumBorder(),
-            textStyle: const TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          icon: const Icon(Icons.schedule_rounded, size: 16),
+          style: OutlinedButton.styleFrom(foregroundColor: AppPalette.accent),
+          icon: const Icon(Icons.schedule_rounded, size: AppControl.iconSize),
           label: Text(time.format(context)),
         ),
       ],

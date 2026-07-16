@@ -60,9 +60,12 @@ class GridCliServiceImpl implements GridCliService {
   @override
   Future<CliResult> run(List<String> args) async {
     try {
-      final result = await Process.run(executable, args,
-              runInShell: false, environment: _env)
-          .timeout(_runTimeout);
+      final result = await Process.run(
+        executable,
+        args,
+        runInShell: false,
+        environment: _env,
+      ).timeout(_runTimeout);
       return CliResult(
         exitCode: result.exitCode,
         stdout: result.stdout as String,
@@ -78,33 +81,45 @@ class GridCliServiceImpl implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args,
-      {Map<String, String>? environment}) async {
+  Future<GridProcess> start(
+    List<String> args, {
+    Map<String, String>? environment,
+  }) async {
     // Per-call vars (e.g. an API-engine key) layer on top of the base env, never
     // replacing it — the CLI still needs PATH/PYTHONUNBUFFERED/UTF-8 to run.
     final env = (environment == null || environment.isEmpty)
         ? _env
         : {..._env, ...environment};
-    final process = await Process.start(executable, args,
-        runInShell: false, environment: env);
+    final process = await Process.start(
+      executable,
+      args,
+      runInShell: false,
+      environment: env,
+    );
     final controller = StreamController<CliLine>();
 
     final outSub = process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((line) => controller.add(CliLine(isStderr: false, text: line)),
-            onError: controller.addError);
+        .listen(
+          (line) => controller.add(CliLine(isStderr: false, text: line)),
+          onError: controller.addError,
+        );
     final errSub = process.stderr
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((line) => controller.add(CliLine(isStderr: true, text: line)),
-            onError: controller.addError);
+        .listen(
+          (line) => controller.add(CliLine(isStderr: true, text: line)),
+          onError: controller.addError,
+        );
 
-    unawaited(process.exitCode.whenComplete(() async {
-      await outSub.cancel();
-      await errSub.cancel();
-      await controller.close();
-    }));
+    unawaited(
+      process.exitCode.whenComplete(() async {
+        await outSub.cancel();
+        await errSub.cancel();
+        await controller.close();
+      }),
+    );
 
     return GridProcess(
       lines: controller.stream,
@@ -124,8 +139,12 @@ class GridCliServiceImpl implements GridCliService {
 
     Future<void> begin() async {
       try {
-        process = await Process.start(executable, args,
-            runInShell: false, environment: _env);
+        process = await Process.start(
+          executable,
+          args,
+          runInShell: false,
+          environment: _env,
+        );
       } catch (e, st) {
         if (!controller.isClosed) controller.addError(e, st);
         if (!controller.isClosed) await controller.close();
@@ -133,18 +152,24 @@ class GridCliServiceImpl implements GridCliService {
       }
       // Progress is written with `\r`, so decode bytes and split on it ourselves
       // rather than using a line splitter (which only breaks on `\n`).
-      stderrSub = process!.stderr.transform(utf8.decoder).listen(
-        (chunk) {
-          final progress = DownloadProgress.latest(chunk);
-          if (progress != null && !controller.isClosed) controller.add(progress);
-        },
-        onError: (Object e, StackTrace st) {
-          if (!controller.isClosed) controller.addError(e, st);
-        },
+      stderrSub = process!.stderr
+          .transform(utf8.decoder)
+          .listen(
+            (chunk) {
+              final progress = DownloadProgress.latest(chunk);
+              if (progress != null && !controller.isClosed) {
+                controller.add(progress);
+              }
+            },
+            onError: (Object e, StackTrace st) {
+              if (!controller.isClosed) controller.addError(e, st);
+            },
+          );
+      unawaited(
+        process!.exitCode.whenComplete(() {
+          if (!controller.isClosed) controller.close();
+        }),
       );
-      unawaited(process!.exitCode.whenComplete(() {
-        if (!controller.isClosed) controller.close();
-      }));
     }
 
     controller = StreamController<DownloadProgress>(

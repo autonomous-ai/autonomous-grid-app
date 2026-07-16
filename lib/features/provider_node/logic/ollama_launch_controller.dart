@@ -9,7 +9,8 @@ import 'provider_run_controller.dart' show backendsProvider;
 
 final ollamaLaunchControllerProvider =
     NotifierProvider<OllamaLaunchController, OllamaLaunchState>(
-        OllamaLaunchController.new);
+      OllamaLaunchController.new,
+    );
 
 /// States of the "Run Ollama" action.
 sealed class OllamaLaunchState {
@@ -48,15 +49,17 @@ class OllamaLaunchController extends Notifier<OllamaLaunchState> {
       await _launch();
     } on Object {
       state = const OllamaLaunchFailed(
-          "Couldn't start Ollama automatically. Open the Ollama app yourself, "
-          'then try again.');
+        "Couldn't start Ollama automatically. Open the Ollama app yourself, "
+        'then try again.',
+      );
       return;
     }
 
     if (!await _waitUntilReady()) {
       state = const OllamaLaunchFailed(
-          "Ollama is starting but didn't come online in time. Give it a moment, "
-          'then reopen this tab.');
+        "Ollama is starting but didn't come online in time. Give it a moment, "
+        'then reopen this tab.',
+      );
       return;
     }
 

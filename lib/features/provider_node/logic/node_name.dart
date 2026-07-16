@@ -12,9 +12,9 @@
 /// empty `--name`, which the CLI would replace with a random `engine-<hex>` id.
 String deriveNodeName(String hostname) {
   final withoutLocal = hostname.trim().replaceFirst(
-        RegExp(r'\.local$', caseSensitive: false),
-        '',
-      );
+    RegExp(r'\.local$', caseSensitive: false),
+    '',
+  );
   final safe = withoutLocal
       .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
       .replaceAll(RegExp(r'-{2,}'), '-')

@@ -20,7 +20,7 @@ class EngineStatus {
 /// detection is testable without touching the real filesystem.
 class EngineDetector {
   EngineDetector({bool Function(String path)? exists})
-      : _exists = exists ?? _fileExists;
+    : _exists = exists ?? _fileExists;
 
   final bool Function(String path) _exists;
 
@@ -42,6 +42,6 @@ class EngineDetector {
 }
 
 /// Detected engine status. Invalidate after an install to rescan.
-final engineStatusProvider =
-    Provider<EngineStatus>((ref) => EngineDetector().detect());
-
+final engineStatusProvider = Provider<EngineStatus>(
+  (ref) => EngineDetector().detect(),
+);

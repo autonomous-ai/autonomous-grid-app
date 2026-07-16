@@ -56,7 +56,9 @@ class InstallerStepRow extends StatelessWidget {
                 if (isRunning || isFailed) ...[
                   const SizedBox(height: 2),
                   Text(
-                    isFailed ? (row.message ?? row.stage.detail) : row.stage.detail,
+                    isFailed
+                        ? (row.message ?? row.stage.detail)
+                        : row.stage.detail,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: isFailed
                           ? theme.colorScheme.error

@@ -21,8 +21,8 @@ enum SessionExpiry {
 /// react, without threading the signal through every controller.
 final sessionExpiryProvider =
     NotifierProvider<SessionExpiryController, SessionExpiry>(
-  SessionExpiryController.new,
-);
+      SessionExpiryController.new,
+    );
 
 class SessionExpiryController extends Notifier<SessionExpiry> {
   @override

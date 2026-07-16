@@ -7,11 +7,10 @@ const int kHistorySamples = 48;
 
 /// A gentle, deterministic seed series around [base] so sparklines look alive
 /// on first paint without any randomness at construction time.
-List<double> seedSeries(double base, {double amp = 2}) =>
-    List<double>.generate(
-      kHistorySamples,
-      (i) => (base + amp * math.sin(i / 3)).clamp(0, 100).toDouble(),
-    );
+List<double> seedSeries(double base, {double amp = 2}) => List<double>.generate(
+  kHistorySamples,
+  (i) => (base + amp * math.sin(i / 3)).clamp(0, 100).toDouble(),
+);
 
 /// The initial fleet, mirroring the reference dashboard. This is the only place
 /// that hardcodes the mock topology; swap [FakeOverlordRepository] for a real

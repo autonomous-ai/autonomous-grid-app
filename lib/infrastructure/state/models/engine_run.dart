@@ -18,7 +18,8 @@ class EngineRunRecord {
   /// Null when the record predates pid tracking or is malformed.
   final int? pid;
 
-  factory EngineRunRecord.fromJson(Map<String, dynamic> json) => EngineRunRecord(
+  factory EngineRunRecord.fromJson(Map<String, dynamic> json) =>
+      EngineRunRecord(
         engineId: (json['engine_id'] ?? '') as String,
         gridId: (json['grid_id'] ?? '') as String,
         models: json['models'] is List

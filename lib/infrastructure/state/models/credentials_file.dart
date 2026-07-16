@@ -28,9 +28,9 @@ class CredentialsFile {
     final rawNetworks = t['networks'];
     final networks = rawNetworks is List
         ? rawNetworks
-            .whereType<Map>()
-            .map((n) => NetworkCredential.fromToml(n.cast<String, dynamic>()))
-            .toList()
+              .whereType<Map>()
+              .map((n) => NetworkCredential.fromToml(n.cast<String, dynamic>()))
+              .toList()
         : <NetworkCredential>[];
     final user = t['user'];
     return CredentialsFile(
@@ -42,8 +42,7 @@ class CredentialsFile {
     );
   }
 
-  bool get isLoggedIn =>
-      sessionToken != null && sessionToken!.isNotEmpty;
+  bool get isLoggedIn => sessionToken != null && sessionToken!.isNotEmpty;
 
   String? get userEmail => user['email'] as String?;
 

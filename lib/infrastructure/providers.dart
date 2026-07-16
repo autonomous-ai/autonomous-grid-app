@@ -16,8 +16,9 @@ import 'state/grid_home_store.dart';
 final gridResolverProvider = Provider<GridResolver>((ref) => GridResolver());
 
 /// Absolute path to `grid`, or null when it cannot be found.
-final gridPathProvider =
-    Provider<String?>((ref) => ref.watch(gridResolverProvider).resolve());
+final gridPathProvider = Provider<String?>(
+  (ref) => ref.watch(gridResolverProvider).resolve(),
+);
 
 /// The CLI seam. Null when `grid` is absent — preflight gates the rest of the
 /// app on this being non-null. Override with [FakeGridCliService] in dev/test.
@@ -39,13 +40,15 @@ final gridCliServiceProvider = Provider<GridCliService?>((ref) {
 });
 
 /// Reads state from `~/.grid` (nguồn 1). Read-only; mutations go through the CLI.
-final gridHomeStoreProvider =
-    Provider<GridHomeStore>((ref) => const GridHomeStore());
+final gridHomeStoreProvider = Provider<GridHomeStore>(
+  (ref) => const GridHomeStore(),
+);
 
 /// Control-plane base URL for the app's direct HTTP calls (managed-network
 /// create, etc.). The CLI reads its own API URL from `~/.grid`, so this is no
 /// longer threaded into `grid login`. Resolves to prod in release builds; in dev
 /// it honours `GRID_CONTROL_PLANE_URL` so you can point the app at staging — see
 /// [AppEnvironment].
-final gridApiUrlProvider =
-    Provider<String>((ref) => AppEnvironment.controlPlaneUrl);
+final gridApiUrlProvider = Provider<String>(
+  (ref) => AppEnvironment.controlPlaneUrl,
+);

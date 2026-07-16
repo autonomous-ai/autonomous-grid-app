@@ -35,10 +35,13 @@ class ContextLengthField extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final maxContext = ref.watch(modelMaxContextProvider(model));
     return maxContext.when(
-      loading: () => const _AdvancedTile(valueLabel: null, child: _ReadingLine()),
+      loading: () =>
+          const _AdvancedTile(valueLabel: null, child: _ReadingLine()),
       error: (_, _) => const SizedBox.shrink(),
       data: (max) {
-        if (max == null || max <= minContextTokens) return const SizedBox.shrink();
+        if (max == null || max <= minContextTokens) {
+          return const SizedBox.shrink();
+        }
         final current = value == null
             ? defaultContextLength(max)
             : value!.clamp(minContextTokens, max);
@@ -173,8 +176,9 @@ class _ReadingLine extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           "Reading this model's limit…",
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );

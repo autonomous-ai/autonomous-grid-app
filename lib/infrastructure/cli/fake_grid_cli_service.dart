@@ -9,9 +9,9 @@ class FakeGridCliService implements GridCliService {
   FakeGridCliService({
     Map<String, CliResult>? results,
     Map<String, List<DownloadProgress>>? pulls,
-  })  : _results = results ?? {},
-        _runs = {},
-        _pulls = pulls ?? {};
+  }) : _results = results ?? {},
+       _runs = {},
+       _pulls = pulls ?? {};
 
   final Map<String, CliResult> _results;
   final Map<String, List<_FakeRun>> _runs;
@@ -30,8 +30,7 @@ class FakeGridCliService implements GridCliService {
     required List<CliLine> lines,
     int exitCode = 0,
     Duration exitDelay = const Duration(milliseconds: 1),
-  }) =>
-      (_runs[keyOf(args)] ??= []).add(_FakeRun(lines, exitCode, exitDelay));
+  }) => (_runs[keyOf(args)] ??= []).add(_FakeRun(lines, exitCode, exitDelay));
 
   void stubPull(List<String> args, List<DownloadProgress> progress) =>
       _pulls[keyOf(args)] = progress;
@@ -49,8 +48,10 @@ class FakeGridCliService implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args,
-      {Map<String, String>? environment}) async {
+  Future<GridProcess> start(
+    List<String> args, {
+    Map<String, String>? environment,
+  }) async {
     lastStartArgs = args;
     lastStartEnvironment = environment;
     final queue = _runs[keyOf(args)];

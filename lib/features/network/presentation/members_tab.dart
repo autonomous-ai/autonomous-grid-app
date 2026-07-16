@@ -255,10 +255,7 @@ class _Message extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(
-                color: AppPalette.textSecondary,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: AppPalette.textSecondary, fontSize: 13),
             ),
           ),
         ],

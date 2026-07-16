@@ -265,9 +265,6 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
         const SizedBox(width: 4),
         FilledButton(
           onPressed: _canSave ? _save : null,
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          ),
           child: Text(_saveLabel),
         ),
       ],
@@ -332,7 +329,10 @@ class _AiDraftButton extends StatelessWidget {
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.auto_awesome_rounded, size: 16),
+              : const Icon(
+                  Icons.auto_awesome_rounded,
+                  size: AppControl.iconSize,
+                ),
           label: Text(busy ? 'Drafting…' : 'Draft with AI'),
         ),
       ),

@@ -151,8 +151,7 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
   void setApproval(AgentApprovalMode approval) =>
       _update(state.copyWith(approval: approval));
 
-  void setThemeMode(ThemeMode mode) =>
-      _update(state.copyWith(themeMode: mode));
+  void setThemeMode(ThemeMode mode) => _update(state.copyWith(themeMode: mode));
 
   void _update(ChatPrefs next) {
     if (next == state) return;

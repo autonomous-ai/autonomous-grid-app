@@ -81,10 +81,6 @@ class _ChangeButtonState extends ConsumerState<_ChangeButton> {
       builder: (context, controller, _) => TextButton(
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
-        style: TextButton.styleFrom(
-          visualDensity: VisualDensity.compact,
-          textStyle: const TextStyle(fontSize: 12.5),
-        ),
         child: const Text('Change access'),
       ),
     );

@@ -5,7 +5,11 @@ import '../../../shared/widgets/glass_card.dart';
 
 /// A one-line note + Download button shown when the client isn't installed yet.
 class MissingAppNote extends StatelessWidget {
-  const MissingAppNote({super.key, required this.name, required this.onDownload});
+  const MissingAppNote({
+    super.key,
+    required this.name,
+    required this.onDownload,
+  });
 
   final String name;
   final VoidCallback onDownload;
@@ -44,7 +48,11 @@ class MissingAppNote extends StatelessWidget {
 /// build the skill, and this grid (images/video) can't be that model. Names the
 /// next step so the user isn't stuck on "No inference provider configured".
 class NeedsChatModelNote extends StatelessWidget {
-  const NeedsChatModelNote({super.key, required this.appName, required this.command});
+  const NeedsChatModelNote({
+    super.key,
+    required this.appName,
+    required this.command,
+  });
 
   final String appName;
   final String command;

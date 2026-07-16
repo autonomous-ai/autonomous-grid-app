@@ -54,19 +54,22 @@ class ManagedNetworkClient {
     required String name,
     required ManagedNetworkType type,
   }) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final request = await client.postUrl(endpoint(apiUrl));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
-      request.add(utf8.encode(jsonEncode({
-        'name': name,
-        'network_type': type.wire,
-      })));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      request.add(
+        utf8.encode(jsonEncode({'name': name, 'network_type': type.wire})),
+      );
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 30));
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return (
@@ -78,16 +81,23 @@ class ManagedNetworkClient {
           ),
         );
       }
-      return (ManagedNetwork.fromJson(jsonDecode(body) as Map<String, dynamic>), null);
+      return (
+        ManagedNetwork.fromJson(jsonDecode(body) as Map<String, dynamic>),
+        null,
+      );
     } on TimeoutException {
       return (
         null,
-        const ManagedNetworkError("The server didn't respond in time. Try again.")
+        const ManagedNetworkError(
+          "The server didn't respond in time. Try again.",
+        ),
       );
     } on SocketException catch (e) {
       return (
         null,
-        ManagedNetworkError("Couldn't reach the Grid control plane: ${e.message}")
+        ManagedNetworkError(
+          "Couldn't reach the Grid control plane: ${e.message}",
+        ),
       );
     } on Object catch (e) {
       return (null, ManagedNetworkError("Couldn't create the network: $e"));
@@ -105,14 +115,18 @@ class ManagedNetworkClient {
     required String sessionToken,
     required String networkId,
   }) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final request = await client.getUrl(membersEndpoint(apiUrl, networkId));
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 30));
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return (null, _memberErrorFor(response.statusCode, body));
@@ -148,26 +162,27 @@ class ManagedNetworkClient {
     required String email,
     required List<String> roles,
   }) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final request = await client.postUrl(membersEndpoint(apiUrl, networkId));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
-      request.add(utf8.encode(jsonEncode({
-        'email': email,
-        'roles': roles,
-      })));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      request.add(utf8.encode(jsonEncode({'email': email, 'roles': roles})));
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 30));
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return (null, _memberErrorFor(response.statusCode, body));
       }
       return (
         ManagedNetworkMember.fromJson(jsonDecode(body) as Map<String, dynamic>),
-        null
+        null,
       );
     } on TimeoutException {
       return (null, "The server didn't respond in time. Try again.");
@@ -189,15 +204,20 @@ class ManagedNetworkClient {
     required String networkId,
     required String email,
   }) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
-      final request =
-          await client.deleteUrl(memberEndpoint(apiUrl, networkId, email));
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+      final request = await client.deleteUrl(
+        memberEndpoint(apiUrl, networkId, email),
+      );
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 30));
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return (false, _memberErrorFor(response.statusCode, body));
@@ -232,16 +252,20 @@ class ManagedNetworkClient {
     required String networkId,
     required String name,
   }) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final request = await client.patchUrl(renameEndpoint(apiUrl, networkId));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
       request.add(utf8.encode(jsonEncode({'name': name})));
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 30));
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return (
@@ -257,12 +281,16 @@ class ManagedNetworkClient {
     } on TimeoutException {
       return (
         false,
-        const ManagedNetworkError("The server didn't respond in time. Try again.")
+        const ManagedNetworkError(
+          "The server didn't respond in time. Try again.",
+        ),
       );
     } on SocketException catch (e) {
       return (
         false,
-        ManagedNetworkError("Couldn't reach the Grid control plane: ${e.message}")
+        ManagedNetworkError(
+          "Couldn't reach the Grid control plane: ${e.message}",
+        ),
       );
     } on Object catch (e) {
       return (false, ManagedNetworkError("Couldn't rename the grid: $e"));
@@ -279,14 +307,20 @@ class ManagedNetworkClient {
     required String sessionToken,
     required String networkId,
   }) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
-      final request = await client.deleteUrl(networkEndpoint(apiUrl, networkId));
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $sessionToken');
+      final request = await client.deleteUrl(
+        networkEndpoint(apiUrl, networkId),
+      );
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
 
-      final response =
-          await request.close().timeout(const Duration(seconds: 30));
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return (
@@ -302,12 +336,16 @@ class ManagedNetworkClient {
     } on TimeoutException {
       return (
         false,
-        const ManagedNetworkError("The server didn't respond in time. Try again.")
+        const ManagedNetworkError(
+          "The server didn't respond in time. Try again.",
+        ),
       );
     } on SocketException catch (e) {
       return (
         false,
-        ManagedNetworkError("Couldn't reach the Grid control plane: ${e.message}")
+        ManagedNetworkError(
+          "Couldn't reach the Grid control plane: ${e.message}",
+        ),
       );
     } on Object catch (e) {
       return (false, ManagedNetworkError("Couldn't delete the grid: $e"));
@@ -344,8 +382,10 @@ class ManagedNetworkClient {
 
   /// The single-member URL for a DELETE. [email] is path-encoded.
   static Uri memberEndpoint(String apiUrl, String networkId, String email) =>
-      Uri.parse('${membersEndpoint(apiUrl, networkId)}'
-          '/${Uri.encodeComponent(email)}');
+      Uri.parse(
+        '${membersEndpoint(apiUrl, networkId)}'
+        '/${Uri.encodeComponent(email)}',
+      );
 
   /// Turns a non-2xx response into a user-facing message, preferring the
   /// server's own `detail`/`message`, with friendlier text for known codes.

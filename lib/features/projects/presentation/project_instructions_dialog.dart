@@ -100,13 +100,7 @@ class _ProjectInstructionsDialogState
           child: const Text('Cancel'),
         ),
         const SizedBox(width: 4),
-        FilledButton(
-          onPressed: _save,
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          ),
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
       ],
     );
   }

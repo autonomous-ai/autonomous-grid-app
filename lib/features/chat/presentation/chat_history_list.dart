@@ -320,12 +320,16 @@ class _AddFirstProjectHint extends ConsumerWidget {
           const SizedBox(height: 6),
           TextButton.icon(
             onPressed: () => addProjectFromPicker(ref),
+            // Compact: this sits inline under the project list, not as a
+            // standalone action.
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: const Size(0, 30),
-              visualDensity: VisualDensity.compact,
+              minimumSize: const Size(0, AppControl.heightSmall),
+              padding: AppControl.paddingSmall,
             ),
-            icon: const Icon(LucideIcons.folderPlus300, size: 18),
+            icon: const Icon(
+              LucideIcons.folderPlus300,
+              size: AppControl.iconSize,
+            ),
             label: const Text('Add a project'),
           ),
         ],

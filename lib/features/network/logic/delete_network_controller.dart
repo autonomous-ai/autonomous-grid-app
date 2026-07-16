@@ -9,11 +9,12 @@ import '../../auth/logic/session_expiry_controller.dart';
 /// The `DELETE /v1/grid/managed-networks/{network_id}` call, behind a provider
 /// so tests can swap in a fake without a real HTTP round-trip. Defaults to the
 /// live client — the same seam as [managedNetworkCreateProvider].
-typedef ManagedNetworkDeleteFn = Future<(bool, ManagedNetworkError?)> Function({
-  required String apiUrl,
-  required String sessionToken,
-  required String networkId,
-});
+typedef ManagedNetworkDeleteFn =
+    Future<(bool, ManagedNetworkError?)> Function({
+      required String apiUrl,
+      required String sessionToken,
+      required String networkId,
+    });
 
 final managedNetworkDeleteProvider = Provider<ManagedNetworkDeleteFn>(
   (ref) => ManagedNetworkClient.delete,
@@ -21,7 +22,8 @@ final managedNetworkDeleteProvider = Provider<ManagedNetworkDeleteFn>(
 
 final deleteNetworkControllerProvider =
     NotifierProvider<DeleteNetworkController, DeleteNetworkState>(
-        DeleteNetworkController.new);
+      DeleteNetworkController.new,
+    );
 
 /// Where a grid deletion stands. Modelled as a sealed state so the button
 /// switches exhaustively (spinner while deleting) instead of juggling booleans.
@@ -69,8 +71,10 @@ class DeleteNetworkController extends Notifier<DeleteNetworkState> {
 
     final apiUrl = ref.read(gridApiUrlProvider);
     final log = ref.read(commandLogProvider.notifier);
-    final logId = log.begin(CliCallKind.http,
-        'DELETE ${ManagedNetworkClient.networkEndpoint(apiUrl, networkId)}');
+    final logId = log.begin(
+      CliCallKind.http,
+      'DELETE ${ManagedNetworkClient.networkEndpoint(apiUrl, networkId)}',
+    );
     final (ok, error) = await ref.read(managedNetworkDeleteProvider)(
       apiUrl: apiUrl,
       sessionToken: token,
@@ -78,9 +82,11 @@ class DeleteNetworkController extends Notifier<DeleteNetworkState> {
     );
     // Debug tab gets the HTTP status + raw server body; the UI shows only the
     // friendly message.
-    log.finish(logId,
-        exitCode: error?.statusCode ?? (ok ? 200 : null),
-        error: error?.debugDetail);
+    log.finish(
+      logId,
+      exitCode: error?.statusCode ?? (ok ? 200 : null),
+      error: error?.debugDetail,
+    );
 
     if (!ok) {
       final message = error?.message ?? 'Could not delete the grid.';

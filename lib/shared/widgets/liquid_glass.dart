@@ -53,6 +53,11 @@ class LiquidGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // This is const-constructed chrome that reads AppGlass tokens, so it has no
+    // tracked reason to rebuild when the brightness flips — and a const child is
+    // short-circuited by its parent's rebuild. Without this it stays on the
+    // palette it first rendered with. See AppTheme.watch.
+    AppTheme.watch(context);
     final radius = borderRadius ?? BorderRadius.circular(20);
     final content = padding == null
         ? child

@@ -27,13 +27,13 @@ class ApiEngineModel {
   final String notes;
 
   factory ApiEngineModel.fromJson(Map<String, dynamic> json) => ApiEngineModel(
-        advertised: json['advertised'] as String,
-        vendorName: json['vendor_name'] as String? ?? json['advertised'] as String,
-        contextWindow: (json['context_window'] as num?)?.toInt() ?? 0,
-        supportsTools: json['supports_tools'] as bool? ?? false,
-        supportsVision: json['supports_vision'] as bool? ?? false,
-        notes: json['notes'] as String? ?? '',
-      );
+    advertised: json['advertised'] as String,
+    vendorName: json['vendor_name'] as String? ?? json['advertised'] as String,
+    contextWindow: (json['context_window'] as num?)?.toInt() ?? 0,
+    supportsTools: json['supports_tools'] as bool? ?? false,
+    supportsVision: json['supports_vision'] as bool? ?? false,
+    notes: json['notes'] as String? ?? '',
+  );
 }
 
 /// Display + wiring metadata for a hosted API provider the app knows how to
@@ -109,17 +109,23 @@ final apiEnginesProvider = FutureProvider<List<ApiEngine>>((ref) async {
 
   final engines = <ApiEngine>[];
   for (final provider in kApiProviders) {
-    final result =
-        await service.run(['catalog', '--api', provider.kind, '--json']);
+    final result = await service.run([
+      'catalog',
+      '--api',
+      provider.kind,
+      '--json',
+    ]);
     if (!result.ok) continue; // this CLI build doesn't whitelist the kind (yet)
     final catalog = _parseCatalog(result.stdout);
     if (catalog == null || catalog.models.isEmpty) continue;
-    engines.add(ApiEngine(
-      provider: provider,
-      models: catalog.models,
-      lastVerified: catalog.lastVerified,
-      hasStoredKey: storedKinds.contains(provider.kind),
-    ));
+    engines.add(
+      ApiEngine(
+        provider: provider,
+        models: catalog.models,
+        lastVerified: catalog.lastVerified,
+        hasStoredKey: storedKinds.contains(provider.kind),
+      ),
+    );
   }
   return engines;
 });
@@ -128,7 +134,8 @@ final apiEnginesProvider = FutureProvider<List<ApiEngine>>((ref) async {
 /// Lenient: any decode/shape problem yields null so a catalog hiccup hides the
 /// provider rather than crashing the Engines tab.
 ({List<ApiEngineModel> models, String lastVerified})? _parseCatalog(
-    String stdout) {
+  String stdout,
+) {
   try {
     final decoded = jsonDecode(stdout);
     if (decoded is! Map) return null;
@@ -136,7 +143,8 @@ final apiEnginesProvider = FutureProvider<List<ApiEngine>>((ref) async {
     if (rawModels is! List) return null;
     final models = [
       for (final model in rawModels)
-        if (model is Map) ApiEngineModel.fromJson(Map<String, dynamic>.from(model)),
+        if (model is Map)
+          ApiEngineModel.fromJson(Map<String, dynamic>.from(model)),
     ];
     final lastVerified = decoded['last_verified'];
     return (

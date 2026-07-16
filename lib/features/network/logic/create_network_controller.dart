@@ -9,13 +9,13 @@ import '../../auth/logic/session_expiry_controller.dart';
 
 /// The `POST /v1/grid/managed-networks` call, behind a provider so tests can
 /// swap in a fake without a real HTTP round-trip. Defaults to the live client.
-typedef ManagedNetworkCreateFn
-    = Future<(ManagedNetwork?, ManagedNetworkError?)> Function({
-  required String apiUrl,
-  required String sessionToken,
-  required String name,
-  required ManagedNetworkType type,
-});
+typedef ManagedNetworkCreateFn =
+    Future<(ManagedNetwork?, ManagedNetworkError?)> Function({
+      required String apiUrl,
+      required String sessionToken,
+      required String name,
+      required ManagedNetworkType type,
+    });
 
 final managedNetworkCreateProvider = Provider<ManagedNetworkCreateFn>(
   (ref) => ManagedNetworkClient.create,
@@ -23,7 +23,8 @@ final managedNetworkCreateProvider = Provider<ManagedNetworkCreateFn>(
 
 final createNetworkControllerProvider =
     NotifierProvider<CreateNetworkController, CreateNetworkState>(
-        CreateNetworkController.new);
+      CreateNetworkController.new,
+    );
 
 sealed class CreateNetworkState {
   const CreateNetworkState();
@@ -84,8 +85,10 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
 
     // Surface the HTTP call in the Debug tab, just like the local-chat path.
     final log = ref.read(commandLogProvider.notifier);
-    final logId =
-        log.begin(CliCallKind.http, 'POST ${ManagedNetworkClient.endpoint(apiUrl)}');
+    final logId = log.begin(
+      CliCallKind.http,
+      'POST ${ManagedNetworkClient.endpoint(apiUrl)}',
+    );
     final (network, error) = await create(
       apiUrl: apiUrl,
       sessionToken: token,

@@ -6,7 +6,8 @@ import '../../auth/logic/session_controller.dart';
 
 final enableProviderControllerProvider =
     NotifierProvider<EnableProviderController, EnableProviderState>(
-        EnableProviderController.new);
+      EnableProviderController.new,
+    );
 
 sealed class EnableProviderState {
   const EnableProviderState();
@@ -63,7 +64,12 @@ class EnableProviderController extends Notifier<EnableProviderState> {
 
     step('Granting the provider role to $email…');
     final add = await service.run([
-      'members', 'add', networkId, email, '--role', 'provider',
+      'members',
+      'add',
+      networkId,
+      email,
+      '--role',
+      'provider',
     ]);
     step(_lastLine(add));
     if (!add.ok) {

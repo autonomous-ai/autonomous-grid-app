@@ -15,7 +15,8 @@ const Map<String, String> _capabilityLabels = {
 /// anything else (MLX, vLLM, llama.cpp…) is shown as reported. `external` is the
 /// app's own generic engine — a meaningless label to a user — so it resolves to
 /// empty and the node tile just drops it from the spec line.
-String nodeEngineLabel(String? engine) => switch ((engine ?? '').toLowerCase()) {
+String nodeEngineLabel(String? engine) =>
+    switch ((engine ?? '').toLowerCase()) {
       'comfyui' => 'ComfyUI',
       'external' => '',
       '' => 'Engine',
@@ -44,7 +45,8 @@ String nodeRoleSummary(OverviewNode node) {
 /// CPU-only node, or a provider that doesn't advertise VRAM. Prefers the node's
 /// `vram_gb`, falling back to `vram_total_mb ÷ 1024`.
 String? nodeVramLabel(OverviewNode node) {
-  final gb = node.vramGb ??
+  final gb =
+      node.vramGb ??
       (node.vramTotalMb == null ? null : node.vramTotalMb! / 1024);
   if (gb == null || gb <= 0) return null;
   return '${_trimGb(gb)} GB VRAM';

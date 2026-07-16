@@ -22,7 +22,9 @@ class GpuPanel extends ConsumerWidget {
       trailing: _HistoryLabel(window: snapshot.asData?.value.historyWindow),
       child: snapshot.when(
         loading: () => const PanelMessage(
-            icon: Icons.memory_outlined, text: 'Connecting to fleet…'),
+          icon: Icons.memory_outlined,
+          text: 'Connecting to fleet…',
+        ),
         error: (err, _) =>
             PanelMessage(icon: Icons.error_outline, text: '$err'),
         data: (data) => _GpuList(snapshot: data),
@@ -39,7 +41,9 @@ class _GpuList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (snapshot.gpus.isEmpty) {
       return const PanelMessage(
-          icon: Icons.memory_outlined, text: 'No GPUs reporting.');
+        icon: Icons.memory_outlined,
+        text: 'No GPUs reporting.',
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(14),

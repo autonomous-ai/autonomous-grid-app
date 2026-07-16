@@ -19,7 +19,8 @@ class HowToUseView extends ConsumerWidget {
         title: 'How to use',
         subtitle: 'Connect your apps to a grid.',
         child: ComingSoon(
-            message: 'Select a grid first to see how to connect to it.'),
+          message: 'Select a grid first to see how to connect to it.',
+        ),
       );
     }
     return SectionScaffold(

@@ -7,10 +7,7 @@ import 'gpu_metrics.dart';
 /// will hang off this same snapshot as those panels come online.
 @immutable
 class OverlordSnapshot {
-  const OverlordSnapshot({
-    required this.gpus,
-    required this.historyWindow,
-  });
+  const OverlordSnapshot({required this.gpus, required this.historyWindow});
 
   final List<GpuMetrics> gpus;
 

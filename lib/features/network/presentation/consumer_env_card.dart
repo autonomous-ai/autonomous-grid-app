@@ -157,13 +157,14 @@ class _HowToUseButton extends ConsumerWidget {
     return Tooltip(
       message: 'See how to connect your apps to this grid',
       child: TextButton.icon(
-        icon: const Icon(Icons.help_outline_rounded, size: 16),
+        icon: const Icon(Icons.help_outline_rounded, size: AppControl.iconSize),
         label: const Text('How to use'),
+        // Sits inline in the section header row, so it stays on the compact
+        // scale; the muted label keeps it quieter than the heading beside it.
         style: TextButton.styleFrom(
           foregroundColor: AppPalette.textSecondary,
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          minimumSize: const Size(0, AppControl.heightSmall),
+          padding: AppControl.paddingSmall,
         ),
         onPressed: () =>
             ref.read(shellSectionProvider.notifier).select(ShellSection.guide),

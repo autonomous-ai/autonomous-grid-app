@@ -190,7 +190,9 @@ class AppUpdaterService with UpdaterListener {
 
   @override
   void onUpdaterUpdateDownloaded(AppcastItem? item) => _log.info(
-      'update', 'Update downloaded: ${item?.displayVersionString ?? ''}');
+    'update',
+    'Update downloaded: ${item?.displayVersionString ?? ''}',
+  );
 
   @override
   void onUpdaterBeforeQuitForUpdate(AppcastItem? item) =>

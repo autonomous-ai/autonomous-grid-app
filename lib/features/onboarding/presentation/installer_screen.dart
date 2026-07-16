@@ -64,7 +64,8 @@ class _InstallerScreenState extends ConsumerState<InstallerScreen> {
                   const SizedBox(height: 8),
                   _Details(
                     expanded: _showDetails,
-                    onToggle: () => setState(() => _showDetails = !_showDetails),
+                    onToggle: () =>
+                        setState(() => _showDetails = !_showDetails),
                   ),
                   const SizedBox(height: 20),
                   _Actions(state: state),

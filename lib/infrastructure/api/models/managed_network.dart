@@ -32,7 +32,8 @@ enum ManagedNetworkType {
   final String description;
 
   /// The API default when `network_type` is omitted.
-  static const ManagedNetworkType fallback = ManagedNetworkType.permissionedPublic;
+  static const ManagedNetworkType fallback =
+      ManagedNetworkType.permissionedPublic;
 }
 
 /// Response from `POST /v1/grid/managed-networks` — a freshly created managed

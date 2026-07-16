@@ -167,9 +167,14 @@ class _CatalogTile extends ConsumerWidget {
           : () => ref
                 .read(modelPullControllerProvider.notifier)
                 .pull(entry.pullSpec),
-      icon: const Icon(Icons.download_outlined, size: 16),
+      icon: const Icon(Icons.download_outlined, size: AppControl.iconSize),
       label: const Text('Download'),
-      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      // Inline action at the trailing edge of a dense catalog row — the compact
+      // scale keeps every row the same height as the "Downloaded" state beside it.
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, AppControl.heightSmall),
+        padding: AppControl.paddingSmall,
+      ),
     );
   }
 }

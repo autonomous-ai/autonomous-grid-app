@@ -91,7 +91,9 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
   }
 
   void _start() {
-    ref.read(providerRunControllerProvider.notifier).startExternal(
+    ref
+        .read(providerRunControllerProvider.notifier)
+        .startExternal(
           network: widget.network.networkId,
           endpoint: _endpoint.text.trim(),
           model: _model.text.trim(),
@@ -171,7 +173,8 @@ class ServerForm extends StatelessWidget {
           child: ListenableBuilder(
             listenable: Listenable.merge([endpoint, model]),
             builder: (context, _) {
-              final canStart = endpoint.text.trim().isNotEmpty &&
+              final canStart =
+                  endpoint.text.trim().isNotEmpty &&
                   model.text.trim().isNotEmpty;
               return FilledButton.icon(
                 onPressed: canStart ? onStart : null,
@@ -190,7 +193,11 @@ class ServerForm extends StatelessWidget {
 /// a free-text field otherwise (manual base URL → type the name). The [model]
 /// controller stays the source of truth either way.
 class ModelField extends StatelessWidget {
-  const ModelField({super.key, required this.model, required this.suggestedModels});
+  const ModelField({
+    super.key,
+    required this.model,
+    required this.suggestedModels,
+  });
 
   final TextEditingController model;
   final List<String> suggestedModels;

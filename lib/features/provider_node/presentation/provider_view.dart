@@ -112,9 +112,12 @@ class _ServeSection extends ConsumerWidget {
     final failedNote = run is ProviderRunFailed
         ? Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text("Couldn't start last time: ${run.message}",
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error)),
+            child: Text(
+              "Couldn't start last time: ${run.message}",
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
           )
         : null;
 
@@ -172,15 +175,18 @@ class _BuiltInUnavailableNote extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Built-in engine not available on Windows yet',
-                      style: theme.textTheme.titleMedium),
+                  Text(
+                    'Built-in engine not available on Windows yet',
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     "Running a model directly on this Windows computer isn't "
                     'supported yet. You can still connect your own AI server below, '
                     'or use models other people share on the grid from the Playground.',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -204,7 +210,8 @@ class _EngineBusyElsewhere extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final runningName =
-        ref.watch(sessionProvider).byName(runningGridId)?.name ?? 'another grid';
+        ref.watch(sessionProvider).byName(runningGridId)?.name ??
+        'another grid';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -220,14 +227,17 @@ class _EngineBusyElsewhere extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('An engine is already running on $runningName',
-                          style: theme.textTheme.titleMedium),
+                      Text(
+                        'An engine is already running on $runningName',
+                        style: theme.textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         'You can run an engine on only one grid at a time. Stop '
                         'it to start one on this grid.',
                         style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant),
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -265,7 +275,7 @@ class _ExternalServers extends ConsumerWidget {
     final backendsAsync = ref.watch(backendsProvider);
     final detected =
         backendsAsync.asData?.value.where((b) => b.isExternal).toList() ??
-            const <DetectedBackend>[];
+        const <DetectedBackend>[];
     // No data yet means we're still probing the machine — show that we're
     // looking so the empty list doesn't read as "nothing here".
     final isScanning = backendsAsync.isLoading && !backendsAsync.hasValue;
@@ -295,7 +305,9 @@ class _ExternalServers extends ConsumerWidget {
             // Installed but not serving — offer to start it instead of a serve
             // form that would fail. The list refreshes once it's up.
             _NotRunningBackendBlock(
-                key: ValueKey(backend.kind), backend: backend),
+              key: ValueKey(backend.kind),
+              backend: backend,
+            ),
           const SizedBox(height: 16),
         ],
         ExternalServerBlock(
@@ -317,8 +329,9 @@ class _ExternalServers extends ConsumerWidget {
 String _backendSubtitle(DetectedBackend backend) {
   final host = backend.baseUrl.replaceFirst(RegExp(r'^https?://'), '');
   final count = backend.models.length;
-  final models =
-      count == 0 ? 'no models reported' : '$count model${count == 1 ? '' : 's'}';
+  final models = count == 0
+      ? 'no models reported'
+      : '$count model${count == 1 ? '' : 's'}';
   return '$host · $models';
 }
 
@@ -343,8 +356,9 @@ class _ScanningForServersNote extends StatelessWidget {
           const SizedBox(width: 10),
           Text(
             'Looking for AI engines on this computer…',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -373,9 +387,12 @@ class _NotRunningBackendBlock extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (launch is OllamaLaunchFailed) ...[
-            Text(launch.message,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error)),
+            Text(
+              launch.message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
             const SizedBox(height: 12),
           ],
           Align(
@@ -383,16 +400,21 @@ class _NotRunningBackendBlock extends ConsumerWidget {
             child: FilledButton.icon(
               onPressed: starting
                   ? null
-                  : () =>
-                      ref.read(ollamaLaunchControllerProvider.notifier).start(),
+                  : () => ref
+                        .read(ollamaLaunchControllerProvider.notifier)
+                        .start(),
               icon: starting
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.play_arrow),
               label: Text(
-                  starting ? 'Starting ${backend.label}…' : 'Run ${backend.label}'),
+                starting
+                    ? 'Starting ${backend.label}…'
+                    : 'Run ${backend.label}',
+              ),
             ),
           ),
         ],

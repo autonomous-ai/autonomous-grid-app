@@ -10,12 +10,13 @@ import 'grid_name.dart';
 /// The `PATCH /v1/grid/networks/{network_id}` call, behind a provider so tests
 /// can swap in a fake without a real HTTP round-trip. Defaults to the live
 /// client — the same seam as [managedNetworkDeleteProvider].
-typedef ManagedNetworkRenameFn = Future<(bool, ManagedNetworkError?)> Function({
-  required String apiUrl,
-  required String sessionToken,
-  required String networkId,
-  required String name,
-});
+typedef ManagedNetworkRenameFn =
+    Future<(bool, ManagedNetworkError?)> Function({
+      required String apiUrl,
+      required String sessionToken,
+      required String networkId,
+      required String name,
+    });
 
 final managedNetworkRenameProvider = Provider<ManagedNetworkRenameFn>(
   (ref) => ManagedNetworkClient.rename,
@@ -23,7 +24,8 @@ final managedNetworkRenameProvider = Provider<ManagedNetworkRenameFn>(
 
 final renameNetworkControllerProvider =
     NotifierProvider<RenameNetworkController, RenameNetworkState>(
-        RenameNetworkController.new);
+      RenameNetworkController.new,
+    );
 
 /// Where a grid rename stands. Modelled as a sealed state so the dialog switches
 /// exhaustively (spinner while saving) instead of juggling booleans.

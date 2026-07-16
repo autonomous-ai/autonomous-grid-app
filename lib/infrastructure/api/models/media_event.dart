@@ -36,12 +36,14 @@ sealed class MediaEvent {
         return MediaResult(
           files is List
               ? files
-                  .whereType<Map>()
-                  .map((f) => MediaFile(
+                    .whereType<Map>()
+                    .map(
+                      (f) => MediaFile(
                         filename: f['filename'] as String,
                         contentBase64: f['content_base64'] as String,
-                      ))
-                  .toList()
+                      ),
+                    )
+                    .toList()
               : const [],
         );
       default:
@@ -82,6 +84,8 @@ class MediaFile {
   List<int> decodeBytes() => base64.decode(contentBase64);
 
   /// Wire shape the relay expects for an input file: `{filename, content_base64}`.
-  Map<String, String> toJson() =>
-      {'filename': filename, 'content_base64': contentBase64};
+  Map<String, String> toJson() => {
+    'filename': filename,
+    'content_base64': contentBase64,
+  };
 }
