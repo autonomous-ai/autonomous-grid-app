@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
@@ -33,8 +32,6 @@ class GridModelPicker extends ConsumerStatefulWidget {
 }
 
 class _GridModelPickerState extends ConsumerState<GridModelPicker> {
-  static const _menuSize = Size(340, 370);
-
   final _menu = MenuController();
 
   void _toggleMenu(BuildContext context, MenuController controller) {
@@ -42,23 +39,31 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
       controller.close();
       return;
     }
-    controller.open(
-      position: anchoredMenuPosition(
-        context,
-        menuSize: _menuSize,
-        alignEnd: true,
-        preferAbove: true,
-      ),
-    );
+    controller.open();
   }
 
   @override
   Widget build(BuildContext context) {
+    // The menu's surface reads tokens; follow theme flips.
+    AppTheme.watch(context);
     return MenuAnchor(
       controller: _menu,
-      style: const MenuStyle(
-        padding: WidgetStatePropertyAll(EdgeInsets.zero),
+      // Hang the menu off the pill's top-right and let MenuAnchor measure it.
+      // A declared height can't be right here: the list grows with the number of
+      // grids and shrinks as you type in the search, so any constant is stale the
+      // moment the catalog loads — too short clipped the last row, too tall
+      // floated the menu off the pill.
+      alignmentOffset: const Offset(0, -8),
+      style: MenuStyle(
+        alignment: Alignment.topRight,
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         visualDensity: VisualDensity.compact,
+        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        elevation: const WidgetStatePropertyAll(8),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
       ),
       menuChildren: [
         _ModelMenu(
@@ -103,8 +108,8 @@ class _TriggerButton extends StatelessWidget {
         // inside the composer's chrome, so it stays stadium-shaped and filled
         // rather than taking the app's bordered-button shape.
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppPalette.textSecondary,
-          backgroundColor: AppGlass.surfaceFill,
+          foregroundColor: AppPalette.textPrimary,
+          backgroundColor: Colors.transparent,
           side: BorderSide.none,
           shape: const StadiumBorder(),
           padding: AppControl.paddingSmall,
@@ -118,9 +123,15 @@ class _TriggerButton extends StatelessWidget {
                 label,
                 overflow: TextOverflow.ellipsis,
                 softWrap: false,
+                style: const TextStyle(fontSize: 12),
               ),
             ),
-            const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
+            const SizedBox(width: 1),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 15,
+              color: AppPalette.textFaint,
+            ),
           ],
         ),
       ),
@@ -148,11 +159,16 @@ class _ModelMenu extends ConsumerStatefulWidget {
 
 class _ModelMenuState extends ConsumerState<_ModelMenu> {
   final _search = TextEditingController();
+  // Its own controller, not the ambient primary one: MenuAnchor wraps its
+  // children in a scroll view of its own, so an inherited PrimaryScrollController
+  // ends up with two ScrollPositions and the Scrollbar asserts.
+  final _scroll = ScrollController();
   String _query = '';
 
   @override
   void dispose() {
     _search.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -167,6 +183,8 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
 
   @override
   Widget build(BuildContext context) {
+    // Menu content — detached from the anchor's rebuilds; watch theme itself.
+    AppTheme.watch(context);
     final catalog = ref.watch(gridModelCatalogProvider);
     final currentGridId = ref.watch(selectedNetworkProvider)?.networkId;
 
@@ -181,10 +199,14 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _SearchField(controller: _search, onChanged: _onQueryChanged),
-          const Divider(height: 1),
+          // A hairline, not Material's default Divider — that one is a full-width
+          // rule in the theme's outline colour and cut the menu visibly in two.
+          Container(height: 1, color: AppGlass.hair),
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 300),
             child: SingleChildScrollView(
+              controller: _scroll,
+              primary: false,
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -237,17 +259,39 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
       child: TextField(
         controller: controller,
         autofocus: true,
         onChanged: (_) => onChanged(),
-        decoration: const InputDecoration(
+        style: TextStyle(fontSize: 13, color: AppPalette.textPrimary),
+        decoration: InputDecoration(
           isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 9),
           hintText: 'Search models',
-          prefixIcon: Icon(Icons.search, size: 18),
-          border: OutlineInputBorder(),
+          hintStyle: TextStyle(fontSize: 13, color: AppPalette.textFaint),
+          prefixIcon: Icon(Icons.search, size: 16, color: AppPalette.textFaint),
+          prefixIconConstraints: const BoxConstraints(minWidth: 34),
+          // A recessed well rather than an outlined box: autofocus meant the
+          // field opened already focused, so an OutlineInputBorder lit its full
+          // 2px accent rim every single time the menu opened — the loudest thing
+          // on screen, reading as an error state rather than as a search box.
+          filled: true,
+          fillColor: AppSurface.recess,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: BorderSide(color: AppPalette.accent, width: 1),
+          ),
         ),
       ),
     );
@@ -261,20 +305,24 @@ class _GroupHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
       child: Row(
         children: [
-          const Icon(Icons.bolt, size: 14),
-          const SizedBox(width: 6),
+          // The bolt is the grid's mark — it earns the brand gold here, where it
+          // labels a grid, rather than the same grey as the name beside it.
+          Icon(Icons.bolt, size: 13, color: AppPalette.brandBolt),
+          const SizedBox(width: 5),
           Expanded(
             child: Text(
               name.toUpperCase(),
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
-                color: theme.colorScheme.onSurfaceVariant,
+                color: AppPalette.textFaint,
               ),
             ),
           ),
@@ -297,33 +345,88 @@ class _OptionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Icon(_modalityIcon(option.modality), size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(option.label, overflow: TextOverflow.ellipsis),
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(9),
+          hoverColor: AppSurface.hoverFill,
+          child: Ink(
+            decoration: BoxDecoration(
+              // Same wash + ticked-disc language as the approval menu, so "the
+              // one in force" looks the same wherever the composer says it.
+              color: selected ? AppSurface.accentWash : Colors.transparent,
+              borderRadius: BorderRadius.circular(9),
             ),
-            if (selected) ...[
-              const SizedBox(width: 8),
-              Icon(Icons.check, size: 18, color: scheme.primary),
-            ],
-          ],
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            child: Row(
+              children: [
+                // Only the exceptions get a glyph. Text is the fallback for every
+                // model that isn't image or video, so a robot beside each of them
+                // just said "this is a model" in a list of models — a column of
+                // identical icons that told the rows apart not at all. Image and
+                // video are the rare ones, and there the icon is the whole point.
+                SizedBox(
+                  width: 16,
+                  child: option.modality == PlaygroundModality.text
+                      ? null
+                      : Icon(
+                          _modalityIcon(option.modality),
+                          size: 16,
+                          color: selected
+                              ? AppPalette.accentMuted
+                              : AppPalette.textFaint,
+                        ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    option.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.2,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: AppPalette.textPrimary,
+                    ),
+                  ),
+                ),
+                if (selected) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 16,
+                    height: 16,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppPalette.accentMuted,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 11,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  static IconData _modalityIcon(PlaygroundModality modality) =>
+  /// Only reached for the modalities that get a glyph — text rows render none,
+  /// so it has no icon to name here.
+  static IconData? _modalityIcon(PlaygroundModality modality) =>
       switch (modality) {
         PlaygroundModality.image => Icons.image_outlined,
         PlaygroundModality.video => Icons.movie_outlined,
-        PlaygroundModality.text => Icons.smart_toy_outlined,
+        PlaygroundModality.text => null,
       };
 }
 
@@ -336,18 +439,24 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
     final message = switch (status) {
       GridModelStatus.loading => 'Loading models…',
       GridModelStatus.offline => 'Grid is offline',
       GridModelStatus.ready => 'No models available',
     };
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      // Indented to the option rows' text, not their icon: this is the absence
+      // of rows, so it reads as a note under the grid rather than lining up as
+      // one more thing you could pick.
+      padding: const EdgeInsets.fromLTRB(29, 2, 15, 8),
       child: Text(
         message,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.2,
+          fontStyle: FontStyle.italic,
+          color: AppPalette.textFaint,
         ),
       ),
     );

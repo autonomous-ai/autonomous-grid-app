@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/anchored_menu_position.dart';
 import '../logic/agent_permissions.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
@@ -21,8 +20,6 @@ class ApprovalPicker extends ConsumerStatefulWidget {
 }
 
 class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
-  static const _menuSize = Size(340, 292);
-
   final _menu = MenuController();
 
   void _select(AgentApprovalMode mode) {
@@ -35,13 +32,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
       controller.close();
       return;
     }
-    controller.open(
-      position: anchoredMenuPosition(
-        context,
-        menuSize: _menuSize,
-        preferAbove: true,
-      ),
-    );
+    controller.open();
   }
 
   @override
@@ -51,7 +42,14 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
     final current = ref.watch(agentApprovalModeProvider);
     return MenuAnchor(
       controller: _menu,
+      // Hang the menu off the pill's top edge and let MenuAnchor measure it.
+      // Passing a hand-computed position meant declaring a height before the
+      // menu existed, and the rows are detail-text tall — they wrap differently
+      // per row, per theme and per window width, so every guess was wrong: too
+      // short dropped the menu onto the pill, too tall floated it far above.
+      alignmentOffset: const Offset(0, -8),
       style: MenuStyle(
+        alignment: Alignment.topLeft,
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(vertical: 6),
         ),
@@ -89,9 +87,15 @@ class _Trigger extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
+    final color = approvalColor(mode);
     return Tooltip(
       message: approvalDetail(mode),
       child: Material(
+        // Neutral, like every other control in the composer. Tinting the fill and
+        // the rim as well as the icon made this the loudest thing on screen on
+        // the one mode that is orange — a warning parked next to the text box you
+        // type in, permanently. The icon alone carries the mode; the pill itself
+        // has no reason to shout, least of all forever.
         color: AppGlass.surfaceFill,
         borderRadius: BorderRadius.circular(999),
         child: InkWell(
@@ -102,16 +106,13 @@ class _Trigger extends StatelessWidget {
             padding: const EdgeInsets.only(left: 8, right: 7),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppGlass.hair),
               boxShadow: AppGlass.cardShadow,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  approvalIcon(mode),
-                  size: 13,
-                  color: AppPalette.textSecondary,
-                ),
+                Icon(approvalIcon(mode), size: 13, color: color),
                 const SizedBox(width: 5),
                 Flexible(
                   child: Text(
@@ -119,6 +120,9 @@ class _Trigger extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
+                      // Ink, not the accent: a whole label in the mode's colour
+                      // fights the icon for the same job and turns the pill into
+                      // a badge. The chip is the signal; the word is the caption.
                       color: AppPalette.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -148,7 +152,9 @@ class _MenuHeading extends StatelessWidget {
     // Menu content — detached from the anchor's rebuilds; watch theme itself.
     AppTheme.watch(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(14, 8, 14, 9),
+      // 18px left = the rows' 8px outer gutter + their 10px inner pad, so the
+      // heading starts exactly on the icon chips' edge rather than 4px shy of it.
+      padding: EdgeInsets.fromLTRB(18, 8, 14, 9),
       child: Text(
         'What may the assistant do on this computer?',
         style: TextStyle(
@@ -162,7 +168,11 @@ class _MenuHeading extends StatelessWidget {
 }
 
 /// One mode: what it is, what it means, and a tick when it's the one in force.
-class _ModeItem extends StatelessWidget {
+///
+/// Stateful for the hover tint on the icon chip — the row's own overlay is drawn
+/// by [MenuItemButton] above this content, so the chip can't read it and has to
+/// track the pointer itself.
+class _ModeItem extends StatefulWidget {
   const _ModeItem({
     required this.mode,
     required this.selected,
@@ -174,13 +184,22 @@ class _ModeItem extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_ModeItem> createState() => _ModeItemState();
+}
+
+class _ModeItemState extends State<_ModeItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     // Menu content — detached from the anchor's rebuilds; watch theme itself.
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    final risky = mode == AgentApprovalMode.full;
+    final mode = widget.mode;
+    final selected = widget.selected;
     return MenuItemButton(
-      onPressed: onTap,
+      onPressed: widget.onTap,
+      onHover: (h) => setState(() => _hovered = h),
       style: ButtonStyle(
         padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
@@ -197,32 +216,49 @@ class _ModeItem extends StatelessWidget {
           width: 324,
           padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
           decoration: BoxDecoration(
-            color: selected ? AppCard.tint10 : Colors.transparent,
+            // Wash + ticked disc, and no rim: the rim made this read as a button
+            // dropped into the menu rather than as the row you're on, and the
+            // wash already carries the accent that the disc then confirms.
+            color: selected ? AppSurface.accentWash : Colors.transparent,
             borderRadius: BorderRadius.circular(11),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _ModeIcon(mode: mode),
+              _ModeIcon(mode: mode, hovered: _hovered),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      approvalLabel(mode),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        height: 1.16,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            approvalLabel(mode),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              height: 1.16,
+                            ),
+                          ),
+                        ),
+                        // The whole detail line used to be warn-orange, which
+                        // read as an error rather than as power, and left no
+                        // colour free to mark the part that actually bites. The
+                        // warning is one fact — say it once, here.
+                        if (mode == AgentApprovalMode.full) ...[
+                          const SizedBox(width: 6),
+                          const _NoUndoBadge(),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 3),
                     Text(
                       approvalDetail(mode),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: risky
-                            ? AppPalette.warn
-                            : AppPalette.textSecondary,
+                        color: AppPalette.textSecondary,
                         height: 1.28,
                       ),
                     ),
@@ -232,11 +268,25 @@ class _ModeItem extends StatelessWidget {
               const SizedBox(width: 8),
               SizedBox(
                 width: 18,
-                child: Icon(
-                  Icons.check_rounded,
-                  size: 16,
-                  color: selected ? AppPalette.accent : Colors.transparent,
-                ),
+                // The disc matches the rim, not the mode: on the "Ask" row the
+                // mode's own accent would be the wash's colour sitting on the
+                // wash, and the tick would sink into it.
+                child: selected
+                    ? Container(
+                        width: 18,
+                        height: 18,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppPalette.accentMuted,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 12,
+                          color: Colors.white,
+                        ),
+                      )
+                    : null,
               ),
             ],
           ),
@@ -246,29 +296,79 @@ class _ModeItem extends StatelessWidget {
   }
 }
 
+/// The one-word cost of [AgentApprovalMode.full], as a chip beside its name.
+class _NoUndoBadge extends StatelessWidget {
+  const _NoUndoBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: AppPalette.warn.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        'No undo',
+        style: TextStyle(
+          color: AppPalette.warn,
+          fontSize: 10,
+          height: 1.3,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.1,
+        ),
+      ),
+    );
+  }
+}
+
 class _ModeIcon extends StatelessWidget {
-  const _ModeIcon({required this.mode});
+  const _ModeIcon({required this.mode, required this.hovered});
 
   final AgentApprovalMode mode;
+  final bool hovered;
 
   @override
   Widget build(BuildContext context) {
     // Menu content — detached from the anchor's rebuilds; watch theme itself.
     AppTheme.watch(context);
-    final risky = mode == AgentApprovalMode.full;
-    final color = risky ? AppPalette.warn : AppPalette.textSecondary;
-    return Container(
-      width: 26,
-      height: 26,
+    final color = approvalColor(mode);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      width: 30,
+      height: 30,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.06),
+        // Was 6% of one shared grey for every mode, which made three of the four
+        // icons interchangeable at a glance. Each mode now owns a hue, and the
+        // chip carries enough of it to be seen.
+        color: color.withValues(alpha: hovered ? 0.20 : 0.13),
         borderRadius: BorderRadius.circular(9),
       ),
-      child: Icon(approvalIcon(mode), size: 15, color: color),
+      child: Icon(approvalIcon(mode), size: 16, color: color),
     );
   }
 }
+
+/// A mode's own hue — cool grey as you climb from "reads only" to "runs anything",
+/// so the four rows are told apart by colour before they're read.
+Color approvalColor(AgentApprovalMode mode) => switch (mode) {
+  // A true cyan, not a blue-grey: on charcoal a desaturated slate just reads as
+  // the same grey as the text beside it, which is what made this chip vanish
+  // into "one of three grey blobs" in the first place.
+  AgentApprovalMode.readOnly => AppTheme.pick(
+    const Color(0xFF3A7D8C),
+    const Color(0xFF4FC3D9),
+  ),
+  AgentApprovalMode.plan => AppTheme.pick(
+    const Color(0xFF6435C9),
+    const Color(0xFF9B7CF0),
+  ),
+  AgentApprovalMode.ask => AppPalette.accent,
+  AgentApprovalMode.full => AppPalette.warn,
+};
 
 /// The name of a mode, as the user reads it in the composer.
 String approvalLabel(AgentApprovalMode mode) => switch (mode) {
