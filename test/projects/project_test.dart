@@ -127,4 +127,66 @@ void main() {
 
     expect(c.read(projectsProvider).single.instructions, isEmpty);
   });
+
+  test(
+    'renaming changes the label, keeps the folder, and reloads next launch',
+    () {
+      final c = container();
+      final project = c
+          .read(projectsProvider.notifier)
+          .add('${tmp.path}/notes');
+
+      c.read(projectsProvider.notifier).rename(project.id, '  My notes  ');
+
+      expect(c.read(projectByIdProvider(project.id))?.name, 'My notes');
+      // Path (its identity) never moves, and the new name survives a relaunch.
+      expect(c.read(projectByIdProvider(project.id))?.path, project.path);
+      expect(container().read(projectsProvider).single.name, 'My notes');
+    },
+  );
+
+  test('a blank rename is ignored — a nameless row can\'t be told apart', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+
+    c.read(projectsProvider.notifier).rename(project.id, '   ');
+
+    expect(c.read(projectByIdProvider(project.id))?.name, 'notes');
+  });
+
+  test('pinning persists and reloads, and unpinning drops out of the file', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+    expect(project.pinned, isFalse);
+
+    c.read(projectsProvider.notifier).setPinned(project.id, true);
+    expect(c.read(projectByIdProvider(project.id))?.pinned, isTrue);
+    expect(container().read(projectsProvider).single.pinned, isTrue);
+
+    c.read(projectsProvider.notifier).setPinned(project.id, false);
+    expect(file.readAsStringSync(), isNot(contains('pinned')));
+  });
+
+  test(
+    'sortedProjects floats pinned to the top, keeping order within groups',
+    () {
+      final c = container();
+      final a = c.read(projectsProvider.notifier).add('${tmp.path}/a');
+      c.read(projectsProvider.notifier).add('${tmp.path}/b');
+      final cc = c.read(projectsProvider.notifier).add('${tmp.path}/c');
+
+      // Pin the last one; it should jump ahead of the earlier, unpinned two.
+      c.read(projectsProvider.notifier).setPinned(cc.id, true);
+
+      final order = c.read(sortedProjectsProvider).map((p) => p.name).toList();
+      expect(order, ['c', 'a', 'b']);
+      // The stored order is untouched — only the display view reorders.
+      expect(c.read(projectsProvider).map((p) => p.name).toList(), [
+        'a',
+        'b',
+        'c',
+      ]);
+      expect(a.pinned, isFalse);
+    },
+  );
 }

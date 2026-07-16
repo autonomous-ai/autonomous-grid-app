@@ -17,6 +17,7 @@ class Project {
     required this.name,
     required this.path,
     this.instructions = '',
+    this.pinned = false,
   });
 
   final String id;
@@ -24,6 +25,10 @@ class Project {
   /// The folder's own name, which is what the user recognises it by.
   final String name;
   final String path;
+
+  /// Kept at the top of the list. A folder you come back to every day shouldn't
+  /// sink under ones you opened once — pinning holds it in reach.
+  final bool pinned;
 
   /// Standing house rules the assistant follows in this project's chats — the
   /// app's equivalent of a repo's `AGENTS.md`. Prepended to the agent's first
@@ -36,6 +41,7 @@ class Project {
     'name': name,
     'path': path,
     if (instructions.isNotEmpty) 'instructions': instructions,
+    if (pinned) 'pinned': true,
   };
 
   static Project? fromJson(Map<String, dynamic> json) {
@@ -50,17 +56,20 @@ class Project {
       name: name is String && name.isNotEmpty ? name : folderName(path),
       path: path,
       instructions: instructions is String ? instructions : '',
+      pinned: json['pinned'] == true,
     );
   }
 
-  /// A copy with [name] or [instructions] changed; id and path are the project's
-  /// identity and never move.
-  Project copyWith({String? name, String? instructions}) => Project(
-    id: id,
-    name: name ?? this.name,
-    path: path,
-    instructions: instructions ?? this.instructions,
-  );
+  /// A copy with [name], [instructions] or [pinned] changed; id and path are the
+  /// project's identity and never move.
+  Project copyWith({String? name, String? instructions, bool? pinned}) =>
+      Project(
+        id: id,
+        name: name ?? this.name,
+        path: path,
+        instructions: instructions ?? this.instructions,
+        pinned: pinned ?? this.pinned,
+      );
 
   /// Whether the folder is still there. A project whose folder was moved or
   /// deleted stays in the list but is shown as missing — silently dropping it
@@ -147,6 +156,25 @@ class ProjectsController extends Notifier<List<Project>> {
     ]);
   }
 
+  /// Rename a project. The folder on disk is untouched — only the label the user
+  /// sees changes. A blank name is ignored (a nameless row can't be told apart),
+  /// as is a project that isn't there any more.
+  void rename(String id, String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    _commit([
+      for (final project in state)
+        if (project.id == id) project.copyWith(name: trimmed) else project,
+    ]);
+  }
+
+  /// Pin or unpin a project, which floats it to the top of the list (see
+  /// [sortedProjectsProvider]). A project that isn't there any more is a no-op.
+  void setPinned(String id, bool pinned) => _commit([
+    for (final project in state)
+      if (project.id == id) project.copyWith(pinned: pinned) else project,
+  ]);
+
   /// Forget a project. The folder on disk is left alone — this is the app's
   /// list, not the user's files.
   void remove(String id) => _commit([
@@ -164,4 +192,17 @@ class ProjectsController extends Notifier<List<Project>> {
 final projectByIdProvider = Provider.family<Project?, String?>((ref, id) {
   if (id == null) return null;
   return ref.watch(projectsProvider).where((p) => p.id == id).firstOrNull;
+});
+
+/// Projects in display order: pinned ones first, each group keeping the stored
+/// (newest-last) order. What the rail and the manage screen render, so pinning
+/// visibly floats a project to the top everywhere at once.
+final sortedProjectsProvider = Provider<List<Project>>((ref) {
+  final projects = ref.watch(projectsProvider);
+  return [
+    for (final p in projects)
+      if (p.pinned) p,
+    for (final p in projects)
+      if (!p.pinned) p,
+  ];
 });

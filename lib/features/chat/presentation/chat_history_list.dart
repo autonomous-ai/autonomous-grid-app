@@ -7,6 +7,7 @@ import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/add_project.dart';
+import '../../projects/presentation/project_menu.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 
@@ -40,7 +41,7 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
   @override
   Widget build(BuildContext context) {
     final sessions = ref.watch(chatSessionsProvider);
-    final projects = ref.watch(projectsProvider);
+    final projects = ref.watch(sortedProjectsProvider);
     final matches = sessions.conversations;
 
     final loose = [
@@ -58,35 +59,35 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
         controller: _scrollController,
         padding: const EdgeInsets.only(left: 10, right: 16),
         children: [
-        _ProjectsHeader(
-          onAdd: () => addProjectFromPicker(ref),
-          onManage: () => ref
-              .read(shellSectionProvider.notifier)
-              .select(ShellSection.projects),
-        ),
-        if (projects.isEmpty)
-          const _AddFirstProjectHint()
-        else
-          for (final project in projects)
-            _ProjectGroup(
-              project: project,
-              chats: [
-                for (final c in matches)
-                  if (c.projectId == project.id) c,
-              ],
-            ),
-        const SidebarSectionLabel(label: 'Chats'),
-        if (loose.isEmpty)
-          const _Hint(
-            text: 'Chats outside a project show up here.',
-            indented: true,
-          )
-        else
-          // Indented like a project's chats so every conversation's title sits
-          // in the same column, whether or not it belongs to a project — the
-          // "Chats" and "Projects" labels stay at the outer edge, their contents
-          // line up one step in.
-          for (final chat in loose) _ChatRow(chat: chat, indented: true),
+          _ProjectsHeader(
+            onAdd: () => addProjectFromPicker(ref),
+            onManage: () => ref
+                .read(shellSectionProvider.notifier)
+                .select(ShellSection.projects),
+          ),
+          if (projects.isEmpty)
+            const _AddFirstProjectHint()
+          else
+            for (final project in projects)
+              _ProjectGroup(
+                project: project,
+                chats: [
+                  for (final c in matches)
+                    if (c.projectId == project.id) c,
+                ],
+              ),
+          const SidebarSectionLabel(label: 'Chats'),
+          if (loose.isEmpty)
+            const _Hint(
+              text: 'Chats outside a project show up here.',
+              indented: true,
+            )
+          else
+            // Indented like a project's chats so every conversation's title sits
+            // in the same column, whether or not it belongs to a project — the
+            // "Chats" and "Projects" labels stay at the outer edge, their contents
+            // line up one step in.
+            for (final chat in loose) _ChatRow(chat: chat, indented: true),
         ],
       ),
     );
@@ -190,15 +191,24 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
               ? "This folder isn't there any more: ${widget.project.path}"
               : widget.project.path,
           onTap: () => setState(() => _open = !_open),
-          trailing: IconButton(
-            tooltip: 'New chat in ${widget.project.name}',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-            iconSize: 17,
-            splashRadius: 14,
-            color: AppPalette.textSecondary,
-            icon: const Icon(LucideIcons.plus300),
-            onPressed: _newChatHere,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ProjectMenuButton(project: widget.project),
+              IconButton(
+                tooltip: 'New chat in ${widget.project.name}',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 24,
+                  height: 24,
+                ),
+                iconSize: 17,
+                splashRadius: 14,
+                color: AppPalette.textSecondary,
+                icon: const Icon(LucideIcons.plus300),
+                onPressed: _newChatHere,
+              ),
+            ],
           ),
         ),
         // Expanding/collapsing animates the group's height so the rows below

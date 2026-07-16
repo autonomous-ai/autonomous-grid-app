@@ -10,6 +10,7 @@ import '../../chat/logic/chat_sessions_controller.dart';
 import '../logic/project.dart';
 import 'add_project.dart';
 import 'project_instructions_dialog.dart';
+import 'project_menu.dart';
 
 /// The Projects screen: the folders on this computer the assistant may read.
 ///
@@ -21,7 +22,7 @@ class ProjectsView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final projects = ref.watch(projectsProvider);
+    final projects = ref.watch(sortedProjectsProvider);
 
     return SectionScaffold(
       title: 'Projects',
@@ -158,27 +159,9 @@ class _Actions extends ConsumerWidget {
   }
 
   Future<void> _forget(BuildContext context, WidgetRef ref) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Remove "${project.name}"?'),
-        content: const Text(
-          'The folder and its files stay exactly where they are — this only '
-          'takes it off your list, and its chats move out of the project.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) ref.read(projectsProvider.notifier).remove(project.id);
+    if (await confirmRemoveProject(context, project)) {
+      ref.read(projectsProvider.notifier).remove(project.id);
+    }
   }
 
   @override
