@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+// For platform_connected_panel.dart, a part of this library.
+import '../../../shared/widgets/toast.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../logic/messaging_controller.dart';
 import '../logic/messaging_platform.dart';
