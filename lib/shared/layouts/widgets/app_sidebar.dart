@@ -95,12 +95,10 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                     ],
                   ),
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: const ChatHistoryList(),
-                  ),
-                ),
+                // No horizontal padding here: the list owns its own insets so
+                // the scrollbar can sit in a gutter at the rail's edge, clear of
+                // the rows, instead of overlapping them (Codex keeps this gap).
+                const Expanded(child: ChatHistoryList()),
                 // A full-width hairline sets the account off as the rail's foot,
                 // the way Codex separates its signed-in user from the list above.
                 const Divider(height: 1, thickness: 1),

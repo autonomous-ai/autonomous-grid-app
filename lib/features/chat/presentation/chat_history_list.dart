@@ -19,11 +19,26 @@ import '../logic/conversation.dart';
 ///
 /// Searching isn't here: it's in the palette (⌘K), which finds projects and
 /// scheduled tasks too.
-class ChatHistoryList extends ConsumerWidget {
+class ChatHistoryList extends ConsumerStatefulWidget {
   const ChatHistoryList({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChatHistoryList> createState() => _ChatHistoryListState();
+}
+
+class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
+  // The list and its scrollbar have to share one controller, or the desktop
+  // scroll behaviour mounts a *second*, uncontrolled bar over the top.
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final sessions = ref.watch(chatSessionsProvider);
     final projects = ref.watch(projectsProvider);
     final matches = sessions.conversations;
@@ -33,9 +48,16 @@ class ChatHistoryList extends ConsumerWidget {
         if (c.projectId == null || !projects.any((p) => p.id == c.projectId)) c,
     ];
 
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
+    // The scrollbar rides in a 6px gutter at the rail's edge; the rows are
+    // inset a matching amount on the right (10 base + 6 gutter) so their content
+    // — and the "+" button — never runs under the thumb. Codex keeps exactly
+    // this clear gap between the list and its scrollbar.
+    return Scrollbar(
+      controller: _scrollController,
+      child: ListView(
+        controller: _scrollController,
+        padding: const EdgeInsets.only(left: 10, right: 16),
+        children: [
         _ProjectsHeader(
           onAdd: () => addProjectFromPicker(ref),
           onManage: () => ref
@@ -65,7 +87,8 @@ class ChatHistoryList extends ConsumerWidget {
           // "Chats" and "Projects" labels stay at the outer edge, their contents
           // line up one step in.
           for (final chat in loose) _ChatRow(chat: chat, indented: true),
-      ],
+        ],
+      ),
     );
   }
 }
