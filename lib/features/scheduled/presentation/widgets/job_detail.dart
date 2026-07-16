@@ -6,6 +6,7 @@ import '../../../../shared/layouts/shell_state.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/error_box.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
+import '../../logic/cron_error.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/scheduled_job.dart';
 import '../../logic/scheduled_jobs_controller.dart';
