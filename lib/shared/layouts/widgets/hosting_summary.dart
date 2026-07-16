@@ -5,6 +5,7 @@ import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../theme/app_theme.dart';
+import 'top_bar_pill.dart';
 
 /// What's live on the active grid, at a glance: how many computers are hosting
 /// and how many models they serve. This is the top bar's "nodes + models hosting
@@ -12,8 +13,9 @@ import '../../theme/app_theme.dart';
 /// actually answer a message.
 ///
 /// Icons rather than words ("node"/"model" are jargon in primary copy), with a
-/// plain-language tooltip. Hidden when nothing is online, so it never shows a
-/// bare "0 · 0".
+/// plain-language tooltip. Owns its own [TopBarPill] and stays fully unmounted —
+/// pill and all — when nothing is online, so the bar never shows a bare "0 · 0"
+/// or a lone empty capsule.
 class HostingSummary extends ConsumerWidget {
   const HostingSummary({super.key});
 
@@ -35,15 +37,17 @@ class HostingSummary extends ConsumerWidget {
 
     final computers = online == 1 ? '1 computer' : '$online computers';
     final serves = models == 1 ? '1 model' : '$models models';
-    return Tooltip(
-      message: '$computers hosting · $serves available',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _HostingStat(icon: Icons.dns_outlined, value: online),
-          const SizedBox(width: 12),
-          _HostingStat(icon: Icons.auto_awesome_outlined, value: models),
-        ],
+    return TopBarPill(
+      child: Tooltip(
+        message: '$computers hosting · $serves available',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _HostingStat(icon: Icons.dns_outlined, value: online),
+            const SizedBox(width: 12),
+            _HostingStat(icon: Icons.auto_awesome_outlined, value: models),
+          ],
+        ),
       ),
     );
   }
