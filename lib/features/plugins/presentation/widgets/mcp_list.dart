@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../logic/mcp_controller.dart';
 import '../../logic/mcp_server.dart';
@@ -14,13 +15,23 @@ import 'extension_tile_surface.dart';
 /// Read from Hermes's own config, so a server listed here is one the agent will
 /// actually connect to on its next session.
 class McpList extends StatelessWidget {
-  const McpList({super.key, required this.servers});
+  const McpList({super.key, required this.servers, this.filtered = false});
 
   final List<McpServer> servers;
 
+  /// A search is narrowing the list, so an empty [servers] means "nothing
+  /// matched" — not "nothing configured". See [SkillList.filtered].
+  final bool filtered;
+
   @override
   Widget build(BuildContext context) {
-    if (servers.isEmpty) return const _Empty();
+    if (servers.isEmpty) {
+      return filtered
+          ? const EmptyState.noMatches(
+              message: 'No MCP servers match that search.',
+            )
+          : const _Empty();
+    }
     return ListView.separated(
       padding: EdgeInsets.zero,
       itemCount: servers.length,
@@ -125,12 +136,19 @@ class _McpInfo extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-        Text(
-          mcpServerSummary(server),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: AppPalette.textSecondary,
+        // One line, like the plugin and skill rows — a stdio server's command
+        // line with its args is long, and wrapping it to two made the MCP rows
+        // taller than everything else in the app.
+        Tooltip(
+          message: mcpServerSummary(server),
+          waitDuration: const Duration(milliseconds: 600),
+          child: Text(
+            mcpServerSummary(server),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
           ),
         ),
       ],
@@ -177,27 +195,16 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              'No MCP servers yet. Add one to give the assistant tools from '
-              'outside — a database, a design tool, a web service.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppPalette.textSecondary),
-            ),
-          ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: () => showAddMcpDialog(context),
-            icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
-            label: const Text('Add an MCP server'),
-          ),
-        ],
+    return EmptyState(
+      icon: Icons.hub_outlined,
+      title: 'No MCP servers yet',
+      message:
+          'Add one to give the assistant tools from outside — a database, a '
+          'design tool, a web service.',
+      action: FilledButton.icon(
+        onPressed: () => showAddMcpDialog(context),
+        icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
+        label: const Text('Add an MCP server'),
       ),
     );
   }

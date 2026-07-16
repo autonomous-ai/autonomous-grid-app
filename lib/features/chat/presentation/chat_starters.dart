@@ -238,7 +238,9 @@ class _StarterCardState extends State<_StarterCard> {
             hoverColor: Colors.transparent,
             child: SizedBox(
               width: widget.width,
-              height: 128,
+              // Tall enough for the worst case: a two-line title over a two-line
+              // description, with the icon chip above both.
+              height: 142,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 15),
                 child: _StarterContent(
@@ -264,78 +266,54 @@ class _StarterContent extends StatelessWidget {
   Widget build(BuildContext context) {
     // Reads AppPalette tokens — follow theme flips.
     AppTheme.watch(context);
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // The icon sits in a soft tinted chip — a small spot of the starter's
-            // colour that gives each card a point of focus and lifts it off the
-            // pane. It swells a hair on hover so the card feels responsive.
-            AnimatedScale(
-              scale: hovered ? 1.06 : 1,
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOut,
-              alignment: Alignment.topLeft,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: starter.color.withValues(alpha: hovered ? 0.20 : 0.13),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(starter.icon, size: 18, color: starter.color),
-              ),
-            ),
-            const Spacer(),
-            Text(
-              starter.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.16,
-                letterSpacing: -0.1,
-                fontWeight: FontWeight.w600,
-                color: AppPalette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 3),
-            // The quiet second line — hidden on the narrowest cards where the
-            // title may wrap to two lines, so the two never collide.
-            Text(
-              starter.description,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.3,
-                color: AppPalette.textFaint,
-              ),
-            ),
-          ],
-        ),
-        // A directional cue that fades in on hover: this card takes you somewhere
-        // (it prefills the composer). Tinted to the starter's own colour.
-        Positioned(
-          right: 0,
-          bottom: 0,
-          child: AnimatedSlide(
-            offset: Offset(hovered ? 0 : -0.25, 0),
+        // The icon sits in a soft tinted chip — a small spot of the starter's
+        // colour that gives each card a point of focus and lifts it off the
+        // pane. It swells a hair on hover so the card feels responsive.
+        AnimatedScale(
+          scale: hovered ? 1.06 : 1,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          alignment: Alignment.topLeft,
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
-            child: AnimatedOpacity(
-              opacity: hovered ? 1 : 0,
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOut,
-              child: Icon(
-                LucideIcons.arrowRight,
-                size: 15,
-                color: starter.color,
-              ),
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: starter.color.withValues(alpha: hovered ? 0.20 : 0.13),
+              borderRadius: BorderRadius.circular(10),
             ),
+            child: Icon(starter.icon, size: 18, color: starter.color),
+          ),
+        ),
+        const Spacer(),
+        Text(
+          starter.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.16,
+            letterSpacing: -0.1,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 3),
+        // The quiet second line — says what the card actually offers, so it gets
+        // the card's full width and wraps rather than truncating. Nothing shares
+        // this row: the hover lift, the tinted rim and the click cursor already
+        // say the card is pickable, so an arrow cue here would only cost text.
+        Text(
+          starter.description,
+          maxLines: 2,
+          style: TextStyle(
+            fontSize: 11.5,
+            height: 1.3,
+            color: AppPalette.textFaint,
           ),
         ),
       ],

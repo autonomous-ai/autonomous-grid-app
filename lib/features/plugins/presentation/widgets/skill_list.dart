@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
+import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../agent/logic/hermes_skill_installer.dart';
 import '../../logic/agent_skill.dart';
@@ -14,26 +15,108 @@ import 'new_skill_dialog.dart';
 /// ("make an image on the grid", "write my weekly report"), grouped by the folder
 /// Hermes files them under.
 class SkillList extends StatelessWidget {
-  const SkillList({super.key, required this.skills});
+  const SkillList({super.key, required this.skills, this.filtered = false});
 
   final List<AgentSkill> skills;
 
+  /// A search is narrowing the list, so an empty [skills] means "nothing
+  /// matched" — not "nothing installed". Offering "Write a skill" there would
+  /// answer a question the user didn't ask.
+  final bool filtered;
+
   @override
   Widget build(BuildContext context) {
-    if (skills.isEmpty) return const _Empty();
+    if (skills.isEmpty) {
+      return filtered
+          ? const EmptyState.noMatches(message: 'No skills match that search.')
+          : const _Empty();
+    }
+    final items = _sectioned(skills);
+    // Read the answer off the built list rather than re-deriving it: _sectioned
+    // also falls back to flat when every skill shares one category, and a row in
+    // that list still has to name its own — otherwise the category disappears
+    // from the screen entirely.
+    final headed = items.any((item) => item is _Header);
     return ListView.separated(
       padding: EdgeInsets.zero,
-      itemCount: skills.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, i) => _SkillRow(skill: skills[i]),
+      itemCount: items.length,
+      // See PluginList: extra air before a header; the lookahead is in range
+      // because separators only fall between two items.
+      separatorBuilder: (context, i) =>
+          SizedBox(height: items[i + 1] is _Header ? 18 : 8),
+      itemBuilder: (context, i) => switch (items[i]) {
+        _Header(:final label, :final count) => ExtensionSectionHeader(
+          label: label,
+          count: count,
+        ),
+        _Row(:final skill) => _SkillRow(skill: skill, showCategory: !headed),
+      },
     );
+  }
+
+  /// Grouped by the folder Hermes files each skill under, the user's own first.
+  ///
+  /// Hermes ships ~70 skills, so a flat alphabetical list mixes the two the user
+  /// wrote in among seventy they didn't — and the category was already computed
+  /// for exactly this, then thrown away by rendering flat.
+  ///
+  /// No sections while searching: chapters over a three-hit list are noise.
+  List<_Item> _sectioned(List<AgentSkill> skills) {
+    if (filtered) return [for (final s in skills) _Row(s)];
+
+    final groups = <String, List<AgentSkill>>{};
+    for (final skill in skills) {
+      // A skill sitting loose at the top of the folder has no category; give it
+      // a heading of its own rather than hiding it under someone else's.
+      final key = skill.category.isEmpty ? 'Other' : skill.category;
+      groups.putIfAbsent(key, () => []).add(skill);
+    }
+    if (groups.length < 2) return [for (final s in skills) _Row(s)];
+
+    final names = groups.keys.toList()
+      ..sort((a, b) {
+        // The user's own skills lead — they're the ones they came here to find.
+        if (a == kMySkillsCategory) return -1;
+        if (b == kMySkillsCategory) return 1;
+        return a.compareTo(b);
+      });
+
+    return [
+      for (final name in names) ...[
+        _Header(name == kMySkillsCategory ? 'My skills' : name,
+            groups[name]!.length),
+        for (final skill in groups[name]!) _Row(skill),
+      ],
+    ];
   }
 }
 
-class _SkillRow extends ConsumerStatefulWidget {
-  const _SkillRow({required this.skill});
+/// One entry in the built list — a section header or a skill row.
+sealed class _Item {
+  const _Item();
+}
+
+class _Header extends _Item {
+  const _Header(this.label, this.count);
+
+  final String label;
+  final int count;
+}
+
+class _Row extends _Item {
+  const _Row(this.skill);
 
   final AgentSkill skill;
+}
+
+class _SkillRow extends ConsumerStatefulWidget {
+  const _SkillRow({required this.skill, this.showCategory = false});
+
+  final AgentSkill skill;
+
+  /// See [_SkillInfo.showCategory] — true only in the flat (searching) list,
+  /// where no header names the category.
+  final bool showCategory;
 
   @override
   ConsumerState<_SkillRow> createState() => _SkillRowState();
@@ -74,9 +157,19 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const ExtensionIconBadge(icon: Icons.auto_awesome_outlined),
+          ExtensionIconBadge(
+            icon: Icons.auto_awesome_outlined,
+            // The user's own skills carry the accent — the same signal the
+            // plugin list gives an enabled plugin: "this one is yours/live".
+            active: skill.isMine,
+          ),
           const SizedBox(width: 12),
-          Expanded(child: _SkillInfo(skill: skill)),
+          Expanded(
+            child: _SkillInfo(
+              skill: skill,
+              showCategory: widget.showCategory,
+            ),
+          ),
           if (!skill.fromGrid) ...[
             const SizedBox(width: 8),
             _SkillActions(skill: skill, busy: _busy, onDelete: _delete),
@@ -89,9 +182,13 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
 
 /// The skill's name, its Hermes category, and one line of what it does.
 class _SkillInfo extends StatelessWidget {
-  const _SkillInfo({required this.skill});
+  const _SkillInfo({required this.skill, required this.showCategory});
 
   final AgentSkill skill;
+
+  /// False when a section header already names the category — repeating it on
+  /// every row under its own heading is just noise beside the name.
+  final bool showCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +208,7 @@ class _SkillInfo extends StatelessWidget {
                 ),
               ),
             ),
-            if (skill.category.isNotEmpty) ...[
+            if (showCategory && skill.category.isNotEmpty) ...[
               const SizedBox(width: 8),
               Text(
                 skill.category,
@@ -122,18 +219,25 @@ class _SkillInfo extends StatelessWidget {
             ],
             if (skill.fromGrid) ...[
               const SizedBox(width: 8),
-              const ExtensionTag(label: 'From Grid'),
+              const ExtensionTag(label: 'From Grid', muted: true),
             ],
           ],
         ),
         if (skill.description.isNotEmpty) ...[
           const SizedBox(height: 4),
-          Text(
-            skill.description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppPalette.textSecondary,
+          // One line, like the plugin rows: a skill card's description is
+          // written for the agent to match against, so it often runs to a
+          // paragraph of trigger words. The full text is the tooltip.
+          Tooltip(
+            message: skill.description,
+            waitDuration: const Duration(milliseconds: 600),
+            child: Text(
+              skill.description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppPalette.textSecondary,
+              ),
             ),
           ),
         ],
@@ -216,27 +320,21 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    return EmptyState(
+      icon: Icons.auto_awesome_outlined,
+      title: 'No skills installed yet',
+      message:
+          'A skill teaches the assistant one job, in your own words — write '
+          "one, or put Grid's own skills back.",
+      action: Wrap(
+        spacing: 10,
         children: [
-          Text(
-            'No skills installed yet.',
-            style: TextStyle(color: AppPalette.textSecondary),
+          FilledButton.icon(
+            onPressed: () => showNewSkillDialog(context),
+            icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
+            label: const Text('Write a skill'),
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            children: [
-              FilledButton.icon(
-                onPressed: () => showNewSkillDialog(context),
-                icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
-                label: const Text('Write a skill'),
-              ),
-              const ReinstallGridSkillsButton(),
-            ],
-          ),
+          const ReinstallGridSkillsButton(),
         ],
       ),
     );

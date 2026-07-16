@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/widgets/skeleton.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../logic/agent_skill.dart';
 import '../logic/mcp_controller.dart';
@@ -45,6 +46,10 @@ class _PluginsViewState extends ConsumerState<PluginsView> {
     super.dispose();
   }
 
+  /// Whether a search is narrowing the lists — so an empty list can say "nothing
+  /// matched" instead of "nothing installed".
+  bool get _isFiltering => _query.trim().isNotEmpty;
+
   bool _matches(String name, String description) {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return true;
@@ -68,29 +73,47 @@ class _PluginsViewState extends ConsumerState<PluginsView> {
       subtitle:
           'What the assistant can do beyond talking: plugins give it new tools, '
           'skills teach it a job.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Toolbar(tab: tab, onRefresh: _refresh),
-          const SizedBox(height: 12),
-          _SearchField(
-            controller: _search,
-            hintText: switch (tab) {
-              PluginsTab.plugins => 'Search plugins',
-              PluginsTab.skills => 'Search skills',
-              PluginsTab.mcp => 'Search MCP servers',
-            },
-            onChanged: (value) => setState(() => _query = value),
+      // Rows are name-on-the-left, switch-on-the-right. Let them run the full
+      // width of a large window and the two ends drift so far apart that the eye
+      // has to travel to pair them up; this keeps a row scannable in one glance.
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 940),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Toolbar(tab: tab, onRefresh: _refresh),
+              const SizedBox(height: 12),
+              _SearchField(
+                controller: _search,
+                hintText: switch (tab) {
+                  PluginsTab.plugins => 'Search plugins',
+                  PluginsTab.skills => 'Search skills',
+                  PluginsTab.mcp => 'Search MCP servers',
+                },
+                onChanged: (value) => setState(() => _query = value),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: switch (tab) {
+                  PluginsTab.plugins => _Plugins(
+                    matches: _matches,
+                    filtered: _isFiltering,
+                  ),
+                  PluginsTab.skills => _Skills(
+                    matches: _matches,
+                    filtered: _isFiltering,
+                  ),
+                  PluginsTab.mcp => _Mcp(
+                    matches: _matches,
+                    filtered: _isFiltering,
+                  ),
+                },
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          Expanded(
-            child: switch (tab) {
-              PluginsTab.plugins => _Plugins(matches: _matches),
-              PluginsTab.skills => _Skills(matches: _matches),
-              PluginsTab.mcp => _Mcp(matches: _matches),
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -316,14 +339,16 @@ class _SearchField extends StatelessWidget {
 
 /// The plugins half — Hermes's own list, with a switch each.
 class _Plugins extends ConsumerWidget {
-  const _Plugins({required this.matches});
+  const _Plugins({required this.matches, required this.filtered});
 
   final bool Function(String name, String description) matches;
+  final bool filtered;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (ref.watch(pluginsProvider)) {
       AsyncData(:final value) => PluginList(
+        filtered: filtered,
         plugins: [
           for (final plugin in value)
             if (matches(plugin.name, plugin.description)) plugin,
@@ -332,21 +357,23 @@ class _Plugins extends ConsumerWidget {
       AsyncError(:final error) => ErrorBox(
         message: "Couldn't read the installed plugins: $error",
       ),
-      _ => const LoadingView(),
+      _ => const _LoadingRows(),
     };
   }
 }
 
 /// The skills half — what's in the assistant's skills folder.
 class _Skills extends ConsumerWidget {
-  const _Skills({required this.matches});
+  const _Skills({required this.matches, required this.filtered});
 
   final bool Function(String name, String description) matches;
+  final bool filtered;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (ref.watch(agentSkillsProvider)) {
       AsyncData(:final value) => SkillList(
+        filtered: filtered,
         skills: [
           for (final skill in value)
             if (matches(skill.name, skill.description)) skill,
@@ -355,21 +382,23 @@ class _Skills extends ConsumerWidget {
       AsyncError(:final error) => ErrorBox(
         message: "Couldn't read the installed skills: $error",
       ),
-      _ => const LoadingView(),
+      _ => const _LoadingRows(),
     };
   }
 }
 
 /// The MCP half — the external tool servers Hermes is configured to load.
 class _Mcp extends ConsumerWidget {
-  const _Mcp({required this.matches});
+  const _Mcp({required this.matches, required this.filtered});
 
   final bool Function(String name, String description) matches;
+  final bool filtered;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (ref.watch(mcpServersProvider)) {
       AsyncData(:final value) => McpList(
+        filtered: filtered,
         servers: [
           for (final server in value)
             if (matches(server.name, mcpServerSummary(server))) server,
@@ -378,8 +407,23 @@ class _Mcp extends ConsumerWidget {
       AsyncError(:final error) => ErrorBox(
         message: "Couldn't read the MCP servers: $error",
       ),
-      _ => const LoadingView(),
+      _ => const _LoadingRows(),
     };
+  }
+}
+
+/// The three lists all load the same shape — an icon, a name, a line of
+/// description — so they wait as rows rather than as a spinner: nothing jumps
+/// when the real list lands.
+class _LoadingRows extends StatelessWidget {
+  const _LoadingRows();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Align(
+      alignment: Alignment.topCenter,
+      child: SkeletonList(rows: 7),
+    );
   }
 }
 
@@ -389,30 +433,20 @@ class _NoAgent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(
-      context,
-    ); // follow theme flips — reads AppPalette.textSecondary.
     return SectionScaffold(
       title: 'Plugins',
       subtitle: 'What the assistant can do beyond talking.',
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              "This computer isn't set up to answer chats yet, so it has "
-              'nothing to extend.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppPalette.textSecondary),
-            ),
-            const SizedBox(height: 14),
-            FilledButton(
-              onPressed: () => ref
-                  .read(shellSectionProvider.notifier)
-                  .select(ShellSection.engines),
-              child: const Text('Set up this computer'),
-            ),
-          ],
+      child: EmptyState(
+        icon: Icons.extension_off_outlined,
+        title: 'No assistant on this computer',
+        message:
+            "This computer isn't set up to answer chats yet, so it has "
+            'nothing to extend.',
+        action: FilledButton(
+          onPressed: () => ref
+              .read(shellSectionProvider.notifier)
+              .select(ShellSection.engines),
+          child: const Text('Set up this computer'),
         ),
       ),
     );
