@@ -62,7 +62,19 @@ class _PulseHaloState extends State<_PulseHalo>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
-  )..repeat();
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Honor Reduce Motion — a still dot instead of a breathing one, matching the
+    // rest of the app's animated marks.
+    if (MediaQuery.of(context).disableAnimations) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
 
   @override
   void dispose() {
@@ -72,6 +84,11 @@ class _PulseHaloState extends State<_PulseHalo>
 
   @override
   Widget build(BuildContext context) {
+    // With Reduce Motion on, the controller is stopped at 0 — the halo would
+    // sit at full size and full opacity, a solid disc around the dot. Drop it
+    // entirely and show just the dot.
+    if (MediaQuery.of(context).disableAnimations) return widget.child;
+
     return SizedBox.square(
       dimension: widget.size,
       child: Stack(

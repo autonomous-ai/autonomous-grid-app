@@ -85,7 +85,7 @@ class _ChangeButtonState extends ConsumerState<_ChangeButton> {
           visualDensity: VisualDensity.compact,
           textStyle: const TextStyle(fontSize: 12.5),
         ),
-        child: const Text('Change'),
+        child: const Text('Change access'),
       ),
     );
   }
@@ -161,23 +161,25 @@ class _PowerItem extends StatelessWidget {
   }
 }
 
-/// The name of a setting, as the user reads it.
+/// The name of a setting, as the user reads it — what it lets a task do, not how
+/// it's wired ("no commands" was the config talking).
 String taskPowerLabel(TaskPower power) => switch (power) {
   TaskPower.fullAccess => 'Full access',
-  TaskPower.noCommands => 'No commands',
+  TaskPower.noCommands => 'Files only',
 };
 
-/// What it actually means. No euphemism for the default — a task running at 8am
-/// with nobody watching is exactly when a surprise costs the most.
+/// What it actually means, in plain terms. No euphemism for the default — a task
+/// running at 8am with nobody watching is exactly when a surprise costs the most.
 String taskPowerDetail(TaskPower power) => switch (power) {
   TaskPower.fullAccess =>
-    'Tasks run commands and change your files with nobody to say no.',
+    'Tasks can change your files and run programs on your computer, with '
+        'nobody there to approve it.',
   TaskPower.noCommands =>
-    'Tasks read and change files in your project, but can\'t run commands — '
-        'those tools are never loaded.',
+    'Tasks can read and edit files in your project, but can\'t run any '
+        'programs on your computer.',
 };
 
 IconData taskPowerIcon(TaskPower power) => switch (power) {
   TaskPower.fullAccess => Icons.bolt_outlined,
-  TaskPower.noCommands => Icons.block_rounded,
+  TaskPower.noCommands => Icons.shield_outlined,
 };

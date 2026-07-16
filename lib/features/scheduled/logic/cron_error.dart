@@ -22,7 +22,7 @@ class CronRunError {
 /// task detail's "Last error" row and the "Run now" feedback.
 CronRunError describeCronRunError(String raw) {
   final text = raw.trim();
-  if (_isModelDriftSkip(text)) {
+  if (isModelDriftSkip(text)) {
     return const CronRunError(
       summary:
           'Paused to avoid an unexpected charge — the model your assistant '
@@ -39,7 +39,11 @@ CronRunError describeCronRunError(String raw) {
 /// provider has drifted from what it was at creation — a fail-closed guard
 /// against surprise spend. Match on the guard's stable phrasing rather than the
 /// exact model names, which differ for every grid.
-bool _isModelDriftSkip(String text) {
+///
+/// This isn't a run that failed and might pass next time: until the user acts,
+/// every future run is skipped the same way. The status layer treats it as a
+/// task that won't run, not one that's merely "running with a failed last run".
+bool isModelDriftSkip(String text) {
   final lower = text.toLowerCase();
   return lower.contains('unintended spend') ||
       (lower.contains('unpinned') && lower.contains('drift'));

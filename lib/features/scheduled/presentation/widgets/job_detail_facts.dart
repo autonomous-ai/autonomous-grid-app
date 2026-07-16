@@ -7,22 +7,27 @@ class _Facts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final status = jobStatusOf(job);
     return _SoftPanel(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(
         children: [
           _FactRow(label: 'Runs', value: describeJobCron(job.cron)),
-          _FactRow(
-            label: 'State',
-            value: job.enabled ? 'Running to schedule' : 'Paused',
-          ),
-          _FactRow(label: 'Next run', value: _when(job.nextRunAt, job.enabled)),
+          _FactRow(label: 'State', value: _state(status)),
+          _FactRow(label: 'Next run', value: _when(job.nextRunAt, status)),
           _FactRow(label: 'Last run', value: _lastRun(job)),
           if (job.failed) _errorRow(job.lastError!),
         ],
       ),
     );
   }
+
+  static String _state(JobStatus status) => switch (status) {
+    JobStatus.running => 'Running to schedule',
+    JobStatus.lastRunFailed => 'Running to schedule',
+    JobStatus.blocked => "Won't run until you fix it",
+    JobStatus.paused => 'Paused',
+  };
 
   static Widget _errorRow(String raw) {
     final error = describeCronRunError(raw);
@@ -34,10 +39,19 @@ class _Facts extends StatelessWidget {
     );
   }
 
-  static String _when(DateTime? time, bool enabled) {
-    if (!enabled) return 'Paused — nothing scheduled';
-    if (time == null) return 'Not scheduled yet';
-    return jobTimeLabel(time);
+  /// A blocked task is still "enabled" in the store, but it won't run — so the
+  /// next-run row must not promise a time the scheduler is going to skip.
+  static String _when(DateTime? time, JobStatus status) {
+    switch (status) {
+      case JobStatus.paused:
+        return 'Paused — nothing scheduled';
+      case JobStatus.blocked:
+        return "Won't run until you fix it";
+      case JobStatus.running:
+      case JobStatus.lastRunFailed:
+        if (time == null) return 'Not scheduled yet';
+        return jobTimeLabel(time);
+    }
   }
 
   static String _lastRun(ScheduledJob job) {

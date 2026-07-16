@@ -156,7 +156,7 @@ void main() {
     final h = harness();
     await h.container.read(scheduledJobsProvider.future);
 
-    final error = await h.container
+    final result = await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
           name: 'Weekly review',
@@ -169,7 +169,7 @@ void main() {
           ),
         );
 
-    expect(error, isNull);
+    expect(result.error, isNull);
     expect(h.cron.created?.schedule, '0 16 * * 5');
     expect(h.cron.created?.name, 'Weekly review');
     expect(h.cron.created?.workdir, workspace.path);

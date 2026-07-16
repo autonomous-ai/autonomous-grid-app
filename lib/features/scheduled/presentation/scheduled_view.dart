@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../agent/logic/hermes_tool.dart';
+import '../logic/job_schedule.dart';
 import '../logic/scheduled_job.dart';
 import '../logic/scheduled_jobs_controller.dart';
 import 'widgets/job_detail.dart';
@@ -83,9 +84,21 @@ class _Workspace extends ConsumerWidget {
         const VerticalDivider(width: 1),
         const SizedBox(width: 30),
         Expanded(
-          child: open == null
-              ? const _PickOne()
-              : JobDetail(key: ValueKey(open.id), job: open),
+          // A short cross-fade when the open task changes, so switching rows
+          // reads as a transition rather than a hard cut. Keyed by task id (and
+          // a sentinel for the empty state) so the switcher knows when to run.
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            // Fade only — no slide. The panes are full-height; sliding them would
+            // fight the list's own layout and feel busier, not smoother.
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
+            child: open == null
+                ? const _PickOne(key: ValueKey('pick-one'))
+                : JobDetail(key: ValueKey(open.id), job: open),
+          ),
         ),
       ],
     );
@@ -119,16 +132,121 @@ class _NewTaskButton extends StatelessWidget {
   }
 }
 
-/// Nothing open in the right pane yet.
-class _PickOne extends StatelessWidget {
-  const _PickOne();
+/// Nothing open in the right pane yet — so instead of an empty prompt, show what
+/// the tasks have been doing. Recent runs across every task, newest first, each
+/// a shortcut into that task. An idle selection still proves the work is happening.
+class _PickOne extends ConsumerWidget {
+  const _PickOne({super.key});
+
+  /// A peek per run — enough to recognise it, not enough to read it here.
+  static const int _previewLines = 3;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        'Pick a task to see what it does.',
-        style: TextStyle(color: AppPalette.textFaint),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final activity = ref.watch(recentActivityProvider);
+
+    return switch (activity) {
+      AsyncData(:final value) when value.isEmpty => Center(
+        child: Text(
+          'Pick a task to see what it does.\n'
+          'When one runs, its answer shows up here.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppPalette.textFaint, height: 1.4),
+        ),
+      ),
+      AsyncData(:final value) => ListView(
+        padding: const EdgeInsets.only(right: 4),
+        children: [
+          Text(
+            'Recent activity',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'The latest from your tasks. Pick one to open it.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          for (final run in value.take(8))
+            _ActivityCard(run: run, previewLines: _previewLines),
+        ],
+      ),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+  }
+}
+
+/// One recent run in the activity feed: which task, when, and the top of what it
+/// said. Tapping it opens that task in the pane.
+class _ActivityCard extends ConsumerWidget {
+  const _ActivityCard({required this.run, required this.previewLines});
+
+  final JobRun run;
+  final int previewLines;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final lines = run.text.split('\n');
+    final preview = lines.take(previewLines).join('\n').trim();
+    final radius = BorderRadius.circular(14);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppCard.base,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: () =>
+              ref.read(selectedJobIdProvider.notifier).select(run.jobId),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        run.jobName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      jobTimeLabel(run.at),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textFaint,
+                      ),
+                    ),
+                  ],
+                ),
+                if (preview.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    preview,
+                    maxLines: previewLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
