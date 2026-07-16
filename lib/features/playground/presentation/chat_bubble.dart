@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/chat_message.dart';
 import 'message_content.dart';
+import 'message_plan.dart';
 import 'message_sources.dart';
 
 /// One transcript turn — the user's message (accent, right-aligned) or the
@@ -28,6 +29,10 @@ class ChatBubble extends StatelessWidget {
                 media: message.media,
                 color: AppPalette.textPrimary,
               ),
+              if (message.plan.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                MessagePlan(entries: message.plan),
+              ],
               if (message.sources.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 MessageSources(sources: message.sources),

@@ -22,6 +22,7 @@ class ChatMessage {
     this.text = '',
     this.media = const [],
     this.sources = const [],
+    this.plan = const [],
   });
 
   final ChatRole role;
@@ -32,6 +33,11 @@ class ChatMessage {
   /// under the reply. Empty for user turns and for answers built without the
   /// web.
   final List<WebSource> sources;
+
+  /// The to-do plan the agent worked through this turn — shown as a checklist
+  /// under the reply. Empty for user turns and for simple answers the agent
+  /// didn't plan out.
+  final List<AgentPlanEntry> plan;
 }
 
 /// What the controller is doing right now — modelled as a sealed hierarchy so

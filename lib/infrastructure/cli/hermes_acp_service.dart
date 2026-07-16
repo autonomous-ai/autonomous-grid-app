@@ -49,6 +49,14 @@ class HermesAcpSources extends HermesAcpEvent {
   final List<WebSource> sources;
 }
 
+/// The agent's to-do plan as it stands now (its `todo` tool state, over ACP's
+/// `plan` update). Replaces the previous plan wholesale — Hermes sends the whole
+/// list each time — so the chat shows the steps and which one it's on.
+class HermesAcpPlan extends HermesAcpEvent {
+  const HermesAcpPlan(this.entries);
+  final List<AgentPlanEntry> entries;
+}
+
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
 class HermesAcpRun {
@@ -331,6 +339,10 @@ class _HermesAcpSession implements HermesAcpSession {
           );
           if (sources.isNotEmpty) events.add(HermesAcpSources(sources));
         }
+      case 'plan':
+        // The agent's own to-do list (its `todo` tool) — the whole list each
+        // time, so it replaces rather than appends.
+        events.add(HermesAcpPlan(parseAgentPlan(raw['entries'])));
       case 'agent_message_chunk':
         final content = raw['content'];
         if (content is Map && content['text'] is String) {

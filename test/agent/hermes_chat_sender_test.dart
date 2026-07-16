@@ -286,6 +286,41 @@ void main() {
     },
   );
 
+  test(
+    'the agent’s to-do plan is pinned onto the answer and shown live, replaced '
+    'wholesale as it revises it',
+    () async {
+      final service = _FakeAcp.single([
+        const HermesAcpPlan([
+          AgentPlanEntry(content: 'Read', status: AgentPlanStatus.active),
+          AgentPlanEntry(content: 'Write', status: AgentPlanStatus.pending),
+        ]),
+        // The agent revised the list — a full replacement, not a delta.
+        const HermesAcpPlan([
+          AgentPlanEntry(content: 'Read', status: AgentPlanStatus.done),
+          AgentPlanEntry(content: 'Write', status: AgentPlanStatus.done),
+        ]),
+        const HermesAcpMessage('All done.'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('go'))
+          .toList();
+
+      // The final plan (both steps done) rides on the persisted answer…
+      final reply = (updates.last as ChatSendSuccess).reply;
+      expect(reply.plan.map((e) => e.content), ['Read', 'Write']);
+      expect(reply.plan.map((e) => e.status), [
+        AgentPlanStatus.done,
+        AgentPlanStatus.done,
+      ]);
+      // …and the live provider holds that latest full list, not the union.
+      expect(container.read(agentPlanProvider), hasLength(2));
+    },
+  );
+
   test('one live session per conversation — later turns send only the new '
       'message', () async {
     final service = _FakeAcp([

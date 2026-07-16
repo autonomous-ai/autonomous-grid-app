@@ -206,6 +206,7 @@ class HermesChatSender implements ChatSender {
   ) {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
     final sourcesLog = _ref.read(agentSourcesProvider.notifier)..clear();
+    final planLog = _ref.read(agentPlanProvider.notifier)..clear();
     final permissions = _ref.read(agentPermissionProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'hermes acp -m $model (agent)');
@@ -235,6 +236,9 @@ class HermesChatSender implements ChatSender {
             // A web look-up finished — collect its pages to cite under the
             // answer once the turn lands.
             sourcesLog.addAll(sources);
+          case HermesAcpPlan(:final entries):
+            // The agent revised its to-do list — replace ours with its latest.
+            planLog.replace(entries);
           case HermesAcpMessage(:final text):
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
@@ -257,6 +261,7 @@ class HermesChatSender implements ChatSender {
                     role: ChatRole.assistant,
                     text: reply,
                     sources: _ref.read(agentSourcesProvider),
+                    plan: _ref.read(agentPlanProvider),
                   ),
                 ),
         );

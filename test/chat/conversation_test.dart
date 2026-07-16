@@ -76,6 +76,51 @@ void main() {
       expect(restored.messages.first.sources, isEmpty);
     });
 
+    test(
+      'round-trips an agent turn with its to-do plan and each step status',
+      () {
+        final original = _conversation(
+          messages: [
+            const ChatMessage(role: ChatRole.user, text: 'refactor the parser'),
+            const ChatMessage(
+              role: ChatRole.assistant,
+              text: 'Done.',
+              plan: [
+                AgentPlanEntry(
+                  content: 'Read the file',
+                  status: AgentPlanStatus.done,
+                ),
+                AgentPlanEntry(
+                  content: 'Rewrite it',
+                  status: AgentPlanStatus.active,
+                ),
+                AgentPlanEntry(
+                  content: 'Run the tests',
+                  status: AgentPlanStatus.pending,
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final restored = Conversation.fromJson(original.toJson());
+
+        final plan = restored.messages.last.plan;
+        expect(plan.map((e) => e.content), [
+          'Read the file',
+          'Rewrite it',
+          'Run the tests',
+        ]);
+        expect(plan.map((e) => e.status), [
+          AgentPlanStatus.done,
+          AgentPlanStatus.active,
+          AgentPlanStatus.pending,
+        ]);
+        // A plain text turn stays planless rather than gaining an empty list.
+        expect(restored.messages.first.plan, isEmpty);
+      },
+    );
+
     test('throws when the id is missing so the store can skip the file', () {
       expect(
         () => Conversation.fromJson(const {'title': 'x'}),

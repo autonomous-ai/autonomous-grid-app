@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../playground/presentation/message_plan.dart';
 import '../../playground/presentation/message_sources.dart';
 import '../logic/agent_providers.dart';
 
@@ -19,6 +20,7 @@ class AgentWorkingBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final steps = ref.watch(agentActivityProvider);
     final sources = ref.watch(agentSourcesProvider);
+    final plan = ref.watch(agentPlanProvider);
     final theme = Theme.of(context);
     return Align(
       alignment: Alignment.centerLeft,
@@ -46,6 +48,10 @@ class AgentWorkingBubble extends ConsumerWidget {
                 Text('Agent is working…', style: theme.textTheme.bodyMedium),
               ],
             ),
+            if (plan.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              MessagePlan(entries: plan),
+            ],
             if (steps.isNotEmpty) ...[
               const SizedBox(height: 10),
               for (final step in steps) _StepRow(step: step),
