@@ -122,8 +122,9 @@ class _Honesty extends StatelessWidget {
             for (final line in const [
               'Only the ids you list can message the bot. Anyone else is '
                   'ignored.',
-              'A message runs the assistant on this computer — the same one, '
-                  'with the same access to your project files.',
+              'A message runs the assistant on this computer — it can read and '
+                  "edit files in your projects, but from Telegram it can't run "
+                  'terminal commands or programs.',
               "It goes quiet when this computer sleeps or shuts down. It isn't "
                   'a bot in the cloud.',
             ])
