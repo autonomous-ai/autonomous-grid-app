@@ -63,19 +63,19 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  if (ref.watch(supportsBuiltInEngineProvider)) ...[
-                    const _LocalOption(),
-                    const SizedBox(height: 12),
-                  ],
                   if (network != null) ...[
                     // The Cloud-Provider block hides itself when the installed CLI
                     // whitelists no hosted provider, so it may render nothing.
                     ApiEngineBlock(network: network),
                     const SizedBox(height: 12),
-                    if (network.isOwner) ...[
-                      _InviteOption(network: network),
-                      const SizedBox(height: 12),
-                    ],
+                  ],
+                  if (ref.watch(supportsBuiltInEngineProvider)) ...[
+                    const _LocalOption(),
+                    const SizedBox(height: 12),
+                  ],
+                  if (network != null && network.isOwner) ...[
+                    _InviteOption(network: network),
+                    const SizedBox(height: 12),
                   ],
                   const SizedBox(height: 4),
                   Center(
