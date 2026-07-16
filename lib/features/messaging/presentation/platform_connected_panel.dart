@@ -1,17 +1,19 @@
-part of 'telegram_view.dart';
+part of 'messages_view.dart';
 
 /// A bot is connected. Two facts, in this order: whether it's actually
 /// answering, and who it answers.
-class TelegramConnectedPanel extends ConsumerWidget {
-  const TelegramConnectedPanel({
+class PlatformConnectedPanel extends ConsumerWidget {
+  const PlatformConnectedPanel({
     super.key,
+    required this.platform,
     required this.allowedUsers,
     required this.link,
     this.detail,
   });
 
+  final MessagingPlatform platform;
   final List<String> allowedUsers;
-  final TelegramLink link;
+  final MessagingLink link;
   final String? detail;
 
   Future<void> _act(
@@ -25,7 +27,7 @@ class TelegramConnectedPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final controller = ref.read(telegramProvider.notifier);
+    final controller = ref.read(messagingProvider(platform).notifier);
     final theme = Theme.of(context);
 
     return SingleChildScrollView(
@@ -95,7 +97,7 @@ class _Status extends StatelessWidget {
     required this.onStart,
   });
 
-  final TelegramLink link;
+  final MessagingLink link;
   final String? detail;
   final VoidCallback onStart;
 
@@ -139,7 +141,7 @@ class _Status extends StatelessWidget {
             ),
             // Only "not answering" is the user's to fix — connecting resolves on
             // its own, and answering needs no action.
-            if (link == TelegramLink.notAnswering) ...[
+            if (link == MessagingLink.notAnswering) ...[
               const SizedBox(width: 12),
               FilledButton(onPressed: onStart, child: const Text('Turn it on')),
             ],
@@ -151,19 +153,19 @@ class _Status extends StatelessWidget {
 
   ({Color color, IconData icon, String title, String body}) _describe() {
     return switch (link) {
-      TelegramLink.answering => (
+      MessagingLink.answering => (
         color: AppPalette.online,
         icon: Icons.check_circle_rounded,
         title: 'Answering your messages',
         body: 'It stops when this computer sleeps or shuts down.',
       ),
-      TelegramLink.connecting => (
+      MessagingLink.connecting => (
         color: AppPalette.textSecondary,
         icon: Icons.sync_rounded,
         title: 'Connecting…',
         body: 'Bringing the bot online — this takes a moment.',
       ),
-      TelegramLink.notAnswering => (
+      MessagingLink.notAnswering => (
         color: AppPalette.warn,
         icon: Icons.pause_circle_outline_rounded,
         title: 'Not answering',

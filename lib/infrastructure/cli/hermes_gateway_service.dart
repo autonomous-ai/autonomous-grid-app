@@ -15,61 +15,48 @@ class HermesGatewayException implements Exception {
   String toString() => 'HermesGatewayException: $message';
 }
 
-/// How Telegram is set up on this computer right now, read from Hermes's own
-/// `.env` — so the screen can't claim a connection that isn't there.
-typedef TelegramSetup = ({
-  /// The bot's token, or empty when no bot is connected.
-  String token,
-
-  /// Who is allowed to message the bot. **Empty means nobody is stopped**, which
-  /// is why the app refuses to connect without one.
-  List<String> allowedUsers,
-
-  /// The chat a scheduled task's result is sent to.
-  String homeChannel,
-});
-
-/// The live Telegram link, read from the gateway's own `gateway_state.json` —
-/// the truth about whether the bot connected, not a guess from a heartbeat.
+/// The live link for one messaging platform, read from the gateway's own
+/// `gateway_state.json` — the truth about whether the bot connected, not a guess
+/// from a heartbeat.
 ///
 /// [state] is Hermes's own word for the platform
 /// (`connected`/`connecting`/`retrying`/`disconnected`/`fatal`/`paused`), or
-/// empty when the running gateway has no Telegram entry yet — i.e. the token
-/// isn't loaded. [error] is the gateway's reason when it isn't connected.
-typedef TelegramPlatformStatus = ({String state, String? error});
+/// empty when the running gateway has no entry for it yet — i.e. the credentials
+/// aren't loaded. [error] is the gateway's reason when it isn't connected.
+typedef PlatformLinkStatus = ({String state, String? error});
 
 /// Drives Hermes's messaging gateway — the thing that lets the user talk to the
-/// assistant from Telegram, and lets a scheduled task send its answer there.
+/// assistant from Telegram, Discord or Slack, and lets a scheduled task send its
+/// answer there.
 ///
 /// The gateway is Hermes's, not the app's: it runs as a background service on
 /// this computer, reads its credentials from `~/.hermes/.env`, and answers with
-/// the same grid and model the Chat tab uses. The app only writes the
-/// credentials, starts the service, and reports the truth about whether it's up.
+/// the same grid and model the Chat tab uses. This service is platform-agnostic —
+/// it reads and writes raw `.env` keys and reports raw link state; a controller
+/// decides which keys a given platform uses.
 abstract interface class HermesGatewayService {
-  /// What's configured now. A disconnected computer reads as an empty token.
-  Future<TelegramSetup> readTelegram();
+  /// Every variable currently set in `~/.hermes/.env`. A disconnected computer
+  /// reads as an empty (or key-less) map.
+  Future<Map<String, String>> readEnv();
 
-  /// Connect a bot. [allowedUsers] is the whitelist — a bot with no whitelist
-  /// answers **anyone who finds it**, on the user's own machine, so the caller
-  /// must never pass an empty one.
-  Future<void> connectTelegram({
-    required String token,
-    required List<String> allowedUsers,
-    required String homeChannel,
-  });
+  /// Upsert [values] into `~/.hermes/.env`. [addedBy] is the human note left in
+  /// the file so a person reading it later knows what put the line there.
+  Future<void> writeEnv(Map<String, String> values, {required String addedBy});
 
-  /// Forget the bot. The token is removed from the file, not just ignored — a
-  /// dead token left lying there reads as "still connected" to anyone who looks.
-  Future<void> disconnectTelegram();
+  /// Remove [keys] from `~/.hermes/.env`. A dead token left lying there reads as
+  /// "still connected" to anyone who looks, so disconnecting deletes rather than
+  /// blanks.
+  Future<void> removeEnv(Set<String> keys);
+
+  /// The live link for the platform Hermes calls [platformKey]
+  /// (`telegram`/`discord`/`slack`) — whether it actually connected, and why it
+  /// didn't. Read from the gateway's own state file, so the screen can't claim
+  /// "Answering" when Hermes has the bot marked disconnected.
+  Future<PlatformLinkStatus> readLink(String platformKey);
 
   /// Whether the gateway is actually running. It's what makes the difference
   /// between "connected" and "connected, but nothing is listening".
   Future<bool> running();
-
-  /// The live Telegram link — whether the platform actually connected, and why
-  /// it didn't. Read from the gateway's own state file, so the screen can't
-  /// claim "Answering" when Hermes has the bot marked disconnected.
-  Future<TelegramPlatformStatus> readTelegramLink();
 
   /// Install the background service (once), then restart it so the credentials
   /// just written to `~/.hermes/.env` are actually loaded. A plain start won't
@@ -77,7 +64,7 @@ abstract interface class HermesGatewayService {
   /// but answer nobody — so this restarts to (re)connect the platform.
   Future<void> startGateway();
 
-  /// Restart it, so a token the user just changed is picked up.
+  /// Restart it, so a credential the user just changed is picked up.
   Future<void> restartGateway();
 }
 
@@ -98,45 +85,22 @@ class HermesGatewayServiceImpl implements HermesGatewayService {
   EnvFile get _env => EnvFile(File('$_home/.hermes/.env'));
 
   @override
-  Future<TelegramSetup> readTelegram() async {
-    final vars = await _env.read();
-    return (
-      token: vars[kTelegramToken] ?? '',
-      allowedUsers: parseAllowedUsers(vars[kTelegramAllowedUsers] ?? ''),
-      homeChannel: vars[kTelegramHomeChannel] ?? '',
-    );
-  }
+  Future<Map<String, String>> readEnv() => _env.read();
 
   @override
-  Future<void> connectTelegram({
-    required String token,
-    required List<String> allowedUsers,
-    required String homeChannel,
-  }) async {
-    if (allowedUsers.isEmpty) {
-      throw const HermesGatewayException(
-        'A bot with nobody on its list answers anyone who finds it.',
-      );
-    }
-    await _env.upsert({
-      kTelegramToken: token,
-      kTelegramAllowedUsers: allowedUsers.join(','),
-      kTelegramHomeChannel: homeChannel,
-    }, addedBy: 'lets you chat with this computer from Telegram');
-  }
+  Future<void> writeEnv(
+    Map<String, String> values, {
+    required String addedBy,
+  }) => _env.upsert(values, addedBy: addedBy);
 
   @override
-  Future<void> disconnectTelegram() => _env.remove({
-    kTelegramToken,
-    kTelegramAllowedUsers,
-    kTelegramHomeChannel,
-  });
+  Future<void> removeEnv(Set<String> keys) => _env.remove(keys);
 
   @override
-  Future<TelegramPlatformStatus> readTelegramLink() async {
+  Future<PlatformLinkStatus> readLink(String platformKey) async {
     final file = File('$_home/.hermes/gateway_state.json');
     if (!file.existsSync()) return (state: '', error: null);
-    return parseTelegramPlatformStatus(await file.readAsString());
+    return parsePlatformLinkStatus(await file.readAsString(), platformKey);
   }
 
   @override
@@ -178,31 +142,26 @@ class HermesGatewayServiceImpl implements HermesGatewayService {
   }
 }
 
-/// The `.env` keys Hermes reads for Telegram (`.env.example`).
-const String kTelegramToken = 'TELEGRAM_BOT_TOKEN';
-const String kTelegramAllowedUsers = 'TELEGRAM_ALLOWED_USERS';
-const String kTelegramHomeChannel = 'TELEGRAM_HOME_CHANNEL';
-
 /// The ids on a whitelist line, dropping the blanks a hand-typed list collects.
 List<String> parseAllowedUsers(String raw) => [
   for (final id in raw.split(','))
     if (id.trim().isNotEmpty) id.trim(),
 ];
 
-/// Reads `platforms.telegram` out of the gateway's state JSON. Lenient by
+/// Reads `platforms.<platformKey>` out of the gateway's state JSON. Lenient by
 /// design: a shape Hermes renames must not throw and blank the screen — anything
 /// unreadable reads as "no link" (empty state), which the UI treats as "not
 /// answering" rather than a crash.
-TelegramPlatformStatus parseTelegramPlatformStatus(String rawJson) {
+PlatformLinkStatus parsePlatformLinkStatus(String rawJson, String platformKey) {
   try {
     final decoded = jsonDecode(rawJson);
     if (decoded is! Map) return (state: '', error: null);
     final platforms = decoded['platforms'];
     if (platforms is! Map) return (state: '', error: null);
-    final telegram = platforms['telegram'];
-    if (telegram is! Map) return (state: '', error: null);
-    final state = telegram['state'];
-    final error = telegram['error_message'];
+    final platform = platforms[platformKey];
+    if (platform is! Map) return (state: '', error: null);
+    final state = platform['state'];
+    final error = platform['error_message'];
     return (
       state: state is String ? state : '',
       error: error is String && error.trim().isNotEmpty ? error.trim() : null,

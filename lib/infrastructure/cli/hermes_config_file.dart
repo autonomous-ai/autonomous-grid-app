@@ -6,8 +6,8 @@ import 'package:yaml_edit/yaml_edit.dart';
 /// rest of it.
 ///
 /// Hermes owns this file; the app only edits a couple of corners — what a
-/// scheduled task ([HermesTaskPolicy]) and a Telegram message
-/// ([HermesTelegramPolicy]) are each allowed to do. Every write merges into
+/// scheduled task ([HermesTaskPolicy]) and a chat-platform message
+/// ([HermesPlatformPolicy]) are each allowed to do. Every write merges into
 /// whatever else is in there and keeps a `<file>.bak` first, so a hand-edited
 /// config is never clobbered.
 class HermesConfigFile {

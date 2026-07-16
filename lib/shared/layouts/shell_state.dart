@@ -9,7 +9,8 @@ import '../../core/app_environment.dart';
 /// Two groups, and the split is deliberate: the sidebar lists what you *do* every
 /// day (chat, and the things that shape how the agent answers), while the
 /// plumbing you set up once — which grids you can talk to, what this computer
-/// runs, Telegram, how to point other apps at it — lives behind Settings.
+/// runs, the chat apps it answers from, how to point other apps at it — lives
+/// behind Settings.
 ///
 /// Icons are Lucide throughout, so the nav, the settings rail and the sidebar all
 /// speak one visual language.
@@ -31,7 +32,7 @@ enum ShellSection {
     'Projects',
     thinIcon: LucideIcons.folderOpen300,
   ),
-  telegram(LucideIcons.send, 'Telegram', thinIcon: LucideIcons.send300),
+  messages(LucideIcons.send, 'Messages', thinIcon: LucideIcons.send300),
   grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300, devOnly: true),
   engines(LucideIcons.server, 'This computer', thinIcon: LucideIcons.server300),
   guide(
@@ -88,12 +89,12 @@ const kSidebarSections = [
 
 /// What Settings lists, in order — the screens you set up once.
 ///
-/// This computer leads, then Telegram and the guide. Grids and Debug sit at the
+/// This computer leads, then Messages and the guide. Grids and Debug sit at the
 /// bottom — both are developer-only ([ShellSection.devOnly]) and hidden from
 /// shipped builds, so for an end user the list ends at the guide.
 const kSettingsSections = [
   ShellSection.engines,
-  ShellSection.telegram,
+  ShellSection.messages,
   ShellSection.guide,
   ShellSection.grids,
   ShellSection.debug,
