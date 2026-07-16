@@ -13,6 +13,16 @@ import '../logic/grid_model_catalog.dart';
 typedef GridModelSelected =
     void Function(NetworkCredential grid, PlaygroundModelOption option);
 
+/// The geometry an option row is built from. `_InfoRow` needs to hang its note
+/// under the row's *text*, which means knowing where that text starts — it used
+/// to carry the hand-added answer (29) and would drift the moment any of these
+/// changed.
+const _rowGutter = 6.0;
+const _rowInnerPad = 9.0;
+const _rowIconSlot = 16.0;
+const _rowIconGap = 9.0;
+final _rowRadius = BorderRadius.circular(AppControl.radius);
+
 /// The composer's model control. A compact pill opens a searchable menu that
 /// lists every grid's models grouped under the grid's name — picking one switches
 /// the active grid and the model together, so choosing "who answers" is one
@@ -111,9 +121,21 @@ class _TriggerButton extends StatelessWidget {
           foregroundColor: AppPalette.textPrimary,
           backgroundColor: Colors.transparent,
           side: BorderSide.none,
-          shape: const StadiumBorder(),
+          // Matches the approval pill beside it: same height, same radius. The
+          // two used to disagree on both — stadium at a forced 30 next to a
+          // circular(999) at 28.
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppControl.radius),
+          ),
           padding: AppControl.paddingSmall,
-          minimumSize: const Size.fromHeight(AppControl.height),
+          // minimumSize alone is only a floor — the button's own vertical
+          // padding still pushed this to 48, which is why the call site used to
+          // wrap it in a SizedBox(height: 30) to force it back down. Pin both
+          // ends and the pill sizes itself.
+          minimumSize: const Size.fromHeight(AppControl.heightSmall),
+          maximumSize: const Size.fromHeight(AppControl.heightSmall),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          splashFactory: NoSplash.splashFactory,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -347,22 +369,28 @@ class _OptionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads colour tokens; follow theme flips.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: _rowGutter, vertical: 1),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: _rowRadius,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: _rowRadius,
           hoverColor: AppSurface.hoverFill,
+          // macOS clicks land instantly; the global InkRipple would spread a
+          // circle across the row. Hover is the affordance here.
+          splashFactory: NoSplash.splashFactory,
           child: Ink(
             decoration: BoxDecoration(
               // Same wash + ticked-disc language as the approval menu, so "the
               // one in force" looks the same wherever the composer says it.
               color: selected ? AppSurface.accentWash : Colors.transparent,
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: _rowRadius,
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: _rowInnerPad,
+              vertical: 8,
+            ),
             child: Row(
               children: [
                 // Only the exceptions get a glyph. Text is the fallback for every
@@ -371,18 +399,18 @@ class _OptionRow extends StatelessWidget {
                 // identical icons that told the rows apart not at all. Image and
                 // video are the rare ones, and there the icon is the whole point.
                 SizedBox(
-                  width: 16,
+                  width: _rowIconSlot,
                   child: option.modality == PlaygroundModality.text
                       ? null
                       : Icon(
                           _modalityIcon(option.modality),
-                          size: 16,
+                          size: AppControl.iconSize,
                           color: selected
                               ? AppPalette.accentMuted
                               : AppPalette.textFaint,
                         ),
                 ),
-                const SizedBox(width: 9),
+                const SizedBox(width: _rowIconGap),
                 Expanded(
                   child: Text(
                     option.label,
@@ -448,8 +476,14 @@ class _InfoRow extends StatelessWidget {
     return Padding(
       // Indented to the option rows' text, not their icon: this is the absence
       // of rows, so it reads as a note under the grid rather than lining up as
-      // one more thing you could pick.
-      padding: const EdgeInsets.fromLTRB(29, 2, 15, 8),
+      // one more thing you could pick. Spelled as the sum of the row's own parts
+      // so it follows them; it used to be the hand-added answer, 29.
+      padding: const EdgeInsets.fromLTRB(
+        _rowGutter + _rowInnerPad + _rowIconSlot + _rowIconGap,
+        2,
+        15,
+        8,
+      ),
       child: Text(
         message,
         style: TextStyle(

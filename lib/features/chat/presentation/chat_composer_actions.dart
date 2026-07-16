@@ -1,5 +1,25 @@
 part of 'chat_composer.dart';
 
+/// Kills the Material ink ripple on a button.
+///
+/// The app's ThemeData sets `splashFactory: InkRipple.splashFactory` app-wide —
+/// a circle that expands from the click point over ~600ms. That is an Android
+/// gesture idiom: on macOS a click lands instantly and the pointer is already
+/// telling you where it is, so the hover tint carries the whole affordance and
+/// the ripple only adds a wave the platform never makes. It also runs 4× longer
+/// than every other animation in this composer (120–160ms).
+/// A getter, not a `final`: [AppSurface.hoverFill] resolves against the live
+/// brightness at read time, so a top-level `final` would freeze whichever theme
+/// happened to be up when this library was first touched.
+ButtonStyle get _noSplash => ButtonStyle(
+  splashFactory: NoSplash.splashFactory,
+  overlayColor: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.hovered)
+        ? AppSurface.hoverFill
+        : Colors.transparent,
+  ),
+);
+
 class _Actions extends StatelessWidget {
   const _Actions({
     required this.canAttach,
@@ -54,7 +74,11 @@ class _Actions extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(width: 140, height: 30, child: modelPicker),
+              // The two pills are chips, not push buttons, so both sit at
+              // heightSmall. This used to force a bare 30 — a fifth number in a
+              // row that already had 32/32/28/32, and it silently overrode the
+              // AppControl.height the picker itself asks for.
+              SizedBox(width: 140, child: modelPicker),
               const SizedBox(width: 8),
               _SendButton(
                 sending: sending,
@@ -86,9 +110,14 @@ class _AttachButton extends StatelessWidget {
       height: 32,
       child: IconButton(
         tooltip: canAttach ? 'Attach image' : 'Up to $maxChatImages images',
-        iconSize: 19,
+        iconSize: AppControl.iconSize,
         visualDensity: VisualDensity.compact,
         color: AppPalette.textSecondary,
+        // No ripple: the app's ThemeData opts into InkRipple globally, which is
+        // an Android idiom — a circle spreading from the click point. macOS
+        // answers a click with an instant state change, so the hover tint is the
+        // whole response.
+        style: _noSplash,
         icon: const Icon(Icons.add_rounded),
         onPressed: canAttach ? onPickImage : null,
       ),
@@ -122,9 +151,10 @@ class _PromptsButton extends StatelessWidget {
       height: 32,
       child: IconButton(
         tooltip: savesInput ? 'Save as a prompt' : 'Insert a saved prompt',
-        iconSize: 18,
+        iconSize: AppControl.iconSize,
         visualDensity: VisualDensity.compact,
         color: AppPalette.textSecondary,
+        style: _noSplash,
         icon: Icon(
           savesInput
               ? Icons.bookmark_add_outlined
@@ -171,6 +201,7 @@ class _SendButton extends StatelessWidget {
           style: FilledButton.styleFrom(
             shape: const CircleBorder(),
             padding: EdgeInsets.zero,
+            splashFactory: NoSplash.splashFactory,
             // A high-contrast knob: dark-on-light in light mode, light-on-dark in
             // dark mode. Using textPrimary as the fill made a near-white circle
             // with a white icon in dark mode — the button vanished.
@@ -198,7 +229,7 @@ class _SendButton extends StatelessWidget {
           ),
           child: Icon(
             sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-            size: sending ? 18 : 17,
+            size: AppControl.iconSize,
             semanticLabel: sending ? 'Stop' : 'Send',
           ),
         ),

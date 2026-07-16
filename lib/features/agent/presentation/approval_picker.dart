@@ -19,6 +19,18 @@ class ApprovalPicker extends ConsumerStatefulWidget {
   ConsumerState<ApprovalPicker> createState() => _ApprovalPickerState();
 }
 
+/// The menu's width, and the gutter its rows are inset by. The rows used to
+/// carry a hand-computed `width: 324` — the menu's 340 minus twice this gutter —
+/// so changing either number silently mis-sized the rows against the panel they
+/// sit in. Derive one from the other instead.
+const _menuWidth = 340.0;
+const _rowGutter = 8.0;
+const _rowInnerPad = 10.0;
+
+/// A menu row's corner. One radius, not the 11 that used to be typed twice in
+/// the same widget for the row's shape and its decoration.
+final _rowRadius = BorderRadius.circular(AppControl.radius);
+
 class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
   final _menu = MenuController();
 
@@ -61,7 +73,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
         ),
       ),
       menuChildren: [
-        const SizedBox(width: 340, child: _MenuHeading()),
+        const SizedBox(width: _menuWidth, child: _MenuHeading()),
         for (final mode in AgentApprovalMode.values)
           _ModeItem(
             mode: mode,
@@ -88,6 +100,7 @@ class _Trigger extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
     final color = approvalColor(mode);
+    final radius = BorderRadius.circular(AppControl.radius);
     return Tooltip(
       message: approvalDetail(mode),
       child: Material(
@@ -97,15 +110,19 @@ class _Trigger extends StatelessWidget {
         // type in, permanently. The icon alone carries the mode; the pill itself
         // has no reason to shout, least of all forever.
         color: AppGlass.surfaceFill,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: radius,
         child: InkWell(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: radius,
           onTap: onTap,
+          // macOS answers a click instantly; the app's global InkRipple spreads
+          // an Android-style circle across the pill instead. Hover carries it.
+          splashFactory: NoSplash.splashFactory,
+          hoverColor: AppGlass.surfaceHoverFill,
           child: Container(
-            height: 28,
+            height: AppControl.heightSmall,
             padding: const EdgeInsets.only(left: 8, right: 7),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: radius,
               border: Border.all(color: AppGlass.hair),
               boxShadow: AppGlass.cardShadow,
             ),
@@ -152,9 +169,15 @@ class _MenuHeading extends StatelessWidget {
     // Menu content — detached from the anchor's rebuilds; watch theme itself.
     AppTheme.watch(context);
     return Padding(
-      // 18px left = the rows' 8px outer gutter + their 10px inner pad, so the
-      // heading starts exactly on the icon chips' edge rather than 4px shy of it.
-      padding: EdgeInsets.fromLTRB(18, 8, 14, 9),
+      // Lines up on the rows' icon chips: their outer gutter plus their inner
+      // pad. Spelled as the sum so it tracks the row when either changes — it
+      // used to be the hand-added answer, 18.
+      padding: const EdgeInsets.fromLTRB(
+        _rowGutter + _rowInnerPad,
+        8,
+        14,
+        9,
+      ),
       child: Text(
         'What may the assistant do on this computer?',
         style: TextStyle(
@@ -204,23 +227,34 @@ class _ModeItemState extends State<_ModeItem> {
         padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
         overlayColor: WidgetStatePropertyAll(AppSurface.hoverFill),
+        // The ripple would spread across a 324px row inside a menu — the least
+        // macOS thing on the page. The wash below is the whole response.
+        splashFactory: NoSplash.splashFactory,
         shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+          RoundedRectangleBorder(borderRadius: _rowRadius),
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(
+          horizontal: _rowGutter,
+          vertical: 3,
+        ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           curve: Curves.easeOut,
-          width: 324,
-          padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
+          width: _menuWidth - _rowGutter * 2,
+          padding: const EdgeInsets.fromLTRB(
+            _rowInnerPad,
+            _rowInnerPad,
+            8,
+            _rowInnerPad,
+          ),
           decoration: BoxDecoration(
             // Wash + ticked disc, and no rim: the rim made this read as a button
             // dropped into the menu rather than as the row you're on, and the
             // wash already carries the accent that the disc then confirms.
             color: selected ? AppSurface.accentWash : Colors.transparent,
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: _rowRadius,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
