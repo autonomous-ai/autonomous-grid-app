@@ -85,6 +85,18 @@ void main() {
       }
     });
 
+    test('plan mode refuses actions like read-only — a planning turn touches '
+        'nothing even if the mode leaks through', () {
+      for (final kind in ['execute', 'edit']) {
+        final decision = decideHermesPermission(
+          toolKind: kind,
+          options: _commandOptions,
+          mode: AgentApprovalMode.plan,
+        );
+        expect((decision as HermesRefuse).optionId, 'deny');
+      }
+    });
+
     test('full access: no interruption — but the yes is still a one-off, never '
         'the "always" Hermes would remember after the mode is switched '
         'back', () {

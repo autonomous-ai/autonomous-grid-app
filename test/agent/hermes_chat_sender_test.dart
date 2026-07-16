@@ -321,6 +321,61 @@ void main() {
     },
   );
 
+  test('Plan mode planning turn runs read-only and asks the agent to plan, not '
+      'act', () async {
+    final service = _FakeAcp.single([
+      const HermesAcpMessage('Here is my plan…'),
+    ]);
+    final container = _container(service, tmp);
+
+    await container
+        .read(hermesChatSenderProvider)
+        .send(
+          network: _credential(),
+          model: 'm',
+          history: _history('refactor the parser'),
+          planFirst: true,
+        )
+        .toList();
+
+    final session = service.sessions.single;
+    // Forced read-only so the plan turn can touch nothing, whatever the composer
+    // was set to…
+    expect(session.modes.last, AgentApprovalMode.readOnly);
+    // …and the request went out wrapped in the plan preamble.
+    expect(session.prompts.single, contains('Planning mode'));
+    expect(session.prompts.single, contains('refactor the parser'));
+  });
+
+  test(
+    'the execute turn after an approved plan runs under Ask, not Plan',
+    () async {
+      final service = _FakeAcp.single([const HermesAcpMessage('Done.')]);
+      final container = _container(service, tmp);
+      // The composer is still on Plan, but this is the carry-it-out turn.
+      container
+          .read(chatPrefsProvider.notifier)
+          .setApproval(AgentApprovalMode.plan);
+
+      await container
+          .read(hermesChatSenderProvider)
+          .send(
+            network: _credential(),
+            model: 'm',
+            history: _history('do it'),
+            planFirst: false,
+          )
+          .toList();
+
+      // Plan maps to Ask on the execute turn — it gates each action, no preamble.
+      expect(service.sessions.single.modes.last, AgentApprovalMode.ask);
+      expect(
+        service.sessions.single.prompts.single,
+        isNot(contains('Planning mode')),
+      );
+    },
+  );
+
   test('one live session per conversation — later turns send only the new '
       'message', () async {
     final service = _FakeAcp([

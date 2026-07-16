@@ -176,6 +176,12 @@ enum AgentApprovalMode {
   /// them; it never runs anything and never changes anything.
   readOnly,
 
+  /// Plan first. The agent works out a step-by-step plan read-only and shows it,
+  /// then waits for the user to approve before it touches anything — the whole
+  /// plan is one yes, after which it carries it out asking per action (like
+  /// [ask]). A middle ground between looking and doing.
+  plan,
+
   /// Ask first: the agent stops and shows the command, or the change to the
   /// file, and waits for a yes. The default — nothing happens behind your back.
   ask,

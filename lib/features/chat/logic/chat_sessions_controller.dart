@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
 import '../../agent/logic/agent_session_title.dart';
 import '../../agent/logic/hermes_chat_sender.dart';
 import '../../agent/logic/hermes_tool.dart';
+import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
@@ -35,12 +38,19 @@ class ChatSessionsState {
     this.activeId,
     this.phase = const SendIdle(),
     this.error,
+    this.awaitingPlan = false,
   });
 
   final List<Conversation> conversations;
   final String? activeId;
   final SendPhase phase;
   final String? error;
+
+  /// True when the last turn was Plan mode's planning turn and its plan is
+  /// waiting on the user: the chat shows an "approve & run" bar. Cleared the
+  /// moment anything else happens (a new send, approving, dismissing, switching
+  /// chat) — it's live interaction state, not saved with the conversation.
+  final bool awaitingPlan;
 
   /// The open conversation, or null while composing a new one.
   Conversation? get active {
@@ -205,9 +215,22 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     required String message,
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
+    bool? planFirst,
   }) async {
     final text = message.trim();
     if (text.isEmpty || state.sending) return;
+
+    // Plan mode's planning turn: only when the composer is set to Plan (unless
+    // the caller forced it — the approve path forces it off) and the agent is
+    // the one answering, since a relay/media turn has no plan/act split.
+    final planTurn =
+        (planFirst ??
+            ref.read(agentApprovalModeProvider) == AgentApprovalMode.plan) &&
+        agentAnswersTurn(
+          modality: modality,
+          hasAttachments: attachments.isNotEmpty,
+          agentInstalled: ref.read(hermesInstalledProvider),
+        );
 
     // Append the user turn and persist it up front, so an interrupted reply
     // never loses what the user typed. A new compose becomes a real, saved
@@ -252,6 +275,8 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       // Lets the agent sender keep one live session per conversation and send
       // only the new turn (the API sender ignores it).
       conversationId: conversation.id,
+      // A planning turn runs read-only and asks the agent to lay out a plan.
+      planFirst: planTurn,
     );
 
     // Fold updates through a stored subscription so [stop] and disposal can
@@ -278,7 +303,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               updatedAt: DateTime.now(),
               messages: [...current.messages, reply],
             );
-            _commit(answered, phase: const SendIdle());
+            // A planning turn's reply is a plan waiting on approval — light the
+            // "approve & run" bar. Any other reply leaves it dark.
+            _commit(answered, phase: const SendIdle(), awaitingPlan: planTurn);
             _adoptAgentName(answered, agentSessionId);
           case ChatSendFailure(:final error):
             state = _withPhase(const SendIdle(), error: error);
@@ -405,8 +432,45 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     return null;
   }
 
+  /// Approve the plan the agent just proposed: carry it out. The execute turn
+  /// continues the same session (so the agent already has the plan in context)
+  /// with the planning flag off, so it runs asking per action rather than
+  /// planning again. A no-op unless a plan is actually waiting.
+  Future<void> approvePlan() {
+    if (!state.awaitingPlan || state.sending) return Future.value();
+    final network = ref.read(selectedNetworkProvider);
+    final active = state.active;
+    if (network == null || active == null) return Future.value();
+    return send(
+      network: network,
+      model: active.model,
+      message: 'The plan looks good — go ahead and carry it out.',
+      planFirst: false,
+    );
+  }
+
+  /// Dismiss the proposed plan without running it — the plan stays in the
+  /// transcript, but the "approve & run" bar goes away and the user can just
+  /// carry on chatting.
+  void dismissPlan() {
+    if (!state.awaitingPlan) return;
+    state = ChatSessionsState(
+      conversations: state.conversations,
+      activeId: state.activeId,
+      phase: state.phase,
+      error: state.error,
+    );
+  }
+
   /// Upsert [conversation], re-sort newest-first, make it active and persist.
-  void _commit(Conversation conversation, {required SendPhase phase}) {
+  /// [awaitingPlan] lights the plan-approval bar — set only after a planning
+  /// turn's reply lands, and default-off everywhere else so any other commit
+  /// (a new send, a stopped turn) clears it.
+  void _commit(
+    Conversation conversation, {
+    required SendPhase phase,
+    bool awaitingPlan = false,
+  }) {
     _store.save(conversation);
     final list = [
       conversation,
@@ -417,6 +481,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       conversations: list,
       activeId: conversation.id,
       phase: phase,
+      awaitingPlan: awaitingPlan,
     );
   }
 

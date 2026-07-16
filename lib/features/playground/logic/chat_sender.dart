@@ -96,6 +96,11 @@ abstract interface class ChatSender {
     /// of a session (the app's `AGENTS.md`). Null/blank for a chat in no project
     /// and ignored by the relay sender, which has no agent to instruct.
     String? instructions,
+
+    /// Run this as Plan mode's planning turn: read-only, with a preamble asking
+    /// the agent to lay out a plan and touch nothing. The agent sender honours
+    /// it; the relay sender has no plan/act distinction and ignores it.
+    bool planFirst,
   });
 }
 
@@ -145,6 +150,9 @@ class DefaultChatSender implements ChatSender {
     String? conversationId,
     // The relay has no agent to instruct, so project rules are irrelevant here.
     String? instructions,
+    // No plan/act distinction on a relay call — a chat/completions request just
+    // answers.
+    bool planFirst = false,
   }) {
     // The local smoke test and relay text both hit chat/completions; only the
     // base URL differs (the local engine has no `/relay/v1` prefix).
