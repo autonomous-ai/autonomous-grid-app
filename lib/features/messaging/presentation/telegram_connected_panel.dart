@@ -6,11 +6,13 @@ class TelegramConnectedPanel extends ConsumerWidget {
   const TelegramConnectedPanel({
     super.key,
     required this.allowedUsers,
-    required this.running,
+    required this.link,
+    this.detail,
   });
 
   final List<String> allowedUsers;
-  final bool running;
+  final TelegramLink link;
+  final String? detail;
 
   Future<void> _act(
     BuildContext context,
@@ -33,7 +35,8 @@ class TelegramConnectedPanel extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _Status(
-              running: running,
+              link: link,
+              detail: detail,
               onStart: () => _act(context, controller.start),
             ),
             const SizedBox(height: 18),
@@ -82,18 +85,24 @@ class TelegramConnectedPanel extends ConsumerWidget {
   }
 }
 
-/// Connected and *listening* are different things — a bot whose gateway is down
-/// answers nobody, and saying "connected" there would be a lie.
+/// Connected and *answering* are different things — a bot whose gateway is down,
+/// or whose token another process is polling, answers nobody. This reads the
+/// real link state from Hermes, so it never says "Answering" when it isn't.
 class _Status extends StatelessWidget {
-  const _Status({required this.running, required this.onStart});
+  const _Status({
+    required this.link,
+    required this.detail,
+    required this.onStart,
+  });
 
-  final bool running;
+  final TelegramLink link;
+  final String? detail;
   final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = running ? AppPalette.online : AppPalette.warn;
+    final (:color, :icon, :title, :body) = _describe();
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -104,20 +113,14 @@ class _Status extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            Icon(
-              running
-                  ? Icons.check_circle_rounded
-                  : Icons.pause_circle_outline_rounded,
-              size: 20,
-              color: color,
-            ),
+            Icon(icon, size: 20, color: color),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    running ? 'Answering your messages' : 'Not answering',
+                    title,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: color,
@@ -125,10 +128,7 @@ class _Status extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    running
-                        ? 'It stops when this computer sleeps or shuts down.'
-                        : 'The bot is set up, but nothing is listening for '
-                              'messages.',
+                    body,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: AppPalette.textSecondary,
                       height: 1.35,
@@ -137,7 +137,9 @@ class _Status extends StatelessWidget {
                 ],
               ),
             ),
-            if (!running) ...[
+            // Only "not answering" is the user's to fix — connecting resolves on
+            // its own, and answering needs no action.
+            if (link == TelegramLink.notAnswering) ...[
               const SizedBox(width: 12),
               FilledButton(onPressed: onStart, child: const Text('Turn it on')),
             ],
@@ -145,5 +147,28 @@ class _Status extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  ({Color color, IconData icon, String title, String body}) _describe() {
+    return switch (link) {
+      TelegramLink.answering => (
+        color: AppPalette.online,
+        icon: Icons.check_circle_rounded,
+        title: 'Answering your messages',
+        body: 'It stops when this computer sleeps or shuts down.',
+      ),
+      TelegramLink.connecting => (
+        color: AppPalette.textSecondary,
+        icon: Icons.sync_rounded,
+        title: 'Connecting…',
+        body: 'Bringing the bot online — this takes a moment.',
+      ),
+      TelegramLink.notAnswering => (
+        color: AppPalette.warn,
+        icon: Icons.pause_circle_outline_rounded,
+        title: 'Not answering',
+        body: detail ?? 'The bot is set up, but nothing is listening yet.',
+      ),
+    };
   }
 }

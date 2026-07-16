@@ -31,9 +31,17 @@ class TelegramView extends ConsumerWidget {
           'computer, with your own model — nothing is sent to anyone else.',
       child: switch (telegram) {
         AsyncData(
-          value: TelegramConnected(:final allowedUsers, :final running),
+          value: TelegramConnected(
+            :final allowedUsers,
+            :final link,
+            :final detail,
+          ),
         ) =>
-          TelegramConnectedPanel(allowedUsers: allowedUsers, running: running),
+          TelegramConnectedPanel(
+            allowedUsers: allowedUsers,
+            link: link,
+            detail: detail,
+          ),
         AsyncData() => const TelegramConnectForm(),
         AsyncError(:final error) => Text(
           "Couldn't read your Telegram setup: $error",

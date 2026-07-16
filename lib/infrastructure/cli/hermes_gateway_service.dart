@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'env_file.dart';
@@ -28,6 +29,15 @@ typedef TelegramSetup = ({
   String homeChannel,
 });
 
+/// The live Telegram link, read from the gateway's own `gateway_state.json` —
+/// the truth about whether the bot connected, not a guess from a heartbeat.
+///
+/// [state] is Hermes's own word for the platform
+/// (`connected`/`connecting`/`retrying`/`disconnected`/`fatal`/`paused`), or
+/// empty when the running gateway has no Telegram entry yet — i.e. the token
+/// isn't loaded. [error] is the gateway's reason when it isn't connected.
+typedef TelegramPlatformStatus = ({String state, String? error});
+
 /// Drives Hermes's messaging gateway — the thing that lets the user talk to the
 /// assistant from Telegram, and lets a scheduled task send its answer there.
 ///
@@ -55,6 +65,11 @@ abstract interface class HermesGatewayService {
   /// Whether the gateway is actually running. It's what makes the difference
   /// between "connected" and "connected, but nothing is listening".
   Future<bool> running();
+
+  /// The live Telegram link — whether the platform actually connected, and why
+  /// it didn't. Read from the gateway's own state file, so the screen can't
+  /// claim "Answering" when Hermes has the bot marked disconnected.
+  Future<TelegramPlatformStatus> readTelegramLink();
 
   /// Install the background service (once), then restart it so the credentials
   /// just written to `~/.hermes/.env` are actually loaded. A plain start won't
@@ -118,6 +133,13 @@ class HermesGatewayServiceImpl implements HermesGatewayService {
   });
 
   @override
+  Future<TelegramPlatformStatus> readTelegramLink() async {
+    final file = File('$_home/.hermes/gateway_state.json');
+    if (!file.existsSync()) return (state: '', error: null);
+    return parseTelegramPlatformStatus(await file.readAsString());
+  }
+
+  @override
   Future<bool> running() async {
     final beat = File('$_home/.hermes/cron/ticker_heartbeat');
     if (!beat.existsSync()) return false;
@@ -166,3 +188,26 @@ List<String> parseAllowedUsers(String raw) => [
   for (final id in raw.split(','))
     if (id.trim().isNotEmpty) id.trim(),
 ];
+
+/// Reads `platforms.telegram` out of the gateway's state JSON. Lenient by
+/// design: a shape Hermes renames must not throw and blank the screen — anything
+/// unreadable reads as "no link" (empty state), which the UI treats as "not
+/// answering" rather than a crash.
+TelegramPlatformStatus parseTelegramPlatformStatus(String rawJson) {
+  try {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! Map) return (state: '', error: null);
+    final platforms = decoded['platforms'];
+    if (platforms is! Map) return (state: '', error: null);
+    final telegram = platforms['telegram'];
+    if (telegram is! Map) return (state: '', error: null);
+    final state = telegram['state'];
+    final error = telegram['error_message'];
+    return (
+      state: state is String ? state : '',
+      error: error is String && error.trim().isNotEmpty ? error.trim() : null,
+    );
+  } on FormatException {
+    return (state: '', error: null);
+  }
+}
