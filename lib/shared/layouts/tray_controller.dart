@@ -5,13 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../../features/auth/logic/session_controller.dart';
-import '../../infrastructure/state/models/network_credential.dart';
+import '../../features/chat/logic/chat_sessions_controller.dart';
+import 'shell_state.dart';
 
-/// Installs a macOS menu-bar (system tray) icon that reads like the Wi-Fi /
-/// Bluetooth menus: the joined grids as a checkable list — the active grid
-/// marked with a gold lightning bolt, the rest grey. Clicking a grid selects it
-/// and shows the window. No-op off macOS; renders [child] unchanged.
+/// Installs a macOS menu-bar (system tray) icon that reads like a Codex / ChatGPT
+/// menu: a few quick actions rather than a directory. It lists the recent chats,
+/// then "New chat", "Open Grid" and "Quit Grid" — so the menu bar is a shortcut
+/// back into a conversation, not a grid switcher (grids live behind Settings).
+/// No-op off macOS; renders [child] unchanged.
 class TrayScope extends ConsumerStatefulWidget {
   const TrayScope({super.key, required this.child});
 
@@ -22,14 +23,8 @@ class TrayScope extends ConsumerStatefulWidget {
 }
 
 class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
-  static const _gridPrefix = 'grid:';
-
-  // SF Symbol names drawn as tinted icons by our vendored tray_manager patch
-  // (packages/tray_manager) — brand gold for the active grid, grey for the rest,
-  // like the macOS Wi-Fi list. The `checked` flag we pass doubles as the tint
-  // selector on the native side. Degrades to just the label on macOS < 11.
-  // A lightning bolt (matching the in-app grids list) marks each grid row.
-  static const _gridSymbol = 'bolt.fill';
+  static const _chatPrefix = 'chat:';
+  static const _maxRecent = 5;
 
   bool _ready = false;
 
@@ -61,38 +56,48 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
     }
   }
 
-  /// Rebuilds the context menu so it reads like the macOS Wi-Fi / Bluetooth
-  /// menu: the joined grids as a flat, checkable list.
+  /// Rebuilds the context menu so its "Recent" list stays in step with the chats
+  /// the user has (new ones appear, the agent's renames land).
   Future<void> _rebuildMenu() async {
     if (!_ready) return;
-    final networks = ref.read(sessionProvider).networks;
-    final activeId = ref.read(selectedNetworkProvider)?.networkId;
-
-    await trayManager.setContextMenu(
-      Menu(items: _gridItems(networks, activeId)),
-    );
+    await trayManager.setContextMenu(Menu(items: _actionItems(_recentChats())));
   }
 
-  /// The grids section: one row per grid. The active grid gets a gold lightning
-  /// bolt, the rest a grey one — mirroring the connected vs. available split in
-  /// the macOS Wi-Fi list, and matching the in-app grids list. Falls back to a
-  /// hint when no grid is joined.
-  List<MenuItem> _gridItems(
-    List<NetworkCredential> networks,
-    String? activeId,
-  ) {
-    if (networks.isEmpty) {
-      return [MenuItem(key: 'none', label: 'No grids yet', disabled: true)];
-    }
+  /// The newest few chats, as (id, label) pairs — the menu only needs a title to
+  /// show and an id to reopen, so it takes just those rather than the whole
+  /// conversation.
+  List<({String id, String label})> _recentChats() {
+    final conversations = [...ref.read(chatSessionsProvider).conversations]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return [
-      for (final n in networks)
-        MenuItem(
-          key: '$_gridPrefix${n.networkId}',
-          label: n.name,
-          icon: _gridSymbol,
-          checked: n.networkId == activeId,
-        ),
+      for (final c in conversations.take(_maxRecent))
+        (id: c.id, label: _trim(c.title)),
     ];
+  }
+
+  /// The quick actions, Codex-style: recent chats (when there are any), then the
+  /// three the menu bar is really for — start a chat, bring the window forward,
+  /// quit.
+  List<MenuItem> _actionItems(List<({String id, String label})> recent) {
+    return [
+      if (recent.isNotEmpty) ...[
+        MenuItem(key: 'recent', label: 'Recent', disabled: true),
+        for (final chat in recent)
+          MenuItem(key: '$_chatPrefix${chat.id}', label: chat.label),
+        MenuItem.separator(),
+      ],
+      MenuItem(key: 'new', label: 'New chat'),
+      MenuItem(key: 'open', label: 'Open Grid'),
+      MenuItem.separator(),
+      MenuItem(key: 'quit', label: 'Quit Grid'),
+    ];
+  }
+
+  /// Keep a menu row to one line — a long chat title would stretch the menu out.
+  static String _trim(String title) {
+    final clean = title.trim();
+    if (clean.isEmpty) return 'Untitled chat';
+    return clean.length <= 44 ? clean : '${clean.substring(0, 43)}…';
   }
 
   Future<void> _showWindow() async {
@@ -100,12 +105,25 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
     await windowManager.focus();
   }
 
-  void _selectGrid(String networkId) {
-    final match = ref.read(sessionProvider).byName(networkId);
-    if (match == null) return;
-    ref.read(selectedNetworkProvider.notifier).select(match);
+  /// Open a saved chat: switch the shell to Chat, select it, raise the window.
+  void _openChat(String id) {
+    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+    ref.read(chatSessionsProvider.notifier).select(id);
     _showWindow();
   }
+
+  /// Start a fresh chat and bring the window forward on it.
+  void _newChat() {
+    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+    ref.read(chatSessionsProvider.notifier).newChat();
+    _showWindow();
+  }
+
+  /// Quit via the window's close path so the shared teardown
+  /// ([WindowLifecycleScope.onWindowClose], armed by `setPreventClose`) stops any
+  /// serving engine before the process exits — the same as the window's own close
+  /// button, not a raw kill that would strand `llama-server`.
+  Future<void> _quit() => windowManager.close();
 
   // macOS shows the menu on either click; route both to the context menu.
   @override
@@ -118,17 +136,25 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   void onTrayMenuItemClick(MenuItem menuItem) {
     final key = menuItem.key;
     if (key == null) return;
-    if (key.startsWith(_gridPrefix)) {
-      _selectGrid(key.substring(_gridPrefix.length));
+    if (key.startsWith(_chatPrefix)) {
+      _openChat(key.substring(_chatPrefix.length));
+      return;
+    }
+    switch (key) {
+      case 'new':
+        _newChat();
+      case 'open':
+        _showWindow();
+      case 'quit':
+        _quit();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Keep the tray menu in step with the grids list and which grid is active.
+    // Refresh the "Recent" list as chats are added or renamed.
     if (Platform.isMacOS) {
-      ref.listen(sessionProvider, (_, _) => _rebuildMenu());
-      ref.listen(selectedNetworkProvider, (_, _) => _rebuildMenu());
+      ref.listen(chatSessionsProvider, (_, _) => _rebuildMenu());
     }
     return widget.child;
   }
