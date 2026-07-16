@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/theme/app_theme.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../models/logic/advertise_name.dart';
@@ -348,11 +349,7 @@ class _ScanningForServersNote extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         children: [
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          const AppSpinner(),
           const SizedBox(width: 10),
           Text(
             'Looking for AI engines on this computer…',
@@ -404,11 +401,7 @@ class _NotRunningBackendBlock extends ConsumerWidget {
                         .read(ollamaLaunchControllerProvider.notifier)
                         .start(),
               icon: starting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const AppSpinner()
                   : const Icon(Icons.play_arrow),
               label: Text(
                 starting

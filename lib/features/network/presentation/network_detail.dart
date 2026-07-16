@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/delete_network_controller.dart';
 import '../logic/grid_overview_provider.dart';
@@ -416,11 +418,7 @@ class _DeleteGridButton extends ConsumerWidget {
             padding: AppControl.paddingSmall,
           ),
           icon: deleting
-              ? const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const AppSpinner(size: SpinnerSize.small)
               : const Icon(Icons.delete_outline, size: AppControl.iconSize),
           label: Text(deleting ? 'Deleting…' : 'Delete grid'),
         ),
@@ -457,13 +455,18 @@ class _DeleteGridButton extends ConsumerWidget {
     );
     if (confirmed != true || !context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     final name = network.name;
     final error = await ref
         .read(deleteNetworkControllerProvider.notifier)
         .delete(network.networkId);
-    messenger.showSnackBar(
-      SnackBar(content: Text(error ?? 'Deleted "$name".')),
+    toast?.show(
+      error != null
+          ? ToastSpec(message: error, severity: ToastSeverity.error)
+          : ToastSpec(
+              message: 'Deleted "$name".',
+              severity: ToastSeverity.success,
+            ),
     );
   }
 }

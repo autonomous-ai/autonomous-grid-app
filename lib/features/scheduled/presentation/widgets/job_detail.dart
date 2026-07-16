@@ -4,7 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../infrastructure/cli/hermes_cron_service.dart';
 import '../../../../shared/layouts/shell_state.dart';
 import '../../../../shared/theme/app_theme.dart';
+// Imported here for the part files below (job_detail_actions/_results), which
+// share this library's imports.
+import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/error_box.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../logic/cron_error.dart';
 import '../../logic/job_schedule.dart';

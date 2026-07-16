@@ -6,6 +6,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../logic/project.dart';
 import 'add_project.dart';
@@ -148,9 +149,13 @@ class _Actions extends ConsumerWidget {
         .read(hostShellServiceProvider)
         .openFolder(project.path);
     if (!context.mounted || opened) return;
-    ScaffoldMessenger.of(
+    ToastScope.show(
       context,
-    ).showSnackBar(SnackBar(content: Text("Couldn't open ${project.path}")));
+      ToastSpec(
+        message: "Couldn't open ${project.path}",
+        severity: ToastSeverity.error,
+      ),
+    );
   }
 
   void _newChat(WidgetRef ref) {

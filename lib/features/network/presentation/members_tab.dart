@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/toast.dart';
 import '../logic/member_providers.dart';
 
 /// The "Members" tab of a managed grid's detail pane — shown to admins and
@@ -56,17 +58,17 @@ class _MembersTabState extends ConsumerState<MembersTab> {
     if (!mounted) return;
     setState(() => _removing.remove(email));
 
-    final messenger = ScaffoldMessenger.of(context);
     if (error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(error)));
+      ToastScope.show(
+        context,
+        ToastSpec(message: error, severity: ToastSeverity.error),
+      );
       return;
     }
     ref.invalidate(networkMembersProvider(_networkId));
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Removed $email.'),
-        duration: const Duration(seconds: 2),
-      ),
+    ToastScope.show(
+      context,
+      ToastSpec(message: 'Removed $email.', severity: ToastSeverity.success),
     );
   }
 
@@ -194,11 +196,7 @@ class _MemberTile extends StatelessWidget {
           else if (removing)
             const Padding(
               padding: EdgeInsets.all(8),
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              child: AppSpinner(),
             )
           else
             IconButton(

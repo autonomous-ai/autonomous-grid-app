@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/hermes_task_policy.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/task_power_controller.dart';
 
 /// What tasks are allowed to do to this computer — stated on the screen that
@@ -63,7 +64,10 @@ class _ChangeButtonState extends ConsumerState<_ChangeButton> {
     if (power == widget.current) return;
     final error = await ref.read(taskPowerProvider.notifier).set(power);
     if (error == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    ToastScope.show(
+      context,
+      ToastSpec(message: error, severity: ToastSeverity.error),
+    );
   }
 
   @override

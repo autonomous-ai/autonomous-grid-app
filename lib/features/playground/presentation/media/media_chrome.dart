@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_spinner.dart';
 
 /// Shared visual chrome for the inline media widgets, so image, video and audio
 /// share one frame, one loading state and one failure state.
@@ -72,11 +73,7 @@ class MediaLoadingBox extends StatelessWidget {
       child: SizedBox(
         height: height,
         child: const Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: AppSpinner(size: SpinnerSize.large),
         ),
       ),
     );

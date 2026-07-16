@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 
 /// The agent's to-do plan, shown as a checklist — live in the working bubble
 /// (the step it's on spins) and pinned under the finished answer (all ticked),
@@ -98,11 +99,7 @@ class _PlanGlyph extends StatelessWidget {
           color: AppPalette.textFaint,
         );
       case AgentPlanStatus.active:
-        return const SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(strokeWidth: 1.6),
-        );
+        return const AppSpinner(size: SpinnerSize.small);
       case AgentPlanStatus.done:
         return Icon(Icons.check_circle, size: 13, color: AppPalette.online);
     }

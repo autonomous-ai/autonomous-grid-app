@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/pill_choice.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/mcp_controller.dart';
 import '../../logic/mcp_input.dart';
 import '../../logic/mcp_server.dart';
@@ -104,7 +105,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
   }
 
   Future<void> _save() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     final navigator = Navigator.of(context);
     final controller = ref.read(mcpServersProvider.notifier);
     final server = _build();
@@ -120,11 +121,16 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     if (!mounted) return;
     setState(() => _saving = false);
     if (error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(error)));
+      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
       return;
     }
     navigator.pop();
-    messenger.showSnackBar(SnackBar(content: Text('${server.name} is ready.')));
+    toast?.show(
+      ToastSpec(
+        message: '${server.name} is ready.',
+        severity: ToastSeverity.success,
+      ),
+    );
   }
 
   @override

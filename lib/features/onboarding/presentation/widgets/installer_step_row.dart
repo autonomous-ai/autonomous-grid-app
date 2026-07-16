@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_spinner.dart';
 import '../../logic/installer_stage.dart';
 
 /// One step of the installer checklist.
@@ -89,11 +90,7 @@ class _StatusIcon extends StatelessWidget {
         size: 8,
         color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.35),
       ),
-      InstallStatus.running => const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
+      InstallStatus.running => const AppSpinner(),
       InstallStatus.done => Icon(
         Icons.check_circle,
         size: 18,

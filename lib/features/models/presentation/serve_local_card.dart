@@ -5,6 +5,7 @@ import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../node_setup/logic/background_model_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
@@ -216,11 +217,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
       child: FilledButton.icon(
         // Not tappable — it reflects the download already running below.
         onPressed: null,
-        icon: const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        icon: const AppSpinner.onAccent(),
         label: Text(pct != null ? 'Downloading… $pct%' : 'Downloading…'),
       ),
     ),
@@ -382,11 +379,7 @@ class _EngineSetupActions extends ConsumerWidget {
         alignment: Alignment.centerLeft,
         child: FilledButton.icon(
           onPressed: null,
-          icon: const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          icon: const AppSpinner.onAccent(),
           label: const Text('Setting up…'),
         ),
       );

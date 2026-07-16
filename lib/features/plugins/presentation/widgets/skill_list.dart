@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_spinner.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../../agent/logic/hermes_skill_installer.dart';
 import '../../logic/agent_skill.dart';
 import '../../logic/skill_author.dart';
@@ -45,17 +47,24 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
     final confirmed = await _confirmDeleteSkill(context, skill.name);
     if (confirmed != true || !mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     setState(() => _busy = true);
-    var message = '${skill.name} deleted.';
+    String? failure;
     try {
       await ref.read(skillAuthorProvider).delete(skill.path);
     } on Object catch (error) {
-      message = "Couldn't delete the skill: $error";
+      failure = "Couldn't delete the skill: $error";
     }
     ref.invalidate(agentSkillsProvider);
     if (mounted) setState(() => _busy = false);
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+    toast?.show(
+      failure != null
+          ? ToastSpec(message: failure, severity: ToastSeverity.error)
+          : ToastSpec(
+              message: '${skill.name} deleted.',
+              severity: ToastSeverity.success,
+            ),
+    );
   }
 
   @override
@@ -250,18 +259,20 @@ class _ReinstallGridSkillsButtonState
 
   Future<void> _reinstall() async {
     setState(() => _busy = true);
-    var message = "Grid's skills are up to date.";
+    String? failure;
     try {
       await ref.read(hermesSkillInstallerProvider).install();
       ref.invalidate(agentSkillsProvider);
     } on Object catch (error) {
-      message = "Couldn't install Grid's skills: $error";
+      failure = "Couldn't install Grid's skills: $error";
     }
     if (!mounted) return;
     setState(() => _busy = false);
-    ScaffoldMessenger.of(
+    ToastScope.showResult(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+      error: failure,
+      success: "Grid's skills are up to date.",
+    );
   }
 
   @override
@@ -269,11 +280,7 @@ class _ReinstallGridSkillsButtonState
     return OutlinedButton.icon(
       onPressed: _busy ? null : _reinstall,
       icon: _busy
-          ? const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
+          ? const AppSpinner()
           : const Icon(Icons.refresh_rounded, size: AppControl.iconSize),
       label: Text(_busy ? 'Installing…' : "Reinstall Grid's skills"),
     );

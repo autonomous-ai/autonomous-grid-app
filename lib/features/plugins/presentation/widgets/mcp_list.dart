@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/mcp_controller.dart';
 import '../../logic/mcp_server.dart';
 import 'add_mcp_dialog.dart';
@@ -46,14 +47,19 @@ class _McpRowState extends ConsumerState<_McpRow> {
     final confirmed = await _confirmRemove(context, server.name);
     if (confirmed != true || !mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     setState(() => _busy = true);
     final error = await ref
         .read(mcpServersProvider.notifier)
         .remove(server.name);
     if (mounted) setState(() => _busy = false);
-    messenger.showSnackBar(
-      SnackBar(content: Text(error ?? '${server.name} removed.')),
+    toast?.show(
+      error != null
+          ? ToastSpec(message: error, severity: ToastSeverity.error)
+          : ToastSpec(
+              message: '${server.name} removed.',
+              severity: ToastSeverity.success,
+            ),
     );
   }
 

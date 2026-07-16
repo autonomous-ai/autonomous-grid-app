@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../agent/logic/hermes_tool.dart';
@@ -331,7 +332,7 @@ class _Plugins extends ConsumerWidget {
       AsyncError(:final error) => ErrorBox(
         message: "Couldn't read the installed plugins: $error",
       ),
-      _ => const Center(child: CircularProgressIndicator()),
+      _ => const LoadingView(),
     };
   }
 }
@@ -354,7 +355,7 @@ class _Skills extends ConsumerWidget {
       AsyncError(:final error) => ErrorBox(
         message: "Couldn't read the installed skills: $error",
       ),
-      _ => const Center(child: CircularProgressIndicator()),
+      _ => const LoadingView(),
     };
   }
 }
@@ -377,7 +378,7 @@ class _Mcp extends ConsumerWidget {
       AsyncError(:final error) => ErrorBox(
         message: "Couldn't read the MCP servers: $error",
       ),
-      _ => const Center(child: CircularProgressIndicator()),
+      _ => const LoadingView(),
     };
   }
 }

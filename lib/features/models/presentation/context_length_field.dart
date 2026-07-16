@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_spinner.dart';
 import '../logic/context_length.dart';
 import '../logic/models_providers.dart';
 
@@ -168,11 +169,7 @@ class _ReadingLine extends StatelessWidget {
     final theme = Theme.of(context);
     return Row(
       children: [
-        const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        const AppSpinner(),
         const SizedBox(width: 10),
         Text(
           "Reading this model's limit…",

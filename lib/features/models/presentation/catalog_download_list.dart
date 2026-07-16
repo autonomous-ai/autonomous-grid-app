@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/parsers/catalog_entry.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
@@ -244,11 +245,7 @@ class _CatalogLoading extends StatelessWidget {
       children: [
         Row(
           children: [
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            const AppSpinner(),
             const SizedBox(width: 10),
             Text(
               'Loading suggested models…',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../projects/logic/agent_workspace.dart';
 
 /// The `@` menu that floats above the composer: the files in the chat's folder,
@@ -51,11 +52,7 @@ class FileMentionMenu extends ConsumerWidget {
         _ => const Padding(
           padding: EdgeInsets.all(16),
           child: Center(
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            child: AppSpinner(size: SpinnerSize.large),
           ),
         ),
       },

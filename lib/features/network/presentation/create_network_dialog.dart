@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/toast.dart';
 import '../logic/create_network_controller.dart';
 
 /// Modal to create a managed (hosted) grid via the control-plane API.
@@ -51,13 +53,20 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
   Widget build(BuildContext context) {
     ref.listen(createNetworkControllerProvider, (_, next) {
       if (next is! CreateNetworkDone) return;
+      // Grab the host *before* popping: this context is the dialog's, and once
+      // it's gone `ToastScope.of` can no longer walk up to find the scope.
+      final toast = ToastScope.of(context);
       Navigator.of(context).pop();
       final warning = next.joinWarning;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(warning ?? 'Grid “${next.network.name}” created.'),
-          duration: const Duration(seconds: 3),
-        ),
+      // The grid was created either way — a warning is a caveat on a success,
+      // not a failure.
+      toast?.show(
+        warning != null
+            ? ToastSpec(message: warning, severity: ToastSeverity.warning)
+            : ToastSpec(
+                message: 'Grid “${next.network.name}” created.',
+                severity: ToastSeverity.success,
+              ),
       );
     });
 
@@ -118,11 +127,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
         FilledButton(
           onPressed: submitting ? null : _submit,
           child: submitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const AppSpinner.onAccent()
               : const Text('Create'),
         ),
       ],

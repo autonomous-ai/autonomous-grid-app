@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/labeled_field.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/agent_skill.dart';
 import '../../logic/skill_author.dart';
 import '../../logic/skill_generator.dart';
@@ -168,12 +170,13 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
     ref.invalidate(agentSkillsProvider);
     if (!mounted) return;
     Navigator.of(context).pop();
-    _say(done);
+    _say(done, severity: ToastSeverity.success);
   }
 
-  void _say(String message) => ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(message)));
+  /// Every caller but the save-succeeded one is reporting a failure, so error is
+  /// the default and success is opted into.
+  void _say(String message, {ToastSeverity severity = ToastSeverity.error}) =>
+      ToastScope.show(context, ToastSpec(message: message, severity: severity));
 
   @override
   Widget build(BuildContext context) {
@@ -324,11 +327,7 @@ class _AiDraftButton extends StatelessWidget {
         child: TextButton.icon(
           onPressed: busy ? null : onPressed,
           icon: busy
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const AppSpinner()
               : const Icon(
                   Icons.auto_awesome_rounded,
                   size: AppControl.iconSize,

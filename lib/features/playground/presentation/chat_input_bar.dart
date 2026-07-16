@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 
 /// The message composer — a multiline field plus a circular send button that
 /// spins while a request is in flight. [canSend] gates both Enter-to-send and
@@ -68,11 +69,7 @@ class ChatInputBar extends StatelessWidget {
               padding: EdgeInsets.zero,
             ),
             child: sending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const AppSpinner(size: SpinnerSize.large)
                 : const Icon(Icons.arrow_upward_rounded, size: 20),
           ),
         ),

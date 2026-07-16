@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/managed_network_member.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
+import '../../../shared/widgets/toast.dart';
 import '../logic/member_providers.dart';
 
 /// Modal to invite a member to a managed grid via the control-plane API.
@@ -78,12 +80,12 @@ class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
     }
 
     ref.invalidate(networkMembersProvider(widget.networkId));
+    // Grab the host before popping — once this dialog's context is deactivated
+    // it can no longer walk up to find the scope.
+    final toast = ToastScope.of(context);
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Invited $email.'),
-        duration: const Duration(seconds: 3),
-      ),
+    toast?.show(
+      ToastSpec(message: 'Invited $email.', severity: ToastSeverity.success),
     );
   }
 
@@ -124,11 +126,7 @@ class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
         FilledButton(
           onPressed: _submitting ? null : _submit,
           child: _submitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const AppSpinner.onAccent()
               : const Text('Add'),
         ),
       ],

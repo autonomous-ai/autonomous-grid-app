@@ -8,8 +8,10 @@ import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/cli/host_shell_service.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../onboarding/preflight_providers.dart';
 import '../../onboarding/preflight_report.dart';
 
@@ -91,12 +93,15 @@ class _OpenLogsButton extends ConsumerWidget {
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
     final directory = GridPaths.logsDir;
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     // Nothing has been logged yet on a fresh install — the folder simply isn't
     // there, and "couldn't open it" would be the wrong story.
     if (!directory.existsSync()) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('No logs yet — nothing has run.')),
+      toast?.show(
+        const ToastSpec(
+          message: 'No logs yet — nothing has run.',
+          severity: ToastSeverity.info,
+        ),
       );
       return;
     }
@@ -104,8 +109,11 @@ class _OpenLogsButton extends ConsumerWidget {
         .read(hostShellServiceProvider)
         .openFolder(directory.path);
     if (opened) return;
-    messenger.showSnackBar(
-      SnackBar(content: Text("Couldn't open ${directory.path}")),
+    toast?.show(
+      ToastSpec(
+        message: "Couldn't open ${directory.path}",
+        severity: ToastSeverity.error,
+      ),
     );
   }
 
@@ -176,11 +184,7 @@ class _StatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (status) {
-      CliCallStatus.running => const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
+      CliCallStatus.running => const AppSpinner(),
       CliCallStatus.success => Icon(
         Icons.check_circle,
         size: 16,
@@ -296,11 +300,7 @@ class _WhichGridCard extends ConsumerWidget {
     return preflight.when(
       loading: () => Row(
         children: [
-          const SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          const AppSpinner(size: SpinnerSize.small),
           const SizedBox(width: 8),
           Text('checking…', style: theme.textTheme.bodySmall),
         ],

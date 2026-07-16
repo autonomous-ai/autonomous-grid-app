@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/toast.dart';
 
 /// A titled group of rows in the detail pane (e.g. "Endpoints", "Details").
 class DetailSection extends StatelessWidget {
@@ -252,10 +253,19 @@ class _BadgePill extends StatelessWidget {
 
 /// Copies [text] to the clipboard and shows a brief "Copied" toast. Shared by
 /// every copy affordance so the behavior and the toast copy stay identical.
-void copyToClipboard(BuildContext context, String text) {
+///
+/// [message] overrides the toast text for call sites that name what they copied
+/// ("Copied 100.64.0.1:8080").
+void copyToClipboard(BuildContext context, String text, {String? message}) {
   Clipboard.setData(ClipboardData(text: text));
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
+  ToastScope.show(
+    context,
+    ToastSpec(
+      message: message ?? 'Copied',
+      severity: ToastSeverity.success,
+      // Deliberately brief: it confirms a keystroke-speed action.
+      duration: const Duration(seconds: 1),
+    ),
   );
 }
 

@@ -5,6 +5,7 @@ import '../features/app_update/presentation/update_toast_scope.dart';
 import '../infrastructure/state/chat_prefs_store.dart';
 import '../shared/layouts/tray_controller.dart';
 import '../shared/theme/app_theme.dart';
+import '../shared/widgets/toast.dart';
 import 'root_view.dart';
 import 'window_lifecycle_scope.dart';
 
@@ -26,9 +27,14 @@ class GridApp extends ConsumerWidget {
       home: const _BrightnessSync(
         child: WindowLifecycleScope(
           child: TrayScope(
-            // Update-check feedback is mounted app-wide: the macOS "Check for
-            // Updates…" menu item works on the login screen too.
-            child: UpdateToastScope(child: RootView()),
+            // Every transient notification in the app surfaces through this one
+            // host, mounted above RootView so a toast is reachable from the
+            // login screen and the main shell alike.
+            child: ToastScope(
+              // Update-check feedback is mounted app-wide: the macOS "Check for
+              // Updates…" menu item works on the login screen too.
+              child: UpdateToastScope(child: RootView()),
+            ),
           ),
         ),
       ),

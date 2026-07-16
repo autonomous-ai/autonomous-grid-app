@@ -53,7 +53,7 @@ class _Results extends ConsumerWidget {
           ),
           _ => const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: LinearProgressIndicator(),
+            child: AppProgressBar(),
           ),
         },
       ],

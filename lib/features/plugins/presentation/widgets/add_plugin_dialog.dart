@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/plugins_controller.dart';
 
 /// Adds a plugin from a Git repository — the one way new plugins arrive.
@@ -37,14 +38,17 @@ class _AddPluginDialogState extends ConsumerState<_AddPluginDialog> {
         .install(_identifier.text);
     if (!mounted) return;
     setState(() => _installing = false);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     if (error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(error)));
+      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
       return;
     }
     Navigator.of(context).pop();
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Plugin installed and turned on.')),
+    toast?.show(
+      const ToastSpec(
+        message: 'Plugin installed and turned on.',
+        severity: ToastSeverity.success,
+      ),
     );
   }
 

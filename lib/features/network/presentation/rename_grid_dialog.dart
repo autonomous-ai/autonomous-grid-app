@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
+import '../../../shared/widgets/toast.dart';
 import '../logic/grid_name.dart';
 import '../logic/rename_network_controller.dart';
 
@@ -60,11 +62,14 @@ class _RenameGridDialogState extends ConsumerState<RenameGridDialog> {
         .rename(networkId: widget.network.networkId, name: name);
 
     if (!mounted || error != null) return;
+    // Grab the host before popping — once this dialog's context is deactivated
+    // it can no longer walk up to find the scope.
+    final toast = ToastScope.of(context);
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Renamed to "$name".'),
-        duration: const Duration(seconds: 3),
+    toast?.show(
+      ToastSpec(
+        message: 'Renamed to "$name".',
+        severity: ToastSeverity.success,
       ),
     );
   }
@@ -116,11 +121,7 @@ class _RenameGridDialogState extends ConsumerState<RenameGridDialog> {
         FilledButton(
           onPressed: saving ? null : _submit,
           child: saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const AppSpinner.onAccent()
               : const Text('Save'),
         ),
       ],

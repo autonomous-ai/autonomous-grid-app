@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/theme/app_theme.dart';
 
 import '../../../infrastructure/cli/parsers/download_progress.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/node_capabilities.dart';
 import '../logic/node_setup_config.dart';
@@ -73,11 +74,7 @@ class _IdleBody extends ConsumerWidget {
     return caps.when(
       loading: () => const Row(
         children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          AppSpinner(),
           SizedBox(width: 12),
           Text('Inspecting this computer…'),
         ],
@@ -232,11 +229,7 @@ class _RunningBody extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            const AppSpinner(),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -253,7 +246,7 @@ class _RunningBody extends ConsumerWidget {
         ),
         if (progress != null) ...[
           const SizedBox(height: 8),
-          LinearProgressIndicator(
+          AppProgressBar(
             value: progress.isIndeterminate ? null : progress.pct! / 100,
           ),
           const SizedBox(height: 4),

@@ -167,8 +167,11 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
 
     final theme = Theme.of(context);
     final options = ref.watch(playgroundModelsProvider);
+    // Either source still in flight means the options list isn't settled yet —
+    // see the same gate in ChatView. Both-at-once (&&) would let the half-loaded
+    // moment flash NoModelYet.
     final loadingModels =
-        ref.watch(gridOverviewProvider).isLoading &&
+        ref.watch(gridOverviewProvider).isLoading ||
         ref.watch(networkModelsProvider).isLoading;
     if (options.isNotEmpty) {
       _syncDefaultModel([for (final o in options) o.id]);

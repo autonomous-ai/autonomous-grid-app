@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
@@ -382,11 +383,7 @@ class _ApplyBlock extends StatelessWidget {
           FilledButton.icon(
             onPressed: running ? null : onApply,
             icon: running
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const AppSpinner.onAccent()
                 : const Icon(Icons.auto_fix_high_rounded, size: 16),
             label: Text(running ? 'Setting up…' : 'Set up $name for me'),
           ),

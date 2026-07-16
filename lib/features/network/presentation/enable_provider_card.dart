@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/enable_provider_controller.dart';
@@ -132,11 +133,7 @@ class _Running extends StatelessWidget {
       children: [
         Row(
           children: const [
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            AppSpinner(),
             SizedBox(width: 12),
             Text('Turning on engines…'),
           ],

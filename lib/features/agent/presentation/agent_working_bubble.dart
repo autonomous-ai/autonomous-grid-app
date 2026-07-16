@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../playground/presentation/message_plan.dart';
 import '../../playground/presentation/message_sources.dart';
 import '../logic/agent_providers.dart';
@@ -39,11 +40,7 @@ class AgentWorkingBubble extends ConsumerWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+                const AppSpinner(),
                 const SizedBox(width: 10),
                 Text('Agent is working…', style: theme.textTheme.bodyMedium),
               ],
@@ -117,11 +114,7 @@ class _StatusDot extends StatelessWidget {
     AppTheme.watch(context); // rebuild on theme flip — reads AppPalette.online
     switch (status) {
       case AgentActivityStatus.running:
-        return const SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(strokeWidth: 1.6),
-        );
+        return const AppSpinner(size: SpinnerSize.small);
       case AgentActivityStatus.done:
         return Icon(Icons.check_circle, size: 14, color: AppPalette.online);
       case AgentActivityStatus.failed:

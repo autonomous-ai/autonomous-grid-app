@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../agent/logic/hermes_tool.dart';
@@ -46,7 +47,7 @@ class ScheduledView extends ConsumerWidget {
               AsyncError(:final error) => ErrorBox(
                 message: "Couldn't read your scheduled tasks: $error",
               ),
-              _ => const Center(child: CircularProgressIndicator()),
+              _ => const LoadingView(),
             },
           ),
         ],
@@ -172,7 +173,7 @@ class _PickOne extends ConsumerWidget {
             _ActivityCard(run: run, previewLines: _previewLines),
         ],
       ),
-      _ => const Center(child: CircularProgressIndicator()),
+      _ => const LoadingView(),
     };
   }
 }

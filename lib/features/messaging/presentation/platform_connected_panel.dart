@@ -22,7 +22,10 @@ class PlatformConnectedPanel extends ConsumerWidget {
   ) async {
     final error = await action();
     if (error == null || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    ToastScope.show(
+      context,
+      ToastSpec(message: error, severity: ToastSeverity.error),
+    );
   }
 
   @override

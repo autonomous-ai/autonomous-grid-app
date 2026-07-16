@@ -20,10 +20,11 @@ class _ActionsState extends ConsumerState<_Actions> {
     final error = await action(ref.read(scheduledJobsProvider.notifier));
     if (!mounted) return;
     setState(() => _busy = false);
-    final message = error == null ? done : describeCronRunError(error).summary;
-    ScaffoldMessenger.of(
+    ToastScope.showResult(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+      error: error == null ? null : describeCronRunError(error).summary,
+      success: done,
+    );
   }
 
   Future<void> _confirmDelete() async {

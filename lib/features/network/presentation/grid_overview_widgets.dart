@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
@@ -7,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/grid_overview_provider.dart';
+import 'detail_widgets.dart';
 import '../logic/node_display.dart';
 
 /// Monospace family for the grid-overview surface. Shared by the card sections
@@ -378,7 +378,7 @@ class _CopyChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => _copyToClipboard(context, id),
+        onTap: () => copyToClipboard(context, id),
         child: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
@@ -432,14 +432,6 @@ class OverviewMessage extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Copy [text] to the clipboard and confirm with a brief snackbar.
-void _copyToClipboard(BuildContext context, String text) {
-  Clipboard.setData(ClipboardData(text: text));
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
-  );
 }
 
 String _cap(String s) =>

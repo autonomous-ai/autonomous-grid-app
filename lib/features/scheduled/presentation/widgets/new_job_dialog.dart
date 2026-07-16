@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../infrastructure/cli/hermes_task_policy.dart';
 import '../../../../shared/layouts/shell_state.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../../messaging/logic/messaging_controller.dart';
 import '../../../messaging/logic/messaging_platform.dart';
 import '../../logic/job_schedule.dart';
@@ -121,18 +122,22 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     if (!mounted) return;
     setState(() => _saving = false);
     if (result.error != null) {
-      ScaffoldMessenger.of(
+      ToastScope.show(
         context,
-      ).showSnackBar(SnackBar(content: Text(result.error!)));
+        ToastSpec(message: result.error!, severity: ToastSeverity.error),
+      );
       return;
     }
     if (result.id != null) {
       ref.read(selectedJobIdProvider.notifier).select(result.id);
     }
     if (runNow) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Running it now — the answer lands in a moment.'),
+      // In-progress, not an outcome — the answer hasn't landed yet.
+      ToastScope.show(
+        context,
+        const ToastSpec(
+          message: 'Running it now — the answer lands in a moment.',
+          severity: ToastSeverity.info,
         ),
       );
     }

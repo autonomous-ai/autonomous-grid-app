@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_version_service.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../agent/logic/hermes_tool.dart';
@@ -329,11 +330,7 @@ class _Working extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(
-          width: 15,
-          height: 15,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        const AppSpinner(),
         const SizedBox(width: 10),
         Text(
           'Installing…',

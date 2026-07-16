@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_spinner.dart';
 import '../../logic/installer_controller.dart';
 
 /// The installer's title, its "x of N steps" counter, and a progress bar.
@@ -48,13 +49,7 @@ class InstallerHeader extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: total == 0 ? 0 : done / total,
-            minHeight: 4,
-          ),
-        ),
+        AppProgressBar(value: total == 0 ? 0 : done / total),
       ],
     );
   }

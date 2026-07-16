@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
 import '../logic/model_group.dart';
@@ -269,11 +271,7 @@ class _ModelTile extends ConsumerWidget {
         width: 40,
         height: 40,
         child: Center(
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: AppSpinner(),
         ),
       );
     }
@@ -345,8 +343,9 @@ class _ModelTile extends ConsumerWidget {
     final message = state is ModelDeleteFailed
         ? state.message
         : "Couldn't delete this model. Please try again.";
-    ScaffoldMessenger.of(
+    ToastScope.show(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+      ToastSpec(message: message, severity: ToastSeverity.error),
+    );
   }
 }

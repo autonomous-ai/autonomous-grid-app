@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_spinner.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/hermes_plugin.dart';
 import '../../logic/plugins_controller.dart';
 import 'extension_tile_surface.dart';
@@ -51,9 +53,7 @@ class _PluginRowState extends ConsumerState<_PluginRow> {
     final error = await action();
     if (!mounted) return;
     setState(() => _busy = false);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(error ?? done)));
+    ToastScope.showResult(context, error: error, success: done);
   }
 
   Future<void> _toggle(bool enabled) => _run(
@@ -175,14 +175,7 @@ class _PluginSwitch extends StatelessWidget {
             ),
             child: busy
                 ? const Center(
-                    child: SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    ),
+                    child: AppSpinner.onAccent(),
                   )
                 : AnimatedAlign(
                     duration: const Duration(milliseconds: 140),

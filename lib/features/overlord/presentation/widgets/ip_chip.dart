@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../network/presentation/detail_widgets.dart';
 import '../overlord_tokens.dart';
 
 /// A boxed, monospace endpoint with a copy affordance — the `192.168.50.134:8000`
@@ -18,7 +18,8 @@ class IpChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
-        onTap: () => _copy(context),
+        onTap: () =>
+            copyToClipboard(context, endpoint, message: 'Copied $endpoint'),
         child: Container(
           padding: const EdgeInsets.fromLTRB(7, 3, 5, 3),
           decoration: BoxDecoration(
@@ -46,16 +47,6 @@ class IpChip extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _copy(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: endpoint));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Copied $endpoint'),
-        duration: const Duration(seconds: 1),
       ),
     );
   }

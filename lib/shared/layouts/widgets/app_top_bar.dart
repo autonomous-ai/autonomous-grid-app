@@ -4,6 +4,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_spinner.dart';
 import '../shell_state.dart';
 import 'hosting_summary.dart';
 import 'top_bar_pill.dart';
@@ -86,11 +87,7 @@ class _DownloadingLabel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        const AppSpinner(size: SpinnerSize.small),
         const SizedBox(width: 8),
         Text(
           label,

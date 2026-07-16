@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../shared/widgets/app_spinner.dart';
 import '../logic/model_pull_controller.dart';
 
 /// Where to find GGUF models to paste into the download field.
@@ -191,7 +192,7 @@ class _ProgressView extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 10),
-        LinearProgressIndicator(value: fraction),
+        AppProgressBar(value: fraction),
         const SizedBox(height: 6),
         Text(label, style: theme.textTheme.bodySmall),
       ],

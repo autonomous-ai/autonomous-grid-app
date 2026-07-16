@@ -11,6 +11,7 @@ import '../features/onboarding/preflight_screen.dart';
 import '../features/onboarding/presentation/choice_screen.dart';
 import '../features/onboarding/presentation/installer_screen.dart';
 import '../shared/layouts/home_shell.dart';
+import '../shared/widgets/app_spinner.dart';
 
 /// Routes between the top-level states: preflight, login (no session), first-run
 /// setup (installing the assistant), the choose-a-model fork (a grid with nothing
@@ -78,11 +79,7 @@ class _Splash extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            const AppSpinner(size: SpinnerSize.large),
             const SizedBox(height: 16),
             Text(
               'Starting Grid…',

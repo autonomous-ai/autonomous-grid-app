@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../playground/presentation/playground_dialog.dart';
@@ -35,11 +36,7 @@ class ProviderRunningCard extends ConsumerWidget {
           Row(
             children: [
               if (starting)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+                const AppSpinner()
               else
                 Icon(Icons.dns, color: AppPalette.online, size: 18),
               const SizedBox(width: 10),

@@ -2,13 +2,14 @@ import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/layouts/widgets/theme_mode_picker.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
+import '../../network/presentation/detail_widgets.dart';
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
 import '../logic/session_expiry_controller.dart';
@@ -1452,12 +1453,8 @@ class _FallbackBody extends StatelessWidget {
   const _FallbackBody({required this.url});
   final String url;
 
-  void _copy(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: url));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Link copied.')));
-  }
+  void _copy(BuildContext context) =>
+      copyToClipboard(context, url, message: 'Link copied.');
 
   @override
   Widget build(BuildContext context) {
@@ -1559,13 +1556,6 @@ class _Busy extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const CircularProgressIndicator(),
-        const SizedBox(height: 16),
-        Text(label),
-      ],
-    );
+    return LoadingView(message: label);
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/scheduled_jobs_controller.dart';
 
 /// Warns when tasks are saved but nothing is there to fire them.
@@ -27,7 +28,10 @@ class _SchedulerBannerState extends ConsumerState<SchedulerBanner> {
     if (!mounted) return;
     setState(() => _starting = false);
     if (error == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    ToastScope.show(
+      context,
+      ToastSpec(message: error, severity: ToastSeverity.error),
+    );
   }
 
   @override

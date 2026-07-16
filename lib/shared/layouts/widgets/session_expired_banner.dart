@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../features/auth/logic/session_expiry_controller.dart';
+import '../../widgets/app_spinner.dart';
 
 /// App-wide strip shown while the app silently tries `grid sync` to renew an
 /// expired session. If that refresh fails the app routes to the login screen
@@ -31,11 +32,7 @@ class _RefreshingRow extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
         child: Row(
           children: [
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            const AppSpinner(),
             const SizedBox(width: 12),
             Expanded(
               child: Text(

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../core/app_environment.dart';
 import '../../shared/widgets/error_box.dart';
+import '../network/presentation/detail_widgets.dart';
 import 'preflight_providers.dart';
 import 'preflight_report.dart';
 
@@ -127,15 +127,7 @@ class _InstallCommand extends StatelessWidget {
             icon: const Icon(Icons.copy, size: 16),
             tooltip: 'Copy',
             visualDensity: VisualDensity.compact,
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: command));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Copied'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
+            onPressed: () => copyToClipboard(context, command),
           ),
         ],
       ),

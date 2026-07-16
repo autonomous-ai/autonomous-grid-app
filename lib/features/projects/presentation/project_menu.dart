@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/host_shell_service.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/toast.dart';
 import '../logic/project.dart';
 
 /// The "…" overflow menu on a project row: pin it to the top, reveal its folder,
@@ -35,9 +36,13 @@ class _ProjectMenuButtonState extends ConsumerState<ProjectMenuButton> {
         .read(hostShellServiceProvider)
         .openFolder(_project.path);
     if (opened || !mounted) return;
-    ScaffoldMessenger.of(
+    ToastScope.show(
       context,
-    ).showSnackBar(SnackBar(content: Text("Couldn't open ${_project.path}")));
+      ToastSpec(
+        message: "Couldn't open ${_project.path}",
+        severity: ToastSeverity.error,
+      ),
+    );
   }
 
   Future<void> _rename() async {

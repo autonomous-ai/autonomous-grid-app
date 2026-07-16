@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../logic/chat_message.dart';
 import 'message_content.dart';
 import 'message_plan.dart';
@@ -104,13 +105,7 @@ class GeneratingBubble extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: phase.progress <= 0 ? null : phase.progress,
-                minHeight: 4,
-              ),
-            ),
+            AppProgressBar(value: phase.progress <= 0 ? null : phase.progress),
           ],
         ),
       ),

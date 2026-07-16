@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/toast.dart';
 import '../logic/agent_changes.dart';
 import '../logic/edit_diff.dart';
 import 'diff_view.dart';
@@ -66,12 +68,17 @@ class _UndoAllButtonState extends ConsumerState<_UndoAllButton> {
   bool _busy = false;
 
   Future<void> _undoAll() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     setState(() => _busy = true);
     final error = await ref.read(agentChangesProvider.notifier).revertAll();
     if (mounted) setState(() => _busy = false);
-    messenger.showSnackBar(
-      SnackBar(content: Text(error ?? 'Undid the assistant\'s changes.')),
+    toast?.show(
+      error != null
+          ? ToastSpec(message: error, severity: ToastSeverity.error)
+          : const ToastSpec(
+              message: 'Undid the assistant\'s changes.',
+              severity: ToastSeverity.success,
+            ),
     );
   }
 
@@ -92,14 +99,7 @@ class _UndoAllButtonState extends ConsumerState<_UndoAllButton> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_busy)
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppPalette.accent,
-                  ),
-                )
+                const AppSpinner(color: AppPalette.accent)
               else
                 Icon(Icons.undo_rounded, size: 16, color: AppPalette.accent),
               const SizedBox(width: 8),
@@ -190,7 +190,7 @@ class _ChangeRowState extends ConsumerState<_ChangeRow> {
   bool _busy = false;
 
   Future<void> _undo() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = ToastScope.of(context);
     setState(() => _busy = true);
     final error = await ref
         .read(agentChangesProvider.notifier)
@@ -198,7 +198,7 @@ class _ChangeRowState extends ConsumerState<_ChangeRow> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(error)));
+      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
     }
   }
 

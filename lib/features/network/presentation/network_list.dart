@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../auth/logic/session_controller.dart';
 import '../logic/grid_overview_provider.dart';
 import '../logic/grid_sync_controller.dart';
@@ -131,14 +133,20 @@ class _SyncButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.listen<GridSyncState>(gridSyncControllerProvider, (_, next) {
-      final messenger = ScaffoldMessenger.of(context);
       switch (next) {
         case GridSyncDone():
-          messenger.showSnackBar(
-            const SnackBar(content: Text('Grids up to date.')),
+          ToastScope.show(
+            context,
+            const ToastSpec(
+              message: 'Grids up to date.',
+              severity: ToastSeverity.success,
+            ),
           );
         case GridSyncFailed(:final message):
-          messenger.showSnackBar(SnackBar(content: Text(message)));
+          ToastScope.show(
+            context,
+            ToastSpec(message: message, severity: ToastSeverity.error),
+          );
         case GridSyncIdle():
         case GridSyncRunning():
           break;
@@ -151,11 +159,7 @@ class _SyncButton extends ConsumerWidget {
         width: 40,
         height: 40,
         child: Center(
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: AppSpinner(size: SpinnerSize.large),
         ),
       );
     }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../infrastructure/state/onboarding_store.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/presentation/add_member_dialog.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
@@ -177,11 +178,7 @@ class _BusyRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        const AppSpinner(),
         const SizedBox(width: 12),
         Text(
           label,
