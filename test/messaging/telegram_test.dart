@@ -12,7 +12,11 @@ const _token = '8123456789:AAF-abcdefghijklmnopqrstuvwxyz123';
 /// A gateway that records what it was asked to do — no `hermes` process, no real
 /// `~/.hermes`.
 class _FakeGateway implements HermesGatewayService {
-  _FakeGateway({TelegramSetup? setup}) : setup = setup ?? _nothing;
+  _FakeGateway({
+    TelegramSetup? setup,
+    this.telegramState = 'connected',
+    this.telegramError,
+  }) : setup = setup ?? _nothing;
 
   static const _nothing = (
     token: '',
@@ -22,10 +26,18 @@ class _FakeGateway implements HermesGatewayService {
 
   TelegramSetup setup;
   bool up = false;
+
+  /// The Telegram platform state the (running) gateway would report.
+  String telegramState;
+  String? telegramError;
   final calls = <String>[];
 
   @override
   Future<TelegramSetup> readTelegram() async => setup;
+
+  @override
+  Future<TelegramPlatformStatus> readTelegramLink() async =>
+      (state: telegramState, error: telegramError);
 
   @override
   Future<void> connectTelegram({
@@ -92,7 +104,7 @@ void main() {
       expect(gateway.setup.homeChannel, '123456789');
 
       final state = container.read(telegramProvider).value;
-      expect((state as TelegramConnected).running, isTrue);
+      expect((state as TelegramConnected).link, TelegramLink.answering);
     });
 
     test('a bot with nobody on its list is not connected at all — it would '
@@ -124,8 +136,8 @@ void main() {
     });
   });
 
-  test('connected but not listening is not "connected" — the screen can tell '
-      'them apart', () async {
+  test('connected but not listening is not "answering" — the gateway is down, '
+      'so the screen says so and offers to turn it on', () async {
     final gateway = _FakeGateway(
       setup: (
         token: _token,
@@ -136,13 +148,27 @@ void main() {
     final container = _container(gateway);
 
     final state = await container.read(telegramProvider.future);
-    expect((state as TelegramConnected).running, isFalse);
+    expect((state as TelegramConnected).link, TelegramLink.notAnswering);
 
     await container.read(telegramProvider.notifier).start();
     expect(
-      (container.read(telegramProvider).value as TelegramConnected).running,
-      isTrue,
+      (container.read(telegramProvider).value as TelegramConnected).link,
+      TelegramLink.answering,
     );
+  });
+
+  test('the gateway is up but Telegram itself is disconnected — the screen '
+      "shows Hermes's own reason, not a false green", () async {
+    final gateway = _FakeGateway(
+      setup: (token: _token, allowedUsers: ['1'], homeChannel: '1'),
+      telegramState: 'fatal',
+      telegramError: 'another process is using the same bot token',
+    )..up = true;
+    final container = _container(gateway);
+
+    final state = await container.read(telegramProvider.future);
+    expect((state as TelegramConnected).link, TelegramLink.notAnswering);
+    expect(state.detail, contains('same bot token'));
   });
 
   test('disconnecting forgets the bot and restarts the gateway, so it stops '
@@ -245,6 +271,89 @@ void main() {
         await HermesGatewayServiceImpl('/bin/hermes', home: tmp.path).running(),
         isFalse,
       );
+    });
+
+    test('the live Telegram link comes from gateway_state.json, with its own '
+        'reason when it is not connected', () async {
+      final gateway = HermesGatewayServiceImpl('/bin/hermes', home: tmp.path);
+      // No state file yet — reads as "no link", not a crash.
+      expect((await gateway.readTelegramLink()).state, isEmpty);
+
+      File('${tmp.path}/.hermes/gateway_state.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          '{"platforms":{"telegram":{"state":"fatal",'
+          '"error_message":"another process is using the same bot token"}}}',
+        );
+
+      final link = await gateway.readTelegramLink();
+      expect(link.state, 'fatal');
+      expect(link.error, contains('same bot token'));
+    });
+  });
+
+  group('parseTelegramPlatformStatus', () {
+    test('pulls the Telegram state and reason out of the gateway state JSON', () {
+      final status = parseTelegramPlatformStatus(
+        '{"platforms":{"telegram":{"state":"connected","error_message":null}}}',
+      );
+      expect(status.state, 'connected');
+      expect(status.error, isNull);
+    });
+
+    test(
+      'a shape without a Telegram entry reads as no link, never a throw',
+      () {
+        expect(parseTelegramPlatformStatus('{"platforms":{}}').state, isEmpty);
+        expect(parseTelegramPlatformStatus('not json').state, isEmpty);
+        expect(parseTelegramPlatformStatus('[]').state, isEmpty);
+      },
+    );
+  });
+
+  group('telegramLinkFrom', () {
+    test(
+      'a dead gateway is never "answering", whatever the state file says',
+      () {
+        final link = telegramLinkFrom(gatewayAlive: false, state: 'connected');
+        expect(link.link, TelegramLink.notAnswering);
+        expect(link.detail, contains("isn't running"));
+      },
+    );
+
+    test('connected only counts when the gateway is alive', () {
+      expect(
+        telegramLinkFrom(gatewayAlive: true, state: 'connected').link,
+        TelegramLink.answering,
+      );
+    });
+
+    test('connecting and retrying read as "connecting", not a failure', () {
+      expect(
+        telegramLinkFrom(gatewayAlive: true, state: 'connecting').link,
+        TelegramLink.connecting,
+      );
+      expect(
+        telegramLinkFrom(gatewayAlive: true, state: 'retrying').link,
+        TelegramLink.connecting,
+      );
+    });
+
+    test('a failed platform surfaces the gateway reason', () {
+      final link = telegramLinkFrom(
+        gatewayAlive: true,
+        state: 'fatal',
+        error: 'another process is using the same bot token',
+      );
+      expect(link.link, TelegramLink.notAnswering);
+      expect(link.detail, contains('same bot token'));
+    });
+
+    test('an alive gateway with no Telegram entry means the token has not '
+        'loaded — surfaced, not shown as answering', () {
+      final link = telegramLinkFrom(gatewayAlive: true, state: '');
+      expect(link.link, TelegramLink.notAnswering);
+      expect(link.detail, contains('token'));
     });
   });
 }

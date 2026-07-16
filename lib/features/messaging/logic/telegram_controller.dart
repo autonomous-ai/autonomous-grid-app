@@ -20,14 +20,40 @@ class TelegramDisconnected extends TelegramState {
   const TelegramDisconnected();
 }
 
-/// A bot is connected. [running] is the honest half: connected and *listening*
-/// are different things, and a bot whose gateway is down answers nobody.
+/// Whether a connected bot is actually answering right now — the honest half,
+/// read from Hermes's own gateway state, not guessed from a heartbeat. A token
+/// being set and the bot *answering* are different things.
+enum TelegramLink {
+  /// The gateway loaded the token and Telegram is connected — messages get
+  /// answered.
+  answering,
+
+  /// The gateway is bringing the bot up (connecting, or retrying after a blip).
+  connecting,
+
+  /// The gateway is off, or up but the bot didn't connect — see
+  /// [TelegramConnected.detail] for which.
+  notAnswering,
+}
+
+/// A bot is connected (a token is set). [link] is the honest half: connected and
+/// *answering* are different things, and a bot whose gateway is down — or whose
+/// token another process is polling — answers nobody.
 class TelegramConnected extends TelegramState {
-  const TelegramConnected({required this.allowedUsers, required this.running});
+  const TelegramConnected({
+    required this.allowedUsers,
+    required this.link,
+    this.detail,
+  });
 
   /// Who may message it. Never empty — the app won't connect a bot without one.
   final List<String> allowedUsers;
-  final bool running;
+  final TelegramLink link;
+
+  /// Why it isn't answering, when [link] is [TelegramLink.notAnswering] — the
+  /// gateway's own reason (a bad token, another process on the same bot) or the
+  /// gateway simply being off. Null otherwise.
+  final String? detail;
 }
 
 /// Chatting with this computer from Telegram: connect a bot, say who may use it,
@@ -47,9 +73,21 @@ class TelegramController extends AsyncNotifier<TelegramState> {
 
     final setup = await gateway.readTelegram();
     if (setup.token.isEmpty) return const TelegramDisconnected();
+
+    // Two signals: the heartbeat says whether the gateway process is alive at
+    // all, and its state file says whether Telegram itself connected. Only both
+    // together is honestly "Answering".
+    final alive = await gateway.running();
+    final status = await gateway.readTelegramLink();
+    final link = telegramLinkFrom(
+      gatewayAlive: alive,
+      state: status.state,
+      error: status.error,
+    );
     return TelegramConnected(
       allowedUsers: setup.allowedUsers,
-      running: await gateway.running(),
+      link: link.link,
+      detail: link.detail,
     );
   }
 
@@ -116,6 +154,37 @@ class TelegramController extends AsyncNotifier<TelegramState> {
   static const _noAgent =
       "This computer isn't set up to answer chats yet. Open the account menu ▸ "
       'This computer to finish setting it up.';
+}
+
+/// Map the gateway's raw signals to the honest UI link. [gatewayAlive] is the
+/// heartbeat — is the gateway process up at all; [state]/[error] are the live
+/// Telegram platform status from the gateway's state file. Pure so the mapping
+/// is unit-tested rather than guessed at in a widget.
+({TelegramLink link, String? detail}) telegramLinkFrom({
+  required bool gatewayAlive,
+  required String state,
+  String? error,
+}) {
+  if (!gatewayAlive) {
+    return (
+      link: TelegramLink.notAnswering,
+      detail: "The gateway that answers messages isn't running.",
+    );
+  }
+  return switch (state) {
+    'connected' => (link: TelegramLink.answering, detail: null),
+    'connecting' || 'retrying' => (link: TelegramLink.connecting, detail: null),
+    'disconnected' || 'fatal' || 'paused' => (
+      link: TelegramLink.notAnswering,
+      detail: error ?? "Telegram didn't connect.",
+    ),
+    // Gateway is up but has no Telegram entry yet — the token hasn't loaded
+    // (e.g. it was added but the gateway wasn't restarted to pick it up).
+    _ => (
+      link: TelegramLink.notAnswering,
+      detail: error ?? "The bot's token hasn't loaded into the gateway yet.",
+    ),
+  };
 }
 
 /// The token @BotFather hands out looks like `8123456789:AAF…`. Checking the
