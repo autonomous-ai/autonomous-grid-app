@@ -14,7 +14,11 @@ import '../../core/app_environment.dart';
 /// Icons are Lucide throughout, so the nav, the settings rail and the sidebar all
 /// speak one visual language.
 enum ShellSection {
-  chat(LucideIcons.messageSquare, 'Chat', thinIcon: LucideIcons.messageSquare300),
+  chat(
+    LucideIcons.messageSquare,
+    'Chat',
+    thinIcon: LucideIcons.messageSquare300,
+  ),
   scheduled(
     LucideIcons.calendarClock,
     'Scheduled',
@@ -28,14 +32,13 @@ enum ShellSection {
     thinIcon: LucideIcons.folderOpen300,
   ),
   telegram(LucideIcons.send, 'Telegram', thinIcon: LucideIcons.send300),
-  grids(
-    LucideIcons.zap,
-    'Grids',
-    thinIcon: LucideIcons.zap300,
-    devOnly: true,
-  ),
+  grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300, devOnly: true),
   engines(LucideIcons.server, 'This computer', thinIcon: LucideIcons.server300),
-  guide(LucideIcons.circleHelp, 'How to use', thinIcon: LucideIcons.circleHelp300),
+  guide(
+    LucideIcons.circleHelp,
+    'How to use',
+    thinIcon: LucideIcons.circleHelp300,
+  ),
   debug(
     LucideIcons.terminal,
     'Debug',
@@ -77,12 +80,10 @@ enum ShellSection {
 /// Chat isn't among them (you get there by starting a chat or opening one), and
 /// neither is Projects — your projects *are* the rail below, each holding its
 /// chats; this section is the screen that manages them, opened from that header.
-/// Agents before Plugins: which assistant does the work, then the tools you give
-/// it.
 const kSidebarSections = [
   ShellSection.scheduled,
-  ShellSection.agents,
   ShellSection.plugins,
+  ShellSection.agents,
 ];
 
 /// What Settings lists, in order — the screens you set up once.
