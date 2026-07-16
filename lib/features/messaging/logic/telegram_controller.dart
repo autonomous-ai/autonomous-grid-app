@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_gateway_service.dart';
+import '../../../infrastructure/cli/hermes_telegram_policy.dart';
 import '../../agent/logic/hermes_tool.dart';
 
 /// The gateway seam, or null when there's no agent on this computer — nothing to
@@ -8,6 +9,13 @@ import '../../agent/logic/hermes_tool.dart';
 final hermesGatewayServiceProvider = Provider<HermesGatewayService?>((ref) {
   final path = ref.watch(hermesPathProvider);
   return path == null ? null : HermesGatewayServiceImpl(path);
+});
+
+/// The seam onto Hermes's config that says what a Telegram message may do on
+/// this computer. Null when there's no agent to run one.
+final hermesTelegramPolicyProvider = Provider<HermesTelegramPolicy?>((ref) {
+  final path = ref.watch(hermesPathProvider);
+  return path == null ? null : HermesTelegramPolicy();
 });
 
 /// What Telegram is on this computer.
@@ -113,6 +121,9 @@ class TelegramController extends AsyncNotifier<TelegramState> {
         // with the bot, which on Telegram is their user id.
         homeChannel: userId.trim(),
       );
+      // Pin the read-and-answer limit before the gateway comes up, so the very
+      // first message a remote user can send already runs without a terminal.
+      await _restrictTelegram();
       await gateway.startGateway();
     } on HermesGatewayException catch (error) {
       state = AsyncData(await _read());
@@ -143,12 +154,24 @@ class TelegramController extends AsyncNotifier<TelegramState> {
     final gateway = ref.read(hermesGatewayServiceProvider);
     if (gateway == null) return _noAgent;
     try {
+      // A bot connected before this limit existed is brought under it here, as
+      // the gateway restarts to pick the change up.
+      await _restrictTelegram();
       await gateway.startGateway();
     } on HermesGatewayException catch (error) {
       return "Couldn't start it: ${error.message}";
     }
     state = AsyncData(await _read());
     return null;
+  }
+
+  /// Hold Telegram to read-and-answer in Hermes's config. Best-effort: a config
+  /// the app can't write shouldn't block connecting the bot — but it's written
+  /// before every (re)start, so the limit lands as soon as it can.
+  Future<void> _restrictTelegram() async {
+    final policy = ref.read(hermesTelegramPolicyProvider);
+    if (policy == null) return;
+    await policy.restrict();
   }
 
   static const _noAgent =

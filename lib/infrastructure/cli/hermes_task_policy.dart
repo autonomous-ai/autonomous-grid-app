@@ -1,6 +1,4 @@
-import 'dart:io';
-
-import 'package:yaml_edit/yaml_edit.dart';
+import 'hermes_config_file.dart';
 
 /// What a scheduled task may do to this computer while it runs unattended.
 ///
@@ -18,28 +16,6 @@ enum TaskPower {
   noCommands,
 }
 
-/// The toolsets a task keeps under [TaskPower.noCommands].
-///
-/// Hermes bundles `read_file` and `write_file` into one `file` toolset, so a task
-/// that can read the user's project can also write to it — there is no read-only
-/// half to hand out. Dropping `file` too would make the whole feature pointless
-/// ("summarise my notes" needs to read the notes), so what this mode actually
-/// removes is the ability to *run* things: terminal, code execution, the browser
-/// and computer control.
-///
-/// TODO(BE): `hermes cron create` has no `--toolsets` flag, though the job store
-/// has an `enabled_toolsets` field — so this is Hermes-wide for cron, not
-/// per-task. A flag would let each task carry its own limit.
-const List<String> kNoCommandToolsets = [
-  'file',
-  'web',
-  'skills',
-  'vision',
-  'todo',
-  'memory',
-  'session_search',
-];
-
 /// Reads and writes what Hermes lets its scheduler do.
 ///
 /// Two settings in `~/.hermes/config.yaml`, and they work in different ways:
@@ -51,26 +27,20 @@ const List<String> kNoCommandToolsets = [
 /// A file write, note, is gated by neither: Hermes only asks about edits over ACP
 /// (a live chat), never in cron. So "no commands" is the strongest limit the app
 /// can honestly enforce today.
+///
+/// TODO(BE): `hermes cron create` has no `--toolsets` flag, though the job store
+/// has an `enabled_toolsets` field — so this limit is Hermes-wide for cron, not
+/// per-task. A flag would let each task carry its own.
 class HermesTaskPolicy {
-  HermesTaskPolicy({String? home})
-    : _home = home ?? Platform.environment['HOME'] ?? '';
+  HermesTaskPolicy({String? home}) : _config = HermesConfigFile(home: home);
 
-  final String _home;
-
-  File get _config => File('$_home/.hermes/config.yaml');
+  final HermesConfigFile _config;
 
   /// What tasks may do right now, as Hermes's own config says. A config that
-  /// doesn't mention it reads as [TaskPower.noCommands] only when the toolsets
-  /// say so — otherwise the tools are all there, and saying anything else would
-  /// be a comfortable lie.
+  /// doesn't pin a toolset list reads as [TaskPower.fullAccess] — the tools are
+  /// all there, and saying anything else would be a comfortable lie.
   Future<TaskPower> read() async {
-    final text = await _read();
-    if (text == null) return TaskPower.fullAccess;
-    final editor = YamlEditor(text);
-    final toolsets = editor.parseAt([
-      'platform_toolsets',
-      'cron',
-    ], orElse: () => wrapAsYamlNode(null)).value;
+    final toolsets = await _config.valueAt(['platform_toolsets', 'cron']);
     if (toolsets is! List) return TaskPower.fullAccess;
     return toolsets.contains('terminal') || toolsets.contains('code_execution')
         ? TaskPower.fullAccess
@@ -78,54 +48,22 @@ class HermesTaskPolicy {
   }
 
   /// Make Hermes's config say [power] — merged into whatever else is in there,
-  /// with the file backed up to `<file>.bak` first.
-  Future<void> write(TaskPower power) async {
-    final text = await _read() ?? '';
-    final editor = YamlEditor(text.trim().isEmpty ? '{}\n' : text);
-
+  /// with the file backed up first.
+  Future<void> write(TaskPower power) => _config.edit((editor) {
     switch (power) {
       case TaskPower.noCommands:
-        _upsert(editor, ['platform_toolsets', 'cron'], kNoCommandToolsets);
+        HermesConfigFile.upsert(editor, [
+          'platform_toolsets',
+          'cron',
+        ], kReadAndAnswerToolsets);
         // Belt and braces: a tool that arrives some other way (a plugin, an MCP
         // server) still can't run a dangerous command.
-        _upsert(editor, ['approvals', 'cron_mode'], 'deny');
+        HermesConfigFile.upsert(editor, ['approvals', 'cron_mode'], 'deny');
       case TaskPower.fullAccess:
         // Hand the toolset decision back to Hermes's own defaults rather than
         // pinning a list the app would then have to keep in step with it.
-        _remove(editor, ['platform_toolsets', 'cron']);
-        _upsert(editor, ['approvals', 'cron_mode'], 'approve');
+        HermesConfigFile.remove(editor, ['platform_toolsets', 'cron']);
+        HermesConfigFile.upsert(editor, ['approvals', 'cron_mode'], 'approve');
     }
-
-    await _config.parent.create(recursive: true);
-    if (await _config.exists()) await _config.copy('${_config.path}.bak');
-    await _config.writeAsString('${editor.toString().trimRight()}\n');
-  }
-
-  Future<String?> _read() async {
-    if (!await _config.exists()) return null;
-    final text = await _config.readAsString();
-    return text.trim().isEmpty ? null : text;
-  }
-
-  /// Set [path], creating the parent map when the config has never had one.
-  void _upsert(YamlEditor editor, List<String> path, Object value) {
-    final parent = path.sublist(0, path.length - 1);
-    final existing = editor
-        .parseAt(parent, orElse: () => wrapAsYamlNode(null))
-        .value;
-    if (existing is! Map) {
-      editor.update(parent, {path.last: value});
-      return;
-    }
-    editor.update(path, value);
-  }
-
-  /// Drop [path] if it's there. A key that was never written is already gone.
-  void _remove(YamlEditor editor, List<String> path) {
-    final existing = editor
-        .parseAt(path, orElse: () => wrapAsYamlNode(null))
-        .value;
-    if (existing == null) return;
-    editor.remove(path);
-  }
+  });
 }
