@@ -1,24 +1,39 @@
-part of 'telegram_view.dart';
+part of 'messages_view.dart';
 
-/// Connecting a bot, in the three steps it actually takes — and the one thing
+/// Connecting a bot for one platform, in the steps it takes — and the one thing
 /// that keeps it yours: the list of who may message it.
-class TelegramConnectForm extends ConsumerStatefulWidget {
-  const TelegramConnectForm({super.key});
+class PlatformConnectForm extends ConsumerStatefulWidget {
+  const PlatformConnectForm({super.key, required this.platform});
+
+  final MessagingPlatform platform;
 
   @override
-  ConsumerState<TelegramConnectForm> createState() =>
-      _TelegramConnectFormState();
+  ConsumerState<PlatformConnectForm> createState() =>
+      _PlatformConnectFormState();
 }
 
-class _TelegramConnectFormState extends ConsumerState<TelegramConnectForm> {
-  final _token = TextEditingController();
+class _PlatformConnectFormState extends ConsumerState<PlatformConnectForm> {
+  /// One controller per credential the platform asks for, keyed by its `.env`
+  /// key so [connect] can hand the notifier a value for each.
+  late final Map<String, TextEditingController> _fields;
   final _userId = TextEditingController();
   bool _connecting = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _fields = {
+      for (final field in widget.platform.credentials)
+        field.envKey: TextEditingController(),
+    };
+  }
+
+  @override
   void dispose() {
-    _token.dispose();
+    for (final controller in _fields.values) {
+      controller.dispose();
+    }
     _userId.dispose();
     super.dispose();
   }
@@ -29,8 +44,13 @@ class _TelegramConnectFormState extends ConsumerState<TelegramConnectForm> {
       _error = null;
     });
     final error = await ref
-        .read(telegramProvider.notifier)
-        .connect(token: _token.text, userId: _userId.text);
+        .read(messagingProvider(widget.platform).notifier)
+        .connect(
+          credentials: {
+            for (final entry in _fields.entries) entry.key: entry.value.text,
+          },
+          userId: _userId.text,
+        );
     if (!mounted) return;
     setState(() {
       _connecting = false;
@@ -40,46 +60,31 @@ class _TelegramConnectFormState extends ConsumerState<TelegramConnectForm> {
 
   @override
   Widget build(BuildContext context) {
+    final platform = widget.platform;
     return SingleChildScrollView(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _Step(
-              number: 1,
-              title: 'Make a bot',
-              detail:
-                  'In Telegram, message @BotFather and send /newbot. It gives '
-                  'you a token — a long line starting with numbers.',
-            ),
-            const _Step(
-              number: 2,
-              title: 'Find your Telegram id',
-              detail:
-                  'Message @userinfobot. It replies with your id, a number. '
-                  'Only the people you list here can use your bot.',
-            ),
-            const _Step(
-              number: 3,
-              title: 'Paste them in',
-              detail: 'Then the bot answers you, from this computer.',
-            ),
+            for (final step in platform.steps) _Step(step: step),
             const SizedBox(height: 18),
-            _Field(
-              controller: _token,
-              label: 'Bot token',
-              hint: '8123456789:AAF…',
-              obscure: true,
-            ),
-            const SizedBox(height: 12),
+            for (final field in platform.credentials) ...[
+              _Field(
+                controller: _fields[field.envKey]!,
+                label: field.label,
+                hint: field.hint,
+                obscure: true,
+              ),
+              const SizedBox(height: 12),
+            ],
             _Field(
               controller: _userId,
-              label: 'Your Telegram id',
-              hint: '123456789',
+              label: platform.userIdLabel,
+              hint: platform.userIdHint,
             ),
             const SizedBox(height: 16),
-            const _Honesty(),
+            _Honesty(platform: platform),
             if (_error != null) ...[
               const SizedBox(height: 14),
               Text(
@@ -104,11 +109,21 @@ class _TelegramConnectFormState extends ConsumerState<TelegramConnectForm> {
 
 /// What the user is actually turning on. Said before they turn it on, not after.
 class _Honesty extends StatelessWidget {
-  const _Honesty();
+  const _Honesty({required this.platform});
+
+  final MessagingPlatform platform;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final lines = [
+      'Only the ids you list can message the bot. Anyone else is ignored.',
+      'A message runs the assistant on this computer — it can read and edit '
+          "files in your projects, but from ${platform.label} it can't run "
+          'terminal commands or programs.',
+      "It goes quiet when this computer sleeps or shuts down. It isn't a bot in "
+          'the cloud.',
+    ];
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppPalette.cardBg,
@@ -119,22 +134,14 @@ class _Honesty extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final line in const [
-              'Only the ids you list can message the bot. Anyone else is '
-                  'ignored.',
-              'A message runs the assistant on this computer — it can read and '
-                  "edit files in your projects, but from Telegram it can't run "
-                  'terminal commands or programs.',
-              "It goes quiet when this computer sleeps or shuts down. It isn't "
-                  'a bot in the cloud.',
-            ])
+            for (final line in lines)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Padding(
-                      padding: EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.only(top: 2),
                       child: Icon(
                         Icons.info_outline_rounded,
                         size: 14,
@@ -162,15 +169,9 @@ class _Honesty extends StatelessWidget {
 }
 
 class _Step extends StatelessWidget {
-  const _Step({
-    required this.number,
-    required this.title,
-    required this.detail,
-  });
+  const _Step({required this.step});
 
-  final int number;
-  final String title;
-  final String detail;
+  final ConnectStep step;
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +185,7 @@ class _Step extends StatelessWidget {
             radius: 11,
             backgroundColor: AppPalette.cardBg,
             child: Text(
-              '$number',
+              '${step.number}',
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
@@ -198,14 +199,14 @@ class _Step extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  step.title,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  detail,
+                  step.detail,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: AppPalette.textSecondary,
                     height: 1.35,

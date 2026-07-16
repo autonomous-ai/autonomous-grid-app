@@ -8,7 +8,7 @@ void main() {
       expect(ShellSection.debug.devOnly, isTrue);
       // Everything an end user needs stays visible in every build.
       expect(ShellSection.engines.devOnly, isFalse);
-      expect(ShellSection.telegram.devOnly, isFalse);
+      expect(ShellSection.messages.devOnly, isFalse);
       expect(ShellSection.guide.devOnly, isFalse);
     });
 

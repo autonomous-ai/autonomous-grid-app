@@ -13,7 +13,9 @@ class _DeliverRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final connected = ref.watch(telegramProvider).value is TelegramConnected;
+    final connected =
+        ref.watch(messagingProvider(MessagingPlatform.schedulerDelivery)).value
+            is MessagingConnected;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -39,7 +41,7 @@ class _DeliverRow extends ConsumerWidget {
             Tooltip(
               message: connected
                   ? 'Your Telegram chat with the bot'
-                  : 'Connect a Telegram bot first (account menu ▸ Telegram)',
+                  : 'Connect a Telegram bot first (account menu ▸ Messages)',
               child: ScheduledPillChoice(
                 label: Text(
                   'Telegram',
@@ -52,7 +54,7 @@ class _DeliverRow extends ConsumerWidget {
                     ? onChanged(true)
                     : ref
                           .read(shellSectionProvider.notifier)
-                          .select(ShellSection.telegram),
+                          .select(ShellSection.messages),
               ),
             ),
           ],

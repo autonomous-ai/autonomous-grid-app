@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../features/agents/presentation/agents_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
 import '../../../features/debug/presentation/debug_view.dart';
-import '../../../features/messaging/presentation/telegram_view.dart';
+import '../../../features/messaging/presentation/messages_view.dart';
 import '../../../features/network/presentation/how_to_use_view.dart';
 import '../../../features/network/presentation/networks_pane.dart';
 import '../../../features/plugins/presentation/plugins_view.dart';
@@ -29,7 +29,7 @@ class SectionView extends StatelessWidget {
       ShellSection.agents => const AgentsView(),
       ShellSection.plugins => const PluginsView(),
       ShellSection.projects => const ProjectsView(),
-      ShellSection.telegram => const TelegramView(),
+      ShellSection.messages => const MessagesView(),
       ShellSection.grids => const NetworksPane(),
       ShellSection.engines => const ProviderView(),
       ShellSection.guide => const HowToUseView(),
