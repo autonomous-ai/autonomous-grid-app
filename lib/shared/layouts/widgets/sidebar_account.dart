@@ -237,7 +237,7 @@ class _AccountMenuContent extends StatelessWidget {
           // guide. They were four loose menu entries; a menu is a bad place to
           // keep things you have to come back to.
           _AccountMenuItem(
-            icon: LucideIcons.settings,
+            icon: LucideIcons.settings300,
             label: 'Settings',
             onPressed: () => onSelected(_settingsValue),
           ),
@@ -248,7 +248,7 @@ class _AccountMenuContent extends StatelessWidget {
           const _AccountMenuDivider(),
           if (updaterSupported)
             _AccountMenuItem(
-              icon: LucideIcons.downloadCloud,
+              icon: LucideIcons.downloadCloud300,
               iconColor: updateAvailable == null
                   ? AppPalette.textSecondary
                   : AppPalette.brandBolt,
@@ -260,7 +260,7 @@ class _AccountMenuContent extends StatelessWidget {
           if (version != null) _AccountVersion(version: version!),
           const _AccountMenuDivider(),
           _AccountMenuItem(
-            icon: LucideIcons.logOut,
+            icon: LucideIcons.logOut300,
             label: 'Sign out',
             onPressed: () => onSelected(_logoutValue),
           ),
@@ -458,8 +458,8 @@ class _AccountRowState extends State<_AccountRow> {
                 duration: const Duration(milliseconds: 130),
                 curve: Curves.easeOut,
                 child: Icon(
-                  LucideIcons.ellipsis,
-                  size: 18,
+                  LucideIcons.ellipsis300,
+                  size: 20,
                   color: _hovered
                       ? AppPalette.textSecondary
                       : AppPalette.textFaint,

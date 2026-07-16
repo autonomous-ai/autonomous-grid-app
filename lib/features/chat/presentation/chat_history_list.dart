@@ -131,12 +131,12 @@ class _ProjectsHeader extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Add a folder as a project',
-            iconSize: 16,
+            iconSize: 18,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints.tightFor(width: 26, height: 26),
             padding: EdgeInsets.zero,
             color: AppPalette.textSecondary,
-            icon: const Icon(LucideIcons.plus),
+            icon: const Icon(LucideIcons.plus300),
             onPressed: onAdd,
           ),
         ],
@@ -183,8 +183,8 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
           // expanded (folderX for a folder that's gone missing) so the icon
           // itself tells you the group's state.
           icon: missing
-              ? LucideIcons.folderX
-              : (open ? LucideIcons.folderOpen : LucideIcons.folder),
+              ? LucideIcons.folderX300
+              : (open ? LucideIcons.folderOpen300 : LucideIcons.folder300),
           label: widget.project.name,
           tooltip: missing
               ? "This folder isn't there any more: ${widget.project.path}"
@@ -194,10 +194,10 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
             tooltip: 'New chat in ${widget.project.name}',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-            iconSize: 15,
+            iconSize: 17,
             splashRadius: 14,
             color: AppPalette.textSecondary,
-            icon: const Icon(LucideIcons.plus),
+            icon: const Icon(LucideIcons.plus300),
             onPressed: _newChatHere,
           ),
         ),
@@ -260,11 +260,11 @@ class _ChatRow extends ConsumerWidget {
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
-      // folder icon: the row's own 10px inset + a 16px icon + a 10px gap put the
-      // name's text at 36px, so a 26px indent here lands the chat's text in the
+      // folder icon: the row's own 10px inset + an 18px icon + a 10px gap put the
+      // name's text at 38px, so a 28px indent here lands the chat's text in the
       // same column. Codex keeps this one clean left edge; anything else makes
       // the list read as ragged.
-      padding: EdgeInsets.only(left: indented ? 26 : 0),
+      padding: EdgeInsets.only(left: indented ? 28 : 0),
       child: SidebarItem(
         label: chat.title,
         selected: selected,
@@ -276,10 +276,10 @@ class _ChatRow extends ConsumerWidget {
           tooltip: 'Delete chat',
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-          iconSize: 14,
+          iconSize: 16,
           splashRadius: 14,
           color: AppPalette.textFaint,
-          icon: const Icon(LucideIcons.trash2),
+          icon: const Icon(LucideIcons.trash2300),
           onPressed: () => controller.deleteConversation(chat.id),
         ),
       ),
@@ -313,7 +313,7 @@ class _AddFirstProjectHint extends ConsumerWidget {
               minimumSize: const Size(0, 30),
               visualDensity: VisualDensity.compact,
             ),
-            icon: const Icon(LucideIcons.folderPlus, size: 16),
+            icon: const Icon(LucideIcons.folderPlus300, size: 18),
             label: const Text('Add a project'),
           ),
         ],
@@ -379,7 +379,7 @@ class _Hint extends StatelessWidget {
     // Reads AppPalette.textFaint — follow theme flips.
     AppTheme.watch(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(indented ? 26 : 10, 4, 10, 6),
+      padding: EdgeInsets.fromLTRB(indented ? 28 : 10, 4, 10, 6),
       child: Text(
         text,
         style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),

@@ -14,21 +14,48 @@ import '../../core/app_environment.dart';
 /// Icons are Lucide throughout, so the nav, the settings rail and the sidebar all
 /// speak one visual language.
 enum ShellSection {
-  chat(LucideIcons.messageSquare, 'Chat'),
-  scheduled(LucideIcons.calendarClock, 'Scheduled'),
-  agents(LucideIcons.bot, 'Agents'),
-  plugins(LucideIcons.puzzle, 'Plugins'),
-  projects(LucideIcons.folderOpen, 'Projects'),
-  telegram(LucideIcons.send, 'Telegram'),
-  grids(LucideIcons.zap, 'Grids', devOnly: true),
-  engines(LucideIcons.server, 'This computer'),
-  guide(LucideIcons.circleHelp, 'How to use'),
-  debug(LucideIcons.terminal, 'Debug', devOnly: true);
+  chat(LucideIcons.messageSquare, 'Chat', thinIcon: LucideIcons.messageSquare300),
+  scheduled(
+    LucideIcons.calendarClock,
+    'Scheduled',
+    thinIcon: LucideIcons.calendarClock300,
+  ),
+  agents(LucideIcons.bot, 'Agents', thinIcon: LucideIcons.bot300),
+  plugins(LucideIcons.puzzle, 'Plugins', thinIcon: LucideIcons.puzzle300),
+  projects(
+    LucideIcons.folderOpen,
+    'Projects',
+    thinIcon: LucideIcons.folderOpen300,
+  ),
+  telegram(LucideIcons.send, 'Telegram', thinIcon: LucideIcons.send300),
+  grids(
+    LucideIcons.zap,
+    'Grids',
+    thinIcon: LucideIcons.zap300,
+    devOnly: true,
+  ),
+  engines(LucideIcons.server, 'This computer', thinIcon: LucideIcons.server300),
+  guide(LucideIcons.circleHelp, 'How to use', thinIcon: LucideIcons.circleHelp300),
+  debug(
+    LucideIcons.terminal,
+    'Debug',
+    thinIcon: LucideIcons.terminal300,
+    devOnly: true,
+  );
 
-  const ShellSection(this.icon, this.label, {this.devOnly = false});
+  const ShellSection(
+    this.icon,
+    this.label, {
+    required this.thinIcon,
+    this.devOnly = false,
+  });
 
   final IconData icon;
   final String label;
+
+  /// The "300"-weight glyph, for the sidebar rail — a slightly different line
+  /// weight than the default used elsewhere, tuned for the rail's rows.
+  final IconData thinIcon;
 
   /// Internal tooling — shown only in developer builds. Raw grid management and
   /// the CLI log aren't for end users, so these are hidden from shipped release

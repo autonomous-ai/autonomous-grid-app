@@ -119,7 +119,7 @@ class _SidebarItemState extends State<SidebarItem> {
                                 curve: Curves.easeOut,
                                 builder: (context, color, _) => Icon(
                                   widget.icon,
-                                  size: 16,
+                                  size: 18,
                                   color: color ?? iconInk,
                                 ),
                               ),

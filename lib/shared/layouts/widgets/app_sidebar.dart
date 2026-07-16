@@ -69,7 +69,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SidebarItem(
-                        icon: LucideIcons.squarePen,
+                        icon: LucideIcons.squarePen300,
                         label: 'New chat',
                         emphasized: true,
                         enabled: !sending,
@@ -84,7 +84,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                       const SizedBox(height: 4),
                       for (final target in kSidebarSections)
                         SidebarItem(
-                          icon: target.icon,
+                          icon: target.thinIcon,
                           label: target.label,
                           selected: section == target,
                           onTap: () => ref
@@ -141,10 +141,10 @@ class _Brand extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Search everything  ⌘K',
-              iconSize: 18,
+              iconSize: 20,
               visualDensity: VisualDensity.compact,
               color: AppPalette.textSecondary,
-              icon: const Icon(LucideIcons.search),
+              icon: const Icon(LucideIcons.search300),
               onPressed: onSearch,
             ),
           ],
