@@ -33,6 +33,7 @@ import '../logic/conversation.dart';
 import '../logic/file_mention.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
+import 'chat_minimap.dart';
 import 'chat_starters.dart';
 import 'grid_model_picker.dart';
 import 'plan_approve_bar.dart';
@@ -43,9 +44,18 @@ const double _atBottomThreshold = 120;
 
 /// How wide the conversation column gets on a big window. Long lines are hard to
 /// read; the transcript and the composer share this so they line up.
-const double _columnWidth = 760;
+///
+/// Wider than the 760 it started at: on a big window that left a broad empty
+/// margin either side, and the content — tables above all — was cramped into a
+/// column far narrower than the room available.
+const double _columnWidth = 1000;
 
-const double _composerWidth = 780;
+const double _composerWidth = 1020;
+
+/// How much taller than the window the conversation has to be before the minimap
+/// rail appears. A chat you can almost see all of doesn't need a table of
+/// contents — the rail would just be clutter beside it.
+const double _railMinContentRatio = 1.5;
 
 /// The open conversation: the transcript (or, on a fresh chat, a greeting and a
 /// few things to try), with the composer at the foot. The composer owns the model
@@ -503,9 +513,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
   };
 }
 
-/// The scrolling conversation, with a "jump to latest" button while the user has
-/// scrolled up into the history.
-class _Transcript extends StatelessWidget {
+/// The scrolling conversation: the minimap rail down the left, the turns in a
+/// centred column, and a "jump to latest" button while the user has scrolled up
+/// into the history.
+///
+/// The ListView spans the *full* pane and each turn is centred within it, rather
+/// than the list itself being boxed to [_columnWidth]. A scrollbar hangs off its
+/// list's right edge — boxing the list put that edge in the middle of the window,
+/// leaving the bar floating in open space instead of riding the window edge.
+class _Transcript extends StatefulWidget {
   const _Transcript({
     required this.scroll,
     required this.messages,
@@ -521,28 +537,192 @@ class _Transcript extends StatelessWidget {
   final VoidCallback onJumpToLatest;
 
   @override
+  State<_Transcript> createState() => _TranscriptState();
+}
+
+class _TranscriptState extends State<_Transcript> {
+  /// One key per message index, so the minimap can scroll a turn into view by
+  /// its own rendered position — the turns are wildly uneven in height (a
+  /// one-line question against a long reply), so there's no arithmetic that maps
+  /// an index to an offset.
+  final _itemKeys = <int, GlobalKey>{};
+
+  /// The message index the rail marks as "where you are", or null before the
+  /// first frame has measured anything.
+  int? _currentIndex;
+
+  /// Whether the transcript is long enough to be worth a rail.
+  bool _railVisible = false;
+
+  GlobalKey _keyFor(int index) => _itemKeys.putIfAbsent(index, GlobalKey.new);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scroll.addListener(_onScroll);
+    // The list hasn't been laid out yet, so nothing is measurable until after the
+    // first frame — resolve both the rail's visibility and the current turn then.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+  }
+
+  @override
+  void didUpdateWidget(_Transcript old) {
+    super.didUpdateWidget(old);
+    if (old.scroll != widget.scroll) {
+      old.scroll.removeListener(_onScroll);
+      widget.scroll.addListener(_onScroll);
+    }
+    // A new turn changes the content's height, which can cross the rail's
+    // threshold — and lands a new message to mark. Re-measure once it's laid out.
+    if (old.messages.length != widget.messages.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.scroll.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  /// Track what the rail should show: whether it's worth showing at all, and
+  /// which turn the user is currently reading.
+  void _onScroll() {
+    if (!mounted || !widget.scroll.hasClients) return;
+    final pos = widget.scroll.position;
+    // The rail earns its place only on a transcript worth navigating: total
+    // content at least [_railMinContentRatio] of the viewport. maxScrollExtent is
+    // the *overflow*, so the content is that plus the viewport itself.
+    final visible =
+        pos.hasContentDimensions &&
+        pos.maxScrollExtent + pos.viewportDimension >=
+            pos.viewportDimension * _railMinContentRatio;
+    // At the very bottom the reading line can't be reached by the last turns —
+    // the list has run out of scroll, so a short final message sits below it
+    // forever and the mark would stall an item or two early. Scrolled to the end
+    // *is* being at the last turn, so say so directly.
+    final atEnd =
+        pos.hasContentDimensions &&
+        pos.pixels >= pos.maxScrollExtent - _atBottomThreshold;
+    // A null reading means nothing measurable has passed the line *this frame* —
+    // mid-fling, say, with the turns around the line not yet built. Keep the last
+    // answer rather than dropping the mark back to the top of the rail.
+    final current = atEnd
+        ? widget.messages.length - 1
+        : (_currentMessage() ?? _currentIndex);
+    if (visible != _railVisible || current != _currentIndex) {
+      setState(() {
+        _railVisible = visible;
+        _currentIndex = current;
+      });
+    }
+  }
+
+  /// The message the user is reading: the last one whose top has passed the
+  /// viewport's reading line. Turns are far taller than the rail's ticks, so
+  /// "which one is on screen" has to be measured from the laid-out items rather
+  /// than interpolated from the scroll offset.
+  ///
+  /// Only *built* items can be measured: the list is lazy, so the turns scrolled
+  /// far off either end have no render object. That's why the answer is the
+  /// highest match rather than the first miss — an unbuilt item above the
+  /// viewport is above the line whether or not it can say so, and an early exit
+  /// on one would pin the answer to the top of the transcript forever.
+  int? _currentMessage() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    // A hair below the top edge: what you're reading is what sits at the top of
+    // the viewport, not what's level with its middle.
+    final line = box.size.height * 0.2;
+    int? found;
+    for (var i = 0; i < widget.messages.length; i++) {
+      final itemContext = _itemKeys[i]?.currentContext;
+      if (itemContext == null) continue;
+      final item = itemContext.findRenderObject() as RenderBox?;
+      if (item == null || !item.hasSize || !item.attached) continue;
+      final top = item.localToGlobal(Offset.zero, ancestor: box).dy;
+      if (top <= line) found = i;
+    }
+    // Everything built sits below the line: the user is above the first measured
+    // turn, so nothing is being read yet.
+    return found;
+  }
+
+  /// Bring message [index] to the top of the viewport. Built turns scroll via
+  /// their key; one that's been recycled out of the lazy list has no context, so
+  /// it falls back to an estimate from its position in the transcript.
+  void _jumpTo(int index) {
+    final context = _itemKeys[index]?.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        // Land the turn just below the pane's top edge rather than dead-centre:
+        // a question is a heading for what follows, so what the user wants to
+        // read is underneath it.
+        alignment: 0.05,
+      );
+      return;
+    }
+    if (!widget.scroll.hasClients || widget.messages.length <= 1) return;
+    final pos = widget.scroll.position;
+    final t = index / (widget.messages.length - 1);
+    widget.scroll.animateTo(
+      (pos.maxScrollExtent * t).clamp(0.0, pos.maxScrollExtent),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final count = messages.length + (trailing != null ? 1 : 0);
+    final count = widget.messages.length + (widget.trailing != null ? 1 : 0);
     return Stack(
       children: [
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _columnWidth),
-            child: ListView.builder(
-              controller: scroll,
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-              itemCount: count,
-              itemBuilder: (context, i) => i < messages.length
-                  ? ChatBubble(message: messages[i])
-                  : trailing ?? const SizedBox.shrink(),
+        ListView.builder(
+          controller: widget.scroll,
+          // No horizontal padding: the list spans the pane so its scrollbar sits
+          // on the window edge. The column below insets its own content.
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          itemCount: count,
+          itemBuilder: (context, i) => Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _columnWidth),
+              child: Padding(
+                // The rail's width on the left, mirrored on the right, so the
+                // column stays optically centred instead of nudged off-axis.
+                padding: const EdgeInsets.symmetric(
+                  horizontal: chatMinimapWidth,
+                ),
+                child: i < widget.messages.length
+                    ? KeyedSubtree(
+                        key: _keyFor(i),
+                        child: ChatBubble(message: widget.messages[i]),
+                      )
+                    : widget.trailing ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
-        if (!atBottom)
+        // The rail hugs the pane's left edge, clear of the centred column. It
+        // shows only once the conversation is long enough to be worth navigating.
+        if (_railVisible)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: ChatMinimap(
+              marks: minimapMarks(widget.messages),
+              currentIndex: _currentIndex,
+              onJumpTo: _jumpTo,
+            ),
+          ),
+        if (!widget.atBottom)
           Positioned(
             right: 20,
             bottom: 12,
-            child: _JumpToLatestButton(onTap: onJumpToLatest),
+            child: _JumpToLatestButton(onTap: widget.onJumpToLatest),
           ),
       ],
     );
@@ -559,24 +739,36 @@ class _JumpToLatestButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    // Reads AppPalette/AppGlass tokens — follow theme flips. Without this the
+    // button keeps whichever theme's colours it was first built under: it's a
+    // const child of the transcript, so nothing else rebuilds it on a flip.
+    AppTheme.watch(context);
     return Tooltip(
       message: 'Jump to latest',
-      child: Material(
-        color: scheme.surface,
-        elevation: 4,
-        shadowColor: const Color(0x1A000000),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 24,
-              color: scheme.onSurface,
-              semanticLabel: 'Jump to latest',
+      // The lift comes from the app's own shadow token, not Material's
+      // elevation: a hard-coded black shadow reads as grime on a dark pane.
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: AppGlass.cardShadow,
+        ),
+        child: Material(
+          // The app's own surface tokens rather than the Material scheme's: this
+          // floats over the transcript, so it has to match the composer and the
+          // menus it sits beside, on either theme.
+          color: AppGlass.surfaceFill,
+          shape: CircleBorder(side: BorderSide(color: AppGlass.lift)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 24,
+                color: AppPalette.textPrimary,
+                semanticLabel: 'Jump to latest',
+              ),
             ),
           ),
         ),

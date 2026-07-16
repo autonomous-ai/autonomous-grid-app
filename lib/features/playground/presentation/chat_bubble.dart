@@ -16,6 +16,12 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppGlass tokens — follow theme flips. Without this a turn
+    // keeps the colours it was first built under: the bubbles are items of a
+    // lazy ListView, which holds its built children across a rebuild of the
+    // transcript, so a flip left the whole conversation in the old theme's ink —
+    // near-invisible white text on the light pane.
+    AppTheme.watch(context);
     final isUser = message.role == ChatRole.user;
     if (!isUser) {
       return Align(
@@ -79,6 +85,8 @@ class GeneratingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppGlass tokens — follow theme flips.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final pct = (phase.progress * 100).round();
     return Align(

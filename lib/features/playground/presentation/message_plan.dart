@@ -16,6 +16,9 @@ class MessagePlan extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (entries.isEmpty) return const SizedBox.shrink();
+    // Reads AppPalette tokens — follow theme flips. It rides inside a transcript
+    // bubble, which a lazy list keeps built across a flip.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final done = entries.where((e) => e.status == AgentPlanStatus.done).length;
     return Column(
@@ -54,6 +57,8 @@ class _PlanRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette tokens — follow theme flips.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final done = entry.status == AgentPlanStatus.done;
     return Padding(

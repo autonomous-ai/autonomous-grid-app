@@ -16,6 +16,9 @@ class MessageSources extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (sources.isEmpty) return const SizedBox.shrink();
+    // Reads AppPalette tokens — follow theme flips. It rides inside a transcript
+    // bubble, which a lazy list keeps built across a flip.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,6 +58,8 @@ class _SourceChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette tokens — follow theme flips.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return Tooltip(
       message: source.url,
