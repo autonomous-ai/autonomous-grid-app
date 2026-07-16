@@ -88,6 +88,83 @@ List<WebSource> parseWebSearchSources(String content) {
   return List.unmodifiable(sources);
 }
 
+/// Where one step of the agent's to-do plan stands.
+enum AgentPlanStatus {
+  /// Not started yet.
+  pending,
+
+  /// The step the agent is on right now.
+  active,
+
+  /// Finished.
+  done,
+}
+
+/// One step in the agent's live to-do plan — something it intends to do, and how
+/// far along it is. Hermes keeps this list through its own `todo` tool and emits
+/// the whole thing over ACP as a `plan` update; the chat shows it as a checklist
+/// so the user sees the steps and which one the agent is on, not just a spinner.
+class AgentPlanEntry {
+  const AgentPlanEntry({required this.content, required this.status});
+
+  /// The step, in the agent's own words.
+  final String content;
+
+  final AgentPlanStatus status;
+
+  Map<String, Object?> toJson() => {'content': content, 'status': status.name};
+
+  /// Reconstruct a *persisted* entry — its [status] is this enum's own name
+  /// (what [toJson] wrote), not the ACP wire vocabulary [parseAgentPlan] reads.
+  static AgentPlanEntry? fromJson(Map<String, dynamic> json) {
+    final content = json['content'];
+    if (content is! String || content.trim().isEmpty) return null;
+    return AgentPlanEntry(
+      content: content.trim(),
+      status: _planStatusByName(json['status']),
+    );
+  }
+}
+
+/// Parses an ACP `plan` update's `entries` into the agent's to-do list. Each
+/// entry is `{content, status}` where status is ACP's own
+/// `pending`/`in_progress`/`completed`; anything else reads as pending, and a
+/// blank step is dropped. The list replaces the previous plan wholesale — Hermes
+/// sends the full to-do state each time, not a delta.
+List<AgentPlanEntry> parseAgentPlan(Object? entries) {
+  if (entries is! List) return const [];
+  final plan = <AgentPlanEntry>[];
+  for (final entry in entries) {
+    if (entry is! Map) continue;
+    final content = entry['content'];
+    if (content is! String || content.trim().isEmpty) continue;
+    plan.add(
+      AgentPlanEntry(
+        content: content.trim(),
+        status: _planStatusFromAcp(entry['status']),
+      ),
+    );
+  }
+  return List.unmodifiable(plan);
+}
+
+/// A persisted status is this enum's own [AgentPlanStatus] name; unknown reads as
+/// pending — a step we can't place is one not started, never one shown as done.
+AgentPlanStatus _planStatusByName(Object? raw) {
+  for (final status in AgentPlanStatus.values) {
+    if (status.name == raw) return status;
+  }
+  return AgentPlanStatus.pending;
+}
+
+/// ACP's live plan statuses (`pending`/`in_progress`/`completed`); unknown reads
+/// as pending, so a step we can't place is never shown as done.
+AgentPlanStatus _planStatusFromAcp(Object? raw) => switch (raw) {
+  'in_progress' => AgentPlanStatus.active,
+  'completed' => AgentPlanStatus.done,
+  _ => AgentPlanStatus.pending,
+};
+
 /// How much the user has agreed to let the agent do to this computer — chosen in
 /// the composer, and applied to every turn from then on.
 ///

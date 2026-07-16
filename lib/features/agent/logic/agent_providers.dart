@@ -67,3 +67,24 @@ class AgentSourcesLog extends Notifier<List<WebSource>> {
     state = List.unmodifiable([...state, ...fresh]);
   }
 }
+
+/// The agent's live to-do plan for the in-flight run. Unlike the sources feed,
+/// this is **replaced** wholesale each time Hermes reports it — its `todo` tool
+/// sends the full list (with each step's status), not a delta. The "agent is
+/// working" bubble shows it live so the user sees which step it's on; and
+/// `HermesChatSender` clears it at the start of each send and pins the final
+/// plan onto the answer.
+final agentPlanProvider = NotifierProvider<AgentPlanLog, List<AgentPlanEntry>>(
+  AgentPlanLog.new,
+);
+
+class AgentPlanLog extends Notifier<List<AgentPlanEntry>> {
+  @override
+  List<AgentPlanEntry> build() => const [];
+
+  void clear() => state = const [];
+
+  /// Replace the plan with the agent's latest full to-do list.
+  void replace(List<AgentPlanEntry> entries) =>
+      state = List.unmodifiable(entries);
+}

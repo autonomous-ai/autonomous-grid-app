@@ -158,11 +158,14 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   ],
   if (message.sources.isNotEmpty)
     'sources': [for (final s in message.sources) s.toJson()],
+  if (message.plan.isNotEmpty)
+    'plan': [for (final p in message.plan) p.toJson()],
 };
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
   final rawMedia = json['media'];
   final rawSources = json['sources'];
+  final rawPlan = json['plan'];
   return ChatMessage(
     role: json['role'] == ChatRole.assistant.name
         ? ChatRole.assistant
@@ -178,6 +181,11 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
       if (rawSources is List)
         for (final s in rawSources)
           if (s is Map<String, dynamic>) ?WebSource.fromJson(s),
+    ],
+    plan: [
+      if (rawPlan is List)
+        for (final p in rawPlan)
+          if (p is Map<String, dynamic>) ?AgentPlanEntry.fromJson(p),
     ],
   );
 }
