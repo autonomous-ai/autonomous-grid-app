@@ -52,12 +52,7 @@ final recentActivityProvider = FutureProvider<List<JobRun>>((ref) async {
   final runs = <JobRun>[];
   for (final job in jobs) {
     for (final run in await service.readOutputs(job.id)) {
-      runs.add((
-        jobId: job.id,
-        jobName: job.name,
-        at: run.at,
-        text: run.text,
-      ));
+      runs.add((jobId: job.id, jobName: job.name, at: run.at, text: run.text));
     }
   }
   runs.sort((a, b) => b.at.compareTo(a.at));
@@ -126,7 +121,7 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     };
     final error = await _act(
       (service) => service.create(
-        schedule: schedule.toCron(),
+        schedule: schedule.toSchedule(),
         prompt: prompt,
         name: name,
         workdir: ref.read(agentWorkspaceDirProvider).path,

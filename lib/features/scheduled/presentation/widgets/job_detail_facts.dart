@@ -12,7 +12,7 @@ class _Facts extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(
         children: [
-          _FactRow(label: 'Runs', value: describeJobCron(job.cron)),
+          _FactRow(label: 'Runs', value: describeJobSchedule(job.cron)),
           _FactRow(label: 'State', value: _state(status)),
           _FactRow(label: 'Next run', value: _when(job.nextRunAt, status)),
           _FactRow(label: 'Last run', value: _lastRun(job)),

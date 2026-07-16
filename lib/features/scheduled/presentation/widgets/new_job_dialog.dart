@@ -200,8 +200,12 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                     onChanged: (value) => setState(() => _weekday = value),
                   ),
                 ],
-                const SizedBox(height: 12),
-                _TimeRow(time: _time, onPick: _pickTime),
+                // An interval cadence repeats through the day — there's no one
+                // time to pick, so the time row would only mislead.
+                if (!_cadence.isInterval) ...[
+                  const SizedBox(height: 12),
+                  _TimeRow(time: _time, onPick: _pickTime),
+                ],
                 const SizedBox(height: 22),
                 const _GroupLabel('Where the answer goes'),
                 const SizedBox(height: 10),
@@ -257,7 +261,9 @@ class _WhatItMayDo extends ConsumerWidget {
                 'Runs ${schedule.describe().toLowerCase()}, on this computer, '
                 'in your Projects folder.',
           ),
-          if (_asleepHour(schedule.hour)) ...[
+          // The asleep warning is about a single nightly time; an interval task
+          // runs all day, so it doesn't apply the same way.
+          if (!schedule.cadence.isInterval && _asleepHour(schedule.hour)) ...[
             const SizedBox(height: 9),
             _InfoLine(
               icon: Icons.bedtime_outlined,

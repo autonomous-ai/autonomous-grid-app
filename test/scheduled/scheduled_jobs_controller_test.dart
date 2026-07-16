@@ -175,6 +175,42 @@ void main() {
     expect(h.cron.created?.workdir, workspace.path);
   });
 
+  test('an interval task is sent as an `every Nm` Hermes understands, not a '
+      'cron line', () async {
+    final h = harness();
+    await h.container.read(scheduledJobsProvider.future);
+
+    await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: 'Inbox check',
+          prompt: 'Any new mail?',
+          schedule: const JobSchedule(cadence: JobCadence.every30Min),
+        );
+
+    expect(h.cron.created?.schedule, 'every 30m');
+  });
+
+  test('an interval job reads back with its schedule, not a blank row — Hermes '
+      'stores it as a display string with no cron expr', () async {
+    const intervalJob = '''
+{"jobs": [{
+  "id": "iv1",
+  "name": "Inbox check",
+  "prompt": "Any new mail?",
+  "schedule": {"kind": "interval", "minutes": 120, "display": "every 120m"},
+  "schedule_display": "every 120m",
+  "enabled": true
+}]}
+''';
+    final h = harness(jobsJson: intervalJob);
+
+    final jobs = await h.container.read(scheduledJobsProvider.future);
+
+    expect(jobs.single.cron, 'every 120m');
+    expect(describeJobSchedule(jobs.single.cron), 'Every 2 hours');
+  });
+
   test('the answer goes where the user picked — this app by default, Telegram '
       'only when they said so', () async {
     final h = harness();

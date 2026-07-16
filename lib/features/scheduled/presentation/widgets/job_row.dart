@@ -30,9 +30,7 @@ class _JobRowState extends ConsumerState<_JobRow> {
     final status = jobStatusOf(widget.job);
     // A task whose result landed since the app opened gets a "new results" pill,
     // so the list itself says something arrived — you don't have to open it.
-    final hasNew = ref
-        .watch(taskDeliveryProvider)
-        .contains(widget.job.id);
+    final hasNew = ref.watch(taskDeliveryProvider).contains(widget.job.id);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -154,7 +152,7 @@ class _JobRowText extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          describeJobCron(job.cron),
+          describeJobSchedule(job.cron),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(

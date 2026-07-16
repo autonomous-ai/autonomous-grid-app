@@ -65,10 +65,17 @@ ScheduledJob? _job(Map<String, dynamic> raw) {
 
   final prompt = _string(raw['prompt']);
   final name = _string(raw['name']);
+  // A cron job carries an `expr`; an interval one (`every 30m`) carries only
+  // `minutes` + a `display` string, so fall through to that rather than reading
+  // an empty schedule and mislabelling the row.
   final schedule = raw['schedule'];
-  final cron = schedule is Map<String, dynamic>
-      ? _string(schedule['expr'])
-      : _string(raw['schedule_display']);
+  final cron = _firstNonEmpty([
+    if (schedule is Map<String, dynamic>) ...[
+      _string(schedule['expr']),
+      _string(schedule['display']),
+    ],
+    _string(raw['schedule_display']),
+  ]);
 
   return ScheduledJob(
     id: id,
@@ -84,6 +91,11 @@ ScheduledJob? _job(Map<String, dynamic> raw) {
 }
 
 String _string(Object? raw) => raw is String ? raw : '';
+
+/// The first non-blank string in [candidates], or '' when they're all empty —
+/// so a job's schedule reads from whichever field Hermes actually filled.
+String _firstNonEmpty(List<String> candidates) =>
+    candidates.firstWhere((s) => s.isNotEmpty, orElse: () => '');
 
 String? _stringOrNull(Object? raw) =>
     raw is String && raw.isNotEmpty ? raw : null;
