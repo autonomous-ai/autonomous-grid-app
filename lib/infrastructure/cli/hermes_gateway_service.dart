@@ -56,7 +56,10 @@ abstract interface class HermesGatewayService {
   /// between "connected" and "connected, but nothing is listening".
   Future<bool> running();
 
-  /// Install the background service (once) and start it.
+  /// Install the background service (once), then restart it so the credentials
+  /// just written to `~/.hermes/.env` are actually loaded. A plain start won't
+  /// reload a gateway that's already running — the bot would read as connected
+  /// but answer nobody — so this restarts to (re)connect the platform.
   Future<void> startGateway();
 
   /// Restart it, so a token the user just changed is picked up.
@@ -126,10 +129,15 @@ class HermesGatewayServiceImpl implements HermesGatewayService {
 
   @override
   Future<void> startGateway() async {
-    // Installing is idempotent and is what survives a reboot; starting is what
-    // makes the bot answer now.
+    // Install (idempotent, and what survives a reboot), then *restart* — not
+    // `start`. A gateway that's already running ignores `start` and never
+    // re-reads ~/.hermes/.env, so a token the user just connected would never
+    // load: the platform stays disconnected on Hermes while this app's
+    // heartbeat still reads "running", and the bot answers nobody. Restart
+    // reloads the credentials and (re)connects the platform; with the gateway
+    // off, restart simply starts it.
     await _run(['gateway', 'install']);
-    await _run(['gateway', 'start']);
+    await _run(['gateway', 'restart']);
   }
 
   @override
