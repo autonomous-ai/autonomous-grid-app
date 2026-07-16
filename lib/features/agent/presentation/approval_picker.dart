@@ -273,6 +273,7 @@ class _ModeIcon extends StatelessWidget {
 /// The name of a mode, as the user reads it in the composer.
 String approvalLabel(AgentApprovalMode mode) => switch (mode) {
   AgentApprovalMode.readOnly => 'Read only',
+  AgentApprovalMode.plan => 'Plan first',
   AgentApprovalMode.ask => 'Ask before acting',
   AgentApprovalMode.full => 'Full access',
 };
@@ -281,6 +282,9 @@ String approvalLabel(AgentApprovalMode mode) => switch (mode) {
 String approvalDetail(AgentApprovalMode mode) => switch (mode) {
   AgentApprovalMode.readOnly =>
     'It can read your project files, but never change them or run anything.',
+  AgentApprovalMode.plan =>
+    'It shows you a plan first and does nothing until you approve it, then '
+        'carries it out asking before each step.',
   AgentApprovalMode.ask =>
     'It shows you each command and each change to a file, and waits for a yes.',
   AgentApprovalMode.full =>
@@ -289,6 +293,7 @@ String approvalDetail(AgentApprovalMode mode) => switch (mode) {
 
 IconData approvalIcon(AgentApprovalMode mode) => switch (mode) {
   AgentApprovalMode.readOnly => Icons.visibility_outlined,
+  AgentApprovalMode.plan => Icons.checklist_outlined,
   AgentApprovalMode.ask => Icons.pan_tool_outlined,
   AgentApprovalMode.full => Icons.bolt_outlined,
 };

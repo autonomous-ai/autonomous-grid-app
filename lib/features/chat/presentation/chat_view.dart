@@ -35,6 +35,7 @@ import 'file_mention_menu.dart';
 import 'chat_composer.dart';
 import 'chat_starters.dart';
 import 'grid_model_picker.dart';
+import 'plan_approve_bar.dart';
 
 /// How close to the end (px) still counts as "at the bottom" — within this, new
 /// messages auto-follow and the jump-to-latest button hides.
@@ -419,6 +420,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        const PlanApproveBar(),
                         const AgentChangesBar(),
                         if (slash != null)
                           PromptSlashMenu(query: slash, onPick: _insertPrompt)

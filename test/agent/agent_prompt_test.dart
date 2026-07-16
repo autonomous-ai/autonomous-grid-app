@@ -23,4 +23,16 @@ void main() {
       expect(result, isNot(contains('  Be brief.  ')));
     });
   });
+
+  group('withPlanPreamble', () {
+    test(
+      'tells the agent to plan and not act, keeping the request at the end',
+      () {
+        final result = withPlanPreamble('Delete the temp files.');
+        expect(result, startsWith('Planning mode'));
+        expect(result.toLowerCase(), contains('do not run'));
+        expect(result, endsWith('Delete the temp files.'));
+      },
+    );
+  });
 }

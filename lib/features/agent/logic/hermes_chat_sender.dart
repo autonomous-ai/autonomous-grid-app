@@ -97,6 +97,7 @@ class HermesChatSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
+    bool planFirst = false,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
@@ -142,13 +143,20 @@ class HermesChatSender implements ChatSender {
 
     // This turn runs under whatever the user has the composer set to *now* —
     // switching the mode takes effect on the next message, not the next session.
-    session.approvalMode = _ref.read(agentApprovalModeProvider);
+    // Plan mode has two shapes: the planning turn is forced read-only (it must
+    // touch nothing), and the execute turn that follows an approval carries out
+    // the plan asking per action — so `plan` maps to `ask` there.
+    final mode = _ref.read(agentApprovalModeProvider);
+    session.approvalMode = planFirst
+        ? AgentApprovalMode.readOnly
+        : (mode == AgentApprovalMode.plan ? AgentApprovalMode.ask : mode);
+    final turnText = planFirst ? withPlanPreamble(text) : text;
 
     // Hand the session's id to the caller: Hermes names its own sessions, and
     // the Chat tab uses that name for the conversation once it lands.
     if (session.sessionId case final id?) yield ChatSendAgentSession(id);
 
-    yield* _runTurn(session, text, model);
+    yield* _runTurn(session, turnText, model);
   }
 
   /// Reuse the live session when this is the next turn of the same conversation,

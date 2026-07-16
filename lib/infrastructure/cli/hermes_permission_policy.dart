@@ -68,7 +68,11 @@ HermesPermissionDecision decideHermesPermission({
 
   if (askableToolKinds.contains(toolKind)) {
     return switch (mode) {
-      AgentApprovalMode.readOnly => HermesRefuse(refuseOption(options)),
+      // Plan's planning turn runs with the session forced to read-only (the
+      // sender does that), so this never actually sees `plan`; treated as
+      // read-only for safety if it ever did — a plan turn touches nothing.
+      AgentApprovalMode.readOnly ||
+      AgentApprovalMode.plan => HermesRefuse(refuseOption(options)),
       AgentApprovalMode.ask => const HermesAskUser(),
       AgentApprovalMode.full => _allowOrRefuse(options),
     };

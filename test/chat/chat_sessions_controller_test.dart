@@ -10,11 +10,13 @@ import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/agent/logic/agent_session_title.dart';
 import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/features/projects/logic/project.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
@@ -46,6 +48,9 @@ class _FakeSender implements ChatSender {
   List<MediaAttachment>? attachments;
   String? workdir;
 
+  /// Whether each send was a Plan-mode planning turn, in call order.
+  final planFirsts = <bool>[];
+
   @override
   Stream<ChatSendUpdate> send({
     required NetworkCredential network,
@@ -57,12 +62,14 @@ class _FakeSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
+    bool planFirst = false,
   }) {
     this.history = history;
     this.model = model;
     this.modality = modality;
     this.attachments = attachments;
     this.workdir = workdir;
+    planFirsts.add(planFirst);
     return Stream.fromIterable(updates);
   }
 }
@@ -89,7 +96,15 @@ class _OpenEndedSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
+    bool planFirst = false,
   }) => _controller.stream;
+}
+
+/// A fixed selected grid, so approving a plan (which reads the current grid to
+/// send the execute turn) never touches the real `~/.grid`.
+class _FixedNetwork extends SelectedNetwork {
+  @override
+  NetworkCredential? build() => _credential();
 }
 
 /// The agent's own name for a session, handed back the moment it's asked for.
@@ -150,6 +165,8 @@ _harness(
       projectsStoreProvider.overrideWithValue(
         ProjectsStore(file: File('${dir.path}/projects.json')),
       ),
+      // Approving a plan reads the current grid; keep it off the real home.
+      selectedNetworkProvider.overrideWith(_FixedNetwork.new),
     ],
   );
   addTearDown(container.dispose);
@@ -669,6 +686,99 @@ void main() {
 
       expect(h.container.read(chatSessionsProvider).active, isNull);
       expect(ChatStore(directory: tmp).loadAll(), isEmpty);
+    });
+  });
+
+  group('Plan mode', () {
+    ({ProviderContainer container, _FakeSender agent}) planHarness() {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'My plan: 1) …'),
+          ),
+        ],
+      );
+      h.container
+          .read(chatPrefsProvider.notifier)
+          .setApproval(AgentApprovalMode.plan);
+      return (container: h.container, agent: h.agent);
+    }
+
+    test(
+      'a Plan-mode send runs a planning turn and leaves the plan waiting for '
+      'approval',
+      () async {
+        final h = planHarness();
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .send(
+              network: _credential(),
+              model: 'qwen',
+              message: 'refactor it',
+            );
+
+        expect(h.container.read(chatSessionsProvider).awaitingPlan, isTrue);
+        // The agent ran it as a planning turn (read-only, plan preamble).
+        expect(h.agent.planFirsts, [true]);
+      },
+    );
+
+    test('approving the plan runs a second turn to carry it out, and clears the '
+        'bar', () async {
+      final h = planHarness();
+      final controller = h.container.read(chatSessionsProvider.notifier);
+
+      await controller.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'refactor it',
+      );
+      await controller.approvePlan();
+
+      // Two turns: the plan, then the execute turn — which is NOT a plan turn.
+      expect(h.agent.planFirsts, [true, false]);
+      expect(h.container.read(chatSessionsProvider).awaitingPlan, isFalse);
+    });
+
+    test(
+      'dismissing the plan clears the bar without running anything',
+      () async {
+        final h = planHarness();
+        final controller = h.container.read(chatSessionsProvider.notifier);
+
+        await controller.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'refactor it',
+        );
+        controller.dismissPlan();
+
+        expect(h.container.read(chatSessionsProvider).awaitingPlan, isFalse);
+        // Only the planning turn ran; nothing was executed.
+        expect(h.agent.planFirsts, [true]);
+      },
+    );
+
+    test('an ordinary send never leaves a plan waiting', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+
+      expect(h.container.read(chatSessionsProvider).awaitingPlan, isFalse);
+      expect(h.agent.planFirsts, [false]);
     });
   });
 }
