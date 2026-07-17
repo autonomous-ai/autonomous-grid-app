@@ -9,10 +9,29 @@ import '../logic/grid_overview_provider.dart';
 import 'detail_widgets.dart';
 import '../logic/node_display.dart';
 
-/// Monospace family for the grid-overview surface. Shared by the card sections
-/// and these widgets so the two files agree on one font token (no duplicate
-/// literal).
-const kGridMono = 'monospace';
+/// The overview's prose face — headings, subtitles, labels, chips, node names.
+/// Shared by the card sections and these widgets so the two files agree on one
+/// token (no duplicate literal). See [AppFont] for why prose is *not* mono here.
+const TextStyle kGridText = TextStyle(
+  fontFamily: AppFont.sans,
+  fontFamilyFallback: AppFont.sansFallback,
+);
+
+/// The face for a string the user is going to copy — a model id. Mono earns its
+/// place here and nowhere else on this surface: these get pasted into a config
+/// or a curl, so `l`/`1` and `0`/`O` have to stay apart.
+const TextStyle kGridCode = TextStyle(
+  fontFamily: AppFont.mono,
+  fontFamilyFallback: AppFont.monoFallback,
+);
+
+/// A stat's headline number: sans, but with fixed-width digits so the value
+/// doesn't reflow as it changes. See [AppFont.tabularFigures].
+const TextStyle kGridNumeral = TextStyle(
+  fontFamily: AppFont.sans,
+  fontFamilyFallback: AppFont.sansFallback,
+  fontFeatures: AppFont.tabularFigures,
+);
 
 /// A single capability chip: an accent icon plus its label.
 class CapabilityChip extends StatelessWidget {
@@ -36,8 +55,7 @@ class CapabilityChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
-              fontFamily: kGridMono,
+            style: kGridText.copyWith(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
               color: AppPalette.textPrimary,
@@ -100,9 +118,9 @@ class _StatCell extends StatelessWidget {
           children: [
             Text(
               label,
-              style: TextStyle(
-                fontFamily: kGridMono,
+              style: kGridText.copyWith(
                 fontSize: 11,
+                fontWeight: FontWeight.w600,
                 letterSpacing: 0.6,
                 color: AppPalette.textFaint,
               ),
@@ -112,8 +130,7 @@ class _StatCell extends StatelessWidget {
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: kGridMono,
+              style: kGridNumeral.copyWith(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
                 color: AppPalette.textPrimary,
@@ -143,19 +160,19 @@ class SectionHeading extends StatelessWidget {
       children: [
         Text(
           title,
-          style: TextStyle(
-            fontFamily: kGridMono,
+          style: kGridText.copyWith(
             fontSize: 19,
             fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
             color: AppPalette.textPrimary,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Text(
           subtitle,
-          style: TextStyle(
-            fontFamily: kGridMono,
+          style: kGridText.copyWith(
             fontSize: 13,
+            height: 1.34,
             color: AppPalette.textSecondary,
           ),
         ),
@@ -182,12 +199,23 @@ class _TileCard extends StatelessWidget {
 }
 
 /// One compact model row: modality glyph, copyable id, kind pill, Copy action.
-class ModelTile extends StatelessWidget {
+///
+/// Tracks hover so the row's Copy chip can stay quiet until the pointer is on
+/// it — see [_CopyChip].
+class ModelTile extends StatefulWidget {
   const ModelTile({super.key, required this.model});
   final OverviewModel model;
 
   @override
+  State<ModelTile> createState() => _ModelTileState();
+}
+
+class _ModelTileState extends State<ModelTile> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final model = widget.model;
     // A comfyui media capability (image/video) can surface in the model list —
     // label it as media with an image/video glyph instead of the default
     // "Chat". See [mediaCapabilityLabel].
@@ -199,28 +227,32 @@ class ModelTile extends StatelessWidget {
         : isVideoCapability(model.id)
         ? Icons.movie_outlined
         : Icons.image_outlined;
-    return _TileCard(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      child: Row(
-        children: [
-          _TileIcon(icon: icon, accent: true, size: 28),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              model.id,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: kGridMono,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppPalette.textPrimary,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: _TileCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          children: [
+            _TileIcon(icon: icon, accent: true, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                model.id,
+                overflow: TextOverflow.ellipsis,
+                // Mono: this is the string the Copy chip puts on the clipboard.
+                style: kGridCode.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppPalette.textPrimary,
+                ),
               ),
             ),
-          ),
-          if (pill != null) ...[const SizedBox(width: 10), _Pill(text: pill)],
-          const SizedBox(width: 10),
-          _CopyChip(id: model.id),
-        ],
+            if (pill != null) ...[const SizedBox(width: 10), _Pill(text: pill)],
+            const SizedBox(width: 10),
+            _CopyChip(id: model.id, active: _hovered),
+          ],
+        ),
       ),
     );
   }
@@ -259,20 +291,21 @@ class NodeTile extends StatelessWidget {
                 Text(
                   node.name,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: kGridMono,
+                  style: kGridText.copyWith(
                     fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                     color: AppPalette.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
+                  // Specs carry numbers (VRAM, tok/s, parallelism) that read as
+                  // a column down a stack of nodes — tabular digits keep them
+                  // from wobbling, without dressing the line as code.
                   specs.join('  ·  '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: kGridMono,
+                  style: kGridNumeral.copyWith(
                     fontSize: 12,
                     color: AppPalette.textSecondary,
                   ),
@@ -303,8 +336,7 @@ class _OnlineTag extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           online ? 'Online' : 'Offline',
-          style: TextStyle(
-            fontFamily: kGridMono,
+          style: kGridText.copyWith(
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: color,
@@ -340,26 +372,27 @@ class _TileIcon extends StatelessWidget {
   }
 }
 
-/// Small rounded label pill (e.g. "Chat", "Images") on a tile.
+/// The kind label ("Chat", "Images") on a model tile — a *statement about* the
+/// model, not something to click.
+///
+/// Deliberately unfilled. It used to wear the same grey capsule as the Copy
+/// button sitting 10px to its right, and two grey capsules side by side read as
+/// a pair of buttons — so "Chat" looked like it would open a chat, and clicking
+/// it did nothing. A label earns no fill; only the button next to it does.
 class _Pill extends StatelessWidget {
   const _Pill({required this.text});
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBgHover,
-        borderRadius: BorderRadius.circular(6),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Text(
         text,
-        style: TextStyle(
-          fontFamily: kGridMono,
+        style: kGridText.copyWith(
           fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          color: AppPalette.textSecondary,
+          fontWeight: FontWeight.w500,
+          color: AppPalette.textFaint,
         ),
       ),
     );
@@ -367,33 +400,41 @@ class _Pill extends StatelessWidget {
 }
 
 /// Small "Copy" pill on a model tile — copies the model's exact id.
+///
+/// Quiet at rest, accent when its row is hovered ([active]). A stack of model
+/// rows is read by scanning the *ids* down the left; painting every row's chip
+/// in accent puts a column of the brightest colour on the surface down the right
+/// edge, pulling the eye off the thing being scanned and flattening the
+/// hierarchy — the chip ends up louder than its own subject. Hover is what says
+/// "this row", so that's what earns the colour.
 class _CopyChip extends StatelessWidget {
-  const _CopyChip({required this.id});
+  const _CopyChip({required this.id, required this.active});
   final String id;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
+    final fg = active ? AppPalette.accent : AppPalette.textFaint;
     return Material(
-      color: AppPalette.cardBgHover,
+      color: active ? AppPalette.cardBgHover : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => copyToClipboard(context, id),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.copy_rounded, size: 13, color: AppPalette.accent),
-              SizedBox(width: 6),
+              Icon(Icons.copy_rounded, size: 13, color: fg),
+              const SizedBox(width: 6),
               Text(
                 'Copy',
-                style: TextStyle(
-                  fontFamily: kGridMono,
+                style: kGridText.copyWith(
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 0.4,
-                  color: AppPalette.accent,
+                  color: fg,
                 ),
               ),
             ],
@@ -421,8 +462,7 @@ class OverviewMessage extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(
-                fontFamily: kGridMono,
+              style: kGridText.copyWith(
                 fontSize: 13,
                 color: AppPalette.textSecondary,
               ),

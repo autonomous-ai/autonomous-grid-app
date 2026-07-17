@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 /// switches on this, so a call site like `color: AppPalette.windowBg` follows the
 /// theme with no change to the call site.
 abstract final class AppTheme {
-  static final ValueNotifier<Brightness> brightness = ValueNotifier(
+  static final BrightnessNotifier brightness = BrightnessNotifier(
     Brightness.light,
   );
 
@@ -18,6 +18,34 @@ abstract final class AppTheme {
 
   /// Pick between a light and a dark value for the current brightness.
   static T pick<T>(T light, T dark) => isDark ? dark : light;
+
+  /// Read tokens as some *other* brightness would resolve them.
+  ///
+  /// The tokens resolve against one global ([brightness]), which is what makes a
+  /// call site like `AppPalette.windowBg` follow the theme with no plumbing — but
+  /// it also means the dark palette is unreadable while the app is light. The
+  /// theme preview needs exactly that: three swatches, each showing a palette the
+  /// app is *not* currently wearing.
+  ///
+  /// So: swap the global, read, put it back. Safe because it's synchronous and
+  /// restores in a `finally` — nothing can observe the swapped value, and the
+  /// swap is [BrightnessNotifier.muted] so it doesn't dirty every widget
+  /// watching the theme on the way out and back.
+  ///
+  /// Do not `await` inside [read]: that would hand the swapped brightness to the
+  /// rest of the frame, and the app would paint half a palette.
+  static T as<T>(Brightness other, T Function() read) {
+    final previous = brightness.value;
+    if (previous == other) return read();
+    return brightness.muted(() {
+      try {
+        brightness.value = other;
+        return read();
+      } finally {
+        brightness.value = previous;
+      }
+    });
+  }
 
   /// Registers the calling widget to rebuild whenever [brightness] flips, and
   /// returns the current value.
@@ -40,6 +68,38 @@ abstract final class AppTheme {
   static Brightness watch(BuildContext context) {
     context.dependOnInheritedWidgetOfExactType<_BrightnessScope>();
     return brightness.value;
+  }
+}
+
+/// The brightness global, with one extra power: it can be moved *silently*.
+///
+/// [AppTheme.as] swaps the brightness to read the other palette and swaps it
+/// straight back. A plain `ValueNotifier` broadcasts both of those moves, so
+/// every widget watching the theme would be marked dirty twice per swatch — six
+/// spurious rebuilds to draw three previews, all to end up back where we
+/// started. [muted] suppresses the broadcast for a change that is, from the
+/// outside, not a change at all.
+class BrightnessNotifier extends ValueNotifier<Brightness> {
+  BrightnessNotifier(super.value);
+
+  bool _muted = false;
+
+  /// Run [body] with notifications suppressed. Only for a swap that restores the
+  /// original value before anything can observe it — see [AppTheme.as].
+  T muted<T>(T Function() body) {
+    final previous = _muted;
+    _muted = true;
+    try {
+      return body();
+    } finally {
+      _muted = previous;
+    }
+  }
+
+  @override
+  void notifyListeners() {
+    if (_muted) return;
+    super.notifyListeners();
   }
 }
 
@@ -322,8 +382,18 @@ abstract final class AppCard {
   static Color get highlightEdge =>
       AppTheme.pick(const Color(0x0A000000), const Color(0x1FFFFFFF));
 
-  static const double radius = 18;
-  static const double insetRadius = 12;
+  /// Corner rounding, on macOS's scale rather than iOS's.
+  ///
+  /// A Mac window is ~10 and a sheet/popover ~12; iOS and the web round far
+  /// harder, and at 18 a card read as an iOS sheet that had wandered onto a
+  /// desktop. It also disagreed with the buttons *inside* it ([AppControl.radius]
+  /// is 8), so a card and its own action were speaking two shape languages.
+  ///
+  /// The inset tile drops to 8 to match those buttons: an inset sits inside a
+  /// card, and nesting a rounder box inside a less-round one is what makes a
+  /// tile look pasted on rather than set in.
+  static const double radius = 12;
+  static const double insetRadius = 8;
 
   /// Soft ambient drop that lifts a card off the page.
   static List<BoxShadow> get shadow => AppTheme.pick(
@@ -456,10 +526,32 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       isDense: true,
       filled: true,
       fillColor: scheme.surfaceContainerHighest,
-      hintStyle: TextStyle(
-        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+      // A field is a control, so its hint takes the control font — 13pt, the
+      // same as the button beside it. (The typed text is set on the field via
+      // [kFieldTextStyle]; `InputDecorationTheme` has no `style` of its own, so
+      // a field's own text can't be themed globally here.)
+      hintStyle: _fieldTextStyle(
+        scheme.onSurfaceVariant.withValues(alpha: 0.7),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      // Material builds a field for a phone: its default padding, plus the 48px
+      // touch target it gives a prefixIcon, rendered this 48 tall next to a 32px
+      // button. macOS sizes a field like every other control, so the height is
+      // AppControl's — derived here rather than typed as a number that happens
+      // to land near it.
+      //
+      // The arithmetic: the box is padding + one line of AppControl.fontSize.
+      // `isDense` already tightens Material's own vertical slack, so the padding
+      // is what's left over once the line has taken its share.
+      constraints: const BoxConstraints(minHeight: AppControl.height),
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: (AppControl.height - AppControl.fontSize * 1.35) / 2,
+      ),
+      // The glyph sits on the text's line, not in a tap target of its own.
+      prefixIconConstraints: const BoxConstraints(
+        minWidth: 30,
+        minHeight: AppControl.iconSize,
+      ),
       border: _fieldBorder(scheme.outline),
       enabledBorder: _fieldBorder(scheme.outline),
       focusedBorder: _fieldBorder(AppPalette.accent, width: 1.5),
@@ -470,7 +562,10 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       color: menuFill,
       surfaceTintColor: Colors.transparent,
       elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      // macOS menus are barely rounded — 14 reads as an iOS action sheet.
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppControl.menuRadius),
+      ),
     ),
     menuTheme: MenuThemeData(
       style: MenuStyle(
@@ -478,7 +573,9 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: const WidgetStatePropertyAll(8),
         shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppControl.menuRadius),
+          ),
         ),
       ),
     ),
@@ -523,6 +620,11 @@ abstract final class AppControl {
   /// pill reads as a "chip" on macOS, not as a button.
   static const double radius = 8;
 
+  /// A menu/popover's rounding. Tighter than a button's: macOS menus are nearly
+  /// square-cornered, and rounding one like an iOS action sheet is one of the
+  /// louder tells that a desktop app was drawn to phone conventions.
+  static const double menuRadius = 6;
+
   /// The label. 13pt semibold is the macOS control font.
   static const double fontSize = 13;
   static const FontWeight fontWeight = FontWeight.w600;
@@ -535,6 +637,57 @@ abstract final class AppControl {
   /// barely at all vertically — the height is what sets the touch target.
   static const EdgeInsets padding = EdgeInsets.symmetric(horizontal: 14);
   static const EdgeInsets paddingSmall = EdgeInsets.symmetric(horizontal: 10);
+}
+
+/// The app's two font stacks, and the rule for which one a given piece of text
+/// gets.
+///
+/// The rule: **mono is for strings the user copies, not for strings they read.**
+/// A model id, an endpoint, a token — those need `l`/`1`/`I` and `0`/`O` to stay
+/// apart, because the user is going to paste them somewhere that cares. Prose
+/// (a heading, a subtitle, a node's name) is *read*, and mono makes reading it
+/// slower while making the surface look like a terminal instead of a product.
+///
+/// Numbers are the case that looks like it wants mono but doesn't: what a stat
+/// actually needs is digits that don't reflow when the value changes, and
+/// [tabularFigures] buys exactly that on the sans stack — no terminal costume
+/// required.
+abstract final class AppFont {
+  /// The reading stack — matches the text theme's system font.
+  static const String sans = '.AppleSystemUIFont';
+  static const List<String> sansFallback = [
+    'SF Pro Text',
+    'Helvetica Neue',
+    'Arial',
+  ];
+
+  /// The copy-me stack: SF Mono, the system's own code face.
+  ///
+  /// The name matters. `'SF Mono'` does **not** resolve — CoreText returns nil
+  /// for it, so Flutter quietly falls through to the next entry (that's what the
+  /// login screen's `fontFamily: 'SF Mono'` has always done: it renders Menlo).
+  /// The face is only reachable under its internal name, below. Verified with
+  /// `NSFont(name:size:)` + `CTFontGetBoundingRectsForGlyphs`; a `flutter test`
+  /// probe can't confirm this — the headless test font manager resolves every
+  /// family to the same test face and reports monospace metrics for all of them.
+  ///
+  /// Menlo is the fallback, not a compromise: its glyphs measure within 0.01pt
+  /// of SF Mono's at 13px. SF Mono leads only for a slashed zero and a tailed
+  /// `l`, which is exactly what a model id needs. Avoid Monaco — it lacks a
+  /// slashed zero.
+  static const String mono = '.AppleSystemUIFontMonospaced';
+  static const List<String> monoFallback = [
+    'Menlo',
+    'Monaco',
+    'Courier New',
+    'monospace',
+  ];
+
+  /// Digits that hold a fixed width, so a stat doesn't reflow as its value
+  /// changes and a column of numbers lines up.
+  static const List<FontFeature> tabularFigures = [
+    FontFeature.tabularFigures(),
+  ];
 }
 
 /// A text field's rim at one state. Radius matches [AppControl.radius] so a
@@ -554,6 +707,24 @@ const TextStyle _buttonTextStyle = TextStyle(
   fontSize: AppControl.fontSize,
   fontWeight: AppControl.fontWeight,
   letterSpacing: 0,
+);
+
+/// A text field's own text: the macOS control font, so a field sits at the same
+/// scale as the button next to it.
+///
+/// Material's default field text is `bodyLarge` — 16pt, sized for a phone. On a
+/// desktop row that puts a visibly larger search box beside a 13pt button.
+/// `InputDecorationTheme` has no `style` slot (it themes the *decoration*, not
+/// the editable text), so a field must be handed this explicitly:
+/// `TextField(style: kFieldTextStyle, ...)`.
+TextStyle get kFieldTextStyle => _fieldTextStyle(AppPalette.textPrimary);
+
+TextStyle _fieldTextStyle(Color color) => TextStyle(
+  fontFamily: AppFont.sans,
+  fontFamilyFallback: AppFont.sansFallback,
+  fontSize: AppControl.fontSize,
+  letterSpacing: 0,
+  color: color,
 );
 
 RoundedRectangleBorder get _buttonShape => RoundedRectangleBorder(

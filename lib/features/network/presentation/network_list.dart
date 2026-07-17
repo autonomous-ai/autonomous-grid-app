@@ -50,6 +50,9 @@ class _NetworkListState extends ConsumerState<NetworkList> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: TextField(
               onChanged: (v) => setState(() => _query = v),
+              // The macOS control font, matching the buttons in the header
+              // above. See [kFieldTextStyle].
+              style: kFieldTextStyle,
               decoration: const InputDecoration(
                 hintText: 'Search…',
                 prefixIcon: Icon(Icons.search, size: 18),

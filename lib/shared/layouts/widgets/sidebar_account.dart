@@ -21,14 +21,14 @@ const _accountMenuWidth = 232.0;
 // the rows that are actually rendered — so adding or removing an entry can't put
 // the menu back in the air.
 const _menuRowHeight = 44.0;
-const _menuDividerHeight = 11.0;
 const _menuVersionHeight = 26.0;
 const _menuPadding = 6.0;
 // The Appearance segmented control (ThemeModePicker): its outer padding (6+8),
 // the "Appearance" label row, and the three-way segment control. Measured (not
-// estimated) via a widget test so the menu that hangs off the account row — it's
-// positioned by summing these heights — stays put once this block is shown.
-const _menuThemeHeight = 107.0;
+// estimated) — see `theme_mode_picker_test.dart`, which fails if the widget
+// grows past this — because the menu that hangs off the account row is
+// positioned by summing these heights, so a stale number leaves it in the air.
+const _menuThemeHeight = 91.0;
 
 /// The menu entries that aren't a section — kept apart from `ShellSection.name`
 /// so a section can never collide with one.
@@ -37,18 +37,15 @@ const _updatesValue = 'check_updates';
 const _logoutValue = 'logout';
 
 /// What the menu will actually measure, given what it's about to show: Settings,
-/// a divider, the update row (not on platforms without an updater), the version
-/// (only once it's read), a divider, Sign out.
+/// the Appearance control, the update row (not on platforms without an updater),
+/// the version (only once it's read), Sign out.
 Size _accountMenuSize({required bool updater, required bool version}) => Size(
   _accountMenuWidth,
   _menuPadding * 2 +
       _menuRowHeight +
-      _menuDividerHeight +
       _menuThemeHeight +
-      _menuDividerHeight +
       (updater ? _menuRowHeight : 0) +
       (version ? _menuVersionHeight : 0) +
-      _menuDividerHeight +
       _menuRowHeight,
 );
 
@@ -241,11 +238,9 @@ class _AccountMenuContent extends StatelessWidget {
             label: 'Settings',
             onPressed: () => onSelected(_settingsValue),
           ),
-          const _AccountMenuDivider(),
           // Light / Dark / System, as a segmented control. The theme system was
           // always live; this is the control that drives it.
           const ThemeModePicker(),
-          const _AccountMenuDivider(),
           if (updaterSupported)
             _AccountMenuItem(
               icon: LucideIcons.downloadCloud300,
@@ -258,7 +253,6 @@ class _AccountMenuContent extends StatelessWidget {
               onPressed: () => onSelected(_updatesValue),
             ),
           if (version != null) _AccountVersion(version: version!),
-          const _AccountMenuDivider(),
           _AccountMenuItem(
             icon: LucideIcons.logOut300,
             label: 'Sign out',
@@ -351,21 +345,6 @@ class _AccountVersion extends StatelessWidget {
             color: AppPalette.textFaint,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _AccountMenuDivider extends StatelessWidget {
-  const _AccountMenuDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: _menuDividerHeight,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 5),
-        child: Divider(height: 1),
       ),
     );
   }

@@ -92,9 +92,12 @@ class AddressRow extends StatelessWidget {
                   value,
                   maxLines: maxLines,
                   overflow: maxLines == null ? null : TextOverflow.ellipsis,
+                  // An address the user copies — mono, via the token rather than
+                  // the OS-resolved 'monospace' alias. See [AppFont].
                   style: TextStyle(
                     color: AppPalette.textPrimary,
-                    fontFamily: 'monospace',
+                    fontFamily: AppFont.mono,
+                    fontFamilyFallback: AppFont.monoFallback,
                     fontSize: 13,
                   ),
                 ),
@@ -378,7 +381,8 @@ class CodeBlock extends StatelessWidget {
               code,
               style: TextStyle(
                 color: AppPalette.textPrimary,
-                fontFamily: 'monospace',
+                fontFamily: AppFont.mono,
+                fontFamilyFallback: AppFont.monoFallback,
                 fontSize: 12.5,
                 height: 1.45,
               ),

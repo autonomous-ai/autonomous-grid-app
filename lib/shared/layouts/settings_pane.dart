@@ -148,7 +148,10 @@ class _SettingsNav extends StatelessWidget {
                   )
                 else
                   SidebarItem(
-                    icon: target.icon,
+                    // The rail glyph — the same 300-weight the app's own sidebar
+                    // uses. This rail was on the default weight, so the two nav
+                    // columns drew the same icon at two line weights.
+                    icon: target.thinIcon,
                     label: target.label,
                     selected: target == section,
                     onTap: () => onSelect(target),
@@ -180,7 +183,9 @@ class _NavIcon extends StatelessWidget {
       child: IconButton(
         tooltip: target.label,
         onPressed: onTap,
-        icon: Icon(target.icon, size: 18),
+        // The rail glyph, matching the labelled rows this collapses from — see
+        // [_SettingsNav].
+        icon: Icon(target.thinIcon, size: 18),
         style: IconButton.styleFrom(
           foregroundColor: selected
               ? AppPalette.textPrimary

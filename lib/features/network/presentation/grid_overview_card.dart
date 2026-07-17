@@ -61,8 +61,7 @@ class GridCapabilitiesSection extends ConsumerWidget {
         children: [
           Text(
             'This grid can',
-            style: TextStyle(
-              fontFamily: kGridMono,
+            style: kGridText.copyWith(
               fontSize: 12.5,
               color: AppPalette.textFaint,
             ),

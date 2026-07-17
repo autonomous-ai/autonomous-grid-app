@@ -4,9 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../theme/app_theme.dart';
 
-/// The Light / Dark / System choice, as a compact three-way segmented control for
-/// the account menu. Reads and writes the persisted [themeModeProvider], so the
-/// pick survives a restart; the whole app re-themes the moment it changes.
+/// The Light / Dark / System choice, as a compact three-way segmented control
+/// for the account menu. Reads and writes the persisted [themeModeProvider], so
+/// the pick survives a restart; the whole app re-themes the moment it changes.
+///
+/// The Appearance settings screen offers the same choice as three preview tiles
+/// instead — a menu is too narrow to show a theme, and a settings pane is too
+/// wide to justify not showing one. Both drive this one provider, so they can't
+/// disagree.
 class ThemeModePicker extends ConsumerWidget {
   const ThemeModePicker({super.key});
 
@@ -61,7 +66,14 @@ class ThemeModePicker extends ConsumerWidget {
 }
 
 /// One cell of the segmented control — an icon over its label, tinted the accent
-/// when picked. Kept local to the picker; it's a denser layout than [PillChoice].
+/// when picked. Kept local to the picker.
+///
+/// A stack, not a row. macOS lays a segmented control on one line, and this was
+/// briefly built that way — but the menu is only ~230px wide once its gutters are
+/// taken out, which leaves ~70px a cell. Side by side, the glyph eats enough of
+/// that for "System" to ellipsize to "Syst…": a control that can't say the name
+/// of its own option. Stacking gives the label the cell's full width, and the
+/// one-line rule is worth less than a legible word.
 class _Segment extends StatelessWidget {
   const _Segment({
     required this.icon,
@@ -97,7 +109,13 @@ class _Segment extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 label,
+                maxLines: 1,
+                // No ellipsis: at this width the label always fits, and if a
+                // longer one ever doesn't, a clipped word is the bug — not
+                // something to render tidily.
                 style: TextStyle(
+                  fontFamily: AppFont.sans,
+                  fontFamilyFallback: AppFont.sansFallback,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: foreground,

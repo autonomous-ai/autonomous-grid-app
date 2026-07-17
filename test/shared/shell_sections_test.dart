@@ -10,12 +10,27 @@ void main() {
       expect(ShellSection.engines.devOnly, isFalse);
       expect(ShellSection.messages.devOnly, isFalse);
       expect(ShellSection.guide.devOnly, isFalse);
+      expect(ShellSection.appearance.devOnly, isFalse);
     });
 
-    test('Grids sits just above Debug at the bottom of the list', () {
-      final grids = kSettingsSections.indexOf(ShellSection.grids);
+    // The order below interleaves Appearance with the developer-only rows, so
+    // what matters isn't its raw index — it's that a shipped build still ends on
+    // it. That holds as long as everything after it is developer-only.
+    test('a shipped build\'s settings list ends at Appearance', () {
+      expect(ShellSection.appearance.isVisibleForBuild, isTrue);
+      final appearance = kSettingsSections.indexOf(ShellSection.appearance);
+      expect(appearance, greaterThan(-1));
+      expect(
+        kSettingsSections.skip(appearance + 1).every((s) => s.devOnly),
+        isTrue,
+        reason:
+            'a tab an end user can see now sits below Appearance, so their '
+            'list no longer ends there',
+      );
+    });
+
+    test('Debug stays at the very bottom', () {
       final debug = kSettingsSections.indexOf(ShellSection.debug);
-      expect(grids, debug - 1);
       expect(debug, kSettingsSections.length - 1);
     });
 

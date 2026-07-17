@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../features/agents/presentation/agents_view.dart';
+import '../../../features/appearance/presentation/appearance_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
 import '../../../features/debug/presentation/debug_view.dart';
 import '../../../features/messaging/presentation/messages_view.dart';
@@ -38,6 +39,7 @@ class SectionView extends StatelessWidget {
       ShellSection.grids => const NetworksPane(),
       ShellSection.engines => const ProviderView(),
       ShellSection.guide => const HowToUseView(),
+      ShellSection.appearance => const AppearanceView(),
       ShellSection.debug => const DebugView(),
     };
 

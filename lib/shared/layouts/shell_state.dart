@@ -40,6 +40,10 @@ enum ShellSection {
     'How to use',
     thinIcon: LucideIcons.circleHelp300,
   ),
+  // The sun — the Light choice's own glyph, so the row and the control it opens
+  // agree. (A half-filled circle is the usual "theme" mark, but Lucide's reads
+  // as a contrast/accessibility toggle at nav size.)
+  appearance(LucideIcons.sun, 'Appearance', thinIcon: LucideIcons.sun300),
   debug(
     LucideIcons.terminal,
     'Debug',
@@ -89,14 +93,20 @@ const kSidebarSections = [
 
 /// What Settings lists, in order — the screens you set up once.
 ///
-/// This computer leads, then Messages and the guide. Grids and Debug sit at the
-/// bottom — both are developer-only ([ShellSection.devOnly]) and hidden from
-/// shipped builds, so for an end user the list ends at the guide.
+/// This computer leads, then Messages and the guide, then Appearance. Grids and
+/// Debug are developer-only ([ShellSection.devOnly]) and hidden from shipped
+/// builds, so an end user's list simply ends at Appearance.
+///
+/// Appearance sits below Grids but above Debug. That only shows up in a
+/// developer build — where Grids is real work and Appearance is a preference, so
+/// the preference gives way — and it costs an end user nothing, since both of the
+/// rows around it are invisible to them either way.
 const kSettingsSections = [
   ShellSection.engines,
   ShellSection.messages,
   ShellSection.guide,
   ShellSection.grids,
+  ShellSection.appearance,
   ShellSection.debug,
 ];
 

@@ -206,9 +206,12 @@ class EnvVarRow extends StatelessWidget {
                   shown,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  // A credential the user copies into their own env — mono via
+                  // the token, so `l`/`1` and `0`/`O` stay apart. See [AppFont].
                   style: TextStyle(
                     color: AppPalette.textPrimary,
-                    fontFamily: 'monospace',
+                    fontFamily: AppFont.mono,
+                    fontFamilyFallback: AppFont.monoFallback,
                     fontSize: 13,
                   ),
                 ),
