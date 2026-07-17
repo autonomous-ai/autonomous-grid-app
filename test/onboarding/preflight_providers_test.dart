@@ -42,8 +42,9 @@ ProviderContainer _containerWith(GridCliService cli, {GridHomeStore? store}) {
 void main() {
   test('runs grid sync right after a successful version check', () async {
     final cli = _RecordingCli()
-      ..stubResult(['--version'],
-          const CliResult(exitCode: 0, stdout: 'grid 0.2.0', stderr: ''));
+      ..stubResult([
+        '--version',
+      ], const CliResult(exitCode: 0, stdout: 'grid 0.2.0', stderr: ''));
     final container = _containerWith(cli);
 
     final report = await container.read(preflightProvider.future);
@@ -55,8 +56,9 @@ void main() {
 
   test('skips sync when the grid CLI is unavailable', () async {
     final cli = _RecordingCli()
-      ..stubResult(['--version'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'boom'));
+      ..stubResult([
+        '--version',
+      ], const CliResult(exitCode: 1, stdout: '', stderr: 'boom'));
     final container = _containerWith(cli);
 
     final report = await container.read(preflightProvider.future);
@@ -67,14 +69,19 @@ void main() {
 
   test('triggers session recovery when grid sync reports an expiry', () async {
     final cli = _RecordingCli()
-      ..stubResult(['--version'],
-          const CliResult(exitCode: 0, stdout: 'grid 0.2.0', stderr: ''))
-      ..stubResult(['sync'], const CliResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: 'Grid session expired or invalid. '
-                'Run `grid auth login` to sign in again.',
-          ));
+      ..stubResult([
+        '--version',
+      ], const CliResult(exitCode: 0, stdout: 'grid 0.2.0', stderr: ''))
+      ..stubResult(
+        ['sync'],
+        const CliResult(
+          exitCode: 1,
+          stdout: '',
+          stderr:
+              'Grid session expired or invalid. '
+              'Run `grid auth login` to sign in again.',
+        ),
+      );
     final container = _containerWith(cli, store: const _EmptyStore());
 
     final report = await container.read(preflightProvider.future);
@@ -88,10 +95,13 @@ void main() {
 
   test('leaves the session healthy on an ordinary sync failure', () async {
     final cli = _RecordingCli()
-      ..stubResult(['--version'],
-          const CliResult(exitCode: 0, stdout: 'grid 0.2.0', stderr: ''))
-      ..stubResult(['sync'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'Network unreachable'));
+      ..stubResult([
+        '--version',
+      ], const CliResult(exitCode: 0, stdout: 'grid 0.2.0', stderr: ''))
+      ..stubResult(
+        ['sync'],
+        const CliResult(exitCode: 1, stdout: '', stderr: 'Network unreachable'),
+      );
     final container = _containerWith(cli, store: const _EmptyStore());
 
     await container.read(preflightProvider.future);

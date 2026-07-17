@@ -11,8 +11,10 @@ void main() {
     parser.feed('Code: AB-12');
 
     expect(parser.result, isNotNull);
-    expect(parser.result!.url,
-        'https://staging.example/grid/device-login?user_code=AB-12');
+    expect(
+      parser.result!.url,
+      'https://staging.example/grid/device-login?user_code=AB-12',
+    );
     expect(parser.result!.userCode, 'AB-12');
   });
 

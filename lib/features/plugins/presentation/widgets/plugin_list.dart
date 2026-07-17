@@ -66,8 +66,14 @@ class PluginList extends StatelessWidget {
   List<_Item> _sectioned(List<HermesPlugin> plugins) {
     if (filtered) return [for (final p in plugins) _Row(p)];
 
-    final on = [for (final p in plugins) if (p.enabled) p];
-    final off = [for (final p in plugins) if (!p.enabled) p];
+    final on = [
+      for (final p in plugins)
+        if (p.enabled) p,
+    ];
+    final off = [
+      for (final p in plugins)
+        if (!p.enabled) p,
+    ];
     if (on.isEmpty || off.isEmpty) return [for (final p in plugins) _Row(p)];
 
     return [

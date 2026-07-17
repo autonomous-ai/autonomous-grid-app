@@ -44,15 +44,18 @@ void main() {
   group('networkMembersProvider', () {
     test('returns the members on success', () async {
       final container = _container(
-        list: ({required apiUrl, required sessionToken, required networkId}) async =>
-            ([_member], null),
+        list:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+            }) async => ([_member], null),
       );
 
       final members = await _readMembers(container);
 
       expect(members.single.email, 'a@example.com');
     });
-
   });
 
   group('addMemberActionProvider', () {
@@ -60,17 +63,18 @@ void main() {
       String? sentEmail;
       List<String>? sentRoles;
       final container = _container(
-        add: ({
-          required apiUrl,
-          required sessionToken,
-          required networkId,
-          required email,
-          required roles,
-        }) async {
-          sentEmail = email;
-          sentRoles = roles;
-          return (_member, null);
-        },
+        add:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+              required email,
+              required roles,
+            }) async {
+              sentEmail = email;
+              sentRoles = roles;
+              return (_member, null);
+            },
       );
 
       final error = await container.read(addMemberActionProvider)(
@@ -86,14 +90,14 @@ void main() {
 
     test('surfaces the API error message', () async {
       final container = _container(
-        add: ({
-          required apiUrl,
-          required sessionToken,
-          required networkId,
-          required email,
-          required roles,
-        }) async =>
-            (null, "You've reached your plan's member limit."),
+        add:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+              required email,
+              required roles,
+            }) async => (null, "You've reached your plan's member limit."),
       );
 
       final error = await container.read(addMemberActionProvider)(
@@ -108,16 +112,17 @@ void main() {
     test('fails fast when not signed in, without calling the API', () async {
       var called = false;
       final container = _container(
-        add: ({
-          required apiUrl,
-          required sessionToken,
-          required networkId,
-          required email,
-          required roles,
-        }) async {
-          called = true;
-          return (_member, null);
-        },
+        add:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+              required email,
+              required roles,
+            }) async {
+              called = true;
+              return (_member, null);
+            },
         sessionToken: null,
       );
 
@@ -135,8 +140,13 @@ void main() {
   group('removeMemberActionProvider', () {
     test('returns null on success', () async {
       final container = _container(
-        remove: ({required apiUrl, required sessionToken, required networkId, required email}) async =>
-            (true, null),
+        remove:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+              required email,
+            }) async => (true, null),
       );
 
       final error = await container.read(removeMemberActionProvider)(
@@ -149,8 +159,13 @@ void main() {
 
     test('surfaces the API error message', () async {
       final container = _container(
-        remove: ({required apiUrl, required sessionToken, required networkId, required email}) async =>
-            (false, 'Network owner cannot be removed.'),
+        remove:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+              required email,
+            }) async => (false, 'Network owner cannot be removed.'),
       );
 
       final error = await container.read(removeMemberActionProvider)(

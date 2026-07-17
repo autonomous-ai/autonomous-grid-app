@@ -24,7 +24,10 @@ void main() {
   group('MediaOperation', () {
     test('paths and capabilities match the relay contract', () {
       expect(MediaOperation.imageGenerate.path, 'media/image/generate');
-      expect(MediaOperation.imageGenerate.capability, 'comfyui:image_generation');
+      expect(
+        MediaOperation.imageGenerate.capability,
+        'comfyui:image_generation',
+      );
       expect(MediaOperation.imageEdit.path, 'media/image/edit');
       expect(MediaOperation.imageEdit.capability, 'comfyui:image_editing');
       expect(MediaOperation.i2v.path, 'media/video/i2v');
@@ -33,30 +36,35 @@ void main() {
   });
 
   group('payloads', () {
-    test('imageGeneratePayload carries capability, prompt and 1024² defaults', () {
-      final payload = imageGeneratePayload('a mug');
-      expect(payload['capability'], 'comfyui:image_generation');
-      expect(payload['prompt'], 'a mug');
-      expect(payload['width'], 1024);
-      expect(payload['height'], 1024);
-      expect(payload['steps'], 4);
-    });
+    test(
+      'imageGeneratePayload carries capability, prompt and 1024² defaults',
+      () {
+        final payload = imageGeneratePayload('a mug');
+        expect(payload['capability'], 'comfyui:image_generation');
+        expect(payload['prompt'], 'a mug');
+        expect(payload['width'], 1024);
+        expect(payload['height'], 1024);
+        expect(payload['steps'], 4);
+      },
+    );
 
-    test('imageEditPayload encodes each source image as {filename, content_base64}',
-        () {
-      final img = MediaAttachment(
-        filename: 'in.png',
-        bytes: Uint8List.fromList([1, 2, 3]),
-      );
-      final payload = imageEditPayload('brighten it', [img]);
-      expect(payload['capability'], 'comfyui:image_editing');
-      final images = payload['input_images'] as List;
-      expect(images, hasLength(1));
-      expect(images.first, {
-        'filename': 'in.png',
-        'content_base64': base64.encode([1, 2, 3]),
-      });
-    });
+    test(
+      'imageEditPayload encodes each source image as {filename, content_base64}',
+      () {
+        final img = MediaAttachment(
+          filename: 'in.png',
+          bytes: Uint8List.fromList([1, 2, 3]),
+        );
+        final payload = imageEditPayload('brighten it', [img]);
+        expect(payload['capability'], 'comfyui:image_editing');
+        final images = payload['input_images'] as List;
+        expect(images, hasLength(1));
+        expect(images.first, {
+          'filename': 'in.png',
+          'content_base64': base64.encode([1, 2, 3]),
+        });
+      },
+    );
 
     test('i2vPayload attaches a single input image plus motion defaults', () {
       final img = MediaAttachment(

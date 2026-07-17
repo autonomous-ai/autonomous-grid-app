@@ -13,7 +13,9 @@ import 'package:grid_app/infrastructure/state/models/network_config.dart';
 void main() {
   group('MemberEntry (§3.1)', () {
     test('parses an allowlist row', () {
-      final m = MemberEntry.parse('a@x.com\tactive\tprovider,consumer\tepoch=3');
+      final m = MemberEntry.parse(
+        'a@x.com\tactive\tprovider,consumer\tepoch=3',
+      );
       expect(m, isNotNull);
       expect(m!.email, 'a@x.com');
       expect(m.status, 'active');
@@ -49,12 +51,15 @@ void main() {
       expect(c.target, isNull);
       expect(c.minVramGb, 24);
       expect(c.kind, 'llm');
-      expect(c.pullSpec,
-          'unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q5_K_XL.gguf');
+      expect(
+        c.pullSpec,
+        'unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q5_K_XL.gguf',
+      );
     });
 
     test('parses an entry with a target prefix', () {
-      const line = '  big-model  org/repo/file.gguf (linux nvidia, min 48 GB, llm)';
+      const line =
+          '  big-model  org/repo/file.gguf (linux nvidia, min 48 GB, llm)';
       final c = CatalogEntry.parse(line);
       expect(c, isNotNull);
       expect(c!.target, 'linux nvidia');
@@ -64,7 +69,9 @@ void main() {
 
   group('DownloadProgress (§3.4)', () {
     test('parses the full bar form', () {
-      final p = DownloadProgress.parse('[####    ]    123.4 / 456.7 MB ( 27.0%)');
+      final p = DownloadProgress.parse(
+        '[####    ]    123.4 / 456.7 MB ( 27.0%)',
+      );
       expect(p, isNotNull);
       expect(p!.doneMb, 123.4);
       expect(p.totalMb, 456.7);
@@ -90,7 +97,8 @@ void main() {
   group('ChatChunk (§4.1)', () {
     test('extracts delta content', () {
       final c = ChatChunk.fromSseData(
-          '{"choices":[{"delta":{"content":"hi"},"finish_reason":null}]}');
+        '{"choices":[{"delta":{"content":"hi"},"finish_reason":null}]}',
+      );
       expect(c!.deltaContent, 'hi');
     });
 
@@ -102,14 +110,16 @@ void main() {
   group('MediaEvent (§4.2)', () {
     test('progress', () {
       final e = MediaEvent.fromSseData(
-          '{"type":"progress","progress":42,"status":"running"}');
+        '{"type":"progress","progress":42,"status":"running"}',
+      );
       expect(e, isA<MediaProgress>());
       expect((e as MediaProgress).progress, 42);
     });
 
     test('result with output files', () {
       final e = MediaEvent.fromSseData(
-          '{"type":"result","output_files":[{"filename":"a.png","content_base64":"AAAA"}]}');
+        '{"type":"result","output_files":[{"filename":"a.png","content_base64":"AAAA"}]}',
+      );
       expect(e, isA<MediaResult>());
       expect((e as MediaResult).files.single.filename, 'a.png');
     });
@@ -149,8 +159,7 @@ refresh_expires_at = 1700600000
 ''';
 
     test('parses session, user and active network with helpers', () {
-      final creds =
-          CredentialsFile.fromToml(TomlDocument.parse(toml).toMap());
+      final creds = CredentialsFile.fromToml(TomlDocument.parse(toml).toMap());
       expect(creds.isLoggedIn, isTrue);
       expect(creds.userEmail, 'dev@autonomous.ai');
       final active = creds.active!;

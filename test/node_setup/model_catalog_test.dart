@@ -22,8 +22,10 @@ void main() {
     final entries = ModelCatalog.parse(_output);
     expect(entries, hasLength(2));
     expect(entries.first.label, 'qwen36-35b-a3b-mtp');
-    expect(entries.first.repoFile,
-        'unsloth/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-UD-IQ3_S.gguf');
+    expect(
+      entries.first.repoFile,
+      'unsloth/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
+    );
     expect(entries.first.isLanguage, isTrue);
     expect(entries[1].kind, 'embedding');
   });
@@ -32,19 +34,24 @@ void main() {
     expect(ModelCatalog.parse('(no local models)\n'), isEmpty);
   });
 
-  test('defaultLanguageModel prefers a language entry over embeddings', () async {
-    final fake = FakeGridCliService()
-      ..stubResult(['catalog'],
-          const CliResult(exitCode: 0, stdout: _output, stderr: ''));
+  test(
+    'defaultLanguageModel prefers a language entry over embeddings',
+    () async {
+      final fake = FakeGridCliService()
+        ..stubResult([
+          'catalog',
+        ], const CliResult(exitCode: 0, stdout: _output, stderr: ''));
 
-    final model = await ModelCatalog(fake).defaultLanguageModel();
-    expect(model!.label, 'qwen36-35b-a3b-mtp');
-  });
+      final model = await ModelCatalog(fake).defaultLanguageModel();
+      expect(model!.label, 'qwen36-35b-a3b-mtp');
+    },
+  );
 
   test('defaultLanguageModel is null when the CLI fails', () async {
     final fake = FakeGridCliService()
-      ..stubResult(['catalog'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'boom'));
+      ..stubResult([
+        'catalog',
+      ], const CliResult(exitCode: 1, stdout: '', stderr: 'boom'));
 
     expect(await ModelCatalog(fake).defaultLanguageModel(), isNull);
   });

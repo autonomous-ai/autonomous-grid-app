@@ -52,11 +52,14 @@ class GridCapabilitiesSection extends ConsumerWidget {
         const CapabilityChip(icon: Icons.movie_outlined, label: 'Video'),
     ];
     if (chips.isEmpty) return const SizedBox.shrink();
+    // Sits tight under the meta line as one more fact about the grid, in the
+    // same register — it used to float in a gap of its own between the stats
+    // card and the action card, anchored to nothing.
     return Padding(
-      padding: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.only(top: 6),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+        spacing: 10,
+        runSpacing: 6,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Text(
@@ -88,17 +91,16 @@ class GridNodesSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 14),
-        const SectionHeading(
+        const SizedBox(height: 24),
+        SectionHeading(
           title: 'Nodes',
           subtitle:
               'Independent machines pooling their compute to serve this grid.',
+          count: nodes.length,
         ),
-        const SizedBox(height: 14),
-        for (final n in nodes) ...[
-          NodeTile(node: n),
-          const SizedBox(height: 10),
-        ],
+        const SizedBox(height: 12),
+        // Same shape as Models above — one card, hairline-separated.
+        TileGroup(children: [for (final n in nodes) NodeTile(node: n)]),
       ],
     );
   }
@@ -118,15 +120,16 @@ class GridModelsSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 24),
-        const SectionHeading(
+        SectionHeading(
           title: 'Models',
           subtitle: 'Copy a model ID to use it with the API above.',
+          // The count belongs on the heading now that the stats bar no longer
+          // announces it in 24pt above.
+          count: models.length,
         ),
-        const SizedBox(height: 14),
-        for (final m in models) ...[
-          ModelTile(model: m),
-          const SizedBox(height: 10),
-        ],
+        const SizedBox(height: 12),
+        // One card, hairline-separated — not one card per model. See [TileGroup].
+        TileGroup(children: [for (final m in models) ModelTile(model: m)]),
       ],
     );
   }

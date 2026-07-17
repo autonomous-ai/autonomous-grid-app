@@ -219,21 +219,26 @@ class _SetUpThisGrid extends ConsumerWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
+              // Both of these jump to a settings section, so both wear that
+              // section's own glyph — taken from [ShellSection], not typed in
+              // again here. "Set up engine" used to carry a DNS mark while the
+              // screen it opens is a server: one action, two symbols, and
+              // nothing linking the button to where it lands.
               FilledButton.icon(
                 onPressed: () => ref
                     .read(shellSectionProvider.notifier)
                     .select(ShellSection.engines),
-                icon: const Icon(Icons.dns_outlined, size: AppControl.iconSize),
+                icon: Icon(
+                  ShellSection.engines.icon,
+                  size: AppControl.iconSize,
+                ),
                 label: const Text('Set up engine'),
               ),
               OutlinedButton.icon(
                 onPressed: () => ref
                     .read(shellSectionProvider.notifier)
                     .select(ShellSection.guide),
-                icon: const Icon(
-                  Icons.help_outline_rounded,
-                  size: AppControl.iconSize,
-                ),
+                icon: Icon(ShellSection.guide.icon, size: AppControl.iconSize),
                 label: const Text('How it works'),
               ),
             ],
@@ -311,14 +316,14 @@ class _TryThisGrid extends ConsumerWidget {
                 ),
                 label: const Text('Try it'),
               ),
+              // Jumps to the guide, so it wears the guide's own glyph — see the
+              // note on [_SetUpThisGrid]'s pair above. ("Try it" opens a dialog
+              // rather than a section, so its chat mark stays its own.)
               OutlinedButton.icon(
                 onPressed: () => ref
                     .read(shellSectionProvider.notifier)
                     .select(ShellSection.guide),
-                icon: const Icon(
-                  Icons.help_outline_rounded,
-                  size: AppControl.iconSize,
-                ),
+                icon: Icon(ShellSection.guide.icon, size: AppControl.iconSize),
                 label: const Text('How to use'),
               ),
             ],
@@ -400,9 +405,18 @@ class _DeleteGridButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final deleting =
         ref.watch(deleteNetworkControllerProvider) is DeleteNetworkDeleting;
-    // Its own block: a divider sets it apart, and the affordance stays small +
-    // muted so it doesn't compete with the primary content — it only reads as
-    // "danger" once tapped (the confirm dialog).
+    final error = Theme.of(context).colorScheme.error;
+    // Its own block at the foot of the pane, set off by a divider and kept at
+    // the compact scale so it never competes with the grid's real content.
+    //
+    // But it is *named* for what it does. It used to be drawn in
+    // [AppPalette.textFaint] on the theory that danger should only appear in the
+    // confirm dialog — which measured at 3.3:1 (light), below the 4.5:1 a label
+    // needs and squarely in the range this app uses for disabled text. So the
+    // one irreversible action on the screen was the faintest thing on it, and
+    // its own confirm dialog then answered in red: you learned what the button
+    // was only after pressing it. Small and last is how you keep an action out
+    // of the way; greying it out to the point of looking dead is not.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -410,12 +424,13 @@ class _DeleteGridButton extends ConsumerWidget {
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: deleting ? null : () => _confirmAndDelete(context, ref),
-          // Deliberately small and muted (see above) — the compact scale, with
-          // the faint label colour that keeps it from reading as "danger".
           style: TextButton.styleFrom(
-            foregroundColor: AppPalette.textFaint,
+            foregroundColor: error,
+            // The wash only appears under the pointer — at rest the button is
+            // just its label, which is what keeps it quiet.
+            overlayColor: error,
             minimumSize: const Size(0, AppControl.heightSmall),
-            padding: AppControl.paddingSmall,
+            padding: AppControl.paddingSmallIcon,
           ),
           icon: deleting
               ? const AppSpinner(size: SpinnerSize.small)
@@ -440,6 +455,11 @@ class _DeleteGridButton extends ConsumerWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
+              // Ink, not accent — matching the other grid dialogs, where the
+              // colour belongs to the one button that acts.
+              style: TextButton.styleFrom(
+                foregroundColor: AppPalette.textSecondary,
+              ),
               child: const Text('Cancel'),
             ),
             FilledButton(

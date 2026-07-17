@@ -50,7 +50,10 @@ void main() {
         exitDelay: const Duration(milliseconds: 10),
         lines: const [
           CliLine(isStderr: false, text: 'Open this URL...'),
-          CliLine(isStderr: false, text: 'https://x/device-login?user_code=AB-12'),
+          CliLine(
+            isStderr: false,
+            text: 'https://x/device-login?user_code=AB-12',
+          ),
           CliLine(isStderr: false, text: 'Code: AB-12'),
         ],
       );
@@ -76,8 +79,9 @@ void main() {
     // authenticated user stuck on the login screen.
     final fake = FakeGridCliService()
       ..stubStart(['login', '--no-browser'], lines: const [], exitCode: 0)
-      ..stubResult(const ['sync'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'session expired'));
+      ..stubResult(const [
+        'sync',
+      ], const CliResult(exitCode: 1, stdout: '', stderr: 'session expired'));
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(fake)],
     );
@@ -92,28 +96,32 @@ void main() {
     expect(container.read(sessionExpiryProvider), SessionExpiry.healthy);
   });
 
-  test('login shows a friendly message on non-zero exit (no raw stderr)',
-      () async {
-    final fake = FakeGridCliService()
-      ..stubStart(
-        ['login', '--no-browser'],
-        exitCode: 1,
-        lines: const [CliLine(isStderr: true, text: 'Grid browser login expired.')],
+  test(
+    'login shows a friendly message on non-zero exit (no raw stderr)',
+    () async {
+      final fake = FakeGridCliService()
+        ..stubStart(
+          ['login', '--no-browser'],
+          exitCode: 1,
+          lines: const [
+            CliLine(isStderr: true, text: 'Grid browser login expired.'),
+          ],
+        );
+      final container = ProviderContainer(
+        overrides: [gridCliServiceProvider.overrideWithValue(fake)],
       );
-    final container = ProviderContainer(
-      overrides: [gridCliServiceProvider.overrideWithValue(fake)],
-    );
-    addTearDown(container.dispose);
+      addTearDown(container.dispose);
 
-    await container.read(authControllerProvider.notifier).login();
+      await container.read(authControllerProvider.notifier).login();
 
-    final state = container.read(authControllerProvider);
-    expect(state, isA<AuthFailure>());
-    // Raw CLI stderr is mapped to plain language, not surfaced verbatim.
-    final message = (state as AuthFailure).message;
-    expect(message, contains('try again'));
-    expect(message, isNot(contains('Grid browser login')));
-  });
+      final state = container.read(authControllerProvider);
+      expect(state, isA<AuthFailure>());
+      // Raw CLI stderr is mapped to plain language, not surfaced verbatim.
+      final message = (state as AuthFailure).message;
+      expect(message, contains('try again'));
+      expect(message, isNot(contains('Grid browser login')));
+    },
+  );
 
   test('login fails fast when grid is absent', () async {
     final container = ProviderContainer(
@@ -131,7 +139,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         gridCliServiceProvider.overrideWithValue(cli),
-        gridHomeStoreProvider.overrideWithValue(_FakeStore(CredentialsFile.empty)),
+        gridHomeStoreProvider.overrideWithValue(
+          _FakeStore(CredentialsFile.empty),
+        ),
       ],
     );
     addTearDown(container.dispose);

@@ -16,8 +16,7 @@ ManagedNetworkDeleteFn _stubDelete((bool, ManagedNetworkError?) result) {
     required String apiUrl,
     required String sessionToken,
     required String networkId,
-  }) async =>
-      result;
+  }) async => result;
 }
 
 /// A [FakeGridCliService] that records the commands it's asked to run.
@@ -51,15 +50,20 @@ ProviderContainer _container({
 
 void main() {
   test('deletes, syncs the local list, then reports done', () async {
-    final container =
-        _container(delete: _stubDelete((true, null)), cli: FakeGridCliService());
+    final container = _container(
+      delete: _stubDelete((true, null)),
+      cli: FakeGridCliService(),
+    );
 
-    final error =
-        await container.read(deleteNetworkControllerProvider.notifier).delete(_net);
+    final error = await container
+        .read(deleteNetworkControllerProvider.notifier)
+        .delete(_net);
 
     expect(error, isNull);
-    expect(container.read(deleteNetworkControllerProvider),
-        isA<DeleteNetworkDone>());
+    expect(
+      container.read(deleteNetworkControllerProvider),
+      isA<DeleteNetworkDone>(),
+    );
   });
 
   test('runs `grid sync` after a successful delete', () async {
@@ -80,8 +84,9 @@ void main() {
       cli: FakeGridCliService(),
     );
 
-    final error =
-        await container.read(deleteNetworkControllerProvider.notifier).delete(_net);
+    final error = await container
+        .read(deleteNetworkControllerProvider.notifier)
+        .delete(_net);
 
     expect(error, contains('owner'));
     final state = container.read(deleteNetworkControllerProvider);
@@ -108,11 +113,14 @@ void main() {
       sessionToken: null,
     );
 
-    final error =
-        await container.read(deleteNetworkControllerProvider.notifier).delete(_net);
+    final error = await container
+        .read(deleteNetworkControllerProvider.notifier)
+        .delete(_net);
 
     expect(error, isNotNull);
-    expect(container.read(deleteNetworkControllerProvider),
-        isA<DeleteNetworkFailed>());
+    expect(
+      container.read(deleteNetworkControllerProvider),
+      isA<DeleteNetworkFailed>(),
+    );
   });
 }

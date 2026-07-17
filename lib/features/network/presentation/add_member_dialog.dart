@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/managed_network_member.dart';
+import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/member_providers.dart';
 
@@ -99,6 +101,7 @@ class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const FieldLabel('Email'),
             TextField(
               controller: _email,
               autofocus: true,
@@ -106,8 +109,8 @@ class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submit(),
+              style: kFieldTextStyle,
               decoration: const InputDecoration(
-                labelText: 'Email',
                 hintText: 'teammate@example.com',
               ),
             ),
@@ -121,13 +124,16 @@ class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
       actions: [
         TextButton(
           onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          // Ink, not accent — the accent belongs to Add alone. See the same
+          // note on [CreateNetworkDialog].
+          style: TextButton.styleFrom(
+            foregroundColor: AppPalette.textSecondary,
+          ),
           child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: _submitting ? null : _submit,
-          child: _submitting
-              ? const AppSpinner.onAccent()
-              : const Text('Add'),
+          child: _submitting ? const AppSpinner.onAccent() : const Text('Add'),
         ),
       ],
     );

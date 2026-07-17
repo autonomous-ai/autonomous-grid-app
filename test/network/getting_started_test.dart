@@ -10,23 +10,22 @@ NetworkCredential _network(
   String id, {
   required List<String> scopes,
   List<String> roles = const ['member'],
-}) =>
-    NetworkCredential(
-      networkId: id,
-      name: id,
-      networkType: 'permissioned',
-      lanSignalingUrl: 'http://127.0.0.1:8090',
-      accessToken: 'tok-$id',
-      refreshToken: '',
-      email: 'dev@x.com',
-      nodeId: 'node-$id',
-      deviceId: 'dev',
-      roles: roles,
-      scopes: scopes,
-      memberEpoch: 1,
-      networkEpoch: 1,
-      expiresAt: 0,
-    );
+}) => NetworkCredential(
+  networkId: id,
+  name: id,
+  networkType: 'permissioned',
+  lanSignalingUrl: 'http://127.0.0.1:8090',
+  accessToken: 'tok-$id',
+  refreshToken: '',
+  email: 'dev@x.com',
+  nodeId: 'node-$id',
+  deviceId: 'dev',
+  roles: roles,
+  scopes: scopes,
+  memberEpoch: 1,
+  networkEpoch: 1,
+  expiresAt: 0,
+);
 
 class _FakeStore extends GridHomeStore {
   const _FakeStore(this.credentials);
@@ -50,8 +49,10 @@ ProviderContainer _containerWith(List<NetworkCredential> networks) {
 
 void main() {
   final consumer = _network('grid-con', scopes: const ['consumer:chat']);
-  final provider =
-      _network('grid-prov', scopes: const ['consumer:chat', 'provider:poll']);
+  final provider = _network(
+    'grid-prov',
+    scopes: const ['consumer:chat', 'provider:poll'],
+  );
 
   test('consumer-only account has no manageable grid and sees the coach', () {
     final container = _containerWith([consumer]);

@@ -51,9 +51,7 @@ class FileMentionMenu extends ConsumerWidget {
         AsyncError() => const _Message('Could not read this folder.'),
         _ => const Padding(
           padding: EdgeInsets.all(16),
-          child: Center(
-            child: AppSpinner(size: SpinnerSize.large),
-          ),
+          child: Center(child: AppSpinner(size: SpinnerSize.large)),
         ),
       },
     );

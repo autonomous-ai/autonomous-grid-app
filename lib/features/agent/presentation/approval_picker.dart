@@ -172,12 +172,7 @@ class _MenuHeading extends StatelessWidget {
       // Lines up on the rows' icon chips: their outer gutter plus their inner
       // pad. Spelled as the sum so it tracks the row when either changes — it
       // used to be the hand-added answer, 18.
-      padding: const EdgeInsets.fromLTRB(
-        _rowGutter + _rowInnerPad,
-        8,
-        14,
-        9,
-      ),
+      padding: const EdgeInsets.fromLTRB(_rowGutter + _rowInnerPad, 8, 14, 9),
       child: Text(
         'What may the assistant do on this computer?',
         style: TextStyle(

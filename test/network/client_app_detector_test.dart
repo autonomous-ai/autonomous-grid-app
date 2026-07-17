@@ -7,12 +7,11 @@ const _home = '/home/u';
 ClientAppDetector _detector({
   Set<String> dirs = const {},
   Set<String> executables = const {},
-}) =>
-    ClientAppDetector(
-      home: _home,
-      dirExists: dirs.contains,
-      findExecutable: (name) => executables.contains(name) ? '/bin/$name' : null,
-    );
+}) => ClientAppDetector(
+  home: _home,
+  dirExists: dirs.contains,
+  findExecutable: (name) => executables.contains(name) ? '/bin/$name' : null,
+);
 
 void main() {
   test('a present config directory marks the app installed', () {

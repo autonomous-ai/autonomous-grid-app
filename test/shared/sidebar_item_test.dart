@@ -5,13 +5,12 @@ import 'package:grid_app/shared/layouts/widgets/sidebar_item.dart';
 
 void main() {
   Widget host(Widget child) => MaterialApp(
-    home: Scaffold(
-      body: SizedBox(width: 264, child: child),
-    ),
+    home: Scaffold(body: SizedBox(width: 264, child: child)),
   );
 
-  testWidgets('tap fires onTap and the press dip settles back to full size',
-      (tester) async {
+  testWidgets('tap fires onTap and the press dip settles back to full size', (
+    tester,
+  ) async {
     var taps = 0;
     await tester.pumpWidget(
       host(
@@ -43,11 +42,7 @@ void main() {
   testWidgets('hover drifts the icon without resizing the row', (tester) async {
     await tester.pumpWidget(
       host(
-        SidebarItem(
-          icon: Icons.edit_outlined,
-          label: 'New chat',
-          onTap: () {},
-        ),
+        SidebarItem(icon: Icons.edit_outlined, label: 'New chat', onTap: () {}),
       ),
     );
 

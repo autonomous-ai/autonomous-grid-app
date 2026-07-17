@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/create_network_controller.dart';
 
@@ -82,6 +83,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const FieldLabel('Name'),
             TextField(
               controller: _name,
               autofocus: true,
@@ -89,28 +91,27 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
               maxLength: 64,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submit(),
+              style: kFieldTextStyle,
               decoration: const InputDecoration(
-                labelText: 'Name',
                 hintText: 'my-team-grid',
                 counterText: '',
               ),
             ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<ManagedNetworkType>(
-              initialValue: _type,
-              decoration: const InputDecoration(labelText: 'Type'),
-              onChanged: submitting
-                  ? null
-                  : (value) => setState(() => _type = value ?? _type),
-              items: [
-                for (final type in ManagedNetworkType.values)
-                  DropdownMenuItem(value: type, child: Text(type.label)),
-              ],
+            const SizedBox(height: 14),
+            const FieldLabel('Type'),
+            _TypePicker(
+              value: _type,
+              enabled: !submitting,
+              onChanged: (value) => setState(() => _type = value),
             ),
             const SizedBox(height: 8),
             Text(
               _type.description,
-              style: TextStyle(color: AppPalette.textSecondary, fontSize: 12),
+              style: TextStyle(
+                color: AppPalette.textSecondary,
+                fontSize: 12,
+                height: 1.35,
+              ),
             ),
             if (error != null) ...[
               const SizedBox(height: 14),
@@ -122,6 +123,12 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
       actions: [
         TextButton(
           onPressed: submitting ? null : () => Navigator.of(context).pop(),
+          // Ink, not accent. Cancel is the way out, not a suggestion — the
+          // accent belongs to Create alone, and two blue words in one corner
+          // give the dialog two things that look like the answer.
+          style: TextButton.styleFrom(
+            foregroundColor: AppPalette.textSecondary,
+          ),
           child: const Text('Cancel'),
         ),
         FilledButton(
@@ -131,6 +138,104 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
               : const Text('Create'),
         ),
       ],
+    );
+  }
+}
+
+/// The grid's visibility, as a two-way segmented control.
+///
+/// It was a dropdown, which is the wrong instrument for two options: it costs a
+/// click, a menu, a read and a second click to flip what is really a switch —
+/// and until that first click it *hides* the other choice, so you couldn't tell
+/// a private grid was even possible. Laid out flat, both options are readable
+/// before you touch anything, and picking one is a single click.
+///
+/// It also stopped a dropdown from wearing [InputDecoration], the recipe for a
+/// box you *type* in. That's why it read as a disabled text field: same fill,
+/// same rim, no affordance saying it opens.
+///
+/// Shaped after [ThemeModePicker]'s control — a recessed groove with the picked
+/// cell lifted in accent — but built here rather than shared: that one stacks a
+/// glyph over its label to survive a ~70px cell in a narrow menu, and this
+/// dialog is 380px wide with no glyphs and two cells.
+class _TypePicker extends StatelessWidget {
+  const _TypePicker({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final ManagedNetworkType value;
+  final bool enabled;
+  final ValueChanged<ManagedNetworkType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppSurface.recess,
+          borderRadius: BorderRadius.circular(AppControl.radius + 2),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: Row(
+            children: [
+              for (final type in ManagedNetworkType.values)
+                Expanded(
+                  child: _TypeSegment(
+                    label: type.label,
+                    selected: type == value,
+                    onTap: enabled ? () => onChanged(type) : null,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One cell of [_TypePicker].
+class _TypeSegment extends StatelessWidget {
+  const _TypeSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = selected ? Colors.white : AppPalette.textSecondary;
+    return Material(
+      color: selected ? AppPalette.accent : Colors.transparent,
+      borderRadius: BorderRadius.circular(AppControl.radius),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppControl.radius),
+        onTap: onTap,
+        child: SizedBox(
+          height: AppControl.height,
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontFamily: AppFont.sans,
+                fontFamilyFallback: AppFont.sansFallback,
+                fontSize: AppControl.fontSize,
+                fontWeight: FontWeight.w600,
+                color: foreground,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

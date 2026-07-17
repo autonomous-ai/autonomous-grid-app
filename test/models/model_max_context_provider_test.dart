@@ -26,23 +26,32 @@ void main() {
       );
     final container = _container(fake);
 
-    expect(await container.read(modelMaxContextProvider('qwen.gguf').future),
-        262144);
+    expect(
+      await container.read(modelMaxContextProvider('qwen.gguf').future),
+      262144,
+    );
   });
 
   test('returns null when the ctx command fails', () async {
     final fake = FakeGridCliService()
-      ..stubResult(const ['ctx', '--json', 'qwen.gguf'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'no such model'));
+      ..stubResult(const [
+        'ctx',
+        '--json',
+        'qwen.gguf',
+      ], const CliResult(exitCode: 1, stdout: '', stderr: 'no such model'));
     final container = _container(fake);
 
     expect(
-        await container.read(modelMaxContextProvider('qwen.gguf').future), isNull);
+      await container.read(modelMaxContextProvider('qwen.gguf').future),
+      isNull,
+    );
   });
 
   test('returns null when the CLI is unavailable', () async {
     final container = _container(null);
-    expect(await container.read(modelMaxContextProvider('qwen.gguf').future),
-        isNull);
+    expect(
+      await container.read(modelMaxContextProvider('qwen.gguf').future),
+      isNull,
+    );
   });
 }

@@ -3,8 +3,9 @@ import 'package:grid_app/features/models/logic/engine_status.dart';
 
 void main() {
   test('detects the linked llama-server', () {
-    final detector =
-        EngineDetector(exists: (p) => p.endsWith('/bin/llama-server'));
+    final detector = EngineDetector(
+      exists: (p) => p.endsWith('/bin/llama-server'),
+    );
     final status = detector.detect();
     expect(status.llamaInstalled, isTrue);
     expect(status.llamaPath, contains('/bin/llama-server'));

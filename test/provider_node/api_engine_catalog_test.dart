@@ -63,11 +63,16 @@ const _codexCatalog = '''
 
 const _codexArgs = ['catalog', '--api', 'codex', '--json'];
 
-ProviderContainer _container(GridCliService? cli, {Set<String> stored = const {}}) {
-  final container = ProviderContainer(overrides: [
-    gridCliServiceProvider.overrideWithValue(cli),
-    gridHomeStoreProvider.overrideWithValue(_StubStore(stored)),
-  ]);
+ProviderContainer _container(
+  GridCliService? cli, {
+  Set<String> stored = const {},
+}) {
+  final container = ProviderContainer(
+    overrides: [
+      gridCliServiceProvider.overrideWithValue(cli),
+      gridHomeStoreProvider.overrideWithValue(_StubStore(stored)),
+    ],
+  );
   addTearDown(container.dispose);
   return container;
 }
@@ -104,10 +109,7 @@ void main() {
     test('flags codex models in every shape run state can hold', () {
       expect(isResponsesOnlyModel('codex'), isTrue); // bare kind (serve-all)
       expect(isResponsesOnlyModel('codex:gpt-5.4-mini'), isTrue);
-      expect(
-        isResponsesOnlyModel('codex:gpt-5.5, codex:gpt-5.4-mini'),
-        isTrue,
-      );
+      expect(isResponsesOnlyModel('codex:gpt-5.5, codex:gpt-5.4-mini'), isTrue);
     });
 
     test('leaves chat-completions models and empties alone', () {
@@ -119,53 +121,69 @@ void main() {
   });
 
   group('apiEnginesProvider', () {
-    test('resolves a whitelisted provider with its models and stored-key flag',
-        () async {
-      final fake = FakeGridCliService()
-        ..stubResult(_catalogArgs,
-            const CliResult(exitCode: 0, stdout: _openaiCatalog, stderr: ''));
-      final container = _container(fake, stored: const {'openai'});
+    test(
+      'resolves a whitelisted provider with its models and stored-key flag',
+      () async {
+        final fake = FakeGridCliService()
+          ..stubResult(
+            _catalogArgs,
+            const CliResult(exitCode: 0, stdout: _openaiCatalog, stderr: ''),
+          );
+        final container = _container(fake, stored: const {'openai'});
 
-      final engines = await container.read(apiEnginesProvider.future);
+        final engines = await container.read(apiEnginesProvider.future);
 
-      expect(engines, hasLength(1));
-      final engine = engines.single;
-      expect(engine.provider.kind, 'openai');
-      expect(engine.provider.envVar, 'OPENAI_API_KEY');
-      expect(engine.hasStoredKey, isTrue);
-      expect(engine.lastVerified, '2026-07-08');
-      expect(engine.models.map((m) => m.advertised),
-          ['openai:gpt-5.5', 'openai:gpt-5.4-nano']);
-    });
+        expect(engines, hasLength(1));
+        final engine = engines.single;
+        expect(engine.provider.kind, 'openai');
+        expect(engine.provider.envVar, 'OPENAI_API_KEY');
+        expect(engine.hasStoredKey, isTrue);
+        expect(engine.lastVerified, '2026-07-08');
+        expect(engine.models.map((m) => m.advertised), [
+          'openai:gpt-5.5',
+          'openai:gpt-5.4-nano',
+        ]);
+      },
+    );
 
-    test('surfaces codex from its per-tier catalog as a sign-in provider',
-        () async {
-      // Only codex resolves here: openai's catalog is refused so the single
-      // engine is unambiguously the codex one.
-      final fake = FakeGridCliService()
-        ..stubResult(_catalogArgs,
-            const CliResult(exitCode: 1, stdout: '', stderr: 'Unknown'))
-        ..stubResult(_codexArgs,
-            const CliResult(exitCode: 0, stdout: _codexCatalog, stderr: ''));
-      final container = _container(fake, stored: const {'codex'});
+    test(
+      'surfaces codex from its per-tier catalog as a sign-in provider',
+      () async {
+        // Only codex resolves here: openai's catalog is refused so the single
+        // engine is unambiguously the codex one.
+        final fake = FakeGridCliService()
+          ..stubResult(
+            _catalogArgs,
+            const CliResult(exitCode: 1, stdout: '', stderr: 'Unknown'),
+          )
+          ..stubResult(
+            _codexArgs,
+            const CliResult(exitCode: 0, stdout: _codexCatalog, stderr: ''),
+          );
+        final container = _container(fake, stored: const {'codex'});
 
-      final engines = await container.read(apiEnginesProvider.future);
+        final engines = await container.read(apiEnginesProvider.future);
 
-      final codex = engines.singleWhere((e) => e.provider.kind == 'codex');
-      expect(codex.provider.usesSignIn, isTrue);
-      expect(codex.provider.envVar, isNull);
-      expect(codex.hasStoredKey, isTrue); // a stored OAuth seat counts
-      expect(codex.lastVerified, '2026-07-15');
-      // Tiers flattened to a first-wins union — the model shared across tiers
-      // appears once, in first-seen order.
-      expect(codex.models.map((m) => m.advertised),
-          ['codex:gpt-5.6-terra', 'codex:gpt-5.4-mini']);
-    });
+        final codex = engines.singleWhere((e) => e.provider.kind == 'codex');
+        expect(codex.provider.usesSignIn, isTrue);
+        expect(codex.provider.envVar, isNull);
+        expect(codex.hasStoredKey, isTrue); // a stored OAuth seat counts
+        expect(codex.lastVerified, '2026-07-15');
+        // Tiers flattened to a first-wins union — the model shared across tiers
+        // appears once, in first-seen order.
+        expect(codex.models.map((m) => m.advertised), [
+          'codex:gpt-5.6-terra',
+          'codex:gpt-5.4-mini',
+        ]);
+      },
+    );
 
     test('reports no stored key when the store has none', () async {
       final fake = FakeGridCliService()
-        ..stubResult(_catalogArgs,
-            const CliResult(exitCode: 0, stdout: _openaiCatalog, stderr: ''));
+        ..stubResult(
+          _catalogArgs,
+          const CliResult(exitCode: 0, stdout: _openaiCatalog, stderr: ''),
+        );
       final container = _container(fake);
 
       final engines = await container.read(apiEnginesProvider.future);
@@ -175,8 +193,10 @@ void main() {
     test('hides a provider the installed CLI does not whitelist', () async {
       // A non-zero exit is the CLI saying "unknown API kind" — never offer it.
       final fake = FakeGridCliService()
-        ..stubResult(_catalogArgs,
-            const CliResult(exitCode: 1, stdout: '', stderr: 'Unknown API kind'));
+        ..stubResult(
+          _catalogArgs,
+          const CliResult(exitCode: 1, stdout: '', stderr: 'Unknown API kind'),
+        );
       final container = _container(fake);
 
       expect(await container.read(apiEnginesProvider.future), isEmpty);

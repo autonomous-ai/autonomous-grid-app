@@ -73,13 +73,16 @@ void main() {
       expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.dark);
     });
 
-    test('an unset or hand-edited theme reads as Light — the shipped default', () {
-      expect(ChatPrefs.empty.themeMode, ThemeMode.light);
-      file.parent.createSync(recursive: true);
-      file.writeAsStringSync('{"themeMode": "solarized"}');
+    test(
+      'an unset or hand-edited theme reads as Light — the shipped default',
+      () {
+        expect(ChatPrefs.empty.themeMode, ThemeMode.light);
+        file.parent.createSync(recursive: true);
+        file.writeAsStringSync('{"themeMode": "solarized"}');
 
-      expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.light);
-    });
+        expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.light);
+      },
+    );
   });
 
   group('chatPrefsProvider', () {

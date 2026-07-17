@@ -23,14 +23,15 @@ const _created = ManagedNetwork(
   plan: 'free',
 );
 
-ManagedNetworkCreateFn _stubCreate((ManagedNetwork?, ManagedNetworkError?) result) {
+ManagedNetworkCreateFn _stubCreate(
+  (ManagedNetwork?, ManagedNetworkError?) result,
+) {
   return ({
     required String apiUrl,
     required String sessionToken,
     required String name,
     required ManagedNetworkType type,
-  }) async =>
-      result;
+  }) async => result;
 }
 
 /// A [FakeGridCliService] that records the lifecycle commands it's asked to run.
@@ -65,7 +66,9 @@ ProviderContainer _container({
 void main() {
   test('creates the grid, syncs + selects it, then reports done', () async {
     final container = _container(
-        create: _stubCreate((_created, null)), cli: FakeGridCliService());
+      create: _stubCreate((_created, null)),
+      cli: FakeGridCliService(),
+    );
 
     await container
         .read(createNetworkControllerProvider.notifier)
@@ -79,8 +82,10 @@ void main() {
 
   test('syncs then selects the new grid with `grid use`', () async {
     final cli = _RecordingCli();
-    final container =
-        _container(create: _stubCreate((_created, null)), cli: cli);
+    final container = _container(
+      create: _stubCreate((_created, null)),
+      cli: cli,
+    );
 
     await container
         .read(createNetworkControllerProvider.notifier)
@@ -91,8 +96,10 @@ void main() {
 
   test('surfaces the API error and stays failed', () async {
     final container = _container(
-      create: _stubCreate(
-          (null, const ManagedNetworkError('You already own a network with this name.'))),
+      create: _stubCreate((
+        null,
+        const ManagedNetworkError('You already own a network with this name.'),
+      )),
       cli: FakeGridCliService(),
     );
 
@@ -107,10 +114,14 @@ void main() {
 
   test('done with a warning when the local sync fails', () async {
     final fake = FakeGridCliService()
-      ..stubResult(_syncArgs,
-          const CliResult(exitCode: 1, stdout: '', stderr: 'sync refused'));
-    final container =
-        _container(create: _stubCreate((_created, null)), cli: fake);
+      ..stubResult(
+        _syncArgs,
+        const CliResult(exitCode: 1, stdout: '', stderr: 'sync refused'),
+      );
+    final container = _container(
+      create: _stubCreate((_created, null)),
+      cli: fake,
+    );
 
     await container
         .read(createNetworkControllerProvider.notifier)
@@ -132,19 +143,25 @@ void main() {
         .read(createNetworkControllerProvider.notifier)
         .submit(name: 'my-grid', type: ManagedNetworkType.permissionedPublic);
 
-    expect(container.read(createNetworkControllerProvider),
-        isA<CreateNetworkFailed>());
+    expect(
+      container.read(createNetworkControllerProvider),
+      isA<CreateNetworkFailed>(),
+    );
   });
 
   test('rejects an empty name before any call', () async {
-    final container =
-        _container(create: _stubCreate((_created, null)), cli: FakeGridCliService());
+    final container = _container(
+      create: _stubCreate((_created, null)),
+      cli: FakeGridCliService(),
+    );
 
     await container
         .read(createNetworkControllerProvider.notifier)
         .submit(name: '   ', type: ManagedNetworkType.permissionedPublic);
 
-    expect(container.read(createNetworkControllerProvider),
-        isA<CreateNetworkFailed>());
+    expect(
+      container.read(createNetworkControllerProvider),
+      isA<CreateNetworkFailed>(),
+    );
   });
 }

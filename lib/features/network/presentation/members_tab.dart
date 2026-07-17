@@ -8,6 +8,7 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/member_providers.dart';
+import 'detail_widgets.dart';
 
 /// The "Members" tab of a managed grid's detail pane — shown to admins and
 /// providers. Lists active members and lets them invite or remove people via
@@ -138,7 +139,7 @@ class _Header extends StatelessWidget {
         ),
         const Spacer(),
         IconButton(
-          icon: const Icon(Icons.refresh, size: 18),
+          icon: const Icon(Icons.refresh, size: AppControl.iconSize),
           color: AppPalette.textSecondary,
           tooltip: 'Refresh',
           visualDensity: VisualDensity.compact,
@@ -194,13 +195,10 @@ class _MemberTile extends StatelessWidget {
           if (isOwner)
             const _OwnerBadge()
           else if (removing)
-            const Padding(
-              padding: EdgeInsets.all(8),
-              child: AppSpinner(),
-            )
+            const Padding(padding: EdgeInsets.all(8), child: AppSpinner())
           else
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 18),
+              icon: const Icon(Icons.delete_outline, size: AppControl.iconSize),
               color: AppPalette.textSecondary,
               tooltip: 'Remove member',
               visualDensity: VisualDensity.compact,
@@ -212,28 +210,14 @@ class _MemberTile extends StatelessWidget {
   }
 }
 
-/// Pill marking the grid owner among the members.
+/// Pill marking the grid owner among the members — the same shape and the same
+/// teal every other "Owner" badge on this screen wears. See [BadgePill].
 class _OwnerBadge extends StatelessWidget {
   const _OwnerBadge();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppPalette.accent.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppPalette.accent.withValues(alpha: 0.45)),
-      ),
-      child: const Text(
-        'Owner',
-        style: TextStyle(
-          color: AppPalette.accent,
-          fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+    return BadgePill(label: 'Owner', color: AppPalette.teal);
   }
 }
 

@@ -21,29 +21,32 @@ BoxDecoration _outerDecoration(WidgetTester tester) {
 void main() {
   setUp(() => AppTheme.brightness.value = Brightness.light);
 
-  testWidgets('border is drawn on the outer box (outside the clip) so it is not '
-      'shaved to a half-pixel', (tester) async {
-    const rim = Color(0xFF112233);
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: LiquidGlass(
-              showBorder: true,
-              borderColor: rim,
-              child: SizedBox(width: 100, height: 40),
+  testWidgets(
+    'border is drawn on the outer box (outside the clip) so it is not '
+    'shaved to a half-pixel',
+    (tester) async {
+      const rim = Color(0xFF112233);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: LiquidGlass(
+                showBorder: true,
+                borderColor: rim,
+                child: SizedBox(width: 100, height: 40),
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    final deco = _outerDecoration(tester);
-    // The outer box carries both the visible border and the lift.
-    expect(deco.border, isNotNull);
-    expect((deco.border as Border).top.color, rim);
-    expect(deco.boxShadow, isNotNull);
-  });
+      final deco = _outerDecoration(tester);
+      // The outer box carries both the visible border and the lift.
+      expect(deco.border, isNotNull);
+      expect((deco.border as Border).top.color, rim);
+      expect(deco.boxShadow, isNotNull);
+    },
+  );
 
   testWidgets('a thicker borderWidth is honoured', (tester) async {
     await tester.pumpWidget(

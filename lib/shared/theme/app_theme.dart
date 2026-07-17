@@ -535,22 +535,28 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       ),
       // Material builds a field for a phone: its default padding, plus the 48px
       // touch target it gives a prefixIcon, rendered this 48 tall next to a 32px
-      // button. macOS sizes a field like every other control, so the height is
-      // AppControl's — derived here rather than typed as a number that happens
-      // to land near it.
+      // button. That's what these constraints exist to hold back.
+      //
+      // The height is [AppControl.heightField], not [AppControl.height]: a field
+      // is typed in, not clicked, and at a button's 32 it reads cramped — see
+      // that token. Derived here rather than typed as a number that happens to
+      // land near it.
       //
       // The arithmetic: the box is padding + one line of AppControl.fontSize.
       // `isDense` already tightens Material's own vertical slack, so the padding
       // is what's left over once the line has taken its share.
-      constraints: const BoxConstraints(minHeight: AppControl.height),
+      constraints: const BoxConstraints(minHeight: AppControl.heightField),
       contentPadding: EdgeInsets.symmetric(
         horizontal: 10,
-        vertical: (AppControl.height - AppControl.fontSize * 1.35) / 2,
+        vertical: (AppControl.heightField - AppControl.fontSize * 1.35) / 2,
       ),
-      // The glyph sits on the text's line, not in a tap target of its own.
+      // The glyph sits on the text's line, not in a tap target of its own. A
+      // step above [AppControl.iconSize]: that size is tuned to a button's cap
+      // height, and this field is taller, so the button's glyph looks
+      // undersized in it.
       prefixIconConstraints: const BoxConstraints(
-        minWidth: 30,
-        minHeight: AppControl.iconSize,
+        minWidth: 32,
+        minHeight: kFieldIconSize,
       ),
       border: _fieldBorder(scheme.outline),
       enabledBorder: _fieldBorder(scheme.outline),
@@ -582,7 +588,12 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     dialogTheme: DialogThemeData(
       backgroundColor: menuFill,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      // The card radius, not a number of its own. This was 18 — the iOS
+      // action-sheet curve, and the app's cards had already come down to 12 for
+      // macOS without the dialogs following.
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppCard.radius),
+      ),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
@@ -616,6 +627,16 @@ abstract final class AppControl {
   /// A compact control (inline actions inside a dense row or a card header).
   static const double heightSmall = 28;
 
+  /// A search field at the head of a list column.
+  ///
+  /// Taller than [height], and deliberately: a push button is sized to be hit,
+  /// but this field is sized to be *typed in* and to anchor the column under it.
+  /// Finder and Mail both give their sidebar search more room than a button in
+  /// the same window for exactly that reason — at [height] it reads as cramped,
+  /// which is what a control set to a button's scale looks like when it isn't
+  /// one.
+  static const double heightField = 36;
+
   /// Corner radius. Apple's push buttons are gently rounded, not stadium — a
   /// pill reads as a "chip" on macOS, not as a button.
   static const double radius = 8;
@@ -633,10 +654,56 @@ abstract final class AppControl {
   /// label rather than tower over it.
   static const double iconSize = 16;
 
+  /// The glyph on a chip — an inline affordance whose label runs smaller than a
+  /// button's (11pt, not 13). [iconSize] is cut to a 13pt cap height and towers
+  /// over an 11pt one, so a chip needs its own step down rather than a number
+  /// picked by eye at each call site.
+  static const double iconSizeChip = 13;
+
   /// Horizontal breathing room. Apple pads a push button generously sideways and
   /// barely at all vertically — the height is what sets the touch target.
   static const EdgeInsets padding = EdgeInsets.symmetric(horizontal: 14);
   static const EdgeInsets paddingSmall = EdgeInsets.symmetric(horizontal: 10);
+
+  /// A button that leads with a glyph, at the compact scale.
+  ///
+  /// Wider on the leading edge than the trailing one, and the asymmetry is the
+  /// point: [paddingSmall] is even, which measures as centred and *reads* as
+  /// pushed left. A glyph is a solid shape that fills its box to the edge, while
+  /// a label's first letter carries its own sidebearing — so at an equal 10px
+  /// the glyph sits visibly tighter to the rim than the text does at the other
+  /// end. Extra leading pad buys back what the glyph lacks.
+  ///
+  /// Only for `.icon` constructors; a text-only button stays on [paddingSmall].
+  static const EdgeInsets paddingSmallIcon = EdgeInsets.only(
+    left: 12,
+    right: 10,
+  );
+}
+
+/// How long the app's UI takes to change, and on what curve.
+///
+/// These aren't new numbers — they're the ones already in use, given a name. The
+/// app had settled on ~130ms for a hover and `Curves.easeOut` almost everywhere
+/// (31 call sites against 8 for the next most common), but every one of them
+/// typed the number in by hand, and the drift had already started: 120, 130, 140
+/// and 160 all appear for the same kind of change. A tile in Plugins even
+/// carries a comment saying its timing "matches the job list's, so a row lifts
+/// the same way everywhere in the app" — an intent with nothing enforcing it.
+///
+/// Motion here is for *continuity*, not decoration: it says the thing you're
+/// looking at is the same thing it was a moment ago. That's why it's this short.
+/// Anything long enough to notice as an animation is too long for a hover.
+abstract final class AppMotion {
+  /// A surface reacting to the pointer — a row's hover fill, a chip warming up.
+  static const Duration hover = Duration(milliseconds: 130);
+
+  /// Content being replaced in place: a list swapping to another grid's models.
+  static const Duration swap = Duration(milliseconds: 160);
+
+  /// The app's curve. Fast to start, settling at the end — the thing arrives
+  /// under the pointer rather than drifting toward it.
+  static const Curve curve = Curves.easeOut;
 }
 
 /// The app's two font stacks, and the rule for which one a given piece of text
@@ -726,6 +793,15 @@ TextStyle _fieldTextStyle(Color color) => TextStyle(
   letterSpacing: 0,
   color: color,
 );
+
+/// A field's leading glyph — the magnifier on a search box, and its kind.
+///
+/// A step above [AppControl.iconSize], which is tuned to sit on the cap height
+/// of a button's 13pt label. A field is [AppControl.heightField] tall, so the
+/// button's glyph reads undersized in it — the icon has to follow the box it
+/// sits in, not the token next to it. Themed via `prefixIconConstraints`, but
+/// the `Icon` itself still has to be handed this size at the call site.
+const double kFieldIconSize = 18;
 
 RoundedRectangleBorder get _buttonShape => RoundedRectangleBorder(
   borderRadius: BorderRadius.circular(AppControl.radius),

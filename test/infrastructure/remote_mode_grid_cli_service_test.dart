@@ -18,8 +18,10 @@ class _RecordingCliService implements GridCliService {
   }
 
   @override
-  Future<GridProcess> start(List<String> args,
-      {Map<String, String>? environment}) async {
+  Future<GridProcess> start(
+    List<String> args, {
+    Map<String, String>? environment,
+  }) async {
     startArgs.add(args);
     lastStartEnvironment = environment;
     return GridProcess(
@@ -56,12 +58,16 @@ void main() {
       expect(inner.startArgs.single, ['--remote', 'join', 'grid.example']);
     });
 
-    test('start forwards the per-call environment to the inner service',
-        () async {
-      await sut.start(['join', 'grid.example'],
-          environment: const {'OPENAI_API_KEY': 'sk-x'});
-      expect(inner.lastStartEnvironment, {'OPENAI_API_KEY': 'sk-x'});
-    });
+    test(
+      'start forwards the per-call environment to the inner service',
+      () async {
+        await sut.start(
+          ['join', 'grid.example'],
+          environment: const {'OPENAI_API_KEY': 'sk-x'},
+        );
+        expect(inner.lastStartEnvironment, {'OPENAI_API_KEY': 'sk-x'});
+      },
+    );
   });
 
   group('drops --remote for local-machine commands', () {

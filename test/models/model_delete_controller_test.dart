@@ -30,7 +30,10 @@ void main() {
 
     expect(ok, isTrue);
     expect(cli.runs, contains(equals(const ['rm', 'qwen.gguf', '--yes'])));
-    expect(container.read(modelDeleteControllerProvider), isA<ModelDeleteIdle>());
+    expect(
+      container.read(modelDeleteControllerProvider),
+      isA<ModelDeleteIdle>(),
+    );
   });
 
   test('delete removes every file of a split model', () async {
@@ -51,13 +54,19 @@ void main() {
     expect(ok, isTrue);
     expect(cli.runs, contains(equals(['rm', files[0], '--yes'])));
     expect(cli.runs, contains(equals(['rm', files[1], '--yes'])));
-    expect(container.read(modelDeleteControllerProvider), isA<ModelDeleteIdle>());
+    expect(
+      container.read(modelDeleteControllerProvider),
+      isA<ModelDeleteIdle>(),
+    );
   });
 
   test('delete surfaces a failure when the CLI returns non-zero', () async {
     final cli = _RecordingCli()
-      ..stubResult(['rm', 'qwen.gguf', '--yes'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'no such model'));
+      ..stubResult([
+        'rm',
+        'qwen.gguf',
+        '--yes',
+      ], const CliResult(exitCode: 1, stdout: '', stderr: 'no such model'));
     final container = ProviderContainer(
       overrides: [gridCliServiceProvider.overrideWithValue(cli)],
     );
@@ -69,7 +78,9 @@ void main() {
 
     expect(ok, isFalse);
     expect(
-        container.read(modelDeleteControllerProvider), isA<ModelDeleteFailed>());
+      container.read(modelDeleteControllerProvider),
+      isA<ModelDeleteFailed>(),
+    );
   });
 
   test('delete fails fast when the CLI is unavailable', () async {
@@ -84,20 +95,27 @@ void main() {
 
     expect(ok, isFalse);
     expect(
-        container.read(modelDeleteControllerProvider), isA<ModelDeleteFailed>());
+      container.read(modelDeleteControllerProvider),
+      isA<ModelDeleteFailed>(),
+    );
   });
 
   group('isModelInUse', () {
     test('exact gguf match — the in-session built-in serve', () {
       expect(
-          isModelInUse('Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
-              'Qwen3.6-35B-A3B-UD-IQ3_S.gguf'),
-          isTrue);
+        isModelInUse(
+          'Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
+          'Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
+        ),
+        isTrue,
+      );
     });
 
     test('advertised-name prefix match — an engine adopted on restart', () {
-      expect(isModelInUse('Qwen3.6-35B-A3B-UD-IQ3_S.gguf', 'Qwen3.6-35B-A3B'),
-          isTrue);
+      expect(
+        isModelInUse('Qwen3.6-35B-A3B-UD-IQ3_S.gguf', 'Qwen3.6-35B-A3B'),
+        isTrue,
+      );
     });
 
     test('a different model is not in use', () {

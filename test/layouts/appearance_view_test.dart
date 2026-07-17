@@ -85,7 +85,10 @@ void main() {
   testWidgets('offers a preview of every theme', (tester) async {
     await tester.pumpWidget(host(const AppearanceView()));
     await tester.pumpAndSettle();
-    expect(find.byType(ThemePreviewTile), findsNWidgets(ThemeMode.values.length));
+    expect(
+      find.byType(ThemePreviewTile),
+      findsNWidgets(ThemeMode.values.length),
+    );
     expect(find.text('System'), findsOneWidget);
     expect(find.text('Light'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
@@ -125,7 +128,8 @@ void main() {
     expect(
       canvasOf('Dark'),
       darkWindow,
-      reason: 'the Dark tile painted the live (light) palette — it is showing '
+      reason:
+          'the Dark tile painted the live (light) palette — it is showing '
           'the current theme rather than the one it advertises',
     );
     expect(

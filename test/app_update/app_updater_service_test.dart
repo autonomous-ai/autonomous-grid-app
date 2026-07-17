@@ -12,18 +12,20 @@ void main() {
       expect(service.isEnabled, isFalse);
     });
 
-    test('a user-initiated check answers with UpdateUnsupported, never silence',
-        () async {
-      final service = AppUpdaterService();
-      final seen = <UpdateStatus>[];
-      final sub = service.status.listen(seen.add);
+    test(
+      'a user-initiated check answers with UpdateUnsupported, never silence',
+      () async {
+        final service = AppUpdaterService();
+        final seen = <UpdateStatus>[];
+        final sub = service.status.listen(seen.add);
 
-      await service.checkForUpdates();
-      await Future<void>.delayed(Duration.zero);
-      await sub.cancel();
+        await service.checkForUpdates();
+        await Future<void>.delayed(Duration.zero);
+        await sub.cancel();
 
-      expect(seen, [isA<UpdateUnsupported>()]);
-    });
+        expect(seen, [isA<UpdateUnsupported>()]);
+      },
+    );
 
     test('replays the last outcome to a late subscriber', () async {
       final service = AppUpdaterService();

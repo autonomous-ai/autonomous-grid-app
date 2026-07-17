@@ -72,9 +72,7 @@ class MediaLoadingBox extends StatelessWidget {
     return MediaFrame(
       child: SizedBox(
         height: height,
-        child: const Center(
-          child: AppSpinner(size: SpinnerSize.large),
-        ),
+        child: const Center(child: AppSpinner(size: SpinnerSize.large)),
       ),
     );
   }

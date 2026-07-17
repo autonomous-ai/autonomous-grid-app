@@ -79,7 +79,8 @@ class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _curved,
-      builder: (context, child) => widget.builder(context, _curved.value, child),
+      builder: (context, child) =>
+          widget.builder(context, _curved.value, child),
       child: widget.child,
     );
   }

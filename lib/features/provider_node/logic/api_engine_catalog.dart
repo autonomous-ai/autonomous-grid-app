@@ -107,9 +107,10 @@ const Set<String> kResponsesOnlyKinds = {'codex'};
 /// Playground" button for honest guidance.
 bool isResponsesOnlyModel(String? model) {
   if (model == null || model.isEmpty) return false;
-  return model.split(',').map((name) => name.trim().split(':').first).any(
-    kResponsesOnlyKinds.contains,
-  );
+  return model
+      .split(',')
+      .map((name) => name.trim().split(':').first)
+      .any(kResponsesOnlyKinds.contains);
 }
 
 /// Hosted providers the app can present. Add one here once its kind lands in the
@@ -216,6 +217,5 @@ List<ApiEngineModel>? _readModels(Map<dynamic, dynamic> decoded) {
 /// Parse the model rows of a catalog list, skipping any non-object row.
 List<ApiEngineModel> _modelsFrom(List<dynamic> rows) => [
   for (final model in rows)
-    if (model is Map)
-      ApiEngineModel.fromJson(Map<String, dynamic>.from(model)),
+    if (model is Map) ApiEngineModel.fromJson(Map<String, dynamic>.from(model)),
 ];

@@ -15,7 +15,9 @@ void main() {
   });
 
   test('tolerates surrounding whitespace/newlines', () {
-    final ctx = ModelContext.parse('\n  {"file": "m.gguf", "context_length": 8192}\n');
+    final ctx = ModelContext.parse(
+      '\n  {"file": "m.gguf", "context_length": 8192}\n',
+    );
     expect(ctx?.contextLength, 8192);
   });
 

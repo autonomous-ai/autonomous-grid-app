@@ -11,7 +11,8 @@ void main() {
        "status": "active", "payment_status": "paid"}''';
 
       final m = ManagedNetworkMember.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>);
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
 
       expect(m.email, 'a@example.com');
       expect(m.roles, ['consumer', 'provider']);
@@ -32,9 +33,13 @@ void main() {
   group('ManagedNetworkMember.isOwner', () {
     test('is true only when the member carries the admin role', () {
       const owner = ManagedNetworkMember(
-          email: 'owner@example.com', roles: ['admin']);
+        email: 'owner@example.com',
+        roles: ['admin'],
+      );
       const provider = ManagedNetworkMember(
-          email: 'me@example.com', roles: ['provider', 'consumer']);
+        email: 'me@example.com',
+        roles: ['provider', 'consumer'],
+      );
       const noRoles = ManagedNetworkMember(email: 'x@example.com', roles: []);
 
       expect(owner.isOwner, isTrue);
@@ -47,8 +52,11 @@ void main() {
 
   group('ManagedMemberRole', () {
     test('wire values match the API contract, without admin', () {
-      expect(ManagedMemberRole.values.map((r) => r.wire),
-          ['consumer', 'provider', 'both']);
+      expect(ManagedMemberRole.values.map((r) => r.wire), [
+        'consumer',
+        'provider',
+        'both',
+      ]);
     });
   });
 }

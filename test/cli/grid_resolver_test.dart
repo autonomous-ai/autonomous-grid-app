@@ -41,8 +41,10 @@ void main() {
 
   test('ignores a non-executable file', () {
     final notExec = File('${tempDir.path}/grid')..writeAsStringSync('x');
-    final resolver =
-        GridResolver(configuredPath: notExec.path, pathLookup: () => null);
+    final resolver = GridResolver(
+      configuredPath: notExec.path,
+      pathLookup: () => null,
+    );
     expect(resolver.resolve(), isNull);
   });
 
@@ -51,8 +53,10 @@ void main() {
     // matches as "grid" — without the guard the resolver would hand back our own
     // executable and the app would spawn itself instead of the CLI.
     final self = Platform.resolvedExecutable;
-    final resolver =
-        GridResolver(configuredPath: self, pathLookup: () => '/usr/bin/grid');
+    final resolver = GridResolver(
+      configuredPath: self,
+      pathLookup: () => '/usr/bin/grid',
+    );
     expect(resolver.resolve(), isNot(self));
     expect(resolver.resolve(), '/usr/bin/grid');
   });

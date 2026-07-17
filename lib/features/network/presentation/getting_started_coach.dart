@@ -32,7 +32,7 @@ class GettingStartedCoach extends ConsumerWidget {
             const SizedBox(width: 14),
             const Expanded(child: _Steps()),
             IconButton(
-              icon: const Icon(Icons.close_rounded, size: 18),
+              icon: const Icon(Icons.close_rounded, size: AppControl.iconSize),
               color: AppPalette.textFaint,
               tooltip: 'Dismiss',
               visualDensity: VisualDensity.compact,

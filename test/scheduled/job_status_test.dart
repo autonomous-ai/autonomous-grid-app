@@ -20,11 +20,14 @@ ScheduledJob _job({
 
 void main() {
   group('jobStatusOf', () {
-    test('a paused task reads as paused even after a failed run — pausing is not '
-        'failing', () {
-      final job = _job(enabled: false, lastError: 'boom');
-      expect(jobStatusOf(job), JobStatus.paused);
-    });
+    test(
+      'a paused task reads as paused even after a failed run — pausing is not '
+      'failing',
+      () {
+        final job = _job(enabled: false, lastError: 'boom');
+        expect(jobStatusOf(job), JobStatus.paused);
+      },
+    );
 
     test('an enabled task whose last run errored reads as failed', () {
       expect(jobStatusOf(_job(lastError: 'boom')), JobStatus.lastRunFailed);

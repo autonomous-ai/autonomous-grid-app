@@ -270,9 +270,7 @@ class _ModelTile extends ConsumerWidget {
       return const SizedBox(
         width: 40,
         height: 40,
-        child: Center(
-          child: AppSpinner(),
-        ),
+        child: Center(child: AppSpinner()),
       );
     }
     if (inUse) {

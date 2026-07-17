@@ -127,23 +127,27 @@ void main() {
     expect(h.cli.lastStartArgs!.first, 'join');
   });
 
-  test('runs at most once — a stopped engine is not restarted behind the user',
-      () async {
-    final h = _harness(network: _grid(provider: true));
-    final controller = h.container.read(autoHostControllerProvider.notifier);
+  test(
+    'runs at most once — a stopped engine is not restarted behind the user',
+    () async {
+      final h = _harness(network: _grid(provider: true));
+      final controller = h.container.read(autoHostControllerProvider.notifier);
 
-    await controller.startIfReady();
-    h.cli.lastStartArgs = null;
-    await controller.startIfReady();
+      await controller.startIfReady();
+      h.cli.lastStartArgs = null;
+      await controller.startIfReady();
 
-    expect(h.cli.lastStartArgs, isNull);
-  });
+      expect(h.cli.lastStartArgs, isNull);
+    },
+  );
 
   group('waits instead of acting', () {
     test('no grid yet — the starter grid is still being provisioned', () async {
       final h = _harness(network: null);
 
-      await h.container.read(autoHostControllerProvider.notifier).startIfReady();
+      await h.container
+          .read(autoHostControllerProvider.notifier)
+          .startIfReady();
 
       expect(h.cli.lastStartArgs, isNull);
       expect(h.container.read(autoHostControllerProvider), isA<AutoHostIdle>());
@@ -152,7 +156,9 @@ void main() {
     test('engine not installed yet', () async {
       final h = _harness(network: _grid(), engineInstalled: false);
 
-      await h.container.read(autoHostControllerProvider.notifier).startIfReady();
+      await h.container
+          .read(autoHostControllerProvider.notifier)
+          .startIfReady();
 
       expect(h.cli.lastStartArgs, isNull);
     });
@@ -160,26 +166,38 @@ void main() {
     test('no model downloaded yet', () async {
       final h = _harness(network: _grid(), hasModel: false);
 
-      await h.container.read(autoHostControllerProvider.notifier).startIfReady();
+      await h.container
+          .read(autoHostControllerProvider.notifier)
+          .startIfReady();
 
       expect(h.cli.lastStartArgs, isNull);
     });
   });
 
   group('never acts', () {
-    test("on someone else's grid — a guest is a consumer, not a host", () async {
-      final h = _harness(network: _grid(owner: false));
+    test(
+      "on someone else's grid — a guest is a consumer, not a host",
+      () async {
+        final h = _harness(network: _grid(owner: false));
 
-      await h.container.read(autoHostControllerProvider.notifier).startIfReady();
+        await h.container
+            .read(autoHostControllerProvider.notifier)
+            .startIfReady();
 
-      expect(h.cli.lastStartArgs, isNull);
-      expect(h.container.read(autoHostControllerProvider), isA<AutoHostIdle>());
-    });
+        expect(h.cli.lastStartArgs, isNull);
+        expect(
+          h.container.read(autoHostControllerProvider),
+          isA<AutoHostIdle>(),
+        );
+      },
+    );
 
     test('on a machine that cannot host (Linux, Windows)', () async {
       final h = _harness(network: _grid(), canHost: false);
 
-      await h.container.read(autoHostControllerProvider.notifier).startIfReady();
+      await h.container
+          .read(autoHostControllerProvider.notifier)
+          .startIfReady();
 
       expect(h.cli.lastStartArgs, isNull);
     });
@@ -187,10 +205,14 @@ void main() {
 
   test('a failed role grant surfaces, and never joins', () async {
     final h = _harness(network: _grid());
-    h.cli.stubResult(
-      ['members', 'add', 'ag-1', 'me@x.com', '--role', 'provider'],
-      const CliResult(exitCode: 1, stdout: '', stderr: 'seat limit reached'),
-    );
+    h.cli.stubResult([
+      'members',
+      'add',
+      'ag-1',
+      'me@x.com',
+      '--role',
+      'provider',
+    ], const CliResult(exitCode: 1, stdout: '', stderr: 'seat limit reached'));
 
     await h.container.read(autoHostControllerProvider.notifier).startIfReady();
 

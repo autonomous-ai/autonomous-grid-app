@@ -62,8 +62,10 @@ void main() {
 
   test('fails with a friendly message when sync errors', () async {
     final fake = FakeGridCliService()
-      ..stubResult(_syncArgs,
-          const CliResult(exitCode: 1, stdout: '', stderr: 'sync refused'));
+      ..stubResult(
+        _syncArgs,
+        const CliResult(exitCode: 1, stdout: '', stderr: 'sync refused'),
+      );
     final container = _container(cli: fake);
 
     await container.read(gridSyncControllerProvider.notifier).sync();
@@ -74,18 +76,27 @@ void main() {
     expect((state as GridSyncFailed).message, isNot(contains('sync refused')));
   });
 
-  test('hands an expired session to the app banner instead of failing', () async {
-    final fake = FakeGridCliService()
-      ..stubResult(
+  test(
+    'hands an expired session to the app banner instead of failing',
+    () async {
+      final fake = FakeGridCliService()
+        ..stubResult(
           _syncArgs,
           const CliResult(
-              exitCode: 1, stdout: '', stderr: 'session expired or invalid'));
-    final container = _container(cli: fake);
+            exitCode: 1,
+            stdout: '',
+            stderr: 'session expired or invalid',
+          ),
+        );
+      final container = _container(cli: fake);
 
-    await container.read(gridSyncControllerProvider.notifier).sync();
+      await container.read(gridSyncControllerProvider.notifier).sync();
 
-    expect(container.read(gridSyncControllerProvider), isA<GridSyncIdle>());
-    expect(container.read(sessionExpiryProvider),
-        isNot(SessionExpiry.healthy));
-  });
+      expect(container.read(gridSyncControllerProvider), isA<GridSyncIdle>());
+      expect(
+        container.read(sessionExpiryProvider),
+        isNot(SessionExpiry.healthy),
+      );
+    },
+  );
 }

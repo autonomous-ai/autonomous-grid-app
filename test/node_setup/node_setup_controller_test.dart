@@ -53,8 +53,10 @@ class _ScriptedProcessCli implements GridCliService {
   final Completer<int> exit;
 
   @override
-  Future<GridProcess> start(List<String> args,
-          {Map<String, String>? environment}) async =>
+  Future<GridProcess> start(
+    List<String> args, {
+    Map<String, String>? environment,
+  }) async =>
       GridProcess(lines: lines.stream, exitCode: exit.future, kill: () {});
 
   @override
@@ -83,12 +85,14 @@ const _modelStep = SetupStep(
 );
 
 ProviderContainer _container(GridCliService? fake, {NodeSetupLog? log}) {
-  final container = ProviderContainer(overrides: [
-    gridCliServiceProvider.overrideWithValue(fake),
-    gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
-    // Always override so no test ever writes to the real ~/.grid/logs.
-    nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
-  ]);
+  final container = ProviderContainer(
+    overrides: [
+      gridCliServiceProvider.overrideWithValue(fake),
+      gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
+      // Always override so no test ever writes to the real ~/.grid/logs.
+      nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
+    ],
+  );
   addTearDown(container.dispose);
   return container;
 }
@@ -96,22 +100,28 @@ ProviderContainer _container(GridCliService? fake, {NodeSetupLog? log}) {
 void main() {
   test('runs an install then a download to completion', () async {
     final fake = FakeGridCliService()
-      ..stubStart(['engine', 'install', 'llama.cpp'],
-          exitCode: 0,
-          exitDelay: const Duration(milliseconds: 5),
-          lines: const [CliLine(isStderr: false, text: 'Linked llama-server')])
-      ..stubPull(['pull', 'm'], const [
-        DownloadProgress(doneMb: 50, totalMb: 100, pct: 50),
-        DownloadProgress(doneMb: 100, totalMb: 100, pct: 100),
-      ]);
+      ..stubStart(
+        ['engine', 'install', 'llama.cpp'],
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 5),
+        lines: const [CliLine(isStderr: false, text: 'Linked llama-server')],
+      )
+      ..stubPull(
+        ['pull', 'm'],
+        const [
+          DownloadProgress(doneMb: 50, totalMb: 100, pct: 50),
+          DownloadProgress(doneMb: 100, totalMb: 100, pct: 100),
+        ],
+      );
     final container = _container(fake);
 
     final seen = <NodeSetupState>[];
     container.listen(nodeSetupControllerProvider, (_, next) => seen.add(next));
 
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_llamaStep, _modelStep]);
+    await container.read(nodeSetupControllerProvider.notifier).run([
+      _llamaStep,
+      _modelStep,
+    ]);
 
     final state = container.read(nodeSetupControllerProvider);
     expect(state, isA<NodeSetupDone>());
@@ -125,14 +135,17 @@ void main() {
 
   test('stops at the first failed step', () async {
     final fake = FakeGridCliService()
-      ..stubStart(['engine', 'install', 'llama.cpp'],
-          exitCode: 1,
-          lines: const [CliLine(isStderr: true, text: 'brew: not found')]);
+      ..stubStart(
+        ['engine', 'install', 'llama.cpp'],
+        exitCode: 1,
+        lines: const [CliLine(isStderr: true, text: 'brew: not found')],
+      );
     final container = _container(fake);
 
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_llamaStep, _modelStep]);
+    await container.read(nodeSetupControllerProvider.notifier).run([
+      _llamaStep,
+      _modelStep,
+    ]);
 
     final state = container.read(nodeSetupControllerProvider);
     expect(state, isA<NodeSetupFailed>());
@@ -155,47 +168,56 @@ void main() {
   test('fails fast when grid is absent', () async {
     final container = _container(null);
 
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_llamaStep]);
+    await container.read(nodeSetupControllerProvider.notifier).run([
+      _llamaStep,
+    ]);
 
     expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
   });
 
-  test('mirrors the full transcript and a success footer to the log file',
-      () async {
-    final fake = FakeGridCliService()
-      ..stubStart(['engine', 'install', 'llama.cpp'],
+  test(
+    'mirrors the full transcript and a success footer to the log file',
+    () async {
+      final fake = FakeGridCliService()
+        ..stubStart(
+          ['engine', 'install', 'llama.cpp'],
           exitCode: 0,
-          lines: const [CliLine(isStderr: false, text: 'Linked llama-server')])
-      ..stubPull(['pull', 'm'], const [
-        DownloadProgress(doneMb: 100, totalMb: 100, pct: 100),
+          lines: const [CliLine(isStderr: false, text: 'Linked llama-server')],
+        )
+        ..stubPull(
+          ['pull', 'm'],
+          const [DownloadProgress(doneMb: 100, totalMb: 100, pct: 100)],
+        );
+      final log = _RecordingLog();
+      final container = _container(fake, log: log);
+
+      await container.read(nodeSetupControllerProvider.notifier).run([
+        _llamaStep,
+        _modelStep,
       ]);
-    final log = _RecordingLog();
-    final container = _container(fake, log: log);
 
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_llamaStep, _modelStep]);
-
-    expect(log.runPlan, contains('Install llama.cpp'));
-    expect(log.stepTitles, contains('Install llama.cpp'));
-    expect(log.lines, contains('Linked llama-server')); // streamed CLI output
-    expect(log.stepResults, everyElement('done'));
-    expect(log.runOutcome, contains('completed'));
-  });
+      expect(log.runPlan, contains('Install llama.cpp'));
+      expect(log.stepTitles, contains('Install llama.cpp'));
+      expect(log.lines, contains('Linked llama-server')); // streamed CLI output
+      expect(log.stepResults, everyElement('done'));
+      expect(log.runOutcome, contains('completed'));
+    },
+  );
 
   test('records the failing step and message in the log footer', () async {
     final fake = FakeGridCliService()
-      ..stubStart(['engine', 'install', 'llama.cpp'],
-          exitCode: 1,
-          lines: const [CliLine(isStderr: true, text: 'brew: not found')]);
+      ..stubStart(
+        ['engine', 'install', 'llama.cpp'],
+        exitCode: 1,
+        lines: const [CliLine(isStderr: true, text: 'brew: not found')],
+      );
     final log = _RecordingLog();
     final container = _container(fake, log: log);
 
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_llamaStep, _modelStep]);
+    await container.read(nodeSetupControllerProvider.notifier).run([
+      _llamaStep,
+      _modelStep,
+    ]);
 
     expect(log.lines, contains('brew: not found'));
     expect(log.runOutcome, contains('FAILED'));
@@ -206,9 +228,9 @@ void main() {
     final log = _RecordingLog();
     final container = _container(null, log: log);
 
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_llamaStep]);
+    await container.read(nodeSetupControllerProvider.notifier).run([
+      _llamaStep,
+    ]);
 
     expect(log.runOutcome, contains('FAILED'));
     expect(log.runOutcome, contains('grid executable not found'));
@@ -227,18 +249,24 @@ void main() {
     // model itself. Say so plainly, and point at the way out (someone else's
     // engine) — not at a raw CLI line.
     final fake = FakeGridCliService()
-      ..stubStart(['engine', 'install', 'llama.cpp'], exitCode: 1, lines: const [
-        CliLine(
-          isStderr: true,
-          text: 'No NVIDIA GPUs detected (nvidia-smi missing or returned '
-              'nothing). Pass --target-sm <sm_XX> to override.',
-        ),
-      ]);
+      ..stubStart(
+        ['engine', 'install', 'llama.cpp'],
+        exitCode: 1,
+        lines: const [
+          CliLine(
+            isStderr: true,
+            text:
+                'No NVIDIA GPUs detected (nvidia-smi missing or returned '
+                'nothing). Pass --target-sm <sm_XX> to override.',
+          ),
+        ],
+      );
     final container = _container(fake);
 
-    await container
-        .read(nodeSetupControllerProvider.notifier)
-        .run([_llamaStep, _modelStep]);
+    await container.read(nodeSetupControllerProvider.notifier).run([
+      _llamaStep,
+      _modelStep,
+    ]);
 
     final state = container.read(nodeSetupControllerProvider);
     expect(state, isA<NodeSetupFailed>());
@@ -248,31 +276,42 @@ void main() {
     expect(state.kind, NodeSetupFailureKind.unsupported);
   });
 
-  test('a late line after a step fails does not revive the running state',
-      () async {
-    // A streamed step can flush a buffered stderr tail after it has already
-    // exited non-zero; that line must not flip the card back to "Running step
-    // 1/1" and spin forever (there is no process left).
-    final lines = StreamController<CliLine>();
-    final exit = Completer<int>();
-    final container = _container(_ScriptedProcessCli(lines, exit));
-    final notifier = container.read(nodeSetupControllerProvider.notifier);
+  test(
+    'a late line after a step fails does not revive the running state',
+    () async {
+      // A streamed step can flush a buffered stderr tail after it has already
+      // exited non-zero; that line must not flip the card back to "Running step
+      // 1/1" and spin forever (there is no process left).
+      final lines = StreamController<CliLine>();
+      final exit = Completer<int>();
+      final container = _container(_ScriptedProcessCli(lines, exit));
+      final notifier = container.read(nodeSetupControllerProvider.notifier);
 
-    final run = notifier.run([_llamaStep]);
-    await Future<void>.delayed(Duration.zero); // let the listener subscribe
-    lines.add(const CliLine(isStderr: true, text: 'working'));
-    await Future<void>.delayed(Duration.zero);
-    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupRunning>());
+      final run = notifier.run([_llamaStep]);
+      await Future<void>.delayed(Duration.zero); // let the listener subscribe
+      lines.add(const CliLine(isStderr: true, text: 'working'));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(nodeSetupControllerProvider),
+        isA<NodeSetupRunning>(),
+      );
 
-    exit.complete(1); // the step fails
-    await run;
-    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
+      exit.complete(1); // the step fails
+      await run;
+      expect(
+        container.read(nodeSetupControllerProvider),
+        isA<NodeSetupFailed>(),
+      );
 
-    // A tail line arriving after the failure is dropped, not re-run.
-    lines.add(const CliLine(isStderr: true, text: 'late tail'));
-    await Future<void>.delayed(Duration.zero);
-    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
+      // A tail line arriving after the failure is dropped, not re-run.
+      lines.add(const CliLine(isStderr: true, text: 'late tail'));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(nodeSetupControllerProvider),
+        isA<NodeSetupFailed>(),
+      );
 
-    await lines.close();
-  });
+      await lines.close();
+    },
+  );
 }

@@ -106,10 +106,7 @@ void main() {
       ctx,
       ToastSpec(
         message: 'Update available',
-        action: ToastAction(
-          label: 'Download',
-          onPressed: () => pressed = true,
-        ),
+        action: ToastAction(label: 'Download', onPressed: () => pressed = true),
       ),
     );
     await tester.pump();

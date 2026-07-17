@@ -50,26 +50,33 @@ void main() {
   });
 
   group('run', () {
-    test('logs the command, stdout, stderr split by line, and the exit code',
-        () async {
-      inner.stubResult(
-        ['status'],
-        const CliResult(exitCode: 2, stdout: 'line1\nline2\n', stderr: 'oops'),
-      );
+    test(
+      'logs the command, stdout, stderr split by line, and the exit code',
+      () async {
+        inner.stubResult(
+          ['status'],
+          const CliResult(
+            exitCode: 2,
+            stdout: 'line1\nline2\n',
+            stderr: 'oops',
+          ),
+        );
 
-      final result = await service.run(['status']);
+        final result = await service.run(['status']);
 
-      expect(result.exitCode, 2); // pass-through unchanged
-      final section = log.sections.single;
-      expect(section.command, 'grid status');
-      expect(section.outputs, ['OUT:line1', 'OUT:line2', 'ERR:oops']);
-      expect(section.exitCode, 2);
-      expect(section.endCalls, 1);
-    });
+        expect(result.exitCode, 2); // pass-through unchanged
+        final section = log.sections.single;
+        expect(section.command, 'grid status');
+        expect(section.outputs, ['OUT:line1', 'OUT:line2', 'ERR:oops']);
+        expect(section.exitCode, 2);
+        expect(section.endCalls, 1);
+      },
+    );
 
     test('skips empty stdout/stderr blocks', () async {
-      inner.stubResult(
-          ['whoami'], const CliResult(exitCode: 0, stdout: '', stderr: ''));
+      inner.stubResult([
+        'whoami',
+      ], const CliResult(exitCode: 0, stdout: '', stderr: ''));
 
       await service.run(['whoami']);
 
@@ -78,39 +85,48 @@ void main() {
   });
 
   group('start', () {
-    test('tees every line to the caller and the log, then records the exit',
-        () async {
-      inner.stubStart(
-        ['login'],
-        lines: const [
-          CliLine(isStderr: false, text: 'visit https://grid/device'),
-          CliLine(isStderr: true, text: 'warning'),
-        ],
-      );
+    test(
+      'tees every line to the caller and the log, then records the exit',
+      () async {
+        inner.stubStart(
+          ['login'],
+          lines: const [
+            CliLine(isStderr: false, text: 'visit https://grid/device'),
+            CliLine(isStderr: true, text: 'warning'),
+          ],
+        );
 
-      final process = await service.start(['login']);
-      final delivered = await process.lines.toList();
-      await process.exitCode;
+        final process = await service.start(['login']);
+        final delivered = await process.lines.toList();
+        await process.exitCode;
 
-      // Caller still receives the exact stream.
-      expect(delivered.map((l) => l.text),
-          ['visit https://grid/device', 'warning']);
+        // Caller still receives the exact stream.
+        expect(delivered.map((l) => l.text), [
+          'visit https://grid/device',
+          'warning',
+        ]);
 
-      final section = log.sections.single;
-      expect(section.command, 'grid login');
-      expect(section.outputs,
-          ['OUT:visit https://grid/device', 'ERR:warning']);
-      expect(section.exitCode, 0);
-      expect(section.endCalls, 1);
-    });
+        final section = log.sections.single;
+        expect(section.command, 'grid login');
+        expect(section.outputs, [
+          'OUT:visit https://grid/device',
+          'ERR:warning',
+        ]);
+        expect(section.exitCode, 0);
+        expect(section.endCalls, 1);
+      },
+    );
   });
 
   group('pull', () {
     test('passes progress through and logs begin + final state', () async {
-      inner.stubPull(['models', 'pull', 'x'], const [
-        DownloadProgress(doneMb: 10),
-        DownloadProgress(doneMb: 100, totalMb: 200, pct: 50),
-      ]);
+      inner.stubPull(
+        ['models', 'pull', 'x'],
+        const [
+          DownloadProgress(doneMb: 10),
+          DownloadProgress(doneMb: 100, totalMb: 200, pct: 50),
+        ],
+      );
 
       final seen = await service.pull(['models', 'pull', 'x']).toList();
 
@@ -124,7 +140,9 @@ void main() {
 
     test('logs an indeterminate final state when total is unknown', () async {
       inner.stubPull(
-          ['media', 'pull', 'y'], const [DownloadProgress(doneMb: 42.5)]);
+        ['media', 'pull', 'y'],
+        const [DownloadProgress(doneMb: 42.5)],
+      );
 
       await service.pull(['media', 'pull', 'y']).toList();
 

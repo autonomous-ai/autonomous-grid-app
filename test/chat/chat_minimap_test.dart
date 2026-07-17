@@ -52,7 +52,10 @@ void main() {
         _assistant('answer to second'),
       ]);
 
-      expect(marks.map((m) => m.reply), ['answer to first', 'answer to second']);
+      expect(marks.map((m) => m.reply), [
+        'answer to first',
+        'answer to second',
+      ]);
     });
 
     test('leaves the reply null when nothing has answered yet', () {

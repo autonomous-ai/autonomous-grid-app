@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
-import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import '../../network/logic/network_models_provider.dart';
@@ -160,8 +160,13 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   /// that could answer yet.
   Widget _buildBody(BuildContext context, NetworkCredential? network) {
     if (network == null) {
-      return const ComingSoon(
+      // Also [EmptyState] rather than `ComingSoon`: nothing here is unbuilt —
+      // the dialog just needs a grid picked before it has anywhere to send to.
+      return const EmptyState(
+        icon: Icons.bolt_outlined,
+        title: 'No grid selected',
         message: 'Select a grid first to start chatting.',
+        compact: true,
       );
     }
 
@@ -228,7 +233,12 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         ],
         Expanded(
           child: chat.messages.isEmpty
-              ? ComingSoon(message: _emptyHint(modality))
+              ? EmptyState(
+                  icon: _emptyIcon(modality),
+                  title: _emptyTitle(modality),
+                  message: _emptyHint(modality),
+                  compact: true,
+                )
               : ListView.builder(
                   controller: _scroll,
                   itemCount:
@@ -260,10 +270,30 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     );
   }
 
+  /// The waiting-for-your-first-message state.
+  ///
+  /// [EmptyState], not `ComingSoon` — that one is for a screen the app has a
+  /// place for but *hasn't built*, and it says so with a wrench. This dialog is
+  /// finished and working; it's just empty until you type. The wrench was
+  /// telling a working feature's users it wasn't ready.
+  String _emptyTitle(PlaygroundModality modality) => switch (modality) {
+    PlaygroundModality.image => 'No images yet',
+    PlaygroundModality.video => 'No videos yet',
+    PlaygroundModality.text => 'No messages yet',
+  };
+
   String _emptyHint(PlaygroundModality modality) => switch (modality) {
     PlaygroundModality.image => 'Describe an image to generate.',
     PlaygroundModality.video => 'Attach an image, then describe the motion.',
     PlaygroundModality.text => 'Send a message to start chatting.',
+  };
+
+  /// The glyph for the empty state — the modality's own mark, matching the one
+  /// the picker puts beside that model in its menu.
+  IconData _emptyIcon(PlaygroundModality modality) => switch (modality) {
+    PlaygroundModality.image => Icons.image_outlined,
+    PlaygroundModality.video => Icons.movie_outlined,
+    PlaygroundModality.text => Icons.chat_bubble_outline,
   };
 
   String _inputHint(PlaygroundModality modality) => switch (modality) {
@@ -303,7 +333,7 @@ class _DialogHeader extends StatelessWidget {
         ),
         IconButton(
           tooltip: 'Close',
-          icon: const Icon(Icons.close_rounded, size: 20),
+          icon: const Icon(Icons.close_rounded, size: AppControl.iconSize),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],

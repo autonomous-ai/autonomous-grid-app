@@ -33,7 +33,13 @@ const TextStyle kGridNumeral = TextStyle(
   fontFeatures: AppFont.tabularFigures,
 );
 
-/// A single capability chip: an accent icon plus its label.
+/// What the grid can do ("Chat", "Images") — a *statement about* the grid, not
+/// something to click.
+///
+/// Unfilled, for the same reason [_Pill] is: it used to wear a filled capsule
+/// with a rim, which is exactly what a button looks like, so "Chat" read as
+/// something that would open a chat — and clicking it did nothing. The accent
+/// glyph carries it; the capsule was only ever pretending.
 class CapabilityChip extends StatelessWidget {
   const CapabilityChip({super.key, required this.icon, required this.label});
   final IconData icon;
@@ -41,36 +47,36 @@ class CapabilityChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBgHover,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppPalette.divider),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AppPalette.accent),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: kGridText.copyWith(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: AppPalette.textPrimary,
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: AppControl.iconSizeChip, color: AppPalette.accent),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: kGridText.copyWith(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textPrimary,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-/// Stats bar showing Models / Nodes / Uptime headline numbers. Hidden on a grid
-/// that serves nothing yet: "0 models, 0 nodes, 99.9% uptime" is noise a new
-/// user has to decode, and it buries the one thing that matters there — the
-/// setup card telling them what to do next.
+/// The grid's headline facts, as one line: models, nodes, uptime.
+///
+/// It used to be a ~90px card of three big numbers, which mostly restated the
+/// screen it sat on — "MODELS 9" directly above a list of nine countable models,
+/// "NODES 2" above the Nodes section — and pushed the pane's one real action
+/// ("Use this grid") toward the fold to do it. Only uptime carried anything new.
+/// So the numbers stay and the furniture goes: a line reads just as fast and
+/// costs a fifth of the height.
+///
+/// Still hidden on a grid that serves nothing yet: "0 models, 0 nodes" is noise
+/// a new user has to decode, and it buries the setup card telling them what to
+/// do next.
 class StatsBar extends ConsumerWidget {
   const StatsBar({super.key, required this.stats});
   final GridStats stats;
@@ -86,86 +92,120 @@ class StatsBar extends ConsumerWidget {
     final resolved = ref.watch(gridModelsProvider).length;
     final models = resolved > 0 ? resolved : stats.models;
     if (models == 0 && stats.nodes == 0) return const SizedBox.shrink();
-    return GlassCard(
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            _StatCell(label: 'MODELS', value: '$models'),
-            const VerticalDivider(width: 1),
-            _StatCell(label: 'NODES', value: '${stats.nodes}'),
-            const VerticalDivider(width: 1),
-            _StatCell(label: 'UPTIME', value: uptime),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _Fact(value: '$models', unit: models == 1 ? 'model' : 'models'),
+          const _FactDot(),
+          _Fact(
+            value: '${stats.nodes}',
+            unit: stats.nodes == 1 ? 'node' : 'nodes',
+          ),
+          const _FactDot(),
+          _Fact(value: uptime, unit: 'uptime'),
+        ],
       ),
     );
   }
 }
 
-/// One stat cell inside the stats bar: a small label over a large number.
-class _StatCell extends StatelessWidget {
-  const _StatCell({required this.label, required this.value});
-  final String label;
+/// One fact on the meta line: the number in ink, its unit in a softer grey, so
+/// the values still stand out from the words at a glance.
+class _Fact extends StatelessWidget {
+  const _Fact({required this.value, required this.unit});
   final String value;
+  final String unit;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: kGridText.copyWith(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.6,
-                color: AppPalette.textFaint,
-              ),
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: value,
+            // Tabular: these sit in a line that reflows as the grid's numbers
+            // change, and shifting digit widths would jitter the whole row.
+            style: kGridNumeral.copyWith(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppPalette.textPrimary,
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: kGridNumeral.copyWith(
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                color: AppPalette.textPrimary,
-              ),
+          ),
+          TextSpan(
+            text: ' $unit',
+            style: kGridText.copyWith(
+              fontSize: 12.5,
+              color: AppPalette.textSecondary,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Section heading: a bold title over a softer subtitle.
+/// The separator between two facts.
+class _FactDot extends StatelessWidget {
+  const _FactDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '·',
+      style: kGridText.copyWith(fontSize: 12.5, color: AppPalette.textFaint),
+    );
+  }
+}
+
+/// Section heading: a bold title over a softer subtitle, with an optional count
+/// beside the title.
 class SectionHeading extends StatelessWidget {
   const SectionHeading({
     super.key,
     required this.title,
     required this.subtitle,
+    this.count,
   });
   final String title;
   final String subtitle;
+
+  /// How many rows the section holds, shown beside the title. Null to omit.
+  final int? count;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: kGridText.copyWith(
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.2,
-            color: AppPalette.textPrimary,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: kGridText.copyWith(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+                color: AppPalette.textPrimary,
+              ),
+            ),
+            if (count != null) ...[
+              const SizedBox(width: 8),
+              Text(
+                '$count',
+                style: kGridNumeral.copyWith(
+                  fontSize: 13,
+                  color: AppPalette.textFaint,
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 4),
         Text(
@@ -181,19 +221,37 @@ class SectionHeading extends StatelessWidget {
   }
 }
 
-/// Thin glass-card wrapper used by model and node tiles.
-class _TileCard extends StatelessWidget {
-  const _TileCard({required this.child, this.padding});
-  final Widget child;
-  final EdgeInsetsGeometry? padding;
+/// One card holding a stack of rows, hairline-separated — the shape macOS gives
+/// a uniform list.
+///
+/// The models used to be one card each: nine rims, nine fills and eight gaps
+/// for one homogeneous list, which read as nine islands rather than one thing
+/// with nine entries. A single card says "these are the same kind of row" and
+/// lets the ids down the left do the scanning work.
+class TileGroup extends StatelessWidget {
+  const TileGroup({super.key, required this.children});
+
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     return GlassCard(
       style: GlassCardStyle.inset,
-      padding:
-          padding ?? const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      child: child,
+      padding: EdgeInsets.zero,
+      // The card's rim already rounds the corners; without this the first and
+      // last rows' hover fill would square them off again.
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppCard.insetRadius),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) Divider(height: 1, color: AppCard.insetHair),
+              children[i],
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -227,31 +285,47 @@ class _ModelTileState extends State<ModelTile> {
         : isVideoCapability(model.id)
         ? Icons.movie_outlined
         : Icons.image_outlined;
+    // A row inside [TileGroup] now, not a card of its own — so the hover fill
+    // is the row's own, and it paints edge to edge.
+    //
+    // Animated, at the app's hover timing: every other hovering surface in the
+    // app eases its fill in, and this row was the one left snapping between two
+    // colours. Over a stack of nine rows a hard cut reads as the list flinching
+    // as the pointer crosses it.
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: _TileCard(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        child: Row(
-          children: [
-            _TileIcon(icon: icon, accent: true, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                model.id,
-                overflow: TextOverflow.ellipsis,
-                // Mono: this is the string the Copy chip puts on the clipboard.
-                style: kGridCode.copyWith(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppPalette.textPrimary,
+      child: AnimatedContainer(
+        duration: AppMotion.hover,
+        curve: AppMotion.curve,
+        color: _hovered ? AppSurface.hoverFill : Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Row(
+            children: [
+              _TileIcon(icon: icon, accent: true, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  model.id,
+                  overflow: TextOverflow.ellipsis,
+                  // Mono: this is the string the Copy chip puts on the
+                  // clipboard.
+                  style: kGridCode.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppPalette.textPrimary,
+                  ),
                 ),
               ),
-            ),
-            if (pill != null) ...[const SizedBox(width: 10), _Pill(text: pill)],
-            const SizedBox(width: 10),
-            _CopyChip(id: model.id, active: _hovered),
-          ],
+              if (pill != null) ...[
+                const SizedBox(width: 10),
+                _Pill(text: pill),
+              ],
+              const SizedBox(width: 10),
+              _CopyChip(id: model.id, active: _hovered),
+            ],
+          ),
         ),
       ),
     );
@@ -275,7 +349,9 @@ class NodeTile extends StatelessWidget {
       if ((node.maxConcurrency ?? 0) > 1) '${node.maxConcurrency} parallel',
       if (node.throughputTokS != null) '~${node.throughputTokS!.round()} tok/s',
     ].where((s) => s.isNotEmpty).toList();
-    return _TileCard(
+    // A row inside [TileGroup], like [ModelTile] — the card is the group's.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       child: Row(
         children: [
           _TileIcon(
@@ -415,29 +491,50 @@ class _CopyChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fg = active ? AppPalette.accent : AppPalette.textFaint;
-    return Material(
-      color: active ? AppPalette.cardBgHover : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
+    // Fill, glyph and label all cross on the row's own timing — the chip lights
+    // up *with* the row it belongs to rather than a beat apart from it.
+    return AnimatedContainer(
+      duration: AppMotion.hover,
+      curve: AppMotion.curve,
+      decoration: BoxDecoration(
+        color: active ? AppPalette.cardBgHover : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
-        onTap: () => copyToClipboard(context, id),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.copy_rounded, size: 13, color: fg),
-              const SizedBox(width: 6),
-              Text(
-                'Copy',
-                style: kGridText.copyWith(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.4,
-                  color: fg,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => copyToClipboard(context, id),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TweenAnimationBuilder<Color?>(
+                  duration: AppMotion.hover,
+                  curve: AppMotion.curve,
+                  tween: ColorTween(end: fg),
+                  builder: (context, color, _) => Icon(
+                    Icons.copy_rounded,
+                    size: AppControl.iconSizeChip,
+                    color: color,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                AnimatedDefaultTextStyle(
+                  duration: AppMotion.hover,
+                  curve: AppMotion.curve,
+                  style: kGridText.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                    color: fg,
+                  ),
+                  child: const Text('Copy'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

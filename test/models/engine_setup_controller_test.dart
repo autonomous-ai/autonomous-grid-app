@@ -28,21 +28,26 @@ FakeGridCliService _grid({
   );
 
 void main() {
-  test('installs the engine with one command — no Homebrew, no Terminal', () async {
-    final container = _container(
-      grid: _grid(
-        exitCode: 0,
-        lines: const [CliLine(isStderr: false, text: 'Installed llama-server')],
-      ),
-    );
+  test(
+    'installs the engine with one command — no Homebrew, no Terminal',
+    () async {
+      final container = _container(
+        grid: _grid(
+          exitCode: 0,
+          lines: const [
+            CliLine(isStderr: false, text: 'Installed llama-server'),
+          ],
+        ),
+      );
 
-    await container.read(engineSetupControllerProvider.notifier).run();
+      await container.read(engineSetupControllerProvider.notifier).run();
 
-    expect(
-      container.read(engineSetupControllerProvider),
-      isA<EngineSetupDone>(),
-    );
-  });
+      expect(
+        container.read(engineSetupControllerProvider),
+        isA<EngineSetupDone>(),
+      );
+    },
+  );
 
   test('a failed install surfaces the last log line', () async {
     final container = _container(

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/grid_name.dart';
 import '../logic/rename_network_controller.dart';
@@ -44,8 +46,37 @@ class _RenameGridDialogState extends ConsumerState<RenameGridDialog> {
     text: widget.network.name,
   );
 
+  /// Held so the selection can be (re)applied the moment the field takes focus.
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // Select the whole name, so the first keystroke replaces it — Finder's
+    // rename, where you type over the old name rather than clearing it
+    // yourself. Otherwise an autofocused field just parks the caret at one end
+    // and makes you backspace through a name you already decided to throw away.
+    //
+    // On the focus event, not at construction: `autofocus` sets its own
+    // selection when the field first takes focus, which lands *after* the
+    // controller is built and quietly replaces anything set there. (A widget
+    // test doesn't catch this — it reports the constructed selection surviving,
+    // because the headless binding never runs the platform's focus handoff.)
+    _focus.addListener(_selectAllOnFocus);
+  }
+
+  void _selectAllOnFocus() {
+    if (!_focus.hasFocus) return;
+    _focus.removeListener(_selectAllOnFocus);
+    _name.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _name.text.length,
+    );
+  }
+
   @override
   void dispose() {
+    _focus.dispose();
     _name.dispose();
     super.dispose();
   }
@@ -88,23 +119,31 @@ class _RenameGridDialogState extends ConsumerState<RenameGridDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const FieldLabel('Grid name'),
             TextField(
               controller: _name,
+              focusNode: _focus,
               autofocus: true,
               enabled: !saving,
               maxLength: gridNameMaxLength,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                labelText: 'Grid name',
-                counterText: '',
-              ),
+              style: kFieldTextStyle,
+              decoration: const InputDecoration(counterText: ''),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               'Only the name changes. Everyone on this grid keeps their '
               'access, and apps you connected keep working.',
-              style: Theme.of(context).textTheme.bodySmall,
+              // The same note style as the Type description on
+              // [CreateNetworkDialog] — `bodySmall` carries the text theme's
+              // own colour, which is not [AppPalette.textSecondary], so the two
+              // dialogs' explanatory lines sat at different weights of grey.
+              style: TextStyle(
+                color: AppPalette.textSecondary,
+                fontSize: 12,
+                height: 1.35,
+              ),
             ),
             if (error != null) ...[
               const SizedBox(height: 14),
@@ -116,13 +155,16 @@ class _RenameGridDialogState extends ConsumerState<RenameGridDialog> {
       actions: [
         TextButton(
           onPressed: saving ? null : () => Navigator.of(context).pop(),
+          // Ink, not accent — the accent belongs to Save alone. See the same
+          // note on [CreateNetworkDialog].
+          style: TextButton.styleFrom(
+            foregroundColor: AppPalette.textSecondary,
+          ),
           child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: saving ? null : _submit,
-          child: saving
-              ? const AppSpinner.onAccent()
-              : const Text('Save'),
+          child: saving ? const AppSpinner.onAccent() : const Text('Save'),
         ),
       ],
     );

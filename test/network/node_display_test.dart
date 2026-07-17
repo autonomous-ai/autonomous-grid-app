@@ -9,17 +9,16 @@ OverviewNode _node({
   int? concurrency,
   double? vramGb,
   double? vramTotalMb,
-}) =>
-    OverviewNode.fromJson({
-      'name': 'n',
-      'engine': engine,
-      'model': ?model,
-      'models': models,
-      'max_concurrency': ?concurrency,
-      'vram_gb': ?vramGb,
-      'vram_total_mb': ?vramTotalMb,
-      'online': true,
-    });
+}) => OverviewNode.fromJson({
+  'name': 'n',
+  'engine': engine,
+  'model': ?model,
+  'models': models,
+  'max_concurrency': ?concurrency,
+  'vram_gb': ?vramGb,
+  'vram_total_mb': ?vramTotalMb,
+  'online': true,
+});
 
 void main() {
   group('nodeEngineLabel', () {
@@ -44,13 +43,14 @@ void main() {
     });
 
     test('reads i2v as Video', () {
-      expect(nodeRoleSummary(_node(engine: 'comfyui', models: ['comfyui:i2v'])),
-          'Video');
+      expect(
+        nodeRoleSummary(_node(engine: 'comfyui', models: ['comfyui:i2v'])),
+        'Video',
+      );
     });
 
     test('counts chat models with correct pluralisation', () {
-      expect(
-          nodeRoleSummary(_node(models: ['a', 'b', 'c'])), '3 chat models');
+      expect(nodeRoleSummary(_node(models: ['a', 'b', 'c'])), '3 chat models');
       expect(nodeRoleSummary(_node(models: ['only'])), '1 chat model');
     });
 
@@ -60,14 +60,23 @@ void main() {
   });
 
   test('nodeIsMedia flags comfyui / capability nodes only', () {
-    expect(nodeIsMedia(_node(engine: 'comfyui', models: ['comfyui:i2v'])), isTrue);
+    expect(
+      nodeIsMedia(_node(engine: 'comfyui', models: ['comfyui:i2v'])),
+      isTrue,
+    );
     expect(nodeIsMedia(_node(models: ['comfyui:image_generation'])), isTrue);
-    expect(nodeIsMedia(_node(engine: 'external', models: ['some/model'])), isFalse);
+    expect(
+      nodeIsMedia(_node(engine: 'external', models: ['some/model'])),
+      isFalse,
+    );
   });
 
   group('mediaCapabilityLabel', () {
     test('labels comfyui media ids, null for a text model', () {
-      expect(mediaCapabilityLabel('comfyui:image_generation'), 'Image generation');
+      expect(
+        mediaCapabilityLabel('comfyui:image_generation'),
+        'Image generation',
+      );
       expect(mediaCapabilityLabel('comfyui:image_editing'), 'Image editing');
       expect(mediaCapabilityLabel('comfyui:i2v'), 'Video');
       expect(mediaCapabilityLabel('qwen3-coder'), isNull);

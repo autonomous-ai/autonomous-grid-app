@@ -2,6 +2,38 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
+/// A field's label, sitting still above the control it names.
+///
+/// Material floats a `labelText` *inside* the field and animates it up to the
+/// rim once the field has focus or a value — so a form ends up with its empty
+/// fields wearing their labels as placeholder text while the filled ones wear
+/// theirs tinted and notched into the border, which reads as focus that isn't
+/// there. macOS doesn't move labels: it sets them above the control and leaves
+/// them.
+///
+/// Split out of [LabeledField] so a dialog that has to build its own control (a
+/// picker, a multiline box) still labels it the same way.
+class FieldLabel extends StatelessWidget {
+  const FieldLabel(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, bottom: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          color: AppPalette.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
 /// A labelled input: the label sits above a soft, borderless capsule field.
 ///
 /// The shared form field for the app's dialogs — roomier and calmer than a
@@ -34,17 +66,7 @@ class LabeledField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 2, bottom: 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: AppPalette.textSecondary,
-            ),
-          ),
-        ),
+        FieldLabel(label),
         TextField(
           controller: controller,
           enabled: enabled,

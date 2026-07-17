@@ -294,7 +294,10 @@ class _Tick extends StatelessWidget {
       _tickRestWidth + (_tickLiftWidth - _tickRestWidth) * lift,
       current ? _tickCurrentWidth : 0.0,
     );
-    final height = math.max(_tickHeight + lift, current ? _tickHeight + 1 : 0.0);
+    final height = math.max(
+      _tickHeight + lift,
+      current ? _tickHeight + 1 : 0.0,
+    );
     return Positioned(
       top: centerY - height / 2,
       // Inset from the rail's left edge. The hit area still starts at 0, so the

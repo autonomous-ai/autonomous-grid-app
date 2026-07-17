@@ -52,7 +52,11 @@ class _ExtensionTileSurfaceState extends State<ExtensionTileSurface> {
 /// row and says nothing; tinted, it becomes the column you scan to find what's
 /// switched on.
 class ExtensionIconBadge extends StatelessWidget {
-  const ExtensionIconBadge({super.key, required this.icon, this.active = false});
+  const ExtensionIconBadge({
+    super.key,
+    required this.icon,
+    this.active = false,
+  });
 
   final IconData icon;
   final bool active;

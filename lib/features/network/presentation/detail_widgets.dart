@@ -151,41 +151,37 @@ class MetaRow extends StatelessWidget {
   }
 }
 
-/// One grid pill in the shared compact shape, with the accent-row legibility
-/// swap: white on the blue selected row (where the tint muddies), the tint
-/// colour otherwise. One place so every grid badge looks identical.
-Widget _gridPill(String label, Color color, {required bool onAccent}) =>
-    _BadgePill(
-      label: label,
-      color: onAccent ? Colors.white : color,
-      compact: true,
-      fillAlpha: onAccent ? 0.24 : 0.16,
-      borderAlpha: onAccent ? 0.7 : 0.45,
-    );
+/// One grid pill in the shared compact shape. One place so every grid badge
+/// looks identical.
+///
+/// It used to carry an `onAccent` variant — white, on a stronger fill — for the
+/// grid list's selected row back when that row was filled with solid accent.
+/// The list now marks its selection with a quiet wash and an accent edge, so no
+/// badge ever sits on accent and the variant had no callers left.
+Widget _gridPill(String label, Color color) => BadgePill(
+  label: label,
+  color: color,
+  compact: true,
+  fillAlpha: 0.16,
+  borderAlpha: 0.45,
+);
 
 /// The list badge: a single pill so the sidebar row stays compact — "Owner" if
 /// the viewer owns the grid, else "Public" for a public grid they merely joined
 /// (otherwise a grid the user doesn't own looks like it appeared for no reason),
 /// else nothing. The detail header shows both at once via [GridBadges].
 class GridBadge extends StatelessWidget {
-  const GridBadge({super.key, required this.network, this.onAccent = false});
+  const GridBadge({super.key, required this.network});
 
   final NetworkCredential network;
-
-  /// Render for an accent-filled (selected) row — see [_gridPill].
-  final bool onAccent;
 
   @override
   Widget build(BuildContext context) {
     if (network.role == NetworkRole.admin) {
-      return _gridPill(network.roleLabel, AppPalette.teal, onAccent: onAccent);
+      return _gridPill(network.roleLabel, AppPalette.teal);
     }
     if (network.isPublic) {
-      return _gridPill(
-        network.visibilityLabel,
-        AppPalette.accent,
-        onAccent: onAccent,
-      );
+      return _gridPill(network.visibilityLabel, AppPalette.accent);
     }
     return const SizedBox.shrink();
   }
@@ -204,9 +200,9 @@ class GridBadges extends StatelessWidget {
   Widget build(BuildContext context) {
     final pills = <Widget>[
       if (network.role == NetworkRole.admin)
-        _gridPill(network.roleLabel, AppPalette.teal, onAccent: false),
+        _gridPill(network.roleLabel, AppPalette.teal),
       if (network.isPublic)
-        _gridPill(network.visibilityLabel, AppPalette.accent, onAccent: false),
+        _gridPill(network.visibilityLabel, AppPalette.accent),
     ];
     if (pills.isEmpty) return const SizedBox.shrink();
     return Wrap(spacing: 6, runSpacing: 6, children: pills);
@@ -214,8 +210,15 @@ class GridBadges extends StatelessWidget {
 }
 
 /// One rounded, tinted pill — the shared shape for role and visibility badges.
-class _BadgePill extends StatelessWidget {
-  const _BadgePill({
+///
+/// Public so every badge on the Grids screen comes from here. The Members tab
+/// used to hand-roll its own "Owner" pill with these exact numbers copied out,
+/// which drifted: it tinted itself [AppPalette.accent] while the header's Owner
+/// badge two rows up was [AppPalette.teal] — one word, one meaning, two colours
+/// on one screen.
+class BadgePill extends StatelessWidget {
+  const BadgePill({
+    super.key,
     required this.label,
     required this.color,
     this.compact = false,
@@ -281,7 +284,7 @@ class CopyIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: const Icon(Icons.copy_rounded, size: 15),
+      icon: const Icon(Icons.copy_rounded, size: AppControl.iconSize),
       color: AppPalette.textSecondary,
       tooltip: 'Copy',
       visualDensity: VisualDensity.compact,
@@ -311,7 +314,7 @@ class CopyButton extends StatelessWidget {
         backgroundColor: AppPalette.accent.withValues(alpha: 0.16),
         foregroundColor: AppPalette.accent,
         minimumSize: const Size(0, AppControl.heightSmall),
-        padding: AppControl.paddingSmall,
+        padding: AppControl.paddingSmallIcon,
         side: BorderSide(color: AppPalette.accent.withValues(alpha: 0.5)),
       ),
     );

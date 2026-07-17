@@ -83,8 +83,10 @@ class SkillList extends StatelessWidget {
 
     return [
       for (final name in names) ...[
-        _Header(name == kMySkillsCategory ? 'My skills' : name,
-            groups[name]!.length),
+        _Header(
+          name == kMySkillsCategory ? 'My skills' : name,
+          groups[name]!.length,
+        ),
         for (final skill in groups[name]!) _Row(skill),
       ],
     ];
@@ -165,10 +167,7 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: _SkillInfo(
-              skill: skill,
-              showCategory: widget.showCategory,
-            ),
+            child: _SkillInfo(skill: skill, showCategory: widget.showCategory),
           ),
           if (!skill.fromGrid) ...[
             const SizedBox(width: 8),

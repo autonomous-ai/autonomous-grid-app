@@ -76,7 +76,8 @@ void main() {
       expect(
         tester.getSize(find.text(label)).width,
         greaterThanOrEqualTo(painter.width - 0.5),
-        reason: '"$label" is being clipped — it renders narrower than the text '
+        reason:
+            '"$label" is being clipped — it renders narrower than the text '
             'it is meant to show',
       );
     }
@@ -107,7 +108,8 @@ void main() {
     expect(
       tester.getSize(find.byType(ThemeModePicker)).height,
       lessThanOrEqualTo(reserved),
-      reason: 'the picker outgrew the $reserved px the account menu reserves — '
+      reason:
+          'the picker outgrew the $reserved px the account menu reserves — '
           'update _menuThemeHeight in sidebar_account.dart to match',
     );
   });
@@ -127,7 +129,10 @@ void main() {
     expect(lightBg, isNot(equals(darkBg)));
     expect(lightInk, isNot(equals(darkInk)));
     expect(darkBg.computeLuminance(), lessThan(lightBg.computeLuminance()));
-    expect(darkInk.computeLuminance(), greaterThan(lightInk.computeLuminance()));
+    expect(
+      darkInk.computeLuminance(),
+      greaterThan(lightInk.computeLuminance()),
+    );
 
     // Leave the global back at the shipped default so test order can't leak.
     AppTheme.brightness.value = Brightness.light;

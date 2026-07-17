@@ -27,8 +27,7 @@ void main() {
     }''';
 
     test('parses stats, models and nodes', () {
-      final o = GridOverview.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>);
+      final o = GridOverview.fromJson(jsonDecode(raw) as Map<String, dynamic>);
 
       expect(o.state, 'running');
       expect(o.stats.models, 1);
@@ -60,8 +59,8 @@ void main() {
 
       final partial = GridOverview.fromJson(const {
         'nodes': [
-          {'name': 'n1', 'online': false}
-        ]
+          {'name': 'n1', 'online': false},
+        ],
       });
       expect(partial.nodes.single.online, isFalse);
       expect(partial.nodes.single.device, isNull);

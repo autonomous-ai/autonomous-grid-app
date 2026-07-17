@@ -22,8 +22,9 @@ void main() {
     ),
   );
 
-  testWidgets('lists all agents with their taglines, no overflow',
-      (tester) async {
+  testWidgets('lists all agents with their taglines, no overflow', (
+    tester,
+  ) async {
     await tester.pumpWidget(host());
     await tester.pump(); // let the version future resolve
 
@@ -35,8 +36,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('every row is the same height — a tagline stays on one line',
-      (tester) async {
+  testWidgets('every row is the same height — a tagline stays on one line', (
+    tester,
+  ) async {
     await tester.pumpWidget(host());
     await tester.pump();
 
@@ -51,13 +53,15 @@ void main() {
     final heights = tester
         .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
         .map((w) => tester.getSize(find.byWidget(w)).height);
-    final spread = heights.reduce((a, b) => a > b ? a : b) -
+    final spread =
+        heights.reduce((a, b) => a > b ? a : b) -
         heights.reduce((a, b) => a < b ? a : b);
     expect(spread, lessThan(4));
   });
 
-  testWidgets('every agent ships a mark the app can actually load',
-      (tester) async {
+  testWidgets('every agent ships a mark the app can actually load', (
+    tester,
+  ) async {
     // A path missing from `pubspec.yaml`'s asset list, or misspelled, compiles
     // fine and throws only when a row paints. Loading each one here moves that
     // failure into CI, where adding an agent is a one-line diff and forgetting
@@ -86,8 +90,9 @@ void main() {
     });
   });
 
-  testWidgets('rows are flat — no card carries a decorative gradient',
-      (tester) async {
+  testWidgets('rows are flat — no card carries a decorative gradient', (
+    tester,
+  ) async {
     await tester.pumpWidget(host());
     await tester.pump();
 
@@ -103,8 +108,9 @@ void main() {
     expect(gradients, findsNothing);
   });
 
-  testWidgets('a planned agent states itself in full ink, with no controls',
-      (tester) async {
+  testWidgets('a planned agent states itself in full ink, with no controls', (
+    tester,
+  ) async {
     await tester.pumpWidget(host());
     await tester.pump();
 
@@ -120,8 +126,9 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Install'), findsNothing);
   });
 
-  testWidgets('hovering the runnable agent tints it without throwing',
-      (tester) async {
+  testWidgets('hovering the runnable agent tints it without throwing', (
+    tester,
+  ) async {
     await tester.pumpWidget(host());
     await tester.pump();
 

@@ -29,8 +29,9 @@ ProviderContainer _container(GridCliService? cli) {
 void main() {
   test('parses the "Grid can pull" block into device-tagged entries', () async {
     final fake = FakeGridCliService()
-      ..stubResult(const ['catalog'],
-          const CliResult(exitCode: 0, stdout: _catalogStdout, stderr: ''));
+      ..stubResult(const [
+        'catalog',
+      ], const CliResult(exitCode: 0, stdout: _catalogStdout, stderr: ''));
     final container = _container(fake);
 
     final entries = await container.read(catalogModelsProvider.future);
@@ -40,15 +41,18 @@ void main() {
     expect(entries, hasLength(2));
     expect(entries.first.target, 'Apple Silicon');
     expect(entries.first.minVramGb, 32);
-    expect(entries.first.pullSpec,
-        'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-IQ3_S.gguf');
+    expect(
+      entries.first.pullSpec,
+      'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
+    );
     expect(entries[1].target, 'NVIDIA');
   });
 
   test('returns empty when the catalog command fails', () async {
     final fake = FakeGridCliService()
-      ..stubResult(const ['catalog'],
-          const CliResult(exitCode: 1, stdout: '', stderr: 'boom'));
+      ..stubResult(const [
+        'catalog',
+      ], const CliResult(exitCode: 1, stdout: '', stderr: 'boom'));
     final container = _container(fake);
 
     expect(await container.read(catalogModelsProvider.future), isEmpty);

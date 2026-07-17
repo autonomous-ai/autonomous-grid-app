@@ -275,8 +275,10 @@ class _ToastHostState extends State<_ToastHost>
     reverseCurve: Curves.easeInCubic,
   );
 
-  late final Animation<Offset> _slide =
-      Tween(begin: const Offset(0, -0.35), end: Offset.zero).animate(_fade);
+  late final Animation<Offset> _slide = Tween(
+    begin: const Offset(0, -0.35),
+    end: Offset.zero,
+  ).animate(_fade);
 
   @override
   void initState() {
