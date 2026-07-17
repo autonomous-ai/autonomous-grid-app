@@ -41,7 +41,8 @@ class ApiEngineModel {
 /// a key hint, or where to get a key — so those live here. [kind] must match the
 /// CLI's service kind (`grid join --api <kind>`); [envVar] is the environment
 /// variable the CLI reads the key from (ADR 0012 key precedence — the app passes
-/// the key that way so it never lands on the command line).
+/// the key that way so it never lands on the command line), or **null** for a
+/// sign-in provider whose credential is an OAuth seat, not a key (ADR 0015).
 class ApiProvider {
   const ApiProvider({
     required this.kind,
@@ -53,9 +54,19 @@ class ApiProvider {
 
   final String kind;
   final String label;
-  final String envVar;
+
+  /// The env var the CLI reads this kind's key from, or null for a sign-in
+  /// provider ([usesSignIn]).
+  final String? envVar;
   final String keyHint;
   final String? keyHelpUrl;
+
+  /// True when this provider authenticates by an interactive browser sign-in —
+  /// `grid join --api <kind>` runs the OAuth flow — instead of a pasted API key.
+  /// A ChatGPT/Codex subscription seat has no env-var key path (its `env_var` is
+  /// null in the CLI whitelist, ADR 0015), so the block asks the user to sign in
+  /// rather than paste a key.
+  bool get usesSignIn => envVar == null;
 }
 
 /// A hosted provider the installed CLI can actually serve, resolved at runtime:
@@ -80,12 +91,34 @@ class ApiEngine {
   final bool hasStoredKey;
 }
 
+/// Advertised model kinds the grid serves through the vendor's `responses`
+/// endpoint only. They can't be exercised from the in-app Playground or `grid
+/// chat` (which speak chat-completions) — only from an external Codex-style app
+/// pointed at the grid (ADR 0015). The UI reads this to stay honest about where
+/// a just-served model can be used. Hand-mirrors the CLI whitelist's
+/// `endpoints=("responses",)` — the same lockstep the CLI keeps with grid-src.
+const Set<String> kResponsesOnlyKinds = {'codex'};
+
+/// Whether [model] is served through the `responses` endpoint only (see
+/// [kResponsesOnlyKinds]). Accepts a single advertised name (`codex:gpt-5.5`), a
+/// comma-joined list of them, or a bare kind (`codex`) — the shapes
+/// `ProviderRunActive.model` can hold — and is true if any names a
+/// responses-only kind. Lets the running-engine card swap a dead-end "Try it in
+/// Playground" button for honest guidance.
+bool isResponsesOnlyModel(String? model) {
+  if (model == null || model.isEmpty) return false;
+  return model.split(',').map((name) => name.trim().split(':').first).any(
+    kResponsesOnlyKinds.contains,
+  );
+}
+
 /// Hosted providers the app can present. Add one here once its kind lands in the
 /// CLI whitelist (`grid catalog --api <kind>`); [apiEnginesProvider] verifies
 /// support at runtime, so an entry the installed CLI doesn't know is simply
 /// hidden — we never offer a provider a `grid join` would reject.
 ///
-/// Today the CLI ships only `openai` (ADR 0012, Slice 1). OpenRouter, Anthropic,
+/// The CLI ships `openai` (a pasted API key, ADR 0012) and `codex` (a ChatGPT
+/// subscription seat signed in via OAuth, ADR 0015). OpenRouter, Anthropic,
 /// Gemini, … are a one-line addition each when their kind is whitelisted.
 const List<ApiProvider> kApiProviders = [
   ApiProvider(
@@ -94,6 +127,15 @@ const List<ApiProvider> kApiProviders = [
     envVar: 'OPENAI_API_KEY',
     keyHint: 'sk-…',
     keyHelpUrl: 'https://platform.openai.com/api-keys',
+  ),
+  ApiProvider(
+    kind: 'codex',
+    label: 'ChatGPT / Codex subscription',
+    // A codex seat is an OAuth sign-in, not a key: its `env_var` is null in the
+    // CLI whitelist (ADR 0015), so the block signs in via `grid join --api
+    // codex` instead of asking for a key. keyHint/keyHelpUrl go unused.
+    envVar: null,
+    keyHint: '',
   ),
 ];
 
@@ -139,13 +181,8 @@ final apiEnginesProvider = FutureProvider<List<ApiEngine>>((ref) async {
   try {
     final decoded = jsonDecode(stdout);
     if (decoded is! Map) return null;
-    final rawModels = decoded['models'];
-    if (rawModels is! List) return null;
-    final models = [
-      for (final model in rawModels)
-        if (model is Map)
-          ApiEngineModel.fromJson(Map<String, dynamic>.from(model)),
-    ];
+    final models = _readModels(decoded);
+    if (models == null) return null;
     final lastVerified = decoded['last_verified'];
     return (
       models: models,
@@ -155,3 +192,30 @@ final apiEnginesProvider = FutureProvider<List<ApiEngine>>((ref) async {
     return null;
   }
 }
+
+/// The model rows out of a catalog document, in either shape the CLI emits: a
+/// flat `models` list (key-based kinds like openai) or a per-subscription-tier
+/// `tiers` map (codex — ADR 0015). Tiers are flattened to the union a join could
+/// serve, first occurrence wins, so the block lists every model once regardless
+/// of which tier verifies it. Null when neither shape is present.
+List<ApiEngineModel>? _readModels(Map<dynamic, dynamic> decoded) {
+  final flat = decoded['models'];
+  if (flat is List) return _modelsFrom(flat);
+
+  final tiers = decoded['tiers'];
+  if (tiers is! Map) return null;
+  final seen = <String>{};
+  return [
+    for (final rows in tiers.values)
+      if (rows is List)
+        for (final model in _modelsFrom(rows))
+          if (seen.add(model.advertised)) model,
+  ];
+}
+
+/// Parse the model rows of a catalog list, skipping any non-object row.
+List<ApiEngineModel> _modelsFrom(List<dynamic> rows) => [
+  for (final model in rows)
+    if (model is Map)
+      ApiEngineModel.fromJson(Map<String, dynamic>.from(model)),
+];

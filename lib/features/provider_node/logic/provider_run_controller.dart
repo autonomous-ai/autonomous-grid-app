@@ -259,21 +259,28 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     );
   }
 
-  /// Serve a third-party hosted engine via the provider's own API key
-  /// (`grid join <grid> --api <kind> [-m <model> …]`). Remote-only, which this
-  /// app always is. The key travels in [environment] (`<KIND>_API_KEY`), not in
-  /// argv, so it never reaches a log — the CLI reads it there first, validates
-  /// it against the vendor, then stores it for the detached serve loop to reuse
-  /// (ADR 0012). Pass an empty [apiKey] to fall back to that stored key.
+  /// Serve a third-party hosted engine to the active remote grid (this app is
+  /// always remote-only), via
+  /// `grid join <grid> --api <kind> [-m <model> …]`.
+  ///
+  /// For a key-based kind, the key travels in [environment] (`<KIND>_API_KEY`),
+  /// not in argv, so it never reaches a log — the CLI reads it there first,
+  /// validates it against the vendor, then stores it for the detached serve loop
+  /// to reuse (ADR 0012). Pass an empty [apiKey] to fall back to that stored key.
+  /// For a sign-in kind (codex, [envVar] null), no key is passed: `grid join
+  /// --api codex` runs the OAuth flow itself — it opens the browser and catches
+  /// the redirect, or reuses a seat this machine already signed in with (ADR
+  /// 0015). The join stays in the starting state while the user approves it (the
+  /// authorize URL streams into the log).
   ///
   /// [models] are advertised whitelist names (`openai:gpt-5.5`); empty serves
-  /// the whole whitelist the key can see (the CLI's zero-config default). No
+  /// the whole set the credential can see (the CLI's zero-config default). No
   /// `--advertise-as`/`--ctx-size`: the CLI rejects aliasing for API engines and
   /// the vendor owns the context window.
   Future<void> startApiEngine({
     required String network,
     required String kind,
-    required String envVar,
+    required String? envVar,
     required String apiKey,
     List<String> models = const [],
   }) {
@@ -289,7 +296,9 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       ],
       grid: network,
       model: models.isEmpty ? kind : models.join(', '),
-      environment: apiKey.isEmpty ? null : {envVar: apiKey},
+      environment: (apiKey.isNotEmpty && envVar != null)
+          ? {envVar: apiKey}
+          : null,
     );
   }
 

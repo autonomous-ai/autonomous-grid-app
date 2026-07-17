@@ -34,6 +34,35 @@ const _openaiCatalog = '''
 
 const _catalogArgs = ['catalog', '--api', 'openai', '--json'];
 
+// A codex catalog speaks per-subscription-tier `tiers`, not a flat `models`
+// list (ADR 0015). `gpt-5.6-terra` appears in two tiers to exercise the
+// first-wins union.
+const _codexCatalog = '''
+{
+  "kind": "codex",
+  "last_verified": "2026-07-15",
+  "endpoints": ["responses"],
+  "minimal_tier": "free",
+  "tiers": {
+    "free": [
+      {"advertised": "codex:gpt-5.6-terra", "vendor_name": "gpt-5.6-terra",
+       "context_window": 272000, "supports_tools": true, "supports_vision": true,
+       "supports_parallel_tool_calls": true, "notes": "Balanced."},
+      {"advertised": "codex:gpt-5.4-mini", "vendor_name": "gpt-5.4-mini",
+       "context_window": 272000, "supports_tools": true, "supports_vision": true,
+       "supports_parallel_tool_calls": true, "notes": "High-volume."}
+    ],
+    "plus": [
+      {"advertised": "codex:gpt-5.6-terra", "vendor_name": "gpt-5.6-terra",
+       "context_window": 272000, "supports_tools": true, "supports_vision": true,
+       "supports_parallel_tool_calls": true, "notes": "Balanced."}
+    ]
+  }
+}
+''';
+
+const _codexArgs = ['catalog', '--api', 'codex', '--json'];
+
 ProviderContainer _container(GridCliService? cli, {Set<String> stored = const {}}) {
   final container = ProviderContainer(overrides: [
     gridCliServiceProvider.overrideWithValue(cli),
@@ -71,6 +100,24 @@ void main() {
     });
   });
 
+  group('isResponsesOnlyModel', () {
+    test('flags codex models in every shape run state can hold', () {
+      expect(isResponsesOnlyModel('codex'), isTrue); // bare kind (serve-all)
+      expect(isResponsesOnlyModel('codex:gpt-5.4-mini'), isTrue);
+      expect(
+        isResponsesOnlyModel('codex:gpt-5.5, codex:gpt-5.4-mini'),
+        isTrue,
+      );
+    });
+
+    test('leaves chat-completions models and empties alone', () {
+      expect(isResponsesOnlyModel('openai:gpt-5.5'), isFalse);
+      expect(isResponsesOnlyModel('llama-3.1-8b'), isFalse);
+      expect(isResponsesOnlyModel(null), isFalse);
+      expect(isResponsesOnlyModel(''), isFalse);
+    });
+  });
+
   group('apiEnginesProvider', () {
     test('resolves a whitelisted provider with its models and stored-key flag',
         () async {
@@ -89,6 +136,30 @@ void main() {
       expect(engine.lastVerified, '2026-07-08');
       expect(engine.models.map((m) => m.advertised),
           ['openai:gpt-5.5', 'openai:gpt-5.4-nano']);
+    });
+
+    test('surfaces codex from its per-tier catalog as a sign-in provider',
+        () async {
+      // Only codex resolves here: openai's catalog is refused so the single
+      // engine is unambiguously the codex one.
+      final fake = FakeGridCliService()
+        ..stubResult(_catalogArgs,
+            const CliResult(exitCode: 1, stdout: '', stderr: 'Unknown'))
+        ..stubResult(_codexArgs,
+            const CliResult(exitCode: 0, stdout: _codexCatalog, stderr: ''));
+      final container = _container(fake, stored: const {'codex'});
+
+      final engines = await container.read(apiEnginesProvider.future);
+
+      final codex = engines.singleWhere((e) => e.provider.kind == 'codex');
+      expect(codex.provider.usesSignIn, isTrue);
+      expect(codex.provider.envVar, isNull);
+      expect(codex.hasStoredKey, isTrue); // a stored OAuth seat counts
+      expect(codex.lastVerified, '2026-07-15');
+      // Tiers flattened to a first-wins union — the model shared across tiers
+      // appears once, in first-seen order.
+      expect(codex.models.map((m) => m.advertised),
+          ['codex:gpt-5.6-terra', 'codex:gpt-5.4-mini']);
     });
 
     test('reports no stored key when the store has none', () async {

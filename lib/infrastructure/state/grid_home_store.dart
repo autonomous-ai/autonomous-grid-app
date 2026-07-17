@@ -28,18 +28,25 @@ class GridHomeStore {
     if (file.existsSync()) file.deleteSync();
   }
 
-  /// Service kinds that already have a stored API-engine key in
-  /// `~/.grid/api_keys.toml` (a `[<kind>]` table with a non-empty `key`). Lets
-  /// the hosted-provider block skip re-asking for a key the CLI already saved on
-  /// a prior successful join. Reads presence only — never the key itself.
+  /// Service kinds that already have a stored API-engine credential in
+  /// `~/.grid/api_keys.toml`. Lets the hosted-provider block skip re-asking on a
+  /// prior successful join. Reads presence only — never the secret itself.
   /// Lenient: a missing/corrupt file yields an empty set, never throws.
+  ///
+  /// A key-based kind stores its secret under `key`; a codex seat is an OAuth
+  /// bundle with no `key`, so its presence is the access/refresh token instead
+  /// (ADR 0015). Either shape counts as "already signed in / has a key".
   Set<String> storedApiKinds() {
     final map = _readToml(GridPaths.apiKeysFile);
     if (map == null) return const {};
     final kinds = <String>{};
     map.forEach((kind, entry) {
-      final key = entry is Map ? entry['key'] : null;
-      if (key is String && key.isNotEmpty) kinds.add(kind);
+      if (entry is! Map) return;
+      final key = entry['key'];
+      final token = entry['access_token'] ?? entry['refresh_token'];
+      final hasKey = key is String && key.isNotEmpty;
+      final hasToken = token is String && token.isNotEmpty;
+      if (hasKey || hasToken) kinds.add(kind);
     });
     return kinds;
   }
