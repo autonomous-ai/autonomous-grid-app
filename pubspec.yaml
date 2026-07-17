@@ -47,3 +47,9 @@ flutter:
   assets:
     - assets/tray/tray_icon.png
     - assets/brand/grid_logo_bg.png
+    # Agent marks, bundled rather than fetched from the CDN they came from: the
+    # Agents screen makes no network calls at all, and an icon that arrives late
+    # would pop into a row that has already been laid out.
+    - assets/agents/hermes_icon.webp
+    - assets/agents/codex_icon.png
+    - assets/agents/openclaw_icon.png

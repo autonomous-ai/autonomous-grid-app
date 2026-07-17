@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'not_yet_badge.dart';
 import 'section_scaffold.dart';
 
 /// A screen the app has a place for but hasn't built yet.
@@ -39,7 +40,7 @@ class ComingSoonView extends StatelessWidget {
             children: [
               Center(child: Icon(icon, size: 34, color: AppPalette.textFaint)),
               const SizedBox(height: 14),
-              const Center(child: _NotYetBadge()),
+              const Center(child: NotYetBadge()),
               const SizedBox(height: 18),
               Text(
                 "When it's ready, you'll be able to:",
@@ -71,30 +72,6 @@ class ComingSoonView extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NotYetBadge extends StatelessWidget {
-  const _NotYetBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppPalette.divider),
-      ),
-      child: Text(
-        'Not available yet',
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppPalette.textSecondary,
         ),
       ),
     );

@@ -149,6 +149,7 @@ void main() {
     test('the id is what `grid agent install` takes', () {
       expect(AgentTool.hermes.id, 'hermes');
     });
+
   });
 
   group('parseHermesVersion', () {

@@ -1,7 +1,3 @@
-import 'package:flutter/material.dart';
-
-import '../../../shared/theme/app_theme.dart';
-
 /// The agents the app knows about — the ones that can be put in charge of a
 /// chat, and the ones that are coming.
 ///
@@ -13,28 +9,23 @@ enum AgentTool {
   hermes(
     id: 'hermes',
     name: 'Hermes',
-    tagline:
-        'Runs on this computer. Uses your model, reads the project '
-        'folder you point it at, and can run tools.',
+    tagline: 'Runs locally. Uses your model and tools.',
     runnable: true,
-    accent: AppPalette.accent,
-    icon: Icons.bolt_rounded,
+    iconAsset: 'assets/agents/hermes_icon.webp',
   ),
   codex(
     id: 'codex',
     name: 'Codex',
     tagline: "OpenAI's coding agent.",
     runnable: false,
-    accent: Color(0xFF16A34A),
-    icon: Icons.terminal_rounded,
+    iconAsset: 'assets/agents/codex_icon.png',
   ),
   openclaw(
     id: 'openclaw',
     name: 'OpenClaw',
     tagline: 'An open-source agent.',
     runnable: false,
-    accent: Color(0xFFF97316),
-    icon: Icons.pets_rounded,
+    iconAsset: 'assets/agents/openclaw_icon.png',
   );
 
   const AgentTool({
@@ -42,8 +33,7 @@ enum AgentTool {
     required this.name,
     required this.tagline,
     required this.runnable,
-    required this.accent,
-    required this.icon,
+    required this.iconAsset,
   });
 
   /// What `grid agent install` calls it.
@@ -51,19 +41,26 @@ enum AgentTool {
 
   final String name;
 
-  /// One line: what it is, in the user's terms.
+  /// One line: what it is, in the user's terms — and one line is the budget. The
+  /// screen's own subtitle already says an agent runs on this computer with your
+  /// model and tools, so a tagline that repeats it says nothing twice and wraps
+  /// the row to two lines, leaving the list unevenly ranked for no reason. Say
+  /// only what sets this agent apart from the others.
   final String tagline;
 
   /// Whether the app can actually install and run it today. False means the
   /// screen shows it as planned — no install button, no toggle.
   final bool runnable;
 
-  /// The agent's own colour — its icon chip's tint and the rim it lifts to on
-  /// hover, so each row reads as its own thing rather than a repeated robot.
-  final Color accent;
-
-  /// A glyph that hints at what the agent is, instead of one shared robot icon.
-  final IconData icon;
+  /// The agent's own mark, bundled with the app (declared in `pubspec.yaml`).
+  ///
+  /// These are each project's real logo, so they arrive with their own colour and
+  /// their own backdrop — which is why a row draws the image itself rather than
+  /// tinting a glyph the way the plugin list does. Adding an agent means adding
+  /// its file to `assets/agents/` *and* to `pubspec.yaml`; a path that isn't
+  /// declared there throws at runtime, not at compile time, so
+  /// `agent_catalog_test.dart` loads every one of these to catch it in CI.
+  final String iconAsset;
 }
 
 /// The agent that answers chats today. Named rather than assumed, so the day a

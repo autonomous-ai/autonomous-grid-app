@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/hermes_version_service.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/not_yet_badge.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../agent/logic/hermes_tool.dart';
@@ -15,6 +16,11 @@ import '../logic/agent_install_controller.dart';
 /// One today (Hermes, which answers your chats), and the ones that are coming.
 /// The planned ones are listed but carry no controls — the screen says what it
 /// will support without offering a button that would do nothing.
+///
+/// This is a status list, not a gallery: three rows, one of them actionable, read
+/// once in a while to check a version or pull an update. So it wears the same
+/// quiet row surface as Plugins and Scheduled rather than a hero treatment. What
+/// marks the live agent is the thing only it has — a lit status dot and a button.
 class AgentsView extends ConsumerWidget {
   const AgentsView({super.key});
 
@@ -25,10 +31,20 @@ class AgentsView extends ConsumerWidget {
       subtitle:
           'The assistant that does the work: it runs on this computer, with '
           'your model, and can use your files and tools.',
-      child: ListView.separated(
-        itemCount: AgentTool.values.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (context, i) => _AgentCard(tool: AgentTool.values[i]),
+      // Name on the left, action on the right. Let a row run the full width of a
+      // large window and the two ends drift apart until pairing them takes a
+      // deliberate look; this keeps a row scannable in one glance. Matches the
+      // width Plugins bounds its rows to.
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 940),
+          child: ListView.separated(
+            itemCount: AgentTool.values.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, i) => _AgentCard(tool: AgentTool.values[i]),
+          ),
+        ),
       ),
     );
   }
@@ -55,174 +71,111 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
     // worth probing — the rest are planned, and say so.
     final installed = tool.runnable && ref.watch(hermesInstalledProvider);
 
-    final radius = BorderRadius.circular(16);
-    // A planned agent reads as quieter: it can't be installed, so it shouldn't
-    // invite a click the way the live one does. Only runnable rows lift on hover.
+    // A planned agent has nothing to reach for, so it doesn't answer the pointer.
     final canHover = tool.runnable;
-    final rim = canHover && _hovered
-        ? tool.accent.withValues(alpha: 0.5)
-        : AppGlass.hair;
 
-    final card = MouseRegion(
-      cursor: canHover ? SystemMouseCursors.click : MouseCursor.defer,
+    return MouseRegion(
       onEnter: canHover ? (_) => setState(() => _hovered = true) : null,
       onExit: canHover ? (_) => setState(() => _hovered = false) : null,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        // The house row-hover timing, shared with the plugin and job lists.
+        duration: const Duration(milliseconds: 130),
         curve: Curves.easeOut,
-        transform: Matrix4.translationValues(0, _hovered ? -2 : 0, 0),
-        transformAlignment: Alignment.center,
         decoration: BoxDecoration(
-          color: AppCard.base,
-          borderRadius: radius,
-          border: Border.all(color: rim, width: 1.5),
-          boxShadow: _hovered ? AppCard.shadow : AppGlass.cardShadow,
+          color: _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: AppGlass.cardShadow,
         ),
-        child: ClipRRect(
-          borderRadius: radius,
-          child: Stack(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // The live agent leads: a faint diagonal wash in its own colour and
-              // a soft corner glow lift it above the flat, planned rows below.
-              if (tool.runnable)
-                Positioned.fill(child: _AgentWash(color: tool.accent)),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _AgentGlyph(tool: tool),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _AgentGlyph(tool: tool),
-                        const SizedBox(width: 13),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    tool.name,
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: tool.runnable
-                                          ? AppPalette.textPrimary
-                                          : AppPalette.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _StatusChip(tool: tool, installed: installed),
-                                ],
+                        Row(
+                          children: [
+                            Text(
+                              tool.name,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppPalette.textPrimary,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                tool.tagline,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: AppPalette.textSecondary,
-                                ),
-                              ),
-                            ],
+                            ),
+                            const SizedBox(width: 10),
+                            _StatusChip(tool: tool, installed: installed),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          tool.tagline,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppPalette.textSecondary,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        _Action(tool: tool, installed: installed),
                       ],
                     ),
-                    _Error(tool: tool),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  _Action(tool: tool, installed: installed),
+                ],
               ),
+              _Error(tool: tool),
             ],
           ),
         ),
       ),
     );
-
-    // Fade the planned agents back so the one you can actually run leads.
-    return AnimatedOpacity(
-      opacity: tool.runnable ? 1 : 0.62,
-      duration: const Duration(milliseconds: 160),
-      child: card,
-    );
   }
 }
 
-/// The wash behind the live agent's card: a faint diagonal tint in its own
-/// colour that fades out toward the far corner, plus a soft glow anchored to the
-/// top-right — the "hero" treatment that sets the running agent above the planned
-/// ones. All low-opacity, so the text on top stays perfectly legible.
-class _AgentWash extends StatelessWidget {
-  const _AgentWash({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    color.withValues(alpha: 0.10),
-                    color.withValues(alpha: 0.03),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.0, 0.45, 0.9],
-                ),
-              ),
-            ),
-          ),
-          // Corner glow — a soft aura bleeding in from the top-right.
-          Positioned(
-            top: -70,
-            right: -70,
-            child: SizedBox(
-              width: 200,
-              height: 200,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    radius: 0.5,
-                    colors: [color.withValues(alpha: 0.13), Colors.transparent],
-                    stops: const [0.0, 0.85],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The agent's glyph in a soft chip tinted to its own colour — a point of focus
-/// that tells the three rows apart and lifts them off the near-white pane.
+/// The agent's own mark — the thing that tells the three rows apart at a glance.
+///
+/// Drawn as the image itself, not tinted into a chip the way the plugin list
+/// does: those are one repeated glyph that needs colour to mean anything, while
+/// these are real logos that already carry their own. A tint well behind them
+/// would only stack a second backdrop under the one each already has.
+///
+/// A few pixels larger than the plugin list's icon well, which holds a flat
+/// one-colour glyph that reads fine small. These are detailed artwork — a face,
+/// a robot — and at 30 they turn to mush before they turn into a logo.
 class _AgentGlyph extends StatelessWidget {
   const _AgentGlyph({required this.tool});
+
+  static const _size = 34.0;
 
   final AgentTool tool;
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
     return Container(
-      width: 38,
-      height: 38,
+      width: _size,
+      height: _size,
       decoration: BoxDecoration(
-        color: tool.accent.withValues(alpha: tool.runnable ? 0.14 : 0.09),
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(10),
+        // Several of these marks sit on their own solid backdrop — Hermes' is
+        // white — which would float shapelessly against the dark theme's
+        // charcoal. A hairline gives every one of them an edge to end on.
+        border: Border.all(color: AppGlass.hair),
       ),
-      child: Icon(
-        tool.icon,
-        size: 20,
-        color: tool.runnable ? tool.accent : tool.accent.withValues(alpha: 0.7),
+      child: ClipRRect(
+        // Inset by the border so the image doesn't paint over the hairline.
+        borderRadius: BorderRadius.circular(9),
+        child: Image.asset(
+          tool.iconAsset,
+          width: _size,
+          height: _size,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+        ),
       ),
     );
   }
@@ -239,9 +192,9 @@ class _StatusChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
-    if (!tool.runnable) {
-      return _Chip(label: 'Not available yet', color: AppPalette.offline);
-    }
+    // Planned, not broken. A grey dot beside the live agent's lit one would read
+    // as "offline" — something that ought to be running and isn't.
+    if (!tool.runnable) return const NotYetBadge();
     if (!installed) {
       return _Chip(label: 'Not installed', color: AppPalette.offline);
     }
