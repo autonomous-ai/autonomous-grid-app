@@ -395,7 +395,11 @@ class _Hint extends StatelessWidget {
     // Reads AppPalette.textFaint — follow theme flips.
     AppTheme.watch(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(indented ? 28 : 10, 4, 10, 6),
+      // 38, not the 28 a chat row uses: that row hands its indent to a
+      // SidebarItem, which adds its own 10px inset before the text. A hint is
+      // bare Text with nothing to add that second step, so it has to carry both
+      // itself or it hangs 10px left of the chats it sits among.
+      padding: EdgeInsets.fromLTRB(indented ? 38 : 10, 4, 10, 6),
       child: Text(
         text,
         style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
