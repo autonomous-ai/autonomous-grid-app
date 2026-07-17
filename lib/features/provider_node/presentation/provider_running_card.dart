@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
@@ -22,6 +23,7 @@ class ProviderRunningCard extends ConsumerWidget {
     required this.starting,
     required this.log,
     this.model,
+    this.signInUrl,
   });
 
   final bool starting;
@@ -30,6 +32,11 @@ class ProviderRunningCard extends ConsumerWidget {
   /// The served model(s), used only to tell a Playground-usable engine from a
   /// responses-only one ([isResponsesOnlyModel]). Null for older run states.
   final String? model;
+
+  /// Set while a sign-in join (codex OAuth) waits for browser approval — the app
+  /// already opened it, so this backs a "didn't open?" fallback link. Null once
+  /// serving and for every other engine.
+  final String? signInUrl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,6 +65,10 @@ class ProviderRunningCard extends ConsumerWidget {
               ),
             ],
           ),
+          if (starting && signInUrl != null) ...[
+            const SizedBox(height: 12),
+            _SignInPrompt(theme: theme, url: signInUrl!),
+          ],
           if (!starting) ...[
             const SizedBox(height: 12),
             _LiveBanner(
@@ -69,6 +80,63 @@ class ProviderRunningCard extends ConsumerWidget {
           ],
           const SizedBox(height: 12),
           Expanded(child: LogView(lines: log)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown while a sign-in join waits for browser approval. The app already opened
+/// the browser (like `grid login`); this confirms what to do there and offers a
+/// tappable fallback in case it didn't open — the URL also sits in the log.
+class _SignInPrompt extends StatelessWidget {
+  const _SignInPrompt({required this.theme, required this.url});
+
+  final ThemeData theme;
+  final String url;
+
+  Future<void> _open() async {
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      style: GlassCardStyle.inset,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.open_in_browser, color: theme.colorScheme.primary, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Approve the sign-in in your browser',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'We opened it for you. Once you approve, sharing starts '
+                  'automatically. Didn’t open?',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _open,
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Open sign-in page'),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
