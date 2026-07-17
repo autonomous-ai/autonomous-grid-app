@@ -352,16 +352,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
       });
     });
 
-    // Nothing can answer yet: no model advertised on the grid. Send the user to
-    // the screen that fixes it rather than leaving them at a dead input box.
-    if (!loadingModels && options.isEmpty) {
-      return NoModelYet(
-        canManage: widget.network.canManageProvider,
-        onGoToEngines: () => ref
-            .read(shellSectionProvider.notifier)
-            .select(ShellSection.engines),
-      );
-    }
+    // Nothing on *this* grid can answer yet. Shown in place of the transcript,
+    // not in place of the screen: the composer's model pill lists every grid's
+    // models, so another grid that does have one online is one click away at the
+    // foot of this very page. Returning early here replaced the composer too and
+    // hid that exit, leaving "ask the grid owner" as the only way out of a room
+    // whose door was already open.
+    final noModel = !loadingModels && options.isEmpty;
 
     final modality = _modalityFor(options);
     // An image/video model, or a turn carrying attachments, bypasses the
@@ -373,8 +370,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
       agentInstalled: ref.watch(hermesInstalledProvider),
     );
     final needsImage = modality == PlaygroundModality.video;
+    // Nothing to send to while this grid has no model: the composer stays for
+    // its model pill (the way out), but Send would have nowhere to go.
     final canSend =
-        !sessions.sending && (!needsImage || _attachments.isNotEmpty);
+        !noModel &&
+        !sessions.sending &&
+        (!needsImage || _attachments.isNotEmpty);
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
     final trailing = _trailingBubble(sessions.phase, agentMode);
     final isNewChat = messages.isEmpty && !sessions.sending;
@@ -401,7 +402,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: isNewChat
+                child: noModel
+                    ? NoModelYet(
+                        canManage: widget.network.canManageProvider,
+                        onGoToEngines: () => ref
+                            .read(shellSectionProvider.notifier)
+                            .select(ShellSection.engines),
+                      )
+                    : isNewChat
                     ? ChatStarters(
                         greeting: _greeting(modality),
                         onPick: _useStarter,
