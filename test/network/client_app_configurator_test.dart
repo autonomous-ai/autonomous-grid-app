@@ -324,6 +324,8 @@ void main() {
       expect(grid['env_key'], gridApiKeyEnv);
       // Codex ≥ 0.141 refuses `wire_api = "chat"`.
       expect(grid['wire_api'], 'responses');
+      // The relay is HTTP SSE, not a socket — pinned so Codex doesn't probe one.
+      expect(grid['supports_websockets'], false);
       // The key never lands in config.toml — Codex reads it from its dotenv.
       expect(
         File('${home.path}/.codex/config.toml').readAsStringSync(),

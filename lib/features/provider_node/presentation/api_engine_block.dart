@@ -27,12 +27,17 @@ class ApiEngineBlock extends ConsumerWidget {
     final available = engines.asData?.value ?? const <ApiEngine>[];
     if (available.isEmpty) return const SizedBox.shrink();
 
+    // Only claim "or your ChatGPT subscription" when a sign-in provider is
+    // actually available on this CLI — otherwise the subtitle over-promises.
+    final hasSignIn = available.any((e) => e.provider.usesSignIn);
     return EngineBlock(
       icon: Icons.cloud_outlined,
       title: 'Cloud Provider',
-      subtitle:
-          'Share models from a hosted provider using your own API key. '
-          'No local model download required.',
+      subtitle: hasSignIn
+          ? 'Share a hosted provider’s models — with your own API key or your '
+                'ChatGPT subscription. No local model download required.'
+          : 'Share models from a hosted provider using your own API key. '
+                'No local model download required.',
       child: _ApiEngineForm(network: network, engines: available),
     );
   }
@@ -103,13 +108,24 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
       launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
   /// Why Start can't run yet, or null when it can. Surfaced as a tooltip on the
-  /// disabled button so it explains itself instead of sitting greyed out.
+  /// disabled button so it explains itself instead of sitting greyed out. A
+  /// sign-in provider needs no key — signing in happens on Start.
   String? _startBlockedReason() {
-    if (!_usingStoredKey && _key.text.trim().isEmpty) {
+    if (!_engine.provider.usesSignIn &&
+        !_usingStoredKey &&
+        _key.text.trim().isEmpty) {
       return 'Enter a valid API key to start sharing cloud models.';
     }
     if (_selected.isEmpty) return 'Pick at least one model to share.';
     return null;
+  }
+
+  /// The Start button's label — honest about what pressing it does for this
+  /// provider: paste-key providers start the engine; a sign-in provider signs in
+  /// (or reuses a stored seat) then shares.
+  String get _startLabel {
+    if (!_engine.provider.usesSignIn) return 'Start cloud engine';
+    return _usingStoredKey ? 'Share your subscription' : 'Sign in & share';
   }
 
   void _start() {
@@ -146,15 +162,18 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
           ),
           const SizedBox(height: 12),
         ],
-        _KeyField(
-          provider: engine.provider,
-          controller: _key,
-          obscure: _obscure,
-          usingStoredKey: _usingStoredKey,
-          onToggleObscure: () => setState(() => _obscure = !_obscure),
-          onReplaceKey: () => setState(() => _replaceKey = true),
-          onOpenHelp: _openKeyHelp,
-        ),
+        if (engine.provider.usesSignIn)
+          _SignInPanel(label: engine.provider.label, signedIn: _usingStoredKey)
+        else
+          _KeyField(
+            provider: engine.provider,
+            controller: _key,
+            obscure: _obscure,
+            usingStoredKey: _usingStoredKey,
+            onToggleObscure: () => setState(() => _obscure = !_obscure),
+            onReplaceKey: () => setState(() => _replaceKey = true),
+            onOpenHelp: _openKeyHelp,
+          ),
         const SizedBox(height: 16),
         _ModelMultiSelect(
           models: engine.models,
@@ -173,8 +192,13 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
         ],
         const SizedBox(height: 12),
         Text(
-          'Your key stays on this computer. When grid requests use these '
-          'models, prompts are sent to ${engine.provider.label} for inference.',
+          engine.provider.usesSignIn
+              ? 'You stay signed in on this computer. Grid never bills you — '
+                    'requests to these models spend your subscription’s own '
+                    'monthly allowance.'
+              : 'Your key stays on this computer. When grid requests use these '
+                    'models, prompts are sent to ${engine.provider.label} for '
+                    'inference.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -185,6 +209,7 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
           child: ListenableBuilder(
             listenable: _key,
             builder: (context, _) => _StartButton(
+              label: _startLabel,
               blockedReason: _startBlockedReason(),
               onPressed: _start,
             ),
@@ -199,7 +224,13 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
 /// button — a greyed-out button that never says why is a dead end for a
 /// first-time user.
 class _StartButton extends StatelessWidget {
-  const _StartButton({required this.blockedReason, required this.onPressed});
+  const _StartButton({
+    required this.label,
+    required this.blockedReason,
+    required this.onPressed,
+  });
+
+  final String label;
 
   /// Why the button is disabled, or null when it can start.
   final String? blockedReason;
@@ -211,10 +242,46 @@ class _StartButton extends StatelessWidget {
     final button = FilledButton.icon(
       onPressed: reason == null ? onPressed : null,
       icon: const Icon(Icons.play_arrow),
-      label: const Text('Start cloud engine'),
+      label: Text(label),
     );
     if (reason == null) return button;
     return Tooltip(message: reason, child: button);
+  }
+}
+
+/// The credential row for a sign-in provider (a ChatGPT/Codex subscription):
+/// there is no key to paste, so it explains what Start will do — open the
+/// browser to sign in, or reuse a seat this machine already signed in with —
+/// instead of showing a key field.
+class _SignInPanel extends StatelessWidget {
+  const _SignInPanel({required this.label, required this.signedIn});
+
+  final String label;
+  final bool signedIn;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final icon = signedIn ? Icons.check_circle_outline : Icons.open_in_browser;
+    final text = signedIn
+        ? 'Signed in to your $label. Starting shares it with the grid — no '
+              'browser needed.'
+        : 'No API key needed. Starting opens your browser to sign in to your '
+              '$label; approve it once and Grid serves the seat.';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 18,
+          color: signedIn
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text)),
+      ],
+    );
   }
 }
 

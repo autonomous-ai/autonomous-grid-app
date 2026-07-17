@@ -197,6 +197,9 @@ class ClientAppConfigurator {
         'base_url': base,
         'env_key': gridApiKeyEnv,
         'wire_api': 'responses',
+        // The grid relay streams HTTP SSE, never WebSocket — pin it so Codex
+        // doesn't reach for a socket transport the relay doesn't offer.
+        'supports_websockets': false,
       };
 
       await _backupThenWrite(

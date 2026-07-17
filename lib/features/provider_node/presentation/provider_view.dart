@@ -74,7 +74,11 @@ class _ServeSection extends ConsumerWidget {
     // Engine running on THIS grid: hand the card the full section height so the
     // header/banner pin and only the log scrolls (fixes the double scrollbar).
     if (run is ProviderRunActive && run.grid == network.networkId) {
-      return ProviderRunningCard(starting: run.starting, log: run.log);
+      return ProviderRunningCard(
+        starting: run.starting,
+        log: run.log,
+        model: run.model,
+      );
     }
 
     // Every other state scrolls as a page.
