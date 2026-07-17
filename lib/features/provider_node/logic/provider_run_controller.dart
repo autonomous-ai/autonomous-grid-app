@@ -99,17 +99,24 @@ class ProviderRunIdle extends ProviderRunState {
 /// model id for an external one — so the model manager can refuse to delete a
 /// gguf that's in use. Null when unknown (e.g. an engine adopted on restart
 /// whose run record carried no model).
+///
+/// [signInUrl] is set only while a sign-in join (codex OAuth) is still starting
+/// and waiting for the user to approve in the browser — the app opens it (like
+/// `grid login`) and offers it as a fallback link. Null for every other engine
+/// and once serving.
 class ProviderRunActive extends ProviderRunState {
   const ProviderRunActive({
     required this.grid,
     required this.log,
     required this.starting,
     this.model,
+    this.signInUrl,
   });
   final String grid;
   final List<String> log;
   final bool starting;
   final String? model;
+  final String? signInUrl;
 }
 
 class ProviderRunStopped extends ProviderRunState {
@@ -284,6 +291,19 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     required String apiKey,
     List<String> models = const [],
   }) {
+    // A sign-in kind (codex, [envVar] null) has no key — `grid join --api codex`
+    // runs the OAuth flow. Drive it like `grid login`: the app opens the browser,
+    // so [_noAutoOpenBrowserEnv] tells the CLI to print the URL without opening a
+    // second tab (a CLI predating the flag just also opens one — harmless).
+    final signIn = envVar == null;
+    final Map<String, String>? environment;
+    if (signIn) {
+      environment = const {_noAutoOpenBrowserEnv: '1'};
+    } else if (apiKey.isNotEmpty) {
+      environment = {envVar: apiKey};
+    } else {
+      environment = null;
+    }
     return _start(
       [
         'join',
@@ -296,10 +316,22 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       ],
       grid: network,
       model: models.isEmpty ? kind : models.join(', '),
-      environment: (apiKey.isNotEmpty && envVar != null)
-          ? {envVar: apiKey}
-          : null,
+      environment: environment,
+      signIn: signIn,
     );
+  }
+
+  /// Env var telling the CLI's codex OAuth flow not to open the browser itself,
+  /// because the app opens it (mirrors how the app drives `grid login`). See
+  /// `codex_signin.py`.
+  static const _noAutoOpenBrowserEnv = 'GRID_OAUTH_NO_OPEN';
+
+  /// The OAuth authorize URL from a sign-in join's output, or null. The CLI
+  /// prints it alone on a line (`  https://…`); keying off the shape keeps this
+  /// robust to reworded prompt text around it.
+  static String? _authorizeUrlIn(String line) {
+    final trimmed = line.trim();
+    return trimmed.startsWith('https://') ? trimmed : null;
   }
 
   List<String> _advertiseArgs(String? advertiseAs) =>
@@ -321,6 +353,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     String? model,
     bool retried = false,
     Map<String, String>? environment,
+    bool signIn = false,
     Future<List<String>> Function()? rebuildForPortConflict,
   }) async {
     final service = ref.read(gridCliServiceProvider);
@@ -341,6 +374,9 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     _grid = grid;
     _stopping = false;
     final log = <String>[];
+    // For a sign-in join, the OAuth authorize URL the app should open, captured
+    // from the stream as it streams past (null until then, and for other joins).
+    String? signInUrl;
     state = ProviderRunActive(
       grid: grid,
       log: const [],
@@ -354,12 +390,16 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       if (log.length > _maxLogLines) {
         log.removeRange(0, log.length - _maxLogLines);
       }
+      if (signIn && signInUrl == null) {
+        signInUrl = _authorizeUrlIn(line.text);
+      }
       // Still "starting" until `join` exits 0 — the engine serves detached after.
       state = ProviderRunActive(
         grid: grid,
         log: List.unmodifiable(log),
         starting: true,
         model: model,
+        signInUrl: signInUrl,
       );
     });
 

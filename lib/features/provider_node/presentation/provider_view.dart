@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
@@ -56,6 +57,15 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
   }
 }
 
+/// Opens [url] in the user's default browser; best-effort (a failed open just
+/// leaves the tappable fallback link in the running card as the way in). Mirrors
+/// the login screen so a sign-in join opens the browser the same way.
+Future<void> _openInBrowser(String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return;
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
 /// Gates on network/provider/run-state, then offers the local-model serve (the
 /// main flow) with the BYO external `--at` form as a secondary option.
 class _ServeSection extends ConsumerWidget {
@@ -66,6 +76,15 @@ class _ServeSection extends ConsumerWidget {
     final theme = Theme.of(context);
     final network = ref.watch(selectedNetworkProvider);
     final run = ref.watch(providerRunControllerProvider);
+
+    // A sign-in join (codex OAuth) streams an authorize URL to approve — open it
+    // the instant it arrives, exactly like the login screen opens the device URL.
+    // The card also offers it as a tappable fallback if the browser didn't open.
+    ref.listen(providerRunControllerProvider, (prev, next) {
+      final was = prev is ProviderRunActive ? prev.signInUrl : null;
+      final now = next is ProviderRunActive ? next.signInUrl : null;
+      if (now != null && now != was) _openInBrowser(now);
+    });
 
     if (network == null) {
       return const Text('Select a grid first from the Grids tab.');
@@ -78,6 +97,7 @@ class _ServeSection extends ConsumerWidget {
         starting: run.starting,
         log: run.log,
         model: run.model,
+        signInUrl: run.signInUrl,
       );
     }
 
