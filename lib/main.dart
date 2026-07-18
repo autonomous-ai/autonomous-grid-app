@@ -42,12 +42,18 @@ Future<void> main() async {
   // immediately and the detached engine is left serving on the relay.
   await windowManager.setPreventClose(true);
 
-  const options = WindowOptions(
-    size: Size(1100, 720),
-    minimumSize: Size(880, 560),
+  final options = WindowOptions(
+    size: const Size(1100, 720),
+    minimumSize: const Size(880, 560),
     title: 'Grid',
     center: true,
-    titleBarStyle: TitleBarStyle.hidden,
+    // The frameless look is a macOS design choice, where the traffic-light
+    // controls still render over a hidden title bar. Windows has no such overlay,
+    // so a hidden bar leaves the window with no minimize/maximize/close buttons
+    // (only Alt+F4 closes it). Keep the native caption bar on Windows/Linux.
+    titleBarStyle: Platform.isMacOS
+        ? TitleBarStyle.hidden
+        : TitleBarStyle.normal,
   );
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.show();
