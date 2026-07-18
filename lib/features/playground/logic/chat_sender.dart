@@ -12,6 +12,7 @@ import 'media_outputs.dart';
 import 'media_transport.dart';
 import 'message_media.dart';
 import 'playground_request.dart';
+import 'responses_transport.dart';
 
 /// A single step in sending one message, streamed by [ChatSender.send]:
 /// generation progress, then exactly one terminal [ChatSendSuccess] or
@@ -167,6 +168,18 @@ class DefaultChatSender implements ChatSender {
 
     switch (modality) {
       case PlaygroundModality.text:
+        // Codex seats serve the Responses endpoint ONLY — a `codex:*` model has
+        // no chat/completions provider, so a chat request to one 503s ("No
+        // providers available for this model"). Route it to `/responses` in the
+        // vendor's dialect instead (ADR 0015 D-a/D-b).
+        if (_isResponsesModel(model)) {
+          return _sendResponses(
+            endpoint: '${network.relayBaseUrl}/responses',
+            network: network,
+            model: model,
+            history: history,
+          );
+        }
         return _sendChat(
           endpoint: '${network.relayBaseUrl}/chat/completions',
           network: network,
@@ -216,6 +229,45 @@ class DefaultChatSender implements ChatSender {
           apiKey: network.relayApiKey,
           model: model,
           messages: _messagesFor(history),
+        );
+    log.finish(id, exitCode: error?.statusCode ?? 200, error: error?.message);
+
+    if (error != null) {
+      yield ChatSendFailure(_friendlyChatError(error));
+      return;
+    }
+    final answer = (reply == null || reply.isEmpty)
+        ? 'The model returned no text.'
+        : reply;
+    yield ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: answer));
+  }
+
+  /// Whether [model] must be served over the Responses endpoint rather than
+  /// chat/completions. Codex subscription models (`codex:*`) advertise
+  /// `endpoints: ["responses"]` only, so the relay has no chat provider for them
+  /// (ADR 0015 D-b) — a chat request 503s.
+  static bool _isResponsesModel(String model) => model.startsWith('codex:');
+
+  /// One-shot Responses completion (relay only). Same shape as [_sendChat] — mirror
+  /// into the Debug tab, map failures to a plain line — but hits `/responses`
+  /// with the vendor's Responses dialect and drains its SSE into one reply.
+  Stream<ChatSendUpdate> _sendResponses({
+    required String endpoint,
+    required NetworkCredential network,
+    required String model,
+    required List<ChatMessage> history,
+  }) async* {
+    final log = _ref.read(commandLogProvider.notifier);
+    final id = log.begin(CliCallKind.http, 'POST $endpoint');
+
+    final (reply, error) = await _ref
+        .read(responsesTransportProvider)
+        .complete(
+          endpoint: endpoint,
+          apiKey: network.relayApiKey,
+          model: model,
+          input: buildResponsesInput(history, _imageDataUri),
+          instructions: 'You are a helpful assistant.',
         );
     log.finish(id, exitCode: error?.statusCode ?? 200, error: error?.message);
 

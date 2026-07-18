@@ -66,7 +66,7 @@ class HttpChatTransport implements ChatTransport {
         return (
           null,
           ChatTransportError(
-            _briefError(body),
+            briefError(body),
             statusCode: response.statusCode,
           ),
         );
@@ -90,8 +90,9 @@ class HttpChatTransport implements ChatTransport {
   }
 
   /// Pulls a message out of an OpenAI/FastAPI error body (`{error:{message}}` or
-  /// `{detail}`), falling back to the raw text, clipped.
-  static String _briefError(String body) {
+  /// `{detail}`), falling back to the raw text, clipped. Public so the Responses
+  /// transport, whose error envelope is the same `{detail}` shape, reuses it.
+  static String briefError(String body) {
     try {
       final decoded = jsonDecode(body);
       if (decoded is Map) {
