@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../infrastructure/state/onboarding_store.dart';
@@ -23,11 +24,22 @@ class OnboardingChoiceScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Starting the cloud engine *is* the "use OpenAI" choice — record it, and the
-    // route falls through to the app. Done here because the shared Cloud-Provider
-    // block starts the engine without knowing it's inside onboarding.
-    ref.listen(providerRunControllerProvider, (_, next) {
-      if (next is ProviderRunActive) {
+    // Starting the cloud engine *is* the "use OpenAI" choice — but only once it's
+    // actually serving. The shared Cloud-Provider block starts the engine without
+    // knowing it's inside onboarding, so onboarding wires the two ends here:
+    //  - a sign-in join (codex OAuth) streams an authorize URL to approve — open
+    //    it the instant it arrives, exactly like the Model Engines and login
+    //    screens (the block itself doesn't open the browser);
+    //  - record the choice and fall through to the app only when the join has
+    //    finished serving (`starting == false`). Deciding on the transient
+    //    "starting" state jumped the user into a chat with nothing serving,
+    //    before the browser sign-in had even opened.
+    ref.listen(providerRunControllerProvider, (prev, next) {
+      final wasUrl = prev is ProviderRunActive ? prev.signInUrl : null;
+      final nowUrl = next is ProviderRunActive ? next.signInUrl : null;
+      if (nowUrl != null && nowUrl != wasUrl) _openInBrowser(nowUrl);
+
+      if (next is ProviderRunActive && !next.starting) {
         ref
             .read(onboardingDecisionProvider.notifier)
             .decide(OnboardingDecision.openai);
@@ -97,6 +109,15 @@ class OnboardingChoiceScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Opens [url] in the user's default browser; best-effort (the running block
+/// still shows the URL as a tappable fallback). Mirrors the Model Engines and
+/// login screens so a sign-in join opens the browser the same way.
+Future<void> _openInBrowser(String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return;
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 /// Run a model on this computer: installs the engine here, then the model
