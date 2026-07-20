@@ -100,10 +100,12 @@ class ChatPrefs {
       other.networkId == networkId &&
       other.model == model &&
       other.approval == approval &&
-      other.themeMode == themeMode;
+      other.themeMode == themeMode &&
+      other.chatAgent == chatAgent;
 
   @override
-  int get hashCode => Object.hash(networkId, model, approval, themeMode);
+  int get hashCode =>
+      Object.hash(networkId, model, approval, themeMode, chatAgent);
 }
 
 /// Persists [ChatPrefs] as `~/.grid/app/chat_prefs.json`. App-owned (the CLI

@@ -14,14 +14,15 @@ import '../logic/agent_status.dart';
 
 /// The assistants this computer can run.
 ///
-/// One today (Hermes, which answers your chats), and the ones that are coming.
-/// The planned ones are listed but carry no controls — the screen says what it
-/// will support without offering a button that would do nothing.
+/// Two can run today — Hermes and Codex — and one of them answers your chats;
+/// the rest are planned and carry no controls, so the screen says what it will
+/// support without offering a button that would do nothing.
 ///
-/// This is a status list, not a gallery: three rows, one of them actionable, read
-/// once in a while to check a version or pull an update. So it wears the same
-/// quiet row surface as Plugins and Scheduled rather than a hero treatment. What
-/// marks the live agent is the thing only it has — a lit status dot and a button.
+/// This is a status list, not a gallery: quiet rows read once in a while to check
+/// a version, pull an update, or hand the chat to a different agent. So it wears
+/// the same surface as Plugins and Scheduled — except the agent answering chats,
+/// which wears the brand (a gold rim and a filled "Answers your chats" badge) so
+/// it's obvious at a glance which one is live.
 class AgentsView extends ConsumerWidget {
   const AgentsView({super.key});
 
@@ -74,6 +75,13 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
     // A planned agent has nothing to reach for, so it doesn't answer the pointer.
     final canHover = tool.runnable;
 
+    // The agent answering chats right now wears the brand: a gold rim and a faint
+    // gold wash lift it out of the quiet list so it's obvious which one is live.
+    final isActive = installed && tool == ref.watch(activeChatAgentProvider);
+    final baseFill = _hovered
+        ? AppGlass.surfaceHoverFill
+        : AppGlass.surfaceFill;
+
     return MouseRegion(
       onEnter: canHover ? (_) => setState(() => _hovered = true) : null,
       onExit: canHover ? (_) => setState(() => _hovered = false) : null,
@@ -82,8 +90,19 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
         duration: const Duration(milliseconds: 130),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          color: _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill,
+          color: isActive
+              ? Color.alphaBlend(
+                  AppPalette.brandBolt.withValues(alpha: 0.08),
+                  baseFill,
+                )
+              : baseFill,
           borderRadius: BorderRadius.circular(14),
+          border: isActive
+              ? Border.all(
+                  color: AppPalette.brandBolt.withValues(alpha: 0.55),
+                  width: 1.5,
+                )
+              : null,
           boxShadow: AppGlass.cardShadow,
         ),
         child: Padding(
@@ -208,23 +227,34 @@ class _StatusChip extends ConsumerWidget {
         if (version != null) 'v$version',
       ].join(' · '),
       color: AppPalette.brandBolt,
-      // The live agent breathes — it's the one doing the work right now.
+      // The live agent breathes — it's the one doing the work right now — and
+      // wears a filled brand pill so "Answers your chats" reads as its state.
       pulsing: answering,
+      filled: answering,
     );
   }
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.color, this.pulsing = false});
+  const _Chip({
+    required this.label,
+    required this.color,
+    this.pulsing = false,
+    this.filled = false,
+  });
 
   final String label;
   final Color color;
   final bool pulsing;
 
+  /// A filled brand pill instead of plain dot + text — for the agent answering
+  /// chats, so its badge stands out as a state rather than a quiet footnote.
+  final bool filled;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
-    return Row(
+    final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         StatusDot(color: color, size: 7, pulsing: pulsing),
@@ -234,10 +264,20 @@ class _Chip extends StatelessWidget {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: AppPalette.textSecondary,
+            color: filled ? color : AppPalette.textSecondary,
           ),
         ),
       ],
+    );
+    if (!filled) return row;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: row,
     );
   }
 }

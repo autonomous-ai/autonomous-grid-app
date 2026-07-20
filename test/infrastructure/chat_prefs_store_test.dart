@@ -116,5 +116,19 @@ void main() {
       // Persisted, not just in memory.
       expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.system);
     });
+
+    test('picking the chat agent persists — the setter is not swallowed by '
+        'equality', () {
+      // The default is Hermes; only a real change should be written. This guards
+      // the trap that sank "Use for chat": if `chatAgent` is left out of
+      // `operator ==`, the update short-circuits and nothing changes.
+      final c = container();
+      expect(c.read(chatPrefsProvider).chatAgent, ChatPrefs.defaultChatAgent);
+
+      c.read(chatPrefsProvider.notifier).setChatAgent('codex');
+      expect(c.read(chatPrefsProvider).chatAgent, 'codex');
+      // On disk, not just in memory.
+      expect(ChatPrefsStore(file: file).load().chatAgent, 'codex');
+    });
   });
 }
