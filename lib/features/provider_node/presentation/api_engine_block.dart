@@ -80,6 +80,11 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
   late Set<String> _selected = _allModels(_engine);
   bool _obscure = true;
 
+  /// Compact only: reveal the model picker. First-run users just sign in and
+  /// share every model (the default), so which-models-to-share is tucked behind
+  /// an "Advanced" link until asked for.
+  bool _showAdvanced = false;
+
   /// Which provider the block opens on: prefer a subscription (sign-in) provider
   /// like the ChatGPT/Codex seat, so it's ready to Start without pasting a key.
   /// Falls back to the first available provider when none use sign-in.
@@ -201,11 +206,21 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
             onOpenHelp: _openKeyHelp,
           ),
         const SizedBox(height: 16),
-        _ModelMultiSelect(
-          models: engine.models,
-          selected: _selected,
-          onToggle: _toggleModel,
-        ),
+        if (!widget.compact || _showAdvanced)
+          _ModelMultiSelect(
+            models: engine.models,
+            selected: _selected,
+            onToggle: _toggleModel,
+          )
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _showAdvanced = true),
+              icon: const Icon(Icons.tune, size: 16),
+              label: const Text('Advanced: choose which models to share'),
+            ),
+          ),
         if (!widget.compact && engine.lastVerified.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
