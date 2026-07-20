@@ -120,67 +120,11 @@ void main() {
     expect(find.text('maker/m1'), findsOneWidget);
   });
 
-  testWidgets('a ready grid serving nothing is left out of the menu', (
-    tester,
-  ) async {
-    await _openMenu(
-      tester,
-      grids: [empty, serving],
-      models: {
-        'grid-empty': const [],
-        'grid-serving': const ['maker/m1'],
-      },
-    );
-
-    expect(find.text('EMPTY GRID'), findsNothing);
-    expect(find.text('No models available'), findsNothing);
-    expect(find.text('SERVING GRID'), findsOneWidget);
-    expect(find.text('maker/m1'), findsOneWidget);
-  });
-
   testWidgets('with every grid empty, the menu says so once', (tester) async {
     await _openMenu(tester, grids: [empty], models: {'grid-empty': const []});
 
     expect(find.text('EMPTY GRID'), findsNothing);
     expect(find.text('No grid is serving a model right now.'), findsOneWidget);
-  });
-
-  testWidgets('a rule separates the groups, but never tops the list', (
-    tester,
-  ) async {
-    final second = _network('grid-second', 'Second Grid');
-    await _openMenu(
-      tester,
-      grids: [serving, second],
-      models: {
-        'grid-serving': const ['maker/m1'],
-        'grid-second': const ['maker/m2'],
-      },
-    );
-
-    // Two groups, one rule: between them, not above the first.
-    expect(find.text('SERVING GRID'), findsOneWidget);
-    expect(find.text('SECOND GRID'), findsOneWidget);
-    expect(find.byKey(groupRuleKey), findsOneWidget);
-  });
-
-  testWidgets('the rule follows the rendered groups, not the catalog', (
-    tester,
-  ) async {
-    // The empty grid comes first in the catalog and is filtered out, so the
-    // grid that renders first is catalog index 1 — a rule keyed off the index
-    // would hang above the top row, dividing it from nothing.
-    await _openMenu(
-      tester,
-      grids: [empty, serving],
-      models: {
-        'grid-empty': const [],
-        'grid-serving': const ['maker/m1'],
-      },
-    );
-
-    expect(find.text('SERVING GRID'), findsOneWidget);
-    expect(find.byKey(groupRuleKey), findsNothing);
   });
 
   testWidgets('each kind of row carries its own mark', (tester) async {

@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/logic/grid_model_catalog.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
+import 'package:grid_app/features/network/logic/network_models_provider.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
-import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 NetworkCredential _network(String id, String name) => NetworkCredential(
@@ -106,20 +106,52 @@ void main() {
     });
   });
 
-  test('catalog builds one group per grid in the session', () {
-    final bar = _network('grid-bar', 'Bar');
+  test('catalog lists only the selected grid, hiding the others', () {
     final container = ProviderContainer(
       overrides: [
-        sessionProvider.overrideWithValue(
-          CredentialsFile(networks: [foo, bar], activeNetwork: 'grid-foo'),
+        selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(foo)),
+        // Keep the read offline: stub the selected grid's model/overview probes
+        // so no real relay call fires (and none logs to a disposed container).
+        networkModelsForProvider(
+          'grid-foo',
+        ).overrideWith((ref) => Future.value(const <String>[])),
+        gridOverviewForProvider('grid-foo').overrideWith(
+          (ref) => Future.value(
+            GridOverview(
+              stats: const GridStats(models: 0, nodes: 0),
+              models: const [],
+              nodes: const [],
+            ),
+          ),
         ),
       ],
     );
     addTearDown(container.dispose);
 
     final catalog = container.read(gridModelCatalogProvider);
-    expect(catalog.map((g) => g.grid.networkId), ['grid-foo', 'grid-bar']);
-    // Overviews haven't resolved (no relay in tests) — both start loading.
-    expect(catalog.every((g) => g.status == GridModelStatus.loading), isTrue);
+    // Only the selected grid — any other grid in the session stays hidden.
+    expect(catalog.map((g) => g.grid.networkId), ['grid-foo']);
+    // The stubbed probes haven't resolved yet — the group starts loading.
+    expect(catalog.single.status, GridModelStatus.loading);
   });
+
+  test('catalog is empty when no grid is selected', () {
+    final container = ProviderContainer(
+      overrides: [
+        selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(null)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(gridModelCatalogProvider), isEmpty);
+  });
+}
+
+/// A [SelectedNetwork] pinned to a fixed grid, so the catalog resolves without
+/// the session/prefs/store wiring the real notifier reads from disk.
+class _FixedSelectedNetwork extends SelectedNetwork {
+  _FixedSelectedNetwork(this._fixed);
+  final NetworkCredential? _fixed;
+  @override
+  NetworkCredential? build() => _fixed;
 }

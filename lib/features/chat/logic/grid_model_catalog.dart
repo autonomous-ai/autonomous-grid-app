@@ -26,25 +26,28 @@ class GridModelGroup {
   final GridModelStatus status;
 }
 
-/// Every grid's model options for the unified picker.
+/// The selected grid's model options for the unified picker.
 ///
-/// The chat model list is the relay's OpenAI-style `/models` ([networkModelsForProvider])
-/// — the canonical list of what a grid can serve, so it includes the `auto`
-/// auto-routing model that the node-derived `/grid/overview` leaves out. The
-/// overview is still read, but only for the node comfyui capabilities that power
-/// the Image/Video modes (those never appear in `/models`); it's best-effort, so
-/// the chat models never wait on it. Both are probed per grid in parallel.
+/// Scoped to the active grid ([selectedNetworkProvider]): the picker shows only
+/// the grid you're on, so other grids' models stay hidden — and aren't probed.
+/// The chat model list is the relay's OpenAI-style `/models`
+/// ([networkModelsForProvider]) — the canonical list of what a grid can serve, so
+/// it includes the `auto` auto-routing model that the node-derived
+/// `/grid/overview` leaves out. The overview is still read, but only for the node
+/// comfyui capabilities that power the Image/Video modes (those never appear in
+/// `/models`); it's best-effort, so the chat models never wait on it. Empty when
+/// no grid is selected.
 final gridModelCatalogProvider = Provider.autoDispose<List<GridModelGroup>>((
   ref,
 ) {
-  final grids = ref.watch(sessionProvider).networks;
+  final grid = ref.watch(selectedNetworkProvider);
+  if (grid == null) return const [];
   return [
-    for (final grid in grids)
-      gridModelGroupFrom(
-        grid,
-        ref.watch(networkModelsForProvider(grid.networkId)),
-        mediaCapabilitiesOf(ref.watch(gridOverviewForProvider(grid.networkId))),
-      ),
+    gridModelGroupFrom(
+      grid,
+      ref.watch(networkModelsForProvider(grid.networkId)),
+      mediaCapabilitiesOf(ref.watch(gridOverviewForProvider(grid.networkId))),
+    ),
   ];
 });
 
