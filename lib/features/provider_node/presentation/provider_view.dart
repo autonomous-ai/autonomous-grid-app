@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
+import '../../../infrastructure/state/models/engine_run.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
@@ -151,14 +152,24 @@ class _ServeSection extends ConsumerWidget {
       ]);
     }
 
-    children.addAll(_addEngineBlocks(network));
+    children.addAll(_addEngineBlocks(network, serving));
     children.add(const SizedBox(height: 16));
     return children;
   }
 
-  /// The ways to add an engine — always available so a join stacks additively
-  /// onto the machine's union (ADR 0010) instead of replacing what's running.
-  List<Widget> _addEngineBlocks(NetworkCredential network) {
+  /// The ways to add an engine. API (`--api`) and connected (`--at`) engines
+  /// stack additively onto the machine's union (ADR 0010); the built-in local
+  /// engine (`--serve`) is the exception — it serves one model and CANNOT share
+  /// the identity with any other engine (ADR 0007 D4), so it's gated on what's
+  /// already serving:
+  ///  - built-in local already running → it must run alone, so nothing can be
+  ///    added until it's stopped;
+  ///  - other engines running → the built-in can't join them, so its block turns
+  ///    into a pointer to run a local server and connect it as external instead.
+  List<Widget> _addEngineBlocks(
+    NetworkCredential network,
+    List<ServingEngine> serving,
+  ) {
     if (Platform.isWindows) {
       // Windows can't host the built-in (llama.cpp) engine yet — offer BYO/API.
       return [
@@ -171,22 +182,135 @@ class _ServeSection extends ConsumerWidget {
         _ExternalServers(network: network),
       ];
     }
+
+    // The built-in local engine is serving → it's exclusive, so no engine can be
+    // added alongside it. Explain instead of offering forms that would fail.
+    if (serving.any((engine) => engine.kind == EngineKind.local)) {
+      return const [
+        _AddEngineHeading(),
+        SizedBox(height: 8),
+        _LocalEngineExclusiveNote(),
+      ];
+    }
+
+    final hasOtherEngines = serving.isNotEmpty;
     return [
       const _AddEngineHeading(),
       const SizedBox(height: 8),
-      EngineBlock(
-        icon: Icons.dns_outlined,
-        title: 'Local Engine',
-        subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
-        child: ServeLocalCard(network: network),
-      ),
+      // With other engines already serving, the built-in local one can't join —
+      // its block becomes a pointer to the connected-engine path.
+      if (hasOtherEngines)
+        const _LocalNeedsConnectNote()
+      else
+        EngineBlock(
+          icon: Icons.dns_outlined,
+          title: 'Local Engine',
+          subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
+          child: ServeLocalCard(network: network),
+        ),
       const SizedBox(height: 16),
       ApiEngineBlock(network: network),
       const SizedBox(height: 16),
       _ExternalServers(network: network),
-      const SizedBox(height: 16),
-      const NodeSetupCard(),
+      if (!hasOtherEngines) ...[
+        const SizedBox(height: 16),
+        const NodeSetupCard(),
+      ],
     ];
+  }
+}
+
+/// Shown when the built-in local engine is running: it serves one model and
+/// can't share the machine with others (ADR 0007 D4), so adding anything means
+/// stopping it first. Honest about the trade rather than offering a failing form.
+class _LocalEngineExclusiveNote extends StatelessWidget {
+  const _LocalEngineExclusiveNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.info_outline, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Your local model runs on its own',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'The built-in local engine serves a single model and can’t '
+                    'run alongside others. To run several engines at once, stop '
+                    'it above, then add API or connected engines — or run your '
+                    'local model as your own server and connect it.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown in place of the built-in Local Engine block when other engines are
+/// already serving: the built-in can't join them, but a local model reached over
+/// its own server (llama-server, Ollama, …) can — so this points there.
+class _LocalNeedsConnectNote extends StatelessWidget {
+  const _LocalNeedsConnectNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.dns_outlined,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add a local model as a connected engine',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'The built-in local engine can’t run alongside other engines. '
+                    'To use a local model here too, run it as a server (Ollama, '
+                    'or llama-server) and add it under “Connect your own engine” '
+                    'below.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
