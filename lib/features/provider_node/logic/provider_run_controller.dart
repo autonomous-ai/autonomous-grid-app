@@ -119,8 +119,14 @@ class ProviderRunStopped extends ProviderRunState {
 }
 
 class ProviderRunFailed extends ProviderRunState {
-  const ProviderRunFailed(this.message);
+  const ProviderRunFailed(this.message, {this.model});
   final String message;
+
+  /// What the failed start was trying to serve — the `--serve` gguf, the API
+  /// kind, or the external model id. Null when the attempt never got far enough
+  /// to know (e.g. the CLI itself was missing). Lets the failure card name the
+  /// engine that broke instead of a bare "the local engine".
+  final String? model;
 }
 
 /// Runs an engine on a grid with `grid join`, streaming its startup log.
@@ -207,6 +213,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// Invalidate [servingEnginesProvider] after a roster change — the store is a
   /// plain reader, so the list only re-reads disk when this ticks.
   void _bumpUnion() => ref.read(engineUnionRefreshProvider.notifier).bump();
+
+  /// Dismiss a [ProviderRunFailed] so the add-engine forms come back, without
+  /// touching any engine. Only clears that state: a failure is a dead end the
+  /// user has now read, whereas idle/active/stopped all describe something real
+  /// that a dismissal must not overwrite.
+  void clearFailure() {
+    if (state is ProviderRunFailed) state = const ProviderRunIdle();
+  }
 
   /// Serve a model already pulled into `~/.grid/models` via the built-in engine
   /// (`grid join <grid> --serve <gguf> --endpoint-port <free> [--advertise-as]`).
@@ -456,7 +470,9 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       );
     }
     _grid = null;
-    state = ProviderRunFailed(_humanizeJoinFailure(failure));
+    // Both sides of this: upstream's humanized message, and the model the
+    // failure card needs to name which engine broke.
+    state = ProviderRunFailed(_humanizeJoinFailure(failure), model: model);
   }
 
   /// Turn a raw `grid join` failure into a line a user can act on. The commonest

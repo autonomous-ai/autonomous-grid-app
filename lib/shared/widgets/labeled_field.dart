@@ -85,7 +85,13 @@ class LabeledField extends StatelessWidget {
 /// The soft, borderless field surface — filled with the card tint, rounded, and
 /// one accent hairline only while focused. Exposed so a field that needs its own
 /// `TextField` (multiline, custom actions) still matches [LabeledField].
-InputDecoration labeledFieldDecoration(String hint) {
+///
+/// [fill] overrides the surface for a field sitting on something lighter than
+/// the usual ground. The default [AppPalette.cardBg] is picked to read against
+/// a dialog or the window; on a raised block (`AppGlass.surfaceFill`, #202020 in
+/// dark) it lands within 1.02:1 of its own container and effectively vanishes.
+/// Such callers pass [AppCard.inset], which recesses properly against it.
+InputDecoration labeledFieldDecoration(String hint, {Color? fill}) {
   OutlineInputBorder border(Color color, [double width = 1]) =>
       OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -96,7 +102,7 @@ InputDecoration labeledFieldDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
     filled: true,
-    fillColor: AppPalette.cardBg,
+    fillColor: fill ?? AppPalette.cardBg,
     hintStyle: TextStyle(
       fontSize: 14,
       height: 1.4,
@@ -107,5 +113,71 @@ InputDecoration labeledFieldDecoration(String hint) {
     enabledBorder: border(Colors.transparent, 0),
     disabledBorder: border(Colors.transparent, 0),
     focusedBorder: border(AppPalette.accent, 1.5),
+  );
+}
+
+/// Dress a [DropdownButtonFormField]'s popup like the app's other menus.
+///
+/// `DropdownButtonFormField` reads **neither** `menuTheme` nor `popupMenuTheme`
+/// — it renders its own `_DropdownMenu`, which takes its look from the widget's
+/// own `dropdownColor` / `borderRadius` / `elevation` arguments. Left alone it
+/// draws Material's default: square corners, full-bleed rows, no inset. On
+/// macOS a menu is a floating rounded panel, so every dropdown in the app has to
+/// be handed this.
+///
+/// Spread it into the widget:
+/// ```dart
+/// DropdownButtonFormField(
+///   dropdownColor: appMenuFill(),
+///   borderRadius: appMenuBorderRadius,
+///   elevation: appMenuElevation,
+///   ...
+/// )
+/// ```
+/// The floating-menu surface, shared by [appMenuStyle] and every dropdown.
+///
+/// Lifted clear of both grounds a menu can open over: the window and a raised
+/// block (`AppGlass.surfaceFill`, `#202020` in dark). The themed `menuFill`
+/// (`#1E1E1E`) sits within 1.02:1 of that block, which left the panel with no
+/// edge at all.
+Color appMenuFill() => AppTheme.pick(Colors.white, const Color(0xFF2A2A2A));
+
+/// Menu corner rounding — [AppControl.menuRadius], the same value
+/// `popupMenuTheme` and `menuTheme` use, so all three kinds of menu agree.
+final BorderRadius appMenuBorderRadius = BorderRadius.circular(
+  AppControl.menuRadius,
+);
+
+/// Menu lift, matching `popupMenuTheme`/`menuTheme`.
+const int appMenuElevation = 8;
+
+/// A [MenuAnchor] surface that reads as *floating over* the page.
+///
+/// The themed default fill ([appMenuFill]) is `#1E1E1E` in dark — chosen against
+/// the window, but a menu opened over a raised block (`AppGlass.surfaceFill`,
+/// `#202020`) lands at 1.023:1 against it, and in light both are pure white:
+/// the panel has no edge at all and the rows appear to float loose on the page.
+///
+/// So this lifts the fill above *both* grounds, adds the hairline the app uses
+/// on other raised chrome, and deepens the shadow — the three things that
+/// together say "this is a layer above". Pass it as a `MenuAnchor.style`.
+MenuStyle appMenuStyle() {
+  return MenuStyle(
+    backgroundColor: WidgetStatePropertyAll(appMenuFill()),
+    surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+    elevation: const WidgetStatePropertyAll(12),
+    // Vertical breathing room only. Rows carry their own horizontal gutter so
+    // their hover highlight reads as an inset pill; adding side padding here
+    // would double it.
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 5)),
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        // In light the fill matches the card beneath it, so the rim is the only
+        // thing drawing the panel's edge; in dark it firms up a lift that the
+        // shadow alone renders too softly on near-black.
+        side: BorderSide(color: AppGlass.hair),
+      ),
+    ),
   );
 }

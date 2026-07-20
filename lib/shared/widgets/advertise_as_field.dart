@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+import 'labeled_field.dart';
+
 /// The "Model name shown to the grid" field — the name a served model is
 /// announced under on the grid (the `grid` CLI's `--advertise-as`). It's what
 /// other people on the grid see and pick when they want to use this model, and
@@ -35,17 +38,39 @@ class AdvertiseAsField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: optional ? '$_label (optional)' : _label,
-        hintText: hintText,
-        border: const OutlineInputBorder(),
-        suffixIcon: Tooltip(
-          message: _tooltip,
-          child: const Icon(Icons.help_outline, size: 18),
+    AppTheme.watch(context);
+    // Label above the control, borderless capsule below — the app's form idiom
+    // (see labeled_field.dart), not Material's floating label.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FieldLabel(optional ? '$_label (optional)' : _label),
+        TextField(
+          controller: controller,
+          style: kFieldTextStyle,
+          // Recessed against the engine block it sits on — see the note on
+          // labeledFieldDecoration's `fill`.
+          decoration:
+              labeledFieldDecoration(
+                hintText ?? '',
+                fill: AppCard.inset,
+              ).copyWith(
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 40,
+                  maxWidth: 40,
+                  maxHeight: 44,
+                ),
+                suffixIcon: Tooltip(
+                  message: _tooltip,
+                  child: Icon(
+                    Icons.help_outline,
+                    size: kFieldIconSize,
+                    color: AppPalette.textFaint,
+                  ),
+                ),
+              ),
         ),
-      ),
+      ],
     );
   }
 }

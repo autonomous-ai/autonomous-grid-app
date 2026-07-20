@@ -600,6 +600,19 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
         ),
       ),
     ),
+    // An ExpansionTile defaults `backgroundColor` (expanded) and
+    // `collapsedBackgroundColor` to *different* values and cross-fades between
+    // them, so opening one flashes a tint over whatever surface it sits on. Our
+    // tiles are always laid into a card that has already painted its own
+    // background, so both states must simply be transparent — then expanding
+    // moves the disclosure and nothing else.
+    expansionTileTheme: const ExpansionTileThemeData(
+      backgroundColor: Colors.transparent,
+      collapsedBackgroundColor: Colors.transparent,
+      // Same reason for the divider lines each tile was clearing by hand.
+      shape: Border(),
+      collapsedShape: Border(),
+    ),
     dialogTheme: DialogThemeData(
       backgroundColor: menuFill,
       surfaceTintColor: Colors.transparent,

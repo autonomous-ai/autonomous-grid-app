@@ -3,10 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../logic/api_engine_catalog.dart';
 import '../logic/provider_run_controller.dart';
 import 'engine_block.dart';
+import 'engine_cost_chip.dart';
 
 /// The "Cloud Provider" engine block: serve a hosted model (e.g. OpenAI's) to
 /// the grid using the user's own API key, with no local engine, model download,
@@ -44,6 +48,9 @@ class ApiEngineBlock extends ConsumerWidget {
     return EngineBlock(
       icon: Icons.cloud_outlined,
       title: 'Cloud Provider',
+      // Every hosted engine spends the user's own vendor account per request —
+      // the one thing about this block worth knowing before filling it in.
+      trailing: const EngineCostChip(cost: EngineCost.metered),
       subtitle: hasSignIn
           ? 'Your own API key or ChatGPT subscription — no model download.'
           : 'A hosted provider with your own API key — no model download.',
@@ -382,23 +389,26 @@ class _ProviderDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: selectedKind,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Provider',
-        border: OutlineInputBorder(),
-      ),
-      items: [
+    AppTheme.watch(context);
+    // AppSelectField, not DropdownButtonFormField: Material draws its own popup
+    // edge-to-edge with square corners, which read as a different design system
+    // beside the models menu right below it.
+    return AppSelectField<String>(
+      label: 'Provider',
+      value: selectedKind,
+      onChanged: onChanged,
+      options: [
         for (final engine in engines)
-          DropdownMenuItem(
+          AppSelectOption(
             value: engine.provider.kind,
-            child: Text(engine.provider.label),
+            label: engine.provider.label,
+            // Say how each provider authenticates while the list is open — it's
+            // the difference between pasting a key and a browser sign-in.
+            detail: engine.provider.usesSignIn
+                ? 'Sign in with your subscription'
+                : 'Uses your API key',
           ),
       ],
-      onChanged: (kind) {
-        if (kind != null) onChanged(kind);
-      },
     );
   }
 }
@@ -450,29 +460,32 @@ class _KeyField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const FieldLabel('Provider API key'),
         TextField(
           controller: controller,
           obscureText: obscure,
           autocorrect: false,
           enableSuggestions: false,
-          decoration: InputDecoration(
-            labelText: 'Provider API key',
-            hintText: provider.keyHint,
-            border: const OutlineInputBorder(),
-            // Cap the toggle so it doesn't inflate the field above the theme's
-            // field height (a bare IconButton is 48, the field is 44).
-            suffixIconConstraints: const BoxConstraints(
-              minWidth: 44,
-              maxWidth: 44,
-              maxHeight: 44,
-            ),
-            suffixIcon: IconButton(
-              tooltip: obscure ? 'Show key' : 'Hide key',
-              iconSize: 20,
-              icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
-              onPressed: onToggleObscure,
-            ),
-          ),
+          style: kFieldTextStyle,
+          decoration:
+              labeledFieldDecoration(
+                provider.keyHint,
+                fill: AppCard.inset,
+              ).copyWith(
+                // Cap the toggle so it doesn't inflate the field above the theme's
+                // field height (a bare IconButton is 48, the field is 44).
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  maxWidth: 44,
+                  maxHeight: 44,
+                ),
+                suffixIcon: IconButton(
+                  tooltip: obscure ? 'Show key' : 'Hide key',
+                  iconSize: 20,
+                  icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+                  onPressed: onToggleObscure,
+                ),
+              ),
         ),
         if (helpUrl != null)
           Align(
@@ -511,7 +524,10 @@ class _ModelMultiSelect extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) => MenuAnchor(
         // Line the menu up under the field's left edge, just below it.
-        alignmentOffset: const Offset(0, 4),
+        alignmentOffset: const Offset(0, 6),
+        // Without this the panel takes the themed fill, which is within 1.02:1
+        // of the block behind it (identical in light) — the menu had no edge.
+        style: appMenuStyle(),
         builder: (context, controller, _) => _ModelField(
           summary: _summary(),
           onTap: controller.isOpen ? controller.close : controller.open,
@@ -541,8 +557,9 @@ class _ModelMultiSelect extends StatelessWidget {
   }
 }
 
-/// The tappable field that opens the model menu: a fixed-height outlined box
-/// showing the current [summary] with a dropdown affordance.
+/// The tappable field that opens the model menu: a borderless capsule matching
+/// the app's other fields, showing the current [summary] with a dropdown
+/// affordance.
 class _ModelField extends StatelessWidget {
   const _ModelField({required this.summary, required this.onTap});
 
@@ -551,24 +568,35 @@ class _ModelField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: InputDecorator(
-        isEmpty: false,
-        decoration: const InputDecoration(
-          labelText: 'Models available to the grid',
-          border: OutlineInputBorder(),
+    AppTheme.watch(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const FieldLabel('Models available to the grid'),
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: InputDecorator(
+            isEmpty: false,
+            decoration: labeledFieldDecoration('', fill: AppCard.inset),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    summary,
+                    overflow: TextOverflow.ellipsis,
+                    style: kFieldTextStyle,
+                  ),
+                ),
+                // Size 24 (a dropdown's default arrow) so the field matches the
+                // theme's field height instead of shrinking to the 18px icon
+                // theme.
+                const Icon(Icons.arrow_drop_down, size: 24),
+              ],
+            ),
+          ),
         ),
-        child: Row(
-          children: [
-            Expanded(child: Text(summary, overflow: TextOverflow.ellipsis)),
-            // Size 24 (a dropdown's default arrow) so the field matches the
-            // theme's field height instead of shrinking to the 18px icon theme.
-            const Icon(Icons.arrow_drop_down, size: 24),
-          ],
-        ),
-      ),
+      ],
     );
   }
 }
@@ -591,33 +619,82 @@ class _ModelMenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
+    final radius = BorderRadius.circular(AppControl.radius);
+    // Same construction as AppSelectField's rows and the chat model picker's:
+    // MenuItemButton is unthemed here, so its M3 defaults (square corners, 14pt
+    // text, Material's grey hover, an ink ripple) would put this menu outside
+    // the design system. See _OptionRow in app_select_field.dart.
     return SizedBox(
       width: width,
-      child: MenuItemButton(
-        closeOnActivate: false,
-        leadingIcon: Icon(
-          checked ? Icons.check_box : Icons.check_box_outline_blank,
-          size: 20,
-          color: checked
-              ? theme.colorScheme.primary
-              : theme.colorScheme.onSurfaceVariant,
-        ),
-        onPressed: onToggle,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(model.vendorName),
-              Text(
-                _meta(model),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: radius,
+          child: InkWell(
+            onTap: onToggle,
+            borderRadius: radius,
+            hoverColor: AppSurface.hoverFill,
+            splashFactory: NoSplash.splashFactory,
+            child: Ink(
+              decoration: BoxDecoration(
+                color: checked ? AppSurface.accentWash : Colors.transparent,
+                borderRadius: radius,
               ),
-            ],
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    checked ? Icons.check_box : Icons.check_box_outline_blank,
+                    size: AppControl.iconSize,
+                    // onSurfaceVariant, not textFaint: on the lifted menu panel
+                    // the faint ink lands at 2.80:1, under the 3.0 WCAG 1.4.11
+                    // asks of a UI glyph.
+                    color: checked
+                        ? AppPalette.accentMuted
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Weight carries the selection as well as the tick, so
+                        // which rows are in play reads from the text alone.
+                        Text(
+                          model.vendorName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppControl.fontSize,
+                            height: 1.2,
+                            fontWeight: checked
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: AppPalette.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _meta(model),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.28,
+                            color: AppPalette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

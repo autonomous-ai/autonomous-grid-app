@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../logic/context_length.dart';
 import '../logic/models_providers.dart';
@@ -72,12 +73,17 @@ class _AdvancedTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppCard tokens, so it must follow theme flips itself.
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
+        // Recessed like a field, not outlined: this tile sits inside an engine
+        // block, and the app draws depth with fill and shadow rather than a
+        // stroke. Radius 12 matches the fields it stacks with.
+        color: AppCard.inset,
+        borderRadius: BorderRadius.circular(12),
       ),
       clipBehavior: Clip.antiAlias,
       child: Theme(

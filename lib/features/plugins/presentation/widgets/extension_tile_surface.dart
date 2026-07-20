@@ -9,9 +9,22 @@ import '../../../../shared/theme/app_theme.dart';
 /// controls (a switch, a delete), which have to look reachable before they're
 /// reached for.
 class ExtensionTileSurface extends StatefulWidget {
-  const ExtensionTileSurface({super.key, required this.child});
+  const ExtensionTileSurface({
+    super.key,
+    required this.child,
+    this.onDialog = false,
+  });
 
   final Widget child;
+
+  /// Set when the row sits inside a dialog rather than on a page.
+  ///
+  /// The default [AppGlass.surfaceFill] is tuned against the page background; on
+  /// a dialog it measures **1.023:1** in dark and **1.000:1** in light — the row
+  /// disappears completely. [AppGlass.bubbleFill] is the one token that moves the
+  /// right way in both themes (lighter than the dark dialog, darker than the
+  /// white one), giving 1.074 / 1.111.
+  final bool onDialog;
 
   @override
   State<ExtensionTileSurface> createState() => _ExtensionTileSurfaceState();
@@ -19,6 +32,11 @@ class ExtensionTileSurface extends StatefulWidget {
 
 class _ExtensionTileSurfaceState extends State<ExtensionTileSurface> {
   bool _hovered = false;
+
+  /// The original page behaviour, unchanged: two opaque fills that swap on
+  /// hover. Only the dialog variant needed a different treatment.
+  Color get _pageFill =>
+      _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill;
 
   @override
   Widget build(BuildContext context) {
@@ -32,10 +50,21 @@ class _ExtensionTileSurfaceState extends State<ExtensionTileSurface> {
         duration: const Duration(milliseconds: 130),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          color: _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill,
+          color: widget.onDialog ? AppGlass.bubbleFill : _pageFill,
           borderRadius: BorderRadius.circular(14),
           boxShadow: AppGlass.cardShadow,
         ),
+        // On a dialog the hover is a translucent overlay rather than a second
+        // opaque fill: surfaceHoverFill is *lighter* than bubbleFill, which in
+        // light theme walks the row back toward the white dialog and erases it.
+        // The overlay darkens in light and lightens in dark, so hover reads as a
+        // lift in both (1.065 / 1.159).
+        foregroundDecoration: widget.onDialog && _hovered
+            ? BoxDecoration(
+                color: AppSurface.hoverFill,
+                borderRadius: BorderRadius.circular(14),
+              )
+            : null,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
           child: widget.child,

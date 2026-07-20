@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/parsers/catalog_entry.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
-import '../../../shared/widgets/glass_card.dart';
-import '../../../shared/widgets/status_dot.dart';
-import '../../../shared/widgets/toast.dart';
-import '../../provider_node/logic/provider_run_controller.dart';
-import '../logic/model_delete_controller.dart';
-import '../logic/model_group.dart';
+import '../../plugins/presentation/widgets/extension_tile_surface.dart';
+import '../logic/model_pull_controller.dart';
+import '../logic/model_shelf.dart';
 import '../logic/models_providers.dart';
-import 'catalog_download_list.dart';
 import 'model_pull_card.dart';
+import 'shelf_model_tile.dart';
 
 /// "Manage models" — the model hub that used to be its own tab: download a GGUF
 /// and see every model already under `~/.grid/models`. Opened from the local
@@ -29,44 +27,42 @@ class _ModelManagerDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context); // dialog content: re-colour on a theme flip.
+    final catalog = ref.watch(catalogModelsProvider);
     final groups = ref.watch(modelGroupsProvider);
-    // Grow with the window (desktop app) so three stacked sections don't feel
-    // cramped, but stay clear of the screen edges on smaller displays.
-    final screen = MediaQuery.sizeOf(context);
-    final maxWidth = screen.width < 800 ? screen.width - 96 : 720.0;
-    final maxHeight = screen.height < 860 ? screen.height * 0.9 : 780.0;
+    // The catalog is optional — offline or without the CLI it simply resolves
+    // empty, and the shelf is then whatever is already on disk.
+    final entries = catalog.asData?.value ?? const <CatalogEntry>[];
+    final shelf = buildModelShelf(catalog: entries, groups: groups);
+    final downloaded = shelf.where((m) => m.isDownloaded).length;
 
+    final screen = MediaQuery.sizeOf(context);
+    final maxWidth = screen.width < 800 ? screen.width - 96 : 640.0;
+    final maxHeight = screen.height < 860 ? screen.height * 0.9 : 720.0;
+
+    // No backgroundColor override: the app's dialogTheme already sets the lifted
+    // menuFill (#1E1E1E dark / white light). AppPalette.windowBg is #0A0A0A in
+    // dark — *darker* than the page behind the dialog, so overriding with it
+    // sank the modal instead of lifting it.
     return Dialog(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(32, 28, 32, 32),
+          padding: const EdgeInsets.fromLTRB(26, 22, 26, 22),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const _DialogHeader(),
-              const SizedBox(height: 20),
-              const Divider(height: 1),
-              const SizedBox(height: 24),
+              _DialogHeader(downloaded: downloaded, total: shelf.length),
+              const SizedBox(height: 18),
               Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    const _SectionLabel('Download a model'),
-                    const SizedBox(height: 14),
-                    const ModelPullCard(),
-                    const SizedBox(height: 32),
-                    const CatalogDownloadSection(),
-                    _SectionLabel(
-                      'Downloaded models',
-                      trailing: groups.isEmpty ? null : '${groups.length}',
-                    ),
-                    const SizedBox(height: 14),
-                    _DownloadedList(groups: groups),
-                  ],
+                child: _ShelfList(
+                  shelf: shelf,
+                  loading: catalog.isLoading && groups.isEmpty,
                 ),
               ),
+              const SizedBox(height: 14),
+              const _AdvancedPull(),
             ],
           ),
         ),
@@ -75,14 +71,26 @@ class _ModelManagerDialog extends ConsumerWidget {
   }
 }
 
-/// Title + one-line "what this is" subtitle + close, so the dialog opens with a
-/// clear band of context instead of jumping straight into the form.
+/// Title, a one-line subtitle that reports the actual state of this computer,
+/// and close.
+///
+/// The subtitle used to be static copy ("Download a model to serve, or see
+/// what's already on this computer") — a restatement of the title that told you
+/// nothing. It now answers the question the dialog is opened to answer.
 class _DialogHeader extends StatelessWidget {
-  const _DialogHeader();
+  const _DialogHeader({required this.downloaded, required this.total});
+
+  final int downloaded;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
+    final summary = downloaded == 0
+        ? 'Nothing downloaded yet — pick one below to get started.'
+        : '$downloaded of $total ready to serve on this computer.';
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -90,13 +98,17 @@ class _DialogHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Manage models', style: theme.textTheme.titleLarge),
+              Text(
+                'Manage models',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 4),
               Text(
-                'Download a model to serve, or see what\'s already on this '
-                'computer.',
+                summary,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: AppPalette.textSecondary,
                 ),
               ),
             ],
@@ -104,8 +116,9 @@ class _DialogHeader extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         IconButton(
-          icon: const Icon(Icons.close),
+          icon: const Icon(Icons.close, size: 18),
           tooltip: 'Close',
+          visualDensity: VisualDensity.compact,
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],
@@ -113,237 +126,165 @@ class _DialogHeader extends StatelessWidget {
   }
 }
 
-/// A section heading with an optional faint trailing count (e.g. how many models
-/// are downloaded). Keeps the two sections visually consistent.
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.title, {this.trailing});
+/// The merged shelf: every model once, downloaded ones first.
+///
+/// Separated by air and a hover lift rather than by `Divider`s inside a bordered
+/// card — the construction the Plugins and Skills lists use.
+class _ShelfList extends StatelessWidget {
+  const _ShelfList({required this.shelf, required this.loading});
 
-  final String title;
-  final String? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Text(title, style: theme.textTheme.titleMedium),
-        if (trailing != null) ...[
-          const SizedBox(width: 8),
-          Text(
-            trailing!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// The models already under `~/.grid/models`, grouped in one bordered card with
-/// divided rows so the list reads as a finished panel rather than loose lines.
-/// Mirrors the detail-pane grouping (see `DetailSection`).
-class _DownloadedList extends StatelessWidget {
-  const _DownloadedList({required this.groups});
-
-  final List<ModelGroup> groups;
+  final List<ShelfModel> shelf;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return GlassCard(
-      child: groups.isEmpty
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-              child: Text(
-                'No models downloaded yet — download one above.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          : Column(children: _rows()),
-    );
-  }
+    AppTheme.watch(context);
+    if (loading) return const _ShelfLoading();
+    if (shelf.isEmpty) return const _ShelfEmpty();
 
-  List<Widget> _rows() {
-    final rows = <Widget>[];
-    for (var i = 0; i < groups.length; i++) {
-      rows.add(_ModelTile(group: groups[i]));
-      if (i != groups.length - 1) {
-        rows.add(const Divider(height: 1, indent: 14, endIndent: 14));
+    // Downloaded models lead: what's already here is what you can serve now,
+    // and it's the reason most visits to this dialog happen.
+    final ready = shelf.where((m) => m.isDownloaded).toList();
+    final available = shelf.where((m) => !m.isDownloaded).toList();
+
+    final items = <Widget>[];
+    if (ready.isNotEmpty) {
+      items.add(
+        ExtensionSectionHeader(label: 'On this computer', count: ready.length),
+      );
+      for (final model in ready) {
+        items.add(ShelfModelTile(model: model));
+        items.add(const SizedBox(height: 8));
+      }
+      if (available.isNotEmpty) items.add(const SizedBox(height: 10));
+    }
+    if (available.isNotEmpty) {
+      items.add(
+        ExtensionSectionHeader(
+          label: 'Suggested for your device',
+          count: available.length,
+        ),
+      );
+      for (final model in available) {
+        items.add(ShelfModelTile(model: model));
+        items.add(const SizedBox(height: 8));
       }
     }
-    return rows;
+
+    return ListView(
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      children: items,
+    );
   }
 }
 
-/// One downloaded model: an icon tile, the model name, its size, and a delete
-/// action. A split GGUF's parts read as one row ("5 parts") and delete as one.
-/// A model the running engine is serving can't be deleted — its row shows a
-/// "Running" badge instead, so files can't be pulled out from under a live engine.
-class _ModelTile extends ConsumerWidget {
-  const _ModelTile({required this.group});
+/// A quiet placeholder while `grid catalog` is being read.
+class _ShelfLoading extends StatelessWidget {
+  const _ShelfLoading();
 
-  final ModelGroup group;
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const AppSpinner(),
+          const SizedBox(width: 10),
+          Text(
+            'Looking for models…',
+            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// No catalog and nothing on disk — the CLI is unreachable or offline. Points at
+/// the advanced field below, which still works.
+class _ShelfEmpty extends StatelessWidget {
+  const _ShelfEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 8),
+      child: Column(
+        children: [
+          Icon(Icons.cloud_off_outlined, size: 22, color: AppPalette.textFaint),
+          const SizedBox(height: 10),
+          Text(
+            "No models here yet, and suggestions couldn't be loaded.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'You can still paste a Hugging Face model below.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The free-text `owner/repo:file.gguf` field, folded away.
+///
+/// It used to open the dialog — the first thing shown was a paste box demanding
+/// a format most people don't know, above the one-tap list that makes it
+/// unnecessary. It stays fully available, just no longer the opening ask.
+///
+/// Auto-expands while a download is running so the progress bar and its Cancel
+/// button can't be hidden behind a collapsed tile.
+class _AdvancedPull extends ConsumerWidget {
+  const _AdvancedPull();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final serving = ref.watch(servingModelProvider);
-    final inUse = group.fileNames.any((name) => isModelInUse(name, serving));
-    final deleteState = ref.watch(modelDeleteControllerProvider);
-    final deleting =
-        deleteState is ModelDeleting && deleteState.label == group.displayName;
+    AppTheme.watch(context);
+    final pulling = ref.watch(modelPullControllerProvider) is ModelPulling;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppPalette.windowBg,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.memory_outlined, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  group.displayName,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                if (group.isSplit) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    _partsLabel(group),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: group.isComplete
-                          ? theme.colorScheme.onSurfaceVariant
-                          : theme.colorScheme.error,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            '${group.sizeGb.toStringAsFixed(2)} GB',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(width: 4),
-          _trailing(context, ref, theme, inUse: inUse, deleting: deleting),
-        ],
+    // bubbleFill, matching the rows above: the dialog's own fill is #1E1E1E
+    // dark / white light, against which surfaceFill measures 1.023:1 / 1.000:1 —
+    // invisible. bubbleFill lifts the right way in both themes, and the field
+    // inside stays recessed against it.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppGlass.bubbleFill,
+        borderRadius: BorderRadius.circular(AppCard.insetRadius),
+        boxShadow: AppGlass.cardShadow,
       ),
-    );
-  }
-
-  /// "5 parts" for a complete split set, or "3 of 5 parts — incomplete" when a
-  /// part is missing (the engine can't serve it until every part is present).
-  static String _partsLabel(ModelGroup group) {
-    final expected = group.expectedParts;
-    if (expected != null && group.partCount < expected) {
-      return '${group.partCount} of $expected parts — incomplete';
-    }
-    return '${group.partCount} parts';
-  }
-
-  Widget _trailing(
-    BuildContext context,
-    WidgetRef ref,
-    ThemeData theme, {
-    required bool inUse,
-    required bool deleting,
-  }) {
-    if (deleting) {
-      return const SizedBox(
-        width: 40,
-        height: 40,
-        child: Center(child: AppSpinner()),
-      );
-    }
-    if (inUse) {
-      return Tooltip(
-        message: 'In use by the running engine — stop it to delete this model.',
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              StatusDot(color: AppPalette.online, size: 7),
-              const SizedBox(width: 6),
-              Text(
-                'Running',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppPalette.online,
-                ),
-              ),
-            ],
+      child: ExpansionTile(
+        // A running download must stay on screen; a finished/idle one starts
+        // folded. `key` forces the tile to rebuild its initial state when the
+        // download starts, since initiallyExpanded is only read on first build.
+        key: ValueKey(pulling),
+        initiallyExpanded: pulling,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        leading: Icon(
+          Icons.link_rounded,
+          size: 17,
+          color: AppPalette.textSecondary,
+        ),
+        title: Text(
+          'Paste a model from Hugging Face',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppPalette.textPrimary,
           ),
         ),
-      );
-    }
-    return IconButton(
-      icon: const Icon(Icons.delete_outline, size: 18),
-      color: AppPalette.textSecondary,
-      tooltip: 'Delete model',
-      visualDensity: VisualDensity.compact,
-      onPressed: () => _confirmAndDelete(context, ref),
-    );
-  }
-
-  Future<void> _confirmAndDelete(BuildContext context, WidgetRef ref) async {
-    final theme = Theme.of(context);
-    final partsNote = group.isSplit
-        ? ' All ${group.partCount} parts will be removed.'
-        : '';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete model?'),
-        content: Text(
-          '"${group.displayName}" will be removed from this computer.$partsNote '
-          'You can download it again later.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
+        children: const [ModelPullCard()],
       ),
-    );
-    if (confirmed != true) return;
-
-    final ok = await ref
-        .read(modelDeleteControllerProvider.notifier)
-        .delete(group.fileNames, label: group.displayName);
-    if (ok || !context.mounted) return;
-    final state = ref.read(modelDeleteControllerProvider);
-    final message = state is ModelDeleteFailed
-        ? state.message
-        : "Couldn't delete this model. Please try again.";
-    ToastScope.show(
-      context,
-      ToastSpec(message: message, severity: ToastSeverity.error),
     );
   }
 }

@@ -5,6 +5,7 @@ import '../../../shared/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../logic/model_pull_controller.dart';
 
 /// Where to find GGUF models to paste into the download field.
@@ -47,23 +48,30 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const FieldLabel('Model to download'),
         TextField(
           controller: _spec,
           minLines: 1,
           maxLines: 6,
           keyboardType: TextInputType.multiline,
-          decoration: const InputDecoration(
-            labelText: 'Model to download',
-            helperText:
-                'Format  owner/repo:file.gguf — one per line. For a '
-                'split model, paste every part.',
-            helperMaxLines: 2,
-            hintText: 'unsloth/…-GGUF:…-00001-of-00005.gguf',
-            border: OutlineInputBorder(),
-            alignLabelWithHint: true,
+          // 13pt explicitly: InputDecorationTheme has no `style` slot, so a bare
+          // TextField takes Material's 16pt and stands out beside every other
+          // field in the app.
+          style: kFieldTextStyle,
+          decoration: labeledFieldDecoration(
+            'unsloth/…-GGUF:…-00001-of-00005.gguf',
+            fill: AppCard.inset,
           ),
         ),
         const SizedBox(height: 8),
+        Text(
+          'Format  owner/repo:file.gguf — one per line. For a split model, '
+          'paste every part.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(

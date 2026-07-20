@@ -188,6 +188,80 @@ void main() {
   });
 
   test(
+    'clearFailure dismisses a read failure so the add forms come back',
+    () async {
+      final fake = FakeGridCliService()
+        ..stubStart(
+          _args,
+          exitCode: 1,
+          lines: const [CliLine(isStderr: true, text: 'boom')],
+        );
+      final container = ProviderContainer(
+        overrides: [
+          gridCliServiceProvider.overrideWithValue(fake),
+          nodeNameProvider.overrideWithValue('grid-app'),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(providerRunControllerProvider.notifier);
+
+      await notifier.startExternal(
+        network: 'net',
+        endpoint: 'http://x/v1',
+        model: 'm',
+      );
+      expect(
+        container.read(providerRunControllerProvider),
+        isA<ProviderRunFailed>(),
+      );
+
+      notifier.clearFailure();
+
+      expect(
+        container.read(providerRunControllerProvider),
+        isA<ProviderRunIdle>(),
+      );
+    },
+  );
+
+  test('clearFailure leaves a running engine alone', () async {
+    final fake = FakeGridCliService()
+      ..stubStart(
+        _args,
+        exitCode: 0,
+        lines: const [CliLine(isStderr: false, text: 'serving')],
+      );
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        nodeNameProvider.overrideWithValue('grid-app'),
+        syncDelayAfterJoinProvider.overrideWithValue(Duration.zero),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(providerRunControllerProvider.notifier);
+
+    await notifier.startExternal(
+      network: 'net',
+      endpoint: 'http://x/v1',
+      model: 'm',
+    );
+    expect(
+      container.read(providerRunControllerProvider),
+      isA<ProviderRunActive>(),
+    );
+
+    // Dismissing a failure that isn't there must never knock a serving engine
+    // out of the UI — the state would then disagree with the engine on disk.
+    notifier.clearFailure();
+
+    expect(
+      container.read(providerRunControllerProvider),
+      isA<ProviderRunActive>(),
+    );
+  });
+
+  test(
     'startLocal serves a local model via --serve (built-in engine)',
     () async {
       // A free port is picked and passed via --endpoint-port so the join never

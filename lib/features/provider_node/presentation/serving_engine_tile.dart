@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../models/logic/advertise_name.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
+import 'engine_cost_chip.dart';
 
 /// One engine in the machine's serving list: what it is, the model(s) it serves,
 /// a live dot, and a Stop that drops just this one from the union (the others
@@ -38,11 +39,24 @@ class ServingEngineTile extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  _title(engine),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+                // Title and cost share a row, wrapping instead of ellipsising
+                // the title when the settings pane is narrow.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 3,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      _title(engine),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    EngineCostChip(
+                      cost: costOfEngineKind(engine.kind),
+                      compact: true,
+                    ),
+                  ],
                 ),
                 Text(
                   _subtitle(engine),

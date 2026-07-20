@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
+import '../../../shared/widgets/app_select_field.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../models/logic/advertise_name.dart';
 import '../logic/provider_run_controller.dart';
 import 'engine_block.dart';
@@ -151,13 +153,10 @@ class ServerForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        LabeledField(
+          label: 'Base URL',
           controller: endpoint,
-          decoration: const InputDecoration(
-            labelText: 'Base URL',
-            hintText: 'http://localhost:8080/v1',
-            border: OutlineInputBorder(),
-          ),
+          hint: 'http://localhost:8080/v1',
         ),
         const SizedBox(height: 12),
         ModelField(model: model, suggestedModels: suggestedModels),
@@ -205,33 +204,26 @@ class ModelField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (suggestedModels.isEmpty) {
-      return TextField(
+      return LabeledField(
+        label: 'Model',
         controller: model,
-        decoration: const InputDecoration(
-          labelText: 'Model',
-          hintText: 'gemma4-31b.gguf',
-          border: OutlineInputBorder(),
-        ),
+        hint: 'gemma4-31b.gguf',
       );
     }
     return ListenableBuilder(
       listenable: model,
       builder: (context, _) {
         final value = suggestedModels.contains(model.text) ? model.text : null;
-        return DropdownButtonFormField<String>(
-          initialValue: value,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Model',
-            border: OutlineInputBorder(),
-          ),
-          items: [
+        // AppSelectField for the same reason as the other two pickers: a
+        // Material dropdown's popup can't match the app's floating menus.
+        return AppSelectField<String>(
+          label: 'Model',
+          value: value,
+          options: [
             for (final m in suggestedModels)
-              DropdownMenuItem(value: m, child: Text(m)),
+              AppSelectOption(value: m, label: m),
           ],
-          onChanged: (v) {
-            if (v != null) model.text = v;
-          },
+          onChanged: (v) => model.text = v,
         );
       },
     );

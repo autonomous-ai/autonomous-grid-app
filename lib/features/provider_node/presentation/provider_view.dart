@@ -13,15 +13,21 @@ import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../auto_router/presentation/auto_router_card.dart';
 import '../../models/logic/advertise_name.dart';
+import '../../models/logic/engine_setup_controller.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../network/presentation/enable_provider_card.dart';
+import '../../network/presentation/sharing_locked_view.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/backend_detector.dart';
 import '../logic/ollama_launch_controller.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
 import 'api_engine_block.dart';
+import 'contribution_summary.dart';
 import 'engine_block.dart';
+import 'engine_cost_chip.dart';
+import 'engine_failure_card.dart';
+import 'grid_scope_bar.dart';
 import 'external_server_block.dart';
 import 'serving_engines_section.dart';
 
@@ -102,26 +108,81 @@ class _ServeSection extends ConsumerWidget {
   ) {
     final run = ref.watch(providerRunControllerProvider);
     final serving = ref.watch(servingEnginesProvider);
-    final children = <Widget>[const SizedBox(height: 16)];
 
-    // Auto-routing (the reserved `auto` model) is an owner-only control, so only
-    // the grid owner sees the card; members serve models without it.
-    if (network.isOwner) {
-      children.addAll([const AutoRouterCard(), const SizedBox(height: 16)]);
-    }
+    // Names the grid every sentence below is about. First, and in every state:
+    // the Settings pane has no top bar, so without this the page says "this
+    // grid" repeatedly while nothing on screen says which one.
+    final children = <Widget>[
+      GridScopeBar(network: network),
+      const SizedBox(height: 16),
+    ];
 
     // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
     // consumer isn't allowed to). Installing the engine still needs no grid
     // permission, so offer the set-up instead of a wall — then stop here, since
     // a join would be rejected until sharing is on.
+    //
+    // An admin sees the one-tap fix ([EnableProviderCard] grants itself the
+    // role); everyone else gets [SharingLockedView], which explains what they
+    // *can* do here. The two gates read different axes on purpose — see the note
+    // on `NetworkCredential.isProvider` vs `.role`.
     if (!network.isProvider) {
+      if (network.role == NetworkRole.admin) {
+        children.addAll([
+          EnableProviderCard(network: network),
+          const SizedBox(height: 16),
+          const NodeSetupCard(),
+          const SizedBox(height: 16),
+        ]);
+      } else {
+        children.addAll([
+          // The set-up card below stays in place: installing an engine touches
+          // only this computer and needs no grid permission, so the wait is
+          // usable time. [SharingLockedView] points at it rather than offering
+          // its own install button.
+          SharingLockedView(network: network),
+          const SizedBox(height: 16),
+          const NodeSetupCard(),
+          const SizedBox(height: 16),
+        ]);
+      }
+      return children;
+    }
+
+    // What this computer is contributing, above everything else: the tab's whole
+    // reason to exist, previously answerable only by reading the entire page.
+    final startingHere =
+        run is ProviderRunActive &&
+        run.grid == network.networkId &&
+        run.starting;
+    children.add(
+      ContributionSummary(
+        engines: serving,
+        gridName: network.name,
+        starting: startingHere,
+      ),
+    );
+
+    // Something broke — it goes directly under the summary, above everything
+    // optional. It used to sit below the auto-routing card, which put a feature
+    // that announces it has nothing to route *between* "you're sharing nothing"
+    // and the reason why. Bad news first, then the offers.
+    if (run is ProviderRunFailed) {
       children.addAll([
-        EnableProviderCard(network: network),
-        const SizedBox(height: 16),
-        const NodeSetupCard(),
+        EngineFailureCard(
+          message: run.message,
+          engineLabel: run.model,
+          // Clears the failed state so the add forms come back; the user then
+          // starts from the block they meant to use. We can't replay the exact
+          // join here — the controller doesn't retain its arguments — and
+          // guessing which engine to restart would be worse than asking.
+          onRetry: () =>
+              ref.read(providerRunControllerProvider.notifier).clearFailure(),
+          onReinstallEngine: () =>
+              ref.read(engineSetupControllerProvider.notifier).run(),
+        ),
         const SizedBox(height: 16),
       ]);
-      return children;
     }
 
     // An engine on ANOTHER grid: remote has one identity per grid, so starting
@@ -135,10 +196,6 @@ class _ServeSection extends ConsumerWidget {
 
     // What's already serving on THIS grid (the union), plus a transient row while
     // a newly-joined engine is still starting.
-    final startingHere =
-        run is ProviderRunActive &&
-        run.grid == network.networkId &&
-        run.starting;
     if (serving.isNotEmpty || startingHere) {
       children.addAll([
         ServingEnginesSection(network: network),
@@ -146,14 +203,15 @@ class _ServeSection extends ConsumerWidget {
       ]);
     }
 
-    if (run is ProviderRunFailed) {
-      children.addAll([
-        _FailedNote(message: run.message),
-        const SizedBox(height: 8),
-      ]);
-    }
-
     children.addAll(_addEngineBlocks(network, serving));
+
+    // Auto-routing (the reserved `auto` model) is an owner-only control, so only
+    // the grid owner sees the card; members serve models without it. It sits
+    // after the engine blocks because it only does anything once models are
+    // running — it's a setting about them, not a way to add one.
+    if (network.isOwner) {
+      children.addAll([const SizedBox(height: 16), const AutoRouterCard()]);
+    }
     children.add(const SizedBox(height: 16));
     return children;
   }
@@ -212,6 +270,7 @@ class _ServeSection extends ConsumerWidget {
           icon: Icons.dns_outlined,
           title: 'Local Engine',
           subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
+          trailing: const EngineCostChip(cost: EngineCost.free),
           child: ServeLocalCard(network: network),
         ),
       const SizedBox(height: 16),
@@ -233,37 +292,34 @@ class _LocalEngineExclusiveNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.info_outline, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Your local model runs on its own',
-                    style: theme.textTheme.titleMedium,
+    return EngineSurface(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your local model runs on its own',
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'The built-in local engine serves a single model and can’t '
+                  'run alongside others. To run several engines at once, stop '
+                  'it above, then add API or connected engines — or run your '
+                  'local model as your own server and connect it.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'The built-in local engine serves a single model and can’t '
-                    'run alongside others. To run several engines at once, stop '
-                    'it above, then add API or connected engines — or run your '
-                    'local model as your own server and connect it.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -278,41 +334,38 @@ class _LocalNeedsConnectNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.dns_outlined,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Add a local model as a connected engine',
-                    style: theme.textTheme.titleMedium,
+    return EngineSurface(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.dns_outlined,
+            size: 20,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add a local model as a connected engine',
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'The built-in local engine can’t run alongside other engines. '
+                  'To use a local model here too, run it as a server (Ollama, '
+                  'or llama-server) and add it under “Connect your own engine” '
+                  'below.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'The built-in local engine can’t run alongside other engines. '
-                    'To use a local model here too, run it as a server (Ollama, '
-                    'or llama-server) and add it under “Connect your own engine” '
-                    'below.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -338,25 +391,6 @@ class _AddEngineHeading extends StatelessWidget {
   }
 }
 
-/// The last start's failure, surfaced above the add forms so the user sees why
-/// it didn't take before trying again.
-class _FailedNote extends StatelessWidget {
-  const _FailedNote({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Text(
-      "Couldn't start last time: $message",
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.error,
-      ),
-    );
-  }
-}
-
 /// Shown on Windows in place of the built-in engine path, which isn't supported
 /// there yet — so the user understands why and where to go instead.
 class _BuiltInUnavailableNote extends StatelessWidget {
@@ -365,36 +399,33 @@ class _BuiltInUnavailableNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.info_outline, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Built-in engine not available on Windows yet',
-                    style: theme.textTheme.titleMedium,
+    return EngineSurface(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Built-in engine not available on Windows yet',
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Running a model directly on this Windows computer isn't "
+                  'supported yet. You can still connect your own AI server below, '
+                  'or use models other people share on the grid from the Playground.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Running a model directly on this Windows computer isn't "
-                    'supported yet. You can still connect your own AI server below, '
-                    'or use models other people share on the grid from the Playground.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -414,50 +445,47 @@ class _EngineBusyElsewhere extends ConsumerWidget {
     final runningName =
         ref.watch(sessionProvider).byName(runningGridId)?.name ??
         'another grid';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.dns, color: AppPalette.online, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'An engine is already running on $runningName',
-                        style: theme.textTheme.titleMedium,
+    return EngineSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.dns, color: AppPalette.online, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'An engine is already running on $runningName',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'You can run an engine on only one grid at a time. Stop '
+                      'it to start one on this grid.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'You can run an engine on only one grid at a time. Stop '
-                        'it to start one on this grid.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: () =>
-                    ref.read(providerRunControllerProvider.notifier).stop(),
-                icon: const Icon(Icons.stop),
-                label: Text('Stop engine on $runningName'),
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: () =>
+                  ref.read(providerRunControllerProvider.notifier).stop(),
+              icon: const Icon(Icons.stop),
+              label: Text('Stop engine on $runningName'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

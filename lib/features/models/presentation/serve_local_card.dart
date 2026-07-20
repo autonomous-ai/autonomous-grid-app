@@ -5,6 +5,7 @@ import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
+import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../node_setup/logic/background_model_controller.dart';
@@ -243,21 +244,19 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
       ];
 
   List<Widget> _serveControls(List<ModelGroup> groups, ModelGroup selected) => [
-    DropdownButtonFormField<String>(
-      initialValue: selected.primary.name,
-      decoration: const InputDecoration(
-        labelText: 'Local model',
-        border: OutlineInputBorder(),
-      ),
-      items: [
+    // AppSelectField, not DropdownButtonFormField: Material's popup can't be
+    // made to match the app's floating menus (square, edge-to-edge, no inset).
+    AppSelectField<String>(
+      label: 'Local model',
+      value: selected.primary.name,
+      options: [
         for (final group in groups)
-          DropdownMenuItem(
+          AppSelectOption(
             value: group.primary.name,
-            child: Text(
-              group.isSplit
-                  ? '${group.displayName} · ${group.partCount} parts'
-                  : group.displayName,
-            ),
+            label: group.displayName,
+            // A split model's shard count belongs on its own line, not crammed
+            // onto the name with a separator.
+            detail: group.isSplit ? '${group.partCount} parts' : null,
           ),
       ],
       // Reset the context choice so the slider falls back to the new
@@ -268,12 +267,19 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
       }),
     ),
     const SizedBox(height: 12),
-    AdvertiseAsField(controller: _advertise, hintText: 'Qwen3.6-35B-A3B'),
-    const SizedBox(height: 12),
-    ContextLengthField(
-      model: selected.primary.name,
-      value: _ctxSize,
-      onChanged: (tokens) => setState(() => _ctxSize = tokens),
+    // The display name and the context window are both pre-filled correctly from
+    // the model itself, so most starts never touch them. Folding them away keeps
+    // the block to one decision — which model — while leaving both a tap away.
+    _AdvancedOptions(
+      children: [
+        AdvertiseAsField(controller: _advertise, hintText: 'Qwen3.6-35B-A3B'),
+        const SizedBox(height: 12),
+        ContextLengthField(
+          model: selected.primary.name,
+          value: _ctxSize,
+          onChanged: (tokens) => setState(() => _ctxSize = tokens),
+        ),
+      ],
     ),
     const SizedBox(height: 16),
     Align(
@@ -297,6 +303,45 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
       ),
     ),
   ];
+}
+
+/// A quiet disclosure holding the settings that are already right by default —
+/// the grid-facing name (derived from the model) and the context window (the
+/// model's own maximum, capped). Both matter when you want them and are noise
+/// when you don't, so the block leads with the single real choice, the model,
+/// and keeps these one tap away.
+///
+/// Not the same as [ContextLengthField]'s own collapsed tile, which stays nested
+/// inside this: that one carries a slider that would otherwise dominate the card
+/// even when expanded here.
+class _AdvancedOptions extends StatelessWidget {
+  const _AdvancedOptions({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      // Drop ExpansionTile's divider lines so it reads as part of the form
+      // rather than a separate section.
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(top: 4),
+        minTileHeight: 40,
+        dense: true,
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        title: Text(
+          'Name and context window',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        children: children,
+      ),
+    );
+  }
 }
 
 /// Shown in the built-in engine block when the engine isn't set up on this
