@@ -8,6 +8,7 @@ import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/agent/logic/agent_session_title.dart';
+import 'package:grid_app/features/agent/logic/codex_tool.dart';
 import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
@@ -154,10 +155,12 @@ _harness(
         Directory('${dir.path}/outputs'),
       ),
       // Whether this computer has the agent — the one thing that decides who
-      // answers a plain text turn.
+      // answers a plain text turn. Codex is pinned absent so the real machine's
+      // PATH (which may have codex installed) can't leak in and change routing.
       hermesPathProvider.overrideWithValue(
         agentInstalled ? '/bin/hermes' : null,
       ),
+      codexPathProvider.overrideWithValue(null),
       // Keep the remembered model and the projects off the real `~/.grid`.
       chatPrefsStoreProvider.overrideWithValue(
         ChatPrefsStore(file: File('${dir.path}/chat_prefs.json')),

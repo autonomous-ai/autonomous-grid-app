@@ -111,14 +111,21 @@ class CodexChatSender implements ChatSender {
     }
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
-    final resolved = _resolveTurn(network, model, conversationId, history, root);
-    final prompt = planFirst
-        ? withPlanPreamble(resolved.text)
-        : resolved.text;
+    final resolved = _resolveTurn(
+      network,
+      model,
+      conversationId,
+      history,
+      root,
+    );
+    final prompt = planFirst ? withPlanPreamble(resolved.text) : resolved.text;
 
     yield* _runTurn(
       workdir: root,
-      prompt: withProjectInstructions(prompt, resolved.freshStart ? instructions : null),
+      prompt: withProjectInstructions(
+        prompt,
+        resolved.freshStart ? instructions : null,
+      ),
       resumeThreadId: resolved.resumeThreadId,
       model: model,
     );
@@ -171,8 +178,10 @@ class CodexChatSender implements ChatSender {
     required String model,
   }) {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
-    final sourcesLog = _ref.read(agentSourcesProvider.notifier)..clear();
     final planLog = _ref.read(agentPlanProvider.notifier)..clear();
+    // Codex cites no sources today, but a prior Hermes turn's citations would
+    // otherwise linger under a Codex answer — start each turn with none.
+    _ref.read(agentSourcesProvider.notifier).clear();
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'codex exec -m $model (agent)');
 
@@ -242,9 +251,6 @@ class CodexChatSender implements ChatSender {
       run.kill();
       log.finish(logId, error: 'stopped');
     };
-    // Sources stay empty for Codex today, but clearing keeps a prior Hermes
-    // turn's citations from lingering under a Codex answer.
-    sourcesLog.clear();
     return updates.stream;
   }
 
@@ -256,14 +262,12 @@ class CodexChatSender implements ChatSender {
   Future<String?> _pointAtGrid(NetworkCredential network, String model) async {
     final key = '${network.networkId}|$model';
     if (_ref.read(codexConfiguredProvider) == key) return null;
-    final result = await _ref
-        .read(clientAppConfiguratorProvider)
-        .apply(
-          ClientApp.codex,
-          network.relayBaseUrl,
-          network.relayApiKey,
-          [model],
-        );
+    final result = await _ref.read(clientAppConfiguratorProvider).apply(
+      ClientApp.codex,
+      network.relayBaseUrl,
+      network.relayApiKey,
+      [model],
+    );
     if (result is ApplyError) {
       return "Couldn't point Codex at this grid: ${result.message}";
     }

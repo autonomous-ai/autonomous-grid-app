@@ -57,7 +57,11 @@ void main() {
     });
 
     test('with nothing installed it reports the catalog default', () {
-      final container = _container(chosen: 'codex', hermes: false, codex: false);
+      final container = _container(
+        chosen: 'codex',
+        hermes: false,
+        codex: false,
+      );
       expect(container.read(activeChatAgentProvider), kChatAgent);
     });
   });

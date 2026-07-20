@@ -7,10 +7,10 @@ import 'package:grid_app/infrastructure/cli/codex_exec_service.dart';
 void main() {
   group('parseCodexEvent — the codex exec --json thread stream', () {
     test('the opening thread.started carries the id to resume with later', () {
-      final event = parseCodexEvent(
-        {'type': 'thread.started', 'thread_id': 'abc-123'},
-        {},
-      );
+      final event = parseCodexEvent({
+        'type': 'thread.started',
+        'thread_id': 'abc-123',
+      }, {});
       expect(event, isA<CodexThreadStarted>());
       expect((event as CodexThreadStarted).threadId, 'abc-123');
     });
@@ -106,10 +106,10 @@ void main() {
     });
 
     test('a bare error is a transient reconnect notice, not a failure', () {
-      final event = parseCodexEvent(
-        {'type': 'error', 'message': 'Reconnecting... 1/5'},
-        {},
-      );
+      final event = parseCodexEvent({
+        'type': 'error',
+        'message': 'Reconnecting... 1/5',
+      }, {});
       expect(event, isNull);
     });
 

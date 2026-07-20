@@ -36,6 +36,7 @@ final chatAgentSenderProvider = Provider<ChatSender>((ref) {
     AgentTool.codex => ref.watch(codexChatSenderProvider),
     // Hermes is the default; openclaw can't be active (never installed) but the
     // switch stays exhaustive, and Hermes is the safe fallback for it.
-    AgentTool.hermes || AgentTool.openclaw => ref.watch(hermesChatSenderProvider),
+    AgentTool.hermes ||
+    AgentTool.openclaw => ref.watch(hermesChatSenderProvider),
   };
 });

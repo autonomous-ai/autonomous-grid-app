@@ -60,18 +60,21 @@ void main() {
       },
     );
 
-    test('an agent the app cannot run is never shelled out for — the CLI only '
-        'knows Hermes, and its error would mean nothing to the user', () async {
-      final cli = _FakeCli();
-      final container = _container(cli);
+    test(
+      'a planned agent is never shelled out for — the CLI has no command for '
+      'it, and its error would mean nothing to the user',
+      () async {
+        final cli = _FakeCli();
+        final container = _container(cli);
 
-      await container
-          .read(agentInstallProvider.notifier)
-          .install(AgentTool.codex);
+        await container
+            .read(agentInstallProvider.notifier)
+            .install(AgentTool.openclaw);
 
-      expect(cli.calls, isEmpty);
-      expect(container.read(agentInstallProvider), isA<AgentInstallIdle>());
-    });
+        expect(cli.calls, isEmpty);
+        expect(container.read(agentInstallProvider), isA<AgentInstallIdle>());
+      },
+    );
 
     test(
       'a failure comes back as the CLI\'s own last words, not an exit code',
@@ -138,16 +141,23 @@ void main() {
   });
 
   group('the catalog', () {
-    test('only Hermes can run today — the rest are listed, not offered', () {
-      expect(AgentTool.hermes.runnable, isTrue);
-      expect(AgentTool.values.where((t) => t.runnable).toList(), [
-        AgentTool.hermes,
-      ]);
-      expect(kChatAgent, AgentTool.hermes);
-    });
+    test(
+      'Hermes and Codex can run; planned agents are listed, not offered',
+      () {
+        expect(AgentTool.hermes.runnable, isTrue);
+        expect(AgentTool.codex.runnable, isTrue);
+        expect(AgentTool.openclaw.runnable, isFalse);
+        expect(AgentTool.values.where((t) => t.runnable).toList(), [
+          AgentTool.hermes,
+          AgentTool.codex,
+        ]);
+        expect(kChatAgent, AgentTool.hermes);
+      },
+    );
 
     test('the id is what `grid agent install` takes', () {
       expect(AgentTool.hermes.id, 'hermes');
+      expect(AgentTool.codex.id, 'codex');
     });
   });
 

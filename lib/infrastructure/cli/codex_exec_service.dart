@@ -253,7 +253,9 @@ CodexExecEvent? parseCodexEvent(
     case 'item.updated':
     case 'item.completed':
       final item = event['item'];
-      return item is Map ? _parseItem(item.cast<String, dynamic>(), messages) : null;
+      return item is Map
+          ? _parseItem(item.cast<String, dynamic>(), messages)
+          : null;
     default:
       // turn.started, turn.completed, token counts, transient errors: nothing to
       // surface. A bare `error` here is a reconnect notice, not a turn failure.

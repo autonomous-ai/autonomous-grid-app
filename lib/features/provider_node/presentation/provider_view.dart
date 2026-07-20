@@ -107,10 +107,7 @@ class _ServeSection extends ConsumerWidget {
     // Auto-routing (the reserved `auto` model) is an owner-only control, so only
     // the grid owner sees the card; members serve models without it.
     if (network.isOwner) {
-      children.addAll([
-        const AutoRouterCard(),
-        const SizedBox(height: 16),
-      ]);
+      children.addAll([const AutoRouterCard(), const SizedBox(height: 16)]);
     }
 
     // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
