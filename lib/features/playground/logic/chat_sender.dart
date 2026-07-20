@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/media_event.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../provider_node/logic/api_engine_catalog.dart';
 import 'chat_message.dart';
 import 'chat_transport.dart';
 import 'media_outputs.dart';
@@ -172,7 +173,7 @@ class DefaultChatSender implements ChatSender {
         // no chat/completions provider, so a chat request to one 503s ("No
         // providers available for this model"). Route it to `/responses` in the
         // vendor's dialect instead (ADR 0015 D-a/D-b).
-        if (_isResponsesModel(model)) {
+        if (isResponsesOnlyModel(model)) {
           return _sendResponses(
             endpoint: '${network.relayBaseUrl}/responses',
             network: network,
@@ -241,12 +242,6 @@ class DefaultChatSender implements ChatSender {
         : reply;
     yield ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: answer));
   }
-
-  /// Whether [model] must be served over the Responses endpoint rather than
-  /// chat/completions. Codex subscription models (`codex:*`) advertise
-  /// `endpoints: ["responses"]` only, so the relay has no chat provider for them
-  /// (ADR 0015 D-b) — a chat request 503s.
-  static bool _isResponsesModel(String model) => model.startsWith('codex:');
 
   /// One-shot Responses completion (relay only). Same shape as [_sendChat] — mirror
   /// into the Debug tab, map failures to a plain line — but hits `/responses`
