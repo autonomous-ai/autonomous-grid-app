@@ -85,6 +85,23 @@ void main() {
     });
   });
 
+  group('isRealChatModel', () {
+    test('a normal text model is a real, answerable model', () {
+      expect(isRealChatModel('qwen3-coder'), isTrue);
+    });
+
+    test('the virtual auto router is not a real model — a grid whose only '
+        'model is auto has nothing to route to', () {
+      expect(isRealChatModel('auto'), isFalse);
+      expect(isRealChatModel(kAutoModelId), isFalse);
+    });
+
+    test('a leaked media capability is not a chat model', () {
+      expect(isRealChatModel('comfyui:image_generation'), isFalse);
+      expect(isRealChatModel('comfyui:i2v'), isFalse);
+    });
+  });
+
   test('isVideoCapability is true only for the i2v capability', () {
     expect(isVideoCapability('comfyui:i2v'), isTrue);
     expect(isVideoCapability('comfyui:image_generation'), isFalse);
@@ -119,7 +136,10 @@ void main() {
     test('drops the generic external engine, keeping the device', () {
       // `external` is the app's own engine id and means nothing to a user, so
       // the line falls back to what the hardware is.
-      expect(nodeSpecLine(_node(engine: 'external', deviceClass: 'gpu')), 'GPU');
+      expect(
+        nodeSpecLine(_node(engine: 'external', deviceClass: 'gpu')),
+        'GPU',
+      );
     });
 
     test('drops the "Engine" placeholder when no engine is reported', () {

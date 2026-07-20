@@ -72,34 +72,46 @@ final gridOverviewProvider = FutureProvider.autoDispose<GridOverview>((
 /// plain ids from the OpenAI-style `/models`. Both the Models section (tiles) and
 /// each node's "serving N" count read this one derived list, so the count and the
 /// list can never disagree. Empty while loading or when the grid advertises none.
+///
+/// The virtual `auto` router (ADR 0013) is stripped here — the relay advertises
+/// it even when no node is serving, so a grid whose only "model" is `auto` reads
+/// as empty. Filtering at the source keeps every count, tile and empty-state
+/// derived from this list honest. See [kAutoModelId].
 final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
   final rich =
       ref.watch(gridOverviewProvider).asData?.value.models ??
       const <OverviewModel>[];
-  if (rich.isNotEmpty) return rich;
-  final ids = ref.watch(networkModelsProvider).asData?.value ?? const [];
-  return [for (final id in ids) OverviewModel(id: id)];
+  final source = rich.isNotEmpty
+      ? rich
+      : [
+          for (final id
+              in ref.watch(networkModelsProvider).asData?.value ?? const [])
+            OverviewModel(id: id),
+        ];
+  return [
+    for (final model in source)
+      if (model.id != kAutoModelId) model,
+  ];
 });
 
 /// Whether the grid serves at least one real chat/text model. A media capability
-/// (`comfyui:*`) can leak into the model list, so those don't count as "chat".
-/// Shared by the overview capability chips and the "How to use" guide so both
-/// decide "is this a chat grid?" the same way (and the guide can hide chat setup
-/// on a media-only grid). See [mediaCapabilityLabel].
+/// (`comfyui:*`) and the virtual `auto` router don't count as "chat", so a
+/// routing-only or media-only grid reads as empty. Shared by the overview
+/// capability chips, the grid front-door setup card and the "How to use" guide so
+/// they all decide "is this a chat grid?" the same way. See [isRealChatModel].
 final gridHasChatProvider = Provider.autoDispose<bool>((ref) {
-  return ref
-      .watch(gridModelsProvider)
-      .any((m) => mediaCapabilityLabel(m.id) == null);
+  return ref.watch(gridModelsProvider).any((m) => isRealChatModel(m.id));
 });
 
-/// Every chat/text model id the grid serves (media `comfyui:*` capabilities
-/// filtered out). Lets a client list them all instead of just the first — e.g.
-/// OpenClaw enumerates every model in its provider config. Empty while loading
-/// or when the grid serves no chat model. See [mediaCapabilityLabel].
+/// Every chat/text model id the grid serves (media `comfyui:*` capabilities and
+/// the virtual `auto` router filtered out). Lets a client list them all instead
+/// of just the first — e.g. OpenClaw enumerates every model in its provider
+/// config. Empty while loading or when the grid serves no chat model. See
+/// [isRealChatModel].
 final gridChatModelIdsProvider = Provider.autoDispose<List<String>>((ref) {
   return [
     for (final m in ref.watch(gridModelsProvider))
-      if (mediaCapabilityLabel(m.id) == null) m.id,
+      if (isRealChatModel(m.id)) m.id,
   ];
 });
 

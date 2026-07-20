@@ -144,12 +144,10 @@ class _RoutingPool extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    // `gridChatModelIdsProvider` already drops media capabilities; also hide the
-    // reserved `auto` itself, which the overview lists once routing is on.
-    final models = [
-      for (final id in ref.watch(gridChatModelIdsProvider))
-        if (id != 'auto') id,
-    ];
+    // `gridChatModelIdsProvider` already drops media capabilities and the
+    // reserved `auto` itself, so this is exactly the real models routing lands
+    // on.
+    final models = ref.watch(gridChatModelIdsProvider);
     if (models.isEmpty) {
       return _PoolNote(
         icon: Icons.info_outline,
