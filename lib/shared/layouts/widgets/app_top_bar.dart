@@ -6,12 +6,13 @@ import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
 import '../shell_state.dart';
-import 'hosting_summary.dart';
+import 'grid_power_pill.dart';
 import 'top_bar_pill.dart';
 
-/// The slim strip above the open section: what's live on the active grid (how
-/// many computers are hosting, how many models they serve) and any model the
-/// user is downloading. Doubles as the window's drag handle on the right.
+/// The slim strip above the open section: which grid is active and what it has
+/// behind it (computers hosting, models served, the hardware they bring), plus
+/// any model the user is downloading. Doubles as the window's drag handle on the
+/// right.
 ///
 /// Deliberately quiet — the account, the grid switcher and the navigation all
 /// live in the sidebar, so nothing competes with the conversation below.
@@ -33,7 +34,7 @@ class AppTopBar extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.only(left: 16, right: 18),
           child: Row(
-            children: [Spacer(), _ModelDownloadPill(), HostingSummary()],
+            children: [Spacer(), _ModelDownloadPill(), GridPowerPill()],
           ),
         ),
       ),

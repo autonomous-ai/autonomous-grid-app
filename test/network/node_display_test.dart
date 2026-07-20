@@ -9,6 +9,7 @@ OverviewNode _node({
   int? concurrency,
   double? vramGb,
   double? vramTotalMb,
+  String? deviceClass,
 }) => OverviewNode.fromJson({
   'name': 'n',
   'engine': engine,
@@ -17,6 +18,7 @@ OverviewNode _node({
   'max_concurrency': ?concurrency,
   'vram_gb': ?vramGb,
   'vram_total_mb': ?vramTotalMb,
+  'device_class': ?deviceClass,
   'online': true,
 });
 
@@ -102,6 +104,37 @@ void main() {
     test('null when the node reports no usable VRAM', () {
       expect(nodeVramLabel(_node()), isNull);
       expect(nodeVramLabel(_node(vramGb: 0.0)), isNull);
+    });
+  });
+
+  group('nodeSpecLine', () {
+    test('joins engine and device class', () {
+      // The Art grid's own node: reports an engine and a GPU, but no VRAM.
+      expect(
+        nodeSpecLine(_node(engine: 'doggi', deviceClass: 'gpu')),
+        'doggi · GPU',
+      );
+    });
+
+    test('drops the generic external engine, keeping the device', () {
+      // `external` is the app's own engine id and means nothing to a user, so
+      // the line falls back to what the hardware is.
+      expect(nodeSpecLine(_node(engine: 'external', deviceClass: 'gpu')), 'GPU');
+    });
+
+    test('drops the "Engine" placeholder when no engine is reported', () {
+      // nodeEngineLabel turns an empty engine into "Engine", which is a label,
+      // not information — it must not reach this line.
+      expect(nodeSpecLine(_node(engine: '', deviceClass: 'cpu')), 'CPU');
+    });
+
+    test('engine alone when no device class is reported', () {
+      expect(nodeSpecLine(_node(engine: 'codex')), 'codex');
+    });
+
+    test('empty when the node reports neither', () {
+      expect(nodeSpecLine(_node(engine: 'external')), '');
+      expect(nodeSpecLine(_node(engine: '')), '');
     });
   });
 }

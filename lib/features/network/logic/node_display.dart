@@ -56,6 +56,26 @@ String? nodeVramLabel(OverviewNode node) {
 String _trimGb(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
 
+/// A short spec line for a node whose VRAM is unknown: engine and device class,
+/// whichever of them says something ("doggi · GPU", "GPU", or empty).
+///
+/// The memory panel normally identifies a machine by its share of the grid's
+/// GPU memory, but a relay can report `vram_gb: null` for every node — some
+/// engines simply don't advertise it. Those grids fall back to a plain list,
+/// and without this the rows are bare names with nothing distinguishing them.
+///
+/// Deliberately thin: `external` resolves to empty via [nodeEngineLabel]
+/// because it's the app's own generic engine and means nothing to a user, and a
+/// node reporting neither field gets an empty line rather than a placeholder.
+String nodeSpecLine(OverviewNode node) {
+  final engine = nodeEngineLabel(node.engine);
+  final device = (node.deviceClass ?? '').toUpperCase();
+  return [
+    if (engine.isNotEmpty && engine != 'Engine') engine,
+    if (device.isNotEmpty) device,
+  ].join(' · ');
+}
+
 /// Whether a node runs media generation (a comfyui provider) — the tile picks
 /// its icon from this.
 bool nodeIsMedia(OverviewNode node) =>
