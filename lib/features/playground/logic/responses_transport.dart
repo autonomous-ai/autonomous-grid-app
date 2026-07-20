@@ -19,10 +19,11 @@ import 'message_media.dart';
 /// (user/system) or `output_text` (prior assistant turns).
 ///
 /// The relay passes the body through to the vendor verbatim and the vendor
-/// answers over SSE, so this requests `stream: true` and accumulates the
-/// `response.output_text.delta` events into the final reply — the Playground
-/// still shows one blocking reply, so the stream is drained here rather than
-/// surfaced token by token. Never throws: every failure is a [ChatTransportError].
+/// answers over SSE, so this requests `stream: true` (and `store: false`, both
+/// required by the relay) and accumulates the `response.output_text.delta`
+/// events into the final reply — the Playground still shows one blocking reply,
+/// so the stream is drained here rather than surfaced token by token. Never
+/// throws: every failure is a [ChatTransportError].
 abstract interface class ResponsesTransport {
   /// [input] is the Responses `input[]` array (see [buildResponsesInput]).
   /// [instructions] is the system head, sent as the top-level `instructions`
@@ -65,7 +66,11 @@ class HttpResponsesTransport implements ResponsesTransport {
             if (instructions != null && instructions.isNotEmpty)
               'instructions': instructions,
             'input': input,
+            // The relay's `/responses` requires both: `stream` for the SSE body
+            // we read, and `store: false` so the vendor keeps no server-side copy
+            // of the response (grid never persists it either).
             'stream': true,
+            'store': false,
           }),
         ),
       );
@@ -110,9 +115,8 @@ class HttpResponsesTransport implements ResponsesTransport {
     final deltas = StringBuffer();
     String? terminalText;
 
-    await for (final line in response
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())) {
+    await for (final line
+        in response.transform(utf8.decoder).transform(const LineSplitter())) {
       final trimmed = line.trim();
       if (!trimmed.startsWith('data:')) continue;
       final data = trimmed.substring(5).trim();
