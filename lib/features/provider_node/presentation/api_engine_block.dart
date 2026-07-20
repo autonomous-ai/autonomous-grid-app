@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../logic/api_engine_catalog.dart';
 import '../logic/provider_run_controller.dart';
 import 'engine_block.dart';
@@ -159,6 +160,12 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
     return _usingStoredKey ? 'Share your subscription' : 'Sign in & share';
   }
 
+  /// What the busy row says while the join is starting: a sign-in join sends the
+  /// user to the browser, so point them there; other joins are just starting up.
+  String get _busyLabel => _engine.provider.usesSignIn && !_usingStoredKey
+      ? 'Signing in… finish it in your browser'
+      : 'Starting…';
+
   void _start() {
     final engine = _engine;
     // Preserve whitelist order; serve-all sends no -m (the CLI's zero-config
@@ -182,6 +189,14 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
   @override
   Widget build(BuildContext context) {
     final engine = _engine;
+    // While this grid's join is still starting (a sign-in join is awaiting the
+    // browser approval), swap Start for a busy row — feedback that it's working,
+    // and a guard against a second join from a double-tap.
+    final run = ref.watch(providerRunControllerProvider);
+    final starting =
+        run is ProviderRunActive &&
+        run.grid == widget.network.networkId &&
+        run.starting;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -245,14 +260,16 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,
-          child: ListenableBuilder(
-            listenable: _key,
-            builder: (context, _) => _StartButton(
-              label: _startLabel,
-              blockedReason: _startBlockedReason(),
-              onPressed: _start,
-            ),
-          ),
+          child: starting
+              ? _StartingRow(label: _busyLabel)
+              : ListenableBuilder(
+                  listenable: _key,
+                  builder: (context, _) => _StartButton(
+                    label: _startLabel,
+                    blockedReason: _startBlockedReason(),
+                    onPressed: _start,
+                  ),
+                ),
         ),
       ],
     );
@@ -285,6 +302,34 @@ class _StartButton extends StatelessWidget {
     );
     if (reason == null) return button;
     return Tooltip(message: reason, child: button);
+  }
+}
+
+/// Shown in place of Start while the join is starting: a spinner and a line that
+/// tells the user what to do next (finish the browser sign-in, or just wait).
+/// Also stops a double-tap from launching a second join.
+class _StartingRow extends StatelessWidget {
+  const _StartingRow({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        const AppSpinner(),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
