@@ -47,7 +47,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(host());
-    expect(find.text('Appearance'), findsOneWidget);
+    // Uppercased at the widget, in the app's section-caption voice — the same
+    // one the model picker's group headers use. The caption is what it renders,
+    // so that is what this looks for.
+    expect(find.text('APPEARANCE'), findsOneWidget);
   });
 
   // "System" ellipsized to "Syst…" when the cells were laid out side by side:

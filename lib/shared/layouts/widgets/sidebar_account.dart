@@ -9,6 +9,7 @@ import '../../../features/provider_node/logic/provider_run_controller.dart';
 import '../../app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/anchored_menu_position.dart';
+import '../../widgets/labeled_field.dart';
 import '../shell_state.dart';
 import 'theme_mode_picker.dart';
 
@@ -20,9 +21,19 @@ const _accountMenuWidth = 232.0;
 // numbers the rows below are built from, and [_accountMenuHeight] adds up exactly
 // the rows that are actually rendered — so adding or removing an entry can't put
 // the menu back in the air.
-const _menuRowHeight = 44.0;
+// A canonical menu row: 6px outer gutter (which is what makes hover read as an
+// inset pill rather than a full-bleed band), then 8px of inner vertical padding
+// around a 13/1.2 label. 1px of vertical gutter top and bottom.
+const _menuRowHeight = 36.0;
 const _menuVersionHeight = 26.0;
-const _menuPadding = 6.0;
+const _menuPadding = 5.0;
+const _menuRowGutter = 6.0;
+const _menuRowInnerPad = 9.0;
+const _menuIconSlot = 16.0;
+const _menuIconGap = 9.0;
+// 8, per the radius ladder — a row nested in a 6-radius panel. Material's own
+// menu item is radius 0.
+final _menuRowRadius = BorderRadius.circular(AppControl.radius);
 // The Appearance segmented control (ThemeModePicker): its outer padding (6+8),
 // the "Appearance" label row, and the three-way segment control. Measured (not
 // estimated) — see `theme_mode_picker_test.dart`, which fails if the widget
@@ -113,17 +124,14 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 9),
       child: MenuAnchor(
         controller: _menu,
-        style: MenuStyle(
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(vertical: _menuPadding),
-          ),
-          backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
-          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-          elevation: const WidgetStatePropertyAll(8),
+        // `appMenuStyle()` is the app's one menu-panel recipe: a fill lifted
+        // clear of *both* grounds a menu can open over, a hairline rim, and a
+        // deeper shadow. This used to pass `AppPalette.cardBg` — #1E1E1E, which
+        // sits at 1.02:1 against a #202020 block and is pure white on white in
+        // light, so the panel had no edge and the rows floated loose on the
+        // page. Only the width is ours; everything else is the shared recipe.
+        style: appMenuStyle().copyWith(
           minimumSize: const WidgetStatePropertyAll(Size(_accountMenuWidth, 0)),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
         ),
         menuChildren: [
           _AccountMenuContent(
@@ -281,45 +289,68 @@ class _AccountMenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MenuItemButton(
-      onPressed: onPressed,
-      style: ButtonStyle(
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        overlayColor: WidgetStatePropertyAll(AppSurface.hoverFill),
-        // Pinned, not merely a minimum: the menu is positioned by adding these
-        // heights up, so a row that quietly grows — or shrinks — moves the whole
-        // menu. `visualDensity` is the one that bites: Flutter defaults it to
-        // *compact* on desktop, which takes 8px off every row (44 → 36) and left
-        // the menu hanging 32px above the pill on macOS while looking right in a
-        // test running as Android.
-        visualDensity: VisualDensity.standard,
-        minimumSize: const WidgetStatePropertyAll(
-          Size(_accountMenuWidth, _menuRowHeight),
-        ),
-        maximumSize: const WidgetStatePropertyAll(
-          Size(double.infinity, _menuRowHeight),
-        ),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    // Lives in the MenuAnchor's overlay, below a const boundary in some of its
+    // call sites — depend on the brightness directly or the row keeps whichever
+    // palette it first built in.
+    AppTheme.watch(context);
+    // The canonical menu row, hand-rolled. `MenuItemButton` cannot be used: the
+    // app has no `menuButtonTheme`, so a bare one takes M3 defaults that
+    // disagree on four counts — radius 0 (vs 8), 14pt labelLarge (vs 13),
+    // an onSurface-at-8% hover (vs AppSurface.hoverFill), and an ink ripple
+    // every other menu in the app suppresses. Its full-bleed highlight was also
+    // why this row had no gutter.
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _menuRowGutter,
+        vertical: 1,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: iconColor ?? AppPalette.textSecondary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppPalette.textPrimary,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: _menuRowRadius,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: _menuRowRadius,
+          hoverColor: AppSurface.hoverFill,
+          // macOS clicks land instantly; the global InkRipple would spread a
+          // circle across the row. Hover is the affordance here.
+          splashFactory: NoSplash.splashFactory,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: _menuRowInnerPad,
+              vertical: 8,
             ),
-          ],
+            child: Row(
+              children: [
+                // A fixed slot, so labels line up whatever the glyph's own
+                // width — and drop 18 → AppControl.iconSize, the size every
+                // other menu in the app marks its rows with.
+                SizedBox(
+                  width: _menuIconSlot,
+                  child: Icon(
+                    icon,
+                    size: AppControl.iconSize,
+                    color: iconColor ?? AppPalette.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: _menuIconGap),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    // 13/1.2 regular — the system's menu label. It was 13.5
+                    // semibold: half a point off the scale, and w600 is how
+                    // this app marks *selection*, so every row read as picked.
+                    style: TextStyle(
+                      color: AppPalette.textPrimary,
+                      fontSize: 13,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -333,15 +364,28 @@ class _AccountVersion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
     return SizedBox(
       height: _menuVersionHeight,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 2, 18, 8),
+        // Indented to the rows' *label* column, not their gutter — this is a
+        // note about the app, not something you can pick, so it lines up with
+        // what the rows say rather than with the glyphs they say it behind.
+        padding: const EdgeInsets.fromLTRB(
+          _menuRowGutter + _menuRowInnerPad + _menuIconSlot + _menuIconGap,
+          2,
+          _menuRowGutter + _menuRowInnerPad,
+          8,
+        ),
         child: Text(
           'Version $version',
+          // 12/1.28 is the system's detail line. textFaint measures 2.8:1 on
+          // the dark panel and 3.33:1 on light — under 4.5, but this is
+          // incidental metadata rather than body text, and it's the same token
+          // every other secondary line in the app's menus uses.
           style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            height: 1.28,
             color: AppPalette.textFaint,
           ),
         ),
