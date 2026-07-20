@@ -89,6 +89,21 @@ bool nodeIsMedia(OverviewNode node) =>
 /// a "Chat" model. See [kCapImageGenerate].
 String? mediaCapabilityLabel(String id) => _capabilityLabels[id];
 
+/// The relay's virtual auto-routing model id (ADR 0013). It is not a real,
+/// answerable model — the relay advertises it (in `/models`, and in a grid's
+/// model list once routing is on) even when no node is actually serving — so a
+/// grid whose only model is `auto` has nothing to route to and must count as
+/// empty, not "ready to chat". One constant so every empty-state check agrees.
+const String kAutoModelId = 'auto';
+
+/// Whether [id] is a real chat/text model the grid can actually answer with:
+/// not a media (`comfyui:*`) capability that leaked into the model list, and not
+/// the virtual `auto` router. The single predicate the app shares to decide
+/// "does this grid have something to chat with?". See [mediaCapabilityLabel] and
+/// [kAutoModelId].
+bool isRealChatModel(String id) =>
+    id != kAutoModelId && mediaCapabilityLabel(id) == null;
+
 /// Whether a model id is the image→video media capability — lets the model tile
 /// pick a video glyph over the image one without re-parsing the id.
 bool isVideoCapability(String id) => id == kCapI2V;

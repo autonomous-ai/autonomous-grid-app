@@ -36,8 +36,10 @@ bool gridServesChatModel(GridOverview overview) {
   if (onlineNodes.any(_nodeServesChat)) return true;
   // A node can be online without echoing its served model in its own record;
   // fall back to the grid's advertised chat models, still guarded by an online
-  // node above so an empty grid with a stale model list doesn't count.
-  return overview.models.any((model) => mediaCapabilityLabel(model.id) == null);
+  // node above so an empty grid with a stale model list doesn't count. The
+  // virtual `auto` router is not a real model, so a lone `auto` here still reads
+  // as empty. See [isRealChatModel].
+  return overview.models.any((model) => isRealChatModel(model.id));
 }
 
 bool _nodeServesChat(OverviewNode node) {
@@ -45,7 +47,7 @@ bool _nodeServesChat(OverviewNode node) {
     if ((node.model ?? '').isNotEmpty) node.model!,
     ...node.models,
   ];
-  return advertised.any((id) => mediaCapabilityLabel(id) == null);
+  return advertised.any(isRealChatModel);
 }
 
 /// The route decision, as a pure function of everything it depends on, so the

@@ -75,6 +75,19 @@ void main() {
       );
     });
 
+    test('an online node advertising only the virtual auto router does not '
+        'count — routing has nothing real to land on, so setup must show', () {
+      expect(
+        gridServesChatModel(
+          _overview(
+            nodes: [_node()],
+            models: const [OverviewModel(id: 'auto')],
+          ),
+        ),
+        isFalse,
+      );
+    });
+
     test('an empty grid has nothing to chat with', () {
       expect(gridServesChatModel(_overview()), isFalse);
     });
