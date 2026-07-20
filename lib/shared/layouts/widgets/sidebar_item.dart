@@ -39,6 +39,11 @@ class SidebarItem extends StatefulWidget {
   final double trailingWidth;
   final String? tooltip;
 
+  /// The row's left inset — where its icon starts, measured from the row's own
+  /// edge. Exposed so chrome placed alongside these rows (the Settings back
+  /// link) can line its glyph up with them instead of hard-coding a copy.
+  static const double iconGutter = 10;
+
   @override
   State<SidebarItem> createState() => _SidebarItemState();
 }
@@ -109,7 +114,12 @@ class _SidebarItemState extends State<SidebarItem> {
                   child: SizedBox(
                     height: 36,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 0, 5, 0),
+                      padding: const EdgeInsets.fromLTRB(
+                        SidebarItem.iconGutter,
+                        0,
+                        5,
+                        0,
+                      ),
                       child: Row(
                         children: [
                           if (widget.icon != null) ...[
