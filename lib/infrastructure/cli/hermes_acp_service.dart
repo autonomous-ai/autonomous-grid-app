@@ -74,8 +74,14 @@ class HermesAcpRun {
 /// Thrown when a Hermes session can't be established (the binary won't launch,
 /// or the handshake never completes).
 class HermesAcpException implements Exception {
-  const HermesAcpException(this.message);
+  const HermesAcpException(this.message, {this.retryable = true});
+
   final String message;
+
+  /// Whether sending again could plausibly work. False for a machine that isn't
+  /// set up (a missing dependency, a broken install): the same send will fail
+  /// the same way every time, so telling the user to retry only wastes theirs.
+  final bool retryable;
 
   @override
   String toString() => 'HermesAcpException: $message';
@@ -217,8 +223,17 @@ class _HermesAcpSession implements HermesAcpSession {
       _process!.exitCode.then((_) {
         _closed = true;
         if (!_ready.isCompleted) {
+          // Quote Hermes's own words when it left any: "exited during startup"
+          // alone gives the user nothing to act on, whereas "ACP dependencies
+          // not installed" points straight at the fix.
+          final said = _stderrTail;
           _ready.completeError(
-            const HermesAcpException('Hermes exited during startup.'),
+            HermesAcpException(
+              said.isEmpty
+                  ? 'Hermes exited during startup.'
+                  : 'Hermes exited during startup: $said',
+              retryable: false,
+            ),
           );
         }
         _endTurn();
@@ -274,8 +289,38 @@ class _HermesAcpSession implements HermesAcpSession {
           final decoded = _tryDecode(line);
           if (decoded != null) _handle(decoded);
         });
-    _process!.stderr.transform(utf8.decoder).drain<void>();
+    // Hermes explains a failed startup on stderr and nowhere else ("ACP
+    // dependencies not installed", an import traceback, a bad config). Dropping
+    // it left the user with "try again" for faults retrying can never fix, so
+    // keep the tail to quote back in [HermesAcpException].
+    _process!.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .forEach((line) {
+          if (line.trim().isEmpty) return;
+          _stderr.add(line);
+          if (_stderr.length > _stderrKept) _stderr.removeAt(0);
+        });
   }
+
+  /// The last few stderr lines, kept as a ring buffer: enough to explain a
+  /// startup failure, bounded so a long-running chatty session can't grow it.
+  static const _stderrKept = 20;
+  final _stderr = <String>[];
+
+  /// What Hermes said before dying, as a single line — empty when it said
+  /// nothing. Python tracebacks put the cause last, so the tail is the useful
+  /// part.
+  String get _stderrTail {
+    final lines = _stderr.where((l) => !_isNoise(l)).toList();
+    if (lines.isEmpty) return '';
+    return lines.length <= 3 ? lines.join(' ') : lines.sublist(lines.length - 3).join(' ');
+  }
+
+  /// Routine `[INFO]`/`[DEBUG]` progress chatter, which would otherwise crowd
+  /// out the actual error in a short tail.
+  static bool _isNoise(String line) =>
+      line.contains('[INFO]') || line.contains('[DEBUG]');
 
   void _handle(Map<String, dynamic> message) {
     if (message['method'] == 'session/update') {

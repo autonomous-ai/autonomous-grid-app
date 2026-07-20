@@ -58,6 +58,17 @@ class _FakeAcp implements HermesAcpService {
   }
 }
 
+/// A [HermesAcpService] whose every start fails, standing in for a machine where
+/// `hermes acp` won't come up (a missing dependency, a broken install).
+class _FailingAcp implements HermesAcpService {
+  _FailingAcp(this._error);
+
+  final HermesAcpException _error;
+
+  @override
+  Future<HermesAcpSession> start({required String workdir}) async => throw _error;
+}
+
 class _FakeAcpSession implements HermesAcpSession {
   _FakeAcpSession(this._turns, this.sessionId);
 
@@ -462,6 +473,56 @@ void main() {
       (updates.single as ChatSendFailure).error,
       contains("isn't set up to answer chats yet"),
     );
+  });
+
+  test('a startup that retrying cannot fix reports why, and does not say to retry', () async {
+    // The real shape of this: hermes-agent installed without its `[acp]` extra,
+    // so `hermes acp` dies on startup saying exactly this. Retrying is futile —
+    // the message has to name the fault instead.
+    final container = _container(
+      _FailingAcp(
+        const HermesAcpException(
+          'Hermes exited during startup: ACP dependencies not installed.',
+          retryable: false,
+        ),
+      ),
+      tmp,
+    );
+
+    final updates = await container
+        .read(hermesChatSenderProvider)
+        .send(
+          network: _credential(),
+          model: 'qwen/qwen3.6-27b',
+          history: _history('hi'),
+        )
+        .toList();
+
+    final error = (updates.single as ChatSendFailure).error;
+    expect(error, contains('ACP dependencies not installed'));
+    expect(
+      error,
+      isNot(contains('Try sending again')),
+      reason: 'retrying a missing dependency fails identically every time',
+    );
+  });
+
+  test('a startup that might succeed next time still says to retry', () async {
+    final container = _container(
+      _FailingAcp(const HermesAcpException('Hermes could not start: spawn failed')),
+      tmp,
+    );
+
+    final updates = await container
+        .read(hermesChatSenderProvider)
+        .send(
+          network: _credential(),
+          model: 'qwen/qwen3.6-27b',
+          history: _history('hi'),
+        )
+        .toList();
+
+    expect((updates.single as ChatSendFailure).error, contains('Try sending again'));
   });
 
   test('a turn with no answer text is a failure', () async {

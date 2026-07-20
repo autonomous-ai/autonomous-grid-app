@@ -134,9 +134,14 @@ class HermesChatSender implements ChatSender {
       );
       session = resolved.session;
       text = resolved.text;
-    } on HermesAcpException {
-      yield const ChatSendFailure(
-        "Couldn't start the agent on this computer. Try sending again.",
+    } on HermesAcpException catch (e) {
+      // Only suggest retrying when retrying could work. A machine missing a
+      // dependency fails identically every time, so it gets Hermes's own reason
+      // instead — that names the thing to fix.
+      yield ChatSendFailure(
+        e.retryable
+            ? "Couldn't start the agent on this computer. Try sending again."
+            : "Couldn't start the agent on this computer. ${e.message}",
       );
       return;
     }
