@@ -456,7 +456,24 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       );
     }
     _grid = null;
-    state = ProviderRunFailed(failure);
+    state = ProviderRunFailed(_humanizeJoinFailure(failure));
+  }
+
+  /// Turn a raw `grid join` failure into a line a user can act on. The commonest
+  /// dead-end is trying to share on a grid you're only a consumer of — the relay
+  /// rejects the register with a missing `provider:*` scope. Anything we don't
+  /// recognise passes through unchanged (the Debug/command log keeps the raw).
+  static String _humanizeJoinFailure(String raw) {
+    final lower = raw.toLowerCase();
+    final isProviderScope =
+        lower.contains('provider:update') ||
+        lower.contains('provider:submit') ||
+        (lower.contains('scope') && lower.contains('provider'));
+    if (isProviderScope) {
+      return "You can't add a model to this grid — only its providers can. Ask "
+          'whoever runs it to let you share, or switch to a grid you own.';
+    }
+    return raw;
   }
 
   /// Re-run `grid sync` a moment after the engine roster changes — a join or a
