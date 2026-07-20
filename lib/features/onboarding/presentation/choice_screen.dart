@@ -82,6 +82,7 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                     // Compact here: onboarding is a lean fork, not the full
                     // Model Engines config screen.
                     ApiEngineBlock(network: network, compact: true),
+                    const _CloudStartError(),
                     const SizedBox(height: 12),
                   ],
                   if (ref.watch(supportsBuiltInEngineProvider)) ...[
@@ -118,6 +119,31 @@ Future<void> _openInBrowser(String url) async {
   final uri = Uri.tryParse(url);
   if (uri == null) return;
   await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+/// The reason the last cloud "Sign in & share" didn't take, shown under the
+/// Cloud-Provider block. Without it a failed join leaves the user staring at an
+/// unchanged screen — e.g. trying to share on a grid they only consume on, where
+/// the humanised message says exactly that (see `_humanizeJoinFailure`). Renders
+/// nothing until there's a failure.
+class _CloudStartError extends ConsumerWidget {
+  const _CloudStartError();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final run = ref.watch(providerRunControllerProvider);
+    if (run is! ProviderRunFailed) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        run.message,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.error,
+        ),
+      ),
+    );
+  }
 }
 
 /// Run a model on this computer: installs the engine here, then the model

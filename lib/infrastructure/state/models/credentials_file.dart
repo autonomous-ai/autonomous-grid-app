@@ -48,15 +48,42 @@ class CredentialsFile {
 
   String? get userName => user['name'] as String?;
 
-  /// Fallback selection: the legacy `active_network` if present, else the first
-  /// grid. The primary active grid now comes from `state.json` (see
-  /// `activeRemoteGridProvider` / [SelectedNetwork]).
+  /// The grid that matches the signed-in user's email domain — a `-domain` grid
+  /// named for that domain (`dev@autonomous.ai` → the "autonomous.ai" grid). It's
+  /// the user's home/org grid, so it's the natural default after login rather
+  /// than an arbitrary first grid they may only consume on. Null when the email
+  /// has no domain or no grid matches.
+  NetworkCredential? get domainGrid {
+    final email = userEmail;
+    final at = email == null ? -1 : email.indexOf('@');
+    if (at < 0) return null;
+    final domain = email!.substring(at + 1).toLowerCase();
+    if (domain.isEmpty) return null;
+    for (final n in networks) {
+      if (n.networkType.contains('domain') && n.name.toLowerCase() == domain) {
+        return n;
+      }
+    }
+    return null;
+  }
+
+  /// Fallback selection, owner-first so a fresh session lands on a grid the user
+  /// can actually run, not one they only consume on: the legacy `active_network`
+  /// if present, then a grid the user owns (admin) — preferring their login-domain
+  /// grid among them — then the login-domain grid, else the first grid. The
+  /// primary active grid comes from `state.json` (see `activeRemoteGridProvider` /
+  /// [SelectedNetwork]).
   NetworkCredential? get active {
     if (networks.isEmpty) return null;
     for (final n in networks) {
       if (n.networkId == activeNetwork) return n;
     }
-    return networks.first;
+    final domain = domainGrid;
+    if (domain != null && domain.isOwner) return domain;
+    for (final n in networks) {
+      if (n.isOwner) return n;
+    }
+    return domain ?? networks.first;
   }
 
   NetworkCredential? byName(String nameOrId) {
