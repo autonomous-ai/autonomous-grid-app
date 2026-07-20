@@ -106,6 +106,7 @@ const kSettingsSections = [
   ShellSection.messages,
   ShellSection.guide,
   ShellSection.appearance,
+  // dev only, so the order doesn't matter for end users: they don't see these rows at all.
   ShellSection.grids,
   ShellSection.debug,
 ];
