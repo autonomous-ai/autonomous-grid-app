@@ -67,7 +67,9 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                   if (network != null) ...[
                     // The Cloud-Provider block hides itself when the installed CLI
                     // whitelists no hosted provider, so it may render nothing.
-                    ApiEngineBlock(network: network),
+                    // Compact here: onboarding is a lean fork, not the full
+                    // Model Engines config screen.
+                    ApiEngineBlock(network: network, compact: true),
                     const SizedBox(height: 12),
                   ],
                   if (ref.watch(supportsBuiltInEngineProvider)) ...[
