@@ -4,6 +4,7 @@
 /// grid's real relay BASE_URL / API_KEY — the same pair `grid info --env` prints.
 library;
 
+import '../../provider_node/logic/api_engine_catalog.dart';
 import 'client_app_detector.dart';
 
 /// Environment variable a client app reads the grid's API key from. Kept out of
@@ -19,6 +20,20 @@ const kGuideDefaultModel = 'qwen3-coder';
 /// Output-token cap written into Hermes's `model.max_tokens` (Hermes reads it
 /// there; `custom_providers` ignores the field). 64K = 64×1024.
 const kHermesMaxTokens = 64000;
+
+/// Hermes's api-mode (a.k.a. `transport`) value for the OpenAI **Responses API**
+/// (`POST /responses`). Written on the grid's `custom_providers` entry for a
+/// responses-only model (codex) so Hermes speaks that dialect instead of
+/// chat-completions — the equivalent of Codex's `wire_api = "responses"`.
+const String kHermesResponsesApiMode = 'codex_responses';
+
+/// Stable `model.provider` selector for the grid's Hermes provider when a
+/// responses-only model is in play. A **named** provider is required: Hermes
+/// silently downgrades a bare `provider: custom` back to chat-completions on a
+/// non-OpenAI host, but honours `api_mode` on a named `custom_providers` entry
+/// matched by this `provider_key`. Chat-completions grids keep `provider:
+/// custom`, whose base_url trust path needs no named selector.
+const String kHermesGridProviderKey = 'grid';
 
 /// The `~/.openclaw/openclaw.json` provider block wiring Grid in as a model
 /// provider, listing **every** model the grid serves ([models]) and the first as
@@ -56,22 +71,35 @@ String hermesProviderName(String base) =>
     Uri.tryParse(base)?.host ?? 'grid.autonomous.ai';
 
 /// The `~/.hermes/config.yaml` blocks that point Hermes at a grid: the active
-/// `model:` selection (`provider: custom` + `base_url`/`api_key`, the `default`
-/// model, and a `max_tokens` cap — see [kHermesMaxTokens]) plus a
-/// `custom_providers` entry registering the grid as a named provider. Hermes
-/// reads it all here — no `.env`.
-String hermesConfigSnippet(String base, String key, String model) =>
-    'model:\n'
-    '  provider: custom\n'
-    '  base_url: $base\n'
-    '  api_key: $key\n'
-    '  default: $model\n'
-    '  max_tokens: $kHermesMaxTokens\n'
-    'custom_providers:\n'
-    '  - name: ${hermesProviderName(base)}\n'
-    '    base_url: $base\n'
-    '    api_key: $key\n'
-    '    model: $model';
+/// `model:` selection (`base_url`/`api_key`, the `default` model, and a
+/// `max_tokens` cap — see [kHermesMaxTokens]) plus a `custom_providers` entry
+/// registering the grid as a named provider. Hermes reads it all here — no
+/// `.env`.
+///
+/// A responses-only model (codex) needs the Responses dialect, which Hermes only
+/// honours on a **named** provider — so those grids select the named entry
+/// (`provider: $kHermesGridProviderKey`) and carry `api_mode:
+/// $kHermesResponsesApiMode`. A chat-completions grid keeps the simpler bare
+/// `provider: custom` + base_url trust path.
+String hermesConfigSnippet(String base, String key, String model) {
+  final responses = isResponsesOnlyModel(model);
+  final buffer = StringBuffer()
+    ..write('model:\n')
+    ..write('  provider: ${responses ? kHermesGridProviderKey : 'custom'}\n')
+    ..write('  base_url: $base\n')
+    ..write('  api_key: $key\n')
+    ..write('  default: $model\n')
+    ..write('  max_tokens: $kHermesMaxTokens\n')
+    ..write('custom_providers:\n')
+    ..write('  - name: ${hermesProviderName(base)}\n');
+  if (responses) buffer.write('    provider_key: $kHermesGridProviderKey\n');
+  buffer
+    ..write('    base_url: $base\n')
+    ..write('    api_key: $key\n')
+    ..write('    model: $model');
+  if (responses) buffer.write('\n    api_mode: $kHermesResponsesApiMode');
+  return buffer.toString();
+}
 
 /// Codex `model_providers` id for a grid — the value its `model_provider` key
 /// points at, and the table name in the config block.

@@ -137,6 +137,30 @@ void main() {
       );
     });
 
+    test('writes the Responses dialect for a codex model', () async {
+      final result = await sut.apply(ClientApp.hermes, _base, _key, const [
+        'codex:gpt-5.5',
+      ]);
+
+      expect(result, isA<ApplyOk>());
+      final editor = YamlEditor(readConfig());
+      // Named provider selection (not bare `custom`) + the api_mode that makes
+      // Hermes call POST /responses for the codex seat.
+      expect(
+        editor.parseAt(['model', 'provider']).value,
+        kHermesGridProviderKey,
+      );
+      expect(editor.parseAt(['model', 'default']).value, 'codex:gpt-5.5');
+      expect(
+        editor.parseAt(['custom_providers', 0, 'provider_key']).value,
+        kHermesGridProviderKey,
+      );
+      expect(
+        editor.parseAt(['custom_providers', 0, 'api_mode']).value,
+        kHermesResponsesApiMode,
+      );
+    });
+
     test('turns on the browser toolset without dropping the ones already '
         'enabled, and re-applying does not duplicate it', () async {
       final config = File('${home.path}/.hermes/config.yaml');

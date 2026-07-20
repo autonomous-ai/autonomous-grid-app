@@ -59,6 +59,19 @@ void main() {
     expect(config, contains('model: $_model'));
   });
 
+  test('Hermes config speaks the Responses dialect for a codex model', () {
+    const codexModel = 'codex:gpt-5.5';
+    final config = hermesConfigSnippet(_base, _key, codexModel);
+    // A responses-only model must select a NAMED provider — a bare `custom` is
+    // silently downgraded to chat-completions on a non-OpenAI host — and carry
+    // the api_mode that switches Hermes onto POST /responses.
+    expect(config, contains('provider: $kHermesGridProviderKey\n'));
+    expect(config, isNot(contains('provider: custom')));
+    expect(config, contains('provider_key: $kHermesGridProviderKey'));
+    expect(config, contains('api_mode: $kHermesResponsesApiMode'));
+    expect(config, contains('default: $codexModel'));
+  });
+
   group('Codex', () {
     test('config block is valid TOML selecting the grid provider', () {
       final toml = TomlDocument.parse(

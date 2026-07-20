@@ -7,6 +7,7 @@ import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/env_file.dart';
+import '../../provider_node/logic/api_engine_catalog.dart';
 import 'app_guide_snippets.dart';
 import 'client_app_detector.dart';
 
@@ -125,6 +126,10 @@ class ClientAppConfigurator {
       // existing `model:` block at the grid, preserving every other setting and
       // comment (yaml_edit edits in place). Either way, a final pass makes sure
       // the `browser` toolset is on so the agent can actually open web pages.
+      // A responses-only model (codex) must speak the Responses dialect, which
+      // Hermes only honours on a NAMED provider — a bare `provider: custom` is
+      // silently downgraded to chat-completions on a non-OpenAI host.
+      final responses = isResponsesOnlyModel(model);
       final YamlEditor editor;
       if (text.trim().isEmpty) {
         await config.parent.create(recursive: true);
@@ -132,7 +137,7 @@ class ClientAppConfigurator {
       } else {
         editor = YamlEditor(text);
         final connection = <String, Object>{
-          'provider': 'custom',
+          'provider': responses ? kHermesGridProviderKey : 'custom',
           'base_url': base,
           'api_key': key,
           'default': model,
@@ -146,16 +151,21 @@ class ClientAppConfigurator {
         } else {
           editor.update(['model'], connection);
         }
-        _upsertCustomProvider(editor, base: base, key: key, model: model);
+        _upsertCustomProvider(
+          editor,
+          base: base,
+          key: key,
+          model: model,
+          responses: responses,
+        );
       }
       ensureBrowserToolset(editor);
       await _backupThenWrite(config, editor.toString().trimRight());
 
-      // Also drop the pair into `.env`: Hermes reads OPENAI_BASE_URL +
-      // OPENAI_API_KEY as a direct custom endpoint (docs: "when base_url is set,
-      // Hermes ignores the provider and calls that endpoint directly"), and its
-      // convention is that secrets live in `.env`. config.yaml (higher
-      // precedence) still carries the model, so the grid resolves either way.
+      // Also drop the pair into `.env` as a fallback for other tools that read
+      // it; current Hermes resolves the grid from config.yaml (its provider
+      // resolution no longer consults `OPENAI_BASE_URL`), so the config write
+      // above is what actually points the agent at this grid.
       await _upsertEnvVars(env, {
         'OPENAI_BASE_URL': base,
         'OPENAI_API_KEY': key,
@@ -236,13 +246,19 @@ class ClientAppConfigurator {
     required String base,
     required String key,
     required String model,
+    required bool responses,
   }) {
     final name = hermesProviderName(base);
+    // A responses-only grid also carries a stable `provider_key` (so the
+    // `model.provider` selector matches this entry regardless of host) and the
+    // `api_mode` that switches Hermes to the Responses dialect.
     final entry = <String, String>{
       'name': name,
+      if (responses) 'provider_key': kHermesGridProviderKey,
       'base_url': base,
       'api_key': key,
       'model': model,
+      if (responses) 'api_mode': kHermesResponsesApiMode,
     };
     final existing = editor.parseAt([
       'custom_providers',
