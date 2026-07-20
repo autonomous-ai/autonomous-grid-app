@@ -40,10 +40,24 @@ class AutoRouterController extends AsyncNotifier<AutoRouterConfig> {
     return _status(network.networkId);
   }
 
-  /// Turn auto-routing on or off for the active grid, then reload the config so
-  /// the card reflects the new state (and any advisor chain the server kept).
+  /// Turn auto-routing on or off for the active grid, then reload the config.
+  ///
+  /// The control plane rejects `enable` with no advisor configured ("Configure
+  /// an advisor first"), so callers must only enable once the chain is set — the
+  /// card routes a first-time enable through [enableWithAdvisors] instead.
   Future<void> setEnabled(bool enabled) =>
       _mutate(['router', enabled ? 'enable' : 'disable']);
+
+  /// Set the advisor chain, then enable — the order the control plane requires
+  /// (an advisor must exist before `enable`). One guarded sequence so the card
+  /// reflects the final state, or the first failure, and never a half-applied one.
+  Future<void> enableWithAdvisors(List<String> tokens) {
+    if (tokens.isEmpty) return Future.value();
+    return _mutateMany([
+      ['router', 'set-advisors', ...tokens],
+      ['router', 'enable'],
+    ]);
+  }
 
   /// Replace the advisor chain (1–[kMaxAdvisors] `provider[:model]` tokens, in
   /// priority order), then reload. An empty list is a no-op — the CLI requires
@@ -53,14 +67,19 @@ class AutoRouterController extends AsyncNotifier<AutoRouterConfig> {
     return _mutate(['router', 'set-advisors', ...tokens]);
   }
 
-  /// Run a mutation for the active grid, then re-read status so the card
-  /// reflects the server's own view (not an optimistic guess). The card holds
-  /// its own busy flag around the await, so no loading state is set here.
-  Future<void> _mutate(List<String> command) async {
+  Future<void> _mutate(List<String> command) => _mutateMany([command]);
+
+  /// Run one or more mutations for the active grid in order, then re-read status
+  /// so the card reflects the server's own view (not an optimistic guess). One
+  /// `guard` wraps the whole sequence, so a mid-sequence failure surfaces and no
+  /// later step runs. The card holds its own busy flag around the await.
+  Future<void> _mutateMany(List<List<String>> commands) async {
     final network = ref.read(selectedNetworkProvider);
     if (network == null) return;
     state = await AsyncValue.guard(() async {
-      _ensureOk(await _run([...command, '--grid', network.networkId]));
+      for (final command in commands) {
+        _ensureOk(await _run([...command, '--grid', network.networkId]));
+      }
       return _status(network.networkId);
     });
   }
