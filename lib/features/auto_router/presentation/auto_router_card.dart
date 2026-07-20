@@ -45,6 +45,23 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
     await _run(() => _controller.setAdvisors(chosen));
   }
 
+  /// Flip auto-routing. Turning it ON with no advisor configured yet would be
+  /// rejected ("Configure an advisor first"), so we open the picker, then set the
+  /// chain and enable together. Cancelling the picker leaves it off.
+  Future<void> _toggle(AutoRouterConfig config, bool on) async {
+    if (!on) {
+      await _run(() => _controller.setEnabled(false));
+      return;
+    }
+    if (config.hasAdvisors) {
+      await _run(() => _controller.setEnabled(true));
+      return;
+    }
+    final chosen = await showAdvisorPicker(context, ref, current: const []);
+    if (chosen == null || chosen.isEmpty) return;
+    await _run(() => _controller.enableWithAdvisors(chosen));
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(autoRouterControllerProvider);
@@ -87,9 +104,7 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
             const SizedBox(width: 12),
             Switch(
               value: config.enabled,
-              onChanged: _busy
-                  ? null
-                  : (value) => _run(() => _controller.setEnabled(value)),
+              onChanged: _busy ? null : (value) => _toggle(config, value),
             ),
           ],
         ),
