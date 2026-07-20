@@ -1,38 +1,14 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/agent/logic/hermes_tool.dart';
-
-/// Which build of Hermes this computer has.
-abstract interface class HermesVersionService {
-  /// The installed version (`0.18.2`), or null when the binary answers with
-  /// something that isn't one.
-  Future<String?> version();
-}
-
-class HermesVersionServiceImpl implements HermesVersionService {
-  const HermesVersionServiceImpl(this.executable);
-
-  final String executable;
-
-  @override
-  Future<String?> version() async {
-    try {
-      final result = await Process.run(executable, ['--version']);
-      return parseHermesVersion('${result.stdout}');
-    } on ProcessException {
-      // The binary was on PATH a moment ago and isn't now (mid-upgrade, say) —
-      // no version rather than a crash.
-      return null;
-    }
-  }
-}
+import 'agent_version_service.dart';
 
 /// Null when Hermes isn't installed — there's nothing to ask.
-final hermesVersionServiceProvider = Provider<HermesVersionService?>((ref) {
+final hermesVersionServiceProvider = Provider<AgentVersionService?>((ref) {
   final path = ref.watch(hermesPathProvider);
-  return path == null ? null : HermesVersionServiceImpl(path);
+  return path == null
+      ? null
+      : AgentBinaryVersionService(path, parse: parseHermesVersion);
 });
 
 /// The installed version, or null when there's no agent (or it didn't say).

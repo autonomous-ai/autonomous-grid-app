@@ -11,7 +11,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agents/logic/agent_status.dart';
 import '../../agent/presentation/agent_changes_bar.dart';
 import '../../agent/presentation/agent_permission_card.dart';
 import '../../agent/presentation/approval_picker.dart';
@@ -367,7 +367,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final agentMode = agentAnswersTurn(
       modality: modality,
       hasAttachments: _attachments.isNotEmpty,
-      agentInstalled: ref.watch(hermesInstalledProvider),
+      agentInstalled: ref.watch(anyAgentInstalledProvider),
     );
     final needsImage = modality == PlaygroundModality.video;
     // Nothing to send to while this grid has no model: the composer stays for

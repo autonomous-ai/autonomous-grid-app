@@ -1,10 +1,11 @@
 /// The agents the app knows about — the ones that can be put in charge of a
 /// chat, and the ones that are coming.
 ///
-/// Only Hermes can run today: the `grid` CLI installs that and nothing else
-/// (`grid agent install {hermes}`). The rest are listed so the screen says what
-/// it will support instead of pretending the list is finished — but they carry
-/// no controls, because a button that can't do anything is worse than none.
+/// Two can run today — Hermes and Codex — each installed through the `grid` CLI
+/// (`grid agent install <id>`) and able to answer chats on this computer. The
+/// rest are listed so the screen says what it will support instead of pretending
+/// the list is finished, but they carry no controls: a button that can't do
+/// anything is worse than none.
 enum AgentTool {
   hermes(
     id: 'hermes',
@@ -17,7 +18,7 @@ enum AgentTool {
     id: 'codex',
     name: 'Codex',
     tagline: "OpenAI's coding agent.",
-    runnable: false,
+    runnable: true,
     iconAsset: 'assets/agents/codex_icon.png',
   ),
   openclaw(

@@ -17,7 +17,14 @@ class ChatPrefs {
     this.model,
     this.approval = AgentApprovalMode.ask,
     this.themeMode = ThemeMode.light,
+    this.chatAgent = defaultChatAgent,
   });
+
+  /// The agent that answers chats out of the box — `hermes`, mirroring the
+  /// `kChatAgent` default in the agents catalog. Stored as a bare id string
+  /// because this layer can't reach the `AgentTool` enum (infrastructure never
+  /// depends on a feature); the agents feature maps the id back to the tool.
+  static const defaultChatAgent = 'hermes';
 
   /// No remembered selection yet — the state before the first launch that saves.
   static const empty = ChatPrefs();
@@ -34,16 +41,23 @@ class ChatPrefs {
   /// light, and a user who never touched it stays there.
   final ThemeMode themeMode;
 
+  /// Which installed agent answers chats — its id (`hermes`, `codex`). Remembered
+  /// so a user who picked Codex keeps it across launches; an unknown or
+  /// no-longer-installed id falls back to whatever is installed.
+  final String chatAgent;
+
   ChatPrefs copyWith({
     String? networkId,
     String? model,
     AgentApprovalMode? approval,
     ThemeMode? themeMode,
+    String? chatAgent,
   }) => ChatPrefs(
     networkId: networkId ?? this.networkId,
     model: model ?? this.model,
     approval: approval ?? this.approval,
     themeMode: themeMode ?? this.themeMode,
+    chatAgent: chatAgent ?? this.chatAgent,
   );
 
   factory ChatPrefs.fromJson(Map<String, dynamic> json) => ChatPrefs(
@@ -51,6 +65,7 @@ class ChatPrefs {
     model: json['model'] as String?,
     approval: _approvalFrom(json['approval']),
     themeMode: _themeModeFrom(json['themeMode']),
+    chatAgent: json['chatAgent'] as String? ?? defaultChatAgent,
   );
 
   Map<String, Object?> toJson() => {
@@ -58,6 +73,7 @@ class ChatPrefs {
     'model': model,
     'approval': approval.name,
     'themeMode': themeMode.name,
+    'chatAgent': chatAgent,
   };
 
   /// A missing or unrecognised value reads as "ask" — a hand-edited file must
@@ -150,6 +166,8 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
 
   void setApproval(AgentApprovalMode approval) =>
       _update(state.copyWith(approval: approval));
+
+  void setChatAgent(String id) => _update(state.copyWith(chatAgent: id));
 
   void setThemeMode(ThemeMode mode) => _update(state.copyWith(themeMode: mode));
 

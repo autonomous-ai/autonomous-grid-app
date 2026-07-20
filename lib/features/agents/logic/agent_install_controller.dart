@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/cli/hermes_version_service.dart';
 import '../../../infrastructure/providers.dart';
+import '../../agent/logic/codex_tool.dart';
 import '../../agent/logic/hermes_tool.dart';
 import 'agent_catalog.dart';
 
@@ -69,11 +70,26 @@ class AgentInstallController extends Notifier<AgentInstallState> {
       return;
     }
 
-    // The binary is on PATH now (or gone, if the user removed it) — re-probe, so
-    // the row stops claiming what it said before the install.
-    ref.invalidate(hermesPathProvider);
-    ref.invalidate(hermesVersionProvider);
+    // The binary is on PATH now (or gone, if the user removed it) — re-probe the
+    // one we installed, so its row stops claiming what it said beforehand.
+    _reprobe(tool);
     state = const AgentInstallIdle();
+  }
+
+  /// Re-read whether [tool] is present and which build it is, after installing
+  /// or updating it. Only runnable agents reach here (install guards the rest).
+  void _reprobe(AgentTool tool) {
+    switch (tool) {
+      case AgentTool.hermes:
+        ref.invalidate(hermesPathProvider);
+        ref.invalidate(hermesVersionProvider);
+      case AgentTool.codex:
+        ref.invalidate(codexPathProvider);
+        ref.invalidate(codexVersionProvider);
+      case AgentTool.openclaw:
+        // Planned, not installable — never installed, so nothing to re-probe.
+        break;
+    }
   }
 
   void clearError() {

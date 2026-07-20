@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/hermes_version_service.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/not_yet_badge.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
 import '../logic/agent_install_controller.dart';
+import '../logic/agent_status.dart';
 
 /// The assistants this computer can run.
 ///
@@ -67,9 +68,8 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
     final tool = widget.tool;
     final theme = Theme.of(context);
-    // Only Hermes can be installed today, so it's the only one whose presence is
-    // worth probing — the rest are planned, and say so.
-    final installed = tool.runnable && ref.watch(hermesInstalledProvider);
+    // Each row probes its own agent — a planned one reads as not installed.
+    final installed = ref.watch(agentInstalledProvider(tool));
 
     // A planned agent has nothing to reach for, so it doesn't answer the pointer.
     final canHover = tool.runnable;
@@ -200,8 +200,8 @@ class _StatusChip extends ConsumerWidget {
     }
     // The version is a nice-to-have: an agent that won't say which build it is
     // still answers chats, so the chip must not wait on it.
-    final version = ref.watch(hermesVersionProvider).asData?.value;
-    final answering = tool == kChatAgent;
+    final version = ref.watch(agentVersionProvider(tool)).asData?.value;
+    final answering = tool == ref.watch(activeChatAgentProvider);
     return _Chip(
       label: [
         if (answering) 'Answers your chats' else 'Installed',
@@ -266,9 +266,27 @@ class _Action extends ConsumerWidget {
         child: const Text('Install'),
       );
     }
-    return OutlinedButton(
-      onPressed: () => controller.install(tool, upgrade: true),
-      child: const Text('Update'),
+
+    // With a second agent installed, the one that isn't answering chats offers
+    // to take over — the active one already says so in its status chip, so it
+    // needs no button. One agent installed → it's always active, no choice shown.
+    final isActive = ref.watch(activeChatAgentProvider) == tool;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!isActive) ...[
+          TextButton(
+            onPressed: () =>
+                ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id),
+            child: const Text('Use for chat'),
+          ),
+          const SizedBox(width: 4),
+        ],
+        OutlinedButton(
+          onPressed: () => controller.install(tool, upgrade: true),
+          child: const Text('Update'),
+        ),
+      ],
     );
   }
 }

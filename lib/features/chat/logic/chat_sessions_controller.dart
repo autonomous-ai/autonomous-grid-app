@@ -7,8 +7,8 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
 import '../../agent/logic/agent_session_title.dart';
-import '../../agent/logic/hermes_chat_sender.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/logic/agent_status.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
@@ -229,7 +229,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         agentAnswersTurn(
           modality: modality,
           hasAttachments: attachments.isNotEmpty,
-          agentInstalled: ref.read(hermesInstalledProvider),
+          agentInstalled: ref.read(anyAgentInstalledProvider),
         );
 
     // Append the user turn and persist it up front, so an interrupted reply
@@ -359,10 +359,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final viaAgent = agentAnswersTurn(
       modality: modality,
       hasAttachments: attachments.isNotEmpty,
-      agentInstalled: ref.read(hermesInstalledProvider),
+      agentInstalled: ref.read(anyAgentInstalledProvider),
     );
     return viaAgent
-        ? ref.read(hermesChatSenderProvider)
+        ? ref.read(chatAgentSenderProvider)
         : ref.read(chatSenderProvider);
   }
 

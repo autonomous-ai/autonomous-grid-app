@@ -59,9 +59,18 @@ class _ApiEngineForm extends ConsumerStatefulWidget {
 
 class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
   final _key = TextEditingController();
-  late String _kind = widget.engines.first.provider.kind;
+  late String _kind = _defaultKind(widget.engines);
   late Set<String> _selected = _allModels(_engine);
   bool _obscure = true;
+
+  /// Which provider the block opens on: prefer a subscription (sign-in) provider
+  /// like the ChatGPT/Codex seat, so it's ready to Start without pasting a key.
+  /// Falls back to the first available provider when none use sign-in.
+  static String _defaultKind(List<ApiEngine> engines) {
+    final subscription = engines.where((e) => e.provider.usesSignIn);
+    final chosen = subscription.isNotEmpty ? subscription.first : engines.first;
+    return chosen.provider.kind;
+  }
 
   /// True once the user chose to replace a key the CLI already had stored — only
   /// then do we show the key field for a provider with a saved key.

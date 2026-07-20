@@ -175,13 +175,14 @@ class _ServeSection extends ConsumerWidget {
     List<ServingEngine> serving,
   ) {
     if (Platform.isWindows) {
-      // Windows can't host the built-in (llama.cpp) engine yet — offer BYO/API.
+      // Windows can't host the built-in (llama.cpp) engine yet — offer BYO/API,
+      // cloud first.
       return [
         const _AddEngineHeading(),
         const SizedBox(height: 8),
-        const _BuiltInUnavailableNote(),
-        const SizedBox(height: 16),
         ApiEngineBlock(network: network),
+        const SizedBox(height: 16),
+        const _BuiltInUnavailableNote(),
         const SizedBox(height: 16),
         _ExternalServers(network: network),
       ];
@@ -201,6 +202,10 @@ class _ServeSection extends ConsumerWidget {
     return [
       const _AddEngineHeading(),
       const SizedBox(height: 8),
+      // Cloud providers first: a hosted model (OpenAI, or a Codex / ChatGPT
+      // subscription) needs no download, so it's the quickest way onto the grid.
+      ApiEngineBlock(network: network),
+      const SizedBox(height: 16),
       // With other engines already serving, the built-in local one can't join —
       // its block becomes a pointer to the connected-engine path.
       if (hasOtherEngines)
@@ -212,8 +217,6 @@ class _ServeSection extends ConsumerWidget {
           subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
           child: ServeLocalCard(network: network),
         ),
-      const SizedBox(height: 16),
-      ApiEngineBlock(network: network),
       const SizedBox(height: 16),
       _ExternalServers(network: network),
       if (!hasOtherEngines) ...[
