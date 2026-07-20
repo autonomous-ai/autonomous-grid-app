@@ -15,9 +15,19 @@ import 'engine_block.dart';
 /// missing or the installed CLI whitelists none we can present ([apiEnginesProvider]).
 /// The block never appears for a provider a `grid join --api` would reject.
 class ApiEngineBlock extends ConsumerWidget {
-  const ApiEngineBlock({super.key, required this.network});
+  const ApiEngineBlock({
+    super.key,
+    required this.network,
+    this.compact = false,
+  });
 
   final NetworkCredential network;
+
+  /// Trims the secondary copy (the model-freshness line) for a first-run
+  /// context like onboarding, where the full form reads as a wall of text next
+  /// to the other one-line options. The Model Engines screen keeps the full
+  /// detail (`compact: false`).
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,11 +44,13 @@ class ApiEngineBlock extends ConsumerWidget {
       icon: Icons.cloud_outlined,
       title: 'Cloud Provider',
       subtitle: hasSignIn
-          ? 'Share a hosted provider’s models — with your own API key or your '
-                'ChatGPT subscription. No local model download required.'
-          : 'Share models from a hosted provider using your own API key. '
-                'No local model download required.',
-      child: _ApiEngineForm(network: network, engines: available),
+          ? 'Your own API key or ChatGPT subscription — no model download.'
+          : 'A hosted provider with your own API key — no model download.',
+      child: _ApiEngineForm(
+        network: network,
+        engines: available,
+        compact: compact,
+      ),
     );
   }
 }
@@ -48,10 +60,15 @@ class ApiEngineBlock extends ConsumerWidget {
 /// environment (never argv), and a key the CLI already saved lets the user start
 /// again without re-pasting.
 class _ApiEngineForm extends ConsumerStatefulWidget {
-  const _ApiEngineForm({required this.network, required this.engines});
+  const _ApiEngineForm({
+    required this.network,
+    required this.engines,
+    required this.compact,
+  });
 
   final NetworkCredential network;
   final List<ApiEngine> engines;
+  final bool compact;
 
   @override
   ConsumerState<_ApiEngineForm> createState() => _ApiEngineFormState();
@@ -189,11 +206,11 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
           selected: _selected,
           onToggle: _toggleModel,
         ),
-        if (engine.lastVerified.isNotEmpty) ...[
+        if (!widget.compact && engine.lastVerified.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
-            '${engine.provider.label}’s current models · list updated '
-            '${_prettyDate(engine.lastVerified)}. Update Grid to refresh it.',
+            'Model list updated ${_prettyDate(engine.lastVerified)}. '
+            'Update Grid to refresh.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -202,12 +219,10 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
         const SizedBox(height: 12),
         Text(
           engine.provider.usesSignIn
-              ? 'You stay signed in on this computer. Grid never bills you — '
-                    'requests to these models spend your subscription’s own '
-                    'monthly allowance.'
-              : 'Your key stays on this computer. When grid requests use these '
-                    'models, prompts are sent to ${engine.provider.label} for '
-                    'inference.',
+              ? 'Grid never bills you — requests use your subscription’s own '
+                    'allowance.'
+              : 'Your key stays on this computer; prompts go to '
+                    '${engine.provider.label} for inference.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -273,10 +288,9 @@ class _SignInPanel extends StatelessWidget {
     final theme = Theme.of(context);
     final icon = signedIn ? Icons.check_circle_outline : Icons.open_in_browser;
     final text = signedIn
-        ? 'Signed in to your $label. Starting shares it with the grid — no '
-              'browser needed.'
-        : 'No API key needed. Starting opens your browser to sign in to your '
-              '$label; approve it once and Grid serves the seat.';
+        ? 'Signed in to your $label — Start shares it with the grid.'
+        : 'No key needed — Start signs you in via your browser, then shares '
+              'the seat.';
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
