@@ -26,7 +26,12 @@ enum ShellSection {
     thinIcon: LucideIcons.calendarClock300,
   ),
   agents(LucideIcons.bot, 'Agents', thinIcon: LucideIcons.bot300),
-  plugins(LucideIcons.puzzle, 'Plugins', thinIcon: LucideIcons.puzzle300),
+  plugins(
+    LucideIcons.puzzle,
+    'Plugins',
+    thinIcon: LucideIcons.puzzle300,
+    devOnly: true,
+  ),
   projects(
     LucideIcons.folderOpen,
     'Projects',
@@ -85,28 +90,27 @@ enum ShellSection {
 /// Chat isn't among them (you get there by starting a chat or opening one), and
 /// neither is Projects — your projects *are* the rail below, each holding its
 /// chats; this section is the screen that manages them, opened from that header.
-const kSidebarSections = [
-  ShellSection.scheduled,
-  ShellSection.plugins,
-  ShellSection.agents,
-];
+const kSidebarSections = [ShellSection.scheduled, ShellSection.agents];
 
 /// What Settings lists, in order — the screens you set up once.
 ///
-/// This computer leads, then Messages and the guide, then Appearance. Grids and
-/// Debug are developer-only ([ShellSection.devOnly]) and hidden from shipped
-/// builds, so an end user's list simply ends at Appearance.
+/// This computer leads, then Messages and the guide, then Appearance. Plugins,
+/// Grids and Debug are developer-only ([ShellSection.devOnly]) and hidden from
+/// shipped builds, so an end user's list simply ends at Appearance. Plugins
+/// (skills/MCP the assistant can use) is agent tooling, not end-user setup, so it
+/// lives here behind the developer gate rather than in the daily sidebar.
 ///
-/// Appearance sits above Grids and Debug, which are developer-only — a
-/// preference the user actually changes leads the developer tooling. That
-/// reordering only shows up in a developer build, and costs an end user nothing,
-/// since both of the rows after Appearance are invisible to them either way.
+/// Appearance sits above the developer-only rows — a preference the user actually
+/// changes leads the developer tooling. That reordering only shows up in a
+/// developer build, and costs an end user nothing, since every row after
+/// Appearance is invisible to them either way.
 const kSettingsSections = [
   ShellSection.engines,
   ShellSection.messages,
   ShellSection.guide,
   ShellSection.appearance,
   // dev only, so the order doesn't matter for end users: they don't see these rows at all.
+  ShellSection.plugins,
   ShellSection.grids,
   ShellSection.debug,
 ];
