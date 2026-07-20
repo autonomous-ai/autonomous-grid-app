@@ -82,13 +82,15 @@ class _AdvisorPickerDialogState extends ConsumerState<_AdvisorPickerDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Pick up to $kMaxAdvisors. The first you check is the highest '
-          'priority.',
+          'An advisor is a cloud AI that reads each request and picks which of '
+          'your grid’s own models should answer it — it only decides, your '
+          'models still do the work. Pick up to $kMaxAdvisors; the first is '
+          'tried first.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Expanded(
           child: ListView(
             children: [

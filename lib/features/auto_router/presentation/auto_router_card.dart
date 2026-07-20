@@ -69,8 +69,9 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
       icon: Icons.alt_route,
       title: 'Automatic model routing',
       subtitle:
-          'Let the grid pick the best model for each message — apps just ask '
-          'for the “auto” model.',
+          'When an app asks for the “auto” model, a cloud AI picks which of your '
+          'grid’s models answers each message. Optional — your models work '
+          'without it.',
       child: state.when(
         skipLoadingOnReload: true,
         data: _body,
