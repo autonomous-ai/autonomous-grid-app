@@ -42,9 +42,10 @@ class AgentInstallController extends Notifier<AgentInstallState> {
 
   /// Fetch [tool]. [upgrade] reinstalls one that's already present.
   ///
-  /// An agent the app can't run has no install path at all — the CLI only knows
-  /// Hermes — so this refuses rather than shelling out to a command that would
-  /// fail with a CLI error the user can't act on.
+  /// An agent the app can't run has no install path at all — the CLI installs
+  /// only the runnable ones (Hermes, Codex) — so this refuses rather than
+  /// shelling out to a command that would fail with a CLI error the user can't
+  /// act on.
   Future<void> install(AgentTool tool, {bool upgrade = false}) async {
     if (!tool.runnable || state is AgentInstallRunning) return;
 
