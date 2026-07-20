@@ -147,8 +147,23 @@ abstract final class AppPalette {
   static Color get divider =>
       AppTheme.pick(const Color(0x0F000000), const Color(0x14FFFFFF));
 
-  // primary action / selection — the same indigo reads well on both surfaces.
+  // primary action — a solid fill with white text on it, so it has to stay dark
+  // enough to carry that text (white on this is 5.5:1). Same value in both
+  // themes: as a *fill* it reads on either surface.
   static const accent = Color(0xFF2F5BEA);
+
+  /// The accent as a *mark on a surface* — a selected row's icon, an accent
+  /// rail — rather than a fill behind white text.
+  ///
+  /// It has to part from [accent] in dark. A selected rail row composites to
+  /// #2A2A2A, and #2F5BEA on that is 2.6:1 — under the 3.0 WCAG 1.4.11 asks of
+  /// a UI element, which is why the selected icon read as flat charcoal-on-
+  /// charcoal there while light (4.6:1) was fine. Lightened to 4.65:1 on that
+  /// row, still plainly the same indigo. [accent] can't simply take this value:
+  /// it is the fill under white text in ~100 places, and lightening it there
+  /// would drop that text to ~3.1:1 — fixing the icon by breaking the buttons.
+  static Color get accentOnSurface =>
+      AppTheme.pick(const Color(0xFF2F5BEA), const Color(0xFF6E8BFF));
 
   // avatar fill (white text on it); a touch brighter in dark for contrast.
   static Color get accentMuted =>

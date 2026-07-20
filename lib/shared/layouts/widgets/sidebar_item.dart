@@ -70,8 +70,10 @@ class _SidebarItemState extends State<SidebarItem> {
     // as "this is the one", matching the selected row's rail. Everything else
     // stays in ink.
     final ink = strong ? AppPalette.textPrimary : AppPalette.textSecondary;
+    // The on-surface accent, not the fill one: this glyph sits on the row, so in
+    // dark it needs the lighter value to stay legible — see [accentOnSurface].
     final iconInk = (widget.selected || widget.emphasized) && widget.enabled
-        ? AppPalette.accent
+        ? AppPalette.accentOnSurface
         : ink;
     // The emphasized row carries a whisper of accent wash so it reads as the
     // primary action without turning into a loud button; the selected row keeps
@@ -209,7 +211,9 @@ class _SidebarItemState extends State<SidebarItem> {
                       width: 3,
                       height: 18,
                       decoration: BoxDecoration(
-                        color: AppPalette.accent,
+                        // Same reason as the icon above — a mark on the row, so
+                        // it takes the on-surface accent.
+                        color: AppPalette.accentOnSurface,
                         borderRadius: const BorderRadius.horizontal(
                           right: Radius.circular(3),
                         ),
