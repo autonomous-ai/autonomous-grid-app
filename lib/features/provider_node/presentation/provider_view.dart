@@ -11,6 +11,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../auto_router/presentation/auto_router_card.dart';
 import '../../models/logic/advertise_name.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../network/presentation/enable_provider_card.dart';
@@ -103,9 +104,14 @@ class _ServeSection extends ConsumerWidget {
     final serving = ref.watch(servingEnginesProvider);
     final children = <Widget>[const SizedBox(height: 16)];
 
-    // Auto-routing (the reserved `auto` model, owner-only) is not shown for now
-    // while its UX is refined — the `auto_router` feature stays wired up; re-add
-    // `const AutoRouterCard()` here (gated on `network.isOwner`) to bring it back.
+    // Auto-routing (the reserved `auto` model) is an owner-only control, so only
+    // the grid owner sees the card; members serve models without it.
+    if (network.isOwner) {
+      children.addAll([
+        const AutoRouterCard(),
+        const SizedBox(height: 16),
+      ]);
+    }
 
     // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
     // consumer isn't allowed to). Installing the engine still needs no grid

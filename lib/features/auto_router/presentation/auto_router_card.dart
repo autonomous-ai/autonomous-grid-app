@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/app_spinner.dart';
+import '../../models/logic/advertise_name.dart';
+import '../../network/logic/grid_overview_provider.dart';
 import '../../provider_node/presentation/engine_block.dart';
 import '../logic/auto_router_controller.dart';
 import '../logic/auto_router_models.dart';
 import 'advisor_picker_dialog.dart';
 
-/// Owner-only control for auto-routing (the reserved `auto` model). Turns it on
-/// or off for the active grid and shows the advisor chain that ranks models for
-/// each request. Only mounted for a grid the viewer owns (the CLI's router
-/// commands are owner-level) — see the gate in `ProviderView`.
+/// Owner-only control for auto-routing (the reserved `auto` model). One switch
+/// turns it on over the grid's running models — an app asking for `auto` then
+/// gets the best of them per request, with no model to pick. Which cloud AI
+/// makes that choice is a platform default, tucked behind an advanced step, so
+/// the owner never has to reason about advisors. Only mounted for a grid the
+/// viewer owns (router commands are owner-level) — see the gate in `ProviderView`.
 class AutoRouterCard extends ConsumerStatefulWidget {
   const AutoRouterCard({super.key});
 
@@ -35,6 +39,17 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
     }
   }
 
+  /// Flip auto-routing. Turning it on configures the default deciding AI first
+  /// when none is set (the control plane rejects `enable` without one), so the
+  /// owner never sees an advisor picker on the main path.
+  Future<void> _toggle(AutoRouterConfig config, bool on) {
+    if (!on) return _run(() => _controller.setEnabled(false));
+    if (config.hasAdvisors) return _run(() => _controller.setEnabled(true));
+    return _run(() => _controller.enableWithDefaultAdvisor());
+  }
+
+  /// Advanced escape hatch: change which cloud AI decides the routing. Off the
+  /// main flow — most owners leave the platform default.
   Future<void> _editAdvisors(AutoRouterConfig config) async {
     final chosen = await showAdvisorPicker(
       context,
@@ -45,23 +60,6 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
     await _run(() => _controller.setAdvisors(chosen));
   }
 
-  /// Flip auto-routing. Turning it ON with no advisor configured yet would be
-  /// rejected ("Configure an advisor first"), so we open the picker, then set the
-  /// chain and enable together. Cancelling the picker leaves it off.
-  Future<void> _toggle(AutoRouterConfig config, bool on) async {
-    if (!on) {
-      await _run(() => _controller.setEnabled(false));
-      return;
-    }
-    if (config.hasAdvisors) {
-      await _run(() => _controller.setEnabled(true));
-      return;
-    }
-    final chosen = await showAdvisorPicker(context, ref, current: const []);
-    if (chosen == null || chosen.isEmpty) return;
-    await _run(() => _controller.enableWithAdvisors(chosen));
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(autoRouterControllerProvider);
@@ -69,9 +67,9 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
       icon: Icons.alt_route,
       title: 'Automatic model routing',
       subtitle:
-          'When an app asks for the “auto” model, a cloud AI picks which of your '
-          'grid’s models answers each message. Optional — your models work '
-          'without it.',
+          'When an app asks for the “auto” model, your grid answers with the '
+          'best of your running models for each message — no model to pick. '
+          'Optional.',
       child: state.when(
         skipLoadingOnReload: true,
         data: _body,
@@ -97,7 +95,8 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
             Expanded(
               child: Text(
                 config.enabled
-                    ? 'On — the grid answers “auto” by picking a model per request.'
+                    ? 'On — apps can ask for “auto” and your grid picks a model '
+                          'per request.'
                     : 'Off — apps must name a specific model.',
                 style: theme.textTheme.bodyMedium,
               ),
@@ -111,19 +110,14 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
         ),
         if (config.enabled) ...[
           const SizedBox(height: 12),
-          if (config.hasAdvisors)
-            _AdvisorChips(advisors: config.advisors)
-          else
-            _NeedsAdvisorsNote(),
-          const SizedBox(height: 12),
+          const _RoutingPool(),
+          const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: TextButton.icon(
               onPressed: _busy ? null : () => _editAdvisors(config),
-              icon: const Icon(Icons.tune, size: 18),
-              label: Text(
-                config.hasAdvisors ? 'Edit advisors' : 'Choose advisors',
-              ),
+              icon: const Icon(Icons.tune, size: 16),
+              label: const Text('Advanced: choose the deciding AI'),
             ),
           ),
         ],
@@ -132,47 +126,81 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
   }
 }
 
-/// The advisor chain as ordered chips — the models the router consults to rank
-/// candidates, priority first.
-class _AdvisorChips extends StatelessWidget {
-  const _AdvisorChips({required this.advisors});
-
-  final List<Advisor> advisors;
+/// The grid's running models as the pool auto-routing chooses among — the live,
+/// grid-wide list (every node's models, not just this computer), so the owner
+/// sees exactly what `auto` can land on. All of them participate: the router
+/// always considers the whole live set, so this is a read-only view, not a
+/// selector. Empty until an engine is serving.
+class _RoutingPool extends ConsumerWidget {
+  const _RoutingPool();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    // `gridChatModelIdsProvider` already drops media capabilities; also hide the
+    // reserved `auto` itself, which the overview lists once routing is on.
+    final models = [
+      for (final id in ref.watch(gridChatModelIdsProvider))
+        if (id != 'auto') id,
+    ];
+    if (models.isEmpty) {
+      return _PoolNote(
+        icon: Icons.info_outline,
+        color: theme.colorScheme.tertiary,
+        text: 'Start or add an engine so routing has models to choose from.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final advisor in advisors)
-          Chip(
-            label: Text(advisor.token),
-            labelStyle: theme.textTheme.bodySmall,
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        Text(
+          'Auto chooses between your running models for each request:',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final id in models)
+              Chip(
+                label: Text(deriveAdvertiseName(id)),
+                labelStyle: theme.textTheme.bodySmall,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+          ],
+        ),
       ],
     );
   }
 }
 
-/// Shown when routing is on but no advisor is set — routing can't rank models
-/// without one, so this nudges the owner to choose at least one.
-class _NeedsAdvisorsNote extends StatelessWidget {
+/// A one-line note with a leading icon — the routing pool's empty state.
+class _PoolNote extends StatelessWidget {
+  const _PoolNote({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String text;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.info_outline, size: 18, color: theme.colorScheme.tertiary),
+        Icon(icon, size: 18, color: color),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            'Choose at least one advisor so routing has something to rank models '
-            'with.',
+            text,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

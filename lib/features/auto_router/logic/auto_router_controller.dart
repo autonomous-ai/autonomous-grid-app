@@ -59,6 +59,33 @@ class AutoRouterController extends AsyncNotifier<AutoRouterConfig> {
     ]);
   }
 
+  /// Turn routing on with a single switch: when the grid has no advisor yet,
+  /// configure the catalog's default one automatically, then enable. This keeps
+  /// the deciding-AI choice off the main flow — the owner enables routing over
+  /// their running models without ever picking a cloud advisor (that stays an
+  /// advanced step). A missing/empty catalog surfaces as a clean error, not a
+  /// silent no-op.
+  Future<void> enableWithDefaultAdvisor() async {
+    final AdvisorCatalog catalog;
+    try {
+      catalog = await ref.read(advisorCatalogProvider.future);
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      return;
+    }
+    final token = catalog.defaultToken;
+    if (token == null) {
+      state = AsyncError(
+        const AutoRouterException(
+          'No routing advisor is available right now — try again later.',
+        ),
+        StackTrace.current,
+      );
+      return;
+    }
+    await enableWithAdvisors([token]);
+  }
+
   /// Replace the advisor chain (1–[kMaxAdvisors] `provider[:model]` tokens, in
   /// priority order), then reload. An empty list is a no-op — the CLI requires
   /// at least one advisor, so clearing the chain is `disable`, not an empty set.

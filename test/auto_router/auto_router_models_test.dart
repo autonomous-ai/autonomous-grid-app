@@ -53,5 +53,29 @@ void main() {
       final catalog = AdvisorCatalog.fromJson({});
       expect(catalog.allTokens, isEmpty);
     });
+
+    test(
+      'default token is the first provider name so enabling needs no pick',
+      () {
+        final catalog = AdvisorCatalog.fromJson({
+          'providers': [
+            {
+              'provider': 'openai',
+              'models': ['gpt-5-mini'],
+            },
+            {
+              'provider': 'anthropic',
+              'models': ['claude'],
+            },
+          ],
+        });
+
+        expect(catalog.defaultToken, 'openai');
+      },
+    );
+
+    test('an empty catalog has no default token to enable with', () {
+      expect(AdvisorCatalog.fromJson({}).defaultToken, isNull);
+    });
   });
 }

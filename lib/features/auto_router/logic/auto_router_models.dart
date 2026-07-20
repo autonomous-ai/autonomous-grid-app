@@ -78,11 +78,19 @@ class AdvisorCatalog {
   final List<AdvisorProvider> providers;
 
   /// Every advisor the catalog offers, flattened to `provider:model` tokens in
-  /// catalog order — the options the picker lists.
+  /// catalog order — the options the advanced picker lists.
   List<String> get allTokens => [
     for (final provider in providers)
       for (final model in provider.models) '${provider.provider}:$model',
   ];
+
+  /// The advisor to configure when the owner just turns routing on without
+  /// choosing one: the first provider's bare name, which the control plane
+  /// resolves to that provider's default model. Null when the catalog is empty
+  /// (nothing to enable with). Keeps the deciding-AI choice off the main flow —
+  /// enabling "just works" and picking a specific advisor is an advanced step.
+  String? get defaultToken =>
+      providers.isEmpty ? null : providers.first.provider;
 
   factory AdvisorCatalog.fromJson(Map<String, dynamic> json) => AdvisorCatalog([
     for (final entry in (json['providers'] as List? ?? const []))
