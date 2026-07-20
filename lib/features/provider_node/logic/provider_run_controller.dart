@@ -6,10 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/state/models/engine_run.dart';
+import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_sync_controller.dart';
 import 'backend_detector.dart';
+import 'engine_liveness.dart';
 import 'free_port.dart';
 import 'node_name.dart';
+import 'serving_engines_provider.dart';
 
 /// Inference backends found on the machine (Ollama, LM Studio, llama.cpp).
 final backendsProvider = FutureProvider<List<DetectedBackend>>(
@@ -49,40 +52,32 @@ final providerRunControllerProvider =
       ProviderRunController.new,
     );
 
-/// What the running engine is serving (gguf or remote model id), or null when
-/// nothing is serving. Lets the model manager refuse to delete a model in use.
+/// Every model this machine is serving on the active grid — the union across all
+/// its engines, joined for display. Null when nothing is serving. Lets the model
+/// manager refuse to delete a gguf that's in use (lenient substring match).
 final servingModelProvider = Provider<String?>((ref) {
-  final state = ref.watch(providerRunControllerProvider);
-  return state is ProviderRunActive ? state.model : null;
+  final models = [
+    for (final engine in ref.watch(servingEnginesProvider)) ...engine.models,
+  ];
+  return models.isEmpty ? null : models.join(', ');
 });
 
-/// Base URL of the locally-running provider's OpenAI-compatible server, parsed
-/// from its run log (e.g. `http://localhost:8081`). Null when no local provider
-/// is serving or the port can't be read yet. Lets the Playground hit the local
-/// server directly over HTTP for a quick smoke test.
+/// Base URL of this machine's local built-in engine on the active grid, read
+/// from its run record's `endpoint_port`. Null when no local engine is serving.
+/// Lets the Playground hit the local server directly for a quick smoke test.
 final localProviderEndpointProvider = Provider<String?>((ref) {
-  final state = ref.watch(providerRunControllerProvider);
-  if (state is! ProviderRunActive) return null;
-  final port = _parseLocalPort(state.log);
-  return port == null ? null : 'http://localhost:$port';
+  ref.watch(engineUnionRefreshProvider);
+  final network = ref.watch(selectedNetworkProvider);
+  if (network == null) return null;
+  final record = firstLiveRun(
+    ref.read(gridHomeStoreProvider).listEngineRuns(network.networkId),
+  );
+  if (record == null) return null;
+  final hasLocal = record.engines.any((e) => e.kind == EngineKind.local);
+  final port = record.endpointPort;
+  if (!hasLocal || port == null) return null;
+  return 'http://localhost:$port';
 });
-
-/// `127.0.0.1:8081` / `localhost:8081` in httpx log lines, or the
-/// `llama_llm_8081.log` filename the provider prints on spawn.
-final _localPortPattern = RegExp(
-  r'(?:localhost|127\.0\.0\.1):(\d{2,5})|llama_\w*?(\d{2,5})\.log',
-);
-
-int? _parseLocalPort(List<String> log) {
-  for (final line in log.reversed) {
-    final match = _localPortPattern.firstMatch(line);
-    if (match == null) continue;
-    final port = match.group(1) ?? match.group(2);
-    final parsed = port == null ? null : int.tryParse(port);
-    if (parsed != null) return parsed;
-  }
-  return null;
-}
 
 sealed class ProviderRunState {
   const ProviderRunState();
@@ -184,7 +179,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     if (service == null) return;
 
     final store = ref.read(gridHomeStoreProvider);
-    final record = _liveRun(store.listEngineRuns(gridId));
+    final record = firstLiveRun(store.listEngineRuns(gridId));
     if (record == null) return;
 
     _service = service;
@@ -204,7 +199,14 @@ class ProviderRunController extends Notifier<ProviderRunState> {
           ? List.unmodifiable(log)
           : ['Resumed — engine serving ${record.models.join(', ')} on this grid.'],
     );
+    // The union list reads the same record from disk; nudge it now the adopted
+    // engine is known so the serving list reflects it on restart.
+    _bumpUnion();
   }
+
+  /// Invalidate [servingEnginesProvider] after a roster change — the store is a
+  /// plain reader, so the list only re-reads disk when this ticks.
+  void _bumpUnion() => ref.read(engineUnionRefreshProvider.notifier).bump();
 
   /// Serve a model already pulled into `~/.grid/models` via the built-in engine
   /// (`grid join <grid> --serve <gguf> --endpoint-port <free> [--advertise-as]`).
@@ -410,13 +412,15 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       return;
     }
     if (exitCode == 0) {
-      // `grid join` launched the engine in the background; it's serving now.
+      // `grid join` launched the engine in the background; it's serving now and
+      // has joined the machine's union — refresh the serving list to include it.
       state = ProviderRunActive(
         grid: grid,
         log: List.unmodifiable(log),
         starting: false,
         model: model,
       );
+      _bumpUnion();
       _syncGridSoon();
       return;
     }
@@ -475,28 +479,24 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     }());
   }
 
-  /// The first still-running engine among [records], or null when none is alive.
-  /// A grid dir can hold stale records from prior sessions alongside the live
-  /// one, so we adopt the one whose process still answers rather than the first
-  /// on disk.
-  static EngineRunRecord? _liveRun(List<EngineRunRecord> records) {
-    for (final record in records) {
-      if (_pidIsAlive(record.pid)) return record;
-    }
-    return null;
-  }
-
-  /// True if [pid] names a live process. POSIX `kill -0` probes existence
-  /// without signalling; where it's unavailable we can't tell, so assume alive
-  /// (the Stop path `grid leave`s regardless).
-  static bool _pidIsAlive(int? pid) {
-    if (pid == null) return false;
-    if (Platform.isWindows) return true;
+  /// Drop one engine from this machine's union on [grid] with a scoped
+  /// `grid leave --engine`, leaving the rest serving. The CLI hot-reloads the
+  /// reduced union (or tears the identity down if it was the last engine).
+  /// Best-effort and time-boxed like [stop]; the union list re-reads the true
+  /// roster from disk afterwards either way.
+  Future<void> removeEngine(String grid, String selector) async {
+    final service = ref.read(gridCliServiceProvider);
+    if (service == null) return;
     try {
-      return Process.runSync('kill', ['-0', '$pid']).exitCode == 0;
-    } on ProcessException {
-      return true;
+      await service
+          .run(['leave', grid, '--engine', selector])
+          .timeout(ref.read(leaveTimeoutProvider));
+    } on Object {
+      // A slow/failed leave must not strand the UI; the refresh below re-reads
+      // the real roster, so a no-op leave simply leaves the row in place.
     }
+    _bumpUnion();
+    _syncGridSoon();
   }
 
   /// Stop the engine: `grid leave` unregisters and kills the detached engine.
@@ -522,6 +522,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       // join — so the UI stops showing it as serving.
       _syncGridSoon();
     }
+    _bumpUnion();
     state = const ProviderRunStopped();
   }
 
@@ -556,6 +557,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
 
     _grid = null;
     _reconciledGrids.clear();
+    _bumpUnion();
     state = const ProviderRunIdle();
   }
 

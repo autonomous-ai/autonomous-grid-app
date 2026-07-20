@@ -235,10 +235,10 @@ void main() {
       final state = container.read(providerRunControllerProvider);
       expect(state, isA<ProviderRunActive>());
       expect(seen.whereType<ProviderRunActive>(), isNotEmpty);
-      // The served gguf is recorded so the model manager can guard against
-      // deleting it while it's live.
+      // The served gguf is recorded on the run state. (The model manager's
+      // in-use guard reads the on-disk union via `servingModelProvider`, which
+      // is covered by the engine-run union tests, not this transient state.)
       expect((state as ProviderRunActive).model, 'qwen.gguf');
-      expect(container.read(servingModelProvider), 'qwen.gguf');
     },
   );
 

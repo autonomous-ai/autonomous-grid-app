@@ -10,6 +10,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../auto_router/presentation/auto_router_card.dart';
 import '../../models/logic/advertise_name.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../network/presentation/enable_provider_card.dart';
@@ -17,10 +18,11 @@ import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/backend_detector.dart';
 import '../logic/ollama_launch_controller.dart';
 import '../logic/provider_run_controller.dart';
+import '../logic/serving_engines_provider.dart';
 import 'api_engine_block.dart';
 import 'engine_block.dart';
 import 'external_server_block.dart';
-import 'provider_running_card.dart';
+import 'serving_engines_section.dart';
 
 /// Provider lifecycle. Enables the provider role when missing, then serves a
 /// model — from a local GGUF (the main flow) or an external OpenAI-compatible
@@ -66,20 +68,20 @@ Future<void> _openInBrowser(String url) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Gates on network/provider/run-state, then offers the local-model serve (the
-/// main flow) with the BYO external `--at` form as a secondary option.
+/// The "This computer" body. A machine serves a *union* of engines on a grid
+/// (ADR 0010), so this is a page, not a single running card: auto-routing at the
+/// top (owner-only), then what's already serving (each engine stoppable on its
+/// own), then the always-available ways to add another engine.
 class _ServeSection extends ConsumerWidget {
   const _ServeSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final network = ref.watch(selectedNetworkProvider);
-    final run = ref.watch(providerRunControllerProvider);
 
     // A sign-in join (codex OAuth) streams an authorize URL to approve — open it
     // the instant it arrives, exactly like the login screen opens the device URL.
-    // The card also offers it as a tappable fallback if the browser didn't open.
+    // The serving card also offers it as a tappable fallback if it didn't open.
     ref.listen(providerRunControllerProvider, (prev, next) {
       final was = prev is ProviderRunActive ? prev.signInUrl : null;
       final now = next is ProviderRunActive ? next.signInUrl : null;
@@ -89,80 +91,89 @@ class _ServeSection extends ConsumerWidget {
     if (network == null) {
       return const Text('Select a grid first from the Grids tab.');
     }
-
-    // Engine running on THIS grid: hand the card the full section height so the
-    // header/banner pin and only the log scrolls (fixes the double scrollbar).
-    if (run is ProviderRunActive && run.grid == network.networkId) {
-      return ProviderRunningCard(
-        starting: run.starting,
-        log: run.log,
-        model: run.model,
-        signInUrl: run.signInUrl,
-      );
-    }
-
-    // Every other state scrolls as a page.
-    return ListView(children: _bodyChildren(context, theme, network, run));
+    return ListView(children: _children(context, ref, network));
   }
 
-  /// The scrollable body for the non-running states — enable-provider gate,
-  /// "engine busy on another grid", or the serve forms (built-in + BYO).
-  List<Widget> _bodyChildren(
+  List<Widget> _children(
     BuildContext context,
-    ThemeData theme,
+    WidgetRef ref,
     NetworkCredential network,
-    ProviderRunState run,
   ) {
+    final run = ref.watch(providerRunControllerProvider);
+    final serving = ref.watch(servingEnginesProvider);
+    final children = <Widget>[const SizedBox(height: 16)];
+
+    // Auto-routing (the reserved `auto` model) — owner-only, above the engines.
+    if (network.isOwner) {
+      children.addAll(const [AutoRouterCard(), SizedBox(height: 16)]);
+    }
+
+    // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
+    // consumer isn't allowed to). Installing the engine still needs no grid
+    // permission, so offer the set-up instead of a wall — then stop here, since
+    // a join would be rejected until sharing is on.
     if (!network.isProvider) {
-      // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
-      // consumer isn't allowed to), but installing the engine on this computer
-      // needs no permission from any grid — so still offer the set-up. That way
-      // a consumer can learn the app and get ready instead of hitting a wall,
-      // and an admin can install while turning sharing on.
-      return [
-        const SizedBox(height: 16),
+      children.addAll([
         EnableProviderCard(network: network),
         const SizedBox(height: 16),
         const NodeSetupCard(),
         const SizedBox(height: 16),
-      ];
+      ]);
+      return children;
     }
-    // One engine at a time: if one is already serving another grid, say so and
-    // let the user stop it here first — don't show a Start form that would
-    // silently leave the running engine to start a new one.
+
+    // An engine on ANOTHER grid: remote has one identity per grid, so starting
+    // one here leaves that one — warn before the add forms.
     if (run is ProviderRunActive && run.grid != network.networkId) {
-      return [_EngineBusyElsewhere(runningGridId: run.grid)];
+      children.addAll([
+        _EngineBusyElsewhere(runningGridId: run.grid),
+        const SizedBox(height: 16),
+      ]);
     }
 
-    final failedNote = run is ProviderRunFailed
-        ? Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              "Couldn't start last time: ${run.message}",
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-          )
-        : null;
+    // What's already serving on THIS grid (the union), plus a transient row while
+    // a newly-joined engine is still starting.
+    final startingHere =
+        run is ProviderRunActive &&
+        run.grid == network.networkId &&
+        run.starting;
+    if (serving.isNotEmpty || startingHere) {
+      children.addAll([
+        ServingEnginesSection(network: network),
+        const SizedBox(height: 16),
+      ]);
+    }
 
-    // Windows can't host the built-in (llama.cpp) engine yet — don't show the
-    // node-setup/serve path there; it would only dead-end. Offer BYO instead.
+    if (run is ProviderRunFailed) {
+      children.addAll([
+        _FailedNote(message: run.message),
+        const SizedBox(height: 8),
+      ]);
+    }
+
+    children.addAll(_addEngineBlocks(network));
+    children.add(const SizedBox(height: 16));
+    return children;
+  }
+
+  /// The ways to add an engine — always available so a join stacks additively
+  /// onto the machine's union (ADR 0010) instead of replacing what's running.
+  List<Widget> _addEngineBlocks(NetworkCredential network) {
     if (Platform.isWindows) {
+      // Windows can't host the built-in (llama.cpp) engine yet — offer BYO/API.
       return [
-        ?failedNote,
+        const _AddEngineHeading(),
+        const SizedBox(height: 8),
         const _BuiltInUnavailableNote(),
         const SizedBox(height: 16),
-        // A hosted API provider needs no local engine, so it's the natural path
-        // on Windows where the built-in one isn't available yet.
         ApiEngineBlock(network: network),
         const SizedBox(height: 16),
         _ExternalServers(network: network),
       ];
     }
-
     return [
-      ?failedNote,
+      const _AddEngineHeading(),
+      const SizedBox(height: 8),
       EngineBlock(
         icon: Icons.dns_outlined,
         title: 'Local Engine',
@@ -175,8 +186,46 @@ class _ServeSection extends ConsumerWidget {
       _ExternalServers(network: network),
       const SizedBox(height: 16),
       const NodeSetupCard(),
-      const SizedBox(height: 16),
     ];
+  }
+}
+
+/// A quiet section label above the add-engine blocks, so the page reads as
+/// "what's running" then "add another".
+class _AddEngineHeading extends StatelessWidget {
+  const _AddEngineHeading();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        'Add an engine',
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// The last start's failure, surfaced above the add forms so the user sees why
+/// it didn't take before trying again.
+class _FailedNote extends StatelessWidget {
+  const _FailedNote({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      "Couldn't start last time: $message",
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.error,
+      ),
+    );
   }
 }
 
