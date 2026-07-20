@@ -63,6 +63,13 @@ class _AutoRouterCardState extends ConsumerState<AutoRouterCard> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(autoRouterControllerProvider);
+    // This card only mounts for the grid's owner, so turning routing on here is
+    // an owner action. Do it once for a grid they've never configured —
+    // scheduled post-frame so nothing mutates during build; the controller
+    // dedupes per grid (mirrors ProviderView's reconcile).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _controller.autoEnableForOwner();
+    });
     return EngineBlock(
       icon: Icons.alt_route,
       title: 'Automatic model routing',

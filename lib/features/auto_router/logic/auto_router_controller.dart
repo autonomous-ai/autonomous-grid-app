@@ -31,6 +31,11 @@ final autoRouterControllerProvider =
     );
 
 class AutoRouterController extends AsyncNotifier<AutoRouterConfig> {
+  /// Grids this session already ran the owner auto-enable pass for, so the
+  /// post-frame trigger from the card is idempotent per grid (the notifier
+  /// instance outlives a grid switch, so a single bool wouldn't reset).
+  final Set<String> _autoEnabledGrids = {};
+
   @override
   Future<AutoRouterConfig> build() async {
     final network = ref.watch(selectedNetworkProvider);
@@ -38,6 +43,25 @@ class AutoRouterController extends AsyncNotifier<AutoRouterConfig> {
       throw const AutoRouterException('Select a grid first.');
     }
     return _status(network.networkId);
+  }
+
+  /// Turn routing on the first time an owner opens a grid they've never
+  /// configured, so `auto` works out of the box without a manual toggle.
+  ///
+  /// A no-op when the viewer isn't the owner, while the status is still
+  /// loading/errored, once this grid was already attempted this session, or when
+  /// advisors already exist — routing is on, or the owner deliberately turned it
+  /// off (advisors persist through `disable`), and either way their state is
+  /// respected, never overridden. Scheduled post-frame by the owner-only card so
+  /// it never mutates during build; the per-grid guard makes repeat calls cheap.
+  Future<void> autoEnableForOwner() async {
+    final network = ref.read(selectedNetworkProvider);
+    if (network == null || !network.isOwner) return;
+    final config = state.asData?.value;
+    if (config == null) return; // still loading — the card retries next build
+    if (!_autoEnabledGrids.add(network.networkId)) return; // once per grid
+    if (config.enabled || config.hasAdvisors) return;
+    await enableWithDefaultAdvisor();
   }
 
   /// Turn auto-routing on or off for the active grid, then reload the config.
