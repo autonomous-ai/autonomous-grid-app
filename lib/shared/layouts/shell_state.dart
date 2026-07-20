@@ -97,16 +97,16 @@ const kSidebarSections = [
 /// Debug are developer-only ([ShellSection.devOnly]) and hidden from shipped
 /// builds, so an end user's list simply ends at Appearance.
 ///
-/// Appearance sits below Grids but above Debug. That only shows up in a
-/// developer build — where Grids is real work and Appearance is a preference, so
-/// the preference gives way — and it costs an end user nothing, since both of the
-/// rows around it are invisible to them either way.
+/// Appearance sits above Grids and Debug, which are developer-only — a
+/// preference the user actually changes leads the developer tooling. That
+/// reordering only shows up in a developer build, and costs an end user nothing,
+/// since both of the rows after Appearance are invisible to them either way.
 const kSettingsSections = [
   ShellSection.engines,
   ShellSection.messages,
   ShellSection.guide,
-  ShellSection.grids,
   ShellSection.appearance,
+  ShellSection.grids,
   ShellSection.debug,
 ];
 
