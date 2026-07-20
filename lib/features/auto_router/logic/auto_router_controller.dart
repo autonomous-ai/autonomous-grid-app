@@ -1,0 +1,138 @@
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../infrastructure/cli/grid_cli_service.dart';
+import '../../../infrastructure/providers.dart';
+import '../../auth/logic/session_controller.dart';
+import 'auto_router_models.dart';
+
+/// Most advisors the chain accepts, matching the CLI's `MAX_ADVISORS`. The
+/// picker caps at this so a too-long chain is refused in the UI, not by a 400.
+const int kMaxAdvisors = 3;
+
+/// A failure worth showing the user, already humanized. Thrown by the controller
+/// so the card's error branch prints one plain line instead of raw CLI stderr.
+class AutoRouterException implements Exception {
+  const AutoRouterException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Auto-routing config for the active grid — `grid router status/enable/disable/
+/// set-advisors`, all account-level owner commands (ADR 0013). Reloads when the
+/// selected grid changes. Only rendered for a grid the viewer owns, so a
+/// not-owner reply is an error path, not the normal case.
+final autoRouterControllerProvider =
+    AsyncNotifierProvider<AutoRouterController, AutoRouterConfig>(
+      AutoRouterController.new,
+    );
+
+class AutoRouterController extends AsyncNotifier<AutoRouterConfig> {
+  @override
+  Future<AutoRouterConfig> build() async {
+    final network = ref.watch(selectedNetworkProvider);
+    if (network == null) {
+      throw const AutoRouterException('Select a grid first.');
+    }
+    return _status(network.networkId);
+  }
+
+  /// Turn auto-routing on or off for the active grid, then reload the config so
+  /// the card reflects the new state (and any advisor chain the server kept).
+  Future<void> setEnabled(bool enabled) =>
+      _mutate(['router', enabled ? 'enable' : 'disable']);
+
+  /// Replace the advisor chain (1–[kMaxAdvisors] `provider[:model]` tokens, in
+  /// priority order), then reload. An empty list is a no-op — the CLI requires
+  /// at least one advisor, so clearing the chain is `disable`, not an empty set.
+  Future<void> setAdvisors(List<String> tokens) {
+    if (tokens.isEmpty) return Future.value();
+    return _mutate(['router', 'set-advisors', ...tokens]);
+  }
+
+  /// Run a mutation for the active grid, then re-read status so the card
+  /// reflects the server's own view (not an optimistic guess). The card holds
+  /// its own busy flag around the await, so no loading state is set here.
+  Future<void> _mutate(List<String> command) async {
+    final network = ref.read(selectedNetworkProvider);
+    if (network == null) return;
+    state = await AsyncValue.guard(() async {
+      _ensureOk(await _run([...command, '--grid', network.networkId]));
+      return _status(network.networkId);
+    });
+  }
+
+  Future<AutoRouterConfig> _status(String gridId) async {
+    final result = await _run(['router', 'status', '--grid', gridId]);
+    return AutoRouterConfig.fromJson(_decodeObject(result));
+  }
+
+  Future<CliResult> _run(List<String> args) async {
+    final service = ref.read(gridCliServiceProvider);
+    if (service == null) {
+      throw const AutoRouterException("The grid tool isn't available.");
+    }
+    // `--json` makes the router commands print a machine-readable body to stdout
+    // — the one place we parse stdout rather than reading `~/.grid`, since the
+    // config lives on the control plane, not on disk.
+    return service.run([...args, '--json']);
+  }
+
+  /// Decode a `--json` reply to a JSON object, mapping any failure to a
+  /// humanized [AutoRouterException].
+  Map<String, dynamic> _decodeObject(CliResult result) {
+    _ensureOk(result);
+    try {
+      final decoded = jsonDecode(result.stdout.trim());
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } on FormatException {
+      // Fall through to the generic message below.
+    }
+    throw const AutoRouterException('The grid returned an unexpected reply.');
+  }
+
+  void _ensureOk(CliResult result) {
+    if (result.ok) return;
+    throw AutoRouterException(_friendly(result));
+  }
+
+  static String _friendly(CliResult result) {
+    if (result.sessionExpired) {
+      return 'Your grid session expired — sign in again.';
+    }
+    final message = result.errorMessage.trim().toLowerCase();
+    if (message.contains('owner') ||
+        message.contains('forbidden') ||
+        message.contains('not allowed')) {
+      return 'Only the grid owner can change auto-routing.';
+    }
+    final raw = result.errorMessage.trim();
+    if (raw.isEmpty) return "Couldn't reach the grid — try again.";
+    return raw.length > 200 ? '${raw.substring(0, 200)}…' : raw;
+  }
+}
+
+/// The platform advisor catalog (`grid router models`) — account-level, needs no
+/// grid. Feeds the advisor picker so the chain is chosen by name.
+final advisorCatalogProvider = FutureProvider<AdvisorCatalog>((ref) async {
+  final service = ref.read(gridCliServiceProvider);
+  if (service == null) {
+    throw const AutoRouterException("The grid tool isn't available.");
+  }
+  final result = await service.run(['router', 'models', '--json']);
+  if (!result.ok) {
+    throw AutoRouterException(AutoRouterController._friendly(result));
+  }
+  try {
+    final decoded = jsonDecode(result.stdout.trim());
+    if (decoded is Map) {
+      return AdvisorCatalog.fromJson(Map<String, dynamic>.from(decoded));
+    }
+  } on FormatException {
+    // Fall through.
+  }
+  throw const AutoRouterException('The grid returned an unexpected reply.');
+});
