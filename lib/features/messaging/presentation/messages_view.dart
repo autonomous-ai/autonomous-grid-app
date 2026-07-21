@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/labeled_field.dart';
+import '../../../shared/widgets/pill_choice.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 // For platform_connected_panel.dart, a part of this library.
 import '../../../shared/widgets/toast.dart';
@@ -31,6 +36,7 @@ class _MessagesViewState extends ConsumerState<MessagesView> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     if (!ref.watch(hermesInstalledProvider)) return const _NoAgent();
 
     return SectionScaffold(
@@ -68,55 +74,13 @@ class _PlatformPicker extends StatelessWidget {
       runSpacing: 8,
       children: [
         for (final platform in MessagingPlatform.values)
-          _PlatformChip(
-            platform: platform,
+          PillChoice(
+            label: Text(platform.label),
+            icon: platform.icon,
             selected: platform == selected,
             onTap: () => onChanged(platform),
           ),
       ],
-    );
-  }
-}
-
-class _PlatformChip extends StatelessWidget {
-  const _PlatformChip({
-    required this.platform,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final MessagingPlatform platform;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ink = selected ? AppPalette.accent : AppPalette.textSecondary;
-    return Material(
-      color: selected ? AppSurface.accentWash : AppSurface.hoverFill,
-      borderRadius: BorderRadius.circular(11),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(11),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(platform.icon, size: 16, color: ink),
-              const SizedBox(width: 8),
-              Text(
-                platform.label,
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 13.5,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -156,7 +120,7 @@ class _PlatformPane extends ConsumerWidget {
         "Couldn't read your ${platform.label} setup: $error",
         style: TextStyle(color: Theme.of(context).colorScheme.error),
       ),
-      _ => const Center(child: CircularProgressIndicator()),
+      _ => const Center(child: AppSpinner(size: SpinnerSize.medium)),
     };
   }
 }
@@ -170,27 +134,20 @@ class _NoAgent extends ConsumerWidget {
     return SectionScaffold(
       title: 'Messages',
       subtitle: 'Message the assistant from your phone.',
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              "There's no assistant on this computer yet, so a bot would have "
-              'nothing to answer with. Install one, then come back here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppPalette.textSecondary),
-            ),
-            const SizedBox(height: 14),
-            FilledButton(
-              // Assistants are installed on the Assistants screen — sending the
-              // user to This computer left them on a page with no way to get
-              // the very thing this screen just asked for.
-              onPressed: () => ref
-                  .read(shellSectionProvider.notifier)
-                  .select(ShellSection.agents),
-              child: const Text('Install an assistant'),
-            ),
-          ],
+      child: EmptyState(
+        icon: LucideIcons.botMessageSquare,
+        title: 'No assistant on this computer',
+        message:
+            "There's no assistant on this computer yet, so a bot would have "
+            'nothing to answer with. Install one, then come back here.',
+        action: FilledButton(
+          // Assistants are installed on the Assistants screen — sending the
+          // user to This computer left them on a page with no way to get
+          // the very thing this screen just asked for.
+          onPressed: () => ref
+              .read(shellSectionProvider.notifier)
+              .select(ShellSection.agents),
+          child: const Text('Install an assistant'),
         ),
       ),
     );

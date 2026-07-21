@@ -68,7 +68,7 @@ class _PlatformConnectFormState extends ConsumerState<PlatformConnectForm> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (final step in platform.steps) _Step(step: step),
-            const SizedBox(height: 18),
+            const SizedBox(height: 24),
             for (final field in platform.credentials) ...[
               _Field(
                 controller: _fields[field.envKey]!,
@@ -76,28 +76,39 @@ class _PlatformConnectFormState extends ConsumerState<PlatformConnectForm> {
                 hint: field.hint,
                 obscure: true,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
             ],
             _Field(
               controller: _userId,
               label: platform.userIdLabel,
               hint: platform.userIdHint,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             _Honesty(platform: platform),
             if (_error != null) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               Text(
                 _error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
-            const SizedBox(height: 18),
+            const SizedBox(height: 24),
             Align(
               alignment: Alignment.centerLeft,
               child: FilledButton(
                 onPressed: _connecting ? null : _connect,
-                child: Text(_connecting ? 'Connecting…' : 'Connect'),
+                // A spinner in the button, not just a word — the label alone
+                // left "Connecting…" looking like a disabled button.
+                child: _connecting
+                    ? const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppSpinner.onAccent(size: SpinnerSize.small),
+                          SizedBox(width: 8),
+                          Text('Connecting…'),
+                        ],
+                      )
+                    : const Text('Connect'),
               ),
             ),
           ],
@@ -115,6 +126,7 @@ class _Honesty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final lines = [
       'Only the ids you list can message the bot. Anyone else is ignored.',
@@ -127,45 +139,49 @@ class _Honesty extends StatelessWidget {
           'messages. It starts up with this computer; disconnecting stops the '
           'bot answering, but leaves that program running.',
     ];
-    return DecoratedBox(
+    // Neither GlassCard style fits this one. `card` carries the indigo wash,
+    // aura and top hairline, and on a block of *caveats* that pulled more
+    // attention than the token fields above it. `inset` is the calm recess this
+    // wants, but it's built to sit *inside* a card — directly on the page it
+    // lands at 1.02:1 in light and effectively disappears.
+    //
+    // So: the neutral raised surface plus the shared lift. Fill alone separates
+    // by only ~1.1:1 here; the shadow is what actually does the layering.
+    return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(12),
+        color: AppGlass.surfaceFill,
+        borderRadius: BorderRadius.circular(AppCard.radius),
+        boxShadow: AppGlass.cardShadow,
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final line in lines)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Icon(
-                        Icons.info_outline_rounded,
-                        size: 14,
-                        color: AppPalette.textSecondary,
-                      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in lines)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.info_outline_rounded,
+                      size: 14,
+                      color: AppPalette.textSecondary,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        line,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textSecondary,
-                          height: 1.35,
-                        ),
-                      ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      line,
+                      style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -178,15 +194,24 @@ class _Step extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 11,
-            backgroundColor: AppPalette.cardBg,
+          // A recess, not a card: the number sits *into* the page rather than
+          // floating above it, and AppCard.inset is what reads as sunk in both
+          // themes.
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppCard.inset,
+              shape: BoxShape.circle,
+            ),
             child: Text(
               '${step.number}',
               style: TextStyle(
@@ -196,7 +221,7 @@ class _Step extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,6 +249,12 @@ class _Step extends StatelessWidget {
   }
 }
 
+/// A secret or an id, labelled the app's way: the label sits still above the
+/// field rather than floating into its rim.
+///
+/// Not [LabeledField] itself because a token field obscures its text, which that
+/// widget doesn't take — so it's built from the same two pieces [LabeledField]
+/// is, and matches it exactly.
 class _Field extends StatelessWidget {
   const _Field({
     required this.controller,
@@ -239,10 +270,18 @@ class _Field extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      decoration: InputDecoration(labelText: label, hintText: hint),
+    AppTheme.watch(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FieldLabel(label),
+        TextField(
+          controller: controller,
+          obscureText: obscure,
+          style: const TextStyle(fontSize: 14, height: 1.4),
+          decoration: labeledFieldDecoration(hint),
+        ),
+      ],
     );
   }
 }

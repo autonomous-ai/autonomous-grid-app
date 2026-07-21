@@ -8,6 +8,7 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../auto_router/presentation/auto_router_card.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/delete_network_controller.dart';
 import '../logic/grid_overview_provider.dart';
@@ -99,6 +100,18 @@ class _OverviewTab extends StatelessWidget {
         // The models it serves, and the nodes serving them. Each adds its own
         // leading gap and collapses to nothing when empty.
         const GridModelsSection(),
+        // Auto-routing sits directly under the models it routes between — it is
+        // a setting *about* them, and this is the grid's own page, which is the
+        // scope every `router` command actually carries (`--grid <id>`, never a
+        // node). It lived on "This computer" before, where it was the one
+        // control that outlived the machine being switched off.
+        //
+        // Owner-only, gated here rather than inside the card: AutoRouterCard
+        // leaves that to its caller (router commands are owner-level).
+        if (network.isOwner) ...[
+          const SizedBox(height: 18),
+          const AutoRouterCard(),
+        ],
         const GridNodesSection(),
         // Raw developer credentials are a consumer convenience; owners/providers
         // manage via the Engines tab and reach the guide from "Use this grid",
