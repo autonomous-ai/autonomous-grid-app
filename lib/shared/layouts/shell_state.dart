@@ -37,7 +37,12 @@ enum ShellSection {
     'Projects',
     thinIcon: LucideIcons.folderOpen300,
   ),
-  messages(LucideIcons.send, 'Messages', thinIcon: LucideIcons.send300),
+  messages(
+    LucideIcons.send,
+    'Messages',
+    thinIcon: LucideIcons.send300,
+    devOnly: true,
+  ),
   grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300, devOnly: true),
   engines(LucideIcons.server, 'This computer', thinIcon: LucideIcons.server300),
   guide(
@@ -106,10 +111,10 @@ const kSidebarSections = [ShellSection.scheduled, ShellSection.agents];
 /// Appearance is invisible to them either way.
 const kSettingsSections = [
   ShellSection.engines,
-  ShellSection.messages,
   ShellSection.guide,
   ShellSection.appearance,
   // dev only, so the order doesn't matter for end users: they don't see these rows at all.
+  ShellSection.messages,
   ShellSection.plugins,
   ShellSection.grids,
   ShellSection.debug,
