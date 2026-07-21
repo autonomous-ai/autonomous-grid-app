@@ -83,8 +83,8 @@ class OneEngineHereNote extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$reason Cloud providers above are unaffected — they run on '
-                  'the provider’s machines, not yours.',
+                  '$reason Cloud providers above still work — they run on the '
+                  'provider’s computers, not yours.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -196,42 +196,6 @@ class BuiltInUnavailableNote extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One line above the connect-a-server cards saying why none of them can start
-/// an engine right now. The cards stay filled in and readable — only Start is
-/// held — so the user can see what they'd connect once they stop the current one.
-class ConnectBlockedNote extends StatelessWidget {
-  const ConnectBlockedNote({super.key, required this.reason});
-
-  final String reason;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline,
-            size: 16,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              reason,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
             ),
           ),
         ],

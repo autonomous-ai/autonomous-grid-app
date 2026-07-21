@@ -29,15 +29,14 @@ ServingEngine? onDeviceEngine(List<ServingEngine> serving) {
   return null;
 }
 
-/// Why a form that connects a server on this computer can't start one right now,
-/// or null when it can. Names what is already sharing, so the way out (stop it
-/// above) is obvious rather than a greyed-out button.
+/// Why this computer can't take another engine of its own right now, or null
+/// when it can. Names what's already sharing, so the way out — stop that one —
+/// is in the sentence rather than left to the user to work out.
 String? connectBlockedReason(List<ServingEngine> serving) {
   final engine = onDeviceEngine(serving);
   if (engine == null) return null;
   return 'This computer is already sharing ${_engineLabel(engine)}. It runs '
-      'one engine at a time — stop that one above to share something else '
-      'from here.';
+      'one engine at a time — stop it above to share a different one.';
 }
 
 /// The advertised model names this machine already serves through hosted
