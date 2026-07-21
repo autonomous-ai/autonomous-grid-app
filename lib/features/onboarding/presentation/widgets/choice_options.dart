@@ -57,6 +57,7 @@ class SubscriptionOption extends ConsumerWidget {
       action: SoftActionButton(
         leading: const ChatGptLogo(size: 18),
         label: 'Continue',
+        compact: true,
         busy: starting,
         onPressed: () => ref
             .read(providerRunControllerProvider.notifier)
@@ -88,6 +89,7 @@ class LocalOption extends ConsumerWidget {
       action: SoftActionButton(
         leading: const Icon(Icons.download_rounded, size: 18),
         label: 'Download',
+        compact: true,
         busy: state is OnboardingInstallingLocal,
         onPressed: controller.chooseLocal,
       ),
@@ -130,6 +132,7 @@ class _ApiKeyOptionState extends ConsumerState<ApiKeyOption> {
       action: SoftActionButton(
         leading: const Icon(Icons.vpn_key_outlined, size: 18),
         label: 'Connect',
+        compact: true,
         onPressed: () => setState(() => _connecting = true),
       ),
       footer: _connecting

@@ -18,6 +18,7 @@ class SoftActionButton extends StatefulWidget {
     required this.label,
     required this.onPressed,
     this.busy = false,
+    this.compact = false,
   });
 
   /// The mark before the label — a vendor's logo at its own colours, or a plain
@@ -29,6 +30,11 @@ class SoftActionButton extends StatefulWidget {
   /// The action is under way: the mark gives way to a spinner and the button
   /// stops taking taps, so a second click can't start it twice.
   final bool busy;
+
+  /// A shorter pill for a button sitting inside a card. Full height is for a
+  /// screen's single call to action (the sign-in screens), where the button is
+  /// the only thing to press.
+  final bool compact;
 
   @override
   State<SoftActionButton> createState() => _SoftActionButtonState();
@@ -88,8 +94,10 @@ class _SoftActionButtonState extends State<SoftActionButton> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 140),
                 curve: Curves.easeOut,
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 22),
+                height: widget.compact ? 40 : 48,
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.compact ? 16 : 22,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: radius,
                   border: Border.all(color: border),
@@ -106,11 +114,11 @@ class _SoftActionButtonState extends State<SoftActionButton> {
                             : widget.leading,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: widget.compact ? 9 : 12),
                     Text(
                       widget.label,
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: widget.compact ? 14 : 15,
                         fontWeight: FontWeight.w600,
                         color: textColor,
                       ),
