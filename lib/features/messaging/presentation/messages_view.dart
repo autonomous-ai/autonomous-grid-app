@@ -175,17 +175,20 @@ class _NoAgent extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              "This computer isn't set up to answer chats yet, so there's "
-              'nothing for a bot to answer with.',
+              "There's no assistant on this computer yet, so a bot would have "
+              'nothing to answer with. Install one, then come back here.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppPalette.textSecondary),
             ),
             const SizedBox(height: 14),
             FilledButton(
+              // Assistants are installed on the Assistants screen — sending the
+              // user to This computer left them on a page with no way to get
+              // the very thing this screen just asked for.
               onPressed: () => ref
                   .read(shellSectionProvider.notifier)
-                  .select(ShellSection.engines),
-              child: const Text('Set up this computer'),
+                  .select(ShellSection.agents),
+              child: const Text('Install an assistant'),
             ),
           ],
         ),
