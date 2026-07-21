@@ -5,8 +5,6 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
-import '../../node_setup/logic/node_capabilities.dart';
-import '../../node_setup/logic/node_setup_plan.dart';
 
 /// The "you may use this grid, but not share on it" screen — a grid someone else
 /// owns and hasn't granted this account the provider role on.
@@ -255,8 +253,13 @@ class _WaysForward extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 14),
+          // One step, so it carries no number: a "1" with nothing after it
+          // promises a sequence that doesn't exist. The old step 2 pointed at
+          // the set-up card below, which this state no longer shows — preparing
+          // this computer with a multi-GB download readies you for something you
+          // still can't do here, and it read as the main action while the real
+          // way forward sat beside it.
           _Step(
-            number: 1,
             title: 'Share on a grid of your own',
             body:
                 'Every account has at least one grid it owns, and you can run '
@@ -268,8 +271,6 @@ class _WaysForward extends ConsumerWidget {
                 .select(ShellSection.grids),
             emphasised: true,
           ),
-          const SizedBox(height: 12),
-          const _PreparednessStep(),
           const SizedBox(height: 14),
           Text(
             'To share here instead, ask an owner of ${network.name} to give '
@@ -284,91 +285,22 @@ class _WaysForward extends ConsumerWidget {
   }
 }
 
-/// Step 2, told against what this computer has actually got.
+/// The way forward out of this state.
 ///
-/// It used to read "use the set-up below" unconditionally — but [NodeSetupCard]
-/// hides itself once the machine is fully equipped ([buildSetupPlan] comes back
-/// empty), so on a ready machine the sentence pointed at a card that wasn't
-/// there. Worse, it told someone who is already prepared to go and prepare.
-///
-/// So this reads [nodeCapabilitiesProvider] and says one of two true things:
-/// the machine still has a gap and the set-up below fills it, or it's ready and
-/// the only thing missing is permission.
-class _PreparednessStep extends ConsumerWidget {
-  const _PreparednessStep();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(context);
-    final caps = ref.watch(nodeCapabilitiesProvider).asData?.value;
-
-    // While the probe is still running we can't claim either state, so say the
-    // neutral half that holds regardless — no permission is needed to install.
-    if (caps == null) {
-      return const _Step.note(
-        number: 2,
-        title: 'Get this computer ready while you wait',
-        body:
-            'Setting up an engine only touches this computer — no grid '
-            'permission needed.',
-      );
-    }
-
-    // The same emptiness test NodeSetupCard uses to decide whether to appear,
-    // so the two can never contradict each other on screen.
-    final ready = buildSetupPlan(caps).isEmpty;
-    if (ready) {
-      return const _Step.note(
-        number: 2,
-        title: 'This computer is already set up',
-        body:
-            'An engine and a model are installed here, so you can start '
-            'sharing the moment you have permission — on this grid or your '
-            'own.',
-        done: true,
-      );
-    }
-    return const _Step.note(
-      number: 2,
-      title: 'Get this computer ready while you wait',
-      body:
-          'Setting up an engine only touches this computer — no grid '
-          'permission needed. Use “Set up this computer to run AI” below and '
-          'you’re ready the moment an owner grants you access.',
-    );
-  }
-}
-
-/// One numbered way forward. The numbers are real sequence — step 1 is what most
-/// people should do, step 2 is what to do meanwhile — not decoration.
+/// Was a numbered step in a two-step column. The second step pointed at the
+/// set-up card this state no longer shows, so the sequence — and with it the
+/// number, the tick-when-done marker, and the note variant that had no button —
+/// went with it. What's left is one card with one action.
 class _Step extends StatelessWidget {
   const _Step({
-    required this.number,
     required this.title,
     required this.body,
     required String this.action,
     required IconData this.icon,
     required VoidCallback this.onPressed,
     this.emphasised = false,
-  }) : done = false;
+  });
 
-  /// A step whose action lives elsewhere on the page — it explains and points,
-  /// rather than offering a button that would duplicate another card's flow.
-  const _Step.note({
-    required this.number,
-    required this.title,
-    required this.body,
-    this.done = false,
-  }) : action = null,
-       icon = null,
-       onPressed = null,
-       emphasised = false;
-
-  /// This step is already satisfied — its marker becomes a tick instead of a
-  /// number, so a settled state doesn't read as an outstanding task.
-  final bool done;
-
-  final int number;
   final String title;
   final String body;
   final String? action;
@@ -389,24 +321,21 @@ class _Step extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // The lead glyph, no longer a step number — it marks the card rather
+          // than counting it.
           Container(
             width: 20,
             height: 20,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: (done ? AppPalette.online : AppPalette.accentOnSurface)
-                  .withValues(alpha: 0.14),
+              color: AppPalette.accentOnSurface.withValues(alpha: 0.14),
             ),
-            child: done
-                ? Icon(Icons.check, size: 13, color: AppPalette.online)
-                : Text(
-                    '$number',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppPalette.accentOnSurface,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+            child: Icon(
+              Icons.arrow_forward_rounded,
+              size: 13,
+              color: AppPalette.accentOnSurface,
+            ),
           ),
           const SizedBox(width: 11),
           Expanded(

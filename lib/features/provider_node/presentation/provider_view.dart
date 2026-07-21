@@ -135,14 +135,14 @@ class _ServeSection extends ConsumerWidget {
           const SizedBox(height: 16),
         ]);
       } else {
+        // No set-up card here, deliberately. Installing an engine needs no grid
+        // permission, so it *could* be offered — but on a grid you can't share
+        // on, a multi-GB download prepares you for something you still can't do,
+        // and it read as the page's main call to action while the actual way
+        // forward (a grid of your own) sat beside it. [SharingLockedView] now
+        // carries the single next step instead.
         children.addAll([
-          // The set-up card below stays in place: installing an engine touches
-          // only this computer and needs no grid permission, so the wait is
-          // usable time. [SharingLockedView] points at it rather than offering
-          // its own install button.
           SharingLockedView(network: network),
-          const SizedBox(height: 16),
-          const NodeSetupCard(),
           const SizedBox(height: 16),
         ]);
       }
