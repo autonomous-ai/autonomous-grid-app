@@ -19,7 +19,17 @@ class EngineBlock extends StatelessWidget {
     required this.subtitle,
     required this.child,
     this.trailing,
+    this.headerless = false,
   });
+
+  /// Drop the icon/title/subtitle row, keeping only [trailing].
+  ///
+  /// For a block sitting directly under the add-engine picker: the pill already
+  /// names the path and its hint line already describes it, so the header
+  /// repeats both. "Cloud" was being said four times inside 150px — pill, hint,
+  /// title, subtitle. The cost chip stays, since it's the one fact none of the
+  /// others carry.
+  final bool headerless;
 
   final IconData icon;
   final String title;
@@ -35,6 +45,23 @@ class EngineBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
+    if (headerless) {
+      return EngineSurface(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // The cost chip alone, right-aligned so it reads as a property of
+            // the block rather than a heading for it.
+            if (trailing case final chip?) ...[
+              Align(alignment: Alignment.centerLeft, child: chip),
+              const SizedBox(height: 14),
+            ],
+            child,
+          ],
+        ),
+      );
+    }
+
     return EngineSurface(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

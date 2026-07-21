@@ -30,6 +30,7 @@ class PlatformConnectedPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final controller = ref.read(messagingProvider(platform).notifier);
     final theme = Theme.of(context);
 
@@ -44,30 +45,51 @@ class PlatformConnectedPanel extends ConsumerWidget {
               detail: detail,
               onStart: () => _act(context, controller.start),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 24),
             Text(
               'Who can message it',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 8),
-            for (final id in allowedUsers)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.person_outline_rounded,
-                      size: 16,
-                      color: AppPalette.textSecondary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(id, style: theme.textTheme.bodyMedium),
-                  ],
-                ),
+            const SizedBox(height: 12),
+            // The allowlist is the one thing keeping the bot yours, so the ids
+            // sit on a surface of their own rather than loose on the page. Same
+            // recipe as the status card above: an inset would be the natural
+            // choice, but it's built to sit inside a card and lands at 1.02:1
+            // directly on the page.
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
               ),
-            const SizedBox(height: 6),
+              decoration: BoxDecoration(
+                color: AppGlass.surfaceFill,
+                borderRadius: BorderRadius.circular(AppCard.radius),
+                boxShadow: AppGlass.cardShadow,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final id in allowedUsers)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline_rounded,
+                            size: 16,
+                            color: AppPalette.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(id, style: theme.textTheme.bodyMedium),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
               'Anyone else who finds the bot is ignored.',
               style: theme.textTheme.bodySmall?.copyWith(
@@ -106,50 +128,57 @@ class _Status extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final (:color, :icon, :title, :body) = _describe();
 
-    return DecoratedBox(
+    // Not a GlassCard in either style: `hero` and `card` both lay an indigo wash
+    // (hero's is merely stronger), and this card's whole job is to signal status
+    // in green or amber. Two colour stories in one box muddies the one signal
+    // the user came here to read. The neutral raised surface plus the shared
+    // lift keeps the status colour the only colour in the box.
+    return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(14),
+        color: AppGlass.surfaceFill,
+        borderRadius: BorderRadius.circular(AppCard.radius),
+        boxShadow: AppGlass.cardShadow,
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
+      child: Row(
+        children: [
+          // "Connecting" is a live state, so it gets the app's one heartbeat
+          // rather than a static glyph that looks stuck.
+          if (link == MessagingLink.connecting)
+            const AppSpinner(size: SpinnerSize.medium)
+          else
             Icon(icon, size: 20, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: color,
-                    ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: color,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    body,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppPalette.textSecondary,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  body,
+                  style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
+                ),
+              ],
             ),
-            // Only "not answering" is the user's to fix — connecting resolves on
-            // its own, and answering needs no action.
-            if (link == MessagingLink.notAnswering) ...[
-              const SizedBox(width: 12),
-              FilledButton(onPressed: onStart, child: const Text('Turn it on')),
-            ],
+          ),
+          // Only "not answering" is the user's to fix — connecting resolves on
+          // its own, and answering needs no action.
+          if (link == MessagingLink.notAnswering) ...[
+            const SizedBox(width: 12),
+            FilledButton(onPressed: onStart, child: const Text('Turn it on')),
           ],
-        ),
+        ],
       ),
     );
   }

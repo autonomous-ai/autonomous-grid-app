@@ -11,18 +11,20 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../auto_router/presentation/auto_router_card.dart';
 import '../../models/logic/advertise_name.dart';
 import '../../models/logic/engine_setup_controller.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../network/presentation/enable_provider_card.dart';
 import '../../network/presentation/sharing_locked_view.dart';
+import '../../node_setup/logic/node_capabilities.dart';
+import '../../node_setup/logic/node_setup_plan.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/backend_detector.dart';
 import '../logic/engine_slots.dart';
 import '../logic/ollama_launch_controller.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
+import 'add_engine_picker.dart';
 import 'api_engine_block.dart';
 import 'contribution_summary.dart';
 import 'engine_block.dart';
@@ -81,11 +83,21 @@ Future<void> _openInBrowser(String url) async {
 /// (ADR 0010), so this is a page, not a single running card: auto-routing at the
 /// top (owner-only), then what's already serving (each engine stoppable on its
 /// own), then the always-available ways to add another engine.
-class _ServeSection extends ConsumerWidget {
+class _ServeSection extends ConsumerStatefulWidget {
   const _ServeSection();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ServeSection> createState() => _ServeSectionState();
+}
+
+class _ServeSectionState extends ConsumerState<_ServeSection> {
+  /// Which add-engine form is open. Cloud leads: a hosted model needs no
+  /// download, so it's the fastest way onto a grid — the same reason the stacked
+  /// layout put it first.
+  AddEngineKind _adding = AddEngineKind.cloud;
+
+  @override
+  Widget build(BuildContext context) {
     final network = ref.watch(selectedNetworkProvider);
 
     // A sign-in join (codex OAuth) streams an authorize URL to approve — open it
@@ -100,14 +112,10 @@ class _ServeSection extends ConsumerWidget {
     if (network == null) {
       return const Text('Select a grid first from the Grids tab.');
     }
-    return ListView(children: _children(context, ref, network));
+    return ListView(children: _children(context, network));
   }
 
-  List<Widget> _children(
-    BuildContext context,
-    WidgetRef ref,
-    NetworkCredential network,
-  ) {
+  List<Widget> _children(BuildContext context, NetworkCredential network) {
     final run = ref.watch(providerRunControllerProvider);
     final serving = ref.watch(servingEnginesProvider);
 
@@ -207,13 +215,14 @@ class _ServeSection extends ConsumerWidget {
 
     children.addAll(_addEngineBlocks(network, serving));
 
-    // Auto-routing (the reserved `auto` model) is an owner-only control, so only
-    // the grid owner sees the card; members serve models without it. It sits
-    // after the engine blocks because it only does anything once models are
-    // running — it's a setting about them, not a way to add one.
-    if (network.isOwner) {
-      children.addAll([const SizedBox(height: 16), const AutoRouterCard()]);
-    }
+    // Auto-routing used to sit here. It has moved to the grid's own Overview
+    // (Grids tab), because it is a property of the *grid*, not of this computer:
+    // every router command carries `--grid <id>` and none carries a node, so
+    // turning it on here changed how every machine on the grid is routed and
+    // outlived this app being closed. On a page called "This computer", where
+    // everything else stops when the machine does, it was the one control that
+    // didn't — and once the add-engine paths became tabs, it had to repeat under
+    // all three, which is what made the mismatch visible.
     children.add(const SizedBox(height: 16));
     return children;
   }
@@ -238,30 +247,17 @@ class _ServeSection extends ConsumerWidget {
     NetworkCredential network,
     List<ServingEngine> serving,
   ) {
-    // Why a server on this computer can't be connected right now — null when
-    // one still can. Replaces every on-device form below when it's set.
+    // Why this computer can't take another engine of its own right now — null
+    // when it still can. From origin's shared rule rather than a local
+    // `serving.isNotEmpty` test: the constraint is *on-device* contention, so a
+    // grid served only by hosted engines leaves the machine free. The old test
+    // blocked the built-in whenever anything at all was serving, including a
+    // cloud engine that costs this computer nothing.
     final connectBlocked = connectBlockedReason(serving);
 
-    if (Platform.isWindows) {
-      // Windows can't host the built-in (llama.cpp) engine yet — offer BYO/API,
-      // cloud first.
-      return [
-        const AddEngineHeading(),
-        const SizedBox(height: 8),
-        ApiEngineBlock(network: network),
-        const SizedBox(height: 16),
-        if (connectBlocked != null)
-          OneEngineHereNote(reason: connectBlocked)
-        else ...[
-          const BuiltInUnavailableNote(),
-          const SizedBox(height: 16),
-          _ExternalServers(network: network),
-        ],
-      ];
-    }
-
     // The built-in local engine is serving → it's exclusive, so no engine can be
-    // added alongside it. Explain instead of offering forms that would fail.
+    // added alongside it. No picker here: with nothing addable, a chooser would
+    // offer three doors that are all shut.
     if (serving.any((engine) => engine.kind == EngineKind.local)) {
       return const [
         AddEngineHeading(),
@@ -270,40 +266,129 @@ class _ServeSection extends ConsumerWidget {
       ];
     }
 
-    final hasOtherEngines = serving.isNotEmpty;
+    // Windows has no built-in engine yet, so it isn't offered as a choice at
+    // all — a pill that can never be picked on this platform is worse than one
+    // that isn't there.
+    final kinds = Platform.isWindows
+        ? const [AddEngineKind.cloud, AddEngineKind.own]
+        : AddEngineKind.values;
+
+    // Selectable, but blocked right now. Both on-device paths share one reason,
+    // in origin's single voice — the built-in and a connected server compete for
+    // the same machine, so whichever is holding it is named once.
+    final unavailable = <AddEngineKind, String>{
+      if (connectBlocked != null) ...{
+        if (!Platform.isWindows) AddEngineKind.local: connectBlocked,
+        AddEngineKind.own: connectBlocked,
+      },
+    };
+
+    // A kind can stop being offered while it's selected (an engine starts on
+    // another path, or the platform list is shorter) — fall back rather than
+    // render an empty body.
+    final selected = kinds.contains(_adding) ? _adding : kinds.first;
+
+    // Engines already up on this machine. Surfaced on the pill because the
+    // chooser would otherwise hide them behind a tab nobody has a reason to
+    // open — the stacked layout showed a running Ollama unprompted.
+    // Counts exactly what the "Your own server" tab renders — `isExternal`, not
+    // `isExternal && running`. An installed-but-stopped Ollama still gets a card
+    // there (offering to start it), so filtering on `running` here showed a tab
+    // with one card behind a pill claiming none.
+    final detected =
+        ref
+            .watch(backendsProvider)
+            .asData
+            ?.value
+            .where((b) => b.isExternal)
+            .length ??
+        0;
+
     return [
-      const AddEngineHeading(),
-      const SizedBox(height: 8),
-      // Cloud providers first: a hosted model (OpenAI, or a Codex / ChatGPT
-      // subscription) needs no download, so it's the quickest way onto the grid.
-      ApiEngineBlock(network: network),
-      const SizedBox(height: 16),
-      // A server is already running here: the built-in can't join it and
-      // neither can another connected one, so both forms give way to the one
-      // note that says which engine is holding the machine.
-      if (connectBlocked != null)
-        OneEngineHereNote(reason: connectBlocked)
-      else ...[
-        // Only hosted engines are serving: the built-in still can't join them,
-        // but a local model behind its own server can — point there.
-        if (hasOtherEngines)
-          const LocalNeedsConnectNote()
-        else
+      // No "Add an engine" heading here: the picker directly below is the
+      // control that says so, and a label plus three labelled pills said it
+      // twice. The exclusive-local branch above keeps the heading — it has no
+      // picker to speak for it.
+      AddEnginePicker(
+        value: selected,
+        kinds: kinds,
+        unavailable: unavailable,
+        badges: {if (detected > 0) AddEngineKind.own: detected},
+        onChanged: (kind) => setState(() => _adding = kind),
+      ),
+      const SizedBox(height: 14),
+      ..._addEngineBody(
+        network,
+        selected,
+        connectBlocked: connectBlocked,
+        // Hosted engines don't hold the machine, but the built-in still can't
+        // join them — the middle state between "free" and "blocked".
+        hostedServing: serving.isNotEmpty,
+      ),
+    ];
+  }
+
+  /// The one open form, for the picked kind. Only this part changes when the
+  /// selection changes — the picker above it stays put.
+  List<Widget> _addEngineBody(
+    NetworkCredential network,
+    AddEngineKind kind, {
+    required String? connectBlocked,
+    required bool hostedServing,
+  }) {
+    switch (kind) {
+      case AddEngineKind.cloud:
+        // Hosted engines cost this machine nothing, so they stack however many
+        // are running — connectBlocked never gates this path.
+        return [ApiEngineBlock(network: network, headerless: true)];
+
+      case AddEngineKind.local:
+        if (Platform.isWindows) return const [BuiltInUnavailableNote()];
+        // Something is already holding this computer. One note, naming it, in
+        // origin's single voice — rather than each blocked path inventing its
+        // own sentence for the same fact.
+        if (connectBlocked != null) {
+          return [OneEngineHereNote(reason: connectBlocked)];
+        }
+
+        // Only hosted engines are serving. Nothing is holding the machine, so
+        // connectBlocked is null — but the built-in still can't join them
+        // (ADR 0007 D4), while a local model behind its own server can. Origin's
+        // third state, and dropping it would have shown a form that fails.
+        if (hostedServing) return const [LocalNeedsConnectNote()];
+
+        // This computer can't run a model yet — no engine, or no model on disk.
+        // Show *only* the set-up card: ServeLocalCard's own "Set up built-in
+        // engine" prompt was appearing directly above it, so the tab offered two
+        // blue buttons for the same goal. Worse, the upper one installs the
+        // engine alone and leaves you still unable to serve, while the card
+        // below fetches the engine *and* a model. The narrower fix was leading.
+        final plan = ref.watch(nodeCapabilitiesProvider).asData?.value;
+        if (plan != null && buildSetupPlan(plan).isNotEmpty) {
+          return const [NodeSetupCard()];
+        }
+
+        return [
           EngineBlock(
+            // Same as the cloud block: the pill above says "This computer" and
+            // its hint says what that means.
+            headerless: true,
             icon: Icons.dns_outlined,
             title: 'Local Engine',
             subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
             trailing: const EngineCostChip(cost: EngineCost.free),
             child: ServeLocalCard(network: network),
           ),
-        const SizedBox(height: 16),
-        _ExternalServers(network: network),
-        if (!hasOtherEngines) ...[
-          const SizedBox(height: 16),
-          const NodeSetupCard(),
-        ],
-      ],
-    ];
+        ];
+
+      case AddEngineKind.own:
+        // A connected server runs here too, so it competes for the same machine
+        // as the built-in — origin's rule blocks both, with the same sentence.
+        if (connectBlocked != null) {
+          return [OneEngineHereNote(reason: connectBlocked)];
+        }
+        return [_ExternalServers(network: network)];
+    }
   }
 }
 

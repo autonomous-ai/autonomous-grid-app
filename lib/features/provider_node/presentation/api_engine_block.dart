@@ -26,9 +26,15 @@ class ApiEngineBlock extends ConsumerWidget {
     super.key,
     required this.network,
     this.compact = false,
+    this.headerless = false,
   });
 
   final NetworkCredential network;
+
+  /// Drop the block's own icon/title/subtitle — see [EngineBlock.headerless].
+  /// Set by the Model Engines page, where the add-engine picker above already
+  /// names this path. Onboarding leaves it off: there the block stands alone.
+  final bool headerless;
 
   /// Trims the secondary copy (the model-freshness line) for a first-run
   /// context like onboarding, where the full form reads as a wall of text next
@@ -52,6 +58,9 @@ class ApiEngineBlock extends ConsumerWidget {
     // play rather than letting a second join fail or shadow the first.
     final alreadyShared = apiModelsServed(ref.watch(servingEnginesProvider));
     return EngineBlock(
+      // Under the add-engine picker the pill and its hint already name this
+      // path; the header would say "Cloud" a third and fourth time.
+      headerless: headerless,
       icon: Icons.cloud_outlined,
       title: 'Cloud Provider',
       // Every hosted engine spends the user's own vendor account per request —
@@ -282,9 +291,12 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
         ],
         const SizedBox(height: 12),
         Text(
+          // The "Billed to your own account" chip above already says who pays,
+          // so this keeps only what the chip doesn't carry: for a subscription,
+          // that the seat's allowance is what's spent; for a key, where the key
+          // lives and where prompts go.
           engine.provider.usesSignIn
-              ? 'Grid never bills you — requests use your subscription’s own '
-                    'allowance.'
+              ? 'Requests use your subscription’s own allowance.'
               : 'Your key stays on this computer; prompts go to '
                     '${engine.provider.label} for inference.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
