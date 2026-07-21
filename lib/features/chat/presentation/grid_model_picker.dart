@@ -24,15 +24,13 @@ const _rowIconSlot = 16.0;
 const _rowIconGap = 9.0;
 final _rowRadius = BorderRadius.circular(AppControl.radius);
 
-/// The hairline above a group heading. Named so a test can tell it apart from
-/// the identical rule under the search field — counting bare 1px containers
-/// would pass for the wrong reason.
-const groupRuleKey = ValueKey('grid-model-picker.group-rule');
-
-/// The composer's model control. A compact pill opens a searchable menu that
-/// lists every grid's models grouped under the grid's name — picking one switches
-/// the active grid and the model together, so choosing "who answers" is one
-/// decision rather than two dropdowns.
+/// The composer's model control: a compact pill that opens the list of models
+/// the grid you're on is serving.
+///
+/// It carried a search field and a grid-name heading back when it listed every
+/// grid you belong to. It lists one grid now — the active one — so the heading
+/// repeated the pill right under it, and the search stood between the user and a
+/// handful of rows they could already see.
 class GridModelPicker extends ConsumerStatefulWidget {
   const GridModelPicker({
     super.key,
@@ -214,9 +212,8 @@ class _TriggerButton extends StatelessWidget {
   }
 }
 
-/// The dropdown body: a search field over a scrollable list of models grouped by
-/// grid. Kept stateful for the live search query; the model catalog itself comes
-/// from [gridModelCatalogProvider].
+/// The dropdown body: the scrollable list of what this grid serves. Stateful for
+/// its own scroll controller; the models come from [gridModelCatalogProvider].
 class _ModelMenu extends ConsumerStatefulWidget {
   const _ModelMenu({
     required this.currentModelId,
@@ -233,27 +230,15 @@ class _ModelMenu extends ConsumerStatefulWidget {
 }
 
 class _ModelMenuState extends ConsumerState<_ModelMenu> {
-  final _search = TextEditingController();
   // Its own controller, not the ambient primary one: MenuAnchor wraps its
   // children in a scroll view of its own, so an inherited PrimaryScrollController
   // ends up with two ScrollPositions and the Scrollbar asserts.
   final _scroll = ScrollController();
-  String _query = '';
 
   @override
   void dispose() {
-    _search.dispose();
     _scroll.dispose();
     super.dispose();
-  }
-
-  void _onQueryChanged() => setState(() => _query = _search.text.trim());
-
-  bool _matches(PlaygroundModelOption option) {
-    if (_query.isEmpty) return true;
-    final q = _query.toLowerCase();
-    return option.label.toLowerCase().contains(q) ||
-        option.id.toLowerCase().contains(q);
   }
 
   @override
@@ -272,19 +257,14 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
     final settling = catalog.any((g) => g.status == GridModelStatus.loading);
 
     // A fixed width lets the menu's IntrinsicWidth size without measuring the
-    // list. The pinned search sits above a bounded, scrollable body — a
-    // SingleChildScrollView (unlike a lazy ListView) can be intrinsic-measured,
-    // so it's safe inside the menu.
+    // list. A SingleChildScrollView (unlike a lazy ListView) can be
+    // intrinsic-measured, so it's safe inside the menu.
     return SizedBox(
       width: 340,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SearchField(controller: _search, onChanged: _onQueryChanged),
-          // A hairline, not Material's default Divider — that one is a full-width
-          // rule in the theme's outline colour and cut the menu visibly in two.
-          Container(height: 1, color: AppGlass.hair),
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 300),
             child: SingleChildScrollView(
@@ -292,7 +272,7 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
               primary: false,
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: settling
-                  ? _LoadingRows(grids: catalog.length)
+                  ? const _LoadingRows()
                   : Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -308,29 +288,16 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
   List<Widget> _rows(List<GridModelGroup> catalog, String? currentGridId) {
     final rows = <Widget>[];
     for (final group in catalog) {
-      final matches = group.options.where(_matches).toList();
-      // With a query typed, hide grids that match nothing to keep the list tight.
-      if (_query.isNotEmpty && matches.isEmpty) continue;
-      // A ready grid serving nothing is just noise in a list you opened to pick
-      // a model from — four headers reading "No models available" pushed the
-      // grids that *do* serve something below the fold. Loading and offline
-      // still show: those say "not yet" and "something's wrong", which are
-      // answers to "why isn't my grid here?"; silently dropping them would make
-      // a grid the user knows they have look like it had been forgotten.
-      if (_query.isEmpty &&
-          matches.isEmpty &&
-          group.status == GridModelStatus.ready) {
+      // A grid with nothing to offer says why — loading, or offline. A *ready*
+      // one serving nothing has no row of its own to explain: the empty note
+      // below covers it, and a heading-less list has nothing to hang it under.
+      if (group.options.isEmpty) {
+        if (group.status != GridModelStatus.ready) {
+          rows.add(_InfoRow(status: group.status));
+        }
         continue;
       }
-      // "First" means the first header actually rendered, not the first grid in
-      // the catalog — the one above it may well have been filtered out, and a
-      // rule hanging above the top row would divide it from nothing.
-      rows.add(_GroupHeader(name: group.grid.name, first: rows.isEmpty));
-      if (matches.isEmpty) {
-        rows.add(_InfoRow(status: group.status));
-        continue;
-      }
-      for (final option in matches) {
+      for (final option in group.options) {
         rows.add(
           _OptionRow(
             option: option,
@@ -345,127 +312,14 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         );
       }
     }
-    // Everything got filtered out. With a query that means "no match"; without
-    // one it means every grid you have is serving nothing — a different fact,
-    // and the only case where the empty picker needs to explain itself.
+    // Nothing to pick — the one case where the empty picker has to explain
+    // itself rather than open onto a blank panel.
     if (rows.isEmpty) {
       rows.add(
-        _EmptyNote(
-          message: _query.isEmpty
-              ? 'No grid is serving a model right now.'
-              : 'No model matches “$_query”.',
-        ),
+        const _EmptyNote(message: "This grid isn't serving a model right now."),
       );
     }
     return rows;
-  }
-}
-
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.controller, required this.onChanged});
-
-  final TextEditingController controller;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads colour tokens; follow theme flips.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-      child: TextField(
-        controller: controller,
-        autofocus: true,
-        onChanged: (_) => onChanged(),
-        style: TextStyle(fontSize: 13, color: AppPalette.textPrimary),
-        decoration: InputDecoration(
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 9),
-          hintText: 'Search models',
-          hintStyle: TextStyle(fontSize: 13, color: AppPalette.textFaint),
-          prefixIcon: Icon(Icons.search, size: 16, color: AppPalette.textFaint),
-          prefixIconConstraints: const BoxConstraints(minWidth: 34),
-          // A recessed well rather than an outlined box: autofocus meant the
-          // field opened already focused, so an OutlineInputBorder lit its full
-          // 2px accent rim every single time the menu opened — the loudest thing
-          // on screen, reading as an error state rather than as a search box.
-          filled: true,
-          fillColor: AppSurface.recess,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: BorderSide(color: AppPalette.accent, width: 1),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GroupHeader extends StatelessWidget {
-  const _GroupHeader({required this.name, required this.first});
-
-  final String name;
-
-  /// The first group needs no rule above it — there's nothing to divide it from.
-  final bool first;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads colour tokens; follow theme flips.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // A hairline is what actually says "a new grid starts here". The header
-        // used to lean on its own text to do that, but a heading can only be
-        // read — a rule is *seen*, before you read anything, and it's what makes
-        // the list a set of blocks instead of one long column.
-        if (!first) ...[
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Container(
-              key: groupRuleKey,
-              height: 1,
-              color: AppGlass.hair,
-            ),
-          ),
-        ],
-        Padding(
-          padding: EdgeInsets.fromLTRB(14, first ? 6 : 10, 14, 5),
-          child: Row(
-            children: [
-              // The bolt is the grid's mark — it earns the brand gold here,
-              // where it labels a grid, rather than the same grey as the name.
-              Icon(Icons.bolt, size: 13, color: AppPalette.brandBolt),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  name.toUpperCase(),
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                    // textSecondary, not textFaint: this labels the rows under
-                    // it, and the faintest ink in the system sat *below* the
-                    // textPrimary of the very rows it was meant to introduce —
-                    // the heading was quieter than the thing it headed.
-                    color: AppPalette.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 }
 
@@ -591,86 +445,48 @@ Color modalityTone(PlaygroundModality modality) => switch (modality) {
   PlaygroundModality.video => AppPalette.brandBolt,
 };
 
-/// The menu's shape while the grids are still answering.
+/// The menu's shape while the grid is still answering.
 ///
-/// Mirrors what lands: a group heading over a couple of model rows, per grid.
-/// The point isn't decoration — it's that the list holds one height from open to
-/// settled, so nothing under the pointer moves out from under it.
+/// Mirrors what lands — a short column of model rows — so the list holds one
+/// height from open to settled and nothing moves out from under the pointer.
 class _LoadingRows extends StatelessWidget {
-  const _LoadingRows({required this.grids});
-
-  /// How many grids are in the catalog. Clamped: one grid still deserves a
-  /// list-shaped wait, and past three the menu scrolls anyway.
-  final int grids;
+  const _LoadingRows();
 
   @override
   Widget build(BuildContext context) {
-    final groups = grids.clamp(1, 3);
+    const rows = 3;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (var i = 0; i < groups; i++)
+        for (var r = 0; r < rows; r++)
           Opacity(
             // Fade down the column so the block reads as "more below" rather
             // than a slab that stops dead — the same trick SkeletonList uses.
-            opacity: 1 - (i / groups) * 0.5,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // The rule between groups is part of the shape now, so the wait
-                // carries it too — otherwise it appears out of nowhere on the
-                // frame the names land and shoves every row below it down.
-                if (i > 0) ...[
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: Container(height: 1, color: AppGlass.hair),
+            opacity: 1 - (r / rows) * 0.5,
+            child: Padding(
+              // Matches _OptionRow's own gutter + inner pad + row height, so a
+              // skeleton row occupies exactly what a model row will.
+              padding: const EdgeInsets.fromLTRB(
+                _rowGutter + _rowInnerPad,
+                5,
+                _rowInnerPad,
+                5,
+              ),
+              child: Row(
+                children: [
+                  // Every row carries a glyph, so the wait shows one too — an
+                  // empty slot here would collapse into the label the moment the
+                  // real icons landed.
+                  const Skeleton(
+                    width: _rowIconSlot,
+                    height: _rowIconSlot,
+                    radius: 4,
                   ),
+                  const SizedBox(width: _rowIconGap),
+                  Skeleton(width: r.isEven ? 150 : 116, height: 11, radius: 3),
                 ],
-                // Stands in for _GroupHeader: same box, same 13px bolt slot, so
-                // the heading doesn't hop when the name arrives.
-                Padding(
-                  padding: EdgeInsets.fromLTRB(14, i == 0 ? 6 : 10, 14, 5),
-                  child: Row(
-                    children: [
-                      const Skeleton(width: 13, height: 13, radius: 3),
-                      const SizedBox(width: 5),
-                      Skeleton(width: 60 + (i * 18), height: 9, radius: 3),
-                    ],
-                  ),
-                ),
-                for (var r = 0; r < 2; r++)
-                  Padding(
-                    // Matches _OptionRow's own gutter + inner pad + row height,
-                    // so a skeleton row occupies exactly what a model row will.
-                    padding: const EdgeInsets.fromLTRB(
-                      _rowGutter + _rowInnerPad,
-                      5,
-                      _rowInnerPad,
-                      5,
-                    ),
-                    child: Row(
-                      children: [
-                        // Every row carries a glyph now, so the wait shows one
-                        // too — an empty slot here would collapse into the label
-                        // the moment the real icons landed.
-                        const Skeleton(
-                          width: _rowIconSlot,
-                          height: _rowIconSlot,
-                          radius: 4,
-                        ),
-                        const SizedBox(width: _rowIconGap),
-                        Skeleton(
-                          width: r.isEven ? 150 : 116,
-                          height: 11,
-                          radius: 3,
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
       ],
@@ -704,9 +520,9 @@ class _EmptyNote extends StatelessWidget {
   }
 }
 
-/// A muted line shown under a grid header when it can't list its models yet:
-/// still loading, or unreachable. A ready grid serving nothing is filtered out
-/// of the menu entirely, so [GridModelStatus.ready] never reaches here.
+/// A muted line for a grid that can't list its models yet: still loading, or
+/// unreachable. A ready grid serving nothing falls to the empty note instead, so
+/// [GridModelStatus.ready] never reaches here.
 class _InfoRow extends StatelessWidget {
   const _InfoRow({required this.status});
 
@@ -724,9 +540,9 @@ class _InfoRow extends StatelessWidget {
     };
     return Padding(
       // Indented to the option rows' text, not their icon: this is the absence
-      // of rows, so it reads as a note under the grid rather than lining up as
-      // one more thing you could pick. Spelled as the sum of the row's own parts
-      // so it follows them; it used to be the hand-added answer, 29.
+      // of rows, so it reads as a note rather than lining up as one more thing
+      // you could pick. Spelled as the sum of the row's own parts so it follows
+      // them; it used to be the hand-added answer, 29.
       padding: const EdgeInsets.fromLTRB(
         _rowGutter + _rowInnerPad + _rowIconSlot + _rowIconGap,
         2,

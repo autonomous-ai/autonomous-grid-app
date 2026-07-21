@@ -73,7 +73,7 @@ void main() {
   final empty = _network('grid-empty', 'Empty Grid');
   final serving = _network('grid-serving', 'Serving Grid');
 
-  testWidgets('the list is skeletoned until every grid has answered', (
+  testWidgets('the list is skeletoned until the grid has answered', (
     tester,
   ) async {
     final slow = Completer<List<String>>();
@@ -107,24 +107,25 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Mid-flight: the shape is there, the grid's name is not.
+    // Mid-flight: the shape is there, the models are not.
     expect(find.byType(Skeleton), findsWidgets);
-    expect(find.text('SERVING GRID'), findsNothing);
+    expect(find.text('maker/m1'), findsNothing);
 
     slow.complete(const ['maker/m1']);
     await tester.pumpAndSettle();
 
     // Settled: skeleton gone, the real rows in its place.
     expect(find.byType(Skeleton), findsNothing);
-    expect(find.text('SERVING GRID'), findsOneWidget);
     expect(find.text('maker/m1'), findsOneWidget);
   });
 
-  testWidgets('with every grid empty, the menu says so once', (tester) async {
+  testWidgets('a grid serving nothing says so', (tester) async {
     await _openMenu(tester, grids: [empty], models: {'grid-empty': const []});
 
-    expect(find.text('EMPTY GRID'), findsNothing);
-    expect(find.text('No grid is serving a model right now.'), findsOneWidget);
+    expect(
+      find.text("This grid isn't serving a model right now."),
+      findsOneWidget,
+    );
   });
 
   testWidgets('each kind of row carries its own mark', (tester) async {
@@ -295,21 +296,5 @@ void main() {
       tester.widget<Tooltip>(find.byType(Tooltip)).message,
       'Choose which model answers',
     );
-  });
-
-  testWidgets('a search with no hit names the query', (tester) async {
-    await _openMenu(
-      tester,
-      grids: [serving],
-      models: {
-        'grid-serving': const ['maker/m1'],
-      },
-    );
-
-    await tester.enterText(find.byType(TextField), 'zzz');
-    await tester.pumpAndSettle();
-
-    expect(find.text('maker/m1'), findsNothing);
-    expect(find.text('No model matches “zzz”.'), findsOneWidget);
   });
 }
