@@ -104,6 +104,19 @@ const String kAutoModelId = 'auto';
 bool isRealChatModel(String id) =>
     id != kAutoModelId && mediaCapabilityLabel(id) == null;
 
+/// The models a grid can actually be asked something, out of the raw `/models`
+/// list: [ids] as they came, or **empty** when the virtual `auto` router is all
+/// there is.
+///
+/// A lone `auto` is an empty grid wearing a model's clothes — the relay
+/// advertises it whenever routing is on, with nothing behind it to route to, so
+/// listing it hands the user a model that answers nothing. Applied once at the
+/// source (`networkModelsForProvider`) so the chat picker, the playground, the
+/// messaging bot and every "no model yet" state agree. `auto` alongside real
+/// models is kept: there it routes to one of them. See [kAutoModelId].
+List<String> answerableModels(List<String> ids) =>
+    ids.every((id) => id == kAutoModelId) ? const [] : ids;
+
 /// Whether a model id is the image→video media capability — lets the model tile
 /// pick a video glyph over the image one without re-parsing the id.
 bool isVideoCapability(String id) => id == kCapI2V;

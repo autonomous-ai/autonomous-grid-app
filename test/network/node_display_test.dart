@@ -102,6 +102,29 @@ void main() {
     });
   });
 
+  group('answerableModels', () {
+    test('a grid whose only model is the auto router counts as having none — '
+        'the router has nothing behind it to answer with', () {
+      expect(answerableModels([kAutoModelId]), isEmpty);
+    });
+
+    test('the router is kept once real models exist, because then it routes '
+        'to one of them', () {
+      expect(answerableModels([kAutoModelId, 'qwen3-coder']), [
+        kAutoModelId,
+        'qwen3-coder',
+      ]);
+    });
+
+    test('a grid serving nothing at all stays empty', () {
+      expect(answerableModels(const []), isEmpty);
+    });
+
+    test('a normal model list passes through untouched', () {
+      expect(answerableModels(['qwen3-coder']), ['qwen3-coder']);
+    });
+  });
+
   test('isVideoCapability is true only for the i2v capability', () {
     expect(isVideoCapability('comfyui:i2v'), isTrue);
     expect(isVideoCapability('comfyui:image_generation'), isFalse);

@@ -82,7 +82,8 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
 ///
 /// The model list is the relay's OpenAI-standard `/models` ([networkModelsProvider]),
 /// the canonical list of what the grid serves — so the `auto` auto-routing model
-/// shows here too, not just node-advertised engines. The overview is read only
+/// shows here too, not just node-advertised engines, unless it is the only entry
+/// (a router with nothing behind it reads as no model). The overview is read only
 /// for the node comfyui capabilities behind the Image/Video modes (those never
 /// appear in `/models`).
 final playgroundModelsProvider =

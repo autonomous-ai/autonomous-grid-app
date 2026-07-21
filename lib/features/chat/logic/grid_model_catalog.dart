@@ -31,9 +31,10 @@ class GridModelGroup {
 /// Scoped to the active grid ([selectedNetworkProvider]): the picker shows only
 /// the grid you're on, so other grids' models stay hidden — and aren't probed.
 /// The chat model list is the relay's OpenAI-style `/models`
-/// ([networkModelsForProvider]) — the canonical list of what a grid can serve, so
-/// it includes the `auto` auto-routing model that the node-derived
-/// `/grid/overview` leaves out. The overview is still read, but only for the node
+/// ([networkModelsForProvider]) — the canonical list of what a grid can serve,
+/// already stripped of a lone `auto` router, so a grid with nothing behind the
+/// router shows "no model yet" instead of a model that can't answer. The
+/// overview is still read, but only for the node
 /// comfyui capabilities that power the Image/Video modes (those never appear in
 /// `/models`); it's best-effort, so the chat models never wait on it. Empty when
 /// no grid is selected.

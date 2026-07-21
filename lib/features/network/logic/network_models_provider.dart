@@ -3,16 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/relay_api_client.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../auth/logic/session_controller.dart';
+import 'node_display.dart';
 
 /// Models a grid serves, via the relay's OpenAI-style `GET {relayBaseUrl}/models`
 /// (the `inference:models` scope). Keyed by network id so every grid in the
 /// picker can be probed in parallel, independent of which one is selected.
 ///
-/// This is the **canonical list of what you can chat with** — it carries
-/// everything the relay actually serves, including the `auto` auto-routing model
-/// (ADR 0013), which the node-derived `/grid/overview` does not advertise. The
-/// chat model picker reads this so a routing-only grid (no local engine, just
-/// `auto`) still lists a model instead of showing "No models available".
+/// This is the **canonical list of what you can chat with**: what the relay
+/// serves, including the `auto` auto-routing model (ADR 0013) that the
+/// node-derived `/grid/overview` leaves out — except when `auto` is the *only*
+/// thing on the list. A grid with nothing but the router has nothing to route
+/// to, so it reads as empty here rather than offering a model that answers
+/// nothing. Filtering at the source ([answerableModels]) keeps the chat picker,
+/// the playground, the messaging bot and every "no model yet" state agreeing.
 ///
 /// Returns empty — never throws — when no provider is online, the token lacks the
 /// inference scope, or the relay is unreachable, so the UI never blanks out.
@@ -37,7 +40,7 @@ final networkModelsForProvider = FutureProvider.autoDispose
           apiKey: network.relayApiKey,
         );
         log.finish(id, exitCode: 200);
-        return ids;
+        return answerableModels(ids);
       } on RelayUnavailable catch (e) {
         log.finish(
           id,

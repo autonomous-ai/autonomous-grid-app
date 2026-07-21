@@ -115,6 +115,12 @@ void main() {
       expect(await _readModels(c), ['a', 'b']);
     });
 
+    test('a relay advertising only the auto router resolves to no models, so '
+        'the app never offers a model that cannot answer', () async {
+      final c = _container(_FakeRelayApiClient(models: ['auto']));
+      expect(await _readModels(c), isEmpty);
+    });
+
     test('falls back to empty when the relay is unavailable', () async {
       final c = _container(
         _FakeRelayApiClient(error: const RelayUnavailable(statusCode: 401)),
