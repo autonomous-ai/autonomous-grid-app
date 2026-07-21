@@ -60,7 +60,7 @@ class ApiEngineBlock extends ConsumerWidget {
       subtitle: hasSignIn
           ? 'Your own API key or ChatGPT subscription — no model download.'
           : 'A hosted provider with your own API key — no model download.',
-      child: _ApiEngineForm(
+      child: ApiEngineForm(
         network: network,
         engines: available,
         alreadyShared: alreadyShared,
@@ -74,8 +74,14 @@ class ApiEngineBlock extends ConsumerWidget {
 /// which models to share, and start. The key travels to the CLI via the
 /// environment (never argv), and a key the CLI already saved lets the user start
 /// again without re-pasting.
-class _ApiEngineForm extends ConsumerStatefulWidget {
-  const _ApiEngineForm({
+///
+/// Public because onboarding presents the same form under its own cards — one
+/// per way in (a ChatGPT subscription, a pasted key) — instead of the single
+/// "Cloud Provider" block with a provider dropdown that this screen uses. Hand
+/// it the [engines] that card is about; with one, it drops the dropdown.
+class ApiEngineForm extends ConsumerStatefulWidget {
+  const ApiEngineForm({
+    super.key,
     required this.network,
     required this.engines,
     required this.alreadyShared,
@@ -91,10 +97,10 @@ class _ApiEngineForm extends ConsumerStatefulWidget {
   final bool compact;
 
   @override
-  ConsumerState<_ApiEngineForm> createState() => _ApiEngineFormState();
+  ConsumerState<ApiEngineForm> createState() => _ApiEngineFormState();
 }
 
-class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
+class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
   final _key = TextEditingController();
   late String _kind = _defaultKind(widget.engines);
   late Set<String> _selected = _shareable(_engine);
