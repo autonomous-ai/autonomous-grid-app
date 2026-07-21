@@ -2,23 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../infrastructure/state/onboarding_store.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_spinner.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../network/presentation/add_member_dialog.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
-import '../../provider_node/presentation/api_engine_block.dart';
-import '../../provider_node/presentation/engine_block.dart';
 import '../logic/onboarding_choice_controller.dart';
+import 'widgets/choice_options.dart';
 
 /// First-run choice: the user's grid has no model to chat with yet, so ask how
-/// it should get one — run a model on this computer, connect a hosted provider
-/// (OpenAI) with an API key, or invite a teammate to bring one online. There's
-/// always a way in without committing ("set this up later"), so the screen is a
-/// fork, not a wall.
+/// it should get one.
+///
+/// Three cards, in the order they cost the user something — sign in with a
+/// ChatGPT subscription (nothing to fetch or find), run a model on this computer
+/// (a download), paste an API key (folded away; it's the answer for someone who
+/// already has one). Asking a teammate and deciding later are lines underneath,
+/// because neither gets this grid a model today. Every card hides itself when
+/// this machine or the installed CLI can't offer it, and there's always a way
+/// past — the screen is a fork, not a wall.
 class OnboardingChoiceScreen extends ConsumerWidget {
   const OnboardingChoiceScreen({super.key});
 
@@ -76,30 +77,29 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  // One card per way in, quickest first: sign in with a
+                  // subscription, run a model here, or paste a key. Each hides
+                  // itself when this computer or the installed CLI can't offer
+                  // it, so the screen never shows a road that leads nowhere.
+                  if (network != null) SubscriptionOption(network: network),
+                  if (ref.watch(supportsBuiltInEngineProvider))
+                    const LocalOption(),
                   if (network != null) ...[
-                    // The Cloud-Provider block hides itself when the installed CLI
-                    // whitelists no hosted provider, so it may render nothing.
-                    // Compact here: onboarding is a lean fork, not the full
-                    // Model Engines config screen.
-                    ApiEngineBlock(network: network, compact: true),
-                    const _CloudStartError(),
-                    const SizedBox(height: 12),
+                    ApiKeyOption(network: network),
+                    const CloudStartError(),
                   ],
-                  if (ref.watch(supportsBuiltInEngineProvider)) ...[
-                    const _LocalOption(),
-                    const SizedBox(height: 12),
-                  ],
-                  if (network != null && network.isOwner) ...[
-                    _InviteOption(network: network),
-                    const SizedBox(height: 12),
-                  ],
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
+                  // The fourth way in — someone else's computer — is a line
+                  // rather than a card: it's the only one that doesn't get the
+                  // grid a model today, and it's an owner's option alone.
+                  if (network != null && network.isOwner)
+                    InviteLine(network: network),
                   Center(
                     child: TextButton(
                       onPressed: () => ref
                           .read(onboardingChoiceControllerProvider.notifier)
                           .chooseLater(),
-                      child: const Text("I'll set this up later"),
+                      child: const Text('Skip for now'),
                     ),
                   ),
                 ],
@@ -119,156 +119,4 @@ Future<void> _openInBrowser(String url) async {
   final uri = Uri.tryParse(url);
   if (uri == null) return;
   await launchUrl(uri, mode: LaunchMode.externalApplication);
-}
-
-/// The reason the last cloud "Sign in & share" didn't take, shown under the
-/// Cloud-Provider block. Without it a failed join leaves the user staring at an
-/// unchanged screen — e.g. trying to share on a grid they only consume on, where
-/// the humanised message says exactly that (see `_humanizeJoinFailure`). Renders
-/// nothing until there's a failure.
-class _CloudStartError extends ConsumerWidget {
-  const _CloudStartError();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final run = ref.watch(providerRunControllerProvider);
-    if (run is! ProviderRunFailed) return const SizedBox.shrink();
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        run.message,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.error,
-        ),
-      ),
-    );
-  }
-}
-
-/// Run a model on this computer: installs the engine here, then the model
-/// downloads in the background and shares itself once the user is in.
-class _LocalOption extends ConsumerWidget {
-  const _LocalOption();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(onboardingChoiceControllerProvider);
-    final controller = ref.read(onboardingChoiceControllerProvider.notifier);
-
-    return EngineBlock(
-      icon: Icons.computer_outlined,
-      title: 'Run a model on this computer',
-      subtitle:
-          'Private and free to use. Downloads a model (several GB) in the '
-          'background after setup, then shares it on your grid.',
-      child: switch (state) {
-        OnboardingInstallingLocal() => const _BusyRow(
-          label: 'Setting up the engine…',
-        ),
-        OnboardingLocalFailed(:final message) => _FailedRow(
-          message: message,
-          onRetry: controller.chooseLocal,
-        ),
-        OnboardingChoiceIdle() => Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: controller.chooseLocal,
-            icon: const Icon(Icons.download, size: 18),
-            label: const Text('Set this up'),
-          ),
-        ),
-      },
-    );
-  }
-}
-
-/// Invite a teammate to bring a model online — the field is pre-filled with the
-/// inviter's own email domain so they only type the person's name.
-class _InviteOption extends ConsumerWidget {
-  const _InviteOption({required this.network});
-
-  final NetworkCredential network;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final prefill = inviteDomainPrefill(ref.watch(sessionProvider).userEmail);
-
-    return EngineBlock(
-      icon: Icons.group_add_outlined,
-      title: 'Invite a teammate',
-      subtitle: prefill == null
-          ? 'Ask someone else to run a model, so your whole grid can use it.'
-          : 'Ask someone at $prefill to run a model, so your whole grid can '
-                'use it.',
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
-          onPressed: () => AddMemberDialog.show(
-            context,
-            network.networkId,
-            initialEmail: prefill,
-          ),
-          icon: const Icon(Icons.mail_outline, size: 18),
-          label: const Text('Invite someone'),
-        ),
-      ),
-    );
-  }
-}
-
-/// A spinner + label while the local engine installs.
-class _BusyRow extends StatelessWidget {
-  const _BusyRow({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const AppSpinner(),
-        const SizedBox(width: 12),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// The local install failed — the plain reason plus a retry.
-class _FailedRow extends StatelessWidget {
-  const _FailedRow({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          message,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.error,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('Try again'),
-          ),
-        ),
-      ],
-    );
-  }
 }
