@@ -24,16 +24,15 @@ List<ApiEngine> keyEngines(List<ApiEngine> engines) => [
     if (!engine.provider.usesSignIn) engine,
 ];
 
-/// "Bring your own OpenAI key" — the API-key card's subtitle, naming the
+/// "Bring your own OpenAI key" — the API-key card's one line, naming the
 /// providers this CLI can actually serve rather than a hopeful list. Empty when
 /// there are none, which is also when the card isn't shown.
-String apiKeyCardSubtitle(List<ApiEngine> engines) {
+String apiKeyCardLine(List<ApiEngine> engines) {
   final names = [
     for (final engine in keyEngines(engines)) engine.provider.label,
   ];
   if (names.isEmpty) return '';
-  return 'Bring your own ${_joined(names)} key. Requests are billed to that '
-      'account, never by Grid.';
+  return 'Bring your own ${_joined(names)} key';
 }
 
 /// `a`, `a or b`, `a, b or c` — an English list, so the subtitle reads as a

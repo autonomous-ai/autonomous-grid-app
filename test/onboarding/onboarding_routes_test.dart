@@ -40,21 +40,18 @@ void main() {
   });
 
   group('the key card names the providers this CLI can actually serve', () {
-    test('one provider reads as a sentence', () {
-      expect(
-        apiKeyCardSubtitle([_codex, _openai]),
-        startsWith('Bring your own OpenAI key.'),
-      );
+    test('one provider reads as a line, not a paragraph', () {
+      expect(apiKeyCardLine([_codex, _openai]), 'Bring your own OpenAI key');
     });
 
     test('several are listed with "or", so the card never over-promises the '
         'ones the CLI does not whitelist', () {
-      final subtitle = apiKeyCardSubtitle([_openai, _anthropic]);
+      final subtitle = apiKeyCardLine([_openai, _anthropic]);
       expect(subtitle, contains('OpenAI or Anthropic key'));
     });
 
     test('no key provider yields nothing to say — the card is hidden then', () {
-      expect(apiKeyCardSubtitle([_codex]), isEmpty);
+      expect(apiKeyCardLine([_codex]), isEmpty);
     });
   });
 }
