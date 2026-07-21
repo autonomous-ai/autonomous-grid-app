@@ -64,14 +64,10 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Bring a model to your grid',
-                    style: theme.textTheme.headlineSmall,
-                  ),
+                  Text('Get started', style: theme.textTheme.headlineSmall),
                   const SizedBox(height: 6),
                   Text(
-                    'Your grid has nothing to chat with yet. Choose how it gets '
-                    'a model — you can change this later.',
+                    'Choose how you want to chat.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -88,7 +84,7 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                     ApiKeyOption(network: network),
                     const CloudStartError(),
                   ],
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   // The fourth way in — someone else's computer — is a line
                   // rather than a card: it's the only one that doesn't get the
                   // grid a model today, and it's an owner's option alone.
@@ -99,7 +95,7 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                       onPressed: () => ref
                           .read(onboardingChoiceControllerProvider.notifier)
                           .chooseLater(),
-                      child: const Text('Skip for now'),
+                      child: const Text('Skip'),
                     ),
                   ),
                 ],
