@@ -413,7 +413,10 @@ class _AdvisorRow extends StatelessWidget {
                   width: 28,
                   child: rank != null && rank! > 1
                       ? IconButton(
-                          icon: const Icon(Icons.arrow_upward_rounded, size: 15),
+                          icon: const Icon(
+                            Icons.arrow_upward_rounded,
+                            size: 15,
+                          ),
                           tooltip: 'Try this one earlier',
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
@@ -497,11 +500,7 @@ class _ErrorNote extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.error_outline_rounded,
-              size: 22,
-              color: AppPalette.warn,
-            ),
+            Icon(Icons.error_outline_rounded, size: 22, color: AppPalette.warn),
             const SizedBox(height: 10),
             Text(
               "Couldn't load the advisor list.",

@@ -49,7 +49,9 @@ class ShelfModelTile extends ConsumerWidget {
             active: model.isDownloaded,
           ),
           const SizedBox(width: 12),
-          Expanded(child: _Lines(model: model, inUse: inUse)),
+          Expanded(
+            child: _Lines(model: model, inUse: inUse),
+          ),
           const SizedBox(width: 12),
           _Action(model: model, inUse: inUse),
         ],
@@ -87,10 +89,7 @@ class _Lines extends StatelessWidget {
                 ),
               ),
             ),
-            if (inUse) ...[
-              const SizedBox(width: 8),
-              _RunningTag(),
-            ],
+            if (inUse) ...[const SizedBox(width: 8), _RunningTag()],
           ],
         ),
         const SizedBox(height: 4),

@@ -78,16 +78,3 @@ class OnboardingChoiceController extends Notifier<OnboardingChoiceState> {
       .read(onboardingDecisionProvider.notifier)
       .decide(OnboardingDecision.later);
 }
-
-/// A polite pre-fill for the invite field: the user's own email domain with an
-/// `@`, so they only type the teammate's name — e.g. `dev@autonomous.ai` →
-/// `@autonomous.ai`. Null when there's no usable domain (no email, or a
-/// malformed one), so the field stays a plain placeholder rather than a lone
-/// `@`.
-String? inviteDomainPrefill(String? email) {
-  if (email == null) return null;
-  final at = email.lastIndexOf('@');
-  if (at < 0 || at == email.length - 1) return null;
-  final domain = email.substring(at + 1).trim();
-  return domain.isEmpty ? null : '@$domain';
-}

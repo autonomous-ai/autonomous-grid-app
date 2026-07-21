@@ -9,6 +9,7 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/layouts/widgets/theme_mode_picker.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/brand_sign_in_button.dart';
 import '../../network/presentation/detail_widgets.dart';
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
@@ -385,19 +386,25 @@ class _SignInState extends State<_SignIn> with SingleTickerProviderStateMixin {
               const _SessionExpiredBadge(),
               const SizedBox(height: 10),
             ],
-            Text(
-              // With the badge already naming the expiry, the subtitle is just
-              // the next action — so it doesn't say "expired" twice.
-              widget.sessionExpired
-                  ? 'Sign in again to continue.'
-                  : 'One private endpoint for the AI models you run.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            // No subtitle when the session expired: the badge above already
+            // says what happened, and the button below is the only thing to do
+            // about it — a line between them just repeated the beat.
+            if (!widget.sessionExpired) ...[
+              Text(
+                'One private endpoint for the AI models you run.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
+              const SizedBox(height: 28),
+            ] else
+              const SizedBox(height: 18),
+            BrandSignInButton(
+              logo: const GoogleLogo(size: 18),
+              label: 'Sign in with Google',
+              onPressed: widget.onSignIn,
             ),
-            const SizedBox(height: 28),
-            _GoogleSignInButton(onPressed: widget.onSignIn),
             if (widget.error != null) ...[
               const SizedBox(height: 16),
               Text(
@@ -500,100 +507,6 @@ class _LogoWithGlowState extends State<_LogoWithGlow>
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// The Google OAuth button — a real "Sign in with Google" control: white
-/// surface, hairline rim, the four-colour "G", and a soft lift. Deliberately
-/// not a `FilledButton` in the app accent: an OAuth button is expected to look
-/// like Google's, and a white pill with the G reads as the trusted, official
-/// path far more than an indigo one.
-class _GoogleSignInButton extends StatefulWidget {
-  const _GoogleSignInButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  State<_GoogleSignInButton> createState() => _GoogleSignInButtonState();
-}
-
-class _GoogleSignInButtonState extends State<_GoogleSignInButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    // Google's guidance is a white button with dark text on light surfaces; on
-    // our dark charcoal we lift to a slightly raised surface so it stays a
-    // distinct, tappable pill instead of sinking into the background.
-    final base = AppTheme.pick(Colors.white, const Color(0xFF2A2A2A));
-    // On hover the surface shifts one quiet step — a hair grey on white, a hair
-    // brighter on charcoal — the small "yes, this is clickable" a desktop user
-    // expects from a pointer.
-    final hoverSurface = AppTheme.pick(
-      const Color(0xFFF7F7F6),
-      const Color(0xFF333333),
-    );
-    final surface = _hovered ? hoverSurface : base;
-    // The rim firms up on hover — the plain hairline lifts to the more present
-    // [AppGlass.lift] rim, so the pill's edge sharpens as it rises.
-    final border = _hovered ? AppGlass.lift : AppGlass.hair;
-    final textColor = AppTheme.pick(
-      const Color(0xFF1F1F1F),
-      const Color(0xFFF5F5F5),
-    );
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      // Rise a single pixel to meet the cursor — enough to feel physical, small
-      // enough never to look like the button jumped.
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOut,
-        offset: _hovered ? const Offset(0, -0.021) : Offset.zero,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOut,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            // A touch more lift on hover, so the pill rises to meet the cursor.
-            boxShadow: _hovered ? AppGlass.shadow : AppGlass.cardShadow,
-          ),
-          child: Material(
-            color: surface,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: widget.onPressed,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                curve: Curves.easeOut,
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 22),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: border),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const GoogleLogo(size: 18),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Sign in with Google',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: textColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

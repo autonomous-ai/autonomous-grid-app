@@ -11,29 +11,15 @@ import '../logic/member_providers.dart';
 
 /// Modal to invite a member to a managed grid via the control-plane API.
 /// Open with [AddMemberDialog.show]; it refreshes the members list itself.
-///
-/// [initialEmail] pre-fills the field — onboarding passes the inviter's own
-/// domain (`@company.com`) so they only type the teammate's name — with the
-/// cursor at the start, ready for that name.
 class AddMemberDialog extends ConsumerStatefulWidget {
-  const AddMemberDialog({
-    super.key,
-    required this.networkId,
-    this.initialEmail,
-  });
+  const AddMemberDialog({super.key, required this.networkId});
 
   final String networkId;
-  final String? initialEmail;
 
-  static Future<void> show(
-    BuildContext context,
-    String networkId, {
-    String? initialEmail,
-  }) {
+  static Future<void> show(BuildContext context, String networkId) {
     return showDialog<void>(
       context: context,
-      builder: (_) =>
-          AddMemberDialog(networkId: networkId, initialEmail: initialEmail),
+      builder: (_) => AddMemberDialog(networkId: networkId),
     );
   }
 
@@ -42,9 +28,7 @@ class AddMemberDialog extends ConsumerStatefulWidget {
 }
 
 class _AddMemberDialogState extends ConsumerState<AddMemberDialog> {
-  late final _email = TextEditingController(text: widget.initialEmail ?? '')
-    // Sit before a pre-filled `@domain` so the first keystroke is the name.
-    ..selection = const TextSelection.collapsed(offset: 0);
+  final _email = TextEditingController();
   bool _submitting = false;
   String? _error;
 

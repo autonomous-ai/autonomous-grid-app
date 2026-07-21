@@ -59,10 +59,7 @@ class PlatformConnectedPanel extends ConsumerWidget {
             // choice, but it's built to sit inside a card and lands at 1.02:1
             // directly on the page.
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
                 color: AppGlass.surfaceFill,
                 borderRadius: BorderRadius.circular(AppCard.radius),

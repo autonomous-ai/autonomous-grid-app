@@ -20,32 +20,6 @@ NodeCapabilities _readyCaps() => const NodeCapabilities(
 );
 
 void main() {
-  group(
-    'inviteDomainPrefill — pre-fill the invite with the inviter’s domain',
-    () {
-      test('offers the domain so only the name is left to type', () {
-        expect(inviteDomainPrefill('dev@autonomous.ai'), '@autonomous.ai');
-      });
-
-      test('is null with no email — the field stays a plain placeholder', () {
-        expect(inviteDomainPrefill(null), isNull);
-      });
-
-      test('is null for a malformed email rather than a lone "@"', () {
-        expect(inviteDomainPrefill('no-at-sign'), isNull);
-        expect(inviteDomainPrefill('trailing@'), isNull);
-      });
-
-      test(
-        'uses the last "@" so a plus-addressed local part is not mistaken for '
-        'the domain',
-        () {
-          expect(inviteDomainPrefill('a@b@company.com'), '@company.com');
-        },
-      );
-    },
-  );
-
   group('OnboardingChoiceController', () {
     late Directory tmp;
     late File storeFile;

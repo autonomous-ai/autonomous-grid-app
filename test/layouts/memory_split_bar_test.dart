@@ -5,11 +5,7 @@ import 'package:grid_app/shared/layouts/widgets/memory_split_bar.dart';
 import 'package:grid_app/shared/theme/app_theme.dart';
 
 OverviewNode _node({required String name, double? vramGb}) =>
-    OverviewNode.fromJson({
-      'name': name,
-      'online': true,
-      'vram_gb': ?vramGb,
-    });
+    OverviewNode.fromJson({'name': name, 'online': true, 'vram_gb': ?vramGb});
 
 Future<void> _pump(WidgetTester tester, List<NodeSlice> slices) async {
   await tester.pumpWidget(
@@ -104,10 +100,7 @@ void main() {
 
       await _pump(tester, slices);
 
-      expect(
-        tester.getSize(_slices.at(1)).width,
-        MemorySplitBar.minSliceWidth,
-      );
+      expect(tester.getSize(_slices.at(1)).width, MemorySplitBar.minSliceWidth);
     });
 
     testWidgets('widths still fill the bar exactly after a floor lift', (
@@ -154,11 +147,10 @@ void main() {
         _node(name: 'c', vramGb: 30),
       ], 100);
 
-      expect([for (final s in slices) s.color], [
-        kSliceColors[0],
-        kSliceColors[1],
-        kSliceColors[2],
-      ]);
+      expect(
+        [for (final s in slices) s.color],
+        [kSliceColors[0], kSliceColors[1], kSliceColors[2]],
+      );
     });
 
     test('fractions sum to the whole', () {
@@ -209,10 +201,10 @@ void main() {
         _node(name: 'MacBooks-MacBook-Pro-6.local', vramGb: 32),
       ], 96);
 
-      expect([for (final s in slices) s.label], [
-        'MacBook-Pro-6',
-        'MacBook-Pro-6.local',
-      ]);
+      expect(
+        [for (final s in slices) s.label],
+        ['MacBook-Pro-6', 'MacBook-Pro-6.local'],
+      );
     });
 
     test('is empty when nothing reports memory', () {

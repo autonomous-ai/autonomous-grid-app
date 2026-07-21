@@ -55,11 +55,7 @@ enum AddEngineKind {
 /// The count rides inside the pill rather than as a floating dot, so it reads as
 /// "this tab has 2 things" instead of an alert.
 class _PillLabel extends StatelessWidget {
-  const _PillLabel({
-    required this.text,
-    required this.selected,
-    this.badge,
-  });
+  const _PillLabel({required this.text, required this.selected, this.badge});
 
   final String text;
   final bool selected;
@@ -169,9 +165,7 @@ class AddEnginePicker extends StatelessWidget {
           style: TextStyle(
             fontSize: 12.5,
             height: 1.35,
-            color: blocked != null
-                ? AppPalette.warn
-                : AppPalette.textSecondary,
+            color: blocked != null ? AppPalette.warn : AppPalette.textSecondary,
           ),
         ),
       ],

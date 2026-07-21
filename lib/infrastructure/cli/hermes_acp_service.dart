@@ -314,7 +314,9 @@ class _HermesAcpSession implements HermesAcpSession {
   String get _stderrTail {
     final lines = _stderr.where((l) => !_isNoise(l)).toList();
     if (lines.isEmpty) return '';
-    return lines.length <= 3 ? lines.join(' ') : lines.sublist(lines.length - 3).join(' ');
+    return lines.length <= 3
+        ? lines.join(' ')
+        : lines.sublist(lines.length - 3).join(' ');
   }
 
   /// Routine `[INFO]`/`[DEBUG]` progress chatter, which would otherwise crowd

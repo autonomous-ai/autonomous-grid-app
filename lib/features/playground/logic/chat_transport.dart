@@ -65,10 +65,7 @@ class HttpChatTransport implements ChatTransport {
       if (response.statusCode != 200) {
         return (
           null,
-          ChatTransportError(
-            briefError(body),
-            statusCode: response.statusCode,
-          ),
+          ChatTransportError(briefError(body), statusCode: response.statusCode),
         );
       }
       return (extractAssistantText(jsonDecode(body)), null);

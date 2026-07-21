@@ -6,14 +6,11 @@ import 'package:grid_app/features/playground/logic/responses_transport.dart';
 void main() {
   group('buildResponsesInput', () {
     test('types user text as input_text and assistant text as output_text', () {
-      final input = buildResponsesInput(
-        const [
-          ChatMessage(role: ChatRole.user, text: 'hello'),
-          ChatMessage(role: ChatRole.assistant, text: 'hi there'),
-          ChatMessage(role: ChatRole.user, text: 'thanks'),
-        ],
-        (_) => null,
-      );
+      final input = buildResponsesInput(const [
+        ChatMessage(role: ChatRole.user, text: 'hello'),
+        ChatMessage(role: ChatRole.assistant, text: 'hi there'),
+        ChatMessage(role: ChatRole.user, text: 'thanks'),
+      ], (_) => null);
 
       expect(input, [
         {
@@ -61,16 +58,13 @@ void main() {
     });
 
     test('carries a readable user image as an input_image data URI', () {
-      final input = buildResponsesInput(
-        const [
-          ChatMessage(
-            role: ChatRole.user,
-            text: 'what is this',
-            media: [ChatMedia(path: '/a.png', kind: MediaKind.image)],
-          ),
-        ],
-        (_) => 'data:image/png;base64,AAAA',
-      );
+      final input = buildResponsesInput(const [
+        ChatMessage(
+          role: ChatRole.user,
+          text: 'what is this',
+          media: [ChatMedia(path: '/a.png', kind: MediaKind.image)],
+        ),
+      ], (_) => 'data:image/png;base64,AAAA');
 
       expect(input.single['content'], [
         {'type': 'input_text', 'text': 'what is this'},

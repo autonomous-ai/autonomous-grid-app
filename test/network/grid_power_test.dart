@@ -88,10 +88,11 @@ void main() {
     test('prefers the relay capacity over summing node concurrency', () {
       // The relay is the authority on how much work it will dispatch; it may
       // cap or oversubscribe what the nodes individually advertise.
-      final power = gridPowerFrom([
-        _node(concurrency: 8),
-        _node(concurrency: 12),
-      ], 8, capacity: 15);
+      final power = gridPowerFrom(
+        [_node(concurrency: 8), _node(concurrency: 12)],
+        8,
+        capacity: 15,
+      );
 
       expect(power.parallel, 15);
     });
@@ -108,9 +109,7 @@ void main() {
     test('ignores a zero capacity and sums instead', () {
       // A relay that hasn't computed capacity yet sends 0, which would read as
       // "this grid can serve nothing" — the nodes know better.
-      final power = gridPowerFrom([
-        _node(concurrency: 3),
-      ], 1, capacity: 0);
+      final power = gridPowerFrom([_node(concurrency: 3)], 1, capacity: 0);
 
       expect(power.parallel, 3);
     });
@@ -119,10 +118,14 @@ void main() {
       // Real payload: two online nodes, neither advertising GPU memory. The
       // panel falls back to a plain machine list, so vramGb must stay null
       // rather than becoming 0 and drawing an empty bar.
-      final power = gridPowerFrom([
-        _node(name: 'Ngoc-Dos-MacBook-Pro.local', concurrency: 8),
-        _node(name: '75543b6a3c33', concurrency: 12),
-      ], 8, capacity: 20);
+      final power = gridPowerFrom(
+        [
+          _node(name: 'Ngoc-Dos-MacBook-Pro.local', concurrency: 8),
+          _node(name: '75543b6a3c33', concurrency: 12),
+        ],
+        8,
+        capacity: 20,
+      );
 
       expect(power.vramGb, isNull);
       expect(power.parallel, 20);
@@ -263,17 +266,20 @@ void main() {
     });
 
     test('trims each group independently', () {
-      expect(
-        shortenNodeNames(['rig-a', 'rig-b', 'lab-x', 'lab-y']),
-        ['a', 'b', 'x', 'y'],
-      );
+      expect(shortenNodeNames(['rig-a', 'rig-b', 'lab-x', 'lab-y']), [
+        'a',
+        'b',
+        'x',
+        'y',
+      ]);
     });
 
     test('leaves a machine standing alone at full name', () {
-      expect(
-        shortenNodeNames(['solo-box', 'pair-a', 'pair-b']),
-        ['solo-box', 'a', 'b'],
-      );
+      expect(shortenNodeNames(['solo-box', 'pair-a', 'pair-b']), [
+        'solo-box',
+        'a',
+        'b',
+      ]);
     });
 
     test('leaves a single name alone — nothing to disambiguate against', () {

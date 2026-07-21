@@ -15,11 +15,12 @@ import 'widgets/choice_options.dart';
 ///
 /// Three cards, in the order they cost the user something — sign in with a
 /// ChatGPT subscription (nothing to fetch or find), run a model on this computer
-/// (a download), paste an API key (folded away; it's the answer for someone who
-/// already has one). Asking a teammate and deciding later are lines underneath,
-/// because neither gets this grid a model today. Every card hides itself when
-/// this machine or the installed CLI can't offer it, and there's always a way
-/// past — the screen is a fork, not a wall.
+/// (a download), paste an API key (the field appears only once they say that's
+/// their way in). Each is a title, one line and one button: this is the first
+/// screen of the app, before any decision has been made, so the detail belongs
+/// after the choice. Every card hides itself when this machine or the installed
+/// CLI can't offer it, and Skip is always there — the screen is a fork, not a
+/// wall.
 class OnboardingChoiceScreen extends ConsumerWidget {
   const OnboardingChoiceScreen({super.key});
 
@@ -85,11 +86,6 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                     const CloudStartError(),
                   ],
                   const SizedBox(height: 4),
-                  // The fourth way in — someone else's computer — is a line
-                  // rather than a card: it's the only one that doesn't get the
-                  // grid a model today, and it's an owner's option alone.
-                  if (network != null && network.isOwner)
-                    InviteLine(network: network),
                   Center(
                     child: TextButton(
                       onPressed: () => ref

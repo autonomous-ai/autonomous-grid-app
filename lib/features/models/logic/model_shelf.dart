@@ -36,8 +36,9 @@ class ShelfModel {
 /// Strips the `.gguf` extension for display. The rows already sit under a
 /// heading about models, and every name repeating the same five characters is
 /// five characters of noise per row.
-String prettyModelName(String name) =>
-    name.toLowerCase().endsWith('.gguf') ? name.substring(0, name.length - 5) : name;
+String prettyModelName(String name) => name.toLowerCase().endsWith('.gguf')
+    ? name.substring(0, name.length - 5)
+    : name;
 
 /// The key two names are matched on.
 ///

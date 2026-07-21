@@ -10,8 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/state/models/network_credential.dart';
-import '../../../auth/logic/session_controller.dart';
-import '../../../network/presentation/add_member_dialog.dart';
+import '../../../../shared/widgets/brand_sign_in_button.dart';
+import '../../../agents/logic/agent_catalog.dart';
 import '../../../provider_node/logic/api_engine_catalog.dart';
 import '../../../provider_node/logic/engine_slots.dart';
 import '../../../provider_node/logic/provider_run_controller.dart';
@@ -51,17 +51,21 @@ class SubscriptionOption extends ConsumerWidget {
       icon: Icons.auto_awesome_outlined,
       title: 'Continue with ChatGPT',
       line: 'Fastest setup — sign in with your subscription',
-      actionLabel: 'Continue',
-      busy: starting,
-      busyLabel: 'Finish signing in your browser…',
-      onPressed: () => ref
-          .read(providerRunControllerProvider.notifier)
-          .startApiEngine(
-            network: network.networkId,
-            kind: provider.kind,
-            envVar: provider.envVar,
-            apiKey: '',
-          ),
+      // The vendor's own control: this button hands a ChatGPT account over, so
+      // it looks like their sign-in, not one of ours (see [BrandSignInButton]).
+      action: BrandSignInButton(
+        logo: Image.asset(AgentTool.codex.iconAsset, width: 18, height: 18),
+        label: 'Continue with ChatGPT',
+        busy: starting,
+        onPressed: () => ref
+            .read(providerRunControllerProvider.notifier)
+            .startApiEngine(
+              network: network.networkId,
+              kind: provider.kind,
+              envVar: provider.envVar,
+              apiKey: '',
+            ),
+      ),
     );
   }
 }
@@ -80,10 +84,12 @@ class LocalOption extends ConsumerWidget {
       icon: Icons.computer_outlined,
       title: 'Run locally',
       line: 'Private & offline — downloads a model (several GB)',
-      actionLabel: 'Download',
-      busy: state is OnboardingInstallingLocal,
-      busyLabel: 'Setting up…',
-      onPressed: controller.chooseLocal,
+      action: ChoiceActionButton(
+        label: 'Download',
+        busy: state is OnboardingInstallingLocal,
+        busyLabel: 'Setting up…',
+        onPressed: controller.chooseLocal,
+      ),
       footer: switch (state) {
         OnboardingLocalFailed(:final message) => FailedRow(
           message: message,
@@ -120,8 +126,10 @@ class _ApiKeyOptionState extends ConsumerState<ApiKeyOption> {
       icon: Icons.key_outlined,
       title: 'Use an API key',
       line: apiKeyCardLine(available),
-      actionLabel: 'Connect',
-      onPressed: () => setState(() => _connecting = true),
+      action: ChoiceActionButton(
+        label: 'Connect',
+        onPressed: () => setState(() => _connecting = true),
+      ),
       footer: _connecting
           ? ApiEngineForm(
               network: widget.network,
@@ -130,33 +138,6 @@ class _ApiKeyOptionState extends ConsumerState<ApiKeyOption> {
               compact: true,
             )
           : null,
-    );
-  }
-}
-
-/// Ask someone else to run a model — a line, not a card: it's the one answer
-/// that doesn't get this grid a model today, so it sits with Skip rather than
-/// competing with the three that do. The invite is pre-filled with the inviter's
-/// own email domain so they only type the person's name.
-class InviteLine extends ConsumerWidget {
-  const InviteLine({super.key, required this.network});
-
-  final NetworkCredential network;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final prefill = inviteDomainPrefill(ref.watch(sessionProvider).userEmail);
-
-    return Center(
-      child: TextButton.icon(
-        onPressed: () => AddMemberDialog.show(
-          context,
-          network.networkId,
-          initialEmail: prefill,
-        ),
-        icon: const Icon(Icons.group_add_outlined, size: 16),
-        label: const Text('Or ask a teammate to run one'),
-      ),
     );
   }
 }
