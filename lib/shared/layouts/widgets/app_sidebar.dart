@@ -23,7 +23,12 @@ import 'sidebar_item.dart';
 class AppSidebar extends ConsumerStatefulWidget {
   const AppSidebar({super.key});
 
-  static const double width = 264;
+  // Wide enough that a chat nested under a project still has room for its title:
+  // those rows are indented to line up under the project *name*, which costs the
+  // title 38px before it starts. Narrowing that indent closes the gap too, but
+  // at the price of a ragged left edge — the rail giving up the space reads
+  // better than the list giving up its alignment.
+  static const double width = 284;
 
   @override
   ConsumerState<AppSidebar> createState() => _AppSidebarState();
