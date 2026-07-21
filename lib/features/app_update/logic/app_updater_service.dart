@@ -82,6 +82,11 @@ class AppUpdaterService with UpdaterListener {
 
   UpdateStatus? _last;
 
+  /// Whether the check now running has already said how it went. Reset when a
+  /// check starts, so only a trailing error is swallowed — a check that fails
+  /// outright still reports it. See [onUpdaterError].
+  bool _answered = false;
+
   /// Outcomes of update checks, so the UI can toast "checking / up to date /
   /// available / failed". The latest outcome is replayed to new subscribers:
   /// the launch check runs before the first frame, and without a replay its
@@ -122,6 +127,7 @@ class AppUpdaterService with UpdaterListener {
   /// exists (no "you're up to date" dialog). Used on launch.
   Future<void> checkInBackground() async {
     if (!isEnabled) return;
+    _answered = false;
     await _guard(() => autoUpdater.checkForUpdates(inBackground: true));
   }
 
@@ -137,6 +143,7 @@ class AppUpdaterService with UpdaterListener {
       _emit(const UpdateUnsupported());
       return;
     }
+    _answered = false;
     _emit(const UpdateChecking());
     await _guard(() => autoUpdater.checkForUpdates(inBackground: false));
   }
@@ -172,12 +179,14 @@ class AppUpdaterService with UpdaterListener {
   void onUpdaterUpdateAvailable(AppcastItem? item) {
     final version = item?.displayVersionString ?? item?.versionString;
     _log.info('update', 'Update available: ${version ?? 'unknown'}');
+    _answered = true;
     _emit(UpdateAvailable(version));
   }
 
   @override
   void onUpdaterUpdateNotAvailable(UpdaterError? error) {
     _log.info('update', 'No update available — already current');
+    _answered = true;
     _emit(const UpdateUpToDate());
   }
 
@@ -185,6 +194,14 @@ class AppUpdaterService with UpdaterListener {
   void onUpdaterError(UpdaterError? error) {
     final message = error?.message ?? 'unknown error';
     _log.failure('update', 'Updater error: $message');
+    // Sparkle reports "no update found" twice: once through
+    // [onUpdaterUpdateNotAvailable], then again down the error channel as
+    // `You're up to date!`. Taking that second one at face value overwrote the
+    // answer with a red "Couldn't check for updates: You're up to date!" — a
+    // failure and its own contradiction in one line. Once a check has answered,
+    // a trailing error is Sparkle restating it, not a new outcome. Matching on
+    // the message would only work in English; the ordering holds in any locale.
+    if (_answered) return;
     _emit(UpdateFailed(message));
   }
 

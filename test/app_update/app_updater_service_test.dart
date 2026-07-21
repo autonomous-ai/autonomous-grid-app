@@ -1,3 +1,4 @@
+import 'package:auto_updater/auto_updater.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/app_update/logic/app_updater_service.dart';
 
@@ -34,6 +35,47 @@ void main() {
       final replayed = await service.status.first;
 
       expect(replayed, isA<UpdateUnsupported>());
+    });
+
+    test("Sparkle's second word on a check that found nothing is ignored — it "
+        'restates "no update" down the error channel as `You\'re up to date!`, '
+        'which showed as a red "Couldn\'t check for updates"', () async {
+      final service = AppUpdaterService();
+      final seen = <UpdateStatus>[];
+      final sub = service.status.listen(seen.add);
+
+      service.onUpdaterUpdateNotAvailable(null);
+      service.onUpdaterError(UpdaterError("You're up to date!"));
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+
+      expect(seen, [isA<UpdateUpToDate>()]);
+    });
+
+    test('an update being available also stands, whatever trails it', () async {
+      final service = AppUpdaterService();
+      final seen = <UpdateStatus>[];
+      final sub = service.status.listen(seen.add);
+
+      service.onUpdaterUpdateAvailable(null);
+      service.onUpdaterError(UpdaterError('anything'));
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+
+      expect(seen, [isA<UpdateAvailable>()]);
+    });
+
+    test('a check that fails outright still reports the failure', () async {
+      final service = AppUpdaterService();
+      final seen = <UpdateStatus>[];
+      final sub = service.status.listen(seen.add);
+
+      service.onUpdaterError(UpdaterError('the feed is unreachable'));
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+
+      expect(seen, [isA<UpdateFailed>()]);
+      expect((seen.single as UpdateFailed).message, 'the feed is unreachable');
     });
 
     test('a silent launch check stays silent', () async {
