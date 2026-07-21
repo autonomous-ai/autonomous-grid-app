@@ -8,6 +8,7 @@ import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/state/models/engine_run.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_sync_controller.dart';
+import 'api_engine_catalog.dart';
 import 'backend_detector.dart';
 import 'engine_liveness.dart';
 import 'free_port.dart';
@@ -327,6 +328,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '--api',
         kind,
         for (final model in models) ...['-m', model],
+        ..._concurrencyArgs(kind),
         '--name',
         _engineName,
       ],
@@ -359,6 +361,22 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// uses its own default). Shared by the local and external join paths.
   List<String> _ctxArgs(int? ctxSize) =>
       ctxSize != null ? ['--ctx-size', '$ctxSize'] : const [];
+
+  /// How many requests a codex engine serves at once.
+  ///
+  /// The CLI pins a codex seat to **1** worker by default (ADR 0015 D-f) so a
+  /// flat-rate subscription isn't drained eight-wide — but on a shared grid that
+  /// one worker is the whole grid's throughput: every other person's question
+  /// waits behind the current one. Ask for [_codexConcurrency] instead.
+  ///
+  /// TODO(BE): this is the operator's own subscription being opened up — if a
+  /// seat starts hitting vendor rate limits, this number is the first suspect.
+  List<String> _concurrencyArgs(String kind) =>
+      kResponsesOnlyKinds.contains(kind)
+      ? ['--max-concurrency', '$_codexConcurrency']
+      : const [];
+
+  static const _codexConcurrency = 100;
 
   /// [rebuildForPortConflict] (local engine only) rebuilds the join args with a
   /// freshly-picked port, so a "port already in use" abort self-heals on a
