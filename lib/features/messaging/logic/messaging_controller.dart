@@ -2,8 +2,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_gateway_service.dart';
 import '../../../infrastructure/cli/hermes_platform_policy.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
+import '../../agent/logic/hermes_grid_link.dart';
 import '../../agent/logic/hermes_tool.dart';
+import '../../auth/logic/session_controller.dart';
+import '../../network/logic/network_models_provider.dart';
 import 'messaging_platform.dart';
+import 'messaging_state.dart';
+
+// The state this controller exposes lives next door, but every caller reads it
+// through the controller — so it comes along with this import.
+export 'messaging_state.dart';
 
 /// The gateway seam, or null when there's no agent on this computer — nothing to
 /// answer a message with, so the screen says that instead of failing later.
@@ -18,52 +27,6 @@ final hermesPlatformPolicyProvider = Provider<HermesPlatformPolicy?>((ref) {
   final path = ref.watch(hermesPathProvider);
   return path == null ? null : HermesPlatformPolicy();
 });
-
-/// What a platform is on this computer.
-sealed class MessagingState {
-  const MessagingState();
-}
-
-/// No bot connected — the screen asks for one.
-class MessagingDisconnected extends MessagingState {
-  const MessagingDisconnected();
-}
-
-/// Whether a connected bot is actually answering right now — the honest half,
-/// read from Hermes's own gateway state, not guessed from a heartbeat. A bot
-/// being set up and the bot *answering* are different things.
-enum MessagingLink {
-  /// The gateway loaded the credentials and the platform is connected — messages
-  /// get answered.
-  answering,
-
-  /// The gateway is bringing the bot up (connecting, or retrying after a blip).
-  connecting,
-
-  /// The gateway is off, or up but the bot didn't connect — see
-  /// [MessagingConnected.detail] for which.
-  notAnswering,
-}
-
-/// A bot is connected (its credentials are set). [link] is the honest half:
-/// connected and *answering* are different things, and a bot whose gateway is
-/// down — or whose token another process is polling — answers nobody.
-class MessagingConnected extends MessagingState {
-  const MessagingConnected({
-    required this.allowedUsers,
-    required this.link,
-    this.detail,
-  });
-
-  /// Who may message it. Never empty — the app won't connect a bot without one.
-  final List<String> allowedUsers;
-  final MessagingLink link;
-
-  /// Why it isn't answering, when [link] is [MessagingLink.notAnswering] — the
-  /// gateway's own reason (a bad token, another process on the same bot) or the
-  /// gateway simply being off. Null otherwise.
-  final String? detail;
-}
 
 /// Chatting with this computer from a platform: connect a bot, say who may use
 /// it, and keep the gateway that answers them running. One controller per
@@ -127,6 +90,11 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     final invalid = _firstInvalid(credentials, userId);
     if (invalid != null) return invalid;
 
+    // Before anything is written: an assistant with no grid to answer with would
+    // leave a bot that connects and then says nothing — see [_pointAtGrid].
+    final unpointed = await _pointAtGrid();
+    if (unpointed != null) return unpointed;
+
     final trimmedUser = userId.trim();
     state = const AsyncLoading();
     try {
@@ -176,9 +144,13 @@ class MessagingController extends AsyncNotifier<MessagingState> {
   Future<String?> start() async {
     final gateway = ref.read(hermesGatewayServiceProvider);
     if (gateway == null) return _noAgent;
+
+    // A bot connected before the app pointed the assistant at a grid is brought
+    // under both limits here, as the gateway restarts to pick them up.
+    final unpointed = await _pointAtGrid();
+    if (unpointed != null) return unpointed;
+
     try {
-      // A bot connected before this limit existed is brought under it here, as
-      // the gateway restarts to pick the change up.
       await _restrict();
       await gateway.startGateway();
     } on HermesGatewayException catch (error) {
@@ -198,6 +170,46 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     return _platform.userIdValidate(userId);
   }
 
+  /// Make sure the assistant has a grid to answer with, and say what's missing
+  /// when it can't have one. Returns null when it's set — including when the
+  /// assistant was already pointed somewhere (by the Chat tab, or by a user who
+  /// configured it themselves).
+  ///
+  /// Not a nicety: the assistant keeps its own config, and until that names a
+  /// grid it has no model to call. A bot connected before the user ever chatted
+  /// in the app would come up, show as "Answering", and fail on every message —
+  /// so the grid is written here rather than only on the way to a chat message.
+  Future<String?> _pointAtGrid() async {
+    final link = ref.read(hermesGridLinkProvider);
+    final grid = ref.read(selectedNetworkProvider);
+    if (grid == null) {
+      // Already configured (by hand, or by an earlier chat) — leave it alone
+      // rather than refusing to connect over a grid we only wanted for setup.
+      if (await link.hasModel()) return null;
+      return 'Pick a grid in Chat first — the bot answers with that grid, and '
+          "there's no answer without one.";
+    }
+
+    final model = await _modelFor(grid.networkId);
+    if (model == null) {
+      if (await link.hasModel()) return null;
+      return "This grid isn't sharing any AI yet, so the bot would have "
+          'nothing to answer with. Start sharing on this computer (Settings ▸ '
+          'This computer), then connect the bot.';
+    }
+    return link.point(grid, model);
+  }
+
+  /// The model the bot answers with: the one the user last chatted with when the
+  /// grid still serves it, else whatever that grid serves first. Null when the
+  /// grid serves nothing at all.
+  Future<String?> _modelFor(String networkId) async {
+    final served = await ref.read(networkModelsForProvider(networkId).future);
+    if (served.isEmpty) return null;
+    final chosen = ref.read(chatPrefsProvider).model;
+    return served.contains(chosen) ? chosen : served.first;
+  }
+
   /// Hold this platform to read-and-answer in Hermes's config. Best-effort: a
   /// config the app can't write shouldn't block connecting the bot — but it's
   /// written before every (re)start, so the limit lands as soon as it can.
@@ -210,38 +222,4 @@ class MessagingController extends AsyncNotifier<MessagingState> {
   static const _noAgent =
       "This computer isn't set up to answer chats yet. Open the account menu ▸ "
       'This computer to finish setting it up.';
-}
-
-/// Map the gateway's raw signals to the honest UI link. [gatewayAlive] is the
-/// heartbeat — is the gateway process up at all; [state]/[error] are the live
-/// platform status from the gateway's state file. Pure so the mapping is
-/// unit-tested rather than guessed at in a widget.
-({MessagingLink link, String? detail}) messagingLinkFrom({
-  required bool gatewayAlive,
-  required String state,
-  String? error,
-}) {
-  if (!gatewayAlive) {
-    return (
-      link: MessagingLink.notAnswering,
-      detail: "The gateway that answers messages isn't running.",
-    );
-  }
-  return switch (state) {
-    'connected' => (link: MessagingLink.answering, detail: null),
-    'connecting' ||
-    'retrying' => (link: MessagingLink.connecting, detail: null),
-    'disconnected' || 'fatal' || 'paused' => (
-      link: MessagingLink.notAnswering,
-      detail: error ?? "The bot didn't connect.",
-    ),
-    // Gateway is up but has no entry for this platform yet — the credentials
-    // haven't loaded (e.g. added but the gateway wasn't restarted to pick
-    // them up).
-    _ => (
-      link: MessagingLink.notAnswering,
-      detail:
-          error ?? "The bot's credentials haven't loaded into the gateway yet.",
-    ),
-  };
 }

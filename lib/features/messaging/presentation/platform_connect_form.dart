@@ -123,6 +123,9 @@ class _Honesty extends StatelessWidget {
           'terminal commands or programs.',
       "It goes quiet when this computer sleeps or shuts down. It isn't a bot in "
           'the cloud.',
+      'Connecting turns on a small background program that listens for your '
+          'messages. It starts up with this computer; disconnecting stops the '
+          'bot answering, but leaves that program running.',
     ];
     return DecoratedBox(
       decoration: BoxDecoration(

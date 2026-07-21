@@ -5,8 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/cli/hermes_acp_service.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../network/logic/client_app_configurator.dart';
-import '../../network/logic/client_app_detector.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
@@ -14,30 +12,15 @@ import '../../../infrastructure/cli/agent_event.dart';
 import 'agent_changes.dart';
 import 'agent_permissions.dart';
 import 'agent_prompt.dart';
+import 'hermes_grid_link.dart';
 import 'hermes_tool.dart';
 import 'agent_providers.dart';
-import 'hermes_skill_installer.dart';
 
 /// The hermes ACP seam, or null when hermes is absent.
 final hermesAcpServiceProvider = Provider<HermesAcpService?>((ref) {
   final path = ref.watch(hermesPathProvider);
   return path == null ? null : HermesAcpServiceImpl(path);
 });
-
-/// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
-/// `~/.hermes` when the target grid or model changes. ACP reads the model from
-/// config (no inline endpoint/model flag), so the config must carry the current
-/// selection.
-final hermesConfiguredProvider = NotifierProvider<HermesConfigured, String?>(
-  HermesConfigured.new,
-);
-
-class HermesConfigured extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  void set(String? key) => state = key;
-}
 
 /// The chat's default [ChatSender], backed by Hermes over ACP (Agent Client
 /// Protocol).
@@ -115,7 +98,9 @@ class HermesChatSender implements ChatSender {
       return;
     }
 
-    final pointed = await _pointAtGrid(network, model);
+    final pointed = await _ref
+        .read(hermesGridLinkProvider)
+        .point(network, model);
     if (pointed != null) {
       yield ChatSendFailure(pointed);
       return;
@@ -307,32 +292,5 @@ class HermesChatSender implements ChatSender {
           before: request.oldText,
           after: request.newText ?? '',
         );
-  }
-
-  /// Ensure `~/.hermes` points at [network] with [model] (idempotent, only
-  /// rewritten when the grid or model changed). Returns null on success, else a
-  /// user-facing error line.
-  Future<String?> _pointAtGrid(NetworkCredential network, String model) async {
-    final key = '${network.networkId}|$model';
-    if (_ref.read(hermesConfiguredProvider) == key) return null;
-    final result = await _ref.read(clientAppConfiguratorProvider).apply(
-      ClientApp.hermes,
-      network.relayBaseUrl,
-      network.relayApiKey,
-      [model],
-    );
-    if (result is ApplyError) {
-      return "Couldn't point Hermes at this grid: ${result.message}";
-    }
-    // Give the agent the grid's skills (image generation). Credential-free — the
-    // skill reads the endpoint/key from the `.env` just written. A skill-install
-    // hiccup must not block chatting, so its failure is swallowed here.
-    try {
-      await _ref.read(hermesSkillInstallerProvider).install();
-    } on Object {
-      // Non-fatal: the agent still chats, just without the image skill.
-    }
-    _ref.read(hermesConfiguredProvider.notifier).set(key);
-    return null;
   }
 }

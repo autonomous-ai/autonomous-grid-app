@@ -2,15 +2,49 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agent/logic/hermes_grid_link.dart';
+import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/messaging/logic/messaging_controller.dart';
 import 'package:grid_app/features/messaging/logic/messaging_platform.dart';
+import 'package:grid_app/features/network/logic/client_app_configurator.dart';
+import 'package:grid_app/features/network/logic/network_models_provider.dart';
 import 'package:grid_app/infrastructure/cli/env_file.dart';
+import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/infrastructure/cli/hermes_gateway_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_platform_policy.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 const _tgToken = '8123456789:AAF-abcdefghijklmnopqrstuvwxyz123';
 final _telegram = MessagingPlatform.telegram;
+final _grid = _network('grid-foo');
+
+NetworkCredential _network(String id) => NetworkCredential(
+  networkId: id,
+  name: 'Test grid',
+  networkType: 'permissioned',
+  lanSignalingUrl: 'http://127.0.0.1:8090',
+  accessToken: 'tok-$id',
+  refreshToken: '',
+  email: 'dev@x.com',
+  nodeId: 'node-$id',
+  deviceId: 'dev',
+  roles: const ['consumer'],
+  scopes: const ['consumer:chat'],
+  memberEpoch: 1,
+  networkEpoch: 1,
+  expiresAt: 0,
+);
+
+/// A [SelectedNetwork] pinned to a fixed grid, so the controller resolves one
+/// without the session/prefs wiring the real notifier reads from disk.
+class _FixedSelectedNetwork extends SelectedNetwork {
+  _FixedSelectedNetwork(this._fixed);
+  final NetworkCredential? _fixed;
+  @override
+  NetworkCredential? build() => _fixed;
+}
 
 /// A gateway that records what it was asked to do — no `hermes` process, no real
 /// `~/.hermes`. Holds an in-memory `.env` and one platform's link state.
@@ -63,15 +97,23 @@ class _FakeGateway implements HermesGatewayService {
 }
 
 void main() {
-  // Read-and-answer is pinned into Hermes's config on connect — point that at a
-  // temp dir so no test ever writes the real ~/.hermes/config.yaml.
+  // Connecting writes into Hermes's own config — the read-and-answer limit and
+  // the grid it answers with. Point every writer at a temp dir so no test ever
+  // touches the real ~/.hermes.
   late Directory policyHome;
   setUp(() async {
     policyHome = await Directory.systemTemp.createTemp('grid_messaging_test');
   });
   tearDown(() => policyHome.delete(recursive: true));
 
-  ProviderContainer container(_FakeGateway gateway) {
+  /// The grid the bot would answer with, and the models it serves. A null
+  /// [grid] is a user who hasn't picked one; an empty [models] a grid sharing
+  /// nothing yet.
+  ProviderContainer container(
+    _FakeGateway gateway, {
+    NetworkCredential? grid,
+    List<String> models = const ['maker/m1'],
+  }) {
     final c = ProviderContainer(
       overrides: [
         hermesGatewayServiceProvider.overrideWithValue(gateway),
@@ -79,6 +121,23 @@ void main() {
           HermesPlatformPolicy(home: policyHome.path),
         ),
         hermesPathProvider.overrideWithValue('/bin/hermes'),
+        selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(grid)),
+        if (grid != null)
+          networkModelsForProvider(
+            grid.networkId,
+          ).overrideWith((ref) => Future.value(models)),
+        hermesGridLinkProvider.overrideWith(
+          (ref) => HermesGridLink(
+            ref,
+            config: HermesConfigFile(home: policyHome.path),
+          ),
+        ),
+        clientAppConfiguratorProvider.overrideWithValue(
+          ClientAppConfigurator(home: policyHome.path),
+        ),
+        hermesSkillInstallerProvider.overrideWithValue(
+          HermesSkillInstaller(home: policyHome.path),
+        ),
       ],
     );
     addTearDown(c.dispose);
@@ -89,7 +148,7 @@ void main() {
     test('writes the bot, its whitelist and where a task sends its answer — '
         'then starts the thing that listens', () async {
       final gateway = _FakeGateway();
-      final c = container(gateway);
+      final c = container(gateway, grid: _grid);
       await c.read(messagingProvider(_telegram).future);
 
       final error = await c
@@ -112,7 +171,7 @@ void main() {
     test('read-and-answer is pinned before the gateway starts, so a remote '
         'message can never run a terminal', () async {
       final gateway = _FakeGateway();
-      final c = container(gateway);
+      final c = container(gateway, grid: _grid);
       await c.read(messagingProvider(_telegram).future);
 
       await c
@@ -130,10 +189,97 @@ void main() {
       );
     });
 
+    test('the assistant is pointed at the grid before the bot goes live, so a '
+        'bot connected before the user ever chatted still has a model to '
+        'answer with', () async {
+      final gateway = _FakeGateway();
+      final c = container(gateway, grid: _grid);
+      await c.read(messagingProvider(_telegram).future);
+
+      await c
+          .read(messagingProvider(_telegram).notifier)
+          .connect(
+            credentials: {_telegram.credentials.first.envKey: _tgToken},
+            userId: '123456789',
+          );
+
+      final config = HermesConfigFile(home: policyHome.path);
+      expect(await config.valueAt(['model', 'default']), 'maker/m1');
+      expect(
+        await config.valueAt(['model', 'base_url']),
+        _grid.relayBaseUrl,
+        reason: 'the bot answers through the selected grid',
+      );
+    });
+
+    test('no grid picked and an assistant pointed at nothing — the bot would '
+        'be mute, so it is not connected', () async {
+      final gateway = _FakeGateway();
+      final c = container(gateway);
+      await c.read(messagingProvider(_telegram).future);
+
+      final error = await c
+          .read(messagingProvider(_telegram).notifier)
+          .connect(
+            credentials: {_telegram.credentials.first.envKey: _tgToken},
+            userId: '123456789',
+          );
+
+      expect(error, contains('Pick a grid'));
+      expect(gateway.calls, isEmpty, reason: 'nothing was written or started');
+    });
+
+    test('a grid sharing no AI yet is refused with what to do about it, rather '
+        'than a bot that answers nothing', () async {
+      final gateway = _FakeGateway();
+      final c = container(gateway, grid: _grid, models: const []);
+      await c.read(messagingProvider(_telegram).future);
+
+      final error = await c
+          .read(messagingProvider(_telegram).notifier)
+          .connect(
+            credentials: {_telegram.credentials.first.envKey: _tgToken},
+            userId: '123456789',
+          );
+
+      expect(error, contains('This computer'));
+      expect(gateway.calls, isEmpty);
+    });
+
+    test('an assistant the user configured themselves is left alone — no grid '
+        'picked is no reason to refuse it', () async {
+      // A config that already names a model: Hermes has something to answer
+      // with, whoever wrote it.
+      await HermesConfigFile(home: policyHome.path).edit(
+        (editor) =>
+            HermesConfigFile.upsert(editor, ['model', 'default'], 'mine/own'),
+      );
+      final gateway = _FakeGateway();
+      final c = container(gateway);
+      await c.read(messagingProvider(_telegram).future);
+
+      final error = await c
+          .read(messagingProvider(_telegram).notifier)
+          .connect(
+            credentials: {_telegram.credentials.first.envKey: _tgToken},
+            userId: '123456789',
+          );
+
+      expect(error, isNull);
+      expect(gateway.calls, ['write', 'start']);
+      expect(
+        await HermesConfigFile(
+          home: policyHome.path,
+        ).valueAt(['model', 'default']),
+        'mine/own',
+        reason: "the user's own choice is not overwritten",
+      );
+    });
+
     test('a bot with nobody on its list is not connected at all — it would '
         'answer whoever found it', () async {
       final gateway = _FakeGateway();
-      final c = container(gateway);
+      final c = container(gateway, grid: _grid);
       await c.read(messagingProvider(_telegram).future);
 
       final error = await c
@@ -150,7 +296,7 @@ void main() {
     test('a token that is not one is caught here, not by a bot that silently '
         'never answers', () async {
       final gateway = _FakeGateway();
-      final c = container(gateway);
+      final c = container(gateway, grid: _grid);
       await c.read(messagingProvider(_telegram).future);
 
       final error = await c
@@ -168,7 +314,7 @@ void main() {
   group('every platform is the same flow with its own keys', () {
     test('Discord writes its own token and allowlist keys', () async {
       final gateway = _FakeGateway();
-      final c = container(gateway);
+      final c = container(gateway, grid: _grid);
       const discord = MessagingPlatform.discord;
       await c.read(messagingProvider(discord).future);
 
@@ -191,7 +337,7 @@ void main() {
     test('Slack needs both tokens — a missing app token is caught before '
         'connecting', () async {
       final gateway = _FakeGateway();
-      final c = container(gateway);
+      final c = container(gateway, grid: _grid);
       const slack = MessagingPlatform.slack;
       await c.read(messagingProvider(slack).future);
 
@@ -225,7 +371,7 @@ void main() {
     final gateway = _FakeGateway(
       env: {'TELEGRAM_BOT_TOKEN': _tgToken, 'TELEGRAM_ALLOWED_USERS': '1'},
     );
-    final c = container(gateway);
+    final c = container(gateway, grid: _grid);
 
     final state = await c.read(messagingProvider(_telegram).future);
     expect((state as MessagingConnected).link, MessagingLink.notAnswering);
@@ -244,7 +390,7 @@ void main() {
       linkState: 'fatal',
       linkError: 'another process is using the same bot token',
     )..up = true;
-    final c = container(gateway);
+    final c = container(gateway, grid: _grid);
 
     final state = await c.read(messagingProvider(_telegram).future);
     expect((state as MessagingConnected).link, MessagingLink.notAnswering);
@@ -256,7 +402,7 @@ void main() {
     final gateway = _FakeGateway(
       env: {'TELEGRAM_BOT_TOKEN': _tgToken, 'TELEGRAM_ALLOWED_USERS': '1'},
     );
-    final c = container(gateway);
+    final c = container(gateway, grid: _grid);
     await c.read(messagingProvider(_telegram).future);
 
     await c.read(messagingProvider(_telegram).notifier).disconnect();
