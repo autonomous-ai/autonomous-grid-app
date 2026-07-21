@@ -12,6 +12,7 @@ import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
 import 'agent_prompt.dart';
+import 'agent_server_error.dart';
 import 'agent_providers.dart';
 import 'codex_tool.dart';
 
@@ -229,7 +230,7 @@ class CodexChatSender implements ChatSender {
         await run.done;
         settled = true;
         final reply = answer.toString().trim();
-        final error = failure ?? (reply.isEmpty ? _noAnswer : null);
+        final error = failure ?? (reply.isEmpty ? kAgentNoAnswer : null);
         log.finish(logId, error: error);
         updates.add(
           error != null
@@ -256,8 +257,6 @@ class CodexChatSender implements ChatSender {
     };
     return updates.stream;
   }
-
-  static const _noAnswer = "The agent didn't return an answer.";
 
   /// Keep Codex's own words for the log while the chat shows the friendly line.
   ///
@@ -293,8 +292,9 @@ class CodexChatSender implements ChatSender {
 /// serves `/v1/responses` yet, so Codex's stream to it 404s. Say so as a
 /// property of the relay, not of their grid — "switch to a grid that supports
 /// Codex" sent people hunting for a grid that doesn't exist, on a grid that was
-/// serving Codex models perfectly well. Everything else keeps Codex's own last
-/// line.
+/// serving Codex models perfectly well. Hermes is offered as the thing to *try*,
+/// never promised to work: it answers over the same grid whose model may equally
+/// refuse the turn. Everything else keeps Codex's own last line.
 ///
 /// TODO(BE): drop this once the relay serves `/v1/responses`.
 String friendlyCodexError(String raw) {
@@ -312,8 +312,7 @@ String friendlyCodexError(String raw) {
           lower.contains('not found') ||
           lower.contains('disconnected'))) {
     return "Codex can't be used on a grid yet — grid servers don't answer the "
-        'kind of request Codex sends. Hermes works here: switch to it in '
-        'Settings ▸ Agents.';
+        'kind of request Codex sends. Try Hermes instead: pick it in Agents.';
   }
   return 'Codex couldn\'t finish: $detail';
 }

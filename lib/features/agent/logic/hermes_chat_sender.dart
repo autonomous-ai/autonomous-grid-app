@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/command_log.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/cli/hermes_acp_service.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../playground/logic/chat_message.dart';
@@ -10,6 +11,7 @@ import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import 'agent_changes.dart';
+import 'agent_server_error.dart';
 import 'agent_permissions.dart';
 import 'agent_prompt.dart';
 import 'hermes_grid_link.dart';
@@ -250,10 +252,17 @@ class HermesChatSender implements ChatSender {
         permissions.clear();
 
         final reply = answer.toString().trim();
-        log.finish(logId, error: reply.isEmpty ? 'no output' : null);
+        // Hermes answers with the grid's failed HTTP call when the model won't
+        // take the turn. That's an error, not an answer — show it as one, and
+        // keep the raw envelope in the log to diagnose from.
+        final refused = friendlyAgentServerError(reply);
+        if (refused != null) _ref.read(appLogProvider).failure('agent', reply);
+        final failure = reply.isEmpty ? kAgentNoAnswer : refused;
+
+        log.finish(logId, error: failure);
         updates.add(
-          reply.isEmpty
-              ? const ChatSendFailure("The agent didn't return an answer.")
+          failure != null
+              ? ChatSendFailure(failure)
               : ChatSendSuccess(
                   ChatMessage(
                     role: ChatRole.assistant,
