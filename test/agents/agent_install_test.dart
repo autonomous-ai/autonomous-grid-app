@@ -61,22 +61,6 @@ void main() {
     );
 
     test(
-      'a planned agent is never shelled out for — the CLI has no command for '
-      'it, and its error would mean nothing to the user',
-      () async {
-        final cli = _FakeCli();
-        final container = _container(cli);
-
-        await container
-            .read(agentInstallProvider.notifier)
-            .install(AgentTool.openclaw);
-
-        expect(cli.calls, isEmpty);
-        expect(container.read(agentInstallProvider), isA<AgentInstallIdle>());
-      },
-    );
-
-    test(
       'a failure comes back as the CLI\'s own last words, not an exit code',
       () async {
         final cli = _FakeCli(
@@ -141,19 +125,11 @@ void main() {
   });
 
   group('the catalog', () {
-    test(
-      'Hermes and Codex can run; planned agents are listed, not offered',
-      () {
-        expect(AgentTool.hermes.runnable, isTrue);
-        expect(AgentTool.codex.runnable, isTrue);
-        expect(AgentTool.openclaw.runnable, isFalse);
-        expect(AgentTool.values.where((t) => t.runnable).toList(), [
-          AgentTool.hermes,
-          AgentTool.codex,
-        ]);
-        expect(kChatAgent, AgentTool.hermes);
-      },
-    );
+    test('lists only agents the app can install, so no row on the screen is '
+        'there to be looked at rather than used', () {
+      expect(AgentTool.values, [AgentTool.hermes, AgentTool.codex]);
+      expect(kChatAgent, AgentTool.hermes);
+    });
 
     test('the id is what `grid agent install` takes', () {
       expect(AgentTool.hermes.id, 'hermes');

@@ -1,39 +1,27 @@
-/// The agents the app knows about — the ones that can be put in charge of a
-/// chat, and the ones that are coming.
+/// The agents the app can put in charge of a chat.
 ///
-/// Two can run today — Hermes and Codex — each installed through the `grid` CLI
-/// (`grid agent install <id>`) and able to answer chats on this computer. The
-/// rest are listed so the screen says what it will support instead of pretending
-/// the list is finished, but they carry no controls: a button that can't do
-/// anything is worse than none.
+/// Every entry here runs today: installed through the `grid` CLI (`grid agent
+/// install &lt;id&gt;`) and able to answer chats on this computer. An agent the app
+/// can't install doesn't belong on the list — a row the user can only look at
+/// takes up the same space as a working one and answers nothing.
 enum AgentTool {
   hermes(
     id: 'hermes',
     name: 'Hermes',
     tagline: 'Runs locally. Uses your model and tools.',
-    runnable: true,
     iconAsset: 'assets/agents/hermes_icon.webp',
   ),
   codex(
     id: 'codex',
     name: 'Codex',
     tagline: "OpenAI's coding agent.",
-    runnable: true,
     iconAsset: 'assets/agents/codex_icon.png',
-  ),
-  openclaw(
-    id: 'openclaw',
-    name: 'OpenClaw',
-    tagline: 'An open-source agent.',
-    runnable: false,
-    iconAsset: 'assets/agents/openclaw_icon.png',
   );
 
   const AgentTool({
     required this.id,
     required this.name,
     required this.tagline,
-    required this.runnable,
     required this.iconAsset,
   });
 
@@ -49,10 +37,6 @@ enum AgentTool {
   /// only what sets this agent apart from the others.
   final String tagline;
 
-  /// Whether the app can actually install and run it today. False means the
-  /// screen shows it as planned — no install button, no toggle.
-  final bool runnable;
-
   /// The agent's own mark, bundled with the app (declared in `pubspec.yaml`).
   ///
   /// These are each project's real logo, so they arrive with their own colour and
@@ -64,6 +48,6 @@ enum AgentTool {
   final String iconAsset;
 }
 
-/// The agent that answers chats today. Named rather than assumed, so the day a
-/// second one becomes runnable the places that assume "the agent" are findable.
+/// The agent that answers chats before the user picks one. Named rather than
+/// assumed, so the places that assume "the agent" stay findable.
 const AgentTool kChatAgent = AgentTool.hermes;

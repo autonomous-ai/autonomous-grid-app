@@ -41,13 +41,8 @@ class AgentInstallController extends Notifier<AgentInstallState> {
   AgentInstallState build() => const AgentInstallIdle();
 
   /// Fetch [tool]. [upgrade] reinstalls one that's already present.
-  ///
-  /// An agent the app can't run has no install path at all — the CLI installs
-  /// only the runnable ones (Hermes, Codex) — so this refuses rather than
-  /// shelling out to a command that would fail with a CLI error the user can't
-  /// act on.
   Future<void> install(AgentTool tool, {bool upgrade = false}) async {
-    if (!tool.runnable || state is AgentInstallRunning) return;
+    if (state is AgentInstallRunning) return;
 
     final cli = ref.read(gridCliServiceProvider);
     if (cli == null) {
@@ -78,7 +73,7 @@ class AgentInstallController extends Notifier<AgentInstallState> {
   }
 
   /// Re-read whether [tool] is present and which build it is, after installing
-  /// or updating it. Only runnable agents reach here (install guards the rest).
+  /// or updating it.
   void _reprobe(AgentTool tool) {
     switch (tool) {
       case AgentTool.hermes:
@@ -87,9 +82,6 @@ class AgentInstallController extends Notifier<AgentInstallState> {
       case AgentTool.codex:
         ref.invalidate(codexPathProvider);
         ref.invalidate(codexVersionProvider);
-      case AgentTool.openclaw:
-        // Planned, not installable — never installed, so nothing to re-probe.
-        break;
     }
   }
 

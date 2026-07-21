@@ -6,13 +6,11 @@ import '../../agent/logic/hermes_tool.dart';
 import 'agent_catalog.dart';
 
 /// Whether [tool] is installed on this computer, keyed by the agent so a row
-/// reads its *own* state instead of every row assuming Hermes. A planned agent
-/// (nothing the CLI can install) is never installed.
+/// reads its *own* state instead of every row assuming Hermes.
 final agentInstalledProvider = Provider.family<bool, AgentTool>((ref, tool) {
   return switch (tool) {
     AgentTool.hermes => ref.watch(hermesInstalledProvider),
     AgentTool.codex => ref.watch(codexInstalledProvider),
-    AgentTool.openclaw => false,
   };
 });
 
@@ -35,6 +33,5 @@ final agentVersionProvider = FutureProvider.family<String?, AgentTool>((
   return switch (tool) {
     AgentTool.hermes => ref.watch(hermesVersionProvider.future),
     AgentTool.codex => ref.watch(codexVersionProvider.future),
-    AgentTool.openclaw => null,
   };
 });

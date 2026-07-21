@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
-import '../../../shared/widgets/not_yet_badge.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/active_chat_agent.dart';
@@ -12,17 +11,17 @@ import '../logic/agent_catalog.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_status.dart';
 
-/// The assistants this computer can run.
-///
-/// Two can run today — Hermes and Codex — and one of them answers your chats;
-/// the rest are planned and carry no controls, so the screen says what it will
-/// support without offering a button that would do nothing.
+/// The assistants this computer can run — Hermes and Codex today, one of which
+/// answers your chats.
 ///
 /// This is a status list, not a gallery: quiet rows read once in a while to check
 /// a version, pull an update, or hand the chat to a different agent. So it wears
 /// the same surface as Plugins and Scheduled — except the agent answering chats,
 /// which wears the brand (a gold rim and a filled "Answers your chats" badge) so
 /// it's obvious at a glance which one is live.
+///
+/// Only agents the app can install are listed. A "coming soon" row costs a
+/// first-time user the same read as a working one and gives nothing back.
 class AgentsView extends ConsumerWidget {
   const AgentsView({super.key});
 
@@ -69,11 +68,8 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
     final tool = widget.tool;
     final theme = Theme.of(context);
-    // Each row probes its own agent — a planned one reads as not installed.
+    // Each row probes its own agent, so it reads its own state.
     final installed = ref.watch(agentInstalledProvider(tool));
-
-    // A planned agent has nothing to reach for, so it doesn't answer the pointer.
-    final canHover = tool.runnable;
 
     // The agent answering chats right now wears the brand: a gold rim and a faint
     // gold wash lift it out of the quiet list so it's obvious which one is live.
@@ -83,8 +79,8 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
         : AppGlass.surfaceFill;
 
     return MouseRegion(
-      onEnter: canHover ? (_) => setState(() => _hovered = true) : null,
-      onExit: canHover ? (_) => setState(() => _hovered = false) : null,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
         // The house row-hover timing, shared with the plugin and job lists.
         duration: const Duration(milliseconds: 130),
@@ -200,8 +196,7 @@ class _AgentGlyph extends StatelessWidget {
   }
 }
 
-/// Where the agent stands: answering chats, sitting there uninstalled, or not a
-/// thing the app can run yet.
+/// Where the agent stands: answering chats, or sitting there uninstalled.
 class _StatusChip extends ConsumerWidget {
   const _StatusChip({required this.tool, required this.installed});
 
@@ -211,9 +206,6 @@ class _StatusChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
-    // Planned, not broken. A grey dot beside the live agent's lit one would read
-    // as "offline" — something that ought to be running and isn't.
-    if (!tool.runnable) return const NotYetBadge();
     if (!installed) {
       return _Chip(label: 'Not installed', color: AppPalette.offline);
     }
@@ -282,8 +274,7 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// Install, or update what's there. A planned agent gets nothing — there is no
-/// command behind it, and a disabled button would only look broken.
+/// Install, or update what's there.
 class _Action extends ConsumerWidget {
   const _Action({required this.tool, required this.installed});
 
@@ -292,8 +283,6 @@ class _Action extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!tool.runnable) return const SizedBox.shrink();
-
     final state = ref.watch(agentInstallProvider);
     if (state is AgentInstallRunning && state.tool == tool) {
       return const _Working();

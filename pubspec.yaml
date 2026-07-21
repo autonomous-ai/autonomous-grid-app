@@ -52,4 +52,3 @@ flutter:
     # would pop into a row that has already been laid out.
     - assets/agents/hermes_icon.webp
     - assets/agents/codex_icon.png
-    - assets/agents/openclaw_icon.png

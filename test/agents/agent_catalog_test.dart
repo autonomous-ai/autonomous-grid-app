@@ -27,9 +27,9 @@ void main() {
     }
   });
 
-  test('the chat-agent default is a runnable agent', () {
-    // kChatAgent is what answers chats before the user picks — it must be one the
-    // app can actually install and run, never a planned placeholder.
-    expect(kChatAgent.runnable, isTrue);
+  test('the chat-agent default is one of the agents on the list', () {
+    // kChatAgent is what answers chats before the user picks — dropping an agent
+    // from the catalog must not leave chat pointed at one that no longer exists.
+    expect(AgentTool.values, contains(kChatAgent));
   });
 }
