@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/codex_exec_service.dart';
 import '../../../infrastructure/cli/command_log.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
@@ -213,6 +214,7 @@ class CodexChatSender implements ChatSender {
             updates.add(ChatSendStreaming(text));
           case CodexTurnFailed(:final message):
             failure = friendlyCodexError(message);
+            _logRaw(message);
         }
       },
       onError: (Object error) {
@@ -221,6 +223,7 @@ class CodexChatSender implements ChatSender {
                   ? "Couldn't start Codex on this computer. Try sending again."
                   : "Couldn't start Codex on this computer. ${error.message}")
             : friendlyCodexError('$error');
+        _logRaw('$error');
       },
       onDone: () async {
         await run.done;
@@ -256,6 +259,14 @@ class CodexChatSender implements ChatSender {
 
   static const _noAnswer = "The agent didn't return an answer.";
 
+  /// Keep Codex's own words for the log while the chat shows the friendly line.
+  ///
+  /// Without this the raw reason is lost the moment it's humanized, and the log
+  /// only repeats the sentence the user already read — leaving no way to tell a
+  /// relay that answers no `/responses` from a rejected key or a dead network.
+  void _logRaw(String raw) =>
+      _ref.read(appLogProvider).failure('agent', 'codex turn failed: $raw');
+
   /// Ensure `~/.codex` points at [network] with [model] (idempotent, only
   /// rewritten when the grid or model changed). Returns null on success, else a
   /// user-facing error line.
@@ -278,9 +289,14 @@ class CodexChatSender implements ChatSender {
 
 /// Humanize Codex's failure so the chat shows a next step, not a stack trace.
 ///
-/// The one the user will actually hit today is the Responses wall: until the
-/// grid relay serves `/v1/responses`, Codex's stream to it 404s — say what's
-/// wrong in the app's own terms. Everything else keeps Codex's own last line.
+/// The one the user will actually hit today is the Responses wall: no grid relay
+/// serves `/v1/responses` yet, so Codex's stream to it 404s. Say so as a
+/// property of the relay, not of their grid — "switch to a grid that supports
+/// Codex" sent people hunting for a grid that doesn't exist, on a grid that was
+/// serving Codex models perfectly well. Everything else keeps Codex's own last
+/// line.
+///
+/// TODO(BE): drop this once the relay serves `/v1/responses`.
 String friendlyCodexError(String raw) {
   final detail = raw
       .split('\n')
@@ -295,8 +311,9 @@ String friendlyCodexError(String raw) {
       (lower.contains('404') ||
           lower.contains('not found') ||
           lower.contains('disconnected'))) {
-    return "This grid can't run Codex yet — its server doesn't answer Codex's "
-        'requests. Try Hermes for now, or switch to a grid that supports Codex.';
+    return "Codex can't be used on a grid yet — grid servers don't answer the "
+        'kind of request Codex sends. Hermes works here: switch to it in '
+        'Settings ▸ Agents.';
   }
   return 'Codex couldn\'t finish: $detail';
 }

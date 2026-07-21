@@ -138,12 +138,14 @@ void main() {
   });
 
   group('friendlyCodexError — a next step, not a stack trace', () {
-    test('the responses wall is named in the app own terms', () {
+    test('the responses wall reads as a limit of grid servers, not of the '
+        "user's own grid — theirs may be serving Codex models fine", () {
       final message = friendlyCodexError(
         'stream disconnected before completion: error sending request for url '
         '(http://host/v1/responses)',
       );
-      expect(message.toLowerCase(), contains("can't run codex yet"));
+      expect(message.toLowerCase(), contains("can't be used on a grid yet"));
+      expect(message, contains('Hermes'));
     });
 
     test('any other failure keeps codex own last line', () {

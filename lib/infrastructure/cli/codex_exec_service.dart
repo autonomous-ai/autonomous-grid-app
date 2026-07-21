@@ -137,6 +137,11 @@ class _CodexExecTurn {
   final _stderr = <String>[];
   static const _stderrKept = 20;
 
+  /// Whether the turn said anything on stdout — an answer or its own failure.
+  /// When it didn't, stderr is the only account of what happened, so the exit
+  /// carries it back instead of leaving the chat with "no answer" and no reason.
+  var _spoke = false;
+
   CodexExecRun start() {
     Process.start(
       _path,
@@ -177,7 +182,7 @@ class _CodexExecTurn {
         .transform(const LineSplitter())
         .listen(_onStderr);
 
-    process.exitCode.then((_) => _finish());
+    process.exitCode.then(_onExit);
   }
 
   void _onStartError(Object error) {
@@ -199,7 +204,22 @@ class _CodexExecTurn {
     final decoded = _tryDecode(line);
     if (decoded == null) return;
     final event = parseCodexEvent(decoded, _messages);
-    if (event != null) _events.add(event);
+    if (event == null) return;
+    if (event is CodexMessageEvent || event is CodexTurnFailed) _spoke = true;
+    _events.add(event);
+  }
+
+  /// A turn that dies without a word on stdout — a config Codex won't load, a
+  /// panic, a killed process — used to reach the chat as "no answer", with the
+  /// reason sitting unread in [_stderr]. Hand that reason over instead.
+  void _onExit(int code) {
+    if (!_spoke && !_killed && code != 0 && !_events.isClosed) {
+      final tail = _stderr.join('\n').trim();
+      _events.add(
+        CodexTurnFailed(tail.isEmpty ? 'Codex exited with code $code.' : tail),
+      );
+    }
+    _finish();
   }
 
   void kill() {
