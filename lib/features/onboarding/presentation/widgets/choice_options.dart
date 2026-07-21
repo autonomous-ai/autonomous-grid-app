@@ -53,10 +53,10 @@ class SubscriptionOption extends ConsumerWidget {
       line: 'Fastest setup — sign in with your subscription',
       // The vendor's mark at its own colours: this button hands a ChatGPT
       // account over, so it reads as their sign-in, not one of ours. The label
-      // is just the verb — the card's title already named the provider.
+      // says the action, not the provider — the card's title already named it.
       action: SoftActionButton(
         leading: const ChatGptLogo(size: 18),
-        label: 'Continue',
+        label: 'Sign in',
         compact: true,
         busy: starting,
         onPressed: () => ref
@@ -88,7 +88,7 @@ class LocalOption extends ConsumerWidget {
       line: 'Private & offline — downloads a model (several GB)',
       action: SoftActionButton(
         leading: const Icon(Icons.download_rounded, size: 18),
-        label: 'Download',
+        label: 'Download a model',
         compact: true,
         busy: state is OnboardingInstallingLocal,
         onPressed: controller.chooseLocal,
@@ -131,7 +131,7 @@ class _ApiKeyOptionState extends ConsumerState<ApiKeyOption> {
       line: apiKeyCardLine(available),
       action: SoftActionButton(
         leading: const Icon(Icons.vpn_key_outlined, size: 18),
-        label: 'Connect',
+        label: 'Enter a key',
         compact: true,
         onPressed: () => setState(() => _connecting = true),
       ),
