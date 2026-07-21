@@ -8,6 +8,7 @@ import '../../../shared/widgets/soft_action_button.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
 import '../../node_setup/logic/node_capabilities.dart';
+import '../../node_setup/logic/node_setup_controller.dart';
 import '../../node_setup/logic/node_setup_plan.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/api_engine_catalog.dart';
@@ -122,8 +123,8 @@ class _SubscriptionCard extends ConsumerWidget {
 /// Run a downloaded model here with the built-in engine.
 ///
 /// Three shapes, in the order they bite: blocked by something already on this
-/// machine → the reason; engine or model still missing → the set-up card, which
-/// fetches both; otherwise the serve form.
+/// machine → the reason; engine or model still missing → one press sets both up,
+/// with the progress underneath; otherwise the serve form.
 class _LocalCard extends ConsumerStatefulWidget {
   const _LocalCard({required this.network, required this.blockedReason});
 
@@ -137,11 +138,30 @@ class _LocalCard extends ConsumerStatefulWidget {
 class _LocalCardState extends ConsumerState<_LocalCard> {
   bool _open = false;
 
+  /// Fetch whatever this computer is missing — the engine, a model, or both.
+  ///
+  /// Runs the plan on the press rather than previewing it behind a second
+  /// button: the card above already says what this option is and what it costs
+  /// ("downloads a model"), so a plan listing the same two steps under a "Set up
+  /// now" button was the same decision asked twice. The steps still show, as
+  /// progress, once it's under way.
+  Future<void> _setUp() async {
+    final caps = await ref.read(nodeCapabilitiesProvider.future);
+    if (!mounted) return;
+    // Leave the serve form open behind it, so the moment the download lands the
+    // card is showing the model picker rather than a finished progress list.
+    setState(() => _open = true);
+    await ref
+        .read(nodeSetupControllerProvider.notifier)
+        .run(buildSetupPlan(caps));
+  }
+
   @override
   Widget build(BuildContext context) {
     final blocked = widget.blockedReason;
     final caps = ref.watch(nodeCapabilitiesProvider).asData?.value;
     final needsSetup = caps != null && buildSetupPlan(caps).isNotEmpty;
+    final setup = ref.watch(nodeSetupControllerProvider);
 
     return ChoiceCard(
       icon: Icons.computer_outlined,
@@ -153,14 +173,23 @@ class _LocalCardState extends ConsumerState<_LocalCard> {
               leading: const Icon(Icons.download_rounded, size: 18),
               label: needsSetup ? 'Set it up' : 'Choose a model',
               compact: true,
-              onPressed: () => setState(() => _open = true),
+              busy: setup is NodeSetupRunning,
+              onPressed: needsSetup
+                  ? _setUp
+                  : () => setState(() => _open = true),
             ),
-      footer: blocked == null && _open
-          ? (needsSetup
-                ? const NodeSetupCard(framed: false)
-                : ServeLocalCard(network: widget.network))
-          : null,
+      footer: blocked != null ? null : _footer(needsSetup, setup),
     );
+  }
+
+  /// What sits under the button: the setup's own progress while there is one to
+  /// show, else the serve form once the user has asked for it. An untouched
+  /// setup shows nothing — that state is the button.
+  Widget? _footer(bool needsSetup, NodeSetupState setup) {
+    if (needsSetup) {
+      return setup is NodeSetupIdle ? null : const NodeSetupCard(framed: false);
+    }
+    return _open ? ServeLocalCard(network: widget.network) : null;
   }
 }
 
