@@ -1,39 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../../../shared/widgets/app_spinner.dart';
 import '../../../provider_node/presentation/engine_block.dart';
 
-/// The plain button a card uses when its choice happens here — nothing handed
-/// to a vendor, so it wears the app's own accent.
-class ChoiceActionButton extends StatelessWidget {
-  const ChoiceActionButton({
-    super.key,
-    required this.label,
-    required this.onPressed,
-    this.busy = false,
-    this.busyLabel,
-  });
-
-  final String label;
-  final VoidCallback onPressed;
-
-  /// The choice is under way: a spinner replaces the icon and the button stops
-  /// taking taps, so it can't be started twice.
-  final bool busy;
-  final String? busyLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.icon(
-      onPressed: busy ? null : onPressed,
-      icon: busy ? const AppSpinner() : const SizedBox.shrink(),
-      label: Text(busy ? (busyLabel ?? label) : label),
-    );
-  }
-}
-
 /// One way to get started, said in as few words as it takes: an icon, a title,
-/// two short lines, one button.
+/// one line, one button.
 ///
 /// The shape is the point. This is the first screen of the app, before the user
 /// has decided anything — a paragraph of caveats per option is a settings form

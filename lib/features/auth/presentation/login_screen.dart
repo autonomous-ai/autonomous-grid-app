@@ -9,7 +9,7 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/layouts/widgets/theme_mode_picker.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
-import '../../../shared/widgets/brand_sign_in_button.dart';
+import '../../../shared/widgets/soft_action_button.dart';
 import '../../network/presentation/detail_widgets.dart';
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
@@ -400,8 +400,8 @@ class _SignInState extends State<_SignIn> with SingleTickerProviderStateMixin {
               const SizedBox(height: 28),
             ] else
               const SizedBox(height: 18),
-            BrandSignInButton(
-              logo: const GoogleLogo(size: 18),
+            SoftActionButton(
+              leading: const GoogleLogo(size: 18),
               label: 'Sign in with Google',
               onPressed: widget.onSignIn,
             ),

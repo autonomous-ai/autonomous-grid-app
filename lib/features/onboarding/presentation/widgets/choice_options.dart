@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/state/models/network_credential.dart';
-import '../../../../shared/widgets/brand_sign_in_button.dart';
+import '../../../../shared/widgets/soft_action_button.dart';
 import '../../../agents/logic/agent_catalog.dart';
 import '../../../provider_node/logic/api_engine_catalog.dart';
 import '../../../provider_node/logic/engine_slots.dart';
@@ -51,11 +51,12 @@ class SubscriptionOption extends ConsumerWidget {
       icon: Icons.auto_awesome_outlined,
       title: 'Continue with ChatGPT',
       line: 'Fastest setup — sign in with your subscription',
-      // The vendor's own control: this button hands a ChatGPT account over, so
-      // it looks like their sign-in, not one of ours (see [BrandSignInButton]).
-      action: BrandSignInButton(
-        logo: Image.asset(AgentTool.codex.iconAsset, width: 18, height: 18),
-        label: 'Continue with ChatGPT',
+      // The vendor's mark at its own colours: this button hands a ChatGPT
+      // account over, so it reads as their sign-in, not one of ours. The label
+      // is just the verb — the card's title already named the provider.
+      action: SoftActionButton(
+        leading: Image.asset(AgentTool.codex.iconAsset, width: 18, height: 18),
+        label: 'Continue',
         busy: starting,
         onPressed: () => ref
             .read(providerRunControllerProvider.notifier)
@@ -84,10 +85,10 @@ class LocalOption extends ConsumerWidget {
       icon: Icons.computer_outlined,
       title: 'Run locally',
       line: 'Private & offline — downloads a model (several GB)',
-      action: ChoiceActionButton(
+      action: SoftActionButton(
+        leading: const Icon(Icons.download_rounded, size: 18),
         label: 'Download',
         busy: state is OnboardingInstallingLocal,
-        busyLabel: 'Setting up…',
         onPressed: controller.chooseLocal,
       ),
       footer: switch (state) {
@@ -126,7 +127,8 @@ class _ApiKeyOptionState extends ConsumerState<ApiKeyOption> {
       icon: Icons.key_outlined,
       title: 'Use an API key',
       line: apiKeyCardLine(available),
-      action: ChoiceActionButton(
+      action: SoftActionButton(
+        leading: const Icon(Icons.vpn_key_outlined, size: 18),
         label: 'Connect',
         onPressed: () => setState(() => _connecting = true),
       ),

@@ -3,47 +3,46 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'app_spinner.dart';
 
-/// A `sign in with <vendor>` control in the shape people already trust: white
-/// surface, hairline rim, the vendor's own mark, dark label, a soft lift that
-/// firms up under the cursor.
+/// A quiet, tactile action button: white surface, hairline rim, a leading mark,
+/// dark label, and a soft lift that firms up under the cursor.
 ///
-/// Deliberately not a `FilledButton` in the app accent. Handing an account over
-/// to a third party is the one moment the app should look like *their* flow, not
-/// ours — an indigo pill reads as one of our buttons, a white one with the mark
-/// reads as the official path. Shared by the Google sign-in on the login screen
-/// and the ChatGPT sign-in in onboarding, so both stay the same control.
-class BrandSignInButton extends StatefulWidget {
-  const BrandSignInButton({
+/// Where the app's indigo `FilledButton` says "this is the one thing to do on
+/// this screen", this says "this is a choice, alongside others" — which is why
+/// the sign-in screens and the first-run cards both use it. It also lets a
+/// vendor's own mark (Google's G, the ChatGPT glyph) sit at its real colours,
+/// so an OAuth button looks like the official path rather than one of ours.
+class SoftActionButton extends StatefulWidget {
+  const SoftActionButton({
     super.key,
-    required this.logo,
+    required this.leading,
     required this.label,
     required this.onPressed,
     this.busy = false,
   });
 
-  /// The vendor's mark, drawn at its own colours — that's what makes the button
-  /// recognisable at a glance.
-  final Widget logo;
+  /// The mark before the label — a vendor's logo at its own colours, or a plain
+  /// icon. It's what makes the button recognisable at a glance.
+  final Widget leading;
   final String label;
   final VoidCallback onPressed;
 
-  /// The sign-in is under way: the mark gives way to a spinner and the button
-  /// stops taking taps, so a second click can't start a second flow.
+  /// The action is under way: the mark gives way to a spinner and the button
+  /// stops taking taps, so a second click can't start it twice.
   final bool busy;
 
   @override
-  State<BrandSignInButton> createState() => _BrandSignInButtonState();
+  State<SoftActionButton> createState() => _SoftActionButtonState();
 }
 
-class _BrandSignInButtonState extends State<BrandSignInButton> {
+class _SoftActionButtonState extends State<SoftActionButton> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    // Vendor guidance is a white button with dark text on light surfaces; on our
-    // dark charcoal we lift to a slightly raised surface so it stays a distinct,
-    // tappable pill instead of sinking into the background.
+    // White with dark text on light surfaces (which is also what the OAuth
+    // vendors ask for); on our dark charcoal we lift to a slightly raised
+    // surface so it stays a distinct, tappable pill instead of sinking in.
     final base = AppTheme.pick(Colors.white, const Color(0xFF2A2A2A));
     // On hover the surface shifts one quiet step — a hair grey on white, a hair
     // brighter on charcoal — the small "yes, this is clickable" a desktop user
@@ -102,7 +101,9 @@ class _BrandSignInButtonState extends State<BrandSignInButton> {
                       width: 18,
                       height: 18,
                       child: Center(
-                        child: widget.busy ? const AppSpinner() : widget.logo,
+                        child: widget.busy
+                            ? const AppSpinner()
+                            : widget.leading,
                       ),
                     ),
                     const SizedBox(width: 12),
