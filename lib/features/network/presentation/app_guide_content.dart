@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/pill_choice.dart';
+import '../../../shared/widgets/status_dot.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
@@ -68,6 +70,7 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final installed = ref.watch(installedClientAppsProvider);
     final selected = _touched
         ? _selected
@@ -110,7 +113,8 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
           installed: installed,
           onSelect: _select,
         ),
-        const SizedBox(height: 18),
+        // 16, not 18 — the vertical rhythm stays on the 4pt scale.
+        const SizedBox(height: 16),
         if (selected == null)
           OtherAppPanel(
             baseUrl: widget.baseUrl,
@@ -176,6 +180,11 @@ class _AppSelector extends StatelessWidget {
 }
 
 /// One selectable app pill. A green dot marks an app we found installed.
+///
+/// Built on the shared [PillChoice] rather than a hand-rolled bordered chip:
+/// the old version drew a `Border` for both states (against the no-borders
+/// rule) and marked selection with colour alone. Selection now reads three
+/// ways — accent fill, white label, and the lift `PillChoice` gives it.
 class _AppChip extends StatelessWidget {
   const _AppChip({
     required this.label,
@@ -191,49 +200,27 @@ class _AppChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected
-          ? AppPalette.accent.withValues(alpha: 0.16)
-          : AppPalette.cardBg,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? AppPalette.accent : AppPalette.divider,
+    // Reads AppPalette.online below and is rebuilt only when the selection
+    // changes, so it needs its own watch to survive a theme flip.
+    AppTheme.watch(context);
+    return PillChoice(
+      selected: selected,
+      onTap: onTap,
+      height: AppControl.height,
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (installed) ...[
+            // White on the accent fill so the "installed" mark stays visible
+            // once the pill is selected — `online` green on accent is muddy.
+            StatusDot(
+              color: selected ? Colors.white : AppPalette.online,
+              size: 6,
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (installed) ...[
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: AppPalette.online,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected
-                      ? AppPalette.textPrimary
-                      : AppPalette.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
+            const SizedBox(width: 7),
+          ],
+          Text(label),
+        ],
       ),
     );
   }

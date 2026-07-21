@@ -84,6 +84,7 @@ class ClientAppPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     // Show chat setup for a chat grid, or while the overview still loads (media
     // resolves to none first) — so a chat grid never flashes without its steps.
     final showChat = hasChat || !media.any;
@@ -161,7 +162,7 @@ class ClientAppPanel extends StatelessWidget {
             'makes images with this grid.',
         prompt: mediaSkillPrompt(baseUrl, apiKey, image: true, video: false),
       ),
-      const SizedBox(height: 10),
+      const SizedBox(height: 12),
     ],
     if (media.video) ...[
       _MediaSkillCard(
@@ -172,7 +173,7 @@ class ClientAppPanel extends StatelessWidget {
             'turns an image into a short video with this grid.',
         prompt: mediaSkillPrompt(baseUrl, apiKey, image: false, video: true),
       ),
-      const SizedBox(height: 10),
+      const SizedBox(height: 12),
     ],
   ];
 }
@@ -198,6 +199,7 @@ class OtherAppPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final showChat = hasChat || !media.any;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,6 +259,7 @@ class _MediaSkillCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return GlassCard(
       style: GlassCardStyle.inset,
       width: double.infinity,
@@ -266,7 +269,9 @@ class _MediaSkillCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: AppPalette.accent),
+              // An accent mark on a surface, not a fill — accentOnSurface.
+              // Flat accent measures 3.22:1 on the dark inset; this is 5.75:1.
+              Icon(icon, size: 16, color: AppPalette.accentOnSurface),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -308,6 +313,7 @@ class _MediaApiCall extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -363,6 +369,7 @@ class _ApplyBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final running = phase is ApplyRunning;
     return GlassCard(
       width: double.infinity,
@@ -434,6 +441,7 @@ class _StatusLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Row(

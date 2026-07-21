@@ -109,6 +109,7 @@ class _EnvHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Row(
       children: [
         Expanded(
@@ -154,6 +155,7 @@ class _HowToUseButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     return Tooltip(
       message: 'See how to connect your apps to this grid',
       child: TextButton.icon(
@@ -193,6 +195,7 @@ class EnvVarRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final shown = secret && !revealed ? _mask(value) : value;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
