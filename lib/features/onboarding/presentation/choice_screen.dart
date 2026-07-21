@@ -94,6 +94,17 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                       child: const Text('Skip'),
                     ),
                   ),
+                  // What skipping actually leaves the user with. Without it they
+                  // land in a chat that answers nothing and have to work out why
+                  // — the cost of the quiet option belongs beside the option.
+                  Text(
+                    'Your grid has no model yet, so chat won’t answer until you '
+                    'add one. You can do this later in Settings.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ],
               ),
             ),
