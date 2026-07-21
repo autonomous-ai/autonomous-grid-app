@@ -16,6 +16,7 @@ class MissingAppNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return GlassCard(
       style: GlassCardStyle.inset,
       width: double.infinity,
@@ -59,6 +60,7 @@ class NeedsChatModelNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return GlassCard(
       style: GlassCardStyle.inset,
       width: double.infinity,

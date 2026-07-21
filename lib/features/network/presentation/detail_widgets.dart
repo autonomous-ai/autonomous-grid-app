@@ -24,6 +24,7 @@ class DetailSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -80,6 +81,7 @@ class AddressRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
       child: Row(
@@ -128,6 +130,7 @@ class MetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       child: Row(
@@ -234,6 +237,7 @@ class BadgePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 6 : 8,
@@ -283,6 +287,7 @@ class CopyIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return IconButton(
       icon: const Icon(Icons.copy_rounded, size: AppControl.iconSize),
       color: AppPalette.textSecondary,
@@ -304,18 +309,21 @@ class CopyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return FilledButton.tonalIcon(
       onPressed: () => copyToClipboard(context, value),
       icon: const Icon(Icons.copy_rounded, size: AppControl.iconSize),
       label: Text(label),
-      // Only the accent tint (fill/label/rim) is this button's own — it sits in
-      // a card corner, so it stays on the compact scale; the rest is the theme.
+      // Only the accent tint (fill/label) is this button's own — it sits in a
+      // card corner, so it stays on the compact scale; the rest is the theme.
+      // The label takes accentOnSurface: flat accent on its own 16% wash
+      // measured 2.64:1 in dark, under the 3.0 floor — this reads 4.72:1. The
+      // rim is gone; the tinted fill alone separates it (no-borders rule).
       style: FilledButton.styleFrom(
         backgroundColor: AppPalette.accent.withValues(alpha: 0.16),
-        foregroundColor: AppPalette.accent,
+        foregroundColor: AppPalette.accentOnSurface,
         minimumSize: const Size(0, AppControl.heightSmall),
         padding: AppControl.paddingSmallIcon,
-        side: BorderSide(color: AppPalette.accent.withValues(alpha: 0.5)),
       ),
     );
   }
@@ -330,6 +338,7 @@ class GuideLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Column(
@@ -369,12 +378,20 @@ class CodeBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    // Fill + shadow, not a border. The old `windowBg` fill separated from the
+    // page by only 1.075:1 (dark) / 1.053:1 (light), so the `Border` was the
+    // only thing drawing this box — the crutch the no-borders rule replaces.
+    //
+    // Deliberately NOT `AppCard.inset`: the snippet blocks sit directly on the
+    // page, where inset measures 1.018:1 in light — invisible. `inset` is built
+    // to recess *inside* a card. The raised recipe is what reads on the page.
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: AppPalette.windowBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppPalette.divider),
+        color: AppGlass.surfaceFill,
+        borderRadius: BorderRadius.circular(AppCard.insetRadius),
+        boxShadow: AppGlass.cardShadow,
       ),
       child: Stack(
         children: [
