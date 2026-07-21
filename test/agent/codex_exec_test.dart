@@ -137,6 +137,40 @@ void main() {
     });
   });
 
+  group('codexExecArgs — the two subcommands take different flags', () {
+    test('a first turn runs in the folder it was given', () {
+      final args = codexExecArgs(workdir: '/tmp/work');
+
+      expect(args.first, 'exec');
+      expect(args, isNot(contains('resume')));
+      expect(args, containsAllInOrder(['-C', '/tmp/work']));
+    });
+
+    test('a resumed turn passes no flag `exec resume` would reject — one '
+        'unknown flag kills the turn before the model is ever reached', () {
+      final args = codexExecArgs(workdir: '/tmp/work', resumeThreadId: 'abc');
+
+      expect(args, containsAllInOrder(['exec', 'resume']));
+      expect(args.last, 'abc');
+      expect(args, isNot(contains('--sandbox')));
+      expect(args, isNot(contains('-C')));
+      expect(args, isNot(contains('/tmp/work')));
+    });
+
+    test(
+      'both turns are read-only, said the one way both subcommands take',
+      () {
+        for (final args in [
+          codexExecArgs(workdir: '/tmp/work'),
+          codexExecArgs(workdir: '/tmp/work', resumeThreadId: 'abc'),
+        ]) {
+          expect(args, containsAllInOrder(['-c', 'sandbox_mode="read-only"']));
+          expect(args, contains('--json'));
+        }
+      },
+    );
+  });
+
   group('friendlyCodexError — a next step, not a stack trace', () {
     test('the responses wall reads as a limit of grid servers, not of the '
         "user's own grid — theirs may be serving Codex models fine", () {
@@ -153,6 +187,18 @@ void main() {
         friendlyCodexError('boom\nauthentication failed'),
         contains('authentication failed'),
       );
+    });
+
+    test('a rejected command quotes the reason, not the usage footer codex '
+        'prints under it', () {
+      final message = friendlyCodexError(
+        "error: unexpected argument '--sandbox' found\n\n"
+        'Usage: codex exec resume --json <SESSION_ID> [PROMPT]\n\n'
+        "For more information, try '--help'.",
+      );
+
+      expect(message, contains("unexpected argument '--sandbox'"));
+      expect(message, isNot(contains('--help')));
     });
 
     test('a silent failure still says what to do', () {

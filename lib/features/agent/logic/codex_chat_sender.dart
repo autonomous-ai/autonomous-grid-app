@@ -298,11 +298,16 @@ class CodexChatSender implements ChatSender {
 ///
 /// TODO(BE): drop this once the relay serves `/v1/responses`.
 String friendlyCodexError(String raw) {
-  final detail = raw
+  final lines = raw
       .split('\n')
       .map((line) => line.trim())
-      .where((line) => line.isNotEmpty)
-      .lastOrNull;
+      .where((line) => line.isNotEmpty);
+  // Codex's own `error:` line when there is one, else its last. A rejected
+  // command prints the reason first and usage after it, so taking the last line
+  // showed the user "For more information, try '--help'." and nothing else.
+  final detail =
+      lines.where((line) => line.startsWith('error:')).firstOrNull ??
+      lines.lastOrNull;
   if (detail == null || detail.isEmpty) {
     return "Codex couldn't finish. Check your connection and try again.";
   }

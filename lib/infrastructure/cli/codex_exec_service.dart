@@ -95,6 +95,30 @@ abstract interface class CodexExecService {
   });
 }
 
+/// The argv for one turn: a fresh `codex exec`, or `codex exec resume <id>` to
+/// continue a thread.
+///
+/// The two subcommands don't take the same flags, and Codex rejects the whole
+/// invocation over one it doesn't know — `exec resume` accepts neither
+/// `--sandbox` nor `-C`, so passing them killed every *second* turn of a
+/// conversation at argv parsing, before a single byte reached the model. So the
+/// read-only sandbox is set through the `-c` config override, which both
+/// subcommands accept, and the working root is left to the process's own
+/// directory (a resumed session restores the one it started in).
+///
+/// Pure, and unit-tested, because the failure mode is silent: a mistyped flag
+/// looks exactly like a model that wouldn't answer.
+List<String> codexExecArgs({required String workdir, String? resumeThreadId}) =>
+    [
+      'exec',
+      if (resumeThreadId != null) 'resume',
+      '--json',
+      '--skip-git-repo-check',
+      '-c',
+      'sandbox_mode="read-only"',
+      if (resumeThreadId != null) resumeThreadId else ...['-C', workdir],
+    ];
+
 /// Real implementation: spawns `codex exec --json` read-only, feeds the prompt on
 /// stdin (so a long replayed history can't overflow an argv limit), and turns its
 /// JSONL thread events into [CodexExecEvent]s.
@@ -152,16 +176,8 @@ class _CodexExecTurn {
     return CodexExecRun(events: _events.stream, done: _done.future, kill: kill);
   }
 
-  List<String> _args() => [
-    'exec',
-    if (_resumeThreadId case final id?) ...['resume', id],
-    '--json',
-    '--skip-git-repo-check',
-    '--sandbox',
-    'read-only',
-    '-C',
-    _workdir,
-  ];
+  List<String> _args() =>
+      codexExecArgs(workdir: _workdir, resumeThreadId: _resumeThreadId);
 
   void _onStarted(Process process) {
     if (_killed) {
