@@ -172,3 +172,36 @@ class CollapsibleEngineBlock extends StatelessWidget {
     );
   }
 }
+
+/// A block's Start button, carrying the reason it can't run yet as a tooltip on
+/// the disabled button — a greyed-out button that never says why is a dead end
+/// for a first-time user.
+///
+/// Shared by every add-engine block: they all disable Start for the same class
+/// of reason (a missing key, nothing picked, or an engine already running here).
+class EngineStartButton extends StatelessWidget {
+  const EngineStartButton({
+    super.key,
+    required this.label,
+    required this.blockedReason,
+    required this.onPressed,
+  });
+
+  final String label;
+
+  /// Why the button is disabled, or null when it can start.
+  final String? blockedReason;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = blockedReason;
+    final button = FilledButton.icon(
+      onPressed: reason == null ? onPressed : null,
+      icon: const Icon(Icons.play_arrow),
+      label: Text(label),
+    );
+    if (reason == null) return button;
+    return Tooltip(message: reason, child: button);
+  }
+}

@@ -8,7 +8,9 @@ import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../logic/api_engine_catalog.dart';
+import '../logic/engine_slots.dart';
 import '../logic/provider_run_controller.dart';
+import '../logic/serving_engines_provider.dart';
 import 'engine_block.dart';
 import 'engine_cost_chip.dart';
 
@@ -45,6 +47,10 @@ class ApiEngineBlock extends ConsumerWidget {
     // Only claim "or your ChatGPT subscription" when a sign-in provider is
     // actually available on this CLI — otherwise the subtitle over-promises.
     final hasSignIn = available.any((e) => e.provider.usesSignIn);
+    // A hosted model this machine already serves can't be shared again — the
+    // grid would be offered the same name twice. The form takes them out of
+    // play rather than letting a second join fail or shadow the first.
+    final alreadyShared = apiModelsServed(ref.watch(servingEnginesProvider));
     return EngineBlock(
       icon: Icons.cloud_outlined,
       title: 'Cloud Provider',
@@ -57,6 +63,7 @@ class ApiEngineBlock extends ConsumerWidget {
       child: _ApiEngineForm(
         network: network,
         engines: available,
+        alreadyShared: alreadyShared,
         compact: compact,
       ),
     );
@@ -71,11 +78,16 @@ class _ApiEngineForm extends ConsumerStatefulWidget {
   const _ApiEngineForm({
     required this.network,
     required this.engines,
+    required this.alreadyShared,
     required this.compact,
   });
 
   final NetworkCredential network;
   final List<ApiEngine> engines;
+
+  /// Advertised names this machine already serves from a hosted provider — off
+  /// the table, so the same model can't be shared twice.
+  final Set<String> alreadyShared;
   final bool compact;
 
   @override
@@ -85,7 +97,7 @@ class _ApiEngineForm extends ConsumerStatefulWidget {
 class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
   final _key = TextEditingController();
   late String _kind = _defaultKind(widget.engines);
-  late Set<String> _selected = _allModels(_engine);
+  late Set<String> _selected = _shareable(_engine);
   bool _obscure = true;
 
   /// Compact only: reveal the model picker. First-run users just sign in and
@@ -111,8 +123,12 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
     orElse: () => widget.engines.first,
   );
 
-  static Set<String> _allModels(ApiEngine engine) => {
-    for (final model in engine.models) model.advertised,
+  /// Everything this provider offers that isn't already on the grid from this
+  /// machine — what "share all" means once some models are live. Ticking every
+  /// box by default would otherwise re-offer a model that's already shared.
+  Set<String> _shareable(ApiEngine engine) => {
+    for (final model in engine.models)
+      if (!widget.alreadyShared.contains(model.advertised)) model.advertised,
   };
 
   /// A stored key covers this start only while the user hasn't asked to replace it.
@@ -127,7 +143,7 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
   void _onProviderChanged(String kind) {
     setState(() {
       _kind = kind;
-      _selected = _allModels(_engine);
+      _selected = _shareable(_engine);
       _replaceKey = false;
       _key.clear();
     });
@@ -154,6 +170,10 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
         !_usingStoredKey &&
         _key.text.trim().isEmpty) {
       return 'Enter a valid API key to start sharing cloud models.';
+    }
+    if (_shareable(_engine).isEmpty) {
+      return "You're already sharing every model ${_engine.provider.label} "
+          'offers. Stop one above to change what you share.';
     }
     if (_selected.isEmpty) return 'Pick at least one model to share.';
     return null;
@@ -232,6 +252,7 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
           _ModelMultiSelect(
             models: engine.models,
             selected: _selected,
+            alreadyShared: widget.alreadyShared,
             onToggle: _toggleModel,
           )
         else
@@ -271,7 +292,7 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
               ? _StartingRow(label: _busyLabel)
               : ListenableBuilder(
                   listenable: _key,
-                  builder: (context, _) => _StartButton(
+                  builder: (context, _) => EngineStartButton(
                     label: _startLabel,
                     blockedReason: _startBlockedReason(),
                     onPressed: _start,
@@ -280,35 +301,6 @@ class _ApiEngineFormState extends ConsumerState<_ApiEngineForm> {
         ),
       ],
     );
-  }
-}
-
-/// Start, carrying the reason it can't run yet as a tooltip on the disabled
-/// button — a greyed-out button that never says why is a dead end for a
-/// first-time user.
-class _StartButton extends StatelessWidget {
-  const _StartButton({
-    required this.label,
-    required this.blockedReason,
-    required this.onPressed,
-  });
-
-  final String label;
-
-  /// Why the button is disabled, or null when it can start.
-  final String? blockedReason;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final reason = blockedReason;
-    final button = FilledButton.icon(
-      onPressed: reason == null ? onPressed : null,
-      icon: const Icon(Icons.play_arrow),
-      label: Text(label),
-    );
-    if (reason == null) return button;
-    return Tooltip(message: reason, child: button);
   }
 }
 
@@ -509,11 +501,16 @@ class _ModelMultiSelect extends StatelessWidget {
   const _ModelMultiSelect({
     required this.models,
     required this.selected,
+    required this.alreadyShared,
     required this.onToggle,
   });
 
   final List<ApiEngineModel> models;
   final Set<String> selected;
+
+  /// Models this machine already serves — shown, but not tickable: sharing one
+  /// twice would advertise the same name to the grid twice.
+  final Set<String> alreadyShared;
   final void Function(String advertised, bool selected) onToggle;
 
   @override
@@ -538,6 +535,7 @@ class _ModelMultiSelect extends StatelessWidget {
               model: model,
               width: constraints.maxWidth,
               checked: selected.contains(model.advertised),
+              shared: alreadyShared.contains(model.advertised),
               onToggle: () => onToggle(
                 model.advertised,
                 !selected.contains(model.advertised),
@@ -548,12 +546,19 @@ class _ModelMultiSelect extends StatelessWidget {
     );
   }
 
+  /// What the field says when closed. Counts against what's actually on offer —
+  /// with some models already live, "all" means all the ones left to share, and
+  /// nothing to share at all says so rather than reading "No models selected".
   String _summary() {
+    final offered = models.length - alreadyShared.length;
+    if (offered <= 0) return 'Already sharing every model';
     if (selected.isEmpty) return 'No models selected';
-    if (selected.length == models.length) {
-      return 'All available models (${models.length})';
+    if (selected.length == offered) {
+      return offered == models.length
+          ? 'All available models ($offered)'
+          : 'All $offered models left to share';
     }
-    return '${selected.length} of ${models.length} models';
+    return '${selected.length} of $offered models';
   }
 }
 
@@ -609,12 +614,17 @@ class _ModelMenuRow extends StatelessWidget {
     required this.model,
     required this.width,
     required this.checked,
+    required this.shared,
     required this.onToggle,
   });
 
   final ApiEngineModel model;
   final double width;
   final bool checked;
+
+  /// Already live on the grid from this machine — the row shows it, greyed and
+  /// untickable, so the model is accounted for rather than silently missing.
+  final bool shared;
   final VoidCallback onToggle;
 
   @override
@@ -634,7 +644,7 @@ class _ModelMenuRow extends StatelessWidget {
           color: Colors.transparent,
           borderRadius: radius,
           child: InkWell(
-            onTap: onToggle,
+            onTap: shared ? null : onToggle,
             borderRadius: radius,
             hoverColor: AppSurface.hoverFill,
             splashFactory: NoSplash.splashFactory,
@@ -648,7 +658,11 @@ class _ModelMenuRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
-                    checked ? Icons.check_box : Icons.check_box_outline_blank,
+                    shared
+                        ? Icons.check_circle_outline
+                        : (checked
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank),
                     size: AppControl.iconSize,
                     // onSurfaceVariant, not textFaint: on the lifted menu panel
                     // the faint ink lands at 2.80:1, under the 3.0 WCAG 1.4.11
@@ -675,12 +689,14 @@ class _ModelMenuRow extends StatelessWidget {
                             fontWeight: checked
                                 ? FontWeight.w600
                                 : FontWeight.w400,
-                            color: AppPalette.textPrimary,
+                            color: shared
+                                ? AppPalette.textSecondary
+                                : AppPalette.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          _meta(model),
+                          shared ? 'Already sharing' : _meta(model),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
