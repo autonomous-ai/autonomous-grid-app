@@ -218,9 +218,7 @@ class _ServeSection extends ConsumerWidget {
     return children;
   }
 
-  /// The ways to add an engine, each gated by what this computer is already
-  /// doing — a form that could only fail is held with the reason on it, never
-  /// hidden (the user needs to see what to stop).
+  /// The ways to add an engine, gated by what this computer is already doing.
   ///
   /// Hosted engines (`--api`) cost this machine nothing, so they stack onto its
   /// union (ADR 0010); only a model it already serves is off the table, which
@@ -231,12 +229,17 @@ class _ServeSection extends ConsumerWidget {
   ///    nothing can be added until it's stopped;
   ///  - a connected server already running → the built-in can't join it, and
   ///    another connected one can't either; hosted engines still can.
+  ///
+  /// When a rule bites, the forms it rules out are **replaced** by one note that
+  /// says what's running and what to stop — not left on screen disabled. Cards
+  /// that can't do anything still read as things to fill in, and a reason
+  /// repeated over each one reads as several problems rather than one.
   List<Widget> _addEngineBlocks(
     NetworkCredential network,
     List<ServingEngine> serving,
   ) {
     // Why a server on this computer can't be connected right now — null when
-    // one still can. Shared by every on-device block below.
+    // one still can. Replaces every on-device form below when it's set.
     final connectBlocked = connectBlockedReason(serving);
 
     if (Platform.isWindows) {
@@ -247,9 +250,13 @@ class _ServeSection extends ConsumerWidget {
         const SizedBox(height: 8),
         ApiEngineBlock(network: network),
         const SizedBox(height: 16),
-        const BuiltInUnavailableNote(),
-        const SizedBox(height: 16),
-        _ExternalServers(network: network, blockedReason: connectBlocked),
+        if (connectBlocked != null)
+          OneEngineHereNote(reason: connectBlocked)
+        else ...[
+          const BuiltInUnavailableNote(),
+          const SizedBox(height: 16),
+          _ExternalServers(network: network),
+        ],
       ];
     }
 
@@ -271,28 +278,30 @@ class _ServeSection extends ConsumerWidget {
       // subscription) needs no download, so it's the quickest way onto the grid.
       ApiEngineBlock(network: network),
       const SizedBox(height: 16),
-      // With a server already running here, the built-in can't join it and
-      // neither can another one — say that, rather than pointing at a
-      // connected-engine form that is itself held.
+      // A server is already running here: the built-in can't join it and
+      // neither can another connected one, so both forms give way to the one
+      // note that says which engine is holding the machine.
       if (connectBlocked != null)
         OneEngineHereNote(reason: connectBlocked)
-      // Only hosted engines are serving: the built-in still can't join them,
-      // but a local model behind its own server can — point there.
-      else if (hasOtherEngines)
-        const LocalNeedsConnectNote()
-      else
-        EngineBlock(
-          icon: Icons.dns_outlined,
-          title: 'Local Engine',
-          subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
-          trailing: const EngineCostChip(cost: EngineCost.free),
-          child: ServeLocalCard(network: network),
-        ),
-      const SizedBox(height: 16),
-      _ExternalServers(network: network, blockedReason: connectBlocked),
-      if (!hasOtherEngines) ...[
+      else ...[
+        // Only hosted engines are serving: the built-in still can't join them,
+        // but a local model behind its own server can — point there.
+        if (hasOtherEngines)
+          const LocalNeedsConnectNote()
+        else
+          EngineBlock(
+            icon: Icons.dns_outlined,
+            title: 'Local Engine',
+            subtitle: 'Run a downloaded model on this computer with Llama.cpp.',
+            trailing: const EngineCostChip(cost: EngineCost.free),
+            child: ServeLocalCard(network: network),
+          ),
         const SizedBox(height: 16),
-        const NodeSetupCard(),
+        _ExternalServers(network: network),
+        if (!hasOtherEngines) ...[
+          const SizedBox(height: 16),
+          const NodeSetupCard(),
+        ],
       ],
     ];
   }
@@ -363,13 +372,9 @@ class _EngineBusyElsewhere extends ConsumerWidget {
 /// start in one tap; a collapsed "Connect your own engine" expander follows for
 /// any other OpenAI-compatible engine you run on this computer.
 class _ExternalServers extends ConsumerWidget {
-  const _ExternalServers({required this.network, this.blockedReason});
+  const _ExternalServers({required this.network});
 
   final NetworkCredential network;
-
-  /// Why none of these can start another engine right now (this computer is
-  /// already serving one), or null when they can.
-  final String? blockedReason;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -385,9 +390,6 @@ class _ExternalServers extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (isScanning) const ScanningForServersNote(),
-        // Said once for the whole section: every card below is held for the
-        // same reason, and three copies of it would read as three problems.
-        if (blockedReason != null) ConnectBlockedNote(reason: blockedReason!),
         for (final backend in detected) ...[
           if (backend.running)
             ExternalServerBlock(
@@ -404,7 +406,6 @@ class _ExternalServers extends ConsumerWidget {
                   ? backend.label
                   : deriveAdvertiseName(backend.models.first),
               suggestedModels: backend.models,
-              blockedReason: blockedReason,
             )
           else
             // Installed but not serving — offer to start it instead of a serve
@@ -412,7 +413,6 @@ class _ExternalServers extends ConsumerWidget {
             _NotRunningBackendBlock(
               key: ValueKey(backend.kind),
               backend: backend,
-              blockedReason: blockedReason,
             ),
           const SizedBox(height: 16),
         ],
@@ -425,7 +425,6 @@ class _ExternalServers extends ConsumerWidget {
           subtitle:
               'Advanced — point Grid at an OpenAI-compatible engine you run on '
               'this computer.',
-          blockedReason: blockedReason,
         ),
       ],
     );
@@ -446,17 +445,9 @@ String _backendSubtitle(DetectedBackend backend) {
 /// than a serve form that would fail, it says so plainly and offers to start it
 /// in place — on success the list refreshes and the normal serve card takes over.
 class _NotRunningBackendBlock extends ConsumerWidget {
-  const _NotRunningBackendBlock({
-    super.key,
-    required this.backend,
-    this.blockedReason,
-  });
+  const _NotRunningBackendBlock({super.key, required this.backend});
 
   final DetectedBackend backend;
-
-  /// Why starting it wouldn't get the user anywhere — this computer already
-  /// serves an engine, so a freshly started server couldn't join either.
-  final String? blockedReason;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -481,47 +472,24 @@ class _NotRunningBackendBlock extends ConsumerWidget {
           ],
           Align(
             alignment: Alignment.centerLeft,
-            child: _RunButton(
-              label: starting
-                  ? 'Starting ${backend.label}…'
-                  : 'Run ${backend.label}',
-              busy: starting,
-              blockedReason: blockedReason,
-              onPressed: () =>
-                  ref.read(ollamaLaunchControllerProvider.notifier).start(),
+            child: FilledButton.icon(
+              onPressed: starting
+                  ? null
+                  : () => ref
+                        .read(ollamaLaunchControllerProvider.notifier)
+                        .start(),
+              icon: starting
+                  ? const AppSpinner()
+                  : const Icon(Icons.play_arrow),
+              label: Text(
+                starting
+                    ? 'Starting ${backend.label}…'
+                    : 'Run ${backend.label}',
+              ),
             ),
           ),
         ],
       ),
     );
-  }
-}
-
-/// Start-this-framework, with a spinner while it comes up and the reason on it
-/// when it can't run — the same contract as [EngineStartButton], which this
-/// can't reuse because its icon doubles as the busy indicator.
-class _RunButton extends StatelessWidget {
-  const _RunButton({
-    required this.label,
-    required this.busy,
-    required this.blockedReason,
-    required this.onPressed,
-  });
-
-  final String label;
-  final bool busy;
-  final String? blockedReason;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final reason = blockedReason;
-    final button = FilledButton.icon(
-      onPressed: busy || reason != null ? null : onPressed,
-      icon: busy ? const AppSpinner() : const Icon(Icons.play_arrow),
-      label: Text(label),
-    );
-    if (reason == null) return button;
-    return Tooltip(message: reason, child: button);
   }
 }
