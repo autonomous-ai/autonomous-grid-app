@@ -275,7 +275,19 @@ class ClientAppConfigurator {
       // Same Grid entry — matched by name, or by the relay it points at → replace
       // in place so there's only ever one Grid config in the file.
       if ('${e['name'] ?? ''}' == name || eBase == normBase) {
-        editor.update(['custom_providers', i], entry);
+        // Key by key rather than `update([..., i], entry)`: replacing a whole
+        // map inside a 4-space-indented list trips a yaml_edit bug (it emits
+        // mis-indented YAML, then asserts it can't re-parse its own output).
+        // Hermes writes this file with 4-space indent, so that path always
+        // blows up when re-pointing an existing Grid entry. Leaf writes are
+        // indent-safe; drop the keys this entry no longer carries first, so a
+        // stale `api_mode`/`provider_key` can't survive the swap.
+        for (final k in e.keys) {
+          if (!entry.containsKey('$k')) {
+            editor.remove(['custom_providers', i, '$k']);
+          }
+        }
+        entry.forEach((k, v) => editor.update(['custom_providers', i, k], v));
         return;
       }
     }

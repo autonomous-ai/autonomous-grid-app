@@ -247,6 +247,47 @@ void main() {
     );
 
     test(
+      're-points a Grid entry in a 4-space-indented file (yaml_edit guard)',
+      () async {
+        // Hermes writes config.yaml with 4-space indent. Replacing a whole map
+        // inside a list at that indent trips a yaml_edit bug, so re-pointing an
+        // existing entry used to abort with "Failed to produce valid YAML".
+        final config = File('${home.path}/.hermes/config.yaml');
+        await config.create(recursive: true);
+        await config.writeAsString(
+          'model:\n'
+          '    provider: custom\n'
+          // `name` is the base_url's host, so this entry matches _base and
+          // takes the replace-in-place branch (not append).
+          'custom_providers:\n'
+          '    - name: grid.example\n'
+          '      provider_key: stale-key\n'
+          '      base_url: https://grid.example/grid-old/relay/v1\n'
+          '      api_key: old-key\n'
+          '      model: old-model\n'
+          '      api_mode: responses\n'
+          'toolsets:\n'
+          '    - hermes-cli\n',
+        );
+
+        final result = await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+        expect(result, isA<ApplyOk>());
+
+        final editor = YamlEditor(readConfig());
+        final list = editor.parseAt(['custom_providers']).value as List;
+        expect(list.length, 1); // re-pointed in place, not stacked
+        expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
+        expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
+        expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
+        // Keys the new entry no longer carries must not survive the swap.
+        expect((list[0] as Map).containsKey('api_mode'), isFalse);
+        expect((list[0] as Map).containsKey('provider_key'), isFalse);
+        // Unrelated settings survive.
+        expect(editor.parseAt(['toolsets']).value, contains('hermes-cli'));
+      },
+    );
+
+    test(
       'overwrites an existing Grid entry when the relay url changed',
       () async {
         final config = File('${home.path}/.hermes/config.yaml');
