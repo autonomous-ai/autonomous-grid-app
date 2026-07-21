@@ -154,10 +154,10 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
 /// box you *type* in. That's why it read as a disabled text field: same fill,
 /// same rim, no affordance saying it opens.
 ///
-/// Shaped after [ThemeModePicker]'s control — a recessed groove with the picked
-/// cell lifted in accent — but built here rather than shared: that one stacks a
-/// glyph over its label to survive a ~70px cell in a narrow menu, and this
-/// dialog is 380px wide with no glyphs and two cells.
+/// A recessed groove with the picked cell lifted in accent — the app's segmented
+/// control, built here rather than shared: this dialog is 380px wide with two
+/// glyph-less cells, which is nothing like the narrow, glyph-stacked cells the
+/// pattern came from.
 class _TypePicker extends StatelessWidget {
   const _TypePicker({
     required this.value,

@@ -10,10 +10,10 @@ import 'package:grid_app/shared/layouts/widgets/section_view.dart';
 import 'package:grid_app/features/appearance/presentation/theme_preview_tile.dart';
 import 'package:grid_app/shared/theme/app_theme.dart';
 
-/// The Appearance settings screen. It owns no state of its own — it hosts the
-/// one [ThemeModePicker] the account menu also shows — so what's worth pinning is
-/// that the section routes to it and that picking a theme from *here* persists
-/// exactly as it does from the menu.
+/// The Appearance settings screen — the one place a theme is picked, now that
+/// the account menu no longer carries a copy of the control. It owns no state of
+/// its own, so what's worth pinning is that the section routes to it and that
+/// picking a theme persists.
 void main() {
   late Directory tmp;
   late File file;

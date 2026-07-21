@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
-import '../../../shared/layouts/widgets/theme_mode_picker.dart';
+import '../../../shared/theme/theme_mode_labels.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import 'theme_preview_tile.dart';
@@ -11,9 +11,9 @@ import 'theme_preview_tile.dart';
 ///
 /// You pick a theme by *seeing* it — three previews of the app wearing each one,
 /// the way macOS System Settings does it — rather than by reading three words.
-/// The segmented [ThemeModePicker] still lives in the account menu, where a
-/// row of pictures wouldn't fit; both drive the one persisted `themeModeProvider`,
-/// so they can't disagree.
+/// This is the one place the choice is made: the account menu used to carry a
+/// segmented copy of it, which put a settings control in a menu and said the
+/// same thing twice.
 class AppearanceView extends ConsumerWidget {
   const AppearanceView({super.key});
 

@@ -11,7 +11,6 @@ import '../../theme/app_theme.dart';
 import '../../widgets/anchored_menu_position.dart';
 import '../../widgets/labeled_field.dart';
 import '../shell_state.dart';
-import 'theme_mode_picker.dart';
 
 const _accountMenuWidth = 232.0;
 
@@ -34,13 +33,6 @@ const _menuIconGap = 9.0;
 // 8, per the radius ladder — a row nested in a 6-radius panel. Material's own
 // menu item is radius 0.
 final _menuRowRadius = BorderRadius.circular(AppControl.radius);
-// The Appearance segmented control (ThemeModePicker): its outer padding (6+8),
-// the "Appearance" label row, and the three-way segment control. Measured (not
-// estimated) — see `theme_mode_picker_test.dart`, which fails if the widget
-// grows past this — because the menu that hangs off the account row is
-// positioned by summing these heights, so a stale number leaves it in the air.
-const _menuThemeHeight = 91.0;
-
 /// The menu entries that aren't a section — kept apart from `ShellSection.name`
 /// so a section can never collide with one.
 const _settingsValue = 'settings';
@@ -48,13 +40,12 @@ const _updatesValue = 'check_updates';
 const _logoutValue = 'logout';
 
 /// What the menu will actually measure, given what it's about to show: Settings,
-/// the Appearance control, the update row (not on platforms without an updater),
-/// the version (only once it's read), Sign out.
+/// the update row (not on platforms without an updater), the version (only once
+/// it's read), Sign out.
 Size _accountMenuSize({required bool updater, required bool version}) => Size(
   _accountMenuWidth,
   _menuPadding * 2 +
       _menuRowHeight +
-      _menuThemeHeight +
       (updater ? _menuRowHeight : 0) +
       (version ? _menuVersionHeight : 0) +
       _menuRowHeight,
@@ -246,9 +237,6 @@ class _AccountMenuContent extends StatelessWidget {
             label: 'Settings',
             onPressed: () => onSelected(_settingsValue),
           ),
-          // Light / Dark / System, as a segmented control. The theme system was
-          // always live; this is the control that drives it.
-          const ThemeModePicker(),
           if (updaterSupported)
             _AccountMenuItem(
               icon: LucideIcons.downloadCloud300,

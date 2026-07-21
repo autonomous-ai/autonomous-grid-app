@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
-import '../../../shared/layouts/widgets/theme_mode_picker.dart';
+import '../../../shared/theme/theme_mode_labels.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/soft_action_button.dart';
@@ -234,9 +234,9 @@ class _BackdropPainter extends CustomPainter {
 
 /// A compact Light / Dark / System switch for the login screen's corner. Reads
 /// and writes the same persisted [themeModeProvider] / [chatPrefsProvider] the
-/// account menu's [ThemeModePicker] uses — so the choice is available before the
-/// user signs in, and survives a restart. Rendered as three quiet icon buttons
-/// in a pill rather than the menu's labelled block, to sit lightly in the corner.
+/// Appearance settings screen does — so the choice is available before the user
+/// signs in, and survives a restart. Rendered as three quiet icon buttons in a
+/// pill, to sit lightly in the corner.
 class _ThemeToggle extends ConsumerWidget {
   const _ThemeToggle();
 
