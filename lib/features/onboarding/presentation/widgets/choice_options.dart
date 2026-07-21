@@ -18,8 +18,8 @@ import '../../../provider_node/logic/provider_run_controller.dart';
 import '../../../provider_node/logic/serving_engines_provider.dart';
 import '../../../provider_node/presentation/api_engine_block.dart';
 import '../../logic/onboarding_choice_controller.dart';
-import '../../logic/onboarding_routes.dart';
-import 'choice_card.dart';
+import '../../../../shared/widgets/choice_card.dart';
+import '../../../provider_node/logic/api_engine_choices.dart';
 
 /// Sign in with a ChatGPT / Codex subscription — the quickest way in when the
 /// installed CLI offers one: nothing to download, no key to go and find.

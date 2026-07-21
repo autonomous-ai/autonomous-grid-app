@@ -1,15 +1,13 @@
-/// The ways a first-run grid can get a model, split the way the choice screen
-/// asks about them.
+/// The hosted providers, split the way the app *asks* about them.
 ///
-/// The Model Engines screen presents every hosted provider as one block with a
-/// dropdown, which is right for a settings page and wrong for a first decision:
-/// signing in with a ChatGPT account and pasting an API key are different
-/// answers to "how does this grid get a model", not two rows of one menu. These
-/// helpers split the catalog that way and word each card from what the installed
-/// CLI actually offers, so the screen never names a provider it can't serve.
+/// Signing in with a ChatGPT account and pasting an API key are different
+/// answers to "how does this grid get a model", not two rows of one dropdown —
+/// so both the first-run screen and the Model Engines tab give them a card each,
+/// worded from what the installed CLI actually offers so neither ever names a
+/// provider it can't serve.
 library;
 
-import '../../provider_node/logic/api_engine_catalog.dart';
+import 'api_engine_catalog.dart';
 
 /// The providers you sign into (a ChatGPT / Codex subscription) — no key to
 /// find, so this is the fastest way in when it's available.

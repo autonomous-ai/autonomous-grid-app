@@ -16,7 +16,13 @@ import '../logic/node_setup_plan.dart';
 /// with a live log. The idle view is driven by detected capabilities; once
 /// started, the [NodeSetupController] state takes over.
 class NodeSetupCard extends ConsumerWidget {
-  const NodeSetupCard({super.key});
+  const NodeSetupCard({super.key, this.framed = true});
+
+  /// Whether to draw its own card and title. False when it's embedded in
+  /// something that already says what it is — the "Run on this computer" card
+  /// on Model Engines — where the frame would be a box inside a box and the
+  /// title would say the same thing twice.
+  final bool framed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,6 +45,8 @@ class NodeSetupCard extends ConsumerWidget {
       NodeSetupDone() => _DoneBody(state: setup),
       NodeSetupIdle() => const _IdleBody(),
     };
+
+    if (!framed) return body;
 
     return Card(
       child: Padding(

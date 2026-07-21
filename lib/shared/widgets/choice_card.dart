@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
-import '../../../provider_node/presentation/engine_block.dart';
+import '../../features/provider_node/presentation/engine_block.dart';
 
-/// One way to get started, said in as few words as it takes: an icon, a title,
+/// One way to do a thing, said in as few words as it takes: an icon, a title,
 /// one line, one button.
 ///
-/// The shape is the point. This is the first screen of the app, before the user
-/// has decided anything — a paragraph of caveats per option is a settings form
-/// wearing a welcome screen's clothes. Detail (which models, whose bill, how big
-/// the download) belongs after the choice, not in front of it.
+/// The shape is the point, and it's why this is shared: the first-run screen and
+/// the Model Engines tab offer the *same* three ways onto a grid, and a user who
+/// picked one on the way in should meet it wearing the same clothes later.
+/// Detail (which models, whose bill, how big the download) belongs after the
+/// choice — revealed in [footer] once the button is pressed — not in front of
+/// it. A card that can't act right now passes its reason as [action] instead of
+/// a button.
 class ChoiceCard extends StatelessWidget {
   const ChoiceCard({
     super.key,
