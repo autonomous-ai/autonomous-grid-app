@@ -24,6 +24,7 @@ class ExternalServerBlock extends ConsumerStatefulWidget {
     this.initialAdvertise = '',
     this.suggestedModels = const [],
     this.collapsible = false,
+    this.blockedReason,
   });
 
   final NetworkCredential network;
@@ -41,6 +42,12 @@ class ExternalServerBlock extends ConsumerStatefulWidget {
   /// Show the form collapsed behind a tappable header (the advanced manual
   /// card), instead of always-open like the detected-framework cards.
   final bool collapsible;
+
+  /// Why this computer can't take another engine right now, or null when it
+  /// can. The form stays visible and filled in — only Start is held, with the
+  /// reason beside it, so the user sees what to stop rather than a card that
+  /// vanished.
+  final String? blockedReason;
 
   @override
   ConsumerState<ExternalServerBlock> createState() =>
@@ -110,6 +117,7 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
       model: _model,
       advertise: _advertise,
       suggestedModels: widget.suggestedModels,
+      blockedReason: widget.blockedReason,
       onStart: _start,
     );
     if (widget.collapsible) {
@@ -140,12 +148,17 @@ class ServerForm extends StatelessWidget {
     required this.advertise,
     required this.suggestedModels,
     required this.onStart,
+    this.blockedReason,
   });
 
   final TextEditingController endpoint;
   final TextEditingController model;
   final TextEditingController advertise;
   final List<String> suggestedModels;
+
+  /// Why Start is held, as its tooltip. The section says it in prose once, above
+  /// these cards — repeating it under every Start would say it three times.
+  final String? blockedReason;
   final VoidCallback onStart;
 
   @override
@@ -172,13 +185,14 @@ class ServerForm extends StatelessWidget {
           child: ListenableBuilder(
             listenable: Listenable.merge([endpoint, model]),
             builder: (context, _) {
-              final canStart =
-                  endpoint.text.trim().isNotEmpty &&
-                  model.text.trim().isNotEmpty;
-              return FilledButton.icon(
-                onPressed: canStart ? onStart : null,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Start engine'),
+              final empty =
+                  endpoint.text.trim().isEmpty || model.text.trim().isEmpty;
+              return EngineStartButton(
+                label: 'Start engine',
+                blockedReason:
+                    blockedReason ??
+                    (empty ? 'Fill in the Base URL and Model to start.' : null),
+                onPressed: onStart,
               );
             },
           ),

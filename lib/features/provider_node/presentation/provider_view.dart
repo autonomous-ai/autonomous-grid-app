@@ -19,6 +19,7 @@ import '../../network/presentation/enable_provider_card.dart';
 import '../../network/presentation/sharing_locked_view.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/backend_detector.dart';
+import '../logic/engine_slots.dart';
 import '../logic/ollama_launch_controller.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
@@ -27,6 +28,7 @@ import 'contribution_summary.dart';
 import 'engine_block.dart';
 import 'engine_cost_chip.dart';
 import 'engine_failure_card.dart';
+import 'engine_notes.dart';
 import 'grid_scope_bar.dart';
 import 'external_server_block.dart';
 import 'serving_engines_section.dart';
@@ -216,30 +218,38 @@ class _ServeSection extends ConsumerWidget {
     return children;
   }
 
-  /// The ways to add an engine. API (`--api`) and connected (`--at`) engines
-  /// stack additively onto the machine's union (ADR 0010); the built-in local
-  /// engine (`--serve`) is the exception — it serves one model and CANNOT share
-  /// the identity with any other engine (ADR 0007 D4), so it's gated on what's
-  /// already serving:
-  ///  - built-in local already running → it must run alone, so nothing can be
-  ///    added until it's stopped;
-  ///  - other engines running → the built-in can't join them, so its block turns
-  ///    into a pointer to run a local server and connect it as external instead.
+  /// The ways to add an engine, each gated by what this computer is already
+  /// doing — a form that could only fail is held with the reason on it, never
+  /// hidden (the user needs to see what to stop).
+  ///
+  /// Hosted engines (`--api`) cost this machine nothing, so they stack onto its
+  /// union (ADR 0010); only a model it already serves is off the table, which
+  /// [ApiEngineBlock] handles per model. Everything that *runs here* competes
+  /// for the same GPU and memory, so the machine serves **one** of those at a
+  /// time ([connectBlockedReason]):
+  ///  - built-in local already running → it must run alone (ADR 0007 D4), so
+  ///    nothing can be added until it's stopped;
+  ///  - a connected server already running → the built-in can't join it, and
+  ///    another connected one can't either; hosted engines still can.
   List<Widget> _addEngineBlocks(
     NetworkCredential network,
     List<ServingEngine> serving,
   ) {
+    // Why a server on this computer can't be connected right now — null when
+    // one still can. Shared by every on-device block below.
+    final connectBlocked = connectBlockedReason(serving);
+
     if (Platform.isWindows) {
       // Windows can't host the built-in (llama.cpp) engine yet — offer BYO/API,
       // cloud first.
       return [
-        const _AddEngineHeading(),
+        const AddEngineHeading(),
         const SizedBox(height: 8),
         ApiEngineBlock(network: network),
         const SizedBox(height: 16),
-        const _BuiltInUnavailableNote(),
+        const BuiltInUnavailableNote(),
         const SizedBox(height: 16),
-        _ExternalServers(network: network),
+        _ExternalServers(network: network, blockedReason: connectBlocked),
       ];
     }
 
@@ -247,24 +257,29 @@ class _ServeSection extends ConsumerWidget {
     // added alongside it. Explain instead of offering forms that would fail.
     if (serving.any((engine) => engine.kind == EngineKind.local)) {
       return const [
-        _AddEngineHeading(),
+        AddEngineHeading(),
         SizedBox(height: 8),
-        _LocalEngineExclusiveNote(),
+        LocalEngineExclusiveNote(),
       ];
     }
 
     final hasOtherEngines = serving.isNotEmpty;
     return [
-      const _AddEngineHeading(),
+      const AddEngineHeading(),
       const SizedBox(height: 8),
       // Cloud providers first: a hosted model (OpenAI, or a Codex / ChatGPT
       // subscription) needs no download, so it's the quickest way onto the grid.
       ApiEngineBlock(network: network),
       const SizedBox(height: 16),
-      // With other engines already serving, the built-in local one can't join —
-      // its block becomes a pointer to the connected-engine path.
-      if (hasOtherEngines)
-        const _LocalNeedsConnectNote()
+      // With a server already running here, the built-in can't join it and
+      // neither can another one — say that, rather than pointing at a
+      // connected-engine form that is itself held.
+      if (connectBlocked != null)
+        OneEngineHereNote(reason: connectBlocked)
+      // Only hosted engines are serving: the built-in still can't join them,
+      // but a local model behind its own server can — point there.
+      else if (hasOtherEngines)
+        const LocalNeedsConnectNote()
       else
         EngineBlock(
           icon: Icons.dns_outlined,
@@ -274,160 +289,12 @@ class _ServeSection extends ConsumerWidget {
           child: ServeLocalCard(network: network),
         ),
       const SizedBox(height: 16),
-      _ExternalServers(network: network),
+      _ExternalServers(network: network, blockedReason: connectBlocked),
       if (!hasOtherEngines) ...[
         const SizedBox(height: 16),
         const NodeSetupCard(),
       ],
     ];
-  }
-}
-
-/// Shown when the built-in local engine is running: it serves one model and
-/// can't share the machine with others (ADR 0007 D4), so adding anything means
-/// stopping it first. Honest about the trade rather than offering a failing form.
-class _LocalEngineExclusiveNote extends StatelessWidget {
-  const _LocalEngineExclusiveNote();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return EngineSurface(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your local model runs on its own',
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'The built-in local engine serves a single model and can’t '
-                  'run alongside others. To run several engines at once, stop '
-                  'it above, then add API or connected engines — or run your '
-                  'local model as your own server and connect it.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Shown in place of the built-in Local Engine block when other engines are
-/// already serving: the built-in can't join them, but a local model reached over
-/// its own server (llama-server, Ollama, …) can — so this points there.
-class _LocalNeedsConnectNote extends StatelessWidget {
-  const _LocalNeedsConnectNote();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return EngineSurface(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.dns_outlined,
-            size: 20,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add a local model as a connected engine',
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'The built-in local engine can’t run alongside other engines. '
-                  'To use a local model here too, run it as a server (Ollama, '
-                  'or llama-server) and add it under “Connect your own engine” '
-                  'below.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A quiet section label above the add-engine blocks, so the page reads as
-/// "what's running" then "add another".
-class _AddEngineHeading extends StatelessWidget {
-  const _AddEngineHeading();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Text(
-        'Add an engine',
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-/// Shown on Windows in place of the built-in engine path, which isn't supported
-/// there yet — so the user understands why and where to go instead.
-class _BuiltInUnavailableNote extends StatelessWidget {
-  const _BuiltInUnavailableNote();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return EngineSurface(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Built-in engine not available on Windows yet',
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "Running a model directly on this Windows computer isn't "
-                  'supported yet. You can still connect your own AI server below, '
-                  'or use models other people share on the grid from the Playground.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -496,9 +363,13 @@ class _EngineBusyElsewhere extends ConsumerWidget {
 /// start in one tap; a collapsed "Connect your own engine" expander follows for
 /// any other OpenAI-compatible engine you run on this computer.
 class _ExternalServers extends ConsumerWidget {
-  const _ExternalServers({required this.network});
+  const _ExternalServers({required this.network, this.blockedReason});
 
   final NetworkCredential network;
+
+  /// Why none of these can start another engine right now (this computer is
+  /// already serving one), or null when they can.
+  final String? blockedReason;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -513,7 +384,10 @@ class _ExternalServers extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (isScanning) const _ScanningForServersNote(),
+        if (isScanning) const ScanningForServersNote(),
+        // Said once for the whole section: every card below is held for the
+        // same reason, and three copies of it would read as three problems.
+        if (blockedReason != null) ConnectBlockedNote(reason: blockedReason!),
         for (final backend in detected) ...[
           if (backend.running)
             ExternalServerBlock(
@@ -530,6 +404,7 @@ class _ExternalServers extends ConsumerWidget {
                   ? backend.label
                   : deriveAdvertiseName(backend.models.first),
               suggestedModels: backend.models,
+              blockedReason: blockedReason,
             )
           else
             // Installed but not serving — offer to start it instead of a serve
@@ -537,6 +412,7 @@ class _ExternalServers extends ConsumerWidget {
             _NotRunningBackendBlock(
               key: ValueKey(backend.kind),
               backend: backend,
+              blockedReason: blockedReason,
             ),
           const SizedBox(height: 16),
         ],
@@ -549,6 +425,7 @@ class _ExternalServers extends ConsumerWidget {
           subtitle:
               'Advanced — point Grid at an OpenAI-compatible engine you run on '
               'this computer.',
+          blockedReason: blockedReason,
         ),
       ],
     );
@@ -565,40 +442,21 @@ String _backendSubtitle(DetectedBackend backend) {
   return '$host · $models';
 }
 
-/// A quiet "still looking" line shown while we probe this computer for running
-/// AI engines (Ollama, LM Studio, …), so the not-yet-populated list doesn't read
-/// as "nothing found" in the first second or two.
-class _ScanningForServersNote extends StatelessWidget {
-  const _ScanningForServersNote();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          const AppSpinner(),
-          const SizedBox(width: 10),
-          Text(
-            'Looking for AI engines on this computer…',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// A detected backend that's installed but not serving (today: Ollama). Rather
 /// than a serve form that would fail, it says so plainly and offers to start it
 /// in place — on success the list refreshes and the normal serve card takes over.
 class _NotRunningBackendBlock extends ConsumerWidget {
-  const _NotRunningBackendBlock({super.key, required this.backend});
+  const _NotRunningBackendBlock({
+    super.key,
+    required this.backend,
+    this.blockedReason,
+  });
 
   final DetectedBackend backend;
+
+  /// Why starting it wouldn't get the user anywhere — this computer already
+  /// serves an engine, so a freshly started server couldn't join either.
+  final String? blockedReason;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -623,24 +481,47 @@ class _NotRunningBackendBlock extends ConsumerWidget {
           ],
           Align(
             alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: starting
-                  ? null
-                  : () => ref
-                        .read(ollamaLaunchControllerProvider.notifier)
-                        .start(),
-              icon: starting
-                  ? const AppSpinner()
-                  : const Icon(Icons.play_arrow),
-              label: Text(
-                starting
-                    ? 'Starting ${backend.label}…'
-                    : 'Run ${backend.label}',
-              ),
+            child: _RunButton(
+              label: starting
+                  ? 'Starting ${backend.label}…'
+                  : 'Run ${backend.label}',
+              busy: starting,
+              blockedReason: blockedReason,
+              onPressed: () =>
+                  ref.read(ollamaLaunchControllerProvider.notifier).start(),
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+/// Start-this-framework, with a spinner while it comes up and the reason on it
+/// when it can't run — the same contract as [EngineStartButton], which this
+/// can't reuse because its icon doubles as the busy indicator.
+class _RunButton extends StatelessWidget {
+  const _RunButton({
+    required this.label,
+    required this.busy,
+    required this.blockedReason,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final String? blockedReason;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = blockedReason;
+    final button = FilledButton.icon(
+      onPressed: busy || reason != null ? null : onPressed,
+      icon: busy ? const AppSpinner() : const Icon(Icons.play_arrow),
+      label: Text(label),
+    );
+    if (reason == null) return button;
+    return Tooltip(message: reason, child: button);
   }
 }
