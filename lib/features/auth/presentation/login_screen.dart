@@ -13,7 +13,6 @@ import '../../../shared/widgets/soft_action_button.dart';
 import '../../network/presentation/detail_widgets.dart';
 import '../logic/auth_controller.dart';
 import '../logic/auth_state.dart';
-import '../logic/session_expiry_controller.dart';
 import 'google_logo.dart';
 
 /// Opens [url] in the user's default browser. Returns false if it could not be
@@ -42,10 +41,6 @@ class LoginScreen extends ConsumerWidget {
 
     final state = ref.watch(authControllerProvider);
     final controller = ref.read(authControllerProvider.notifier);
-    // We land here from an expired session (RootView routes needsLogin -> login),
-    // so tell the user why they're back at sign-in instead of the app.
-    final sessionExpired =
-        ref.watch(sessionExpiryProvider) == SessionExpiry.needsLogin;
 
     return Scaffold(
       body: Stack(
@@ -77,12 +72,8 @@ class LoginScreen extends ConsumerWidget {
                     AuthFailure(:final message) => _SignIn(
                       onSignIn: controller.login,
                       error: message,
-                      sessionExpired: sessionExpired,
                     ),
-                    AuthIdle() => _SignIn(
-                      onSignIn: controller.login,
-                      sessionExpired: sessionExpired,
-                    ),
+                    AuthIdle() => _SignIn(onSignIn: controller.login),
                   },
                 ),
               );
@@ -327,18 +318,10 @@ class _ThemeToggleButton extends StatelessWidget {
 /// *arrives* rather than blinking in — the small motion is most of what reads
 /// as "polished" in the first moment on screen.
 class _SignIn extends StatefulWidget {
-  const _SignIn({
-    required this.onSignIn,
-    this.error,
-    this.sessionExpired = false,
-  });
+  const _SignIn({required this.onSignIn, this.error});
 
   final VoidCallback onSignIn;
   final String? error;
-
-  /// True when the user was routed here because their session expired, so the
-  /// subtitle explains the bounce instead of showing the product tagline.
-  final bool sessionExpired;
 
   @override
   State<_SignIn> createState() => _SignInState();
@@ -382,24 +365,18 @@ class _SignInState extends State<_SignIn> with SingleTickerProviderStateMixin {
             const SizedBox(height: 18),
             Text('Grid', style: theme.textTheme.headlineMedium),
             const SizedBox(height: 8),
-            if (widget.sessionExpired) ...[
-              const _SessionExpiredBadge(),
-              const SizedBox(height: 10),
-            ],
-            // No subtitle when the session expired: the badge above already
-            // says what happened, and the button below is the only thing to do
-            // about it — a line between them just repeated the beat.
-            if (!widget.sessionExpired) ...[
-              Text(
-                'One private endpoint for the AI models you run.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+            // Nothing about *why* the user is here. Arriving from an expired
+            // session and opening the app cold look the same from this screen,
+            // and both end in the same tap — an explanation of the bounce is a
+            // line about the past in front of the one thing to do next.
+            Text(
+              'One private endpoint for the AI models you run.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 28),
-            ] else
-              const SizedBox(height: 18),
+            ),
+            const SizedBox(height: 28),
             SoftActionButton(
               leading: const GoogleLogo(size: 18),
               label: 'Sign in with Google',
@@ -507,44 +484,6 @@ class _LogoWithGlowState extends State<_LogoWithGlow>
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A small warn-toned chip that names *why* the user is back at sign-in when a
-/// session expired — so the bounce reads as an event, not a plain tagline. Uses
-/// the shared [AppPalette.warn] token over a faint wash of the same hue.
-class _SessionExpiredBadge extends StatelessWidget {
-  const _SessionExpiredBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final warn = AppPalette.warn;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: warn.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: warn.withValues(alpha: 0.28)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 5, 12, 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.schedule_rounded, size: 13, color: warn),
-            const SizedBox(width: 6),
-            Text(
-              'Session expired',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: warn,
-                letterSpacing: 0.1,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

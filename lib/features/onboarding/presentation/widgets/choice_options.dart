@@ -10,8 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../../shared/widgets/chatgpt_logo.dart';
 import '../../../../shared/widgets/soft_action_button.dart';
-import '../../../agents/logic/agent_catalog.dart';
 import '../../../provider_node/logic/api_engine_catalog.dart';
 import '../../../provider_node/logic/engine_slots.dart';
 import '../../../provider_node/logic/provider_run_controller.dart';
@@ -55,7 +55,7 @@ class SubscriptionOption extends ConsumerWidget {
       // account over, so it reads as their sign-in, not one of ours. The label
       // is just the verb — the card's title already named the provider.
       action: SoftActionButton(
-        leading: Image.asset(AgentTool.codex.iconAsset, width: 18, height: 18),
+        leading: const ChatGptLogo(size: 18),
         label: 'Continue',
         busy: starting,
         onPressed: () => ref
