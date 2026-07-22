@@ -33,6 +33,8 @@ class ServingEnginesSection extends ConsumerWidget {
     final starting = active?.starting ?? false;
     final signInUrl = active?.signInUrl;
     final log = active?.log ?? const <String>[];
+    final stopping =
+        run is ProviderRunStopping && run.grid == network.networkId;
 
     // Any non-responses model in the union can be tried in-app; a codex seat
     // can't (the Playground speaks chat/completions), so the hint drops then.
@@ -50,13 +52,19 @@ class ServingEnginesSection extends ConsumerWidget {
         children: [
           _Header(
             gridName: network.name,
-            live: engines.isNotEmpty,
-            onStop: engines.isEmpty && !starting
-                ? null
-                : () => _stop(context, ref, engines),
+            activity: _activity(
+              engines,
+              starting: starting,
+              stopping: stopping,
+            ),
+            onStop: () => _stop(context, ref, engines),
           ),
           for (final engine in engines)
-            ServingEngineTile(engine: engine, gridId: network.networkId),
+            ServingEngineTile(
+              engine: engine,
+              gridId: network.networkId,
+              stopping: stopping,
+            ),
           if (signInUrl != null) ...[
             const SizedBox(height: 12),
             _SignInPrompt(url: signInUrl),
@@ -72,6 +80,19 @@ class ServingEnginesSection extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// What the header reports. A stop in flight outranks the rest: the engine is
+  /// still up and still listed, but the only true thing to say about it is that
+  /// it's on its way out.
+  _Activity _activity(
+    List<ServingEngine> engines, {
+    required bool starting,
+    required bool stopping,
+  }) {
+    if (stopping) return _Activity.stopping;
+    if (engines.isNotEmpty) return _Activity.serving;
+    return _Activity.starting;
   }
 
   /// Stop what this machine is serving — after the same question the row's own
@@ -95,48 +116,54 @@ class ServingEnginesSection extends ConsumerWidget {
   }
 }
 
-/// The section header: what this machine is doing on the grid right now, and
-/// the one control that ends it.
+/// What this machine is doing on the grid right now — the three things the
+/// header can honestly say, and one word for each so the icon, the sentence and
+/// the button can't disagree.
+enum _Activity { starting, serving, stopping }
+
+/// The section header: the activity, and the one control that ends it.
 ///
-/// It says *Starting* while a join is in flight, never *Serving*: with nothing
-/// live yet, "Serving on autonomous.ai" over a spinner claimed a share that
-/// hadn't happened. The stop stays reachable in that state — a join that hangs
-/// needs a way out, and `stop()` cancels one as well as it ends one.
+/// Every state is named for what is true at that moment. It says *Starting*
+/// while a join is in flight, never *Serving* — with nothing live yet, "Serving
+/// on autonomous.ai" over a spinner claimed a share that hadn't happened. And
+/// *Stopping* until `grid leave` returns, which takes seconds: the row used to
+/// keep its green dot and its live Stop throughout, so the only feedback a
+/// second click gave was that nothing happened.
 class _Header extends StatelessWidget {
   const _Header({
     required this.gridName,
-    required this.live,
+    required this.activity,
     required this.onStop,
   });
 
   final String gridName;
-
-  /// An engine of this machine's is actually serving the grid — as opposed to a
-  /// join still on its way.
-  final bool live;
-
-  final VoidCallback? onStop;
+  final _Activity activity;
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final serving = activity == _Activity.serving;
     return Row(
       children: [
-        live
+        serving
             ? Icon(Icons.dns, color: AppPalette.online, size: 18)
             : const AppSpinner(),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            live ? 'Serving on $gridName' : 'Starting on $gridName…',
-            style: theme.textTheme.titleMedium,
-          ),
+          child: Text(switch (activity) {
+            _Activity.starting => 'Starting on $gridName…',
+            _Activity.serving => 'Serving on $gridName',
+            _Activity.stopping => 'Stopping on $gridName…',
+          }, style: theme.textTheme.titleMedium),
         ),
-        if (onStop != null)
+        // Nothing to press while it's already stopping — a second leave would
+        // race the first, and there is no state left to ask for.
+        if (activity != _Activity.stopping)
           TextButton.icon(
             onPressed: onStop,
-            icon: Icon(live ? Icons.stop : Icons.close, size: 18),
-            label: Text(live ? 'Stop' : 'Cancel'),
+            icon: Icon(serving ? Icons.stop : Icons.close, size: 18),
+            label: Text(serving ? 'Stop' : 'Cancel'),
           ),
       ],
     );

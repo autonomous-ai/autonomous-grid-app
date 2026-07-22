@@ -29,7 +29,10 @@ const _args = [
 class _StubHomeStore extends GridHomeStore {
   _StubHomeStore({this.record, this.log = const [], this.serving = const []});
 
-  final EngineRunRecord? record;
+  /// Mutable so a fake CLI can drop it mid-test, the way `grid leave` clears the
+  /// real run record on disk.
+  EngineRunRecord? record;
+
   final List<String> log;
   final List<String> serving;
 
@@ -63,6 +66,21 @@ class _RecordingCli extends FakeGridCliService {
   @override
   Future<CliResult> run(List<String> args) {
     runs.add(args);
+    return super.run(args);
+  }
+}
+
+/// A fake CLI that clears the store's run record when it leaves, the way a real
+/// `grid leave` drops the engine from `~/.grid` — so a test can check what the
+/// controller settles on once the roster is genuinely empty.
+class _LeavingCli extends FakeGridCliService {
+  _LeavingCli(this.store);
+
+  final _StubHomeStore store;
+
+  @override
+  Future<CliResult> run(List<String> args) {
+    if (args.isNotEmpty && args.first == 'leave') store.record = null;
     return super.run(args);
   }
 }
@@ -616,6 +634,73 @@ void main() {
     );
 
     await notifier.stop();
+    expect(
+      container.read(providerRunControllerProvider),
+      isA<ProviderRunStopped>(),
+    );
+  });
+
+  test('a stop says so while grid leave is still running, so the card never '
+      'looks untouched for the seconds it takes', () async {
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(_HangingLeaveCli()),
+        nodeNameProvider.overrideWithValue('grid-app'),
+        gridHomeStoreProvider.overrideWithValue(
+          _StubHomeStore(
+            record: EngineRunRecord(
+              engineId: 'grid-app',
+              gridId: 'net',
+              models: const ['m'],
+              pid: io.pid,
+            ),
+          ),
+        ),
+        leaveTimeoutProvider.overrideWithValue(
+          const Duration(milliseconds: 20),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(providerRunControllerProvider.notifier);
+    notifier.reconcile('net');
+
+    final stopping = notifier.stop();
+    final midStop = container.read(providerRunControllerProvider);
+    expect(
+      midStop,
+      isA<ProviderRunStopping>(),
+      reason: 'the engine is still up, but the user has asked for it to go',
+    );
+    expect((midStop as ProviderRunStopping).grid, 'net');
+
+    await stopping;
+    expect(
+      container.read(providerRunControllerProvider),
+      isA<ProviderRunStopped>(),
+    );
+  });
+
+  test('dropping the machine’s last engine ends in stopped, not still-serving '
+      '— disk decides, not the leave’s exit code', () async {
+    final store = _StubHomeStore(
+      record: EngineRunRecord(
+        engineId: 'grid-app',
+        gridId: 'net',
+        models: const ['m'],
+        pid: io.pid,
+      ),
+    );
+    // The CLI clears the run record as a real `grid leave --engine` would, so
+    // the controller re-reads an empty roster afterwards.
+    final container = _containerWith(_LeavingCli(store), store: store);
+    addTearDown(container.dispose);
+
+    final notifier = container.read(providerRunControllerProvider.notifier);
+    notifier.reconcile('net');
+    await notifier.removeEngine('net', 'm');
+
     expect(
       container.read(providerRunControllerProvider),
       isA<ProviderRunStopped>(),

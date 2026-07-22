@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/engine_run.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../models/logic/advertise_name.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
@@ -31,10 +32,16 @@ class ServingEngineTile extends ConsumerWidget {
     super.key,
     required this.engine,
     required this.gridId,
+    required this.stopping,
   });
 
   final ServingEngine engine;
   final String gridId;
+
+  /// A stop is already under way on this grid: the row keeps its place — the
+  /// engine is still up until `grid leave` returns — but says so instead of
+  /// offering a Stop that would race the one in flight.
+  final bool stopping;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -85,14 +92,18 @@ class ServingEngineTile extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
-          _LiveDot(),
-          IconButton(
-            tooltip: selector == null ? 'Use Stop, above' : 'Stop',
-            onPressed: selector == null
-                ? null
-                : () => _confirmStop(context, ref, selector),
-            icon: const Icon(Icons.stop_circle_outlined, size: 20),
-          ),
+          if (stopping)
+            const _StoppingLabel()
+          else ...[
+            _LiveDot(),
+            IconButton(
+              tooltip: selector == null ? 'Use Stop, above' : 'Stop',
+              onPressed: selector == null
+                  ? null
+                  : () => _confirmStop(context, ref, selector),
+              icon: const Icon(Icons.stop_circle_outlined, size: 20),
+            ),
+          ],
         ],
       ),
     );
@@ -132,6 +143,35 @@ class ServingEngineTile extends ConsumerWidget {
           : '${engine.models.join(', ')} · $host';
     }
     return engine.models.isEmpty ? 'serving' : engine.models.join(', ');
+  }
+}
+
+/// What the row's Stop turns into while `grid leave` runs: the engine is on its
+/// way out and nothing more is to be pressed here. In words, not a bare spinner
+/// — a spinner alone reads as "loading", and this is the one moment the user
+/// wants to know the click landed.
+class _StoppingLabel extends StatelessWidget {
+  const _StoppingLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AppSpinner(size: SpinnerSize.small),
+          const SizedBox(width: 8),
+          Text(
+            'Stopping…',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

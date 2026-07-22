@@ -147,6 +147,11 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
         run is ProviderRunActive &&
         run.grid == network.networkId &&
         run.starting;
+    // A stop this machine asked for is still running `grid leave`. It keeps the
+    // serving card on screen — the card is what says "Stopping…" — and keeps the
+    // add-engine cards away, so a new join can't race the leave.
+    final stoppingHere =
+        run is ProviderRunStopping && run.grid == network.networkId;
     children.add(
       ContributionSummary(
         engines: serving,
@@ -188,14 +193,16 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
 
     // What's already serving on THIS grid (the union), plus a transient row while
     // a newly-joined engine is still starting.
-    if (serving.isNotEmpty || startingHere) {
+    if (serving.isNotEmpty || startingHere || stoppingHere) {
       children.addAll([
         ServingEnginesSection(network: network),
         const SizedBox(height: 16),
       ]);
     }
 
-    children.addAll(_addEngineBlocks(network, serving, startingHere));
+    children.addAll(
+      _addEngineBlocks(network, serving, startingHere || stoppingHere),
+    );
 
     // Auto-routing used to sit here. It has moved to the grid's own Overview
     // (Grids tab), because it is a property of the *grid*, not of this computer:
@@ -215,17 +222,20 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
   /// A computer shares **one** engine ([connectBlockedReason]), so the cards
   /// only appear while nothing is serving. Once something is, they're replaced
   /// by a single note naming what to stop first — a set of cards that are all
-  /// shut is four doors and no way through. While a join is still in flight
-  /// there is nothing to add and nothing yet to stop, so the section is simply
-  /// absent: the starting card above is the whole story.
+  /// shut is four doors and no way through. While a join or a stop is [busy] on
+  /// the wire there is nothing to add yet, so the section is simply absent: the
+  /// card above is the whole story, and a card pressed now would race the CLI
+  /// call already running.
   List<Widget> _addEngineBlocks(
     NetworkCredential network,
     List<ServingEngine> serving,
-    bool starting,
+    bool busy,
   ) {
+    // First, so a stop in flight doesn't leave a note telling the user to stop
+    // the engine they're already stopping.
+    if (busy) return const [];
     final blocked = connectBlockedReason(serving);
     if (blocked != null) return [OneEngineNote(reason: blocked)];
-    if (starting) return const [];
     return [AddEngineCards(network: network)];
   }
 }
