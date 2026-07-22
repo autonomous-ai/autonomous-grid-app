@@ -125,7 +125,7 @@ class ClientAppConfigurator {
       // No config yet → start from the snippet. Otherwise surgically repoint the
       // existing `model:` block at the grid, preserving every other setting and
       // comment (yaml_edit edits in place). Either way, a final pass makes sure
-      // the `browser` toolset is on so the agent can actually open web pages.
+      // the agent's toolsets are all on — files, terminal and the browser.
       // A responses-only model (codex) must speak the Responses dialect, which
       // Hermes only honours on a NAMED provider — a bare `provider: custom` is
       // silently downgraded to chat-completions on a non-OpenAI host.
@@ -159,7 +159,7 @@ class ClientAppConfigurator {
           responses: responses,
         );
       }
-      ensureBrowserToolset(editor);
+      ensureAgentToolsets(editor);
       await _backupThenWrite(config, editor.toString().trimRight());
 
       // Also drop the pair into `.env` as a fallback for other tools that read
@@ -329,26 +329,49 @@ class ClientAppConfigurator {
   String _reason(Object e) => e is FormatException ? e.message : '$e';
 }
 
-/// Ensure Hermes's `toolsets:` enables the `browser` toolset, which drives a
-/// real headless Chromium (`browser_navigate`).
+/// The Hermes toolsets the agent needs to do the job this app hands it.
 ///
-/// Without it the agent has only HTTP web fetch (`web_search` / `web_extract`),
-/// which sites like VNExpress block outright (406, bot detection) — a real
-/// browser renders the page and gets through. Applied on every Hermes config
-/// write so a non-technical user never has to enable it by hand. Idempotent and
-/// non-destructive: it appends `browser` to an existing list, leaving the user's
-/// other toolsets intact, and seeds a sensible default when there's none yet.
-void ensureBrowserToolset(YamlEditor editor) {
-  const browser = 'browser';
+/// `toolsets:` is an **allowlist**, not an addition: Hermes with no such key
+/// enables everything, and the moment the key exists only the toolsets named in
+/// it survive. So the list has to carry every group the app's own UI implies —
+/// `file` (`read_file`/`write_file`/`patch`/`search_files`) and `terminal`
+/// (`terminal`/`process`/`execute_code`) as much as the web ones. Naming only
+/// the web toolsets left an agent that could browse and nothing else, while the
+/// chat still offered "Ask before acting" over commands it no longer had; it
+/// answered by narrating its own blocks and guessing at a "security scan".
+///
+/// What the agent may actually *do* with these is the approval gate's call, in
+/// front of the user, per action ([decideHermesPermission]) — not something to
+/// decide once, silently, by withholding the tool.
+const List<String> kHermesToolsets = [
+  'hermes-cli',
+  'file',
+  'terminal',
+  'web',
+  'browser',
+];
+
+/// Ensure Hermes's `toolsets:` enables everything in [kHermesToolsets] — the
+/// file and terminal groups the agent works with, plus `browser`, which drives a
+/// real headless Chromium (`browser_navigate`); without it the agent has only
+/// HTTP fetch, which sites like VNExpress block outright (406, bot detection).
+///
+/// Applied on every Hermes config write so a non-technical user never has to
+/// enable one by hand — and so a config an older build narrowed to three
+/// toolsets repairs itself on the next write instead of staying crippled.
+/// Idempotent and non-destructive: it appends what's missing and leaves any
+/// other toolset the user added alone.
+void ensureAgentToolsets(YamlEditor editor) {
   final toolsets = editor.parseAt([
     'toolsets',
   ], orElse: () => wrapAsYamlNode(null)).value;
   if (toolsets is! List) {
-    editor.update(['toolsets'], const ['hermes-cli', 'web', browser]);
+    editor.update(['toolsets'], kHermesToolsets);
     return;
   }
-  if (toolsets.contains(browser)) return;
-  editor.appendToList(['toolsets'], browser);
+  for (final toolset in kHermesToolsets) {
+    if (!toolsets.contains(toolset)) editor.appendToList(['toolsets'], toolset);
+  }
 }
 
 /// The app-config writer, so widgets get it via `ref.read`.

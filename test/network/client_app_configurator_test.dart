@@ -129,12 +129,10 @@ void main() {
       expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
       expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
       expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
-      // A fresh config still enables the browser toolset, so the agent can open
-      // web pages rather than being stuck on bot-blocked HTTP fetches.
-      expect(
-        editor.parseAt(['toolsets']).value,
-        containsAll(<String>['hermes-cli', 'web', 'browser']),
-      );
+      // A fresh config enables every toolset the agent works with — files and
+      // terminal as much as the browser, since `toolsets:` is an allowlist and
+      // naming any of them turns the unnamed ones off.
+      expect(editor.parseAt(['toolsets']).value, containsAll(kHermesToolsets));
     });
 
     test('writes the Responses dialect for a codex model', () async {
@@ -161,8 +159,8 @@ void main() {
       );
     });
 
-    test('turns on the browser toolset without dropping the ones already '
-        'enabled, and re-applying does not duplicate it', () async {
+    test('turns on the agent toolsets without dropping the ones already '
+        'enabled, and re-applying does not duplicate them', () async {
       final config = File('${home.path}/.hermes/config.yaml');
       await config.create(recursive: true);
       await config.writeAsString(
@@ -177,7 +175,9 @@ void main() {
       await sut.apply(ClientApp.hermes, _base, _key, [_model]); // re-apply
 
       final list = YamlEditor(readConfig()).parseAt(['toolsets']).value as List;
-      expect(list, ['hermes-cli', 'web', 'browser']);
+      expect(list, containsAll(kHermesToolsets));
+      // The user's own order is left alone; re-applying adds nothing twice.
+      expect(list, hasLength(kHermesToolsets.length));
     });
 
     test(
@@ -276,7 +276,10 @@ void main() {
         final editor = YamlEditor(readConfig());
         final list = editor.parseAt(['custom_providers']).value as List;
         expect(list.length, 1); // re-pointed in place, not stacked
-        expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
+        expect(
+          editor.parseAt(['custom_providers', 0, 'base_url']).value,
+          _base,
+        );
         expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
         expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
         // Keys the new entry no longer carries must not survive the swap.
@@ -447,31 +450,44 @@ void main() {
     });
   });
 
-  group('ensureBrowserToolset', () {
-    test('appends browser to an existing toolsets list, keeping the rest', () {
-      final editor = YamlEditor('toolsets:\n  - hermes-cli\n  - web\n');
-      ensureBrowserToolset(editor);
-      expect(editor.parseAt(['toolsets']).value, [
-        'hermes-cli',
-        'web',
-        'browser',
-      ]);
+  group('ensureAgentToolsets', () {
+    test('adds every toolset the agent works with, keeping the rest', () {
+      // `toolsets:` is an allowlist — whatever isn't named is off. A list
+      // holding only the web groups is an agent that can browse and nothing
+      // else, under a chat still offering "Ask before acting" over commands.
+      final editor = YamlEditor('toolsets:\n  - hermes-cli\n  - mcp-mine\n');
+      ensureAgentToolsets(editor);
+      final result = editor.parseAt(['toolsets']).value as List;
+      expect(result, containsAll(kHermesToolsets));
+      expect(result, contains('mcp-mine'));
     });
 
-    test('is a no-op when browser is already enabled', () {
-      final editor = YamlEditor('toolsets:\n  - web\n  - browser\n');
-      ensureBrowserToolset(editor);
-      expect(editor.parseAt(['toolsets']).value, ['web', 'browser']);
+    test('repairs a config an older build narrowed to the web toolsets', () {
+      // What shipped: file and terminal dropped, so write_file and terminal
+      // simply weren't there — the agent narrated its own blocks and guessed
+      // at a "security scan". The next config write has to put them back.
+      final editor = YamlEditor(
+        'toolsets:\n  - hermes-cli\n  - web\n  - browser\n',
+      );
+      ensureAgentToolsets(editor);
+      final result = editor.parseAt(['toolsets']).value as List;
+      expect(result, containsAll(['file', 'terminal']));
     });
 
-    test('seeds a sensible list when there is no toolsets key yet', () {
+    test('is a no-op once every toolset is enabled', () {
+      final yaml =
+          'toolsets:\n${kHermesToolsets.map((t) => '  - $t\n').join()}';
+      final editor = YamlEditor(yaml);
+      ensureAgentToolsets(editor);
+      expect(editor.parseAt(['toolsets']).value, kHermesToolsets);
+    });
+
+    test('seeds the full list when there is no toolsets key yet', () {
+      // No key at all means Hermes enables everything, so seeding a short list
+      // would take tools away — the seed has to be the whole set.
       final editor = YamlEditor('model:\n  provider: custom\n');
-      ensureBrowserToolset(editor);
-      expect(editor.parseAt(['toolsets']).value, [
-        'hermes-cli',
-        'web',
-        'browser',
-      ]);
+      ensureAgentToolsets(editor);
+      expect(editor.parseAt(['toolsets']).value, kHermesToolsets);
     });
   });
 }
