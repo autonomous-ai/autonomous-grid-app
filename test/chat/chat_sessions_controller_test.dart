@@ -108,16 +108,27 @@ class _FixedNetwork extends SelectedNetwork {
   NetworkCredential? build() => _credential();
 }
 
-/// The agent's own name for a session, handed back the moment it's asked for.
+/// The agent's own name for a session, handed back the moment it's asked for —
+/// unless [held] is set, in which case it waits for [release].
+///
+/// The real one takes seconds (it polls the agent), and that gap is where the
+/// user gets to rename the chat themselves. A fake that answers instantly closes
+/// the gap and would let a race through untested.
 class _FakeAgentTitle implements AgentSessionTitle {
-  _FakeAgentTitle(this.title);
+  _FakeAgentTitle(this.title, {this.held = false});
 
   final String? title;
+  final bool held;
   final asked = <String>[];
+  final _gate = Completer<void>();
+
+  /// Let the held name land, as the agent eventually would.
+  void release() => _gate.complete();
 
   @override
   Future<String?> waitFor(String sessionId) async {
     asked.add(sessionId);
+    if (held) await _gate.future;
     return title;
   }
 }
@@ -136,12 +147,13 @@ _harness(
   required List<ChatSendUpdate> updates,
   bool agentInstalled = false,
   String? agentName,
+  bool holdAgentName = false,
   ChatSender? answering,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
   final agent = _FakeSender(updates);
-  final agentTitle = _FakeAgentTitle(agentName);
+  final agentTitle = _FakeAgentTitle(agentName, held: holdAgentName);
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
@@ -654,6 +666,53 @@ void main() {
     final conv = h.container.read(chatSessionsProvider).conversations.single;
     expect(conv.title, 'Đọc thư mục dự án');
     expect(ChatStore(directory: tmp).loadAll().single.title, conv.title);
+  });
+
+  test('a name the user typed survives the agent naming the same chat — the '
+      'agent name arrives seconds late and must not overwrite it', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      agentName: 'Đọc thư mục dự án',
+      // Held, so the name is still in flight while the user renames — the real
+      // wait is seconds long, which is ample time to open the "…" menu.
+      holdAgentName: true,
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+    final controller = h.container.read(chatSessionsProvider.notifier);
+
+    await controller.send(network: _credential(), model: 'm', message: 'hi');
+    final id = h.container.read(chatSessionsProvider).conversations.single.id;
+    controller.renameConversation(id, 'Ngân sách quý 4');
+    // Only now does the agent's name arrive — onto a chat the user has named.
+    h.agentTitle.release();
+    await pumpEventQueue();
+
+    final conv = h.container.read(chatSessionsProvider).conversations.single;
+    expect(conv.title, 'Ngân sách quý 4');
+    expect(conv.titleLocked, isTrue);
+    // On disk too, so reopening the app doesn't restore the agent's name.
+    expect(ChatStore(directory: tmp).loadAll().single.title, 'Ngân sách quý 4');
+  });
+
+  test('the lock outlives a restart — a chat reloaded from disk still refuses '
+      'to be renamed by the agent', () async {
+    final store = ChatStore(directory: tmp);
+    store.save(
+      Conversation(
+        id: 'c1',
+        title: 'Ngân sách quý 4',
+        model: 'm',
+        createdAt: DateTime(2026, 7, 1),
+        updatedAt: DateTime(2026, 7, 1),
+        titleLocked: true,
+      ),
+    );
+
+    expect(store.loadAll().single.titleLocked, isTrue);
   });
 
   test('a chat with no project sends no folder — the agent falls back to its '

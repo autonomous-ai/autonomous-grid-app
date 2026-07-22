@@ -34,6 +34,7 @@ import '../logic/file_mention.dart';
 import 'agent_handover_bar.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
+import 'chat_header.dart';
 import 'chat_minimap.dart';
 import 'chat_starters.dart';
 import 'grid_model_picker.dart';
@@ -402,6 +403,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Only over a real transcript. The starters screen and the
+              // no-model nudge are both stand-ins for a conversation that isn't
+              // there yet, and a header naming one would be naming nothing.
+              if (!noModel && !isNewChat) const ChatHeader(),
               Expanded(
                 child: noModel
                     ? NoModelYet(

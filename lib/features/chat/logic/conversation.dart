@@ -15,6 +15,7 @@ class Conversation {
     required this.updatedAt,
     this.messages = const [],
     this.projectId,
+    this.titleLocked = false,
   });
 
   final String id;
@@ -35,11 +36,21 @@ class Conversation {
   /// assistant may read while answering — see `Project`.
   final String? projectId;
 
+  /// The user named this chat by hand, so nothing may rename it again.
+  ///
+  /// The agent names a chat off its opening exchange, but that name arrives
+  /// seconds *after* the first reply — long enough for the user to have already
+  /// typed their own. Persisted rather than kept in memory: the agent's rename
+  /// can land after a restart, and a title the user chose must outlive the
+  /// session that chose it.
+  final bool titleLocked;
+
   Conversation copyWith({
     String? title,
     String? model,
     DateTime? updatedAt,
     List<ChatMessage>? messages,
+    bool? titleLocked,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -48,6 +59,7 @@ class Conversation {
     updatedAt: updatedAt ?? this.updatedAt,
     messages: messages ?? this.messages,
     projectId: projectId,
+    titleLocked: titleLocked ?? this.titleLocked,
   );
 
   Map<String, dynamic> toJson() => {
@@ -55,6 +67,7 @@ class Conversation {
     'title': title,
     'model': model,
     'projectId': projectId,
+    'titleLocked': titleLocked,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
     'messages': [for (final m in messages) _messageToJson(m)],
@@ -80,6 +93,9 @@ class Conversation {
               (json['projectId'] as String).isNotEmpty
           ? json['projectId'] as String
           : null,
+      // Defaults to false, so every chat saved before this field existed stays
+      // open to the agent's naming — which is what it had all along.
+      titleLocked: json['titleLocked'] == true,
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
       messages: [
