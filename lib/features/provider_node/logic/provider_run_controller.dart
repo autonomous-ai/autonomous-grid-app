@@ -115,6 +115,20 @@ class ProviderRunActive extends ProviderRunState {
   final String? signInUrl;
 }
 
+/// A stop is under way on [grid] — `grid leave` unregisters the engine with the
+/// relay and kills it, which takes seconds and is time-boxed at
+/// [leaveTimeoutProvider].
+///
+/// Its own state because that gap used to show nothing at all: the row kept its
+/// green dot and its live Stop, so the only feedback was that clicking again did
+/// nothing. The engine is still serving until this resolves, so the UI says
+/// "Stopping", not "Stopped".
+class ProviderRunStopping extends ProviderRunState {
+  const ProviderRunStopping(this.grid);
+
+  final String grid;
+}
+
 class ProviderRunStopped extends ProviderRunState {
   const ProviderRunStopped();
 }
@@ -538,6 +552,8 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   Future<void> removeEngine(String grid, String selector) async {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) return;
+    final wasServing = state;
+    state = ProviderRunStopping(grid);
     try {
       await service
           .run(['leave', grid, '--engine', selector])
@@ -547,6 +563,13 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       // the real roster, so a no-op leave simply leaves the row in place.
     }
     _bumpUnion();
+    // Disk decides what we settle on, not the leave's exit: it may have been a
+    // no-op. Nothing left on this grid means this machine has stopped serving;
+    // anything left (a legacy multi-engine record) is still the run we were in.
+    final stillServing = firstLiveRun(
+      ref.read(gridHomeStoreProvider).listEngineRuns(grid),
+    );
+    state = stillServing == null ? const ProviderRunStopped() : wasServing;
     _syncGridSoon();
   }
 
@@ -560,6 +583,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     final service = _service;
     final grid = _grid;
     _grid = null;
+    if (grid != null) state = ProviderRunStopping(grid);
     if (service != null && grid != null) {
       try {
         await _leaveEngine(
