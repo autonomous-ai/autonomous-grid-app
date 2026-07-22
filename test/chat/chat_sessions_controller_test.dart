@@ -318,6 +318,31 @@ void main() {
     },
   );
 
+  test(
+    'handing the chat to another agent takes the old failure with it',
+    () async {
+      // The sentence blamed an agent that no longer answers, and it sat right
+      // above the button that had just switched away from it — which then offered
+      // to switch back. Keeps the transcript, drops only the message.
+      final h = _harness(
+        tmp,
+        updates: [const ChatSendFailure('provider offline')],
+      );
+      final controller = h.container.read(chatSessionsProvider.notifier);
+      await controller.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'hi',
+      );
+
+      controller.clearError();
+
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.error, isNull);
+      expect(state.conversations.single.messages, hasLength(1));
+    },
+  );
+
   test('an attached image is saved onto the user turn and persists', () async {
     final h = _harness(
       tmp,
