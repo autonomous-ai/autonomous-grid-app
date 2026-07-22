@@ -381,6 +381,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
     final trailing = _trailingBubble(sessions.phase, agentMode);
     final isNewChat = messages.isEmpty && !sessions.sending;
+
+    // The header naming this conversation lives in the top bar, so it shares
+    // one row with the grid pill instead of sitting in a strip of its own.
+    // Both conditions that gate it are only knowable here — the starters
+    // screen and the no-model nudge are stand-ins for a conversation that
+    // isn't there yet, and a header over either would name nothing — so
+    // publish the answer rather than have the shell re-derive it. Deferred:
+    // writing a provider during build would throw.
+    final wantsHeader = !noModel && !isNewChat;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      ref.read(chatHeaderVisibleProvider.notifier).set(wantsHeader);
+    });
+
     // The agent has stopped and is asking before it touches this computer.
     final permission = ref.watch(agentPermissionProvider);
     // A leading "/" (with no space yet) opens the saved-prompt menu; an "@"
@@ -403,10 +417,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Only over a real transcript. The starters screen and the
-              // no-model nudge are both stand-ins for a conversation that isn't
-              // there yet, and a header naming one would be naming nothing.
-              if (!noModel && !isNewChat) const ChatHeader(),
               Expanded(
                 child: noModel
                     ? NoModelYet(

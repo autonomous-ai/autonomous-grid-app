@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/chat/presentation/chat_header.dart';
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
@@ -9,32 +10,76 @@ import '../shell_state.dart';
 import 'grid_power_pill.dart';
 import 'top_bar_pill.dart';
 
-/// The slim strip above the open section: which grid is active and what it has
-/// behind it (computers hosting, models served, the hardware they bring), plus
-/// any model the user is downloading. Doubles as the window's drag handle on the
-/// right.
+/// The slim strip above the open section: on the left, the conversation you're
+/// reading; on the right, which grid is active and what it has behind it
+/// (computers hosting, models served, the hardware they bring), plus any model
+/// the user is downloading. Doubles as the window's drag handle.
+///
+/// The chat header shares this row rather than owning a strip below it — two
+/// stacked bars put the chat's title and the grid's summary a few pixels out of
+/// line with each other, which read as a mistake. One row, one baseline.
 ///
 /// Deliberately quiet — the account, the grid switcher and the navigation all
 /// live in the sidebar, so nothing competes with the conversation below.
-class AppTopBar extends StatelessWidget {
+class AppTopBar extends ConsumerWidget {
   const AppTopBar({super.key});
 
   static const double height = 46;
 
   @override
-  Widget build(BuildContext context) {
-    return const DragToMoveArea(
-      child: SizedBox(
-        height: height,
-        // Seamless with the content, like Codex — no fill, no border, no blur.
-        // The pills simply float on the pane; the bar is just their row and the
-        // window's drag handle. Each pill stays unmounted when it has nothing to
-        // show, so an idle grid leaves the bar empty rather than showing a bare
-        // capsule.
-        child: Padding(
-          padding: EdgeInsets.only(left: 16, right: 18),
-          child: Row(
-            children: [Spacer(), _ModelDownloadPill(), GridPowerPill()],
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The hairline below tints from a global the element tree can't track, so
+    // subscribe to the brightness here rather than relying on an ancestor's
+    // watch — it wouldn't reach across the const children below.
+    AppTheme.watch(context);
+    // Only the chat view knows whether its header applies (a model is
+    // reachable, and the chat is past its starters screen).
+    final showChatHeader =
+        ref.watch(shellSectionProvider) == ShellSection.chat &&
+        ref.watch(chatHeaderVisibleProvider);
+
+    return DragToMoveArea(
+      child: DecoratedBox(
+        // Only under a named conversation. The bar is otherwise seamless with
+        // the pane, and a rule under an empty bar would divide nothing; but a
+        // transcript needs to start against an edge rather than float up into
+        // the window chrome.
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: showChatHeader ? AppPalette.divider : Colors.transparent,
+            ),
+          ),
+        ),
+        child: SizedBox(
+          height: height,
+          // Seamless with the content, like Codex — no fill, no blur. The pills
+          // simply float on the pane; the bar is just their row and the window's
+          // drag handle. Each pill stays unmounted when it has nothing to show,
+          // so an idle grid leaves the bar empty rather than showing a bare
+          // capsule.
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 18),
+            child: Row(
+              children: [
+                // One flex child, not two. An Expanded header *plus* a Spacer
+                // both take flex: 1 and split the free space between them,
+                // which parks the grid pill mid-row instead of against the
+                // right edge. The header owns the whole left side and aligns
+                // its own content; the pills sit at their intrinsic width on
+                // the right.
+                Expanded(
+                  child: showChatHeader
+                      ? const Align(
+                          alignment: Alignment.centerLeft,
+                          child: ChatHeader(),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                const _ModelDownloadPill(),
+                const GridPowerPill(),
+              ],
+            ),
           ),
         ),
       ),

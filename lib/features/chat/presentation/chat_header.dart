@@ -23,13 +23,18 @@ const _menuSize = Size(
   _menuPadding * 2 + _rowHeight * 3 + _dividerHeight + _rowHeight,
 );
 
-/// The strip above the transcript naming the conversation you're reading: a
-/// mark, the title, and the "…" that acts on it — closed off by a hairline so
-/// the turns below start against an edge rather than floating under the window
-/// chrome.
+/// Names the conversation you're reading: a mark, the title, and the "…" that
+/// acts on it.
+///
+/// Rides in the left of [AppTopBar] rather than in a strip of its own, so the
+/// chat's identity and the grid's summary read as one row instead of two
+/// stacked bars a few pixels out of line with each other. The chat view keeps
+/// ownership of *whether* it shows — that depends on `noModel`/`isNewChat`,
+/// which only it can compute — and publishes itself through
+/// [chatHeaderVisibleProvider].
 ///
 /// Absent until a conversation exists. A fresh chat is all starters, and a
-/// header over it would name a thing the user hasn't made yet.
+/// header naming one would name a thing the user hasn't made yet.
 class ChatHeader extends ConsumerWidget {
   const ChatHeader({super.key});
 
@@ -41,43 +46,53 @@ class ChatHeader extends ConsumerWidget {
     final active = ref.watch(chatSessionsProvider).active;
     if (active == null) return const SizedBox.shrink();
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppPalette.divider)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 11, 12, 11),
-        child: Row(
-          children: [
-            Icon(
-              LucideIcons.messageSquare300,
-              size: 16,
-              color: AppPalette.textSecondary,
-            ),
-            const SizedBox(width: 9),
-            // Bounded, not Expanded: the title should sit beside its "…" like a
-            // label on a tab, not stretch the menu button out to the far edge of
-            // a wide window.
-            Flexible(
-              child: Text(
-                active.title,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppPalette.textPrimary,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            ChatHeaderMenuButton(conversation: active),
-          ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          LucideIcons.messageSquare300,
+          size: 16,
+          color: AppPalette.textSecondary,
         ),
-      ),
+        const SizedBox(width: 9),
+        // Bounded, not Expanded: the title should sit beside its "…" like a
+        // label on a tab, not stretch the menu button out to the far edge of
+        // a wide window.
+        Flexible(
+          child: Text(
+            active.title,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppPalette.textPrimary,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        ChatHeaderMenuButton(conversation: active),
+      ],
     );
   }
+}
+
+/// Whether the chat view currently wants its header in the top bar.
+///
+/// The two conditions that gate it (a model is reachable, and the chat isn't
+/// still on its starters screen) are only computable inside the chat view, so
+/// it writes the answer here rather than the shell re-deriving it.
+final chatHeaderVisibleProvider =
+    NotifierProvider<ChatHeaderVisibleNotifier, bool>(
+      ChatHeaderVisibleNotifier.new,
+    );
+
+class ChatHeaderVisibleNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool visible) => state = visible;
 }
 
 /// The "…" on the header: rename this chat, copy it out, or delete it.
