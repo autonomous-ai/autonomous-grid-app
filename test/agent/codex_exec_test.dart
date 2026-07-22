@@ -157,18 +157,20 @@ void main() {
       expect(args, isNot(contains('/tmp/work')));
     });
 
-    test(
-      'both turns are read-only, said the one way both subcommands take',
-      () {
-        for (final args in [
-          codexExecArgs(workdir: '/tmp/work'),
-          codexExecArgs(workdir: '/tmp/work', resumeThreadId: 'abc'),
-        ]) {
-          expect(args, containsAllInOrder(['-c', 'sandbox_mode="read-only"']));
-          expect(args, contains('--json'));
-        }
-      },
-    );
+    test('both turns carry the sandbox mode, said the one way both subcommands '
+        'take — `--sandbox` kills `exec resume` at argv parsing', () {
+      for (final args in [
+        codexExecArgs(workdir: '/tmp/work'),
+        codexExecArgs(workdir: '/tmp/work', resumeThreadId: 'abc'),
+      ]) {
+        expect(args, isNot(contains('--sandbox')));
+        expect(
+          args,
+          containsAllInOrder(['-c', 'sandbox_mode="$kCodexSandboxMode"']),
+        );
+        expect(args, contains('--json'));
+      }
+    });
   });
 
   group('friendlyCodexError — a next step, not a stack trace', () {

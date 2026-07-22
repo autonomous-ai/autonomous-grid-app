@@ -130,9 +130,10 @@ class _Honesty extends StatelessWidget {
     final theme = Theme.of(context);
     final lines = [
       'Only the ids you list can message the bot. Anyone else is ignored.',
-      'A message runs the assistant on this computer — it can read and edit '
-          'files in your projects and look things up on the web, but from '
-          "${platform.label} it can't run terminal commands or programs.",
+      'A message runs the assistant on this computer with everything it has — '
+          'reading and changing your files, and running commands. Nothing asks '
+          'you first: nobody is at the machine when a ${platform.label} message '
+          'arrives, so the list above is what decides who can do this.',
       "It goes quiet when this computer sleeps or shuts down. It isn't a bot in "
           'the cloud.',
       'Connecting turns on a small background program that listens for your '

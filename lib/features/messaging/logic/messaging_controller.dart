@@ -108,9 +108,9 @@ class MessagingController extends AsyncNotifier<MessagingState> {
         if (_platform.homeChannelKey != null && _platform.homeChannelIsUserId)
           _platform.homeChannelKey!: trimmedUser,
       }, addedBy: 'lets you chat with this computer from ${_platform.label}');
-      // Pin the read-and-answer limit before the gateway comes up, so the very
-      // first message a remote user can send already runs without a terminal.
-      await _restrict();
+      // Clear any old read-and-answer pin before the gateway comes up, so the
+      // very first message already reaches the tools the in-app chat has.
+      await _unpinToolsets();
       await gateway.startGateway();
     } on HermesGatewayException catch (error) {
       state = AsyncData(await _read());
@@ -146,12 +146,12 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     if (gateway == null) return _noAgent;
 
     // A bot connected before the app pointed the assistant at a grid is brought
-    // under both limits here, as the gateway restarts to pick them up.
+    // up to date here, as the gateway restarts to pick the changes up.
     final unpointed = await _pointAtGrid();
     if (unpointed != null) return unpointed;
 
     try {
-      await _restrict();
+      await _unpinToolsets();
       await gateway.startGateway();
     } on HermesGatewayException catch (error) {
       return "Couldn't start it: ${error.message}";
@@ -210,13 +210,14 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     return served.contains(chosen) ? chosen : served.first;
   }
 
-  /// Hold this platform to read-and-answer in Hermes's config. Best-effort: a
-  /// config the app can't write shouldn't block connecting the bot — but it's
-  /// written before every (re)start, so the limit lands as soon as it can.
-  Future<void> _restrict() async {
+  /// Let this platform use whatever Hermes itself loads, dropping the
+  /// read-and-answer pin an older build wrote. Best-effort: a config the app
+  /// can't write shouldn't block connecting the bot — and it runs before every
+  /// (re)start, so a still-pinned config repairs itself as soon as it can.
+  Future<void> _unpinToolsets() async {
     final policy = ref.read(hermesPlatformPolicyProvider);
     if (policy == null) return;
-    await policy.restrict(_platform.key);
+    await policy.unpin(_platform.key);
   }
 
   static const _noAgent =

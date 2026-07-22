@@ -84,7 +84,7 @@ class CodexExecRun {
 /// the sender is tested against a fake that replays scripted turns.
 abstract interface class CodexExecService {
   /// Run one turn. [resumeThreadId] continues an earlier conversation; null
-  /// starts a fresh one. [workdir] is the agent's read-only working root; the
+  /// starts a fresh one. [workdir] is the folder the turn opens in; the
   /// model and grid endpoint come from `~/.codex/config.toml`, which the sender
   /// points at the grid before the turn. Throws [CodexExecException] if the
   /// process won't start.
@@ -102,9 +102,9 @@ abstract interface class CodexExecService {
 /// invocation over one it doesn't know — `exec resume` accepts neither
 /// `--sandbox` nor `-C`, so passing them killed every *second* turn of a
 /// conversation at argv parsing, before a single byte reached the model. So the
-/// read-only sandbox is set through the `-c` config override, which both
-/// subcommands accept, and the working root is left to the process's own
-/// directory (a resumed session restores the one it started in).
+/// sandbox is set through the `-c` config override, which both subcommands
+/// accept, and the working root is left to the process's own directory (a
+/// resumed session restores the one it started in).
 ///
 /// Pure, and unit-tested, because the failure mode is silent: a mistyped flag
 /// looks exactly like a model that wouldn't answer.
@@ -115,11 +115,23 @@ List<String> codexExecArgs({required String workdir, String? resumeThreadId}) =>
       '--json',
       '--skip-git-repo-check',
       '-c',
-      'sandbox_mode="read-only"',
+      'sandbox_mode="$kCodexSandboxMode"',
       if (resumeThreadId != null) resumeThreadId else ...['-C', workdir],
     ];
 
-/// Real implementation: spawns `codex exec --json` read-only, feeds the prompt on
+/// How much of this computer a Codex turn may touch.
+///
+/// TODO(BE): `danger-full-access` is exactly what it says — Codex writes files
+/// and runs commands **anywhere on this machine, with nobody asked first**.
+/// `codex exec` is non-interactive and has no per-action approval channel (the
+/// thing Hermes gets over ACP), so there is no card, no prompt and no stopping
+/// it mid-command; the only limits left are the ones the OS puts on the user
+/// account. Chosen deliberately — the agent is meant to be able to do the work —
+/// but it is the widest grant in the app, so it is named here rather than buried
+/// in an argv string.
+const String kCodexSandboxMode = 'danger-full-access';
+
+/// Real implementation: spawns `codex exec --json`, feeds the prompt on
 /// stdin (so a long replayed history can't overflow an argv limit), and turns its
 /// JSONL thread events into [CodexExecEvent]s.
 class CodexExecServiceImpl implements CodexExecService {
@@ -343,7 +355,9 @@ CodexExecEvent? _parseItem(
     case 'todo_list':
       return CodexPlanEvent(_parseTodoList(item['items']));
     default:
-      // reasoning, file_change (never in read-only), error warnings: not shown.
+      // reasoning, file_change, error warnings: not shown.
+      // TODO(BE): now that Codex may write, `file_change` is worth surfacing —
+      // Hermes's edits feed the undo bar and Codex's don't.
       return null;
   }
 }

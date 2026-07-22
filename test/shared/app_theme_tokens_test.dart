@@ -21,7 +21,10 @@ void main() {
     expect(lightBg, isNot(equals(darkBg)));
     expect(lightInk, isNot(equals(darkInk)));
     expect(darkBg.computeLuminance(), lessThan(lightBg.computeLuminance()));
-    expect(darkInk.computeLuminance(), greaterThan(lightInk.computeLuminance()));
+    expect(
+      darkInk.computeLuminance(),
+      greaterThan(lightInk.computeLuminance()),
+    );
 
     // Leave the global back at the shipped default so test order can't leak.
     AppTheme.brightness.value = Brightness.light;
