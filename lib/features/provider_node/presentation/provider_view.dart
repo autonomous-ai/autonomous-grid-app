@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
+import '../../../core/app_environment.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
@@ -101,12 +102,19 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     final run = ref.watch(providerRunControllerProvider);
     final serving = ref.watch(servingEnginesProvider);
 
-    // Names the grid every sentence below is about. First, and in every state:
-    // the Settings pane has no top bar, so without this the page says "this
-    // grid" repeatedly while nothing on screen says which one.
+    // Names the grid every sentence below is about, and switches it — but only
+    // in a developer build, where several grids are open at once and which one
+    // is selected is a thing to check. A shipped user has one grid and no Grids
+    // tab beside it, so the strip asks them to hold a distinction they never
+    // make.
+    // TODO(BE): with it hidden, nothing on this page names the grid (Settings
+    // mounts no top bar) and the only switcher left in a release build is the
+    // Chat composer's model pill.
     final children = <Widget>[
-      GridScopeBar(network: network),
-      const SizedBox(height: 16),
+      if (AppEnvironment.isDeveloperMode) ...[
+        GridScopeBar(network: network),
+        const SizedBox(height: 16),
+      ],
     ];
 
     // Sharing on THIS grid is locked (an admin hasn't turned engines on; a

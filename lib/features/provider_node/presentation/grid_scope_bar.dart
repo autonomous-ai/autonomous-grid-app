@@ -9,12 +9,13 @@ import '../../auth/logic/session_controller.dart';
 
 /// Which grid everything below applies to, and a way to change it.
 ///
-/// The Engines tab talks about "this grid" throughout — what you may do on it,
-/// what this computer serves to it — but the Settings pane has no top bar
-/// (`SettingsPane` doesn't mount `AppTopBar`), so nothing on screen named the
-/// grid those sentences meant. Readers had to infer it from a subordinate
-/// clause. This is the anchor: the grid's name, the viewer's standing on it, and
-/// a switcher.
+/// **Developer builds only** — mounted behind [AppEnvironment.isDeveloperMode]
+/// by `ProviderView`. The Engines tab talks about "this grid" throughout, and
+/// the Settings pane has no top bar (`SettingsPane` doesn't mount `AppTopBar`),
+/// so nothing else on the page names the grid those sentences mean. That matters
+/// when several grids are open and Grids sits beside it; a shipped user has one
+/// grid and no Grids tab, and the strip only asks them to hold a distinction
+/// they never make.
 ///
 /// Deliberately a strip, not a card: it frames the page rather than competing
 /// with the cards below, which carry the actual state and controls.
