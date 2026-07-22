@@ -25,12 +25,19 @@ class FakeGridCliService implements GridCliService {
   /// Stub a `start` result. Calling it more than once for the same args queues a
   /// sequence consumed call-by-call (e.g. fail-then-succeed for retry tests); a
   /// single stub is reused for every call.
+  ///
+  /// [lineDelay] spaces the output out instead of delivering it in one burst —
+  /// what a real CLI does, and the only way to test what a listener does with a
+  /// line that lands *after* the caller has already killed the process.
   void stubStart(
     List<String> args, {
     required List<CliLine> lines,
     int exitCode = 0,
     Duration exitDelay = const Duration(milliseconds: 1),
-  }) => (_runs[keyOf(args)] ??= []).add(_FakeRun(lines, exitCode, exitDelay));
+    Duration lineDelay = Duration.zero,
+  }) => (_runs[keyOf(args)] ??= []).add(
+    _FakeRun(lines, exitCode, exitDelay, lineDelay),
+  );
 
   void stubPull(List<String> args, List<DownloadProgress> progress) =>
       _pulls[keyOf(args)] = progress;
@@ -56,10 +63,14 @@ class FakeGridCliService implements GridCliService {
     lastStartEnvironment = environment;
     final queue = _runs[keyOf(args)];
     final run = (queue == null || queue.isEmpty)
-        ? const _FakeRun([], 0, Duration.zero)
+        ? const _FakeRun([], 0, Duration.zero, Duration.zero)
         : (queue.length == 1 ? queue.first : queue.removeAt(0));
     return GridProcess(
-      lines: Stream.fromIterable(run.lines),
+      lines: run.lineDelay == Duration.zero
+          ? Stream.fromIterable(run.lines)
+          : Stream.fromIterable(
+              run.lines,
+            ).asyncMap((line) => Future.delayed(run.lineDelay, () => line)),
       // Resolve after lines are delivered so consumers observe output first.
       exitCode: Future.delayed(run.exitDelay, () => run.exitCode),
       kill: () {},
@@ -75,8 +86,9 @@ class FakeGridCliService implements GridCliService {
 }
 
 class _FakeRun {
-  const _FakeRun(this.lines, this.exitCode, this.exitDelay);
+  const _FakeRun(this.lines, this.exitCode, this.exitDelay, this.lineDelay);
   final List<CliLine> lines;
   final int exitCode;
   final Duration exitDelay;
+  final Duration lineDelay;
 }
