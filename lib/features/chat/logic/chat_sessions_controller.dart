@@ -145,6 +145,32 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Give a conversation the name the user typed, replacing whatever was
+  /// derived from its first message.
+  ///
+  /// [updatedAt] is deliberately left alone: it orders the sidebar by when a
+  /// chat was last *talked in*, and retitling one is not talking in it — bumping
+  /// it would jump an old chat to the top for a cosmetic edit.
+  void renameConversation(String id, String title) {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) return;
+    final chat = _find(id);
+    if (chat == null || chat.title == trimmed) return;
+    // Locked from here on: the agent's own name for this chat can still be
+    // seconds out, and it must not overwrite the one the user just typed.
+    final renamed = chat.copyWith(title: trimmed, titleLocked: true);
+    _store.save(renamed);
+    state = ChatSessionsState(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == renamed.id) renamed else c,
+      ],
+      activeId: state.activeId,
+      phase: state.phase,
+      error: state.error,
+    );
+  }
+
   /// Delete a conversation from disk and state, falling back to the newest
   /// remaining one (or a new compose) when the open one is removed.
   void deleteConversation(String id) {
@@ -335,8 +361,12 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final title = await ref.read(agentSessionTitleProvider).waitFor(sessionId);
     if (title == null || _disposed) return;
 
+    // Re-read *after* the wait, not before: the name takes seconds to arrive,
+    // and the user may have named the chat themselves in the meantime. Theirs
+    // wins — this is the only thing standing between a hand-typed title and an
+    // agent silently replacing it.
     final current = _find(conversationId);
-    if (current == null || current.title == title) return;
+    if (current == null || current.titleLocked || current.title == title) return;
     final renamed = current.copyWith(title: title);
     _store.save(renamed);
     state = ChatSessionsState(
