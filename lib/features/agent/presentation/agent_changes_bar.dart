@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/composer_notice_bar.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/agent_changes.dart';
 import '../logic/edit_diff.dart';
@@ -18,41 +19,20 @@ class AgentChangesBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(context); // rebuild on theme flip — reads palette tokens
     final changes = ref.watch(agentChangesProvider);
     if (changes.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
-      decoration: BoxDecoration(
-        color: AppPalette.windowBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.divider),
-        boxShadow: AppSurface.composerShadow,
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.history_rounded,
-            size: 17,
-            color: AppPalette.textSecondary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'The assistant changed ${changes.length} '
-              '${changes.length == 1 ? 'file' : 'files'}',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ),
-          TextButton(
-            onPressed: () => showAgentChangesDialog(context),
-            child: const Text('Review'),
-          ),
-          const SizedBox(width: 4),
-          const _UndoAllButton(),
-        ],
-      ),
+    return ComposerNoticeBar(
+      icon: Icons.history_rounded,
+      label:
+          'The assistant changed ${changes.length} '
+          '${changes.length == 1 ? 'file' : 'files'}',
+      actions: [
+        TextButton(
+          onPressed: () => showAgentChangesDialog(context),
+          child: const Text('Review'),
+        ),
+        const _UndoAllButton(),
+      ],
     );
   }
 }

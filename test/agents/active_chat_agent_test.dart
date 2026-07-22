@@ -6,6 +6,7 @@ import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/features/agents/logic/agent_grid_support.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 
 /// A prefs controller pinned to a fixed value, so a test controls the remembered
@@ -19,10 +20,14 @@ class _FixedPrefs extends ChatPrefsController {
   ChatPrefs build() => _prefs;
 }
 
+/// [responses] is what the open grid's overview says about the Responses API:
+/// true/false when the relay reports it, null when it hasn't (or won't). Always
+/// overridden so no test reaches for a real grid.
 ProviderContainer _container({
   required String chosen,
   required bool hermes,
   required bool codex,
+  bool? responses,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -31,6 +36,7 @@ ProviderContainer _container({
       ),
       hermesInstalledProvider.overrideWithValue(hermes),
       codexInstalledProvider.overrideWithValue(codex),
+      gridAdvertisesResponsesProvider.overrideWithValue(responses),
     ],
   );
   addTearDown(container.dispose);
@@ -63,6 +69,67 @@ void main() {
         codex: false,
       );
       expect(container.read(activeChatAgentProvider), kChatAgent);
+    });
+  });
+
+  group('a grid that cannot run the chosen agent', () {
+    test('hands the chat to one it can run', () {
+      // The grid serves nothing Codex can talk to. Letting Codex keep the chat
+      // would fail on the first message with a 404 the user can't act on.
+      final container = _container(
+        chosen: 'codex',
+        hermes: true,
+        codex: true,
+        responses: false,
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.hermes);
+      expect(container.read(blockedChatAgentProvider), AgentTool.codex);
+    });
+
+    test('gives the chat back on a grid that can run it', () {
+      // The hand-over is resolved per grid, never written to prefs: the user
+      // picked Codex once and gets it back the moment a grid can serve it.
+      final container = _container(
+        chosen: 'codex',
+        hermes: true,
+        codex: true,
+        responses: true,
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+      expect(container.read(blockedChatAgentProvider), isNull);
+    });
+
+    test('reports nothing while the grid has not said either way', () {
+      final container = _container(chosen: 'codex', hermes: true, codex: true);
+      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+      expect(container.read(blockedChatAgentProvider), isNull);
+    });
+
+    test('an uninstalled pick is not reported as a grid problem', () {
+      // Codex isn't there to run — that's an install to do, and the Agents
+      // screen already says so. Blaming the grid would send the user hunting
+      // for a different one.
+      final container = _container(
+        chosen: 'codex',
+        hermes: true,
+        codex: false,
+        responses: false,
+      );
+      expect(container.read(blockedChatAgentProvider), isNull);
+    });
+  });
+
+  group('the agent a failed turn can be handed to', () {
+    test('is the other installed agent this grid can run', () {
+      final container = _container(chosen: 'codex', hermes: true, codex: true);
+      expect(container.read(alternativeChatAgentProvider), AgentTool.hermes);
+    });
+
+    test('is nothing when no other agent could do better', () {
+      // Nothing to offer — the button stands down rather than promising a swap
+      // that would change nothing.
+      final container = _container(chosen: 'codex', hermes: false, codex: true);
+      expect(container.read(alternativeChatAgentProvider), isNull);
     });
   });
 

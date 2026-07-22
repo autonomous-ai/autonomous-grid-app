@@ -286,17 +286,25 @@ class CodexChatSender implements ChatSender {
   }
 }
 
+/// Shown when the grid answered Codex's request with a flat "no such endpoint".
+///
+/// The grid-wide case is already headed off before the send (a grid that serves
+/// nothing Codex can talk to never gets handed the chat — see
+/// `agentRunsOnGrid`), so what's left is the model: this grid *can* answer Codex
+/// somewhere, just not with the one the user picked. Say that, and nothing about
+/// whether another agent would do better — the chat pairs this with a button
+/// that switches, which is an offer to try, not a promise.
+///
+/// A const so the composer can recognise its own message and show that button,
+/// instead of sniffing prose.
+const String kCodexDialectFailure =
+    "This model can't answer the kind of request Codex sends. Pick a model "
+    'Codex supports, or let another agent take this chat.';
+
 /// Humanize Codex's failure so the chat shows a next step, not a stack trace.
 ///
-/// The one the user will actually hit today is the Responses wall: no grid relay
-/// serves `/v1/responses` yet, so Codex's stream to it 404s. Say so as a
-/// property of the relay, not of their grid — "switch to a grid that supports
-/// Codex" sent people hunting for a grid that doesn't exist, on a grid that was
-/// serving Codex models perfectly well. Hermes is offered as the thing to *try*,
-/// never promised to work: it answers over the same grid whose model may equally
-/// refuse the turn. Everything else keeps Codex's own last line.
-///
-/// TODO(BE): drop this once the relay serves `/v1/responses`.
+/// The one the user is most likely to hit is the Responses wall — see
+/// [kCodexDialectFailure]. Everything else keeps Codex's own last line.
 String friendlyCodexError(String raw) {
   final lines = raw
       .split('\n')
@@ -316,8 +324,7 @@ String friendlyCodexError(String raw) {
       (lower.contains('404') ||
           lower.contains('not found') ||
           lower.contains('disconnected'))) {
-    return "Codex can't be used on a grid yet — grid servers don't answer the "
-        'kind of request Codex sends. Try Hermes instead: pick it in Agents.';
+    return kCodexDialectFailure;
   }
   return 'Codex couldn\'t finish: $detail';
 }

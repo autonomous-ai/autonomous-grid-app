@@ -11,6 +11,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
+import '../../agent/logic/codex_chat_sender.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agent/presentation/agent_changes_bar.dart';
 import '../../agent/presentation/agent_permission_card.dart';
@@ -31,6 +32,7 @@ import '../logic/active_workdir.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../logic/file_mention.dart';
+import 'agent_handover_bar.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
 import 'chat_minimap.dart';
@@ -444,6 +446,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        const AgentHandoverBar(),
                         const PlanApproveBar(),
                         const AgentChangesBar(),
                         if (slash != null)
@@ -462,6 +465,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           sending: sessions.sending,
                           canSend: canSend,
                           error: sessions.error,
+                          // Only this one failure has a one-click fix: the agent
+                          // reached the grid but the picked model won't answer
+                          // it. Offer the swap right where the message lands.
+                          errorAction: sessions.error == kCodexDialectFailure
+                              ? const SwitchAgentButton()
+                              : null,
                           // Only the agent can touch this computer — a picture is made
                           // by the grid, so there'd be nothing to approve.
                           approvalPicker: agentMode
