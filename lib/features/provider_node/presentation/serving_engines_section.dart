@@ -12,6 +12,7 @@ import '../logic/api_engine_catalog.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
 import 'serving_engine_tile.dart';
+import 'stop_engine_dialog.dart';
 
 /// What this machine is serving on the active grid: one row per engine in its
 /// union (ADR 0010), each stoppable on its own, plus a transient "starting" row
@@ -52,7 +53,7 @@ class ServingEnginesSection extends ConsumerWidget {
             live: engines.isNotEmpty,
             onStop: engines.isEmpty && !starting
                 ? null
-                : () => ref.read(providerRunControllerProvider.notifier).stop(),
+                : () => _stop(context, ref, engines),
           ),
           for (final engine in engines)
             ServingEngineTile(engine: engine, gridId: network.networkId),
@@ -71,6 +72,26 @@ class ServingEnginesSection extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Stop what this machine is serving — after the same question the row's own
+  /// Stop asks, and in the same words. Cancelling a join that hasn't produced an
+  /// engine yet skips it: nothing is on the grid to be taken away.
+  Future<void> _stop(
+    BuildContext context,
+    WidgetRef ref,
+    List<ServingEngine> engines,
+  ) async {
+    final notifier = ref.read(providerRunControllerProvider.notifier);
+    if (engines.isEmpty) return notifier.stop();
+    final ok = await confirmStopEngine(
+      context,
+      what: engines.length == 1
+          ? engineTitle(engines.first)
+          : 'all ${engines.length} engines',
+    );
+    if (!ok) return;
+    await notifier.stop();
   }
 }
 

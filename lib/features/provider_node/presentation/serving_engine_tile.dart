@@ -7,6 +7,21 @@ import '../../models/logic/advertise_name.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
 import 'engine_cost_chip.dart';
+import 'stop_engine_dialog.dart';
+
+/// The engine's kind, in the product's words — "Local model", "Connected
+/// engine", or the hosted provider's name. Public because the section header
+/// names the engine it is about to stop with the same words the row uses.
+String engineTitle(ServingEngine engine) => switch (engine.kind) {
+  EngineKind.local => 'Local model',
+  EngineKind.external => 'Connected engine',
+  EngineKind.api => switch (engine.apiKind) {
+    'openai' => 'OpenAI',
+    'codex' => 'ChatGPT / Codex',
+    final kind? => kind,
+    _ => 'Hosted model',
+  },
+};
 
 /// One engine in the machine's serving list: what it is, the model(s) it serves,
 /// a live dot, and a Stop that drops just this one from the union (the others
@@ -47,7 +62,7 @@ class ServingEngineTile extends ConsumerWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      _title(engine),
+                      engineTitle(engine),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
@@ -72,7 +87,7 @@ class ServingEngineTile extends ConsumerWidget {
           const SizedBox(width: 8),
           _LiveDot(),
           IconButton(
-            tooltip: selector == null ? 'Use Stop all below' : 'Stop',
+            tooltip: selector == null ? 'Use Stop, above' : 'Stop',
             onPressed: selector == null
                 ? null
                 : () => _confirmStop(context, ref, selector),
@@ -88,27 +103,8 @@ class ServingEngineTile extends ConsumerWidget {
     WidgetRef ref,
     String selector,
   ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Stop ${_title(engine)}?'),
-        content: const Text(
-          'It will stop serving on the grid, so others can no longer use it. '
-          'Your other engines keep running.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Stop'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
+    final ok = await confirmStopEngine(context, what: engineTitle(engine));
+    if (!ok) return;
     await ref
         .read(providerRunControllerProvider.notifier)
         .removeEngine(gridId, selector);
@@ -121,19 +117,6 @@ class ServingEngineTile extends ConsumerWidget {
       engine.apiKind == 'codex'
           ? Icons.smart_toy_outlined
           : Icons.cloud_outlined,
-  };
-
-  /// The engine's kind, in the product's words — "Local model", "Connected
-  /// engine", or the hosted provider's name.
-  static String _title(ServingEngine engine) => switch (engine.kind) {
-    EngineKind.local => 'Local model',
-    EngineKind.external => 'Connected engine',
-    EngineKind.api => switch (engine.apiKind) {
-      'openai' => 'OpenAI',
-      'codex' => 'ChatGPT / Codex',
-      final kind? => kind,
-      _ => 'Hosted model',
-    },
   };
 
   /// The model(s) it serves — a friendly name for a local GGUF, the endpoint host
