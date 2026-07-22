@@ -7,6 +7,7 @@ import '../../../shared/widgets/composer_notice_bar.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_grid_support.dart';
 import '../../agents/logic/agent_status.dart';
+import '../logic/chat_sessions_controller.dart';
 
 /// Says out loud when the *grid*, not the user, decided which agent answers.
 ///
@@ -58,6 +59,10 @@ class AgentHandoverBar extends ConsumerWidget {
 /// went wrong, this says what to do about it. Hidden when there's no other agent
 /// that could do better, because a button that swaps one failure for another is
 /// worse than none.
+///
+/// Taking the offer clears the failure with it: the sentence was about a turn by
+/// an agent that no longer answers, and left up it sat above this same button
+/// now offering to switch straight back to the one that had just failed.
 class SwitchAgentButton extends ConsumerWidget {
   const SwitchAgentButton({super.key});
 
@@ -66,8 +71,10 @@ class SwitchAgentButton extends ConsumerWidget {
     final alternative = ref.watch(alternativeChatAgentProvider);
     if (alternative == null) return const SizedBox.shrink();
     return TextButton(
-      onPressed: () =>
-          ref.read(chatPrefsProvider.notifier).setChatAgent(alternative.id),
+      onPressed: () {
+        ref.read(chatPrefsProvider.notifier).setChatAgent(alternative.id);
+        ref.read(chatSessionsProvider.notifier).clearError();
+      },
       child: Text('Use ${alternative.name}'),
     );
   }

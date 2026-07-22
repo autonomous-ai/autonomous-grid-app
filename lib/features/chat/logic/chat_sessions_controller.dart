@@ -462,6 +462,22 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Drop the last turn's failure.
+  ///
+  /// For when the thing the message described stops being true — handing the
+  /// chat to a different agent, say. Left up, the sentence keeps blaming an
+  /// agent that is no longer answering, above a button offering to switch back
+  /// to it.
+  void clearError() {
+    if (state.error == null) return;
+    state = ChatSessionsState(
+      conversations: state.conversations,
+      activeId: state.activeId,
+      phase: state.phase,
+      awaitingPlan: state.awaitingPlan,
+    );
+  }
+
   /// Upsert [conversation], re-sort newest-first, make it active and persist.
   /// [awaitingPlan] lights the plan-approval bar — set only after a planning
   /// turn's reply lands, and default-off everywhere else so any other commit
