@@ -1,12 +1,11 @@
 /// The explanations the Model Engines page shows in place of something it can't
-/// offer — the built-in engine must run alone, or we're still looking for
-/// servers on this computer.
+/// offer — this computer already has its engine, or we're still looking for
+/// servers on it.
 ///
 /// Kept together, and apart from the page: they carry no state and no provider
 /// reads, and the page's own file is about *which* of them applies. Each one
 /// says what's true and what to do about it, rather than a form quietly
-/// vanishing. Per-card reasons don't live here — those are one sentence in the
-/// card's own action slot (see `BlockedNote`).
+/// vanishing.
 library;
 
 import 'package:flutter/material.dart';
@@ -14,11 +13,16 @@ import 'package:flutter/material.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import 'engine_block.dart';
 
-/// Shown when the built-in local engine is running: it serves one model and
-/// can't share the machine with others (ADR 0007 D4), so adding anything means
-/// stopping it first. Honest about the trade rather than offering a failing form.
-class LocalEngineExclusiveNote extends StatelessWidget {
-  const LocalEngineExclusiveNote({super.key});
+/// Shown in place of the add-engine cards once this computer is serving: a
+/// machine shares one engine at a time (`connectBlockedReason`), so there is
+/// nothing to add until that one stops. One sentence naming what to stop, rather
+/// than a set of cards that all say no.
+class OneEngineNote extends StatelessWidget {
+  const OneEngineNote({super.key, required this.reason});
+
+  /// The whole message, from `connectBlockedReason` — it names the engine that
+  /// holds the slot, which is the only thing the user needs from this note.
+  final String reason;
 
   @override
   Widget build(BuildContext context) {
@@ -34,15 +38,12 @@ class LocalEngineExclusiveNote extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Your local model runs on its own',
+                  'One engine per computer',
                   style: theme.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'The built-in local engine serves a single model and can’t '
-                  'run alongside others. To run several engines at once, stop '
-                  'it above, then add API or connected engines — or run your '
-                  'local model as your own server and connect it.',
+                  reason,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -51,26 +52,6 @@ class LocalEngineExclusiveNote extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A quiet section label above the add-engine blocks, so the page reads as
-/// "what's running" then "add another".
-class AddEngineHeading extends StatelessWidget {
-  const AddEngineHeading({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Text(
-        'Add an engine',
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
       ),
     );
   }

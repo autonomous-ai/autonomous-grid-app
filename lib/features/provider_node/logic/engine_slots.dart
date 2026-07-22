@@ -1,42 +1,24 @@
-/// What this computer can still take on: which add-engine forms may start
-/// another engine, and which would only produce a duplicate.
+/// Whether this computer can still take on an engine at all.
 ///
-/// Two rules, and they differ because the constraint differs. An engine that
-/// **runs here** — the built-in one, or a server the user runs on this machine
-/// that Grid points at — competes for the same GPU and memory, so the machine
-/// serves one at a time. A **hosted** engine costs this computer nothing, so any
-/// number can stack; what it can't do is offer the grid a model it is already
-/// serving, which would advertise the same name twice.
+/// **One machine, one engine.** A computer shares a single engine with a grid,
+/// whatever kind it is. The rule used to depend on the kind — the built-in
+/// engine ran alone, hosted ones stacked — which left the page answering "can I
+/// add one?" differently depending on which engine got there first, with a
+/// separate refusal written into each card. One rule, in one sentence, instead.
 ///
-/// Pure so the rule is unit-tested, rather than re-derived in each block's
-/// `build()` — three widgets ask the same question.
+/// Pure so the rule is unit-tested, rather than re-derived in a `build()`.
 library;
 
 import '../../../infrastructure/state/models/engine_run.dart';
 import 'serving_engines_provider.dart';
 
-/// Whether [engine] runs on this computer (built-in, or a server here that Grid
-/// points at) rather than in a vendor's cloud.
-bool runsOnThisComputer(ServingEngine engine) =>
-    engine.kind == EngineKind.local || engine.kind == EngineKind.external;
-
-/// The engine already running on this computer, or null when none is — the one
-/// that has to stop before another can start.
-ServingEngine? onDeviceEngine(List<ServingEngine> serving) {
-  for (final engine in serving) {
-    if (runsOnThisComputer(engine)) return engine;
-  }
-  return null;
-}
-
-/// Why this computer can't take another engine of its own right now, or null
-/// when it can. Names what's already sharing, so the way out — stop that one —
-/// is in the sentence rather than left to the user to work out.
+/// Why this computer can't add an engine right now, or null when it can. Names
+/// what's already sharing, so the way out — stop that one — is in the sentence
+/// rather than left to the user to work out.
 String? connectBlockedReason(List<ServingEngine> serving) {
-  final engine = onDeviceEngine(serving);
-  if (engine == null) return null;
-  return 'This computer is already sharing ${_engineLabel(engine)}. It runs '
-      'one engine at a time — stop it above to share a different one.';
+  if (serving.isEmpty) return null;
+  return 'This computer is already sharing ${_engineLabel(serving.first)}. It '
+      'runs one engine at a time — stop it above to share a different one.';
 }
 
 /// The advertised model names this machine already serves through hosted

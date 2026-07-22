@@ -32,14 +32,13 @@ ServingEngine _hosted(List<String> models, {String kind = 'codex'}) =>
     );
 
 void main() {
-  group('one engine runs on this computer at a time', () {
+  group('this computer shares one engine at a time', () {
     test('nothing serving leaves every way in open', () {
       expect(connectBlockedReason(const []), isNull);
-      expect(onDeviceEngine(const []), isNull);
     });
 
-    test('a connected server already sharing blocks connecting another, and '
-        'names what to stop', () {
+    test('a connected server already sharing blocks adding another, and names '
+        'what to stop', () {
       final reason = connectBlockedReason([_connected()]);
       expect(reason, isNotNull);
       expect(
@@ -54,18 +53,16 @@ void main() {
       expect(connectBlockedReason([_local('gemma4-31b.gguf')]), isNotNull);
     });
 
-    test('hosted engines never block it — they run on the provider’s machines, '
-        'not this one', () {
-      expect(
-        connectBlockedReason([
-          _hosted(['codex:gpt-5.5', 'openai:gpt-5.5']),
-        ]),
-        isNull,
-      );
+    test('a hosted engine blocks it too: it costs this machine nothing to run, '
+        'but the machine still offers the grid a single engine', () {
+      final reason = connectBlockedReason([
+        _hosted(['codex:gpt-5.5', 'openai:gpt-5.5']),
+      ]);
+      expect(reason, contains('codex:gpt-5.5'));
     });
 
-    test('a connected engine with no model named still blocks, described by '
-        'the server it points at', () {
+    test('an engine with no model named still blocks, described by the server '
+        'it points at', () {
       final reason = connectBlockedReason([
         ServingEngine(
           kind: EngineKind.external,

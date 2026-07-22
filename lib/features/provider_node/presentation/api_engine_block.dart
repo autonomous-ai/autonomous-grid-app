@@ -93,15 +93,16 @@ class ApiEngineForm extends ConsumerStatefulWidget {
     super.key,
     required this.network,
     required this.engines,
-    required this.alreadyShared,
     required this.compact,
+    this.alreadyShared = const {},
   });
 
   final NetworkCredential network;
   final List<ApiEngine> engines;
 
   /// Advertised names this machine already serves from a hosted provider — off
-  /// the table, so the same model can't be shared twice.
+  /// the table, so the same model can't be shared twice. Empty where the form is
+  /// only reachable with nothing serving at all (the add-engine cards).
   final Set<String> alreadyShared;
   final bool compact;
 
