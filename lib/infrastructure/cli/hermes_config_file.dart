@@ -75,9 +75,9 @@ class HermesConfigFile {
 /// read-only half to hand out. Dropping `file` too would make the whole thing
 /// pointless ("summarise my notes" needs to read the notes), so what this list
 /// actually removes is the ability to *run* things: terminal, code execution,
-/// and computer control. Shared by the scheduler and the Telegram gateway —
-/// both unattended surfaces with nobody at the machine to approve a dangerous
-/// command.
+/// and computer control. The scheduler's "no commands" setting, and — because
+/// the chat platforms were once held to this same list — the fingerprint
+/// [HermesPlatformPolicy.isPinned] recognises when undoing that.
 ///
 /// `browser` is in the list because without it these surfaces can't reach the
 /// web at all: `web` (`web_search` / `web_extract`) only loads when a search
