@@ -42,7 +42,9 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
   Widget build(BuildContext context) {
     final sessions = ref.watch(chatSessionsProvider);
     final projects = ref.watch(sortedProjectsProvider);
-    final matches = sessions.conversations;
+    // Live only: an archived chat is hidden from the rail until the user brings
+    // it back from Settings › Archived.
+    final matches = sessions.live;
 
     final loose = [
       for (final c in matches)

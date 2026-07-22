@@ -62,6 +62,22 @@ class ChatSessionsState {
     return null;
   }
 
+  /// The chats that haven't been archived — what the sidebar, the tray menu and
+  /// ⌘K all list. [conversations] stays the whole set so the Archived screen
+  /// has something to read; anything showing the user their *working* history
+  /// wants this instead.
+  List<Conversation> get live => [
+    for (final c in conversations)
+      if (!c.isArchived) c,
+  ];
+
+  /// The archived chats, most recently archived first — the Archived screen's
+  /// source list, before its own search/sort/filter narrow it further.
+  List<Conversation> get archived => [
+    for (final c in conversations)
+      if (c.isArchived) c,
+  ]..sort((a, b) => b.archivedAt!.compareTo(a.archivedAt!));
+
   /// True while a request is in flight — the composer disables on this.
   bool get sending => phase is! SendIdle;
 }
@@ -94,9 +110,16 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       _cancel();
     });
     final conversations = ref.read(chatStoreProvider).loadAll();
+    // Opens on the newest *live* chat: `conversations` holds the archived ones
+    // too, and landing the user in one they filed away — in a transcript the
+    // sidebar doesn't even list — would look like the app lost their history.
+    final opening = [
+      for (final c in conversations)
+        if (!c.isArchived) c,
+    ];
     return ChatSessionsState(
       conversations: conversations,
-      activeId: conversations.isEmpty ? null : conversations.first.id,
+      activeId: opening.isEmpty ? null : opening.first.id,
     );
   }
 
@@ -187,6 +210,95 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       activeId: activeId,
       phase: state.phase,
       error: state.error,
+    );
+  }
+
+  /// Archive a conversation: hide it from the sidebar, the tray and ⌘K without
+  /// touching a single message in it. The transcript stays on disk and comes
+  /// back whole from [unarchiveConversation].
+  ///
+  /// Ignored mid-send, for the same reason [select] is: filing away the chat a
+  /// reply is streaming into would leave that reply landing in a transcript the
+  /// user can no longer see.
+  void archiveConversation(String id) {
+    if (state.sending && state.activeId == id) return;
+    final chat = _find(id);
+    if (chat == null || chat.isArchived) return;
+    final archived = chat.copyWith(archivedAt: DateTime.now());
+    _store.save(archived);
+    _replace(archived, activeId: _activeIdAfterHiding(id));
+  }
+
+  /// Put an archived conversation back: it returns to the sidebar in its old
+  /// place (ordered by [Conversation.updatedAt] — archiving never touched it,
+  /// so it lands back where the user last left it, not at the top).
+  void unarchiveConversation(String id) {
+    final chat = _find(id);
+    if (chat == null || !chat.isArchived) return;
+    final restored = chat.copyWith(clearArchivedAt: true);
+    _store.save(restored);
+    _replace(restored, activeId: state.activeId);
+  }
+
+  /// Delete every archived conversation — the Archived screen's "Delete all".
+  /// Live chats are left strictly alone, so the button can never reach the
+  /// history the user is still working in.
+  ///
+  /// Takes an optional [ids] subset for "Delete all in project", which is the
+  /// same operation scoped to one group.
+  void deleteArchivedConversations({Set<String>? ids}) {
+    final doomed = [
+      for (final c in state.conversations)
+        if (c.isArchived && (ids == null || ids.contains(c.id))) c.id,
+    ];
+    if (doomed.isEmpty) return;
+    for (final id in doomed) {
+      _store.delete(id);
+    }
+    final gone = doomed.toSet();
+    final remaining = [
+      for (final c in state.conversations)
+        if (!gone.contains(c.id)) c,
+    ];
+    // The open chat is normally live (archived ones aren't reachable from the
+    // sidebar), but it *can* be the one just deleted — the user can open an
+    // archived chat from the Archived screen. Fall back like delete does.
+    final activeId = gone.contains(state.activeId)
+        ? (remaining.isEmpty ? null : remaining.first.id)
+        : state.activeId;
+    state = ChatSessionsState(
+      conversations: remaining,
+      activeId: activeId,
+      phase: state.phase,
+      error: state.error,
+      awaitingPlan: state.awaitingPlan,
+    );
+  }
+
+  /// Where to send the user when the chat with [id] stops being visible: stay
+  /// put unless it was the open one, in which case fall back to the newest chat
+  /// still in the sidebar (or a fresh compose when none is left).
+  String? _activeIdAfterHiding(String id) {
+    if (state.activeId != id) return state.activeId;
+    for (final c in state.conversations) {
+      if (c.id != id && !c.isArchived) return c.id;
+    }
+    return null;
+  }
+
+  /// Swap one conversation in place, keeping the rest of the state as-is.
+  /// Deliberately does not re-sort: archiving and unarchiving both leave
+  /// [Conversation.updatedAt] alone, so the list order is already right.
+  void _replace(Conversation conversation, {required String? activeId}) {
+    state = ChatSessionsState(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == conversation.id) conversation else c,
+      ],
+      activeId: activeId,
+      phase: state.phase,
+      error: state.error,
+      awaitingPlan: state.awaitingPlan,
     );
   }
 
@@ -366,7 +478,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // wins — this is the only thing standing between a hand-typed title and an
     // agent silently replacing it.
     final current = _find(conversationId);
-    if (current == null || current.titleLocked || current.title == title) return;
+    if (current == null || current.titleLocked || current.title == title) {
+      return;
+    }
     final renamed = current.copyWith(title: title);
     _store.save(renamed);
     state = ChatSessionsState(
@@ -517,15 +631,22 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     required SendPhase phase,
     bool awaitingPlan = false,
   }) {
-    _store.save(conversation);
+    // Talking in a chat un-files it. Reaching an archived chat takes opening it
+    // from the Archived screen, and once the user types into it, leaving it
+    // hidden would mean their reply lands somewhere the sidebar never shows —
+    // the chat would look lost the moment they navigated away.
+    final saved = conversation.isArchived
+        ? conversation.copyWith(clearArchivedAt: true)
+        : conversation;
+    _store.save(saved);
     final list = [
-      conversation,
+      saved,
       for (final c in state.conversations)
-        if (c.id != conversation.id) c,
+        if (c.id != saved.id) c,
     ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     state = ChatSessionsState(
       conversations: list,
-      activeId: conversation.id,
+      activeId: saved.id,
       phase: phase,
       awaitingPlan: awaitingPlan,
     );

@@ -60,7 +60,9 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
   Widget build(BuildContext context) {
     final groups = searchCommands(
       query: _query.text,
-      chats: ref.watch(chatSessionsProvider).conversations,
+      // Live only — archiving a chat takes it out of search too, which is most
+      // of the point of filing it away.
+      chats: ref.watch(chatSessionsProvider).live,
       projects: ref.watch(projectsProvider),
       tasks: ref.watch(scheduledJobsProvider).value ?? const [],
     );

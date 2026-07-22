@@ -16,6 +16,7 @@ class Conversation {
     this.messages = const [],
     this.projectId,
     this.titleLocked = false,
+    this.archivedAt,
   });
 
   final String id;
@@ -45,12 +46,30 @@ class Conversation {
   /// session that chose it.
   final bool titleLocked;
 
+  /// When the user archived this chat, or null while it's live.
+  ///
+  /// Archiving is *hiding*, not deleting: the transcript is untouched and the
+  /// chat comes back whole on unarchive. Stored as the moment it happened
+  /// rather than a bool so the Archived screen can sort by when each chat was
+  /// put away — which is the order the user actually remembers filing them in,
+  /// and is independent of [updatedAt] (when it was last talked in).
+  final DateTime? archivedAt;
+
+  /// True when this chat is hidden from the sidebar, the tray and ⌘K.
+  bool get isArchived => archivedAt != null;
+
+  /// [archivedAt] can't use the usual `?? this.archivedAt` idiom: unarchiving
+  /// means setting it *back to null*, which that idiom can't express (it would
+  /// read the null as "leave it alone" and the chat could never come back).
+  /// Passing [clearArchivedAt] is how a caller says null on purpose.
   Conversation copyWith({
     String? title,
     String? model,
     DateTime? updatedAt,
     List<ChatMessage>? messages,
     bool? titleLocked,
+    DateTime? archivedAt,
+    bool clearArchivedAt = false,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -60,6 +79,7 @@ class Conversation {
     messages: messages ?? this.messages,
     projectId: projectId,
     titleLocked: titleLocked ?? this.titleLocked,
+    archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
   );
 
   Map<String, dynamic> toJson() => {
@@ -70,6 +90,9 @@ class Conversation {
     'titleLocked': titleLocked,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
+    // Written only when set, so a live chat's file is byte-identical to what
+    // every build before archiving existed wrote.
+    if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -98,6 +121,10 @@ class Conversation {
       titleLocked: json['titleLocked'] == true,
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
+      // Absent (every chat saved before this field existed) or unparseable
+      // means live — the safe reading, since it keeps the chat visible rather
+      // than hiding it in a screen the user hasn't learned about yet.
+      archivedAt: _parseNullableDate(json['archivedAt']),
       messages: [
         if (rawMessages is List)
           for (final m in rawMessages)
@@ -215,5 +242,12 @@ MediaKind _parseKind(Object? raw) {
 
 DateTime _parseDate(Object? raw) =>
     raw is String ? DateTime.tryParse(raw) ?? _epoch : _epoch;
+
+/// Like [_parseDate] but keeps null as null instead of falling back to the
+/// epoch. Archiving is decided by *whether* this date is there, so the epoch
+/// fallback would read every chat that has never been archived as archived in
+/// 1970 and empty the sidebar on first launch.
+DateTime? _parseNullableDate(Object? raw) =>
+    raw is String ? DateTime.tryParse(raw) : null;
 
 final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0);

@@ -67,7 +67,9 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   /// show and an id to reopen, so it takes just those rather than the whole
   /// conversation.
   List<({String id, String label})> _recentChats() {
-    final conversations = [...ref.read(chatSessionsProvider).conversations]
+    // Live only: "recent chats" in the menu bar means the ones still in play,
+    // not something the user filed away.
+    final conversations = [...ref.read(chatSessionsProvider).live]
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return [
       for (final c in conversations.take(_maxRecent))

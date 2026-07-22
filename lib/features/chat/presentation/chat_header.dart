@@ -17,9 +17,10 @@ const _menuPadding = 6.0;
 
 /// What the menu will measure. Summed rather than guessed so
 /// [anchoredMenuPosition] lands the menu on the button instead of near it.
+/// Three rows above the divider now (rename, archive, copy), one below.
 const _menuSize = Size(
   _menuWidth,
-  _menuPadding * 2 + _rowHeight * 2 + _dividerHeight + _rowHeight,
+  _menuPadding * 2 + _rowHeight * 3 + _dividerHeight + _rowHeight,
 );
 
 /// The strip above the transcript naming the conversation you're reading: a
@@ -109,6 +110,26 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
     ToastScope.show(context, const ToastSpec(message: 'Transcript copied'));
   }
 
+  /// Archive without asking: nothing is destroyed, and the toast carries the
+  /// way back. A confirm dialog for a reversible action trains the user to
+  /// dismiss dialogs, which is what makes the *delete* one stop working.
+  void _archive() {
+    _menu.close();
+    final id = _chat.id;
+    ref.read(chatSessionsProvider.notifier).archiveConversation(id);
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message: 'Chat archived',
+        action: ToastAction(
+          label: 'Undo',
+          onPressed: () =>
+              ref.read(chatSessionsProvider.notifier).unarchiveConversation(id),
+        ),
+      ),
+    );
+  }
+
   Future<void> _delete() async {
     _menu.close();
     final ok = await confirmDeleteChat(context, _chat);
@@ -152,6 +173,7 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
       menuChildren: [
         _ChatMenuContent(
           onRename: _rename,
+          onArchive: _archive,
           onCopy: _copy,
           onDelete: _delete,
         ),
@@ -222,11 +244,13 @@ class _MenuTriggerState extends State<_MenuTrigger> {
 class _ChatMenuContent extends StatelessWidget {
   const _ChatMenuContent({
     required this.onRename,
+    required this.onArchive,
     required this.onCopy,
     required this.onDelete,
   });
 
   final VoidCallback onRename;
+  final VoidCallback onArchive;
   final VoidCallback onCopy;
   final VoidCallback onDelete;
 
@@ -243,6 +267,11 @@ class _ChatMenuContent extends StatelessWidget {
             icon: LucideIcons.pencilLine300,
             label: 'Rename chat',
             onPressed: onRename,
+          ),
+          _ChatMenuItem(
+            icon: LucideIcons.archive300,
+            label: 'Archive chat',
+            onPressed: onArchive,
           ),
           _ChatMenuItem(
             icon: LucideIcons.copy300,
