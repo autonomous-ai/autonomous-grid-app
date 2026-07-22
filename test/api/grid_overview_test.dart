@@ -66,5 +66,28 @@ void main() {
       expect(partial.nodes.single.device, isNull);
       expect(partial.nodes.single.throughputTokS, isNull);
     });
+
+    test('reads the wire-dialect flags the relay advertises', () {
+      final o = GridOverview.fromJson(const {
+        'advertises_chat_completions': true,
+        'advertises_responses': false,
+      });
+      expect(o.advertisesChatCompletions, isTrue);
+      expect(o.advertisesResponses, isFalse);
+    });
+
+    test('a relay that omits the dialect flags reads as unknown, not "no"', () {
+      // Every relay predating the flags leaves them out. Parsing absence as
+      // `false` would tell the app no grid can run Codex — and would strand a
+      // user on a grid that serves it perfectly well.
+      final o = GridOverview.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      expect(o.advertisesChatCompletions, isNull);
+      expect(o.advertisesResponses, isNull);
+    });
+
+    test('a non-boolean flag reads as unknown rather than throwing', () {
+      final o = GridOverview.fromJson(const {'advertises_responses': 'true'});
+      expect(o.advertisesResponses, isNull);
+    });
   });
 }

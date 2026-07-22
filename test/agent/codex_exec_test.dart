@@ -172,14 +172,22 @@ void main() {
   });
 
   group('friendlyCodexError — a next step, not a stack trace', () {
-    test('the responses wall reads as a limit of grid servers, not of the '
-        "user's own grid — theirs may be serving Codex models fine", () {
+    test('the responses wall reads as a limit of the model that was picked, '
+        'not of Codex or of the grid as a whole', () {
+      // A grid that can't run Codex at all never gets handed the chat, so what
+      // is left when this fires is the model. Naming the grid instead sent
+      // people hunting for a different one while theirs served Codex fine.
       final message = friendlyCodexError(
         'stream disconnected before completion: error sending request for url '
         '(http://host/v1/responses)',
       );
-      expect(message.toLowerCase(), contains("can't be used on a grid yet"));
-      expect(message, contains('Hermes'));
+      expect(message, kCodexDialectFailure);
+      expect(message.toLowerCase(), contains('this model'));
+    });
+
+    test('the responses-wall message promises no other agent by name — the '
+        'chat offers the swap as a button, which is a try, not a promise', () {
+      expect(kCodexDialectFailure, isNot(contains('Hermes')));
     });
 
     test('any other failure keeps codex own last line', () {

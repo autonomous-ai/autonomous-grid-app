@@ -8,6 +8,7 @@ import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
+import '../logic/agent_grid_support.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_status.dart';
 
@@ -70,6 +71,10 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
     final theme = Theme.of(context);
     // Each row probes its own agent, so it reads its own state.
     final installed = ref.watch(agentInstalledProvider(tool));
+    // Installed isn't enough: the open grid has to serve a model this agent can
+    // talk to. One that can't is shown as unavailable *here* rather than hidden
+    // — the row is how the user learns the grid is the reason.
+    final runsHere = ref.watch(agentRunsOnGridProvider(tool));
 
     // The agent answering chats right now wears the brand: a gold rim and a faint
     // gold wash lift it out of the quiet list so it's obvious which one is live.
@@ -125,12 +130,21 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            _StatusChip(tool: tool, installed: installed),
+                            _StatusChip(
+                              tool: tool,
+                              installed: installed,
+                              runsHere: runsHere,
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          tool.tagline,
+                          // What the grid can't do outranks what the agent is
+                          // for: a user reading this row wants to know why it
+                          // isn't answering before what it would be good at.
+                          installed && !runsHere
+                              ? agentUnsupportedHere(tool)
+                              : tool.tagline,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: AppPalette.textSecondary,
                           ),
@@ -139,7 +153,7 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  _Action(tool: tool, installed: installed),
+                  _Action(tool: tool, installed: installed, runsHere: runsHere),
                 ],
               ),
               _Error(tool: tool),
@@ -196,18 +210,33 @@ class _AgentGlyph extends StatelessWidget {
   }
 }
 
-/// Where the agent stands: answering chats, or sitting there uninstalled.
+/// Where the agent stands: answering chats, unavailable on this grid, or sitting
+/// there uninstalled.
 class _StatusChip extends ConsumerWidget {
-  const _StatusChip({required this.tool, required this.installed});
+  const _StatusChip({
+    required this.tool,
+    required this.installed,
+    required this.runsHere,
+  });
 
   final AgentTool tool;
   final bool installed;
+  final bool runsHere;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
     if (!installed) {
       return _Chip(label: 'Not installed', color: AppPalette.offline);
+    }
+    // Installed and up to date, but nothing here for it to answer with. Said as
+    // a fact about the grid ("on this grid"), not about the agent — the same
+    // build answers fine on the next grid over.
+    if (!runsHere) {
+      return _Chip(
+        label: 'Not available on this grid',
+        color: AppPalette.offline,
+      );
     }
     // The version is a nice-to-have: an agent that won't say which build it is
     // still answers chats, so the chip must not wait on it.
@@ -276,10 +305,19 @@ class _Chip extends StatelessWidget {
 
 /// Install, or update what's there.
 class _Action extends ConsumerWidget {
-  const _Action({required this.tool, required this.installed});
+  const _Action({
+    required this.tool,
+    required this.installed,
+    required this.runsHere,
+  });
 
   final AgentTool tool;
   final bool installed;
+
+  /// Whether the open grid can run this agent. False hides "Use for chat": a
+  /// button that hands the chat to something that would fail on the very next
+  /// message is worse than no button.
+  final bool runsHere;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -303,7 +341,7 @@ class _Action extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!isActive) ...[
+        if (!isActive && runsHere) ...[
           TextButton(
             onPressed: () =>
                 ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id),

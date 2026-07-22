@@ -7,12 +7,25 @@ class GridOverview {
     required this.stats,
     required this.models,
     required this.nodes,
+    this.advertisesChatCompletions,
+    this.advertisesResponses,
   });
 
   final String? state;
   final GridStats stats;
   final List<OverviewModel> models;
   final List<OverviewNode> nodes;
+
+  /// Whether the grid serves at least one model that answers on
+  /// `/v1/chat/completions`, and one that answers on `/v1/responses` — the two
+  /// wire dialects a client can speak. Which agents can work here is derived
+  /// from these (see `agentRunsOnGrid`).
+  ///
+  /// **Null means "the relay didn't say"**, never "no": a relay that predates
+  /// the flags leaves them out, and reading absence as `false` would strand
+  /// every user of an older grid. Only an explicit `false` rules a dialect out.
+  final bool? advertisesChatCompletions;
+  final bool? advertisesResponses;
 
   factory GridOverview.fromJson(Map<String, dynamic> j) {
     final grid = j['grid'];
@@ -25,8 +38,15 @@ class GridOverview {
       ),
       models: _list(j['models'], OverviewModel.fromJson),
       nodes: _list(j['nodes'], OverviewNode.fromJson),
+      advertisesChatCompletions: _flag(j['advertises_chat_completions']),
+      advertisesResponses: _flag(j['advertises_responses']),
     );
   }
+
+  /// A tri-state flag: the boolean when the relay sent one, else null. Anything
+  /// that isn't a bool (a string `"true"`, a number, a missing key) reads as
+  /// unknown rather than throwing or guessing.
+  static bool? _flag(Object? raw) => raw is bool ? raw : null;
 
   static List<T> _list<T>(
     Object? raw,

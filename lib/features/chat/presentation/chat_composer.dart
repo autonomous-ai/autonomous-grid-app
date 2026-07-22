@@ -27,6 +27,7 @@ class ComposerSection extends StatelessWidget {
     required this.sending,
     required this.canSend,
     required this.error,
+    this.errorAction,
     required this.approvalPicker,
     required this.modelPicker,
     required this.onAddAttachment,
@@ -45,6 +46,11 @@ class ComposerSection extends StatelessWidget {
   final bool sending;
   final bool canSend;
   final String? error;
+
+  /// A way out of [error], shown beside it — e.g. handing the chat to another
+  /// agent when this one can't answer with the model that's picked. Null when
+  /// the message has no one-click fix, which is most of them.
+  final Widget? errorAction;
 
   /// The control for what the assistant may do to this computer, or null on a
   /// turn nothing can (a picture is made by the grid, which has no filesystem).
@@ -76,17 +82,27 @@ class ComposerSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (error != null) ...[
+        if (error != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Text(
-              error!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    error!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
+                if (errorAction != null) ...[
+                  const SizedBox(width: 8),
+                  errorAction!,
+                ],
+              ],
             ),
           ),
-        ],
         LiquidGlass(
           borderRadius: BorderRadius.circular(18),
           fill: AppGlass.surfaceFill,
