@@ -47,8 +47,13 @@ class CodexConfigured extends Notifier<String?> {
 ///
 /// Codex streams the same activity/plan shapes Hermes does, so this feeds the
 /// shared activity feed ([agentActivityProvider]) and streams the answer into the
-/// bubble as it lands. It runs **read-only** — Codex reads the project and
-/// answers, and never runs a command or changes a file (no permission prompts).
+/// bubble as it lands.
+///
+/// It runs with **no sandbox** ([kCodexSandboxMode]): Codex changes files and
+/// runs commands on this computer, and — unlike Hermes over ACP — `codex exec`
+/// has no channel to ask first, so nothing here prompts the user. The approval
+/// picker in the composer governs Hermes only; it has nothing to hand Codex.
+/// TODO(BE): a per-action approval path for Codex would close that gap.
 final codexChatSenderProvider = Provider<ChatSender>((ref) {
   return CodexChatSender(ref);
 });

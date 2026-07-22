@@ -168,8 +168,17 @@ void main() {
       expect((state as MessagingConnected).link, MessagingLink.answering);
     });
 
-    test('read-and-answer is pinned before the gateway starts, so a remote '
-        'message can never run a terminal', () async {
+    test('an old read-and-answer pin is cleared before the gateway starts, so '
+        'the first message already reaches the tools Hermes loads', () async {
+      // A config an older build pinned would stay pinned forever otherwise:
+      // Hermes never rewrites a key that already exists.
+      final config = File('${policyHome.path}/.hermes/config.yaml');
+      await config.parent.create(recursive: true);
+      await config.writeAsString(
+        'platform_toolsets:\n  ${_telegram.key}:\n'
+        '${kReadAndAnswerToolsets.map((t) => '    - $t\n').join()}',
+      );
+
       final gateway = _FakeGateway();
       final c = container(gateway, grid: _grid);
       await c.read(messagingProvider(_telegram).future);
@@ -184,8 +193,8 @@ void main() {
       expect(
         await HermesPlatformPolicy(
           home: policyHome.path,
-        ).isRestricted(_telegram.key),
-        isTrue,
+        ).isPinned(_telegram.key),
+        isFalse,
       );
     });
 

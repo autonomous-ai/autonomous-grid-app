@@ -859,43 +859,40 @@ void main() {
     },
   );
 
-  test(
-    'a codex join asks for room to answer several people at once — the CLI '
-    'would otherwise pin the seat to one worker and queue the whole grid '
-    'behind whoever asked first',
-    () async {
-      const codexArgs = [
-        'join',
-        'net',
-        '--api',
-        'codex',
-        '--max-concurrency',
-        '100',
-        '--name',
-        'grid-app',
-      ];
-      final fake = FakeGridCliService()
-        ..stubStart(
-          codexArgs,
-          exitCode: 0,
-          exitDelay: const Duration(milliseconds: 15),
-          lines: const [CliLine(isStderr: false, text: 'Joining engine…')],
+  test('a codex join asks for room to answer several people at once — the CLI '
+      'would otherwise pin the seat to one worker and queue the whole grid '
+      'behind whoever asked first', () async {
+    const codexArgs = [
+      'join',
+      'net',
+      '--api',
+      'codex',
+      '--max-concurrency',
+      '100',
+      '--name',
+      'grid-app',
+    ];
+    final fake = FakeGridCliService()
+      ..stubStart(
+        codexArgs,
+        exitCode: 0,
+        exitDelay: const Duration(milliseconds: 15),
+        lines: const [CliLine(isStderr: false, text: 'Joining engine…')],
+      );
+    final container = _containerWith(fake);
+    addTearDown(container.dispose);
+
+    await container
+        .read(providerRunControllerProvider.notifier)
+        .startApiEngine(
+          network: 'net',
+          kind: 'codex',
+          envVar: null,
+          apiKey: '',
         );
-      final container = _containerWith(fake);
-      addTearDown(container.dispose);
 
-      await container
-          .read(providerRunControllerProvider.notifier)
-          .startApiEngine(
-            network: 'net',
-            kind: 'codex',
-            envVar: null,
-            apiKey: '',
-          );
-
-      expect(fake.lastStartArgs, codexArgs);
-    },
-  );
+    expect(fake.lastStartArgs, codexArgs);
+  });
 
   test(
     'startApiEngine with no models omits -m and passes no env for a stored key',

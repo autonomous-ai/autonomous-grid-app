@@ -5,7 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 
-/// The read-only working root the agent runs in, created on first read.
+/// The folder the agent opens in when no project is picked, created on first
+/// read. A starting point, not a fence — the agent may read and write outside it.
 final agentWorkspaceDirProvider = Provider<Directory>((ref) {
   final dir = GridPaths.agentWorkspaceDir;
   if (!dir.existsSync()) dir.createSync(recursive: true);

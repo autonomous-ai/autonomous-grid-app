@@ -33,6 +33,7 @@ const _menuIconGap = 9.0;
 // 8, per the radius ladder — a row nested in a 6-radius panel. Material's own
 // menu item is radius 0.
 final _menuRowRadius = BorderRadius.circular(AppControl.radius);
+
 /// The menu entries that aren't a section — kept apart from `ShellSection.name`
 /// so a section can never collide with one.
 const _settingsValue = 'settings';
