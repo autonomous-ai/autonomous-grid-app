@@ -5,13 +5,22 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../infrastructure/cli/host_shell_service.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/project.dart';
 
 const _menuWidth = 208.0;
+
+/// One standard menu row: 1px gutter + 8px inset, a 16px glyph/label line, then
+/// the same back again. Must stay in step with what [_ProjectMenuItem] actually
+/// builds — the menu is positioned by summing these, so a row that measures
+/// taller than this floats the whole panel off its button.
 const _rowHeight = 34.0;
 const _dividerHeight = 9.0;
-const _menuPadding = 6.0;
+
+/// Matches the vertical padding in [appMenuStyle] — these were 6 vs 5 once, and
+/// the menu drifted by exactly that difference.
+const _menuPadding = 5.0;
 
 /// What the menu will measure given what it's about to show — the reveal row is
 /// dropped when the folder is gone. Summed rather than guessed so
@@ -101,20 +110,15 @@ class _ProjectMenuButtonState extends ConsumerState<ProjectMenuButton> {
     final reveal = _project.exists;
     return MenuAnchor(
       controller: _menu,
-      style: MenuStyle(
+      // The shared surface, not a hand-rolled one. This menu opens over the
+      // sidebar, and AppGlass.surfaceFill sits within 1.02:1 of a raised block
+      // — in light both are white, so the panel had no edge at all.
+      // appMenuStyle() lifts it clear on both grounds (§5).
+      style: appMenuStyle().copyWith(
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(vertical: _menuPadding),
         ),
-        backgroundColor: WidgetStatePropertyAll(AppGlass.surfaceFill),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(8),
         minimumSize: const WidgetStatePropertyAll(Size(_menuWidth, 0)),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: AppGlass.hair),
-          ),
-        ),
       ),
       menuChildren: [
         _ProjectMenuContent(
@@ -193,7 +197,19 @@ class _ProjectMenuContent extends StatelessWidget {
   }
 }
 
-class _ProjectMenuItem extends StatelessWidget {
+/// One row of the menu, built to the standard recipe in §5 of the design system:
+/// a 6px gutter so hover reads as an inset pill rather than a full-bleed band,
+/// radius 8, no ink ripple, and a 16px leading slot that keeps labels aligned.
+///
+/// Hand-rolled rather than a [MenuItemButton] because the app has no
+/// `menuButtonTheme`, so a bare one takes Material's M3 defaults and lands wrong
+/// on four counts at once: radius 0, 14pt `labelLarge` text, a grey `onSurface`
+/// 8% hover, and a ripple every other menu here has turned off.
+///
+/// Stateful for its own hover: the glyph has to climb to [AppPalette.textPrimary]
+/// under the pointer. An icon that stays dim while the cursor sits on it reads as
+/// decoration, and nothing above this row tracks hover per-row to do it for us.
+class _ProjectMenuItem extends StatefulWidget {
   const _ProjectMenuItem({
     required this.icon,
     required this.label,
@@ -209,46 +225,64 @@ class _ProjectMenuItem extends StatelessWidget {
   final bool danger;
 
   @override
+  State<_ProjectMenuItem> createState() => _ProjectMenuItemState();
+}
+
+class _ProjectMenuItemState extends State<_ProjectMenuItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    // Lives in the MenuAnchor's overlay, so it watches for itself.
+    AppTheme.watch(context);
     final error = Theme.of(context).colorScheme.error;
-    final tint = danger ? error : AppPalette.textSecondary;
-    return MenuItemButton(
-      onPressed: onPressed,
-      requestFocusOnHover: false,
-      style: ButtonStyle(
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        overlayColor: WidgetStatePropertyAll(
-          danger ? error.withValues(alpha: 0.09) : AppSurface.hoverFill,
-        ),
-        // Pinned, not a minimum: the menu is positioned by summing these heights,
-        // and Flutter defaults visualDensity to *compact* on desktop — which
-        // would take 8px off every row and float the menu clear of the button.
-        visualDensity: VisualDensity.standard,
-        minimumSize: const WidgetStatePropertyAll(Size(_menuWidth, _rowHeight)),
-        maximumSize: const WidgetStatePropertyAll(
-          Size(double.infinity, _rowHeight),
-        ),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: tint),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: danger ? error : AppPalette.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+    // Danger rows are already red at rest, so they deepen rather than climb.
+    final tint = widget.danger
+        ? error
+        : (_hovered ? AppPalette.textPrimary : AppPalette.textSecondary);
+
+    return Padding(
+      // The 6px gutter, and the row height the menu's own size constant is
+      // summed from — vertical 1 here plus 8+8 inside keeps it at _rowHeight.
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: widget.onPressed,
+          onHover: (hovered) => setState(() => _hovered = hovered),
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: widget.danger
+              ? error.withValues(alpha: 0.09)
+              : AppSurface.hoverFill,
+          splashFactory: NoSplash.splashFactory,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            child: Row(
+              children: [
+                // Fixed 16px slot: the icons here differ in width, and without
+                // it every label would start at a slightly different column.
+                SizedBox(
+                  width: 16,
+                  child: Icon(widget.icon, size: 16, color: tint),
                 ),
-              ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: widget.danger ? error : AppPalette.textPrimary,
+                      fontSize: 13,
+                      height: 1.2,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -333,38 +367,152 @@ Future<void> showRenameProjectDialog(
   WidgetRef ref,
   Project project,
 ) async {
-  final controller = TextEditingController(text: project.name);
-  try {
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename project'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name'),
-          onSubmitted: (value) => Navigator.pop(context, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+  final name = await showDialog<String>(
+    context: context,
+    builder: (_) => _RenameProjectDialog(project: project),
+  );
+  if (name != null) {
+    ref.read(projectsProvider.notifier).rename(project.id, name);
+  }
+}
+
+/// The rename form. Stateful so the confirm button can follow what's typed:
+/// [ProjectsNotifier.rename] drops a blank name on the floor, so a lit-up
+/// "Rename" over an empty field is a button that promises something it won't do.
+class _RenameProjectDialog extends StatefulWidget {
+  const _RenameProjectDialog({required this.project});
+
+  final Project project;
+
+  @override
+  State<_RenameProjectDialog> createState() => _RenameProjectDialogState();
+}
+
+class _RenameProjectDialogState extends State<_RenameProjectDialog> {
+  late final TextEditingController _name = TextEditingController(
+    text: widget.project.name,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to the controller rather than leaning on the field's `onChanged`:
+    // text can arrive without the field ever firing that callback — the
+    // controller being set programmatically, or `enterText` in a widget test —
+    // and then the confirm button would still be reading the previous value.
+    _name.addListener(_onNameChanged);
+  }
+
+  void _onNameChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    _name.removeListener(_onNameChanged);
+    _name.dispose();
+    super.dispose();
+  }
+
+  bool get _canRename {
+    final trimmed = _name.text.trim();
+    return trimmed.isNotEmpty && trimmed != widget.project.name;
+  }
+
+  void _submit() {
+    if (!_canRename) return;
+    Navigator.of(context).pop(_name.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Reads AppPalette tokens — follow theme flips.
+    AppTheme.watch(context);
+    final theme = Theme.of(context);
+    // Same shell as the app's other dialogs (see `prompt_dialog.dart`): the
+    // stock AlertDialog brings Material's surface tint and a tighter radius,
+    // neither of which belongs to this design system.
+    return AlertDialog(
+      // `AppSurface.surfaceFill`, not `AppPalette.windowBg`: on the dark theme
+      // windowBg is #0A0A0A — *darker* than the panel (#141414) and cards
+      // (#1E1E1E) it floats above, so a dialog wearing it sank into the page
+      // instead of rising off it. A dialog is the topmost layer, so it takes
+      // the lifted surface (#202020, 1.215:1 against the page) per §2's stack.
+      backgroundColor: AppGlass.surfaceFill,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      titlePadding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
+      contentPadding: const EdgeInsets.fromLTRB(28, 14, 28, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(28, 10, 22, 22),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Rename project',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Rename'),
+          const SizedBox(height: 6),
+          Text(
+            'Only the label changes — the folder on disk stays where it is.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
           ),
         ],
       ),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 10),
+            // LabeledField, not a bare TextField with `labelText`: Material
+            // floats that label into the field's rim, which rule 2 of the
+            // design system rules out — labels sit above the control.
+            LabeledField(
+              label: 'Name',
+              controller: _name,
+              hint: widget.project.name,
+              autofocus: true,
+              // The field sits on the dialog's *raised* surface, not the page,
+              // so the default cardBg fill is the wrong ground: measured on
+              // #202020 it lands at 1.023:1 and the unfocused box dissolves
+              // into the dialog. AppCard.inset is the recessed token for
+              // exactly this — 1.09:1 there. Light is the other way round
+              // (cardBg 1.11:1 beats inset's 1.073:1), so this picks per theme
+              // rather than committing to one value that only works in dark.
+              fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
+              // No onChanged: the controller listener above already rebuilds.
+              // Enter confirms, as it did before this dialog was rebuilt.
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        const SizedBox(width: 4),
+        // A disabled button with no reason attached reads as broken — this one
+        // greys out both for a blank name and for a name that hasn't actually
+        // changed, and the second case looks identical to "nothing happened".
+        Tooltip(
+          message: _name.text.trim().isEmpty
+              ? 'Give the project a name'
+              : _canRename
+              ? 'Rename the project'
+              : "That's already its name",
+          child: FilledButton(
+            onPressed: _canRename ? _submit : null,
+            child: const Text('Rename'),
+          ),
+        ),
+      ],
     );
-    if (name != null) {
-      ref.read(projectsProvider.notifier).rename(project.id, name);
-    }
-  } finally {
-    // After the frame, not the moment `showDialog` returns: the dialog is still
-    // animating out and rebuilds its TextField on the way, which would read a
-    // controller disposed out from under it.
-    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
   }
 }
 
@@ -373,23 +521,63 @@ Future<void> showRenameProjectDialog(
 Future<bool> confirmRemoveProject(BuildContext context, Project project) async {
   final ok = await showDialog<bool>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text('Remove "${project.name}"?'),
-      content: const Text(
-        'The folder and its files stay exactly where they are — this only '
-        'takes it off your list, and its chats move out of the project.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+    builder: (context) {
+      // Reads AppPalette tokens — follow theme flips.
+      AppTheme.watch(context);
+      final theme = Theme.of(context);
+      // Same shell as the rename dialog above: the two open from one menu, so
+      // a stock AlertDialog next to a styled one reads as a bug.
+      return AlertDialog(
+        // The lifted surface, not windowBg — see the rename dialog above.
+        backgroundColor: AppGlass.surfaceFill,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
+        contentPadding: const EdgeInsets.fromLTRB(28, 14, 28, 4),
+        actionsPadding: const EdgeInsets.fromLTRB(28, 10, 22, 22),
+        title: Text(
+          'Remove "${project.name}"?',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Remove'),
+        content: SizedBox(
+          width: 460,
+          child: Text(
+            'The folder and its files stay exactly where they are — this only '
+            'takes it off your list, and its chats move out of the project.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
+          ),
         ),
-      ],
-    ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          const SizedBox(width: 4),
+          // Tinted to the error colour: this one takes something away, and in
+          // the default fill it looked identical to the benign confirm sitting
+          // one menu item above it.
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+              // Not `colorScheme.onError`: neither scheme sets it, so it falls
+              // back to Material's, and on the dark palette's #F2544B that
+              // default (#690005) measures 3.83:1 — under the 4.5:1 body text
+              // needs. White is worse there (3.42:1); black clears it at 6.15:1.
+              // Light's #B3261E is the opposite case, so this has to switch.
+              foregroundColor: AppTheme.isDark
+                  ? Colors.black
+                  : theme.colorScheme.onError,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      );
+    },
   );
   return ok ?? false;
 }

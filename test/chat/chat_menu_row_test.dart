@@ -15,9 +15,7 @@ Future<void> _openMenu(WidgetTester tester) async {
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(
-    const ProviderScope(child: _MenuHarness()),
-  );
+  await tester.pumpWidget(const ProviderScope(child: _MenuHarness()));
   await tester.pumpAndSettle();
 
   await tester.tap(find.byTooltip('Chat options'));
@@ -75,7 +73,10 @@ void main() {
     );
     final row = tester.getRect(
       find
-          .ancestor(of: find.text('Rename chat'), matching: find.byType(InkWell))
+          .ancestor(
+            of: find.text('Rename chat'),
+            matching: find.byType(InkWell),
+          )
           .first,
     );
 

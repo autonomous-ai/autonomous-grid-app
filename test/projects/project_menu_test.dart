@@ -132,6 +132,9 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), 'Renamed');
+    // "Rename" disables itself on a blank or unchanged name, so the tap has to
+    // land on a rebuilt button — without this frame it hits the disabled one.
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
     await tester.pumpAndSettle();
 
@@ -193,6 +196,24 @@ void main() {
     final bottom = tester.getRect(find.text('Remove from Grid')).bottom;
     expect(top, greaterThan(anchor.bottom));
     expect(bottom - anchor.bottom, lessThan(180));
+  });
+
+  testWidgets('rows measure the height the menu is positioned from', (
+    tester,
+  ) async {
+    // The menu places itself by summing a _rowHeight constant, so a row that
+    // draws taller than that constant floats the whole panel off its button.
+    // The two are only kept honest by measuring, never by reading the code:
+    // pitch here must equal _rowHeight (34).
+    await pump(tester);
+    await open(tester);
+
+    final pin = tester.getRect(find.text('Pin project')).top;
+    final finder = tester.getRect(find.text('Show in Finder')).top;
+    final rename = tester.getRect(find.text('Rename project')).top;
+
+    expect(finder - pin, 34.0, reason: 'row pitch drifted from _rowHeight');
+    expect(rename - finder, 34.0);
   });
 
   testWidgets('an open menu re-colours when the theme flips', (tester) async {
