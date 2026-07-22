@@ -3,52 +3,62 @@ import 'package:grid_app/shared/layouts/shell_state.dart';
 
 void main() {
   group('settings sections', () {
-    test('Grids and Debug are the developer-only tabs', () {
+    test('the developer-only tabs are gated', () {
       expect(ShellSection.grids.devOnly, isTrue);
       expect(ShellSection.debug.devOnly, isTrue);
+      // Messages and Plugins are the Integrations group, gated together — the
+      // whole run vanishes from a shipped build, heading included.
+      expect(ShellSection.messages.devOnly, isTrue);
+      expect(ShellSection.plugins.devOnly, isTrue);
       // Everything an end user needs stays visible in every build.
       expect(ShellSection.engines.devOnly, isFalse);
-      expect(ShellSection.messages.devOnly, isFalse);
       expect(ShellSection.guide.devOnly, isFalse);
       expect(ShellSection.appearance.devOnly, isFalse);
-    });
-
-    // The order interleaves the end-user rows with the developer-only ones, so
-    // what matters isn't any single index — it's that the visible rows form one
-    // unbroken run at the top. Archived chats is the last of them: it's where a
-    // chat goes when it leaves the sidebar, so it belongs with the rows an end
-    // user actually visits rather than behind the developer gate.
-    test('a shipped build\'s settings list ends at Archived chats', () {
-      expect(ShellSection.archived.isVisibleForBuild, isTrue);
       expect(ShellSection.archived.devOnly, isFalse);
-      final archived = kSettingsSections.indexOf(ShellSection.archived);
-      expect(archived, greaterThan(-1));
+    });
+
+    // The flat list is what isSettings tests against, so a row that appears in
+    // the nav must count as a settings screen — and nothing may count as one
+    // without appearing.
+    test('the flat list is exactly the grouped rows', () {
+      final grouped = [for (final g in kSettingsGroups) ...g.sections];
+      expect(kSettingsSections, grouped);
       expect(
-        kSettingsSections.skip(archived + 1).every((s) => s.devOnly),
-        isTrue,
-        reason:
-            'a tab an end user can see now sits below Archived chats, so their '
-            'list no longer ends there',
+        kSettingsSections.toSet().length,
+        kSettingsSections.length,
+        reason: 'a section listed in two groups would draw twice in the nav',
       );
     });
 
-    // The rule the test above rests on: an end user sees a contiguous list, not
-    // one with a gap where a developer-only row was filtered out of the middle.
-    test('no end-user tab hides below a developer-only one', () {
-      final visible = [
-        for (final (i, s) in kSettingsSections.indexed)
-          if (!s.devOnly) i,
-      ];
-      expect(
-        visible,
-        List.generate(visible.length, (i) => i),
-        reason: 'the rows an end user sees must be the first ones in the list',
+    // With groups the old "visible rows form one unbroken run" rule no longer
+    // applies — a developer-only group drops out whole, heading included, so a
+    // gap in the flat order costs an end user nothing. What must hold instead:
+    // no heading is ever drawn over an empty run.
+    test('a group with no visible rows drops out entirely', () {
+      final groups = visibleSettingsGroups(
+        where: (s) => s != ShellSection.grids,
       );
+      expect(groups.every((g) => g.sections.isNotEmpty), isTrue);
+      // Filtering everything away leaves no headings at all, rather than a
+      // column of captions over nothing.
+      expect(visibleSettingsGroups(where: (_) => false), isEmpty);
     });
 
-    test('Debug stays at the very bottom', () {
-      final debug = kSettingsSections.indexOf(ShellSection.debug);
-      expect(debug, kSettingsSections.length - 1);
+    test('filtering keeps a group\'s surviving rows in their listed order', () {
+      final kept = visibleSettingsGroups(
+        where: (s) => s != ShellSection.appearance,
+      );
+      final personal = kept.firstWhere((g) => g.title == 'Personal');
+      expect(personal.sections, isNot(contains(ShellSection.appearance)));
+      expect(personal.sections, [
+        for (final s in kSettingsGroups.first.sections)
+          if (s != ShellSection.appearance) s,
+      ]);
+    });
+
+    test('Archived chats is the last row in the list', () {
+      expect(ShellSection.archived.devOnly, isFalse);
+      expect(kSettingsSections.last, ShellSection.archived);
     });
 
     test('the default settings screen is one every build can show, so an end '

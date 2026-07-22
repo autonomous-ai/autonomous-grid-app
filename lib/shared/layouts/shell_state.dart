@@ -102,31 +102,75 @@ enum ShellSection {
 /// chats; this section is the screen that manages them, opened from that header.
 const kSidebarSections = [ShellSection.scheduled, ShellSection.agents];
 
-/// What Settings lists, in order — the screens you set up once.
+/// One labelled run of rows in the settings nav.
 ///
-/// This computer leads, then Messages and the guide, then Appearance. Plugins,
-/// Grids and Debug are developer-only ([ShellSection.devOnly]) and hidden from
-/// shipped builds, so an end user's list simply ends at Appearance. Plugins
-/// (skills/MCP the assistant can use) is agent tooling, not end-user setup, so it
-/// lives here behind the developer gate rather than in the daily sidebar.
+/// The list was a flat eight rows, which reads as a pile once the developer
+/// build unhides the last four: nothing tells you that Plugins and Messages are
+/// the same kind of thing and Appearance isn't. Grouping is presentation only —
+/// [kSettingsSections] still flattens to the same set, so [ShellSection.isSettings]
+/// and the ⌘K palette are untouched.
+class SettingsGroup {
+  const SettingsGroup(this.title, this.sections);
+
+  /// The heading above the run. Kept short — it's a caption, not a sentence.
+  final String title;
+
+  /// The rows under it, in order. May be entirely [ShellSection.devOnly], in
+  /// which case the whole group — heading included — disappears from a shipped
+  /// build; see [visibleSettingsGroups].
+  final List<ShellSection> sections;
+}
+
+/// What Settings lists, in order — the screens you set up once, in labelled runs.
 ///
-/// Appearance sits above the developer-only rows — a preference the user actually
-/// changes leads the developer tooling. That reordering only shows up in a
-/// developer build, and costs an end user nothing, since every row after
-/// Appearance is invisible to them either way.
-const kSettingsSections = [
-  ShellSection.engines,
-  ShellSection.guide,
-  ShellSection.appearance,
-  // Where a chat goes when it leaves the sidebar, so it sits with the other
-  // rows an end user actually visits rather than behind the developer gate.
-  ShellSection.archived,
-  // dev only, so the order doesn't matter for end users: they don't see these rows at all.
-  ShellSection.messages,
-  ShellSection.plugins,
-  ShellSection.grids,
-  ShellSection.debug,
+/// Personal is what an end user actually touches; Integrations is what the app
+/// talks to on their behalf; Developer is the [ShellSection.devOnly] tooling,
+/// which vanishes wholesale in a shipped build; Archived trails everything as
+/// storage rather than setup.
+///
+/// Messages and Plugins sit together because they are the same shape — both
+/// point the assistant at something outside the app (a Telegram gateway, the
+/// skills/MCP it may call) — even though both are developer-gated today.
+const kSettingsGroups = [
+  SettingsGroup('Personal', [
+    ShellSection.engines,
+    ShellSection.appearance,
+    ShellSection.guide,
+  ]),
+  SettingsGroup('Integrations', [
+    // dev only for now, so this whole group is invisible in a shipped build.
+    ShellSection.messages,
+    ShellSection.plugins,
+  ]),
+  SettingsGroup('Developer', [ShellSection.grids, ShellSection.debug]),
+  // Where a chat goes when it leaves the sidebar. Its own run at the bottom:
+  // it's the one row here that manages content rather than configuration.
+  SettingsGroup('Archived', [ShellSection.archived]),
 ];
+
+/// Every settings screen, flat — the membership test behind
+/// [ShellSection.isSettings]. Derived from [kSettingsGroups] so a row can never
+/// be in the nav without counting as a settings screen, or the reverse.
+final kSettingsSections = [
+  for (final group in kSettingsGroups) ...group.sections,
+];
+
+/// [kSettingsGroups] narrowed to this build: rows that fail
+/// [ShellSection.isVisibleForBuild] drop out, and a group left with no rows drops
+/// out with them — so a shipped build never draws a heading over nothing.
+List<SettingsGroup> visibleSettingsGroups({
+  bool Function(ShellSection)? where,
+}) {
+  final groups = <SettingsGroup>[];
+  for (final group in kSettingsGroups) {
+    final rows = [
+      for (final target in group.sections)
+        if (target.isVisibleForBuild && (where?.call(target) ?? true)) target,
+    ];
+    if (rows.isNotEmpty) groups.add(SettingsGroup(group.title, rows));
+  }
+  return groups;
+}
 
 /// Where Settings opens when the user asked for Settings rather than for one
 /// screen inside it (the account menu, ⌘K) — the first screen every build shows.

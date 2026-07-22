@@ -149,16 +149,29 @@ class _SettingsNav extends StatefulWidget {
 class _SettingsNavState extends State<_SettingsNav> {
   String _query = '';
 
-  /// The rows this build offers, narrowed to the query. Matching is a plain
-  /// case-insensitive substring of the label — this list is six rows, so
+  /// The groups this build offers, narrowed to the query. Matching is a plain
+  /// case-insensitive substring of the label — this list is eight rows, so
   /// anything cleverer would be machinery no one can feel.
-  List<ShellSection> get _visible {
+  ///
+  /// The group's own title matches too, so typing "integrations" surfaces the
+  /// whole run rather than nothing. A group the query empties disappears with
+  /// its heading — see [visibleSettingsGroups].
+  List<SettingsGroup> get _visible {
     final q = _query.trim().toLowerCase();
-    return [
-      for (final target in kSettingsSections)
-        if (target.isVisibleForBuild)
-          if (q.isEmpty || target.label.toLowerCase().contains(q)) target,
-    ];
+    if (q.isEmpty) return visibleSettingsGroups();
+    final groups = <SettingsGroup>[];
+    for (final group in visibleSettingsGroups()) {
+      if (group.title.toLowerCase().contains(q)) {
+        groups.add(group);
+        continue;
+      }
+      final rows = [
+        for (final target in group.sections)
+          if (target.label.toLowerCase().contains(q)) target,
+      ];
+      if (rows.isNotEmpty) groups.add(SettingsGroup(group.title, rows));
+    }
+    return groups;
   }
 
   @override
@@ -209,24 +222,70 @@ class _SettingsNavState extends State<_SettingsNav> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 6),
       children: [
-        for (final target in visible)
-          if (widget.compact)
-            _NavIcon(
-              target: target,
-              selected: target == widget.section,
-              onTap: () => widget.onSelect(target),
-            )
-          else
-            SidebarItem(
-              // The rail glyph — the same 300-weight the app's own sidebar
-              // uses. This rail was on the default weight, so the two nav
-              // columns drew the same icon at two line weights.
-              icon: target.thinIcon,
-              label: target.label,
-              selected: target == widget.section,
-              onTap: () => widget.onSelect(target),
+        for (final (i, group) in visible.indexed) ...[
+          // At [compactWidth] there is no room for a caption, so the grouping
+          // survives as a hairline between runs instead — dropped above the
+          // first group, where a rule would read as a border under the search
+          // field rather than a divider.
+          if (!widget.compact)
+            _GroupHeading(title: group.title, first: i == 0)
+          else if (i > 0)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Divider(height: 1),
             ),
+          for (final target in group.sections)
+            if (widget.compact)
+              _NavIcon(
+                target: target,
+                selected: target == widget.section,
+                onTap: () => widget.onSelect(target),
+              )
+            else
+              SidebarItem(
+                // The rail glyph — the same 300-weight the app's own sidebar
+                // uses. This rail was on the default weight, so the two nav
+                // columns drew the same icon at two line weights.
+                icon: target.thinIcon,
+                label: target.label,
+                selected: target == widget.section,
+                onTap: () => widget.onSelect(target),
+              ),
+        ],
       ],
+    );
+  }
+}
+
+/// The caption over one run of settings rows.
+///
+/// Same recipe as the sidebar's own "Projects" heading — 11px, w600, the faintest
+/// text token — so the two nav columns label their groups identically. Its left
+/// gutter matches [SidebarItem]'s so the caption sits over the labels it heads
+/// rather than over their icons.
+class _GroupHeading extends StatelessWidget {
+  const _GroupHeading({required this.title, required this.first});
+
+  final String title;
+
+  /// The first heading sits tighter to the search field above it — a full run of
+  /// leading there reads as the list starting late, not as separation.
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(10, first ? 2 : 14, 10, 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: AppPalette.textFaint,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+        ),
+      ),
     );
   }
 }
