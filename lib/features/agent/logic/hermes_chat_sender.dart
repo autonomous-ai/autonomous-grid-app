@@ -21,7 +21,11 @@ import 'agent_providers.dart';
 /// The hermes ACP seam, or null when hermes is absent.
 final hermesAcpServiceProvider = Provider<HermesAcpService?>((ref) {
   final path = ref.watch(hermesPathProvider);
-  return path == null ? null : HermesAcpServiceImpl(path);
+  // The real logger, not the default no-op: permission decisions are exactly
+  // what a user's bug report has to be able to show us.
+  return path == null
+      ? null
+      : HermesAcpServiceImpl(path, log: ref.watch(appLogProvider));
 });
 
 /// The chat's default [ChatSender], backed by Hermes over ACP (Agent Client

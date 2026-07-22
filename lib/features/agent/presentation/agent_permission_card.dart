@@ -24,7 +24,28 @@ class AgentPermissionCard extends ConsumerWidget {
     AppTheme.watch(context); // rebuild on theme flip — reads card/glass tokens
     final theme = Theme.of(context);
     final controller = ref.read(agentPermissionProvider.notifier);
-    final isCommand = request.kind == AgentPermissionKind.command;
+    final isEdit = request.kind == AgentPermissionKind.edit;
+    // Icon, question and subtitle in one place, so the three can't drift apart.
+    // `other` is a tool the app has no drawing for — it gets the agent's own
+    // title and the raw request below, rather than a description we'd be making
+    // up about something we couldn't read.
+    final (icon, title, subtitle) = switch (request.kind) {
+      AgentPermissionKind.command => (
+        Icons.terminal_rounded,
+        'Run this on your computer?',
+        request.summary,
+      ),
+      AgentPermissionKind.edit => (
+        Icons.edit_note_rounded,
+        'Change this file?',
+        request.path ?? '',
+      ),
+      AgentPermissionKind.other => (
+        Icons.extension_outlined,
+        'Let the assistant do this?',
+        request.summary,
+      ),
+    };
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -38,25 +59,22 @@ class AgentPermissionCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _Header(
-            icon: isCommand ? Icons.terminal_rounded : Icons.edit_note_rounded,
-            title: isCommand
-                ? 'Run this on your computer?'
-                : 'Change this file?',
-            subtitle: isCommand ? request.summary : (request.path ?? ''),
-          ),
+          _Header(icon: icon, title: title, subtitle: subtitle),
           Flexible(
             child: SingleChildScrollView(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                child: isCommand
-                    ? _Command(command: request.command ?? '')
-                    : DiffView(
+                // Only an edit has two versions to compare; a command and an
+                // unrecognised call are both "here is exactly what was asked",
+                // which the monospace block already says well.
+                child: isEdit
+                    ? DiffView(
                         lines: buildEditDiff(
                           request.oldText,
                           request.newText ?? '',
                         ),
-                      ),
+                      )
+                    : _Command(command: request.command ?? ''),
               ),
             ),
           ),
