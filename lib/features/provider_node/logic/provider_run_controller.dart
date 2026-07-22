@@ -434,6 +434,12 @@ class ProviderRunController extends Notifier<ProviderRunState> {
 
     _process = await service.start(args, environment: environment);
     _process!.lines.listen((line) {
+      // The user cancelled (or stopped) this run. `kill()` is a request, not an
+      // instant: the CLI keeps flushing buffered lines on its way out, and each
+      // one used to re-arm "Starting…" — so seconds after cancelling, the
+      // section reappeared on its own and then vanished again when the process
+      // finally exited. Nothing this run says now can change what was decided.
+      if (_stopping) return;
       log.add(line.text);
       if (log.length > _maxLogLines) {
         log.removeRange(0, log.length - _maxLogLines);
@@ -454,7 +460,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     final exitCode = await _process!.exitCode;
     _process = null;
     if (_stopping) {
-      state = const ProviderRunStopped();
+      // [stop] owns the ending: it holds "Stopping…" until `grid leave` comes
+      // back, which takes seconds. Settling to Stopped the moment the killed
+      // process exits cut that short and dropped the section off the page while
+      // the leave was still running.
+      if (state is! ProviderRunStopping) state = const ProviderRunStopped();
       return;
     }
     if (exitCode == 0) {

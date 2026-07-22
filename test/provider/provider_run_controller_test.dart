@@ -1012,4 +1012,68 @@ void main() {
       expect(fake.lastStartEnvironment, isNull);
     },
   );
+
+  test('cancelling a sign-in join stays cancelled — a line the CLI flushes on '
+      'its way out must not put the join back on screen', () async {
+    // What the user saw: Cancel during the ChatGPT sign-in put the list back,
+    // then seconds later "Starting on <grid>…" reappeared by itself and went
+    // away again. `kill()` is a request; the CLI keeps writing while it dies,
+    // and every line was re-arming the starting state.
+    const codexArgs = [
+      'join',
+      'net',
+      '--api',
+      'codex',
+      '--max-concurrency',
+      '100',
+      '--name',
+      'grid-app',
+    ];
+    final fake = FakeGridCliService()
+      ..stubStart(
+        codexArgs,
+        exitCode: 0,
+        lineDelay: const Duration(milliseconds: 20),
+        exitDelay: const Duration(milliseconds: 120),
+        lines: const [
+          CliLine(isStderr: false, text: 'Open https://auth.example/device'),
+          CliLine(isStderr: false, text: 'Waiting for approval…'),
+          CliLine(isStderr: false, text: 'Signed in'),
+        ],
+      );
+    final container = ProviderContainer(
+      overrides: [
+        gridCliServiceProvider.overrideWithValue(fake),
+        nodeNameProvider.overrideWithValue('grid-app'),
+        leaveTimeoutProvider.overrideWithValue(const Duration(seconds: 1)),
+        syncDelayAfterJoinProvider.overrideWithValue(Duration.zero),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(providerRunControllerProvider.notifier);
+
+    unawaited(
+      notifier.startApiEngine(
+        network: 'net',
+        kind: 'codex',
+        envVar: null,
+        apiKey: '',
+      ),
+    );
+    // Long enough for the first line, so the join really is on screen.
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(
+      container.read(providerRunControllerProvider),
+      isA<ProviderRunActive>(),
+    );
+
+    await notifier.stop();
+    // Past the remaining lines and the process's own exit.
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    expect(
+      container.read(providerRunControllerProvider),
+      isA<ProviderRunStopped>(),
+    );
+  });
 }
