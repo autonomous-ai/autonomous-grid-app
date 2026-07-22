@@ -13,14 +13,22 @@ import '../logic/conversation.dart';
 const _menuWidth = 208.0;
 const _rowHeight = 34.0;
 const _dividerHeight = 9.0;
-const _menuPadding = 6.0;
+
+/// The panel's own vertical padding — [appMenuStyle]'s `vertical: 5`. Read off
+/// that style rather than guessed: the two drifting apart is what pushes the
+/// menu off its button.
+const _menuPadding = 5.0;
+
+/// Each row's 1px breathing room above and below, which the gutter recipe adds
+/// outside [_rowHeight].
+const _rowGap = 1.0;
 
 /// What the menu will measure. Summed rather than guessed so
 /// [anchoredMenuPosition] lands the menu on the button instead of near it.
 /// Three rows above the divider now (rename, archive, copy), one below.
 const _menuSize = Size(
   _menuWidth,
-  _menuPadding * 2 + _rowHeight * 3 + _dividerHeight + _rowHeight,
+  _menuPadding * 2 + (_rowHeight + _rowGap * 2) * 4 + _dividerHeight,
 );
 
 /// Names the conversation you're reading: a mark, the title, and the "…" that
@@ -308,7 +316,10 @@ class _ChatMenuContent extends StatelessWidget {
   }
 }
 
-class _ChatMenuItem extends StatelessWidget {
+/// One menu row, hand-rolled per the design system's §5 recipe: the app has no
+/// `menuButtonTheme`, so a bare `MenuItemButton` would take Material's defaults
+/// (square corners, 14pt label, a grey `onSurface` hover, an ink ripple).
+class _ChatMenuItem extends StatefulWidget {
   const _ChatMenuItem({
     required this.icon,
     required this.label,
@@ -324,47 +335,75 @@ class _ChatMenuItem extends StatelessWidget {
   final bool danger;
 
   @override
+  State<_ChatMenuItem> createState() => _ChatMenuItemState();
+}
+
+class _ChatMenuItemState extends State<_ChatMenuItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    // Lives in the MenuAnchor's overlay, detached from the header's subtree —
+    // so it watches the palette itself.
+    AppTheme.watch(context);
     final error = Theme.of(context).colorScheme.error;
-    final tint = danger ? error : AppPalette.textSecondary;
-    return MenuItemButton(
-      onPressed: onPressed,
-      requestFocusOnHover: false,
-      style: ButtonStyle(
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        overlayColor: WidgetStatePropertyAll(
-          danger ? error.withValues(alpha: 0.09) : AppSurface.hoverFill,
-        ),
-        // Pinned, not a minimum: the menu is positioned by summing these
-        // heights, and Flutter defaults visualDensity to *compact* on desktop —
-        // which would take 8px off every row and float the menu clear of the
-        // button.
-        visualDensity: VisualDensity.standard,
-        minimumSize: const WidgetStatePropertyAll(Size(_menuWidth, _rowHeight)),
-        maximumSize: const WidgetStatePropertyAll(
-          Size(double.infinity, _rowHeight),
-        ),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: tint),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: danger ? error : AppPalette.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+    // The glyph rests a step below the label and comes up to meet it under the
+    // pointer — the same "fills in on hover" move the rail's actions make, so a
+    // hovered row reads as one lit object instead of a lit label beside a grey
+    // icon. Danger keeps its red throughout: dimming it would file the one
+    // destructive row in with the rest.
+    final tint = widget.danger
+        ? error
+        : _hovered
+        ? AppPalette.textPrimary
+        : AppPalette.textSecondary;
+
+    return Padding(
+      // The 6px gutter is what makes the hover highlight read as an inset pill
+      // rather than a full-bleed band across the panel.
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: _rowGap),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: widget.onPressed,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: widget.danger
+              ? error.withValues(alpha: 0.09)
+              : AppSurface.hoverFill,
+          // The app's menus have no ink ripple; MenuItemButton brought one.
+          splashFactory: NoSplash.splashFactory,
+          onHover: (value) => setState(() => _hovered = value),
+          child: SizedBox(
+            height: _rowHeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              child: Row(
+                children: [
+                  // Fixed 16px leading slot so labels line up whatever the
+                  // glyph's own width.
+                  SizedBox(
+                    width: 16,
+                    child: Icon(widget.icon, size: 16, color: tint),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: widget.danger ? error : AppPalette.textPrimary,
+                        fontSize: 13,
+                        height: 1.2,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

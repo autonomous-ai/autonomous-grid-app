@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/add_project.dart';
 import '../../projects/presentation/project_menu.dart';
@@ -259,6 +260,24 @@ class _ChatRow extends ConsumerWidget {
   final Conversation chat;
   final bool indented;
 
+  /// Same deal as the "…" menu's Archive: no confirm dialog for a reversible
+  /// action, the toast carries the way back.
+  void _archive(BuildContext context, WidgetRef ref) {
+    final id = chat.id;
+    ref.read(chatSessionsProvider.notifier).archiveConversation(id);
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message: 'Chat archived',
+        action: ToastAction(
+          label: 'Undo',
+          onPressed: () =>
+              ref.read(chatSessionsProvider.notifier).unarchiveConversation(id),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Reads AppPalette.textFaint — follow theme flips.
@@ -271,6 +290,11 @@ class _ChatRow extends ConsumerWidget {
     final selected =
         ref.watch(chatSessionsProvider).activeId == chat.id &&
         ref.watch(shellSectionProvider) == ShellSection.chat;
+    // Mirrors archiveConversation's own guard: this chat is the one a reply is
+    // streaming into.
+    final streaming =
+        ref.watch(chatSessionsProvider).sending &&
+        ref.watch(chatSessionsProvider).activeId == chat.id;
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
@@ -286,15 +310,91 @@ class _ChatRow extends ConsumerWidget {
           controller.select(chat.id);
           ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
         },
-        trailing: IconButton(
-          tooltip: 'Delete chat',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-          iconSize: 16,
-          splashRadius: 14,
-          color: AppPalette.textFaint,
-          icon: const Icon(LucideIcons.trash2300),
-          onPressed: () => controller.deleteConversation(chat.id),
+        // Archive, not delete: the hover affordance on a whole list of chats is
+        // one mis-aimed click away from the row below it, so the reversible
+        // action is the one that belongs here. Destroying a transcript stays
+        // behind the chat's own "…" menu, where it asks first.
+        trailing: _ArchiveButton(
+          enabled: !streaming,
+          onTap: () => _archive(context, ref),
+        ),
+      ),
+    );
+  }
+}
+
+/// The archive action revealed on a chat row's hover.
+///
+/// Built like the project rail's "…" trigger rather than as an [IconButton]:
+/// the row's own hover only *reveals* this glyph, so lighting up under the
+/// pointer needs a second, button-local hover state. Without it the icon sits
+/// at its resting tint while you're aiming at it, and the click target reads as
+/// decoration.
+class _ArchiveButton extends StatefulWidget {
+  const _ArchiveButton({required this.onTap, required this.enabled});
+
+  final VoidCallback onTap;
+
+  /// False while a reply is streaming into this chat — [archiveConversation]
+  /// no-ops then, and a button that silently does nothing reads as broken.
+  final bool enabled;
+
+  @override
+  State<_ArchiveButton> createState() => _ArchiveButtonState();
+}
+
+class _ArchiveButtonState extends State<_ArchiveButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // Reads AppPalette/AppSurface from inside a lazy list's child — watch here
+    // or this glyph keeps the palette it was first painted with.
+    AppTheme.watch(context);
+    final hot = _hovered && widget.enabled;
+    // Rests at textFaint so it stays a whisper once revealed, and climbs to
+    // textPrimary under the pointer — the same destination as the project row's
+    // trigger, so two neighbouring rail actions light up identically.
+    final ink = !widget.enabled
+        ? AppPalette.textFaint.withValues(alpha: 0.4)
+        : hot
+        ? AppPalette.textPrimary
+        : AppPalette.textFaint;
+
+    return Semantics(
+      button: true,
+      enabled: widget.enabled,
+      label: 'Archive chat',
+      child: Tooltip(
+        message: widget.enabled
+            ? 'Archive chat'
+            : "Can't archive while replying",
+        waitDuration: const Duration(milliseconds: 600),
+        child: MouseRegion(
+          cursor: widget.enabled
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.enabled ? widget.onTap : null,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(7),
+                // A fill under the glyph as well as the colour lift: on a row
+                // that is *already* washed by its own hover, colour alone is a
+                // thin signal for "the pointer is on the button, not the row".
+                color: hot ? AppSurface.hoverFill : Colors.transparent,
+              ),
+              alignment: Alignment.center,
+              child: Icon(LucideIcons.archive300, size: 16, color: ink),
+            ),
+          ),
         ),
       ),
     );
