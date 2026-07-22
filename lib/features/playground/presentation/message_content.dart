@@ -51,7 +51,13 @@ class MessageContent extends StatelessWidget {
       TextSegment(:final text) => SelectionArea(
         child: GptMarkdown(
           text,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+          // Body copy gets a touch more leading than the app's default 1.34.
+          // That figure is tuned for single-line UI labels; a multi-paragraph
+          // answer is read continuously, and at this measure the tighter value
+          // makes the block feel dense — the "no visual rhythm" problem.
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: color, height: 1.55),
           onLinkTap: (url, _) => openExternalUrl(url),
         ),
       ),

@@ -50,6 +50,11 @@ const double _atBottomThreshold = 120;
 /// Wider than the 760 it started at: on a big window that left a broad empty
 /// margin either side, and the content — tables above all — was cramped into a
 /// column far narrower than the room available.
+///
+/// This stays the *outer* bound, the one wide content is allowed to fill. Prose
+/// is held to the narrower `proseWidth` (in `chat_bubble.dart`) inside it, so
+/// widening this again for tables doesn't drag body copy back out to 110+
+/// characters a line.
 const double _columnWidth = 1000;
 
 const double _composerWidth = 1020;

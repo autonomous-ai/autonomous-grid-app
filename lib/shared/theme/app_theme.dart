@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 
 /// The app's live brightness — the single source of truth the color tokens below
 /// resolve against. It is *not* read from the platform directly: [_BrightnessSync]
@@ -522,6 +523,13 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     splashFactory: InkRipple.splashFactory,
     textTheme: textTheme,
     primaryTextTheme: textTheme,
+    // Without this the markdown in a chat turn is styled by gpt_markdown's own
+    // fallback, which builds itself from `ThemeData.light()/dark()` +
+    // `Typography.tall2021` — Roboto, Material sizes, w400 headings, and
+    // `letterSpacing: 0.25`. That ignores every token here, so a reply's
+    // headings rendered *lighter* than bold body text and the whole transcript
+    // sat on a different type ramp from the rest of the app.
+    extensions: [_markdownTheme(textTheme, brightness)],
     iconTheme: IconThemeData(color: scheme.onSurfaceVariant, size: 18),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.all(Colors.white),
@@ -870,6 +878,53 @@ ButtonStyle _textButtonStyle() => TextButton.styleFrom(
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
   visualDensity: VisualDensity.standard,
 );
+
+/// Pins gpt_markdown's heading/link/rule styling to this app's type ramp.
+///
+/// The package's default theme is derived from a stock Material `ThemeData` and
+/// `Typography.tall2021`, so registering this is what stops a chat reply from
+/// rendering on Roboto at Material sizes. The headings step down the *app's*
+/// ramp (all w600, per the design system) rather than Material's w400.
+GptMarkdownThemeData _markdownTheme(TextTheme text, Brightness brightness) {
+  final isDark = brightness == Brightness.dark;
+  // The text-on-surface accent, not AppPalette.accent: #2F5BEA only reaches
+  // 2.6:1 on the dark pane, so links there use the lifted #6E8BFF variant.
+  final link = isDark ? const Color(0xFF6E8BFF) : const Color(0xFF2F5BEA);
+  // A `---` a model wrote mid-answer. The two brightnesses need different alphas
+  // to land at the same *perceived* weight, so this can't be one shared token:
+  // the chat pane is #FFFFFF in light but #0A0A0A in dark, and ink on white
+  // separates far more readily than white on near-black. Measured against each
+  // pane, these sit at 1.283:1 (light) and 1.174:1 (dark) — visible as a
+  // paragraph break, without the 1.416:1 the package default hit in dark, where
+  // the rule outweighed the text it was dividing.
+  final rule = isDark ? const Color(0x14FFFFFF) : const Color(0x1C000000);
+
+  return GptMarkdownThemeData(
+    brightness: brightness,
+    // The inline-code chip. The package default is Material's
+    // `onSurfaceVariant.withAlpha(50)`, which on the dark pane composites to a
+    // faintly purple #383739 — legible, but off this app's neutral ramp.
+    highlightColor: isDark ? const Color(0x1FFFFFFF) : const Color(0x0F000000),
+    // A reply's headings live inside body copy, so the ramp starts well below
+    // the page-level headline sizes — h1 here is the app's titleLarge, not its
+    // headlineLarge, or a single "##" would tower over the answer around it.
+    h1: text.titleLarge,
+    h2: text.titleMedium,
+    h3: text.titleSmall,
+    h4: text.labelLarge,
+    h5: text.labelMedium,
+    h6: text.labelMedium,
+    linkColor: link,
+    linkHoverColor: link,
+    hrLineColor: rule,
+    hrLineThickness: 1,
+    // The package's default rule padding is tuned for its taller type ramp.
+    hrLinePadding: const EdgeInsets.symmetric(vertical: 16),
+    // An automatic divider under every h1 is Material-doc styling; the design
+    // system separates with space, not lines.
+    autoAddDividerLineAfterH1: false,
+  );
+}
 
 TextTheme _appTextTheme(Color primary, Color secondary) {
   final base = TextStyle(

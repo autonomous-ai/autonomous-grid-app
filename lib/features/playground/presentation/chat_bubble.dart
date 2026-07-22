@@ -7,6 +7,15 @@ import 'message_content.dart';
 import 'message_plan.dart';
 import 'message_sources.dart';
 
+/// How wide running text is allowed to get inside the transcript column.
+///
+/// The column itself is deliberately wide (1000, in `chat_view.dart`) so tables
+/// and code blocks have room. Body copy shouldn't inherit that: a line stops
+/// being comfortable past roughly 75–85 characters, which at the app's 15pt
+/// body lands near here. Two separate numbers, so widening the column for wide
+/// content never drags prose back out with it.
+const double proseWidth = 760;
+
 /// One transcript turn — the user's message (accent, right-aligned) or the
 /// assistant's reply (surface, left-aligned). Renders text and/or inline media
 /// via [MessageContent]. Shared by the Playground dialog and the Chat tab.
@@ -27,14 +36,28 @@ class ChatBubble extends StatelessWidget {
       return Align(
         alignment: Alignment.centerLeft,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          // Matches the user bubble's own vertical margin so the gap between
+          // any two turns is the same 14px, whoever spoke. The two used to be
+          // 10 and 6, which made an assistant→user gap read tighter than a
+          // user→assistant one and gave the transcript an uneven rhythm.
+          padding: const EdgeInsets.symmetric(vertical: 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MessageContent(
-                text: message.text,
-                media: message.media,
-                color: AppPalette.textPrimary,
+              // Prose is held to a comfortable measure while the surrounding
+              // column stays wide. The cap sits here rather than inside
+              // MessageContent on purpose: a table or code block lives *within*
+              // a text segment, so capping at the segment level would bind
+              // those too — which is exactly why the column was widened to 1000
+              // in the first place. gpt_markdown lets wide children overflow
+              // this box and scroll, so they still get the full width.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: proseWidth),
+                child: MessageContent(
+                  text: message.text,
+                  media: message.media,
+                  color: AppPalette.textPrimary,
+                ),
               ),
               if (message.plan.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -59,13 +82,18 @@ class ChatBubble extends StatelessWidget {
     return Align(
       alignment: Alignment.centerRight,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        margin: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         constraints: const BoxConstraints(maxWidth: 520),
         decoration: BoxDecoration(
+          // Rule 1: no rim — depth is fill + shadow. The shadow isn't optional
+          // dressing here, it's what replaces the border: measured against the
+          // pane, `bubbleFill` is only 1.055:1 in light mode (1.187:1 dark),
+          // and §2 puts ~1.05 squarely in "effectively invisible". Fill alone
+          // would erase this bubble on the light pane.
           color: AppGlass.bubbleFill,
           borderRadius: radius,
-          border: Border.all(color: AppGlass.hair),
+          boxShadow: AppGlass.cardShadow,
         ),
         child: MessageContent(
           text: message.text,
