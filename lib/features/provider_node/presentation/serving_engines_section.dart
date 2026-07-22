@@ -49,20 +49,16 @@ class ServingEnginesSection extends ConsumerWidget {
         children: [
           _Header(
             gridName: network.name,
-            count: engines.length,
-            onStopAll: engines.isEmpty
+            live: engines.isNotEmpty,
+            onStop: engines.isEmpty && !starting
                 ? null
                 : () => ref.read(providerRunControllerProvider.notifier).stop(),
           ),
           for (final engine in engines)
             ServingEngineTile(engine: engine, gridId: network.networkId),
-          if (starting) ...[
-            const SizedBox(height: 8),
-            const _StartingRow(),
-            if (signInUrl != null) ...[
-              const SizedBox(height: 12),
-              _SignInPrompt(url: signInUrl),
-            ],
+          if (signInUrl != null) ...[
+            const SizedBox(height: 12),
+            _SignInPrompt(url: signInUrl),
           ],
           if (canPlayground) ...[
             const SizedBox(height: 12),
@@ -78,56 +74,49 @@ class ServingEnginesSection extends ConsumerWidget {
   }
 }
 
-/// The section header: a live dot, the grid name, a count, and a Stop all.
+/// The section header: what this machine is doing on the grid right now, and
+/// the one control that ends it.
+///
+/// It says *Starting* while a join is in flight, never *Serving*: with nothing
+/// live yet, "Serving on autonomous.ai" over a spinner claimed a share that
+/// hadn't happened. The stop stays reachable in that state — a join that hangs
+/// needs a way out, and `stop()` cancels one as well as it ends one.
 class _Header extends StatelessWidget {
   const _Header({
     required this.gridName,
-    required this.count,
-    required this.onStopAll,
+    required this.live,
+    required this.onStop,
   });
 
   final String gridName;
-  final int count;
-  final VoidCallback? onStopAll;
+
+  /// An engine of this machine's is actually serving the grid — as opposed to a
+  /// join still on its way.
+  final bool live;
+
+  final VoidCallback? onStop;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Icon(Icons.dns, color: AppPalette.online, size: 18),
+        live
+            ? Icon(Icons.dns, color: AppPalette.online, size: 18)
+            : const AppSpinner(),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
-            count == 0
-                ? 'Serving on $gridName'
-                : 'Serving on $gridName · $count',
+            live ? 'Serving on $gridName' : 'Starting on $gridName…',
             style: theme.textTheme.titleMedium,
           ),
         ),
-        if (onStopAll != null)
+        if (onStop != null)
           TextButton.icon(
-            onPressed: onStopAll,
-            icon: const Icon(Icons.stop, size: 18),
-            label: const Text('Stop all'),
+            onPressed: onStop,
+            icon: Icon(live ? Icons.stop : Icons.close, size: 18),
+            label: Text(live ? 'Stop' : 'Cancel'),
           ),
-      ],
-    );
-  }
-}
-
-/// The row shown while a newly-joined engine is still starting up.
-class _StartingRow extends StatelessWidget {
-  const _StartingRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        const AppSpinner(),
-        const SizedBox(width: 12),
-        Text('Starting a new engine…', style: theme.textTheme.bodyMedium),
       ],
     );
   }

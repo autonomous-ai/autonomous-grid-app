@@ -4,7 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
-import '../../../infrastructure/state/models/engine_run.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
@@ -12,6 +11,7 @@ import '../../models/logic/engine_setup_controller.dart';
 import '../../network/presentation/enable_provider_card.dart';
 import '../../network/presentation/sharing_locked_view.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
+import '../logic/engine_slots.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
 import 'add_engine_cards.dart';
@@ -195,7 +195,7 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
       ]);
     }
 
-    children.addAll(_addEngineBlocks(network, serving));
+    children.addAll(_addEngineBlocks(network, serving, startingHere));
 
     // Auto-routing used to sit here. It has moved to the grid's own Overview
     // (Grids tab), because it is a property of the *grid*, not of this computer:
@@ -212,23 +212,21 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
   /// The ways to add an engine — one card each, in the same words the first-run
   /// screen uses ([AddEngineCards]).
   ///
-  /// The one rule this page still enforces itself: while the **built-in** engine
-  /// is serving, it runs alone (ADR 0007 D4), so nothing can be added beside it.
-  /// The cards are replaced by a single note saying what to stop — a set of
-  /// cards that are all shut is four doors and no way through. Every other
-  /// constraint is per-card and lives with the card it rules out.
+  /// A computer shares **one** engine ([connectBlockedReason]), so the cards
+  /// only appear while nothing is serving. Once something is, they're replaced
+  /// by a single note naming what to stop first — a set of cards that are all
+  /// shut is four doors and no way through. While a join is still in flight
+  /// there is nothing to add and nothing yet to stop, so the section is simply
+  /// absent: the starting card above is the whole story.
   List<Widget> _addEngineBlocks(
     NetworkCredential network,
     List<ServingEngine> serving,
+    bool starting,
   ) {
-    if (serving.any((engine) => engine.kind == EngineKind.local)) {
-      return const [
-        AddEngineHeading(),
-        SizedBox(height: 8),
-        LocalEngineExclusiveNote(),
-      ];
-    }
-    return [AddEngineCards(network: network, serving: serving)];
+    final blocked = connectBlockedReason(serving);
+    if (blocked != null) return [OneEngineNote(reason: blocked)];
+    if (starting) return const [];
+    return [AddEngineCards(network: network)];
   }
 }
 
