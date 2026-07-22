@@ -70,9 +70,11 @@ class _ProjectCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    // Counts live chats only, so the number here matches the rows the sidebar
+    // actually shows under this project.
     final chats = ref
         .watch(chatSessionsProvider)
-        .conversations
+        .live
         .where((c) => c.projectId == project.id)
         .length;
     final missing = !project.exists;

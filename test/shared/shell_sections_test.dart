@@ -13,19 +13,36 @@ void main() {
       expect(ShellSection.appearance.devOnly, isFalse);
     });
 
-    // The order below interleaves Appearance with the developer-only rows, so
-    // what matters isn't its raw index — it's that a shipped build still ends on
-    // it. That holds as long as everything after it is developer-only.
-    test('a shipped build\'s settings list ends at Appearance', () {
-      expect(ShellSection.appearance.isVisibleForBuild, isTrue);
-      final appearance = kSettingsSections.indexOf(ShellSection.appearance);
-      expect(appearance, greaterThan(-1));
+    // The order interleaves the end-user rows with the developer-only ones, so
+    // what matters isn't any single index — it's that the visible rows form one
+    // unbroken run at the top. Archived chats is the last of them: it's where a
+    // chat goes when it leaves the sidebar, so it belongs with the rows an end
+    // user actually visits rather than behind the developer gate.
+    test('a shipped build\'s settings list ends at Archived chats', () {
+      expect(ShellSection.archived.isVisibleForBuild, isTrue);
+      expect(ShellSection.archived.devOnly, isFalse);
+      final archived = kSettingsSections.indexOf(ShellSection.archived);
+      expect(archived, greaterThan(-1));
       expect(
-        kSettingsSections.skip(appearance + 1).every((s) => s.devOnly),
+        kSettingsSections.skip(archived + 1).every((s) => s.devOnly),
         isTrue,
         reason:
-            'a tab an end user can see now sits below Appearance, so their '
+            'a tab an end user can see now sits below Archived chats, so their '
             'list no longer ends there',
+      );
+    });
+
+    // The rule the test above rests on: an end user sees a contiguous list, not
+    // one with a gap where a developer-only row was filtered out of the middle.
+    test('no end-user tab hides below a developer-only one', () {
+      final visible = [
+        for (final (i, s) in kSettingsSections.indexed)
+          if (!s.devOnly) i,
+      ];
+      expect(
+        visible,
+        List.generate(visible.length, (i) => i),
+        reason: 'the rows an end user sees must be the first ones in the list',
       );
     });
 

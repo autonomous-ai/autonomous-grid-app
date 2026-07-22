@@ -54,6 +54,11 @@ enum ShellSection {
   // agree. (A half-filled circle is the usual "theme" mark, but Lucide's reads
   // as a contrast/accessibility toggle at nav size.)
   appearance(LucideIcons.sun, 'Appearance', thinIcon: LucideIcons.sun300),
+  archived(
+    LucideIcons.archive,
+    'Archived chats',
+    thinIcon: LucideIcons.archive300,
+  ),
   debug(
     LucideIcons.terminal,
     'Debug',
@@ -113,6 +118,9 @@ const kSettingsSections = [
   ShellSection.engines,
   ShellSection.guide,
   ShellSection.appearance,
+  // Where a chat goes when it leaves the sidebar, so it sits with the other
+  // rows an end user actually visits rather than behind the developer gate.
+  ShellSection.archived,
   // dev only, so the order doesn't matter for end users: they don't see these rows at all.
   ShellSection.messages,
   ShellSection.plugins,
