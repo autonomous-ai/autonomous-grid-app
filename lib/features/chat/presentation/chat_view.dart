@@ -11,7 +11,6 @@ import '../../../shared/theme/app_theme.dart';
 import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
-import '../../agent/logic/codex_chat_sender.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agent/presentation/agent_changes_bar.dart';
 import '../../agent/presentation/agent_permission_card.dart';
@@ -465,10 +464,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           sending: sessions.sending,
                           canSend: canSend,
                           error: sessions.error,
-                          // Only this one failure has a one-click fix: the agent
-                          // reached the grid but the picked model won't answer
-                          // it. Offer the swap right where the message lands.
-                          errorAction: sessions.error == kCodexDialectFailure
+                          // Any turn the agent couldn't finish gets the way out
+                          // offered beside it. Keying this to one known message
+                          // meant the failure people actually hit (a 503 from
+                          // the grid) arrived with no button at all — and the
+                          // message is the wrong thing to hang it on anyway:
+                          // what makes the swap worth offering is that an agent
+                          // failed, not which sentence it failed with.
+                          errorAction: agentMode
                               ? const SwitchAgentButton()
                               : null,
                           // Only the agent can touch this computer — a picture is made
