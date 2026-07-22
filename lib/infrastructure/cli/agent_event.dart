@@ -199,6 +199,15 @@ enum AgentPermissionKind {
   /// Write to a file — [AgentPermission.oldText] / [AgentPermission.newText]
   /// are what it looks like now and what it would become.
   edit,
+
+  /// Anything else the agent asked for, and anything we couldn't read as one of
+  /// the two above — a tool this app has no special way to draw.
+  ///
+  /// It still goes to the user, shown with the agent's own title and the raw
+  /// request ([AgentPermission.command]). Refusing these unasked is what left an
+  /// agent silently unable to work while the chat claimed it would ask first;
+  /// a request we can't dress up is still one the user can read and judge.
+  other,
 }
 
 /// What the user answered.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../logging/app_log.dart';
 import 'agent_event.dart';
 import 'hermes_permission_policy.dart';
 import 'host_environment.dart';
@@ -140,23 +141,30 @@ abstract interface class HermesAcpSession {
 /// refuses the dangerous commands and file edits the agent escalates — see
 /// [decideHermesPermission]).
 class HermesAcpServiceImpl implements HermesAcpService {
-  const HermesAcpServiceImpl(this._path);
+  const HermesAcpServiceImpl(this._path, {AppLog log = const NoopAppLog()})
+    : _log = log;
 
   final String _path;
 
+  /// Where every permission decision is written. Defaults to a no-op so a test
+  /// needn't wire one, but the app passes the real one — a decision nobody can
+  /// read afterwards is how a blocked agent stayed a mystery for a session.
+  final AppLog _log;
+
   @override
   Future<HermesAcpSession> start({required String workdir}) async {
-    final session = _HermesAcpSession(_path, workdir);
+    final session = _HermesAcpSession(_path, workdir, _log);
     await session.open();
     return session;
   }
 }
 
 class _HermesAcpSession implements HermesAcpSession {
-  _HermesAcpSession(this._path, this._workdir);
+  _HermesAcpSession(this._path, this._workdir, this._log);
 
   final String _path;
   final String _workdir;
+  final AppLog _log;
 
   // The handshake occupies ids 0 (initialize) and 1 (session/new); prompt turns
   // take the rest, one id each, so a turn's response is matched by its id.
@@ -436,6 +444,14 @@ class _HermesAcpSession implements HermesAcpSession {
       options: options,
       mode: _approvalMode,
     );
+    // Every decision, every time — allowed, refused or put to the user. An
+    // agent that quietly can't work looks exactly like one that won't, and
+    // without this line there is nothing to tell the two apart afterwards.
+    _log.info(
+      'agent',
+      'acp permission $toolKind "$label" under ${_approvalMode.name} '
+          '→ ${_decisionName(decision)}',
+    );
     switch (decision) {
       case HermesAllow(:final optionId):
         answerPermission(id, optionId);
@@ -454,9 +470,16 @@ class _HermesAcpSession implements HermesAcpSession {
       case HermesAskUser():
         final events = _events;
         final request = parseAgentPermission(id: id, params: params);
-        // Nobody to ask (no turn listening), or a request we can't put into
-        // words: refuse it. Never approve what we can't show the user.
+        // Nobody to ask (the turn already ended), or a message carrying no tool
+        // call at all: refuse it. Never approve what nobody saw. Logged with the
+        // raw params, because this is the branch we can't reason about later
+        // from a summary — the message itself is the evidence.
         if (events == null || events.isClosed || request == null) {
+          _log.warn(
+            'agent',
+            'acp permission refused unasked (${request == null ? 'no tool call '
+                      'in the message' : 'no turn listening'}): $params',
+          );
           answerPermission(id, refuseOption(options));
           _blocked(id, label);
           return;
@@ -465,8 +488,22 @@ class _HermesAcpSession implements HermesAcpSession {
     }
   }
 
+  /// What went in the log for [decision] — the outcome, not the class name.
+  String _decisionName(HermesPermissionDecision decision) => switch (decision) {
+    HermesAllow() => 'allowed',
+    HermesRefuse() => 'refused',
+    HermesAskUser() => 'asking the user',
+  };
+
   @override
   void answerPermission(Object requestId, String? optionId) {
+    // What actually went back to the agent, including the user's own answer —
+    // the one line that survives the app closing. A cancel is a no: Hermes has
+    // no "reject" option to send when it offered none.
+    _log.debug(
+      'agent',
+      'acp permission #$requestId answered ${optionId ?? 'cancelled (no)'}',
+    );
     _write({
       'jsonrpc': '2.0',
       'id': requestId,

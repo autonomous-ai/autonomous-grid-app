@@ -121,32 +121,43 @@ void main() {
       }
     });
 
-    test('a kind we cannot explain is refused even on full access', () {
+    test('a kind we cannot explain still follows the mode — on full access it '
+        'is allowed, like every other acting tool', () {
       final decision = decideHermesPermission(
         toolKind: 'other',
         options: _commandOptions,
         mode: AgentApprovalMode.full,
       );
-      expect(decision, isA<HermesRefuse>());
+      expect((decision as HermesAllow).optionId, 'allow_once');
     });
   });
 
-  group('everything else fails closed', () {
-    test('a kind we cannot put into words is refused, unasked', () {
+  group('a kind the app has never seen', () {
+    test('is put to the user rather than refused behind their back — the '
+        'composer says it will ask, so it asks', () {
       for (final kind in ['delete', 'move', 'other']) {
-        final decision = decideHermesPermission(
-          toolKind: kind,
-          options: _commandOptions,
+        expect(
+          decideHermesPermission(toolKind: kind, options: _commandOptions),
+          isA<HermesAskUser>(),
+          reason: '$kind should reach the user',
         );
-        expect(decision, isA<HermesRefuse>(), reason: '$kind is not askable');
-        expect((decision as HermesRefuse).optionId, 'deny');
       }
+    });
+
+    test('is still refused in read-only, where nothing may act at all', () {
+      final decision = decideHermesPermission(
+        toolKind: 'delete',
+        options: _commandOptions,
+        mode: AgentApprovalMode.readOnly,
+      );
+      expect((decision as HermesRefuse).optionId, 'deny');
     });
 
     test('no reject option offered → cancel outright, never approve', () {
       final decision = decideHermesPermission(
         toolKind: 'other',
         options: const [(optionId: 'allow_once', kind: 'allow_once')],
+        mode: AgentApprovalMode.readOnly,
       );
       expect((decision as HermesRefuse).optionId, isNull);
     });
@@ -262,29 +273,60 @@ void main() {
       expect(request.summary, 'Create this file');
     });
 
-    test('a request we cannot show honestly parses to nothing — the caller '
-        'refuses it rather than asking about something it cannot describe', () {
-      // A command with no command line.
-      expect(
-        parseAgentPermission(
-          id: 1,
-          params: {
-            'toolCall': {'kind': 'execute', 'rawInput': <String, Object?>{}},
+    test('a shape we cannot draw is still shown, as the title over the raw '
+        'request — the user reads what was actually asked', () {
+      // A command with no command line, and an edit with no diff: known kinds
+      // arriving without the field we draw them from. Dropping these was how a
+      // request the app half-understood became a silent no.
+      final noCommand = parseAgentPermission(
+        id: 1,
+        params: {
+          'toolCall': {
+            'kind': 'execute',
+            'title': 'Run the nightly build',
+            'rawInput': <String, Object?>{},
           },
-        ),
-        isNull,
-      );
-      // An edit with no diff.
-      expect(
-        parseAgentPermission(
-          id: 2,
-          params: {
-            'toolCall': {'kind': 'edit', 'content': const []},
+        },
+      )!;
+      expect(noCommand.kind, AgentPermissionKind.other);
+      expect(noCommand.summary, 'Run the nightly build');
+
+      final noDiff = parseAgentPermission(
+        id: 2,
+        params: {
+          'toolCall': {'kind': 'edit', 'content': const []},
+        },
+      )!;
+      expect(noDiff.kind, AgentPermissionKind.other);
+      // No title either, so it falls back to the kind rather than heading the
+      // card with an empty string.
+      expect(noDiff.summary, 'edit');
+    });
+
+    test('a tool the app has never heard of carries its own words and what it '
+        'was passed', () {
+      final request = parseAgentPermission(
+        id: 7,
+        params: {
+          'toolCall': {
+            'kind': 'delete',
+            'title': 'Remove 3 files',
+            'rawInput': {'paths': 'a.txt'},
           },
-        ),
-        isNull,
-      );
+          'options': const [
+            {'optionId': 'allow_once', 'kind': 'allow_once'},
+          ],
+        },
+      )!;
+      expect(request.kind, AgentPermissionKind.other);
+      expect(request.summary, 'Remove 3 files');
+      expect(request.command, contains('a.txt'));
+    });
+
+    test('a message with no tool call at all is the one thing left to refuse — '
+        'there is nothing to ask about', () {
       expect(parseAgentPermission(id: 3, params: null), isNull);
+      expect(parseAgentPermission(id: 4, params: const {}), isNull);
     });
   });
 }

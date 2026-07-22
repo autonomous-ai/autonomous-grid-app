@@ -113,5 +113,8 @@ class AgentPermissionController extends Notifier<AgentPermission?> {
   String _label(AgentPermission request) => switch (request.kind) {
     AgentPermissionKind.command => request.command ?? 'run a command',
     AgentPermissionKind.edit => request.path ?? 'change a file',
+    // The agent's own title for the call — the only name we have for a tool
+    // this app doesn't recognise.
+    AgentPermissionKind.other => request.summary,
   };
 }
