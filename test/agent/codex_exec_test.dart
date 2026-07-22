@@ -185,9 +185,33 @@ void main() {
       expect(message.toLowerCase(), contains('this model'));
     });
 
-    test('the responses-wall message promises no other agent by name — the '
-        'chat offers the swap as a button, which is a try, not a promise', () {
-      expect(kCodexDialectFailure, isNot(contains('Hermes')));
+    test('a grid with nobody serving the model reads as an empty grid, not as '
+        'a wrong model — the two have different fixes', () {
+      // The real 503 a user hits: the endpoint is there and understood the
+      // request, there is just no machine behind it. Told as "wrong model" it
+      // sends them renaming models while the grid is simply empty.
+      final message = friendlyCodexError(
+        'unexpected status 503 Service Unavailable: {"detail":"No providers '
+        'available for this model"}, url: https://grid.autonomous.ai/'
+        'grid-3378218621364f16/relay/v1/responses',
+      );
+      expect(message, kCodexNoProviderFailure);
+      expect(message, isNot(contains('503')));
+    });
+
+    test('neither responses message promises another agent by name — the chat '
+        'offers the swap as a button, which is a try, not a promise', () {
+      for (final message in [kCodexDialectFailure, kCodexNoProviderFailure]) {
+        expect(message, isNot(contains('Hermes')));
+      }
+    });
+
+    test('a failure that never reached the Responses call keeps codex own '
+        'words, rather than being read as a grid problem', () {
+      expect(
+        friendlyCodexError('unexpected status 503 Service Unavailable'),
+        contains('503'),
+      );
     });
 
     test('any other failure keeps codex own last line', () {

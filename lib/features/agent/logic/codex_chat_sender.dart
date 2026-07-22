@@ -295,16 +295,29 @@ class CodexChatSender implements ChatSender {
 /// whether another agent would do better — the chat pairs this with a button
 /// that switches, which is an offer to try, not a promise.
 ///
-/// A const so the composer can recognise its own message and show that button,
-/// instead of sniffing prose.
+/// Neither sentence names another agent: the chat pairs both with a button that
+/// hands the turn over, which is an offer to try, not a promise that it works.
 const String kCodexDialectFailure =
     "This model can't answer the kind of request Codex sends. Pick a model "
     'Codex supports, or let another agent take this chat.';
 
+/// Shown when the grid took Codex's request and had nobody to give it to.
+///
+/// A different failure from [kCodexDialectFailure] and a different fix: the
+/// endpoint is there, so the request was understood — there is simply no machine
+/// online serving this model that way. Reading the two as one ("wrong model")
+/// would send the user renaming models while the real answer is that the grid is
+/// empty right now.
+const String kCodexNoProviderFailure =
+    'No machine on this grid is serving a model Codex can use right now. Try '
+    'another model, or let another agent take this chat.';
+
 /// Humanize Codex's failure so the chat shows a next step, not a stack trace.
 ///
-/// The one the user is most likely to hit is the Responses wall — see
-/// [kCodexDialectFailure]. Everything else keeps Codex's own last line.
+/// The failures a user actually hits are the two Responses ones above — a raw
+/// `unexpected status 503 Service Unavailable: {"detail":…}, url: …/v1/responses`
+/// is a log line, not something anyone can act on. Everything else keeps Codex's
+/// own last line, which at least says what it was doing.
 String friendlyCodexError(String raw) {
   final lines = raw
       .split('\n')
@@ -320,11 +333,17 @@ String friendlyCodexError(String raw) {
     return "Codex couldn't finish. Check your connection and try again.";
   }
   final lower = detail.toLowerCase();
-  if (lower.contains('responses') &&
-      (lower.contains('404') ||
-          lower.contains('not found') ||
-          lower.contains('disconnected'))) {
+  // Only a failure of the Responses call itself gets rewritten — Codex reports
+  // the endpoint in the same line, so anything else is a failure we'd be
+  // guessing about.
+  if (!lower.contains('responses')) return "Codex couldn't finish: $detail";
+  if (lower.contains('no providers') || lower.contains('503')) {
+    return kCodexNoProviderFailure;
+  }
+  if (lower.contains('404') ||
+      lower.contains('not found') ||
+      lower.contains('disconnected')) {
     return kCodexDialectFailure;
   }
-  return 'Codex couldn\'t finish: $detail';
+  return "Codex couldn't finish: $detail";
 }
