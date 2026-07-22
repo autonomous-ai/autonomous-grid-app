@@ -31,6 +31,10 @@ void main() {
     // It can still read (and, unavoidably, write) the project's files — looking
     // at them is the whole point of a task.
     expect(cron, contains('file'));
+    // And it can still reach the web: a "read me today's news" task has nothing
+    // to read without the browser, because web_search / web_extract only load
+    // when a search backend has credentials.
+    expect(cron, contains('browser'));
     // And a tool that arrives some other way still can't run a dangerous
     // command.
     expect(at(['approvals', 'cron_mode']), 'deny');

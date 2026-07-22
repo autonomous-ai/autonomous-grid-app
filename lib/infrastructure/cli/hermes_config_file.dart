@@ -75,12 +75,21 @@ class HermesConfigFile {
 /// read-only half to hand out. Dropping `file` too would make the whole thing
 /// pointless ("summarise my notes" needs to read the notes), so what this list
 /// actually removes is the ability to *run* things: terminal, code execution,
-/// the browser, and computer control. Shared by the scheduler and the Telegram
-/// gateway — both unattended surfaces with nobody at the machine to approve a
-/// dangerous command.
+/// and computer control. Shared by the scheduler and the Telegram gateway —
+/// both unattended surfaces with nobody at the machine to approve a dangerous
+/// command.
+///
+/// `browser` is in the list because without it these surfaces can't reach the
+/// web at all: `web` (`web_search` / `web_extract`) only loads when a search
+/// backend has credentials — an Exa/Tavily/Brave key, a SearXNG URL, or the
+/// `ddgs` package — and a stock install has none, so Hermes drops both tools
+/// and a "read me today's news" task has nothing left to read with. The browser
+/// drives headless Chromium: it opens pages, it doesn't run the user's
+/// commands, so it belongs on the read-and-answer side of the line.
 const List<String> kReadAndAnswerToolsets = [
   'file',
   'web',
+  'browser',
   'skills',
   'vision',
   'todo',

@@ -29,11 +29,19 @@ void main() {
     final discord = at(['platform_toolsets', 'discord']) as List;
     expect(discord, isNot(contains('terminal')));
     expect(discord, isNot(contains('code_execution')));
-    expect(discord, isNot(contains('browser')));
     expect(discord, isNot(contains('computer_use')));
     // It can still read (and, unavoidably, edit) the project's files — answering
     // about them is the whole point, and Hermes has no read-only half.
     expect(discord, contains('file'));
+  });
+
+  test('a restricted bot can still reach the web — the browser is how it does '
+      'that when no search key is configured', () async {
+    await policy().restrict('discord');
+
+    // `web` alone is not enough: web_search / web_extract only load when a
+    // search backend has credentials, which a stock install has none of.
+    expect(at(['platform_toolsets', 'discord']), contains('browser'));
   });
 
   test('a bot connected before the limit existed reads as unrestricted, and '

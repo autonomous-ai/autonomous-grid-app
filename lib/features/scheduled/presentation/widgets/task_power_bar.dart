@@ -175,8 +175,8 @@ String taskPowerDetail(TaskPower power) => switch (power) {
     'Tasks can change your files and run programs on your computer, with '
         'nobody there to approve it.',
   TaskPower.noCommands =>
-    'Tasks can read and edit files in your project, but can\'t run any '
-        'programs on your computer.',
+    'Tasks can read and edit files in your project and look things up on the '
+        'web, but can\'t run any programs on your computer.',
 };
 
 IconData taskPowerIcon(TaskPower power) => switch (power) {
