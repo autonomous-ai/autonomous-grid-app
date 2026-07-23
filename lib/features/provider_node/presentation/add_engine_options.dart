@@ -143,7 +143,7 @@ class _LocalRowState extends ConsumerState<_LocalRow> {
     final caps = ref.watch(nodeCapabilitiesProvider).asData?.value;
     final needsSetup = caps != null && buildSetupPlan(caps).isNotEmpty;
     final setup = ref.watch(nodeSetupControllerProvider);
-    final body = _body(needsSetup, setup);
+    final body = _body(setup);
 
     return ChoiceRow(
       icon: const Icon(Icons.computer_outlined),
@@ -165,10 +165,19 @@ class _LocalRowState extends ConsumerState<_LocalRow> {
   /// What sits under the row: the setup's own progress while there is one to
   /// show, else the serve form once the user has asked for it. An untouched
   /// setup shows nothing — that state is the row itself.
-  Widget? _body(bool needsSetup, NodeSetupState setup) {
-    final content = needsSetup
-        ? (setup is NodeSetupIdle ? null : const NodeSetupCard(framed: false))
-        : (_open ? ServeLocalCard(network: widget.network) : null);
+  ///
+  /// A *finished* run shows nothing either. The press was for the form behind
+  /// the install, not for a receipt: parking a "Done — this computer is set up
+  /// as a node" checklist here leaves the user reading a summary of what they
+  /// already watched happen, with a Done button as the only way on. A failure
+  /// still keeps its card, because that card carries the retry.
+  Widget? _body(NodeSetupState setup) {
+    final content = switch (setup) {
+      NodeSetupRunning() ||
+      NodeSetupFailed() => const NodeSetupCard(framed: false),
+      NodeSetupIdle() ||
+      NodeSetupDone() => _open ? ServeLocalCard(network: widget.network) : null,
+    };
     return content == null ? null : _RowBody(child: content);
   }
 }
