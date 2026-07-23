@@ -20,13 +20,12 @@ $Here    = $PSScriptRoot                                   # scripts\cli
 $AppRoot = Split-Path -Parent (Split-Path -Parent $Here)  # grid-app repo root
 $Entry   = Join-Path $Here "grid_entry.py"
 
-# CLI source: -CliSrc wins; else the first sibling that looks like the CLI repo.
+# CLI source: -CliSrc wins; else the sibling clone of the CLI repo. One name only —
+# the list used to include the repo's old name (autonomous-grid-cli), so a stale
+# clone left over from the rename would be compiled into the app instead of the
+# real source, with nothing on screen to say so.
 if (-not $CliSrc) {
-    $siblings = Split-Path -Parent $AppRoot
-    foreach ($name in @("autonomous-grid", "autonomous-grid-cli")) {
-        $candidate = Join-Path $siblings $name
-        if (Test-Path $candidate) { $CliSrc = $candidate; break }
-    }
+    $CliSrc = Join-Path (Split-Path -Parent $AppRoot) "autonomous-grid"
 }
 if (-not $CliSrc -or -not (Test-Path $CliSrc)) { throw "CLI source not found (pass -CliSrc <path>)" }
 $CliSrc = (Resolve-Path $CliSrc).Path

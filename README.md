@@ -1,7 +1,7 @@
 # Grid
 
 A cross-platform desktop app for the **Grid** peer-to-peer AI network — a Flutter
-GUI that drives the [`grid`](https://github.com/autonomous-ai/autonomous-grid-cli)
+GUI that drives the [`grid`](https://github.com/autonomous-ai/autonomous-grid)
 CLI. Join a grid, run a provider node (llama.cpp / ComfyUI), manage local models,
 and chat or generate media against the network — all from one window, on macOS,
 Windows, and Linux.
@@ -110,13 +110,18 @@ lib/
 For development, install the CLI on your `PATH` or point at a built binary:
 
 ```bash
-# Option A — install on PATH (resolver finds it last)
-cd ../autonomous-grid-cli && uv tool install -e . --force
+# Option A — install on PATH (resolver finds it last, so a bundled sidecar wins)
+cd ../autonomous-grid && uv tool install . --force
 
-# Option B — point at a built binary without installing
-cd ../autonomous-grid-cli && ./build/build_macos.sh        # → dist/grid
-export GRID_BIN="$PWD/dist/grid"
+# Option B — build the sidecar and point at it (beats a bundled sidecar)
+scripts/cli/build_sidecar.sh ../autonomous-grid   # → ../autonomous-grid/dist/grid.dist/
+export GRID_BIN="$PWD/../autonomous-grid/dist/grid.dist/grid"
 ```
+
+> **Option A alone may not be enough.** The bundled sidecar is resolved *before*
+> `$PATH`, so a packaged build keeps using the `grid` inside `Grid.app` however new
+> the one you just installed is. Use `GRID_BIN`, or re-inject the sidecar with
+> [`scripts/bundle_grid_macos.sh`](scripts/bundle_grid_macos.sh).
 
 ### Run the app
 
