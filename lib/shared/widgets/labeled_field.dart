@@ -50,6 +50,8 @@ class LabeledField extends StatelessWidget {
     this.minLines = 1,
     this.maxLines = 1,
     this.onChanged,
+    this.onSubmitted,
+    this.fill,
   });
 
   final String label;
@@ -61,8 +63,20 @@ class LabeledField extends StatelessWidget {
   final int maxLines;
   final ValueChanged<String>? onChanged;
 
+  /// Enter confirms. Only meaningful on a single-line field — in a multiline
+  /// box Enter inserts a newline and this never fires.
+  final ValueChanged<String>? onSubmitted;
+
+  /// Overrides the field surface — see [labeledFieldDecoration]. Pass this when
+  /// the field sits on a *raised* block rather than the page: the default
+  /// [AppPalette.cardBg] is within 1.02:1 of `AppGlass.surfaceFill` in dark and
+  /// disappears into it.
+  final Color? fill;
+
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette tokens through its decoration — follow theme flips.
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -74,8 +88,9 @@ class LabeledField extends StatelessWidget {
           minLines: minLines,
           maxLines: maxLines,
           onChanged: onChanged,
+          onSubmitted: onSubmitted,
           style: const TextStyle(fontSize: 14, height: 1.4),
-          decoration: labeledFieldDecoration(hint),
+          decoration: labeledFieldDecoration(hint, fill: fill),
         ),
       ],
     );
