@@ -41,7 +41,9 @@ class NodeSetupRunning extends NodeSetupState {
   SetupStep get current => steps[index];
 }
 
-/// Every step finished. [completed] is empty when the node was already set up.
+/// The run reached the end. [completed] lists only the steps that actually
+/// succeeded — empty when the node was already set up, and short of the plan
+/// when an optional step was skipped ([SetupStep.optional]).
 class NodeSetupDone extends NodeSetupState {
   const NodeSetupDone(this.completed);
   final List<SetupStep> completed;
@@ -114,6 +116,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
 
     _cancelled = false;
     final log = <String>[];
+    final completed = <SetupStep>[];
 
     for (var i = 0; i < steps.length; i++) {
       if (_cancelled) return; // cancel() writes its own footer
@@ -130,6 +133,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
           : await _runStreaming(service, steps, i, log);
       if (_cancelled) return; // cancel() writes its own footer
       if (!ok) {
+        if (_skipOptional(steps, i, log)) continue;
         _logFile.endStep('failed');
         final failure = state;
         _logFile.endRun(
@@ -140,12 +144,30 @@ class NodeSetupController extends Notifier<NodeSetupState> {
         return; // failure state already set
       }
       _logFile.endStep('done');
+      completed.add(steps[i]);
     }
 
     if (_cancelled) return;
     _refresh();
-    _logFile.endRun('completed — ${steps.length} step(s)');
-    state = NodeSetupDone(steps);
+    _logFile.endRun('completed — ${completed.length} step(s)');
+    state = NodeSetupDone(completed);
+  }
+
+  /// Whether step [i] may be left behind: an optional step that failed is noted
+  /// and the run continues, so one extra assistant that wouldn't download can't
+  /// stop a first run that already has the one answering chat.
+  ///
+  /// The failure state the step just set is dropped here — the *next* iteration
+  /// re-arms [NodeSetupRunning], and the loop's tail turns the run into
+  /// [NodeSetupDone] with only what actually succeeded. Returns false for a
+  /// required step, leaving its failure to stop the run.
+  bool _skipOptional(List<SetupStep> steps, int i, List<String> log) {
+    if (!steps[i].optional) return false;
+    final failure = state;
+    final why = failure is NodeSetupFailed ? failure.message : 'it failed';
+    _logFile.endStep('skipped — $why');
+    _memo(log, '… skipped ${steps[i].title}: $why');
+    return true;
   }
 
   /// Streaming lifecycle step (`llama.cpp install`, `media install`): success is

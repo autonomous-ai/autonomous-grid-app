@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../../agents/logic/agent_catalog.dart';
 import 'node_capabilities.dart';
 import 'node_setup_config.dart';
 
@@ -22,6 +23,7 @@ class SetupStep {
     required this.detail,
     required this.args,
     required this.isDownload,
+    this.optional = false,
   });
 
   final SetupAction action;
@@ -29,6 +31,13 @@ class SetupStep {
   final String detail;
   final List<String> args;
   final bool isDownload;
+
+  /// Whether the run carries on when this step fails.
+  ///
+  /// The extra assistants are optional: once the one that answers chat is in,
+  /// a first run must not be held at a red screen because a second one couldn't
+  /// be fetched. The failure is still logged — it's skipped, not hidden.
+  final bool optional;
 }
 
 /// Default ComfyUI bundle so the media engine is usable right after install.
@@ -88,19 +97,7 @@ List<SetupStep> buildSetupPlan(
     if (model != null) steps.add(model);
   }
 
-  // The agent is what lets chat use tools, so a first run installs it too — no
-  // Homebrew needed: `grid agent install` fetches it into ~/.grid.
-  if (!caps.hasAgent) {
-    steps.add(
-      const SetupStep(
-        action: SetupAction.installAgent,
-        title: 'Install the assistant',
-        detail: 'The part that can use tools and act on what you ask.',
-        args: ['agent', 'install', 'hermes'],
-        isDownload: false,
-      ),
-    );
-  }
+  steps.addAll(agentInstallSteps(caps));
 
   if (includeMedia && !caps.hasMediaEngine) {
     steps.add(
@@ -129,6 +126,35 @@ List<SetupStep> buildSetupPlan(
 
   return steps;
 }
+
+/// One install step per agent this computer doesn't have yet, in
+/// [_agentInstallOrder].
+///
+/// Every agent in the catalog is fetched, not just the default one: an agent
+/// the user can't choose because nobody installed it is a row that answers
+/// nothing, and `grid agent install` needs no Homebrew and no admin rights —
+/// it drops each one in `~/.grid`. Only [kChatAgent] is required, so a machine
+/// always ends up with something that can answer; the rest are [SetupStep
+/// .optional] and a first run survives one of them failing to download.
+List<SetupStep> agentInstallSteps(NodeCapabilities caps) => [
+  for (final tool in _agentInstallOrder)
+    if (!caps.installedAgents.contains(tool))
+      SetupStep(
+        action: SetupAction.installAgent,
+        title: 'Install ${tool.name}',
+        detail: tool.tagline,
+        args: ['agent', 'install', tool.id],
+        isDownload: false,
+        optional: tool != kChatAgent,
+      ),
+];
+
+/// The default agent first, then the rest in catalog order — the one that must
+/// succeed is also the one the user waits the least for.
+List<AgentTool> get _agentInstallOrder => [
+  kChatAgent,
+  ...AgentTool.values.where((tool) => tool != kChatAgent),
+];
 
 /// The model-download step for [caps], or null when a model is already on disk.
 ///
