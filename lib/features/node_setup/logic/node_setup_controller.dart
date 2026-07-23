@@ -4,6 +4,7 @@ import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/logging/node_setup_log.dart';
 import '../../../infrastructure/providers.dart';
+import '../../agents/logic/agent_status.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import 'node_capabilities.dart';
@@ -287,7 +288,15 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     }
   }
 
+  /// Re-read everything a completed (or half-completed) plan can have changed.
+  ///
+  /// The agents belong here as much as the engine does: a plan's
+  /// `grid agent install hermes` step leaves the binary on PATH, and without
+  /// this the app went on answering with the probe it took at launch — the
+  /// Agents tab said "Not installed" and chat skipped the agent entirely, on a
+  /// machine that had just installed one.
   void _refresh() {
+    reprobeAgents(ref);
     ref.invalidate(engineStatusProvider);
     ref.invalidate(localModelsProvider);
     ref.invalidate(nodeCapabilitiesProvider);
