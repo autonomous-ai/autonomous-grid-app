@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
@@ -14,20 +13,21 @@ extension ClientAppX on ClientApp {
   /// Whether the guide offers this client at all — one switch, so a hidden app
   /// can't reappear through a picker or a default that forgot about it.
   ///
-  /// **Codex** is hidden from shipped builds: codex ≥ 0.141 talks only to the
-  /// Responses API, while the relay serves Chat Completions, so a grid wired
-  /// into Codex answers every prompt with a 404 on `/v1/responses`. Offering it
-  /// would be a lie. Kept in debug so it can be tried again the day the relay
-  /// grows the endpoint.
-  /// TODO(BE): unhide once the relay serves the Responses API.
+  /// **Codex** ships to everyone. It only talks to the Responses API (codex ≥
+  /// 0.141 rejects `wire_api = "chat"`), which not every relay serves yet — so
+  /// the tab is always offered and the *grid* decides whether it works, per
+  /// grid. Hiding it outside debug was the blunt version of the same honesty:
+  /// it also hid Codex from the grids that can already answer it.
+  /// TODO(BE): the panel still walks the setup on a relay with no
+  /// `/v1/responses`. Wire [agentRunsOnGridProvider] into it so such a grid
+  /// says so, instead of handing out steps that end in a 404.
   ///
   /// **OpenClaw** is off the list entirely — it isn't an app we point people at
   /// any more. The config writer and its snippet stay behind this switch so
   /// flipping it back is one line, not a rewrite.
   bool get isSelectable => switch (this) {
     ClientApp.openClaw => false,
-    ClientApp.codex => kDebugMode,
-    ClientApp.hermes => true,
+    ClientApp.codex || ClientApp.hermes => true,
   };
 }
 

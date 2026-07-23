@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/network/logic/client_app_detector.dart';
 
@@ -48,15 +47,14 @@ void main() {
     expect(d.detect().toList(), kSelectableClientApps);
   });
 
-  test('the guide offers Hermes always, Codex in debug, OpenClaw never', () {
-    // Codex needs the Responses API the relay doesn't serve yet, so a shipped
-    // build hides it (tests run in debug ⇒ it's selectable here). OpenClaw is
-    // off the list outright.
+  test('the guide offers Hermes and Codex, never OpenClaw', () {
+    // Codex ships to everyone: whether it can answer is the grid's call, per
+    // grid (agentRunsOnGridProvider), not something the build decides for all
+    // of them. OpenClaw is off the list outright.
     expect(ClientApp.hermes.isSelectable, isTrue);
-    expect(ClientApp.codex.isSelectable, kDebugMode);
+    expect(ClientApp.codex.isSelectable, isTrue);
     expect(ClientApp.openClaw.isSelectable, isFalse);
-    expect(kSelectableClientApps, isNot(contains(ClientApp.openClaw)));
-    expect(kSelectableClientApps.contains(ClientApp.codex), kDebugMode);
+    expect(kSelectableClientApps, [ClientApp.hermes, ClientApp.codex]);
   });
 
   test('the picker always has something to fall back on', () {
