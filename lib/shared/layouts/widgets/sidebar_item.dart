@@ -162,7 +162,7 @@ class _SidebarItemState extends State<SidebarItem> {
                                 fontSize: 13.7,
                                 height: 1.25,
                                 fontWeight: strong
-                                    ? FontWeight.w600
+                                    ? AppFont.medium
                                     : FontWeight.w400,
                               ),
                             ),
@@ -251,7 +251,7 @@ class SidebarSectionLabel extends StatelessWidget {
         style: TextStyle(
           color: AppPalette.textFaint,
           fontSize: 11.2,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppFont.medium,
           letterSpacing: 0,
         ),
       ),

@@ -43,6 +43,7 @@ class GhostButton extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontFamily: OverlordTokens.mono,
+                  fontFamilyFallback: OverlordTokens.monoFallback,
                   fontSize: 12,
                   color: AppPalette.textSecondary,
                 ),

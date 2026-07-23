@@ -279,7 +279,7 @@ class _AdvancedPull extends ConsumerWidget {
           'Paste a model from Hugging Face',
           style: TextStyle(
             fontSize: 13,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: AppPalette.textPrimary,
           ),
         ),

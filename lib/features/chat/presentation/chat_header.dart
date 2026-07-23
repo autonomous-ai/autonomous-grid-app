@@ -75,7 +75,7 @@ class ChatHeader extends ConsumerWidget {
             style: TextStyle(
               color: AppPalette.textPrimary,
               fontSize: 13.5,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
             ),
           ),
         ),

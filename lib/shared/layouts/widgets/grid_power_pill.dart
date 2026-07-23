@@ -137,7 +137,7 @@ class _PillRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.textPrimary,
             ),
           ),
@@ -194,7 +194,7 @@ class _Stat extends StatelessWidget {
           value,
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: AppPalette.textSecondary,
             fontFeatures: AppFont.tabularFigures,
           ),
@@ -328,7 +328,7 @@ class _PanelHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13.5,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.textPrimary,
             ),
           ),
@@ -341,7 +341,7 @@ class _PanelHeader extends StatelessWidget {
             '${_trimPct(uptimePct!)}% uptime',
             style: TextStyle(
               fontSize: 11.5,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.online,
               fontFeatures: AppFont.tabularFigures,
             ),
@@ -433,7 +433,7 @@ class _LegendRow extends StatelessWidget {
             textAlign: TextAlign.right,
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.textSecondary,
               fontFeatures: AppFont.tabularFigures,
             ),
@@ -522,7 +522,7 @@ class _StatRow extends StatelessWidget {
             value,
             style: TextStyle(
               fontSize: 12.5,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.textPrimary,
               fontFeatures: AppFont.tabularFigures,
             ),
@@ -618,7 +618,7 @@ class _SectionLabel extends StatelessWidget {
     AppTheme.watch(context);
     final style = TextStyle(
       fontSize: 10.5,
-      fontWeight: FontWeight.w600,
+      fontWeight: AppFont.medium,
       letterSpacing: 0.5,
       color: AppPalette.textFaint,
     );

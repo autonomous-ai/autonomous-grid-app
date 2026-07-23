@@ -279,7 +279,7 @@ class _MediaSkillCard extends StatelessWidget {
                   style: TextStyle(
                     color: AppPalette.textPrimary,
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: AppFont.medium,
                   ),
                 ),
               ),

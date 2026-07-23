@@ -469,7 +469,7 @@ class _FilterMenuRow extends StatelessWidget {
                     color: AppPalette.textPrimary,
                     fontSize: 13,
                     height: 1.2,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: selected ? AppFont.medium : FontWeight.w500,
                   ),
                 ),
               ],
@@ -588,7 +588,7 @@ class _GroupSection extends StatelessWidget {
                         style: TextStyle(
                           color: AppPalette.textPrimary,
                           fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: AppFont.medium,
                         ),
                       ),
                     ),
@@ -790,7 +790,7 @@ class _ArchivedRowState extends State<_ArchivedRow> {
                         style: TextStyle(
                           color: AppPalette.textPrimary,
                           fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: AppFont.medium,
                         ),
                       ),
                       const SizedBox(height: 3),

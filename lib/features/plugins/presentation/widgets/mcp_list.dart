@@ -126,9 +126,7 @@ class _McpInfo extends StatelessWidget {
               child: Text(
                 server.name,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: theme.textTheme.titleSmall?.copyWith(),
               ),
             ),
             const SizedBox(width: 8),

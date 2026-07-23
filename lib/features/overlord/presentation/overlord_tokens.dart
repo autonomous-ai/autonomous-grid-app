@@ -8,7 +8,14 @@ import '../../../shared/theme/app_theme.dart';
 /// shared [AppPalette] so the dashboard sits flush with the rest of the app.
 abstract final class OverlordTokens {
   /// The single typeface for every number/label on the dashboard.
-  static const mono = 'monospace';
+  ///
+  /// Deferred to [AppFont] rather than named here: `'monospace'` is a CSS-style
+  /// alias the engine resolves to whatever it likes, and it ignored the code
+  /// font the user picked in Appearance. The dashboard is one of the surfaces
+  /// that setting is *for*.
+  static String get mono => AppFont.mono;
+
+  static List<String> get monoFallback => AppFont.monoFallback;
 
   /// "live" pulse + low-load sparklines. A teal that reads as healthy/idle.
   static const accent = Color(0xFF2DD4BF);
@@ -30,6 +37,7 @@ abstract final class OverlordTokens {
 
   static TextStyle get cardTitle => TextStyle(
     fontFamily: mono,
+    fontFamilyFallback: monoFallback,
     fontSize: 14,
     fontWeight: FontWeight.w700,
     color: AppPalette.textPrimary,
@@ -37,6 +45,7 @@ abstract final class OverlordTokens {
 
   static TextStyle get sublabel => TextStyle(
     fontFamily: mono,
+    fontFamilyFallback: monoFallback,
     fontSize: 11,
     letterSpacing: 0.6,
     color: AppPalette.textFaint,
@@ -44,10 +53,15 @@ abstract final class OverlordTokens {
 
   static TextStyle get meta => TextStyle(
     fontFamily: mono,
+    fontFamilyFallback: monoFallback,
     fontSize: 11.5,
     color: AppPalette.textSecondary,
   );
 
-  static TextStyle get processLine =>
-      TextStyle(fontFamily: mono, fontSize: 11, color: AppPalette.textFaint);
+  static TextStyle get processLine => TextStyle(
+    fontFamily: mono,
+    fontFamilyFallback: monoFallback,
+    fontSize: 11,
+    color: AppPalette.textFaint,
+  );
 }

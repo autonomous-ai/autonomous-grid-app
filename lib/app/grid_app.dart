@@ -15,12 +15,40 @@ class GridApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
+    final fonts = ref.watch(fontPrefsProvider);
+
+    // Ordering matters and is the reason this is a statement rather than
+    // something tucked into the tree: `buildAppTheme` below reads AppFont.sans
+    // and AppControl.*Scaled, so the settings have to be on AppFont *before*
+    // the theme is built, in this same frame. Pushed through the notifier (not
+    // AppFont.apply directly) so widgets past a `const` boundary — which a
+    // top-down rebuild never reaches — are marked dirty too.
+    AppTheme.fonts.apply(
+      uiFamily: fonts.uiFamily,
+      codeFamily: fonts.codeFamily,
+      uiScale: fonts.uiScale,
+      codeSize: fonts.codeSize,
+    );
+
     return MaterialApp(
       title: 'Grid',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: buildAppTheme(brightness: Brightness.light),
       darkTheme: buildAppTheme(brightness: Brightness.dark),
+      // The UI font size reaches every `Text` in the app as a text scale rather
+      // than as 249 edited call sites. `withClampedTextScaling` with both bounds
+      // equal *is* the way to force a factor: MediaQuery has no "set the scale"
+      // constructor that also inherits the rest of the platform's metrics.
+      //
+      // Code surfaces opt back out with `MediaQuery.withNoTextScaling` and use
+      // AppFont.codeSize, so the two settings stay independent instead of
+      // multiplying.
+      builder: (context, child) => MediaQuery.withClampedTextScaling(
+        minScaleFactor: fonts.uiScale,
+        maxScaleFactor: fonts.uiScale,
+        child: child ?? const SizedBox.shrink(),
+      ),
       // _BrightnessSync sits *below* MaterialApp so it reads the brightness
       // Material actually resolved (after ThemeMode.system is applied) and feeds
       // it to the color tokens, which resolve against AppTheme.brightness.

@@ -259,7 +259,7 @@ class _CreateMenuItem extends StatelessWidget {
       leadingIcon: Icon(icon, size: 17),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        style: const TextStyle(fontSize: 13, fontWeight: AppFont.medium),
       ),
     );
   }

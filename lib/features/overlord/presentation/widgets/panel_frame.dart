@@ -69,7 +69,7 @@ class _Header extends StatelessWidget {
               style: OverlordTokens.sublabel.copyWith(
                 fontSize: 11.5,
                 letterSpacing: 1.1,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppFont.medium,
               ),
             ),
           ),

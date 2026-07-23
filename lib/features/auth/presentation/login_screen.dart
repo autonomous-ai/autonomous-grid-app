@@ -945,7 +945,7 @@ class _HandshakeStep extends StatelessWidget {
                 fontSize: 11,
                 height: 1.25,
                 fontWeight: status == _StepStatus.active
-                    ? FontWeight.w600
+                    ? AppFont.medium
                     : FontWeight.w500,
                 color: switch (status) {
                   _StepStatus.active => AppPalette.textPrimary,
@@ -1137,7 +1137,7 @@ class _WaitingStatus extends StatelessWidget {
               'Waiting for approval…',
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppFont.medium,
                 color: AppPalette.accent,
               ),
             ),
@@ -1260,7 +1260,7 @@ class _BrowserFallbackState extends State<_BrowserFallback> {
                           "Browser didn't open?",
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: AppFont.medium,
                             color: AppPalette.textPrimary,
                           ),
                         ),
@@ -1385,7 +1385,7 @@ class _CopyLinkButtonState extends State<_CopyLinkButton> {
               'Copy sign-in link',
               style: TextStyle(
                 fontSize: 13.5,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppFont.medium,
                 color: AppPalette.accent,
                 decoration: _hovered
                     ? TextDecoration.underline

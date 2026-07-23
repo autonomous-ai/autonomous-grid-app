@@ -106,7 +106,7 @@ class _PromptRowState extends State<_PromptRow> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: AppFont.medium,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -162,7 +162,7 @@ class _NewPromptRow extends StatelessWidget {
                 'New prompt',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: AppFont.medium,
                   color: AppPalette.accent,
                 ),
               ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/code_text_scope.dart';
 import '../logic/edit_diff.dart';
 
 /// A monospace, `+`/`-` rendering of an edit's [DiffLine]s.
@@ -15,19 +16,21 @@ class DiffView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads color tokens; follow theme flips.
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: AppGlass.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [for (final line in lines) _DiffRow(line: line)],
+    AppTheme.watch(context); // reads color/type tokens; follow theme flips.
+    return CodeTextScope(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppPalette.cardBg,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: AppGlass.cardShadow,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [for (final line in lines) _DiffRow(line: line)],
+        ),
       ),
     );
   }
@@ -50,12 +53,7 @@ class _DiffRow extends StatelessWidget {
       '$prefix ${line.text}',
       softWrap: false,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontFamily: 'monospace',
-        fontSize: 12,
-        height: 1.5,
-        color: color,
-      ),
+      style: AppFont.codeStyle(color: color, height: 1.5),
     );
   }
 }

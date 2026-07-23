@@ -171,10 +171,11 @@ class _Tag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: OverlordTokens.mono,
+          fontFamilyFallback: OverlordTokens.monoFallback,
           fontSize: 11,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppFont.medium,
           color: AppPalette.accent,
         ),
       ),

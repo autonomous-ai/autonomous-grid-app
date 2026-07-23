@@ -80,6 +80,7 @@ class _BigValue extends StatelessWidget {
             text: value,
             style: TextStyle(
               fontFamily: OverlordTokens.mono,
+              fontFamilyFallback: OverlordTokens.monoFallback,
               fontSize: 32,
               fontWeight: FontWeight.w700,
               height: 1,
@@ -90,6 +91,7 @@ class _BigValue extends StatelessWidget {
             text: ' $unit',
             style: TextStyle(
               fontFamily: OverlordTokens.mono,
+              fontFamilyFallback: OverlordTokens.monoFallback,
               fontSize: 12.5,
               color: AppPalette.textSecondary,
             ),

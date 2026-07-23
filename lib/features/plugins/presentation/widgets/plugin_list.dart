@@ -159,9 +159,7 @@ class _PluginRowState extends ConsumerState<_PluginRow> {
                       child: Text(
                         plugin.name,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
                     if (plugin.version.isNotEmpty) ...[

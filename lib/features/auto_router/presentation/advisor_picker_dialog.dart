@@ -271,7 +271,7 @@ class _ChainStep extends StatelessWidget {
             model,
             style: TextStyle(
               fontSize: 12,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               // Plain ink, not the accent: accentStrong on the chip's own tinted
               // fill is 3.76:1 in dark. The rank disc beside it already carries
               // the accent, so the chip doesn't need to repeat it.

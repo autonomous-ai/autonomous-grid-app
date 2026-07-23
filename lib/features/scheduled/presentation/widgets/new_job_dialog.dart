@@ -338,7 +338,7 @@ class _DialogTitle extends StatelessWidget {
       style: TextStyle(
         color: AppPalette.textPrimary,
         fontSize: 21,
-        fontWeight: FontWeight.w700,
+        fontWeight: AppFont.semibold,
         letterSpacing: -0.3,
         height: 1.12,
       ),

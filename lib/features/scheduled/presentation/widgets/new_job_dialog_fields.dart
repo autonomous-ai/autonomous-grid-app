@@ -40,7 +40,7 @@ class _ExampleRow extends StatelessWidget {
           'Try:',
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: AppPalette.textFaint,
           ),
         ),
@@ -85,7 +85,7 @@ class _ExampleChip extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 12,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.accent,
             ),
           ),
@@ -149,7 +149,7 @@ class _TaskFieldState extends State<_TaskField> {
           widget.label,
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: _focused ? AppPalette.accent : AppPalette.textSecondary,
           ),
         ),

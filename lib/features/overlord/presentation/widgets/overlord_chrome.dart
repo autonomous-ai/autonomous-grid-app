@@ -70,6 +70,7 @@ class _Clock extends ConsumerWidget {
       now == null ? '--:--:--' : _format(now),
       style: TextStyle(
         fontFamily: OverlordTokens.mono,
+        fontFamilyFallback: OverlordTokens.monoFallback,
         fontSize: 13,
         color: AppPalette.textSecondary,
       ),

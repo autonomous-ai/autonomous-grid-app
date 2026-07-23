@@ -76,6 +76,7 @@ class _MetricChartPainter extends CustomPainter {
         text: text,
         style: TextStyle(
           fontFamily: OverlordTokens.mono,
+          fontFamilyFallback: OverlordTokens.monoFallback,
           fontSize: 8,
           color: AppPalette.textFaint,
         ),

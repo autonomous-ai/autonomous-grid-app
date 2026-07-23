@@ -14,6 +14,10 @@ class MainFlutterWindow: NSWindow {
     (NSApp.delegate as? AppDelegate)?
       .setUpUpdaterChannel(messenger: flutterViewController.engine.binaryMessenger)
 
+    // Let Appearance list the fonts installed on this Mac.
+    (NSApp.delegate as? AppDelegate)?
+      .setUpFontsChannel(messenger: flutterViewController.engine.binaryMessenger)
+
     super.awakeFromNib()
   }
 }

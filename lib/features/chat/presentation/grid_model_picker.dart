@@ -386,7 +386,7 @@ class _OptionRow extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.2,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: selected ? AppFont.medium : FontWeight.w400,
                       color: AppPalette.textPrimary,
                     ),
                   ),

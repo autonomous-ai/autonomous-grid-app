@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/code_text_scope.dart';
 import '../logic/agent_permissions.dart';
 import '../logic/edit_diff.dart';
 import 'diff_view.dart';
@@ -143,12 +144,7 @@ class _Header extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(title, style: theme.textTheme.titleSmall?.copyWith()),
                 if (subtitle.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -181,21 +177,18 @@ class _Command extends StatelessWidget {
     AppTheme.watch(
       context,
     ); // rebuild on theme flip — reads palette/glass tokens
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: AppGlass.cardShadow,
-      ),
-      child: SelectableText(
-        command,
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 12.5,
-          height: 1.45,
-          color: AppPalette.textPrimary,
+    return CodeTextScope(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppPalette.cardBg,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: AppGlass.cardShadow,
+        ),
+        child: SelectableText(
+          command,
+          style: AppFont.codeStyle(color: AppPalette.textPrimary, height: 1.45),
         ),
       ),
     );

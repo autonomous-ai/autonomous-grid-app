@@ -84,7 +84,7 @@ class _Lines extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.2,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: AppFont.medium,
                   color: AppPalette.textPrimary,
                 ),
               ),

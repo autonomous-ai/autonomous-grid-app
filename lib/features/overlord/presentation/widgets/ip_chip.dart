@@ -37,6 +37,7 @@ class IpChip extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: OverlordTokens.mono,
+                    fontFamilyFallback: OverlordTokens.monoFallback,
                     fontSize: 11.5,
                     color: AppPalette.textPrimary,
                   ),
