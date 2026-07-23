@@ -72,11 +72,14 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final installed = ref.watch(installedClientAppsProvider);
+    // Until the user picks: the first app they already have, else the first the
+    // build offers. Both come off [kSelectableClientApps], so a hidden app can
+    // never land here as the default and draw a panel with no tab to match it.
     final selected = _touched
         ? _selected
         : kSelectableClientApps.firstWhere(
             installed.contains,
-            orElse: () => ClientApp.openClaw,
+            orElse: () => kSelectableClientApps.first,
           );
 
     // Every chat model the grid serves — OpenClaw lists them all; the first is
