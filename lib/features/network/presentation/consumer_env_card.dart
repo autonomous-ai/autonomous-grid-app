@@ -133,7 +133,7 @@ class _EnvHeader extends StatelessWidget {
                     style: TextStyle(
                       color: AppPalette.textFaint,
                       fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppFont.medium,
                       letterSpacing: 0.6,
                     ),
                   ),

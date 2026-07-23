@@ -162,7 +162,6 @@ class _ViewOnlyBadge extends StatelessWidget {
               'View only',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ],

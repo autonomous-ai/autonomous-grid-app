@@ -32,7 +32,6 @@ class MessageSources extends StatelessWidget {
               _label(sources.length),
               style: theme.textTheme.labelMedium?.copyWith(
                 color: AppPalette.textSecondary,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ],

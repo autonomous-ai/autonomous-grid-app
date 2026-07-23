@@ -125,7 +125,7 @@ class _ProjectsHeader extends StatelessWidget {
                     style: TextStyle(
                       color: AppPalette.textFaint,
                       fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppFont.medium,
                       letterSpacing: 0.2,
                     ),
                   ),

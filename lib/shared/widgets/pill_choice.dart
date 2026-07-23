@@ -53,7 +53,7 @@ class PillChoice extends StatelessWidget {
                 style: TextStyle(
                   color: foreground,
                   fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: AppFont.medium,
                 ),
                 child: label,
               ),

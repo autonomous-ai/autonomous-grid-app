@@ -393,7 +393,7 @@ class _Preview extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12.5,
                       height: 1.32,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppFont.medium,
                       color: AppPalette.textPrimary,
                     ),
                   ),

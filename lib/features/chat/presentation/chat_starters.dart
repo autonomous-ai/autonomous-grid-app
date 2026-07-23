@@ -37,9 +37,18 @@ class ChatStarters extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium?.copyWith(
                       fontSize: compact ? 27 : 31,
-                      fontWeight: FontWeight.w700,
+                      // Semibold at 31pt, not bold. Size already carries all
+                      // the emphasis a greeting needs — past ~28pt the weight
+                      // stops adding rank and just adds ink, and this is the
+                      // largest type in the app, so it was the heaviest thing
+                      // on the screen by a wide margin.
+                      fontWeight: AppFont.semibold,
                       height: 1.06,
-                      letterSpacing: -0.4,
+                      // Less negative than -0.4: tight tracking on large type
+                      // is a display-face trick, and it was doing to a whole
+                      // sentence what it's meant to do to a two-word logotype —
+                      // packing the letters until the line reads as one mass.
+                      letterSpacing: -0.2,
                     ),
                   ),
                   const SizedBox(height: 9),
@@ -61,7 +70,13 @@ class ChatStarters extends StatelessWidget {
                       for (final starter in _starters)
                         _StarterCard(
                           starter: starter,
-                          width: compact ? 166 : 178,
+                          // Scaled with the type it holds: at a fixed 178 a
+                          // larger UI size wraps "Write something" onto two
+                          // lines, which is what pushed the card past its own
+                          // height. The Wrap above reflows them to fewer per
+                          // row when they no longer fit, which is the right
+                          // answer on a narrow pane too.
+                          width: (compact ? 166 : 178) * AppFont.uiScale,
                           onTap: () => onPick(starter.prompt),
                         ),
                     ],
@@ -240,9 +255,15 @@ class _StarterCardState extends State<_StarterCard> {
               width: widget.width,
               // Tall enough for the worst case: a two-line title over a two-line
               // description, with the icon chip above both.
-              height: 142,
+              //
+              // Scaled, because "the worst case" is a function of the user's UI
+              // size. At 19px the titles that wrapped to two lines overflowed a
+              // fixed 142 by exactly the extra line — the card is one of the few
+              // places in the app that pins a height to text it doesn't measure.
+              height: 142 * AppFont.uiScale,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 15),
+                padding:
+                    const EdgeInsets.fromLTRB(16, 16, 16, 15) * AppFont.uiScale,
                 child: _StarterContent(
                   starter: widget.starter,
                   hovered: _hovered,
@@ -298,7 +319,7 @@ class _StarterContent extends StatelessWidget {
             fontSize: 14,
             height: 1.16,
             letterSpacing: -0.1,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: AppPalette.textPrimary,
           ),
         ),

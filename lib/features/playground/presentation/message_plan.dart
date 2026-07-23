@@ -37,7 +37,6 @@ class MessagePlan extends StatelessWidget {
               'Plan · $done/${entries.length}',
               style: theme.textTheme.labelMedium?.copyWith(
                 color: AppPalette.textSecondary,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ],

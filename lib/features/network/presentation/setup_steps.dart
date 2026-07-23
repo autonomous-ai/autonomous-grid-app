@@ -137,7 +137,7 @@ class DocsLink extends StatelessWidget {
               style: TextStyle(
                 color: tint,
                 fontSize: 12.5,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppFont.medium,
               ),
             ),
             const SizedBox(width: 4),

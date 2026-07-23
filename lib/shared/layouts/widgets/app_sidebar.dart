@@ -139,8 +139,14 @@ class _Brand extends StatelessWidget {
                 style: TextStyle(
                   color: AppPalette.textPrimary,
                   fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
+                  // Semibold, not bold. A wordmark at 17pt already out-ranks
+                  // everything in the sidebar by size alone; w700 on top of
+                  // that made the app's own name the heaviest ink on screen,
+                  // which is a thing to notice once and then stop noticing.
+                  fontWeight: AppFont.semibold,
+                  // Slightly open, because tight tracking is what makes a short
+                  // heavy word read as a solid block rather than as letters.
+                  letterSpacing: 0.1,
                 ),
               ),
             ),

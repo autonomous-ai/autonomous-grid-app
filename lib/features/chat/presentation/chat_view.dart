@@ -866,7 +866,7 @@ class _DropHint extends StatelessWidget {
                       'Drop to add the file to your message',
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: AppFont.medium,
                         color: AppPalette.textPrimary,
                       ),
                     ),

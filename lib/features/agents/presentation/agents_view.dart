@@ -125,7 +125,6 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                             Text(
                               tool.name,
                               style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
                                 color: AppPalette.textPrimary,
                               ),
                             ),
@@ -284,7 +283,7 @@ class _Chip extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: filled ? color : AppPalette.textSecondary,
           ),
         ),

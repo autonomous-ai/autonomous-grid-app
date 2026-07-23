@@ -40,10 +40,31 @@ class AppSelectField<T> extends StatefulWidget {
     required this.options,
     required this.onChanged,
     this.placeholder = 'Choose…',
+    this.showLabel = true,
+    this.fill,
   });
+
+  /// Overrides the closed field's surface — see [labeledFieldDecoration].
+  ///
+  /// The default ([AppCard.inset]) is tuned for a field sitting on the page. A
+  /// caller that puts this on a *raised* row has to pass the token that recesses
+  /// against that row, and the answer differs by theme: measured against
+  /// `AppGlass.surfaceFill`, `inset` wins in dark (1.090 vs 1.023) and `cardBg`
+  /// wins in light (1.110 vs 1.073). Picking one for both leaves the control
+  /// invisible in whichever theme lost.
+  final Color? fill;
 
   /// Sits above the control ([FieldLabel]) — the app doesn't float labels.
   final String label;
+
+  /// Whether to draw [label] above the control.
+  ///
+  /// Off for a settings row, which names the preference in its own left column:
+  /// a second copy of the name would say the same thing twice, and — because it
+  /// adds height this control's neighbours don't have — it also knocks a column
+  /// of controls out of alignment with each other. [label] is still required
+  /// when this is false: it stays the control's accessible name.
+  final bool showLabel;
 
   /// Currently selected value, or null when nothing is picked yet.
   final T? value;
@@ -83,15 +104,22 @@ class _AppSelectFieldState<T> extends State<AppSelectField<T>> {
       builder: (context, constraints) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FieldLabel(widget.label),
+          if (widget.showLabel) FieldLabel(widget.label),
           MenuAnchor(
             controller: _menu,
             alignmentOffset: const Offset(0, 6),
             style: appMenuStyle(),
-            builder: (context, controller, _) => _FieldSurface(
-              summary: _summary,
-              muted: !_hasSelection,
-              onTap: controller.isOpen ? controller.close : controller.open,
+            // With the visible label suppressed, the name has to reach a screen
+            // reader some other way — a control announced only as its current
+            // value ("System") says nothing about what it sets.
+            builder: (context, controller, _) => Semantics(
+              label: widget.showLabel ? null : widget.label,
+              child: _FieldSurface(
+                summary: _summary,
+                muted: !_hasSelection,
+                fill: widget.fill,
+                onTap: controller.isOpen ? controller.close : controller.open,
+              ),
             ),
             menuChildren: [
               for (final option in widget.options)
@@ -119,11 +147,15 @@ class _FieldSurface extends StatelessWidget {
     required this.summary,
     required this.muted,
     required this.onTap,
+    this.fill,
   });
 
   final String summary;
   final bool muted;
   final VoidCallback onTap;
+
+  /// The surface, when the default doesn't recess against what it sits on.
+  final Color? fill;
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +165,7 @@ class _FieldSurface extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
         isEmpty: false,
-        decoration: labeledFieldDecoration('', fill: AppCard.inset),
+        decoration: labeledFieldDecoration('', fill: fill ?? AppCard.inset),
         child: Row(
           children: [
             Expanded(

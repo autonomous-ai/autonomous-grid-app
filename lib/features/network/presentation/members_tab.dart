@@ -187,7 +187,7 @@ class _MemberTile extends StatelessWidget {
               style: TextStyle(
                 color: AppPalette.textPrimary,
                 fontSize: 14,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppFont.medium,
               ),
             ),
           ),

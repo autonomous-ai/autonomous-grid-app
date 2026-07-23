@@ -26,7 +26,7 @@ class FieldLabel extends StatelessWidget {
         text,
         style: TextStyle(
           fontSize: 12.5,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppFont.medium,
           color: AppPalette.textSecondary,
         ),
       ),

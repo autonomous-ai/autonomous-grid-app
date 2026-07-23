@@ -148,10 +148,7 @@ class _RoleChip extends StatelessWidget {
       ),
       child: Text(
         network.roleLabel,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
+        style: theme.textTheme.labelSmall?.copyWith(color: color),
       ),
     );
   }

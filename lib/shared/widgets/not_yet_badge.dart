@@ -30,7 +30,7 @@ class NotYetBadge extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: 12,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppFont.medium,
           color: AppPalette.textSecondary,
         ),
       ),

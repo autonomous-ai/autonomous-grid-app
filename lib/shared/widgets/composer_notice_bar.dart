@@ -49,7 +49,7 @@ class ComposerNoticeBar extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 13, fontWeight: AppFont.medium),
             ),
           ),
           for (final action in actions) ...[const SizedBox(width: 4), action],

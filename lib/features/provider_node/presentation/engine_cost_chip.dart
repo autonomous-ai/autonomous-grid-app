@@ -87,7 +87,6 @@ class EngineCostChip extends StatelessWidget {
             label,
             style: theme.textTheme.labelSmall?.copyWith(
               color: color,
-              fontWeight: FontWeight.w600,
               height: 1.2,
             ),
           ),

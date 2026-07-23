@@ -139,7 +139,7 @@ class _DownloadingLabel extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: AppPalette.textSecondary,
           ),
         ),
@@ -163,7 +163,7 @@ class _DownloadFailedLabel extends StatelessWidget {
           'Model download failed',
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: error,
           ),
         ),

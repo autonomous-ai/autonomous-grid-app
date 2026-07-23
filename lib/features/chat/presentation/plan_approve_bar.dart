@@ -67,7 +67,7 @@ class _RunButton extends StatelessWidget {
                 'Approve & run',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: AppFont.medium,
                   color: AppPalette.accent,
                 ),
               ),

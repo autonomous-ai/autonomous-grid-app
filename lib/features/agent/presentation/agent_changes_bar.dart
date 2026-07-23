@@ -87,7 +87,7 @@ class _UndoAllButtonState extends ConsumerState<_UndoAllButton> {
                 'Undo all',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: AppFont.medium,
                   color: AppPalette.accent,
                 ),
               ),
@@ -199,7 +199,7 @@ class _ChangeRowState extends ConsumerState<_ChangeRow> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: AppFont.medium,
                   ),
                 ),
               ),

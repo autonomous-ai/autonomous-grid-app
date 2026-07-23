@@ -149,7 +149,7 @@ class ExtensionSectionHeader extends StatelessWidget {
             '$count',
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.textFaint,
             ),
           ),

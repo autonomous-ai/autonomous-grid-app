@@ -24,7 +24,7 @@ class _DeliverRow extends ConsumerWidget {
           'Send the answer to',
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: AppPalette.textSecondary,
           ),
         ),

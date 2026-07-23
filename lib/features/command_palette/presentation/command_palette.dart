@@ -230,7 +230,7 @@ class _GroupLabel extends StatelessWidget {
         style: TextStyle(
           color: AppPalette.textFaint,
           fontSize: 11.5,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppFont.medium,
         ),
       ),
     );

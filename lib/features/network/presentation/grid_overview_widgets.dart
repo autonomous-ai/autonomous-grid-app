@@ -12,7 +12,10 @@ import '../logic/node_display.dart';
 /// The overview's prose face — headings, subtitles, labels, chips, node names.
 /// Shared by the card sections and these widgets so the two files agree on one
 /// token (no duplicate literal). See [AppFont] for why prose is *not* mono here.
-const TextStyle kGridText = TextStyle(
+/// Getters, not consts: [AppFont] resolves the user's chosen family at read
+/// time, and a const would freeze whichever font was set when the library
+/// loaded.
+TextStyle get kGridText => TextStyle(
   fontFamily: AppFont.sans,
   fontFamilyFallback: AppFont.sansFallback,
 );
@@ -20,14 +23,14 @@ const TextStyle kGridText = TextStyle(
 /// The face for a string the user is going to copy — a model id. Mono earns its
 /// place here and nowhere else on this surface: these get pasted into a config
 /// or a curl, so `l`/`1` and `0`/`O` have to stay apart.
-const TextStyle kGridCode = TextStyle(
+TextStyle get kGridCode => TextStyle(
   fontFamily: AppFont.mono,
   fontFamilyFallback: AppFont.monoFallback,
 );
 
 /// A stat's headline number: sans, but with fixed-width digits so the value
 /// doesn't reflow as it changes. See [AppFont.tabularFigures].
-const TextStyle kGridNumeral = TextStyle(
+TextStyle get kGridNumeral => TextStyle(
   fontFamily: AppFont.sans,
   fontFamilyFallback: AppFont.sansFallback,
   fontFeatures: AppFont.tabularFigures,
@@ -47,6 +50,10 @@ class CapabilityChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -56,7 +63,7 @@ class CapabilityChip extends StatelessWidget {
           label,
           style: kGridText.copyWith(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: AppPalette.textPrimary,
           ),
         ),
@@ -122,6 +129,10 @@ class _Fact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return Text.rich(
       TextSpan(
         children: [
@@ -131,7 +142,7 @@ class _Fact extends StatelessWidget {
             // change, and shifting digit widths would jitter the whole row.
             style: kGridNumeral.copyWith(
               fontSize: 12.5,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
               color: AppPalette.textPrimary,
             ),
           ),
@@ -154,6 +165,10 @@ class _FactDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return Text(
       '·',
       style: kGridText.copyWith(fontSize: 12.5, color: AppPalette.textFaint),
@@ -178,6 +193,10 @@ class SectionHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -190,7 +209,10 @@ class SectionHeading extends StatelessWidget {
               title,
               style: kGridText.copyWith(
                 fontSize: 19,
-                fontWeight: FontWeight.w700,
+                // Semibold: this heads a section *within* a page, so it only has
+                // to out-rank the medium row titles under it — not the page
+                // title above it.
+                fontWeight: AppFont.semibold,
                 letterSpacing: -0.2,
                 color: AppPalette.textPrimary,
               ),
@@ -207,15 +229,22 @@ class SectionHeading extends StatelessWidget {
             ],
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: kGridText.copyWith(
-            fontSize: 13,
-            height: 1.34,
-            color: AppPalette.textSecondary,
+        // Omitted entirely when empty, rather than rendered as a blank line: an
+        // empty Text still occupies its line box, so a heading that has nothing
+        // to add pushed everything below it down by a line it never used. Some
+        // headings genuinely need no gloss — three labelled pictures of a theme
+        // explain themselves.
+        if (subtitle.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: kGridText.copyWith(
+              fontSize: 13,
+              height: 1.34,
+              color: AppPalette.textSecondary,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -235,6 +264,10 @@ class TileGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return GlassCard(
       style: GlassCardStyle.inset,
       padding: EdgeInsets.zero,
@@ -273,6 +306,10 @@ class _ModelTileState extends State<ModelTile> {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     final model = widget.model;
     // A comfyui media capability (image/video) can surface in the model list —
     // label it as media with an image/video glyph instead of the default
@@ -339,6 +376,10 @@ class NodeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     final media = nodeIsMedia(node);
     final vram = nodeVramLabel(node);
     final specs = <String>[
@@ -369,7 +410,7 @@ class NodeTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: kGridText.copyWith(
                     fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: AppFont.medium,
                     color: AppPalette.textPrimary,
                   ),
                 ),
@@ -404,6 +445,10 @@ class _OnlineTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     final color = online ? AppPalette.online : AppPalette.offline;
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -414,7 +459,7 @@ class _OnlineTag extends StatelessWidget {
           online ? 'Online' : 'Offline',
           style: kGridText.copyWith(
             fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppFont.medium,
             color: color,
           ),
         ),
@@ -432,6 +477,10 @@ class _TileIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return Container(
       width: size,
       height: size,
@@ -461,6 +510,10 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Text(
@@ -490,6 +543,10 @@ class _CopyChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     final fg = active ? AppPalette.accent : AppPalette.textFaint;
     // Fill, glyph and label all cross on the row's own timing — the chip lights
     // up *with* the row it belongs to rather than a beat apart from it.
@@ -527,7 +584,7 @@ class _CopyChip extends StatelessWidget {
                   curve: AppMotion.curve,
                   style: kGridText.copyWith(
                     fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: AppFont.medium,
                     letterSpacing: 0.4,
                     color: fg,
                   ),
@@ -550,6 +607,10 @@ class OverviewMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reads AppPalette/AppCard tokens — follow theme flips. Without this the
+    // widget keeps whichever palette it first built with; on a static screen
+    // (Appearance) nothing else rebuilds it, so the flip never lands.
+    AppTheme.watch(context);
     return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       child: Row(
