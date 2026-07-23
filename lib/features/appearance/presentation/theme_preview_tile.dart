@@ -105,7 +105,7 @@ class ThemePreviewTile extends StatelessWidget {
                   fontFamilyFallback: AppFont.sansFallback,
                   fontSize: 12,
                   // The picked one says so twice: the ring, and the ink.
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  fontWeight: selected ? AppFont.medium : FontWeight.w400,
                   color: selected
                       ? AppPalette.textPrimary
                       : AppPalette.textSecondary,

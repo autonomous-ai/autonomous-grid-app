@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/appearance/presentation/appearance_view.dart';
+import 'package:grid_app/features/network/presentation/grid_overview_widgets.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/shared/layouts/shell_state.dart';
 import 'package:grid_app/shared/layouts/widgets/section_view.dart';
@@ -23,11 +24,21 @@ void main() {
   });
   tearDown(() => tmp.delete(recursive: true));
 
+  /// The screen as the app really mounts it.
+  ///
+  /// `BrightnessScope` is not optional scaffolding: it is the InheritedNotifier
+  /// `AppTheme.watch` registers against, so without it every watch call in the
+  /// tree is a no-op and a theme-following test would pass or fail for reasons
+  /// that have nothing to do with the widget under test. `grid_app.dart` mounts
+  /// it just below MaterialApp, which is what this mirrors.
   Widget host(Widget child) => ProviderScope(
     overrides: [
       chatPrefsStoreProvider.overrideWithValue(ChatPrefsStore(file: file)),
     ],
-    child: MaterialApp(home: Scaffold(body: child)),
+    child: MaterialApp(
+      theme: buildAppTheme(),
+      home: BrightnessScope(child: Scaffold(body: child)),
+    ),
   );
 
   testWidgets('the appearance section routes to the Appearance screen', (
@@ -82,6 +93,88 @@ void main() {
     expect(ChatPrefsStore(file: file).load().themeMode, ThemeMode.system);
   });
 
+  // The page scrolls — the type settings pushed it past a screenful — so every
+  // line at the top of it costs the user a scroll before they can read the
+  // heading. An empty Text still occupies its line box, so a heading with
+  // nothing to add was spending one anyway.
+  testWidgets('a heading with nothing to add spends no line on it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host(const AppearanceView()));
+    await tester.pumpAndSettle();
+
+    final themeHeading = find.ancestor(
+      of: find.text('Theme'),
+      matching: find.byType(SectionHeading),
+    );
+    expect(themeHeading, findsOneWidget);
+
+    // The heading box is exactly its title, with no blank second line under it.
+    final headingHeight = tester.getRect(themeHeading).height;
+    final titleHeight = tester.getRect(find.text('Theme')).height;
+    expect(
+      headingHeight,
+      closeTo(titleHeight, 0.5),
+      reason: 'an empty subtitle is still taking up a line',
+    );
+  });
+
+  // …and the one that does have something to say still says it.
+  testWidgets('a heading with a subtitle still renders it', (tester) async {
+    await tester.pumpWidget(host(const AppearanceView()));
+    await tester.pumpAndSettle();
+
+    final typography = find.ancestor(
+      of: find.text('Typography'),
+      matching: find.byType(SectionHeading),
+    );
+    expect(
+      tester.getRect(typography).height,
+      greaterThan(tester.getRect(find.text('Typography')).height),
+    );
+  });
+
+  // Both headings have to *follow* the theme, not merely be built in one.
+  //
+  // This is the AppTheme.watch trap, and Appearance is where it bites hardest:
+  // the screen is static, so nothing else ever rebuilds a heading, and one that
+  // doesn't watch keeps whichever palette it first built with. Grids hid the
+  // same bug because its Riverpod data churn rebuilt everything anyway.
+  testWidgets('the section headings repaint when the theme flips', (
+    tester,
+  ) async {
+    AppTheme.brightness.value = Brightness.light;
+    addTearDown(() => AppTheme.brightness.value = Brightness.light);
+
+    await tester.pumpWidget(host(const AppearanceView()));
+    await tester.pumpAndSettle();
+
+    Color inkOf(String title) =>
+        tester.widget<Text>(find.text(title)).style!.color!;
+
+    final lightTheme = inkOf('Theme');
+    final lightTypography = inkOf('Typography');
+
+    AppTheme.brightness.value = Brightness.dark;
+    await tester.pumpAndSettle();
+
+    expect(
+      inkOf('Theme'),
+      isNot(lightTheme),
+      reason: '"Theme" is stuck on the palette it first built with',
+    );
+    expect(
+      inkOf('Typography'),
+      isNot(lightTypography),
+      reason: '"Typography" is stuck on the palette it first built with',
+    );
+    // …and it moved the right way: dark ink on light, light ink on dark.
+    expect(
+      inkOf('Typography').computeLuminance(),
+      greaterThan(lightTypography.computeLuminance()),
+    );
+  });
+
   testWidgets('offers a preview of every theme', (tester) async {
     await tester.pumpWidget(host(const AppearanceView()));
     await tester.pumpAndSettle();
@@ -89,9 +182,16 @@ void main() {
       find.byType(ThemePreviewTile),
       findsNWidgets(ThemeMode.values.length),
     );
-    expect(find.text('System'), findsOneWidget);
-    expect(find.text('Light'), findsOneWidget);
-    expect(find.text('Dark'), findsOneWidget);
+    // Scoped to the tiles rather than the whole screen: "System" is also the
+    // font pickers' word for the default face, so a bare `find.text('System')`
+    // matches three things on this screen and none of the extra two are a theme.
+    Finder tileLabel(String label) => find.descendant(
+      of: find.byType(ThemePreviewTile),
+      matching: find.text(label),
+    );
+    expect(tileLabel('System'), findsOneWidget);
+    expect(tileLabel('Light'), findsOneWidget);
+    expect(tileLabel('Dark'), findsOneWidget);
   });
 
   // The point of the whole screen: the Dark tile has to show you *dark* while
