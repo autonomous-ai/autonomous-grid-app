@@ -1,0 +1,190 @@
+import 'package:flutter/material.dart';
+
+import '../theme/app_theme.dart';
+import '../../features/provider_node/presentation/engine_block.dart';
+
+/// What pressing a [ChoiceRow] does, so the mark on its right can tell the
+/// truth about it.
+enum ChoiceRowAction {
+  /// Reveals the row's own form underneath it — a chevron that turns to point
+  /// down at what it opened.
+  open,
+
+  /// Hands off to somewhere that isn't this window (the browser, for a sign-in)
+  /// — an arrow leading out.
+  leave,
+}
+
+/// The same choice [ChoiceCard] offers, worn as a row you press.
+///
+/// A card spends a title, a line and a *button* on one option — and the button
+/// mostly repeated the title ("Use an API key" → Enter a key). Four of them
+/// stacked ran past the fold, all four at identical weight, with the real target
+/// a small button inside each. As a row the whole strip is the target, the
+/// button goes, and the same four options cost a third of the height.
+///
+/// The card shape is still right where a choice is the *whole screen* — first
+/// run, three options, nothing else competing — which is why both exist. Use
+/// [ChoiceCard] there; use this inside a page that has other things to say.
+class ChoiceRow extends StatelessWidget {
+  const ChoiceRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.line,
+    required this.action,
+    required this.onPressed,
+    this.expanded = false,
+    this.child,
+  });
+
+  /// A widget, not an `IconData`, so a row that hands an account to a vendor
+  /// can carry that vendor's own mark where our glyph would sit.
+  final Widget icon;
+
+  final String title;
+
+  /// The one line under the title. One, not a paragraph — the detail belongs in
+  /// what the row opens, not in front of it.
+  final String line;
+
+  final ChoiceRowAction action;
+  final VoidCallback onPressed;
+
+  /// Whether [child] is showing, so the chevron matches what the user sees.
+  final bool expanded;
+
+  /// The form this row reveals, or null while it has nothing open.
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette/AppSurface — follow theme flips
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: onPressed,
+          // No ripple: a macOS row answers a click with an instant state
+          // change, so the hover tint carries the whole affordance (as in the
+          // chat composer's buttons).
+          splashFactory: NoSplash.splashFactory,
+          hoverColor: AppSurface.hoverFill,
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(15, 11, 13, 11),
+            child: Row(
+              children: [
+                // The slot dresses the glyph, so a caller passes a bare `Icon`
+                // and gets the row's own size and tone. A vendor's mark brings
+                // its own colours and simply ignores this.
+                SizedBox(
+                  width: 20,
+                  child: Center(
+                    child: IconTheme.merge(
+                      data: IconThemeData(
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      child: icon,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 2),
+                      Text(
+                        line,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _Marker(action: action, expanded: expanded),
+              ],
+            ),
+          ),
+        ),
+        ?child,
+      ],
+    );
+  }
+}
+
+/// The mark on the row's right: a chevron that turns as the row opens, or an
+/// arrow leading out for a row that hands off to the browser.
+class _Marker extends StatelessWidget {
+  const _Marker({required this.action, required this.expanded});
+
+  final ChoiceRowAction action;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    if (action == ChoiceRowAction.leave) {
+      return Icon(
+        Icons.arrow_outward_rounded,
+        size: 17,
+        color: AppPalette.textFaint,
+      );
+    }
+    // A quarter turn, at the app's hover speed: the chevron ends up pointing at
+    // what it opened, so the row still reads correctly after the animation as
+    // well as during it.
+    return AnimatedRotation(
+      turns: expanded ? 0.25 : 0,
+      duration: AppMotion.hover,
+      curve: AppMotion.curve,
+      child: Icon(
+        Icons.chevron_right_rounded,
+        size: 19,
+        color: AppPalette.textFaint,
+      ),
+    );
+  }
+}
+
+/// [ChoiceRow]s as one surface, hairline-separated — a single object holding
+/// every way to do the thing, rather than four cards the eye has to gather.
+///
+/// The divider follows each row's *opened* form rather than the row itself, so
+/// an expanded option stays visibly one piece with what it opened.
+class ChoiceRowGroup extends StatelessWidget {
+  const ChoiceRowGroup({super.key, required this.children});
+
+  /// One [ChoiceRow] each — or the stateful widget that builds one, which is
+  /// why this can't be typed tighter: a row that remembers whether it's open
+  /// owns that state itself.
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(EngineSurface.radius),
+      child: EngineSurface(
+        // The rows bring their own padding — the surface supplies only the
+        // fill, so a hover tint reaches the full width of the row.
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (index, row) in children.indexed) ...[
+              row,
+              if (index != children.length - 1)
+                Divider(height: 1, thickness: 1, color: AppPalette.divider),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
