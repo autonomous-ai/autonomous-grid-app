@@ -21,15 +21,16 @@ class HostingSummary extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final grid = ref.watch(selectedNetworkProvider);
-    if (grid == null) return const SizedBox.shrink();
+    if (ref.watch(selectedNetworkProvider) == null) {
+      return const SizedBox.shrink();
+    }
 
+    // Through [gridOverviewProvider], not the family directly — same one-door
+    // rule as [gridPowerProvider], and for the same reason: [gridModelsProvider]
+    // below reaches the overview through the alias, so watching the family here
+    // too would flush the same cache twice inside one build.
     final nodes =
-        ref
-            .watch(gridOverviewForProvider(grid.networkId))
-            .asData
-            ?.value
-            .nodes ??
+        ref.watch(gridOverviewProvider).asData?.value.nodes ??
         const <OverviewNode>[];
     final online = nodes.where((n) => n.online).length;
     final models = ref.watch(gridModelsProvider).length;

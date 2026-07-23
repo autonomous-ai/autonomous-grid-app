@@ -117,15 +117,19 @@ GridPower gridPowerFrom(
 /// The selected grid's power summary. Empty (and the pill unmounted) while the
 /// overview loads, when it fails, or when no grid is selected — the top bar
 /// stays quiet rather than flashing a skeleton on every grid switch.
+///
+/// Reads the overview through [gridOverviewProvider], the same door
+/// [gridModelsProvider] uses, and **not** through `gridOverviewForProvider`
+/// directly. Watching both doors in one body reached the same cache twice: the
+/// direct watch flushed the family member, which dirtied the alias, which then
+/// flushed on the *second* watch and notified its other listeners — inside a
+/// widget's build, since that is where this provider first mounts. One of those
+/// listeners invalidating itself there is `setState() called during build`.
 final gridPowerProvider = Provider.autoDispose<GridPower>((ref) {
-  final grid = ref.watch(selectedNetworkProvider);
-  if (grid == null) {
+  if (ref.watch(selectedNetworkProvider) == null) {
     return const GridPower(onlineNodes: 0, models: 0);
   }
-  final overview = ref
-      .watch(gridOverviewForProvider(grid.networkId))
-      .asData
-      ?.value;
+  final overview = ref.watch(gridOverviewProvider).asData?.value;
   return gridPowerFrom(
     overview?.nodes ?? const <OverviewNode>[],
     ref.watch(gridModelsProvider).length,
@@ -140,11 +144,13 @@ final gridPowerProvider = Provider.autoDispose<GridPower>((ref) {
 /// most of the grid is the one worth seeing first, and relay order buried a
 /// 382 GB box under a 32 GB laptop. Nodes reporting no VRAM sort last, by name,
 /// so the ordering stays stable between refreshes instead of shuffling.
+/// Same one-door rule as [gridPowerProvider]: the popover and the pill mount
+/// together, so a second path into the overview cache would reintroduce the
+/// mid-build flush this pair was fixed for.
 final gridOnlineNodesProvider = Provider.autoDispose<List<OverviewNode>>((ref) {
-  final grid = ref.watch(selectedNetworkProvider);
-  if (grid == null) return const [];
+  if (ref.watch(selectedNetworkProvider) == null) return const [];
   final nodes =
-      ref.watch(gridOverviewForProvider(grid.networkId)).asData?.value.nodes ??
+      ref.watch(gridOverviewProvider).asData?.value.nodes ??
       const <OverviewNode>[];
   return sortNodesByPower([
     for (final n in nodes)
