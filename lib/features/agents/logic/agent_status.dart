@@ -35,3 +35,31 @@ final agentVersionProvider = FutureProvider.family<String?, AgentTool>((
     AgentTool.codex => ref.watch(codexVersionProvider.future),
   };
 });
+
+/// Re-read whether [tool] is on this computer, and which build it is.
+///
+/// The probe behind [agentInstalledProvider] walks the PATH once and then caches
+/// the answer for the app's lifetime, so **anything that installs or removes an
+/// agent has to say so here**. The first-run installer didn't: it finished
+/// `grid agent install hermes` and every screen kept answering with the probe
+/// taken at launch — Agents read "Not installed", and chat routed straight past
+/// the agent — until the user quit and reopened the app.
+void reprobeAgent(Ref ref, AgentTool tool) {
+  switch (tool) {
+    case AgentTool.hermes:
+      ref.invalidate(hermesPathProvider);
+      ref.invalidate(hermesVersionProvider);
+    case AgentTool.codex:
+      ref.invalidate(codexPathProvider);
+      ref.invalidate(codexVersionProvider);
+  }
+}
+
+/// Re-read every agent — for a caller that changed one without naming it. The
+/// first-run installer runs a *plan*, so it knows something was installed but
+/// not which tool it was.
+void reprobeAgents(Ref ref) {
+  for (final tool in AgentTool.values) {
+    reprobeAgent(ref, tool);
+  }
+}

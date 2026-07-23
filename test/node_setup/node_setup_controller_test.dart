@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/features/agents/logic/agent_status.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_controller.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_plan.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
@@ -84,13 +87,28 @@ const _modelStep = SetupStep(
   isDownload: true,
 );
 
-ProviderContainer _container(GridCliService? fake, {NodeSetupLog? log}) {
+const _agentStep = SetupStep(
+  action: SetupAction.installAgent,
+  title: 'Install the assistant',
+  detail: '',
+  args: ['agent', 'install', 'hermes'],
+  isDownload: false,
+);
+
+/// [onDisk] stands in for the PATH probe, so a test can put the binary "there"
+/// mid-run the way an install does and see whether the app notices.
+ProviderContainer _container(
+  GridCliService? fake, {
+  NodeSetupLog? log,
+  String? Function()? onDisk,
+}) {
   final container = ProviderContainer(
     overrides: [
       gridCliServiceProvider.overrideWithValue(fake),
       gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
       // Always override so no test ever writes to the real ~/.grid/logs.
       nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
+      if (onDisk != null) hermesPathProvider.overrideWith((_) => onDisk()),
     ],
   );
   addTearDown(container.dispose);
@@ -98,6 +116,36 @@ ProviderContainer _container(GridCliService? fake, {NodeSetupLog? log}) {
 }
 
 void main() {
+  test(
+    'installing the assistant makes the app see it without a restart',
+    () async {
+      // The PATH probe is computed once and cached, so a finished install used
+      // to leave the whole app answering with what was true at launch: Agents
+      // read "Not installed" and chat routed past the agent on a machine that
+      // had just installed one, until the user quit and reopened.
+      var installed = false;
+      final fake = FakeGridCliService()
+        ..stubStart(
+          ['agent', 'install', 'hermes'],
+          exitCode: 0,
+          lines: const [],
+        );
+      final container = _container(
+        fake,
+        onDisk: () => installed ? '/Users/x/.grid/bin/hermes' : null,
+      );
+
+      expect(container.read(agentInstalledProvider(AgentTool.hermes)), isFalse);
+
+      installed = true; // what the install step puts on disk
+      await container.read(nodeSetupControllerProvider.notifier).run([
+        _agentStep,
+      ]);
+
+      expect(container.read(agentInstalledProvider(AgentTool.hermes)), isTrue);
+    },
+  );
+
   test('runs an install then a download to completion', () async {
     final fake = FakeGridCliService()
       ..stubStart(
