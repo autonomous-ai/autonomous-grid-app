@@ -19,7 +19,6 @@ import 'add_engine_cards.dart';
 import 'engine_block.dart';
 import 'contribution_summary.dart';
 import 'engine_failure_card.dart';
-import 'engine_notes.dart';
 import 'grid_scope_bar.dart';
 import 'serving_engines_section.dart';
 
@@ -227,25 +226,18 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
   /// The ways to add an engine — one card each, in the same words the first-run
   /// screen uses ([AddEngineCards]).
   ///
-  /// A computer shares **one** engine ([connectBlockedReason]), so the cards
-  /// only appear while nothing is serving. Once something is, they're replaced
-  /// by a single note naming what to stop first — a set of cards that are all
-  /// shut is four doors and no way through. While a join or a stop is [busy] on
-  /// the wire there is nothing to add yet, so the section is simply absent: the
-  /// card above is the whole story, and a card pressed now would race the CLI
-  /// call already running.
+  /// A computer shares **one** engine ([canAddEngine]), so the cards only appear
+  /// while nothing is serving. Once something is, the section is simply absent —
+  /// the serving card above is the whole story, and its Stop button is the way
+  /// to a different engine. The same goes while a join or a stop is [busy] on
+  /// the wire: a card pressed now would race the CLI call already running.
   List<Widget> _addEngineBlocks(
     NetworkCredential network,
     List<ServingEngine> serving,
     bool busy,
-  ) {
-    // First, so a stop in flight doesn't leave a note telling the user to stop
-    // the engine they're already stopping.
-    if (busy) return const [];
-    final blocked = connectBlockedReason(serving);
-    if (blocked != null) return [OneEngineNote(reason: blocked)];
-    return [AddEngineCards(network: network)];
-  }
+  ) => busy || !canAddEngine(serving)
+      ? const []
+      : [AddEngineCards(network: network)];
 }
 
 /// Shown when an engine is already serving a *different* grid. Only one engine

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/app_environment.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -73,7 +74,11 @@ class ServingEnginesSection extends ConsumerWidget {
             const SizedBox(height: 12),
             _PlaygroundHint(onOpen: () => openPlaygroundDialog(context, ref)),
           ],
-          if (log.isNotEmpty) ...[
+          // Developer builds only: the engine's raw output is diagnostics, and
+          // the row sat under the serving card all day offering people who
+          // don't read logs a drawer of llama.cpp chatter. Nothing is lost —
+          // the same lines are in `~/.grid/logs` and the Debug tab.
+          if (log.isNotEmpty && AppEnvironment.isDeveloperMode) ...[
             const SizedBox(height: 12),
             _LogExpander(lines: log),
           ],

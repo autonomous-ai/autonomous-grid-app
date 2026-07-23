@@ -34,45 +34,42 @@ ServingEngine _hosted(List<String> models, {String kind = 'codex'}) =>
 void main() {
   group('this computer shares one engine at a time', () {
     test('nothing serving leaves every way in open', () {
-      expect(connectBlockedReason(const []), isNull);
+      expect(canAddEngine(const []), isTrue);
     });
 
-    test('a connected server already sharing blocks adding another, and names '
-        'what to stop', () {
-      final reason = connectBlockedReason([_connected()]);
-      expect(reason, isNotNull);
+    test('a connected server already sharing takes the slot', () {
+      expect(canAddEngine([_connected()]), isFalse);
+    });
+
+    test('the built-in local engine takes it the same way — the rule is about '
+        'the machine, not which kind got there first', () {
+      expect(canAddEngine([_local('gemma4-31b.gguf')]), isFalse);
+    });
+
+    test('a hosted engine takes it too: it costs this machine nothing to run, '
+        'but the machine still offers the grid a single engine', () {
       expect(
-        reason,
-        contains('qwen3.5:0.8b'),
-        reason: 'the user has to know which engine to stop',
+        canAddEngine([
+          _hosted(['codex:gpt-5.5', 'openai:gpt-5.5']),
+        ]),
+        isFalse,
       );
     });
 
-    test('the built-in local engine blocks it the same way — the rule is about '
-        'the machine, not which kind got there first', () {
-      expect(connectBlockedReason([_local('gemma4-31b.gguf')]), isNotNull);
-    });
-
-    test('a hosted engine blocks it too: it costs this machine nothing to run, '
-        'but the machine still offers the grid a single engine', () {
-      final reason = connectBlockedReason([
-        _hosted(['codex:gpt-5.5', 'openai:gpt-5.5']),
-      ]);
-      expect(reason, contains('codex:gpt-5.5'));
-    });
-
-    test('an engine with no model named still blocks, described by the server '
-        'it points at', () {
-      final reason = connectBlockedReason([
-        ServingEngine(
-          kind: EngineKind.external,
-          models: const [],
-          apiKind: null,
-          endpointUrl: 'http://localhost:8080/v1',
-          leaveSelector: null,
-        ),
-      ]);
-      expect(reason, contains('localhost:8080/v1'));
+    test('an engine with no model named still holds the slot — the rule counts '
+        'engines, not what they managed to advertise', () {
+      expect(
+        canAddEngine([
+          ServingEngine(
+            kind: EngineKind.external,
+            models: const [],
+            apiKind: null,
+            endpointUrl: 'http://localhost:8080/v1',
+            leaveSelector: null,
+          ),
+        ]),
+        isFalse,
+      );
     });
   });
 

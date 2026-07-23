@@ -12,14 +12,14 @@ library;
 import '../../../infrastructure/state/models/engine_run.dart';
 import 'serving_engines_provider.dart';
 
-/// Why this computer can't add an engine right now, or null when it can. Names
-/// what's already sharing, so the way out — stop that one — is in the sentence
-/// rather than left to the user to work out.
-String? connectBlockedReason(List<ServingEngine> serving) {
-  if (serving.isEmpty) return null;
-  return 'This computer is already sharing ${_engineLabel(serving.first)}. It '
-      'runs one engine at a time — stop it above to share a different one.';
-}
+/// Whether this computer has a free slot for another engine.
+///
+/// A predicate, not a sentence: the page acts on it by simply not offering the
+/// add-engine cards while something is serving. It used to return the refusal
+/// as copy, which put a paragraph under the serving card explaining a rule the
+/// user had already met — the Stop button in that card is the way out, and it
+/// is right there.
+bool canAddEngine(List<ServingEngine> serving) => serving.isEmpty;
 
 /// The advertised model names this machine already serves through hosted
 /// providers, so a cloud block can't offer to share the same one twice.
@@ -27,14 +27,3 @@ Set<String> apiModelsServed(List<ServingEngine> serving) => {
   for (final engine in serving)
     if (engine.kind == EngineKind.api) ...engine.models,
 };
-
-/// What to call the engine in a sentence: the model it serves, else the server
-/// it points at, else a plain fallback so the copy never reads "sharing .".
-String _engineLabel(ServingEngine engine) {
-  if (engine.models.isNotEmpty) return engine.models.first;
-  final endpoint = engine.endpointUrl;
-  if (endpoint != null && endpoint.isNotEmpty) {
-    return endpoint.replaceFirst(RegExp(r'^https?://'), '');
-  }
-  return 'a model';
-}

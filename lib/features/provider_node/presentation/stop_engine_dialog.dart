@@ -20,7 +20,7 @@ Future<bool> confirmStopEngine(
     builder: (dialogContext) => AlertDialog(
       title: Text('Stop $what?'),
       // No "your other engines keep running": this computer shares one engine
-      // (see `connectBlockedReason`), so stopping is always all of it.
+      // (see `canAddEngine`), so stopping is always all of it.
       content: const Text(
         'It will stop serving on the grid, so others can no longer use it. '
         'You can share it again from this page whenever you like.',
