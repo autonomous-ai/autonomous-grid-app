@@ -83,13 +83,14 @@ class _Actions extends StatelessWidget {
               // row that already had 32/32/28/32, and it silently overrode the
               // AppControl.height the picker itself asks for.
               //
-              // The ring sits immediately left of the model: it measures that
-              // model's memory, and the pair reads as one answer to "what am I
-              // talking to, and how much room is left in it?". It costs no
-              // width at all until there's a real reading to show, so an empty
-              // chat isn't given a gauge of nothing.
-              ?contextMeter,
+              // The ring sits between the model and Send: it measures that
+              // model's memory, and the two read as one answer to "what am I
+              // talking to, and how much room is left in it?" — right where the
+              // eye already is on its way to the button. It costs no width at
+              // all until there's a real reading to show, so an empty chat
+              // isn't given a gauge of nothing.
               SizedBox(width: 140, child: modelPicker),
+              ?contextMeter,
               const SizedBox(width: 8),
               _SendButton(
                 sending: sending,
