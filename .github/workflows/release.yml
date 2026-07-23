@@ -79,14 +79,14 @@ jobs:
 
       # Sidecar source, pinned to the CLI_VERSION release (not main) for reproducible
       # builds. Cloned as a sibling of grid-app so the scripts' default CLI path
-      # ("$APP_ROOT/../autonomous-grid-cli") resolves unchanged.
+      # ("$APP_ROOT/../autonomous-grid") resolves unchanged.
       - name: Checkout grid CLI (sidecar source)
         uses: actions/checkout@v5
         with:
           repository: autonomous-ai/autonomous-grid
           ref: ${{ env.CLI_VERSION }}
           token: ${{ secrets.CLI_REPO_TOKEN }}
-          path: autonomous-grid-cli
+          path: autonomous-grid
 
       - name: Resolve version
         shell: bash
@@ -131,7 +131,7 @@ jobs:
       - name: Build grid sidecar (macOS)
         if: runner.os == 'macOS'
         working-directory: grid-app
-        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli/dist/grid.dist/
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid/dist/grid.dist/
         # (Nuitka standalone/onedir). Nuitka can't cross-compile, so the sidecar's arch follows the
         # build python's arch: GRID_BUILD_PYTHON is the setup-python interpreter picked for this job
         # — arm64 for the Apple Silicon DMG, x86_64 (under Rosetta 2) for the Intel DMG. Onedir, not
@@ -142,7 +142,7 @@ jobs:
         env:
           GRID_BUILD_PYTHON: ${{ steps.setup_python.outputs.python-path }}
         run: |
-          CLI="$GITHUB_WORKSPACE/autonomous-grid-cli"
+          CLI="$GITHUB_WORKSPACE/autonomous-grid"
           if [ "${{ matrix.arch }}" = "x64" ]; then
             # The "x64" interpreter is universal2 and build_sidecar.sh's resolve_python()
             # realpath-collapses it to a framework python that macOS runs NATIVELY as arm64
@@ -170,7 +170,7 @@ jobs:
           [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
           # onedir sidecar: inject the whole standalone folder (entry at Resources/grid/grid)
           rm -rf "$APP/Contents/Resources/grid"
-          cp -R ../autonomous-grid-cli/dist/grid.dist "$APP/Contents/Resources/grid"
+          cp -R ../autonomous-grid/dist/grid.dist "$APP/Contents/Resources/grid"
           chmod +x "$APP/Contents/Resources/grid/grid"
 
       # Fail loudly HERE — before the slow sign+notarize — if anything in the bundle is
@@ -264,8 +264,8 @@ jobs:
       - name: Build grid sidecar (Windows)
         if: runner.os == 'Windows'
         working-directory: grid-app
-        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid-cli\dist\grid.exe.
-        run: powershell -ExecutionPolicy Bypass -File scripts\cli\build_sidecar.ps1 -CliSrc "${{ github.workspace }}\autonomous-grid-cli"
+        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid\dist\grid.exe.
+        run: powershell -ExecutionPolicy Bypass -File scripts\cli\build_sidecar.ps1 -CliSrc "${{ github.workspace }}\autonomous-grid"
 
       - name: Build Windows app + package zip
         if: runner.os == 'Windows'
@@ -275,7 +275,7 @@ jobs:
           flutter config --enable-windows-desktop
           flutter build windows --release
           powershell -ExecutionPolicy Bypass -File scripts\package_windows.ps1 `
-            -Sidecar ..\autonomous-grid-cli\dist\grid.exe `
+            -Sidecar ..\autonomous-grid\dist\grid.exe `
             -OutZip  "${{ github.workspace }}\grid-app\dist\Grid-${{ env.VERSION }}-Windows-x64.zip"
 
       # ───────────────────────── Publish ─────────────────────────

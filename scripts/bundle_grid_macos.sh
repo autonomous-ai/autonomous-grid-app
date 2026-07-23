@@ -15,13 +15,10 @@ set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# CLI source: explicit arg wins; else the first sibling that looks like the CLI repo.
-CLI_REPO="${1:-}"
-if [ -z "$CLI_REPO" ]; then
-  for c in "$APP_ROOT/../autonomous-grid" "$APP_ROOT/../autonomous-grid-cli"; do
-    [ -d "$c" ] && { CLI_REPO="$c"; break; }
-  done
-fi
+# CLI source: explicit arg wins; else the sibling clone of the CLI repo. One name
+# only — see build_sidecar.sh: a leftover clone under the repo's old name would
+# otherwise be compiled into the app in place of the real source.
+CLI_REPO="${1:-$APP_ROOT/../autonomous-grid}"
 if [ -z "$CLI_REPO" ] || [ ! -d "$CLI_REPO" ]; then
   echo "ERROR: CLI source not found (pass it as arg 1)" >&2
   exit 1

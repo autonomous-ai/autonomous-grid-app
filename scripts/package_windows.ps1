@@ -6,7 +6,7 @@
 # after the CLI repo's build_windows.ps1 (produces grid.exe).
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\package_windows.ps1 `
-#       -Sidecar ..\autonomous-grid-cli\dist\grid.exe `
+#       -Sidecar ..\autonomous-grid\dist\grid.exe `
 #       -OutZip  dist\Grid-0.1.2-Windows-x64.zip
 param(
     [Parameter(Mandatory = $true)][string]$Sidecar,

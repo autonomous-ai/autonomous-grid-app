@@ -28,13 +28,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # scripts/cli
 APP_ROOT="$(cd "$HERE/../.." && pwd)"                  # grid-app repo root
 ENTRY="$HERE/grid_entry.py"
 
-# CLI source: explicit arg wins; else the first sibling that looks like the CLI repo.
-CLI_SRC="${1:-}"
-if [ -z "$CLI_SRC" ]; then
-  for c in "$APP_ROOT/../autonomous-grid" "$APP_ROOT/../autonomous-grid-cli"; do
-    [ -d "$c" ] && { CLI_SRC="$c"; break; }
-  done
-fi
+# CLI source: explicit arg wins; else the sibling clone of the CLI repo.
+#
+# One name, not a list. The fallback used to also accept ../autonomous-grid-cli —
+# the repo's old name — so a stale clone left over from the rename would be picked
+# up silently and compiled instead of the real source. That is a wrong CLI shipped
+# inside the app with nothing on screen to say so.
+CLI_SRC="${1:-$APP_ROOT/../autonomous-grid}"
 [ -n "$CLI_SRC" ] && [ -d "$CLI_SRC" ] || { echo "ERROR: CLI source not found (pass it as arg 1)" >&2; exit 1; }
 CLI_SRC="$(cd "$CLI_SRC" && pwd)"
 [ -f "$CLI_SRC/pyproject.toml" ] || { echo "ERROR: $CLI_SRC has no pyproject.toml — not the grid CLI source?" >&2; exit 1; }
