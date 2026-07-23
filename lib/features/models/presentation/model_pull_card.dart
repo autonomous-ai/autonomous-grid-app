@@ -48,7 +48,6 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const FieldLabel('Model to download'),
         TextField(
           controller: _spec,
           minLines: 1,
@@ -63,35 +62,16 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
             fill: AppCard.inset,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
+        // The whole instruction, in one line. It used to run to three: the
+        // format, then "for a split model, paste every part", then a warning
+        // that models are large and download in the background. "One line per
+        // file" says the second in four words, and the first two are answered
+        // by what the user is already looking at — the shelf above prints each
+        // model's size, and pressing Download swaps this for a progress bar
+        // with a Cancel beside it.
         Text(
-          'Format  owner/repo:file.gguf — one per line. For a split model, '
-          'paste every part.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => launchUrl(
-              Uri.parse(_huggingFaceGgufUrl),
-              mode: LaunchMode.externalApplication,
-            ),
-            icon: const Icon(Icons.open_in_new, size: AppControl.iconSize),
-            label: const Text('Browse models on Hugging Face'),
-            // Reads as a link under the field, not a button: no padding, so its
-            // label lines up with the field's edge above it.
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(0, AppControl.heightSmall),
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Models are large — often several GB — and download in the background.',
+          'owner/repo:file.gguf — one line per file',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -102,15 +82,12 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
             children: [
               Icon(Icons.check_circle, color: AppPalette.online, size: 18),
               const SizedBox(width: 8),
-              Expanded(child: Text('Downloaded ${state.file}')),
+              // What landed and what to do about it, in one sentence rather
+              // than a line of confirmation followed by a line of instruction.
+              Expanded(
+                child: Text('${state.file} — close this to start it.'),
+              ),
             ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Ready to use. Close this, then start the engine to serve it.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
           ),
         ],
         if (state is ModelPullFailed) ...[
@@ -122,20 +99,40 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
             ),
           ),
         ],
-        const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ListenableBuilder(
-            listenable: _spec,
-            builder: (context, _) => FilledButton.icon(
-              onPressed: _spec.text.trim().isEmpty ? null : _pull,
-              icon: const Icon(
-                Icons.download_outlined,
-                size: AppControl.iconSize,
+        const SizedBox(height: 14),
+        // The action leads, the way to go and find something to paste follows
+        // it on the same row — one strip instead of a link and a button with a
+        // paragraph between them.
+        Row(
+          children: [
+            ListenableBuilder(
+              listenable: _spec,
+              builder: (context, _) => FilledButton.icon(
+                onPressed: _spec.text.trim().isEmpty ? null : _pull,
+                icon: const Icon(
+                  Icons.download_outlined,
+                  size: AppControl.iconSize,
+                ),
+                label: Text(state is ModelPullFailed ? 'Try again' : 'Download'),
               ),
-              label: Text(state is ModelPullFailed ? 'Try again' : 'Download'),
             ),
-          ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => launchUrl(
+                Uri.parse(_huggingFaceGgufUrl),
+                mode: LaunchMode.externalApplication,
+              ),
+              icon: const Icon(Icons.open_in_new, size: AppControl.iconSize),
+              // The tile above already said Hugging Face; repeating it here
+              // spent half the label saying where the user already knows they
+              // are.
+              label: const Text('Browse models'),
+              style: TextButton.styleFrom(
+                padding: AppControl.paddingSmall,
+                minimumSize: const Size(0, AppControl.heightSmall),
+              ),
+            ),
+          ],
         ),
       ],
     );
