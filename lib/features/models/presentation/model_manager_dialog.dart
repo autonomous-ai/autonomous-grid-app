@@ -87,9 +87,11 @@ class _DialogHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
+    // "on this computer" used to close this line, one row above a section
+    // header that says ON THIS COMPUTER — the same three words twice.
     final summary = downloaded == 0
-        ? 'Nothing downloaded yet — pick one below to get started.'
-        : '$downloaded of $total ready to serve on this computer.';
+        ? 'Nothing downloaded yet — pick one below.'
+        : '$downloaded of $total ready to use.';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,16 +219,13 @@ class _ShelfEmpty extends StatelessWidget {
         children: [
           Icon(Icons.cloud_off_outlined, size: 22, color: AppPalette.textFaint),
           const SizedBox(height: 10),
+          // One line carrying both halves — what went wrong, and the way on
+          // that still works. It used to take two, and the second spent its
+          // first three words ("You can still") apologising for the first.
           Text(
-            "No models here yet, and suggestions couldn't be loaded.",
+            "Couldn't load suggestions — paste a model below.",
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'You can still paste a Hugging Face model below.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
           ),
         ],
       ),
