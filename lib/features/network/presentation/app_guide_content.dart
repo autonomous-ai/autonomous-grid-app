@@ -145,8 +145,8 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
 }
 
 /// The row of app choices — every client this build offers (with an "Installed"
-/// dot when detected) plus a generic "Other app". Codex is debug-only, so a
-/// shipped build shows one chip fewer — see [ClientAppX.isSelectable].
+/// dot when detected) plus a generic "Other app". Which clients those are is
+/// [ClientAppX.isSelectable]'s call, never this widget's.
 class _AppSelector extends StatelessWidget {
   const _AppSelector({
     required this.selected,
