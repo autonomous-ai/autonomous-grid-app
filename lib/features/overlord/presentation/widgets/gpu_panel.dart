@@ -65,6 +65,7 @@ class _HistoryLabel extends StatelessWidget {
       '${window!.inSeconds}s history',
       style: TextStyle(
         fontFamily: OverlordTokens.mono,
+        fontFamilyFallback: OverlordTokens.monoFallback,
         fontSize: 11,
         color: AppPalette.textFaint,
       ),

@@ -149,7 +149,8 @@ class _LogTile extends StatelessWidget {
                 child: SelectableText(
                   log.command,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
+                    fontFamily: AppFont.mono,
+                    fontFamilyFallback: AppFont.monoFallback,
                     color: AppPalette.textPrimary,
                   ),
                 ),
@@ -166,7 +167,8 @@ class _LogTile extends StatelessWidget {
                 log.error!,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
-                  fontFamily: 'monospace',
+                  fontFamily: AppFont.mono,
+                  fontFamilyFallback: AppFont.monoFallback,
                 ),
               ),
             ),
@@ -207,7 +209,8 @@ class _Meta extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.bodySmall?.copyWith(
       color: AppPalette.textFaint,
-      fontFamily: 'monospace',
+      fontFamily: AppFont.mono,
+      fontFamilyFallback: AppFont.monoFallback,
       fontSize: 11.5,
     );
     return Column(
@@ -323,7 +326,8 @@ class _WhichGridCard extends ConsumerWidget {
                 child: SelectableText(
                   report.gridVersion ?? 'installed (version unknown)',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
+                    fontFamily: AppFont.mono,
+                    fontFamilyFallback: AppFont.monoFallback,
                   ),
                 ),
               ),
@@ -377,7 +381,8 @@ class _PathRow extends StatelessWidget {
             child: SelectableText(
               value,
               style: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
+                fontFamily: AppFont.mono,
+                fontFamilyFallback: AppFont.monoFallback,
                 color: ok ? AppPalette.textPrimary : theme.colorScheme.error,
               ),
             ),

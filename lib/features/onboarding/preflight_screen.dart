@@ -120,7 +120,11 @@ class _InstallCommand extends StatelessWidget {
             child: SelectableText(
               command,
               maxLines: 1,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+              style: TextStyle(
+                fontFamily: AppFont.mono,
+                fontFamilyFallback: AppFont.monoFallback,
+                fontSize: 12.5,
+              ),
             ),
           ),
           IconButton(

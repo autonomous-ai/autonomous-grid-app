@@ -27,13 +27,11 @@ MarkdownStyleSheet buildMarkdownStyleSheet(
   TextStyle heading(double size) =>
       body.copyWith(fontSize: size, fontWeight: FontWeight.w600, height: 1.3);
 
-  final mono = TextStyle(
-    fontFamily: AppFont.mono,
-    fontFamilyFallback: AppFont.monoFallback,
-    fontSize: 12.5,
-    height: 1.5,
-    color: textColor,
-  );
+  // Inline code stays on the UI text scale, unlike a fenced block: a `token`
+  // sits *inside* a sentence, and a chip that ignored the reader's UI size
+  // would step out of the line it belongs to. It still takes the user's code
+  // family and size — just not the block's opt-out from scaling.
+  final mono = AppFont.codeStyle(color: textColor, height: 1.5);
 
   return MarkdownStyleSheet(
     p: body,
@@ -55,7 +53,7 @@ MarkdownStyleSheet buildMarkdownStyleSheet(
     del: body.copyWith(decoration: TextDecoration.lineThrough),
     // Inline code: the recessed fill, so a `token` reads as a chip rather than
     // as differently-coloured prose.
-    code: mono.copyWith(fontSize: 12.5, backgroundColor: AppCard.inset),
+    code: mono.copyWith(backgroundColor: AppCard.inset),
     codeblockDecoration: BoxDecoration(
       color: AppCard.inset,
       borderRadius: BorderRadius.circular(12),
@@ -79,7 +77,7 @@ MarkdownStyleSheet buildMarkdownStyleSheet(
     ),
     tableHead: body.copyWith(
       fontSize: 13.5,
-      fontWeight: FontWeight.w600,
+      fontWeight: AppFont.medium,
       color: AppPalette.textSecondary,
     ),
     // Header sits on the same axis as the cells under it. The package centres

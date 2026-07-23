@@ -37,7 +37,7 @@ class DetailSection extends StatelessWidget {
                 style: TextStyle(
                   color: AppPalette.textFaint,
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: AppFont.medium,
                   letterSpacing: 0.6,
                 ),
               ),
@@ -349,7 +349,7 @@ class GuideLabel extends StatelessWidget {
             style: TextStyle(
               color: AppPalette.textPrimary,
               fontSize: 13,
-              fontWeight: FontWeight.w600,
+              fontWeight: AppFont.medium,
             ),
           ),
           if (caption != null)

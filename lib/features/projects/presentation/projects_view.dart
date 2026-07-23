@@ -96,9 +96,7 @@ class _ProjectCard extends ConsumerWidget {
               children: [
                 Text(
                   project.name,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: theme.textTheme.titleSmall?.copyWith(),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -107,7 +105,8 @@ class _ProjectCard extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: AppPalette.textFaint,
-                    fontFamily: 'monospace',
+                    fontFamily: AppFont.mono,
+                    fontFamilyFallback: AppFont.monoFallback,
                   ),
                 ),
                 const SizedBox(height: 6),

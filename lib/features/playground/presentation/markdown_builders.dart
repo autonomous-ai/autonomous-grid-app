@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/code_text_scope.dart';
 import 'code_highlight.dart';
 
 /// The code block and table renderers a chat turn uses, replacing the defaults
@@ -72,7 +73,7 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
                     label.isEmpty ? 'code' : label,
                     style: TextStyle(
                       fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppFont.medium,
                       color: AppPalette.textFaint,
                       letterSpacing: 0.2,
                     ),
@@ -88,7 +89,7 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
                     'writing…',
                     style: TextStyle(
                       fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppFont.medium,
                       color: AppPalette.textFaint,
                     ),
                   ),
@@ -98,18 +99,23 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
           // A hairline, not a Divider: the app's divider token is the quiet
           // separator, and Material's default is a full-strength rule.
           Container(height: 1, color: AppPalette.divider),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            child: _CodeText(
-              code: widget.code.trimRight(),
-              language: label,
-              // Colour only settles once the fence closes. Highlighting a
-              // fragment costs a full re-tokenise per streamed chunk, and the
-              // colours churn as the parser guesses at half-written syntax —
-              // so mid-stream the block stays plain, exactly as the web chat
-              // UIs do it.
-              highlight: widget.closed,
+          // Only the code takes the code size — the language label and the copy
+          // action above are chrome, and they stay on the UI scale with the rest
+          // of the transcript.
+          CodeTextScope(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: _CodeText(
+                code: widget.code.trimRight(),
+                language: label,
+                // Colour only settles once the fence closes. Highlighting a
+                // fragment costs a full re-tokenise per streamed chunk, and the
+                // colours churn as the parser guesses at half-written syntax —
+                // so mid-stream the block stays plain, exactly as the web chat
+                // UIs do it.
+                highlight: widget.closed,
+              ),
             ),
           ),
         ],
@@ -138,13 +144,7 @@ class _CodeText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brightness = AppTheme.watch(context);
-    final base = TextStyle(
-      fontFamily: AppFont.mono,
-      fontFamilyFallback: AppFont.monoFallback,
-      fontSize: 12.5,
-      height: 1.5,
-      color: AppPalette.textPrimary,
-    );
+    final base = AppFont.codeStyle(color: AppPalette.textPrimary, height: 1.5);
 
     final spans = highlight
         ? CodeHighlight.spans(
@@ -229,7 +229,7 @@ class _CopyButtonState extends State<_CopyButton> {
                   _copied ? 'Copied' : 'Copy',
                   style: TextStyle(
                     fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: AppFont.medium,
                     color: ink,
                   ),
                 ),
