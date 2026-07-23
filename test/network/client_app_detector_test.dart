@@ -15,10 +15,18 @@ ClientAppDetector _detector({
 
 void main() {
   test('a present config directory marks the app installed', () {
+    final d = _detector(dirs: {'$_home/.hermes'});
+    expect(d.isInstalled(ClientApp.hermes), isTrue);
+    expect(d.isInstalled(ClientApp.codex), isFalse);
+    expect(d.detect(), {ClientApp.hermes});
+  });
+
+  test('an app the build hides is never reported as installed', () {
+    // OpenClaw on disk must not light up a chip for a tab the picker doesn't
+    // draw — isInstalled still answers honestly, detect() is what the UI reads.
     final d = _detector(dirs: {'$_home/.openclaw'});
     expect(d.isInstalled(ClientApp.openClaw), isTrue);
-    expect(d.isInstalled(ClientApp.hermes), isFalse);
-    expect(d.detect(), {ClientApp.openClaw});
+    expect(d.detect(), isEmpty);
   });
 
   test('an executable on PATH counts even without a config dir', () {
@@ -40,14 +48,21 @@ void main() {
     expect(d.detect().toList(), kSelectableClientApps);
   });
 
-  test('Codex is debug-only; the shipped clients always show', () {
+  test('the guide offers Hermes always, Codex in debug, OpenClaw never', () {
     // Codex needs the Responses API the relay doesn't serve yet, so a shipped
-    // build hides it (tests run in debug ⇒ it's selectable here).
-    expect(ClientApp.codex.isSelectable, kDebugMode);
-    expect(ClientApp.openClaw.isSelectable, isTrue);
+    // build hides it (tests run in debug ⇒ it's selectable here). OpenClaw is
+    // off the list outright.
     expect(ClientApp.hermes.isSelectable, isTrue);
-    expect(kSelectableClientApps, contains(ClientApp.openClaw));
+    expect(ClientApp.codex.isSelectable, kDebugMode);
+    expect(ClientApp.openClaw.isSelectable, isFalse);
+    expect(kSelectableClientApps, isNot(contains(ClientApp.openClaw)));
     expect(kSelectableClientApps.contains(ClientApp.codex), kDebugMode);
+  });
+
+  test('the picker always has something to fall back on', () {
+    // The guide defaults to kSelectableClientApps.first when the user has none
+    // of them installed — hiding the last app would throw there, not degrade.
+    expect(kSelectableClientApps, isNotEmpty);
   });
 
   group('appSetupGuide', () {

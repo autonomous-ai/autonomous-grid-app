@@ -11,15 +11,24 @@ import '../../../infrastructure/cli/host_environment.dart';
 enum ClientApp { openClaw, hermes, codex }
 
 extension ClientAppX on ClientApp {
-  /// Whether the guide offers this client at all.
+  /// Whether the guide offers this client at all — one switch, so a hidden app
+  /// can't reappear through a picker or a default that forgot about it.
   ///
-  /// Codex is hidden from shipped builds: codex ≥ 0.141 talks only to the
+  /// **Codex** is hidden from shipped builds: codex ≥ 0.141 talks only to the
   /// Responses API, while the relay serves Chat Completions, so a grid wired
   /// into Codex answers every prompt with a 404 on `/v1/responses`. Offering it
   /// would be a lie. Kept in debug so it can be tried again the day the relay
   /// grows the endpoint.
   /// TODO(BE): unhide once the relay serves the Responses API.
-  bool get isSelectable => this != ClientApp.codex || kDebugMode;
+  ///
+  /// **OpenClaw** is off the list entirely — it isn't an app we point people at
+  /// any more. The config writer and its snippet stay behind this switch so
+  /// flipping it back is one line, not a rewrite.
+  bool get isSelectable => switch (this) {
+    ClientApp.openClaw => false,
+    ClientApp.codex => kDebugMode,
+    ClientApp.hermes => true,
+  };
 }
 
 /// The clients the guide may show, in [ClientApp.values] order — everything the
