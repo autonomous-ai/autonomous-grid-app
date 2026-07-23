@@ -15,7 +15,7 @@ import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/engine_slots.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
-import 'add_engine_cards.dart';
+import 'add_engine_options.dart';
 import 'engine_block.dart';
 import 'contribution_summary.dart';
 import 'engine_failure_card.dart';
@@ -223,8 +223,8 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     return children;
   }
 
-  /// The ways to add an engine — one card each, in the same words the first-run
-  /// screen uses ([AddEngineCards]).
+  /// The ways to add an engine — one row each, in the same words the first-run
+  /// screen uses on its cards ([AddEngineOptions]).
   ///
   /// A computer shares **one** engine ([canAddEngine]), so the cards only appear
   /// while nothing is serving. Once something is, the section is simply absent —
@@ -237,7 +237,7 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     bool busy,
   ) => busy || !canAddEngine(serving)
       ? const []
-      : [AddEngineCards(network: network)];
+      : [AddEngineOptions(network: network)];
 }
 
 /// Shown when an engine is already serving a *different* grid. Only one engine
