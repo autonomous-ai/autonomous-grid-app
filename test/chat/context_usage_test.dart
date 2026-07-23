@@ -126,23 +126,29 @@ void main() {
       expect(chatContextUsage(_chat(), advertisedWindow: 128000), isNull);
     });
 
-    test('a window nobody publishes means no ring, not a guessed denominator', () {
-      final usage = chatContextUsage(
-        _chat(messages: [_user('hi')], contextTokens: 900),
-        advertisedWindow: null,
-      );
-      expect(usage, isNull);
-    });
+    test(
+      'a window nobody publishes means no ring, not a guessed denominator',
+      () {
+        final usage = chatContextUsage(
+          _chat(messages: [_user('hi')], contextTokens: 900),
+          advertisedWindow: null,
+        );
+        expect(usage, isNull);
+      },
+    );
 
-    test('the count the model reported wins, and is not flagged an estimate', () {
-      final usage = chatContextUsage(
-        _chat(messages: [_user('hi')], contextTokens: 62000),
-        advertisedWindow: 258000,
-      );
-      expect(usage!.usedTokens, 62000);
-      expect(usage.estimated, isFalse);
-      expect(usage.limitTokens, 258000);
-    });
+    test(
+      'the count the model reported wins, and is not flagged an estimate',
+      () {
+        final usage = chatContextUsage(
+          _chat(messages: [_user('hi')], contextTokens: 62000),
+          advertisedWindow: 258000,
+        );
+        expect(usage!.usedTokens, 62000);
+        expect(usage.estimated, isFalse);
+        expect(usage.limitTokens, 258000);
+      },
+    );
 
     test('a window the answering agent named beats the one the grid '
         'advertises — it is the window the tokens were measured in', () {

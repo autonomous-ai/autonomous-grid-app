@@ -276,8 +276,6 @@ class _RowBody extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(47, 0, 15, 15),
-    child: child,
-  );
+  Widget build(BuildContext context) =>
+      Padding(padding: const EdgeInsets.fromLTRB(47, 0, 15, 15), child: child);
 }

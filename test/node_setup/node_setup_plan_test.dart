@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';
 import 'package:grid_app/features/node_setup/logic/model_catalog.dart';
@@ -17,7 +18,7 @@ NodeCapabilities _caps({
   bool engineInstalled = false,
   MediaStatus media = MediaStatus.notInstalled,
   int models = 0,
-  bool agent = false,
+  Set<AgentTool> agents = const {},
   CatalogModel? recommended = _model,
 }) => NodeCapabilities(
   textBackends: backends,
@@ -26,8 +27,19 @@ NodeCapabilities _caps({
       : EngineStatus.notInstalled,
   media: media,
   localModelCount: models,
-  hasAgent: agent,
+  installedAgents: agents,
   recommendedModel: recommended,
+);
+
+/// Every agent the catalog knows — a machine with nothing left to install.
+final _allAgents = AgentTool.values.toSet();
+
+/// What a bare machine owes the agents: one install step each. Written as a
+/// function of the catalog so adding an agent doesn't need every expectation in
+/// this file rewritten.
+final _agentSteps = List.filled(
+  AgentTool.values.length,
+  SetupAction.installAgent,
 );
 
 DetectedBackend _ollama({
@@ -58,12 +70,12 @@ void main() {
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.pullModel,
-      SetupAction.installAgent,
+      ..._agentSteps,
     ]);
   });
 
   test('a machine that already has the assistant does not reinstall it', () {
-    final plan = buildSetupPlan(_caps(agent: true));
+    final plan = buildSetupPlan(_caps(agents: _allAgents));
     expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
   });
 
@@ -73,12 +85,38 @@ void main() {
     expect(step.args, ['agent', 'install', 'hermes']);
   });
 
+  test('a first run fetches every agent, not just the one that answers', () {
+    // An agent nobody installed is a row the user can only look at, so setup
+    // brings them all in — and the one chat defaults to goes first.
+    final steps = agentInstallSteps(_caps());
+    expect(
+      steps.map((s) => s.args),
+      AgentTool.values.map((t) => ['agent', 'install', t.id]),
+    );
+    expect(steps.first.args.last, kChatAgent.id);
+  });
+
+  test('only the default agent is worth stopping a first run for', () {
+    // A second assistant that won't download must not leave a new user staring
+    // at a red screen when the one that answers chat is already in.
+    final steps = agentInstallSteps(_caps());
+    final required = steps.where((s) => !s.optional).toList();
+    expect(required, hasLength(1));
+    expect(required.single.args.last, kChatAgent.id);
+  });
+
+  test('having one agent still gets you the other', () {
+    final steps = agentInstallSteps(_caps(agents: {kChatAgent}));
+    expect(steps, hasLength(AgentTool.values.length - 1));
+    expect(steps.every((s) => s.args.last != kChatAgent.id), isTrue);
+  });
+
   test('with media enabled, a fresh machine installs both engines', () {
     final plan = buildSetupPlan(_caps(), includeMedia: true);
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.pullModel,
-      SetupAction.installAgent,
+      ..._agentSteps,
       SetupAction.installComfy,
       SetupAction.pullMediaBundle,
     ]);
@@ -93,7 +131,7 @@ void main() {
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.pullModel,
-      SetupAction.installAgent,
+      ..._agentSteps,
     ]);
   });
 
@@ -102,7 +140,7 @@ void main() {
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.pullModel,
-      SetupAction.installAgent,
+      ..._agentSteps,
     ]);
   });
 
@@ -116,7 +154,7 @@ void main() {
       expect(_actions(plan), [
         SetupAction.installLlama,
         SetupAction.pullModel,
-        SetupAction.installAgent,
+        ..._agentSteps,
         SetupAction.installComfy,
         SetupAction.pullMediaBundle,
       ]);
@@ -128,7 +166,7 @@ void main() {
     expect(_actions(plan), [
       SetupAction.installLlama,
       SetupAction.pullModel,
-      SetupAction.installAgent,
+      ..._agentSteps,
     ]);
     final pull = plan.firstWhere((s) => s.action == SetupAction.pullModel);
     expect(pull.args, [
@@ -143,7 +181,7 @@ void main() {
         engineInstalled: true,
         media: _completeMedia,
         models: 1,
-        agent: true,
+        agents: _allAgents,
       ),
       includeMedia: true,
     );
@@ -158,10 +196,7 @@ void main() {
 
   test('leaving the model out still installs the engine and assistant', () {
     final plan = buildSetupPlan(_caps(), includeModel: false);
-    expect(_actions(plan), [
-      SetupAction.installLlama,
-      SetupAction.installAgent,
-    ]);
+    expect(_actions(plan), [SetupAction.installLlama, ..._agentSteps]);
   });
 
   test('the first-run installer plan is the assistant only — no engine, no '
@@ -171,14 +206,17 @@ void main() {
       includeEngine: false,
       includeModel: false,
     );
-    expect(_actions(plan), [SetupAction.installAgent]);
+    expect(_actions(plan), _agentSteps);
   });
 
   test(
     'the "run local" choice installs the engine but still not the model — it '
     'downloads in the background after the choice',
     () {
-      final plan = buildSetupPlan(_caps(agent: true), includeModel: false);
+      final plan = buildSetupPlan(
+        _caps(agents: _allAgents),
+        includeModel: false,
+      );
       expect(_actions(plan), [SetupAction.installLlama]);
     },
   );

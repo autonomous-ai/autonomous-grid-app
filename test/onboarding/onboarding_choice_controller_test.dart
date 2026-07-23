@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';
 import 'package:grid_app/features/node_setup/logic/node_capabilities.dart';
@@ -11,12 +12,12 @@ import 'package:grid_app/infrastructure/state/onboarding_store.dart';
 /// A machine that already has the engine and the assistant — so "run local"
 /// installs nothing and the controller records the choice without touching the
 /// CLI (the install path is exercised by node_setup_controller's own tests).
-NodeCapabilities _readyCaps() => const NodeCapabilities(
-  textBackends: [],
-  engine: EngineStatus(llamaInstalled: true),
+NodeCapabilities _readyCaps() => NodeCapabilities(
+  textBackends: const [],
+  engine: const EngineStatus(llamaInstalled: true),
   media: MediaStatus.notInstalled,
   localModelCount: 0,
-  hasAgent: true,
+  installedAgents: AgentTool.values.toSet(),
 );
 
 void main() {

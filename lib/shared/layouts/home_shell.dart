@@ -8,6 +8,7 @@ import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/node_setup/logic/auto_host_controller.dart';
+import '../../features/node_setup/logic/background_agent_controller.dart';
 import '../../features/node_setup/logic/background_model_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
 import '../theme/app_theme.dart';
@@ -44,6 +45,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       unawaited(
         ref.read(backgroundModelControllerProvider.notifier).startIfNeeded(),
       );
+      // Same idea for the assistants: a computer set up before an agent joined
+      // the catalog never sees the first-run installer again, so top it up here
+      // rather than leaving a row the user can only look at.
+      unawaited(ref.read(backgroundAgentInstallerProvider).startIfNeeded());
       // Scheduled tasks run whether the app is open or not, and Hermes just
       // leaves the result in a file. Start looking for those results, so they
       // land in Chat instead of sitting somewhere the user never looks.

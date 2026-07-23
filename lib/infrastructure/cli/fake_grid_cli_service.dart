@@ -48,8 +48,13 @@ class FakeGridCliService implements GridCliService {
   List<String>? lastStartArgs;
   Map<String, String>? lastStartEnvironment;
 
+  /// Every [run] this fake was asked for, in order — for the callers whose whole
+  /// job is *which* commands they issue (and how many times).
+  final List<List<String>> runCalls = [];
+
   @override
   Future<CliResult> run(List<String> args) async {
+    runCalls.add(List.unmodifiable(args));
     return _results[keyOf(args)] ??
         const CliResult(exitCode: 0, stdout: '', stderr: '');
   }

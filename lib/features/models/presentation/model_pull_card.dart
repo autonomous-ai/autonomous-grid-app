@@ -84,9 +84,7 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
               const SizedBox(width: 8),
               // What landed and what to do about it, in one sentence rather
               // than a line of confirmation followed by a line of instruction.
-              Expanded(
-                child: Text('${state.file} — close this to start it.'),
-              ),
+              Expanded(child: Text('${state.file} — close this to start it.')),
             ],
           ),
         ],
@@ -113,7 +111,9 @@ class _ModelPullCardState extends ConsumerState<ModelPullCard> {
                   Icons.download_outlined,
                   size: AppControl.iconSize,
                 ),
-                label: Text(state is ModelPullFailed ? 'Try again' : 'Download'),
+                label: Text(
+                  state is ModelPullFailed ? 'Try again' : 'Download',
+                ),
               ),
             ),
             const Spacer(),
