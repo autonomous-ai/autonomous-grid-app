@@ -46,9 +46,23 @@ const _audioExt = {
   'weba',
 };
 
-/// Markdown image, then markdown link, then bare URL / local path — in that
-/// priority order so a link's own URL is never mistaken for a bare media URL.
+/// Fenced code first, then markdown image, then markdown link, then bare URL /
+/// local path — in that priority order so a link's own URL is never mistaken
+/// for a bare media URL.
+///
+/// The fence alternatives come first and capture nothing: they exist purely to
+/// swallow a code block whole, so nothing inside one is lifted out of the text.
+/// A path in an example command is part of the code, not a video to play.
+///
+/// Linking bare URLs is *not* this parser's job — GitHub Flavored Markdown does
+/// it downstream, including the cases that are easy to get wrong by hand (a URL
+/// inside a fence or a `code span` stays literal; a full stop after a URL stays
+/// prose). This only decides what becomes media.
 final _mediaPattern = RegExp(
+  r'```[\s\S]*?```' // 0a: fenced code block (or an unclosed one, below)
+  r'|'
+  r'```[\s\S]*$' // 0b: a fence still streaming, no terminator yet
+  r'|'
   r'!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)' // 1: markdown image url
   r'|'
   r'\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)' // 2: markdown link url
@@ -122,7 +136,8 @@ List<MessageSegment> parseMessageSegments(String text) {
       continue;
     }
 
-    // A non-media bare URL or path: keep verbatim for markdown.
+    // Anything else — a non-media URL, a plain path — passes through untouched
+    // for the markdown layer to deal with.
     buffer.write(match.group(0));
   }
   buffer.write(text.substring(last));

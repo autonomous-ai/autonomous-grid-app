@@ -36,6 +36,36 @@ void main() {
       expect(_textAt(segs, 0), contains('https://example.com/page'));
     });
 
+    // Linking bare URLs moved to the markdown layer: GitHub Flavored Markdown
+    // autolinks them, including the cases hand-rolled code kept getting wrong
+    // (inside a fence, inside a code span, a full stop after the URL). The
+    // parser's job is only to decide what becomes *media*, so a plain web URL
+    // now passes through untouched — see markdown_autolink_test.dart for the
+    // rendered behaviour.
+    test('a non-media url passes through for the markdown layer', () {
+      final segs = parseMessageSegments('see https://example.com/page now');
+      expect(segs, hasLength(1));
+      expect(_textAt(segs, 0), 'see https://example.com/page now');
+    });
+
+    test('a url inside a fence is never lifted out as media', () {
+      const src =
+          "Here:\n```sh\nffmpeg -i /Users/me/clips/a.mp4 out.gif\n```\ndone";
+      final segs = parseMessageSegments(src);
+      // The path is part of the command, not a video to play.
+      expect(segs.whereType<MediaSegment>(), isEmpty);
+    });
+
+    test('an already-markdown link is not double-wrapped', () {
+      final segs = parseMessageSegments('[docs](https://example.com/page)');
+      expect(_textAt(segs, 0), '[docs](https://example.com/page)');
+    });
+
+    test('a local path is left alone, not dressed as a web link', () {
+      final segs = parseMessageSegments('saved to /Users/me/notes.txt');
+      expect(_textAt(segs, 0), 'saved to /Users/me/notes.txt');
+    });
+
     test("markdown link's url is not mistaken for bare media", () {
       final segs = parseMessageSegments('[clip](https://x.com/a.mp4)');
       expect(segs, hasLength(1));
