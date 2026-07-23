@@ -58,6 +58,19 @@ class HermesAcpPlan extends HermesAcpEvent {
   final List<AgentPlanEntry> entries;
 }
 
+/// How full the model's context window is after this turn, straight from
+/// Hermes: [used] tokens of a [size]-token window.
+///
+/// ACP's own `usage_update` — the update Zed's circular context indicator is
+/// built on. It's the one place either agent tells us the *window* and not just
+/// the count, so the composer's ring can report a share of it rather than a
+/// bare number.
+class HermesAcpUsage extends HermesAcpEvent {
+  const HermesAcpUsage({required this.used, required this.size});
+  final int used;
+  final int size;
+}
+
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
 class HermesAcpRun {
@@ -403,8 +416,17 @@ class _HermesAcpSession implements HermesAcpSession {
         if (content is Map && content['text'] is String) {
           events.add(HermesAcpMessage(content['text'] as String));
         }
+      case 'usage_update':
+        // Both numbers or nothing: a window of 0 (Hermes couldn't read the
+        // model's context length) would make every share of it meaningless.
+        final used = _int(raw['used']);
+        final size = _int(raw['size']);
+        if (used == null || size == null || size <= 0) return;
+        events.add(HermesAcpUsage(used: used, size: size));
     }
   }
+
+  static int? _int(Object? raw) => raw is num ? raw.toInt() : null;
 
   // Server → client requests. Permission prompts go through the policy: reads
   // are allowed, a command or a file change is put to the user (see

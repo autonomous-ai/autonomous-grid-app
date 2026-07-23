@@ -8,6 +8,7 @@ import '../../../infrastructure/cli/hermes_acp_service.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
+import '../../playground/logic/context_usage.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import 'agent_changes.dart';
@@ -246,6 +247,13 @@ class HermesChatSender implements ChatSender {
           case HermesAcpMessage(:final text):
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
+          case HermesAcpUsage(:final used, :final size):
+            // Hermes counts the whole conversation against the model's own
+            // window, so this is the one reading the composer's ring never has
+            // to estimate.
+            updates.add(
+              ChatSendUsage(ContextUsage(usedTokens: used, limitTokens: size)),
+            );
         }
       },
       onDone: () async {

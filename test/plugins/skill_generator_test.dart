@@ -17,7 +17,7 @@ class _FakeTransport implements ChatTransport {
   String? apiKey;
 
   @override
-  Future<(String?, ChatTransportError?)> complete({
+  Future<ChatCompletion> complete({
     required String endpoint,
     required String apiKey,
     required String model,
@@ -26,7 +26,7 @@ class _FakeTransport implements ChatTransport {
     this.endpoint = endpoint;
     this.apiKey = apiKey;
     this.model = model;
-    return (reply, error);
+    return (reply, null, error);
   }
 }
 
