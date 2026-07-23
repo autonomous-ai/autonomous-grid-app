@@ -5,6 +5,13 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'chat_reply.dart';
+import 'context_usage.dart';
+
+/// What one completion came back with: the assistant's text, what the turn cost
+/// (null when the engine reported no `usage`), and the failure — exactly one of
+/// text/error is meaningful. A record rather than a class: it's a multi-return,
+/// not a thing with behaviour.
+typedef ChatCompletion = (String?, ContextUsage?, ChatTransportError?);
 
 /// A failed chat request. [statusCode] is the HTTP status when the server
 /// answered (null for transport failures — timeout, unreachable host); [message]
@@ -24,7 +31,7 @@ abstract interface class ChatTransport {
   /// [messages] follows the OpenAI schema. `content` is a plain string for text
   /// turns, or a list of parts (`{type: text}` / `{type: image_url}`) when a
   /// vision turn carries attached images — hence the `dynamic` value.
-  Future<(String?, ChatTransportError?)> complete({
+  Future<ChatCompletion> complete({
     required String endpoint,
     required String apiKey,
     required String model,
@@ -39,7 +46,7 @@ class HttpChatTransport implements ChatTransport {
   const HttpChatTransport();
 
   @override
-  Future<(String?, ChatTransportError?)> complete({
+  Future<ChatCompletion> complete({
     required String endpoint,
     required String apiKey,
     required String model,
@@ -65,22 +72,26 @@ class HttpChatTransport implements ChatTransport {
       if (response.statusCode != 200) {
         return (
           null,
+          null,
           ChatTransportError(briefError(body), statusCode: response.statusCode),
         );
       }
-      return (extractAssistantText(jsonDecode(body)), null);
+      final decoded = jsonDecode(body);
+      return (extractAssistantText(decoded), extractUsage(decoded), null);
     } on TimeoutException {
       return (
+        null,
         null,
         const ChatTransportError("The model didn't respond in time."),
       );
     } on SocketException catch (e) {
       return (
         null,
+        null,
         ChatTransportError("Couldn't reach the model: ${e.message}"),
       );
     } on Object catch (e) {
-      return (null, ChatTransportError("Couldn't reach the model: $e"));
+      return (null, null, ChatTransportError("Couldn't reach the model: $e"));
     } finally {
       client.close(force: true);
     }

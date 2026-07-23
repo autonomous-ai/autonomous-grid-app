@@ -41,7 +41,7 @@ class _FakeChatTransport implements ChatTransport {
   List<Map<String, dynamic>>? messages;
 
   @override
-  Future<(String?, ChatTransportError?)> complete({
+  Future<ChatCompletion> complete({
     required String endpoint,
     required String apiKey,
     required String model,
@@ -49,7 +49,7 @@ class _FakeChatTransport implements ChatTransport {
   }) async {
     this.endpoint = endpoint;
     this.messages = messages;
-    return (reply, error);
+    return (reply, null, error);
   }
 }
 

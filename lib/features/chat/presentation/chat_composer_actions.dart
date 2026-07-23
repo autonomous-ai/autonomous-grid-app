@@ -27,6 +27,7 @@ class _Actions extends StatelessWidget {
     required this.canSend,
     required this.approvalPicker,
     required this.modelPicker,
+    required this.contextMeter,
     required this.onPickImage,
     required this.onOpenPrompts,
     required this.promptsSaveInput,
@@ -43,6 +44,9 @@ class _Actions extends StatelessWidget {
   /// control isn't offered where it would mean nothing.
   final Widget? approvalPicker;
   final Widget modelPicker;
+
+  /// The context ring, or null where a transcript keeps no history to fill.
+  final Widget? contextMeter;
   final VoidCallback onPickImage;
   final VoidCallback onOpenPrompts;
   final bool promptsSaveInput;
@@ -78,6 +82,13 @@ class _Actions extends StatelessWidget {
               // heightSmall. This used to force a bare 30 — a fifth number in a
               // row that already had 32/32/28/32, and it silently overrode the
               // AppControl.height the picker itself asks for.
+              //
+              // The ring sits immediately left of the model: it measures that
+              // model's memory, and the pair reads as one answer to "what am I
+              // talking to, and how much room is left in it?". It costs no
+              // width at all until there's a real reading to show, so an empty
+              // chat isn't given a gauge of nothing.
+              ?contextMeter,
               SizedBox(width: 140, child: modelPicker),
               const SizedBox(width: 8),
               _SendButton(

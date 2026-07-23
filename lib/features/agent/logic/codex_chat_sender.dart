@@ -10,6 +10,7 @@ import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
+import '../../playground/logic/context_usage.dart';
 import '../../playground/logic/playground_request.dart';
 import 'agent_prompt.dart';
 import 'agent_server_error.dart';
@@ -218,6 +219,10 @@ class CodexChatSender implements ChatSender {
               ..clear()
               ..write(text);
             updates.add(ChatSendStreaming(text));
+          case CodexUsageEvent(:final usedTokens):
+            // Codex counts the tokens but never names the window, so the ring
+            // pairs this with the context length the grid advertises.
+            updates.add(ChatSendUsage(ContextUsage(usedTokens: usedTokens)));
           case CodexTurnFailed(:final message):
             failure = friendlyCodexError(message);
             _logRaw(message);

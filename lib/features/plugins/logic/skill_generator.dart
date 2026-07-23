@@ -47,7 +47,9 @@ class SkillGenerator {
     final target = _resolveTarget();
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(CliCallKind.http, 'POST ${target.endpoint}');
-    final (reply, error) = await _ref
+    // A one-shot generation, not a conversation: what the turn cost is of no
+    // use here, so the usage the transport reports is dropped.
+    final (reply, _, error) = await _ref
         .read(chatTransportProvider)
         .complete(
           endpoint: target.endpoint,
