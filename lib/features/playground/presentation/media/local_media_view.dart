@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../logic/chat_message.dart';
 import '../../logic/message_media.dart';
 import 'inline_video.dart';
+import '../../../../shared/external_launch.dart';
 import 'media_chrome.dart';
 
 /// Renders a generated media file from disk (`~/.grid/outputs`): an image via

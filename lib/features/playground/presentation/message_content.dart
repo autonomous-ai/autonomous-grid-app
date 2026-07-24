@@ -10,7 +10,7 @@ import 'media/inline_audio.dart';
 import 'media/inline_image.dart';
 import 'media/inline_video.dart';
 import 'media/local_media_view.dart';
-import 'media/media_chrome.dart';
+import '../../../shared/external_launch.dart';
 
 /// How wide running text is allowed to get inside the transcript column.
 ///

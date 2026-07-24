@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
-import 'media/media_chrome.dart';
+import '../../../shared/external_launch.dart';
 
 /// The web pages an agent turn cited, shown as clickable chips — live in the
 /// working bubble and pinned under the finished answer. Clicking one opens it in
