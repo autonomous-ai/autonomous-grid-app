@@ -25,14 +25,16 @@ String engineTitle(ServingEngine engine) => switch (engine.kind) {
 };
 
 /// One engine in the machine's serving list: what it is, the model(s) it serves,
-/// a live dot, and a Stop that drops just this one from the union (the others
-/// keep running). Stop is disabled when the engine carries nothing to match on.
+/// a live dot, and — when the union holds more than one — a Stop that drops just
+/// this one, the others staying up. Stop is disabled when the engine carries
+/// nothing to match on.
 class ServingEngineTile extends ConsumerWidget {
   const ServingEngineTile({
     super.key,
     required this.engine,
     required this.gridId,
     required this.stopping,
+    required this.showStop,
   });
 
   final ServingEngine engine;
@@ -42,6 +44,13 @@ class ServingEngineTile extends ConsumerWidget {
   /// engine is still up until `grid leave` returns — but says so instead of
   /// offering a Stop that would race the one in flight.
   final bool stopping;
+
+  /// Whether this row carries its own Stop. False when it's the only engine
+  /// serving: "stop just this one" would then mean exactly what the header's
+  /// Stop already does, and two buttons for one outcome is the redundancy the
+  /// row drops. The per-engine Stop earns its place only once there's another
+  /// engine it can be told apart from.
+  final bool showStop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -96,13 +105,16 @@ class ServingEngineTile extends ConsumerWidget {
             const _StoppingLabel()
           else ...[
             _LiveDot(),
-            IconButton(
-              tooltip: selector == null ? 'Use Stop, above' : 'Stop',
-              onPressed: selector == null
-                  ? null
-                  : () => _confirmStop(context, ref, selector),
-              icon: const Icon(Icons.stop_circle_outlined, size: 20),
-            ),
+            // Only when there's another engine to tell this one apart from —
+            // otherwise the header's Stop is the single control (see [showStop]).
+            if (showStop)
+              IconButton(
+                tooltip: selector == null ? 'Use Stop, above' : 'Stop',
+                onPressed: selector == null
+                    ? null
+                    : () => _confirmStop(context, ref, selector),
+                icon: const Icon(Icons.stop_circle_outlined, size: 20),
+              ),
           ],
         ],
       ),
