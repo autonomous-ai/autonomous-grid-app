@@ -38,8 +38,18 @@ void main() {
       expect(_container(agent: true).read(installerNeededProvider), isFalse);
     });
 
-    test('a machine that cannot host the built-in engine never sees it', () {
-      expect(_container(canHost: false).read(installerNeededProvider), isFalse);
+    test('a machine that cannot host the built-in engine still sees it when the '
+        'assistant is missing — agents install on every OS, only the engine is '
+        'Mac-gated', () {
+      expect(_container(canHost: false).read(installerNeededProvider), isTrue);
+    });
+
+    test('a non-hosting machine with the assistant already installed does not '
+        'see it', () {
+      expect(
+        _container(canHost: false, agent: true).read(installerNeededProvider),
+        isFalse,
+      );
     });
   });
 

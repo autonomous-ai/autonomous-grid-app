@@ -259,6 +259,21 @@ class _PowerPanel extends ConsumerWidget {
         ? const <NodeSlice>[]
         : buildMemorySlices(nodes, vram);
 
+    // A node either brings hardware (its VRAM feeds the split above) or a
+    // subscription seat (a plan, no VRAM to split). Sub nodes are the ones the
+    // memory bar can't represent — list them by plan instead of dropping them.
+    final subNodes = [
+      for (final node in nodes)
+        if (nodeVramGb(node) == null && nodePlanLabel(node) != null) node,
+    ];
+    // The plain fallback names only the machines the two sections above don't:
+    // hardware nodes that report no VRAM and carry no plan. With a memory bar
+    // present those already-listed VRAM nodes are excluded here anyway.
+    final plainNodes = [
+      for (final node in nodes)
+        if (nodeVramGb(node) == null && nodePlanLabel(node) == null) node,
+    ];
+
     return Positioned(
       width: _width,
       child: CompositedTransformFollower(
@@ -278,11 +293,17 @@ class _PowerPanel extends ConsumerWidget {
                 if (slices.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _MemorySplit(totalGb: vram!, slices: slices),
-                ] else if (nodes.isNotEmpty) ...[
+                ] else if (plainNodes.isNotEmpty) ...[
                   // No node reports VRAM, so there is no bar to split — name the
                   // machines instead of leaving the panel with only its footer.
                   const SizedBox(height: 12),
-                  _PlainNodeList(nodes: nodes),
+                  _PlainNodeList(nodes: plainNodes),
+                ],
+                // Subscription seats carry a plan, not VRAM, so they sit in their
+                // own block below the hardware — each named by its tier.
+                if (subNodes.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _SubscriptionList(nodes: subNodes),
                 ],
                 const SizedBox(height: 11),
                 _FooterStats(power: power),
@@ -611,6 +632,87 @@ class _PlainNodeList extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// The subscription seats behind a grid — ChatGPT/Codex nodes that bring a plan
+/// rather than GPU memory. They can't take a slice of the memory bar, so they're
+/// named here by their tier instead, each with an accent plan badge that echoes
+/// the per-node badge on the grid page (and the top bar's plan pill).
+class _SubscriptionList extends StatelessWidget {
+  const _SubscriptionList({required this.nodes});
+
+  final List<OverviewNode> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final labels = shortenNodeNames([for (final n in nodes) n.name]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SectionLabel(
+          label: plural(nodes.length, 'Subscription'),
+          trailing: '${nodes.length} online',
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < nodes.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2.5),
+            child: Row(
+              children: [
+                StatusDot(color: AppPalette.online, size: 6),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    labels[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppPalette.textPrimary,
+                    ),
+                  ),
+                ),
+                if (nodePlanLabel(nodes[i]) case final plan?)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: _PlanBadge(label: plan),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The accent tier chip a subscription row carries — same shape and accent tint
+/// as the grid page's per-node plan badge, so a plan reads the same everywhere.
+class _PlanBadge extends StatelessWidget {
+  const _PlanBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppPalette.accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: AppPalette.accent,
+        ),
+      ),
     );
   }
 }

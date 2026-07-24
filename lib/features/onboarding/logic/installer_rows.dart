@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../../network/logic/grid_sync_controller.dart';
-import '../../node_setup/logic/auto_host_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../node_setup/logic/node_setup_plan.dart';
 import 'installer_controller.dart';
@@ -45,18 +44,21 @@ final installerLogProvider = Provider<List<String>>((ref) {
 ///
 /// Only a missing assistant holds the user here now. The engine and model aren't
 /// gates: running a model on this computer is a choice on the screen after this
-/// one, and the model downloads in the background once the user is in. A machine
-/// that can't host the built-in engine at all never sees the installer.
+/// one, and the model downloads in the background once the user is in. The
+/// assistant, though, is not Mac-only: `grid agent install` needs no Homebrew
+/// and no admin rights and runs on every OS, so the installer is shown wherever
+/// it's missing — Windows and Linux included — instead of installing the agent
+/// silently in the background there. Only the built-in *engine* stays Mac-gated,
+/// and that's decided on the choose-a-model screen after this one.
 final installerNeededProvider = Provider<bool>((ref) {
-  if (!ref.watch(supportsBuiltInEngineProvider)) return false;
   return !ref.watch(hermesInstalledProvider);
 });
 
 /// Whether to show the installer instead of the app.
 ///
 /// Once the user is in, they stay in: a finished or skipped install never puts
-/// the screen back. A machine that can't host (Linux, Windows, or a guest on
-/// someone else's grid) never sees it at all.
+/// the screen back. Shown on every OS while the assistant is missing; a machine
+/// that already has it (or a returning user) never sees it.
 final showInstallerProvider = Provider<bool>((ref) {
   final state = ref.watch(installerControllerProvider);
   return switch (state) {
