@@ -7,6 +7,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../../shared/widgets/modality_mark.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/chat_controller.dart';
 import '../logic/chat_message.dart';
@@ -229,7 +230,10 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
         Expanded(
           child: chat.messages.isEmpty
               ? EmptyState(
-                  icon: _emptyIcon(modality),
+                  // The picker's own mark for this modality. It used to be a
+                  // second switch here that claimed to match the picker and
+                  // didn't — different glyphs for all three.
+                  icon: modalityIcon(modality),
                   title: _emptyTitle(modality),
                   message: _emptyHint(modality),
                   compact: true,
@@ -281,14 +285,6 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     PlaygroundModality.image => 'Describe an image to generate.',
     PlaygroundModality.video => 'Attach an image, then describe the motion.',
     PlaygroundModality.text => 'Send a message to start chatting.',
-  };
-
-  /// The glyph for the empty state — the modality's own mark, matching the one
-  /// the picker puts beside that model in its menu.
-  IconData _emptyIcon(PlaygroundModality modality) => switch (modality) {
-    PlaygroundModality.image => Icons.image_outlined,
-    PlaygroundModality.video => Icons.movie_outlined,
-    PlaygroundModality.text => Icons.chat_bubble_outline,
   };
 
   String _inputHint(PlaygroundModality modality) => switch (modality) {

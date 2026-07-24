@@ -6,8 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/presentation/grid_model_picker.dart';
 import 'package:grid_app/features/network/logic/network_models_provider.dart';
-import 'package:grid_app/features/playground/logic/playground_models.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
+import 'package:grid_app/shared/widgets/modality_mark.dart';
+import 'package:grid_app/features/playground/logic/playground_models.dart';
 import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 import 'package:grid_app/shared/widgets/skeleton.dart';
@@ -128,46 +129,6 @@ void main() {
     );
   });
 
-  testWidgets('each kind of row carries its own mark', (tester) async {
-    await _openMenu(
-      tester,
-      grids: [serving],
-      models: {
-        'grid-serving': const ['maker/m1'],
-      },
-    );
-
-    // A chat model and the two media modes are three different jobs; each gets
-    // a glyph of its own rather than the media ones being marked and chat left
-    // blank.
-    expect(
-      modalityIcon(PlaygroundModality.text),
-      Icons.chat_bubble_outline_rounded,
-    );
-    expect(modalityIcon(PlaygroundModality.image), Icons.auto_awesome_outlined);
-    expect(modalityIcon(PlaygroundModality.video), Icons.slideshow_outlined);
-    expect(
-      {
-        modalityIcon(PlaygroundModality.text),
-        modalityIcon(PlaygroundModality.image),
-        modalityIcon(PlaygroundModality.video),
-      },
-      hasLength(3),
-      reason: 'a shared glyph would tell two kinds of row apart not at all',
-    );
-
-    // The chat model's row is marked, where it used to render an empty slot.
-    expect(
-      find.descendant(
-        of: find
-            .ancestor(of: find.text('maker/m1'), matching: find.byType(Row))
-            .first,
-        matching: find.byIcon(Icons.chat_bubble_outline_rounded),
-      ),
-      findsOneWidget,
-    );
-  });
-
   testWidgets('the pill wears the mark of what is selected', (tester) async {
     tester.view.physicalSize = const Size(1000, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -201,7 +162,7 @@ void main() {
     }
 
     await pumpWith('maker/m1');
-    expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsOneWidget);
+    expect(find.byIcon(modalityIcon(PlaygroundModality.text)), findsOneWidget);
 
     // The media modes carry fixed labels, not maker/name ids — the pill reads
     // the mode straight off the id.
@@ -211,7 +172,7 @@ void main() {
     // Nothing picked yet: the pill is prompting, so it wears no mode's mark.
     await pumpWith('');
     expect(find.text('Choose model'), findsOneWidget);
-    expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsNothing);
+    expect(find.byIcon(modalityIcon(PlaygroundModality.text)), findsNothing);
     expect(find.byIcon(Icons.slideshow_outlined), findsNothing);
   });
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/modality_mark.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/playground_models.dart';
@@ -371,7 +372,7 @@ class _OptionRow extends StatelessWidget {
                 SizedBox(
                   width: _rowIconSlot,
                   child: Icon(
-                    modalityIcon(option.modality),
+                    modelIcon(option),
                     size: AppControl.iconSize,
                     color: selected
                         ? AppPalette.accentMuted
@@ -416,34 +417,6 @@ class _OptionRow extends StatelessWidget {
     );
   }
 }
-
-/// What a row *does*, not what it is: a chat model answers in words, the image
-/// mode draws, the video mode takes a picture and moves it. The media entries
-/// aren't models at all — they're modes the grid's nodes offer — so the glyph is
-/// what tells them apart from the model ids beside them.
-///
-/// Shared by the menu rows and the composer's pill, so the mark you pick by is
-/// the mark you're left looking at.
-IconData modalityIcon(PlaygroundModality modality) => switch (modality) {
-  // A speech bubble, not a robot: every row here is served by a model, so "this
-  // is an AI" was the one thing the mark didn't need to say. What sets this row
-  // apart is that it answers you in text.
-  PlaygroundModality.text => Icons.chat_bubble_outline_rounded,
-  PlaygroundModality.image => Icons.auto_awesome_outlined,
-  // Not a film reel — the mode's whole point is that it starts from an image you
-  // attach. The play-on-a-frame says "your picture, moving".
-  PlaygroundModality.video => Icons.slideshow_outlined,
-};
-
-/// Chat is the ordinary case and stays in the quiet ink; the media modes are the
-/// exceptions and carry a tint, so the eye finds them without the row having to
-/// shout. Same reasoning as the approval menu's per-mode hues — colour marks
-/// what differs, not everything.
-Color modalityTone(PlaygroundModality modality) => switch (modality) {
-  PlaygroundModality.text => AppPalette.textFaint,
-  PlaygroundModality.image => AppPalette.teal,
-  PlaygroundModality.video => AppPalette.brandBolt,
-};
 
 /// The menu's shape while the grid is still answering.
 ///
