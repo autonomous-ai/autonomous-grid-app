@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../infrastructure/state/onboarding_store.dart';
+import '../../../shared/layouts/onboarding_page.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/onboarding_choice_controller.dart';
+import 'widgets/api_key_disclosure.dart';
 import 'widgets/choice_options.dart';
 
 /// First-run choice: the user's grid has no model to chat with yet, so ask how
@@ -51,67 +53,38 @@ class OnboardingChoiceScreen extends ConsumerWidget {
     });
 
     final network = ref.watch(selectedNetworkProvider);
-    final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: AppPalette.windowBg,
-      // Scrollable: the window can be resized small and the cloud form is tall —
-      // the options must never be clipped.
-      body: SingleChildScrollView(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Connect an AI model',
-                    style: theme.textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 6),
-                  // Says the decision is reversible up front, which is what lets
-                  // the rest of the screen stay this short.
-                  Text(
-                    'Choose where your AI runs. You can change this later.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // One row per way in, quickest first. Each hides itself when
-                  // this computer or the installed CLI can't offer it — and
-                  // carries its own gap, so a hidden option leaves no hole.
-                  if (network != null) SubscriptionOption(network: network),
-                  if (ref.watch(supportsBuiltInEngineProvider))
-                    const LocalOption(),
-                  if (network != null) ...[
-                    const CloudStartError(),
-                    ApiKeyDisclosure(network: network),
-                  ],
-                  const SizedBox(height: 4),
-                  Center(
-                    child: TextButton(
-                      onPressed: () => ref
-                          .read(onboardingChoiceControllerProvider.notifier)
-                          .chooseLater(),
-                      // Quiet, not accent — it's the way out, not one of the
-                      // answers. Not `textFaint` though: that reads at 3.3:1 on
-                      // this white page, and a control has to clear 4.5 (§11).
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppPalette.textSecondary,
-                      ),
-                      child: const Text('I’ll set this up later'),
-                    ),
-                  ),
-                ],
-              ),
+    return OnboardingPage(
+      title: 'Connect an AI model',
+      // Says the decision is reversible up front, which is what lets the rest of
+      // the screen stay this short.
+      subtitle: 'Choose where your AI runs. You can change this later.',
+      children: [
+        // One row per way in, quickest first. Each hides itself when this
+        // computer or the installed CLI can't offer it — and carries its own
+        // gap, so a hidden option leaves no hole.
+        if (network != null) SubscriptionOption(network: network),
+        if (ref.watch(supportsBuiltInEngineProvider)) const LocalOption(),
+        if (network != null) ...[
+          const CloudStartError(),
+          ApiKeyDisclosure(network: network),
+        ],
+        const SizedBox(height: 4),
+        Center(
+          child: TextButton(
+            onPressed: () => ref
+                .read(onboardingChoiceControllerProvider.notifier)
+                .chooseLater(),
+            // Quiet, not accent — it's the way out, not one of the answers. Not
+            // `textFaint` though: that reads at 3.3:1 on this white page, and a
+            // control has to clear 4.5 (§11).
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.textSecondary,
             ),
+            child: const Text('I’ll set this up later'),
           ),
         ),
-      ),
+      ],
     );
   }
 }
