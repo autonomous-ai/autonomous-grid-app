@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/cli/hermes_acp_service.dart';
+import '../../../infrastructure/cli/hermes_acp_setup.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
@@ -19,13 +20,22 @@ import 'hermes_tool.dart';
 import 'agent_providers.dart';
 
 /// The hermes ACP seam, or null when hermes is absent.
+///
+/// Wrapped in [RepairingHermesAcpService] so a Hermes installed without its ACP
+/// support finishes installing itself on the first turn that needs it, rather
+/// than failing every turn until the user reinstalls — which reinstalled it just
+/// as broken (see [friendlyAgentStartupError]).
 final hermesAcpServiceProvider = Provider<HermesAcpService?>((ref) {
   final path = ref.watch(hermesPathProvider);
+  if (path == null) return null;
   // The real logger, not the default no-op: permission decisions are exactly
   // what a user's bug report has to be able to show us.
-  return path == null
-      ? null
-      : HermesAcpServiceImpl(path, log: ref.watch(appLogProvider));
+  final log = ref.watch(appLogProvider);
+  final service = HermesAcpServiceImpl(path, log: log);
+  final setup = ref.watch(hermesAcpSetupProvider);
+  return setup == null
+      ? service
+      : RepairingHermesAcpService(service, setup, log: log);
 });
 
 /// The chat's default [ChatSender], backed by Hermes over ACP (Agent Client

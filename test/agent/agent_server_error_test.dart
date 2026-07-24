@@ -75,8 +75,8 @@ void main() {
   });
 
   group('a startup failure reads for a non-technical user', () {
-    test('the ACP-dependencies case never shows pip or acp, and offers the '
-        'button without promising it works', () {
+    test('the ACP-dependencies case never shows pip or acp, and reports the '
+        'repair the app already attempted', () {
       final message = friendlyAgentStartupError(
         "Hermes exited during startup: ACP dependencies not installed. Install "
         "them with: pip install -e '.[acp]'",
@@ -86,12 +86,13 @@ void main() {
       expect(message.toLowerCase(), isNot(contains('pip')));
       expect(message.toLowerCase(), isNot(contains('acp')));
       expect(message.toLowerCase(), isNot(contains('dependenc')));
-      // It names where to try — but this state is usually a fresh install that
-      // simply arrived without the piece the chat needs, so Update runs the same
-      // command and lands in the same place. Telling the user to reinstall "then
-      // try again" is a loop with no end, so the copy must not claim it fixes it.
+      // The app finishes the install itself, so by the time this line is shown
+      // that has been tried and failed: it says so, names the thing the user can
+      // actually change (their connection), and points at Update — without
+      // claiming Update will work.
+      expect(message, contains(kAgentSetupUnfinished));
+      expect(message.toLowerCase(), contains('connection'));
       expect(message.toLowerCase(), contains('agents'));
-      expect(message.toLowerCase(), contains("if that doesn't help"));
     });
 
     test('a Python import failure is the same missing-setup class', () {
@@ -99,7 +100,7 @@ void main() {
         "Hermes exited during startup: ModuleNotFoundError: No module named "
         "'acp'",
       );
-      expect(message.toLowerCase(), contains('setup is missing'));
+      expect(message, contains(kAgentSetupUnfinished));
       expect(message, isNot(contains('ModuleNotFoundError')));
     });
 
