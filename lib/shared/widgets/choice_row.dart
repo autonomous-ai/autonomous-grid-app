@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../../features/provider_node/presentation/engine_block.dart';
 import 'app_spinner.dart';
+import 'meta_label.dart';
 
 /// What pressing a [ChoiceRow] does, so the mark on its right can tell the
 /// truth about it.
@@ -123,7 +124,7 @@ class ChoiceRow extends StatelessWidget {
                 ),
                 if (badge != null) ...[
                   const SizedBox(width: 10),
-                  _Badge(label: badge!),
+                  MetaLabel(badge!),
                 ],
                 const SizedBox(width: 10),
                 if (busy)
@@ -140,31 +141,6 @@ class ChoiceRow extends StatelessWidget {
         ),
         ?child,
       ],
-    );
-  }
-}
-
-/// The row's one-glance reason: small, quiet, upper-case — read as a property of
-/// the option, not as something to press. Deliberately no fill or border; a chip
-/// beside a chevron reads as a second target on a row that only has one.
-class _Badge extends StatelessWidget {
-  const _Badge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label.toUpperCase(),
-      style: TextStyle(
-        fontSize: 10.5,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.7,
-        // Secondary, not faint: at this size the faint grey lands near 3.3:1 on
-        // white, and the caps/size/tracking already carry "this is a label"
-        // without borrowing contrast to do it (§11).
-        color: AppPalette.textSecondary,
-      ),
     );
   }
 }

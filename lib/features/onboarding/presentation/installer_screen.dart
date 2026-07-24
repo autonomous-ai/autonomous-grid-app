@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/layouts/onboarding_page.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../logic/installer_controller.dart';
+import '../logic/installer_copy.dart';
 import '../logic/installer_rows.dart';
 import '../logic/installer_stage.dart';
-import 'widgets/installer_header.dart';
 import 'widgets/installer_step_row.dart';
 
 /// First-run setup, as a screen the user watches rather than a chore hidden in
@@ -44,37 +46,22 @@ class _InstallerScreenState extends ConsumerState<InstallerScreen> {
     final state = ref.watch(installerControllerProvider);
     final done = rows.where((r) => r.status == InstallStatus.done).length;
 
-    return Scaffold(
-      backgroundColor: AppPalette.windowBg,
-      // Scrollable: the window can be resized small, and the log can be opened —
-      // the checklist must never be clipped or overflow.
-      body: SingleChildScrollView(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  InstallerHeader(done: done, total: rows.length, state: state),
-                  const SizedBox(height: 24),
-                  for (final row in rows) InstallerStepRow(row: row),
-                  const SizedBox(height: 8),
-                  _Details(
-                    expanded: _showDetails,
-                    onToggle: () =>
-                        setState(() => _showDetails = !_showDetails),
-                  ),
-                  const SizedBox(height: 20),
-                  _Actions(state: state),
-                ],
-              ),
-            ),
-          ),
+    return OnboardingPage(
+      title: installerHeadline(state),
+      subtitle: installerSubtitle(state),
+      meta: '$done of ${rows.length} steps',
+      children: [
+        AppProgressBar(value: rows.isEmpty ? 0 : done / rows.length),
+        const SizedBox(height: 20),
+        for (final row in rows) InstallerStepRow(row: row),
+        const SizedBox(height: 8),
+        _Details(
+          expanded: _showDetails,
+          onToggle: () => setState(() => _showDetails = !_showDetails),
         ),
-      ),
+        const SizedBox(height: 20),
+        _Actions(state: state),
+      ],
     );
   }
 }
@@ -99,6 +86,11 @@ class _Details extends ConsumerWidget {
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
             onPressed: onToggle,
+            // Quiet, not accent: the CLI log is the last thing on this screen
+            // that should pull a first-time user's eye.
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.textSecondary,
+            ),
             icon: Icon(
               expanded ? Icons.expand_more : Icons.chevron_right,
               size: 18,
@@ -122,12 +114,17 @@ class _Actions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.read(installerControllerProvider.notifier);
+    // Every way *out* of this screen is quiet; only the way forward is a button.
+    final quiet = TextButton.styleFrom(
+      foregroundColor: AppPalette.textSecondary,
+    );
 
     return switch (state) {
       InstallerRunning() => Align(
         alignment: Alignment.centerRight,
         child: TextButton(
           onPressed: controller.cancel,
+          style: quiet,
           child: const Text('Cancel'),
         ),
       ),
@@ -140,6 +137,7 @@ class _Actions extends ConsumerWidget {
         children: [
           TextButton(
             onPressed: controller.skip,
+            style: quiet,
             child: const Text('Continue without this computer'),
           ),
           FilledButton(
@@ -153,7 +151,11 @@ class _Actions extends ConsumerWidget {
         spacing: 8,
         runSpacing: 8,
         children: [
-          TextButton(onPressed: controller.skip, child: const Text('Skip')),
+          TextButton(
+            onPressed: controller.skip,
+            style: quiet,
+            child: const Text('Skip'),
+          ),
           FilledButton(
             onPressed: controller.run,
             child: const Text('Set up this computer'),
