@@ -40,11 +40,18 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
 
   /// Open on hover, but only once the pointer has settled — a pointer crossing
   /// the bar on its way elsewhere shouldn't flash a panel open behind it.
+  ///
+  /// Opening the panel puts the fast-moving figures (VRAM, requests in flight)
+  /// on screen, so it's also when the overview earns the quicker poll — hence
+  /// [GridOverviewRefresher.setActive]. The refresher no-ops the call when
+  /// nothing is watching, so the empty-pill case (which mounts the refresher but
+  /// draws no panel) is safe.
   void _onEnter() {
     _hovering = true;
     Future<void>.delayed(const Duration(milliseconds: 180), () {
       if (!mounted || !_hovering) return;
       _controller.show();
+      ref.read(gridOverviewRefresherProvider).setActive(true);
     });
   }
 
@@ -55,6 +62,7 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     Future<void>.delayed(const Duration(milliseconds: 120), () {
       if (!mounted || _hovering) return;
       _controller.hide();
+      ref.read(gridOverviewRefresherProvider).setActive(false);
     });
   }
 
