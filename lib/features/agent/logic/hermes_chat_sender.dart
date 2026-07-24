@@ -127,12 +127,13 @@ class HermesChatSender implements ChatSender {
       text = resolved.text;
     } on HermesAcpException catch (e) {
       // Only suggest retrying when retrying could work. A machine missing a
-      // dependency fails identically every time, so it gets Hermes's own reason
-      // instead — that names the thing to fix.
+      // dependency fails identically every time, so it gets a plain, actionable
+      // line instead — Hermes's raw stderr ("pip install …") means nothing to a
+      // non-technical user, and the raw reason is already in the log.
       yield ChatSendFailure(
         e.retryable
-            ? "Couldn't start the agent on this computer. Try sending again."
-            : "Couldn't start the agent on this computer. ${e.message}",
+            ? "Couldn't start the assistant on this computer. Try sending again."
+            : friendlyAgentStartupError(e.message),
       );
       return;
     }
