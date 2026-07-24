@@ -9,7 +9,6 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'chat_message.dart';
 import 'chat_transport.dart';
-import 'context_usage.dart';
 import 'media_outputs.dart';
 import 'media_transport.dart';
 import 'message_media.dart';
@@ -49,18 +48,6 @@ class ChatSendStreaming extends ChatSendUpdate {
 class ChatSendAgentSession extends ChatSendUpdate {
   const ChatSendAgentSession(this.sessionId);
   final String sessionId;
-}
-
-/// What the conversation now occupies in the model's context window, reported
-/// by whoever answered — the relay's `usage` block, Codex's turn summary,
-/// Hermes's ACP usage update. Always emitted *before* the terminal
-/// [ChatSendSuccess], so a caller can fold it into the same commit as the reply.
-///
-/// Optional by nature: an engine that reports no usage simply never sends this,
-/// and the Chat tab falls back to counting the transcript itself.
-class ChatSendUsage extends ChatSendUpdate {
-  const ChatSendUsage(this.usage);
-  final ContextUsage usage;
 }
 
 /// The request finished; [reply] is the assistant turn to append (text for
@@ -236,7 +223,7 @@ class DefaultChatSender implements ChatSender {
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(CliCallKind.http, 'POST $endpoint');
 
-    final (reply, usage, error) = await _ref
+    final (reply, error) = await _ref
         .read(chatTransportProvider)
         .complete(
           endpoint: endpoint,
@@ -250,7 +237,6 @@ class DefaultChatSender implements ChatSender {
       yield ChatSendFailure(_friendlyChatError(error));
       return;
     }
-    if (usage != null) yield ChatSendUsage(usage);
     final answer = (reply == null || reply.isEmpty)
         ? 'The model returned no text.'
         : reply;
@@ -269,7 +255,7 @@ class DefaultChatSender implements ChatSender {
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(CliCallKind.http, 'POST $endpoint');
 
-    final (reply, usage, error) = await _ref
+    final (reply, error) = await _ref
         .read(responsesTransportProvider)
         .complete(
           endpoint: endpoint,
@@ -284,7 +270,6 @@ class DefaultChatSender implements ChatSender {
       yield ChatSendFailure(_friendlyChatError(error));
       return;
     }
-    if (usage != null) yield ChatSendUsage(usage);
     final answer = (reply == null || reply.isEmpty)
         ? 'The model returned no text.'
         : reply;

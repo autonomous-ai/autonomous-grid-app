@@ -12,7 +12,6 @@ import '../../agents/logic/agent_status.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
-import '../../playground/logic/context_usage.dart';
 import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
@@ -422,9 +421,6 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // cancel an in-flight reply instead of letting it write back later.
     final done = _done = Completer<void>();
     String? agentSessionId;
-    // Reported before the reply lands, so it rides into the same commit rather
-    // than costing the conversation a second write to disk.
-    ContextUsage? usage;
     _sub = updates.listen(
       (update) {
         // The conversation may have been deleted mid-flight — drop the update
@@ -440,15 +436,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             state = _withPhase(SendStreaming(text));
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
-          case ChatSendUsage(usage: final reported):
-            usage = reported;
           case ChatSendSuccess(:final reply):
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
               messages: [...current.messages, reply],
-              contextTokens: usage?.usedTokens,
-              contextLimit: usage?.limitTokens,
-              clearContext: usage == null,
             );
             // A planning turn's reply is a plan waiting on approval — light the
             // "approve & run" bar. Any other reply leaves it dark.

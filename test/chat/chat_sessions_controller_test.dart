@@ -13,7 +13,6 @@ import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
-import 'package:grid_app/features/playground/logic/context_usage.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
@@ -243,72 +242,6 @@ void main() {
       expect(reloaded.single.messages.last.text, 'hi back');
     },
   );
-
-  group('context usage', () {
-    test('a usage report before the reply rides into the same commit and '
-        'persists — so reopening shows how full the chat is at once', () async {
-      final h = _harness(
-        tmp,
-        updates: [
-          const ChatSendUsage(
-            ContextUsage(usedTokens: 62000, limitTokens: 258000),
-          ),
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
-          ),
-        ],
-      );
-
-      await h.container
-          .read(chatSessionsProvider.notifier)
-          .send(network: _credential(), model: 'qwen', message: 'hi');
-
-      final conv = h.container.read(chatSessionsProvider).conversations.single;
-      expect(conv.contextTokens, 62000);
-      expect(conv.contextLimit, 258000);
-
-      final reloaded = ChatStore(directory: tmp).loadAll().single;
-      expect(reloaded.contextTokens, 62000);
-      expect(reloaded.contextLimit, 258000);
-    });
-
-    test('a turn answered by something that counts no tokens drops a stale '
-        'count, so the ring is never left describing a shorter chat', () async {
-      // First turn reports usage; the second answers without any.
-      final store = ChatStore(directory: tmp);
-      final seeded = Conversation(
-        id: 'c1',
-        title: 'A chat',
-        model: 'qwen',
-        createdAt: DateTime(2026, 7, 1),
-        updatedAt: DateTime(2026, 7, 1),
-        messages: const [ChatMessage(role: ChatRole.user, text: 'earlier')],
-        contextTokens: 40000,
-        contextLimit: 258000,
-      );
-      store.save(seeded);
-
-      final h = _harness(
-        tmp,
-        updates: const [
-          ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
-          ),
-        ],
-      );
-      final notifier = h.container.read(chatSessionsProvider.notifier);
-      notifier.select('c1');
-      await notifier.send(
-        network: _credential(),
-        model: 'qwen',
-        message: 'again',
-      );
-
-      final conv = h.container.read(chatSessionsProvider).active!;
-      expect(conv.contextTokens, isNull);
-      expect(conv.contextLimit, isNull);
-    });
-  });
 
   group('stop', () {
     test('keeps what the assistant had already said — the user stopped because '

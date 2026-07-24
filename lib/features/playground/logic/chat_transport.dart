@@ -5,13 +5,11 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'chat_reply.dart';
-import 'context_usage.dart';
 
-/// What one completion came back with: the assistant's text, what the turn cost
-/// (null when the engine reported no `usage`), and the failure — exactly one of
-/// text/error is meaningful. A record rather than a class: it's a multi-return,
-/// not a thing with behaviour.
-typedef ChatCompletion = (String?, ContextUsage?, ChatTransportError?);
+/// What one completion came back with: the assistant's text and the failure —
+/// exactly one of the two is meaningful. A record rather than a class: it's a
+/// multi-return, not a thing with behaviour.
+typedef ChatCompletion = (String?, ChatTransportError?);
 
 /// A failed chat request. [statusCode] is the HTTP status when the server
 /// answered (null for transport failures — timeout, unreachable host); [message]
@@ -72,26 +70,22 @@ class HttpChatTransport implements ChatTransport {
       if (response.statusCode != 200) {
         return (
           null,
-          null,
           ChatTransportError(briefError(body), statusCode: response.statusCode),
         );
       }
-      final decoded = jsonDecode(body);
-      return (extractAssistantText(decoded), extractUsage(decoded), null);
+      return (extractAssistantText(jsonDecode(body)), null);
     } on TimeoutException {
       return (
-        null,
         null,
         const ChatTransportError("The model didn't respond in time."),
       );
     } on SocketException catch (e) {
       return (
         null,
-        null,
         ChatTransportError("Couldn't reach the model: ${e.message}"),
       );
     } on Object catch (e) {
-      return (null, null, ChatTransportError("Couldn't reach the model: $e"));
+      return (null, ChatTransportError("Couldn't reach the model: $e"));
     } finally {
       client.close(force: true);
     }

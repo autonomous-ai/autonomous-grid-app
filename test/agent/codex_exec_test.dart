@@ -113,31 +113,9 @@ void main() {
       expect(event, isNull);
     });
 
-    test('a finished turn reports what the thread now occupies, counting the '
-        'cached prefix once', () {
-      final event = parseCodexEvent({
-        'type': 'turn.completed',
-        'usage': {
-          'input_tokens': 12000,
-          'cached_input_tokens': 9000,
-          'output_tokens': 340,
-        },
-      }, {});
-      expect(event, isA<CodexUsageEvent>());
-      expect((event as CodexUsageEvent).usedTokens, 12340);
-    });
-
-    test('a turn that says nothing about tokens leaves the estimate in '
-        'charge', () {
-      expect(parseCodexEvent({'type': 'turn.completed'}, {}), isNull);
-      expect(
-        parseCodexEvent({'type': 'turn.completed', 'usage': {}}, {}),
-        isNull,
-      );
-    });
-
     test('turn lifecycle chatter and unknown items surface nothing', () {
       expect(parseCodexEvent({'type': 'turn.started'}, {}), isNull);
+      expect(parseCodexEvent({'type': 'turn.completed'}, {}), isNull);
       expect(
         parseCodexEvent({
           'type': 'item.completed',

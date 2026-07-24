@@ -5,9 +5,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'chat_message.dart';
-import 'chat_reply.dart';
 import 'chat_transport.dart';
-import 'context_usage.dart';
 import 'message_media.dart';
 
 /// Sends an OpenAI **Responses API** request (`POST {relayBaseUrl}/responses`).
@@ -84,47 +82,38 @@ class HttpResponsesTransport implements ResponsesTransport {
         final body = await response.transform(utf8.decoder).join();
         return (
           null,
-          null,
           ChatTransportError(
             HttpChatTransport.briefError(body),
             statusCode: response.statusCode,
           ),
         );
       }
-      final (text, usage) = await _readStream(response);
-      return (text, usage, null);
+      return (await _readStream(response), null);
     } on TimeoutException {
       return (
-        null,
         null,
         const ChatTransportError("The model didn't respond in time."),
       );
     } on SocketException catch (e) {
       return (
         null,
-        null,
         ChatTransportError("Couldn't reach the model: ${e.message}"),
       );
     } on Object catch (e) {
-      return (null, null, ChatTransportError("Couldn't reach the model: $e"));
+      return (null, ChatTransportError("Couldn't reach the model: $e"));
     } finally {
       client.close(force: true);
     }
   }
 
-  /// Drains the Responses SSE body into the assistant's text and what the turn
-  /// cost. Accumulates every `response.output_text.delta`; if none arrived (a
-  /// non-streaming JSON body, or a terminal-only stream) it falls back to the
-  /// final `response` object's `output[]`. That same terminal object carries the
-  /// `usage` block — the only place in the stream it appears. Unparseable
-  /// `data:` lines are skipped — a heartbeat or an event shape we don't read
-  /// must not abort a live answer.
-  static Future<(String, ContextUsage?)> _readStream(
-    HttpClientResponse response,
-  ) async {
+  /// Drains the Responses SSE body into the assistant's text. Accumulates every
+  /// `response.output_text.delta`; if none arrived (a non-streaming JSON body,
+  /// or a terminal-only stream) it falls back to the final `response` object's
+  /// `output[]`. Unparseable `data:` lines are skipped — a heartbeat or an event
+  /// shape we don't read must not abort a live answer.
+  static Future<String> _readStream(HttpClientResponse response) async {
     final deltas = StringBuffer();
     String? terminalText;
-    ContextUsage? usage;
 
     await for (final line
         in response.transform(utf8.decoder).transform(const LineSplitter())) {
@@ -147,12 +136,10 @@ class HttpResponsesTransport implements ResponsesTransport {
         case 'response.completed':
         case 'response.incomplete':
           terminalText ??= extractResponsesText(decoded['response']);
-          usage ??= extractUsage(decoded['response']);
       }
     }
 
-    final text = deltas.isNotEmpty ? deltas.toString() : (terminalText ?? '');
-    return (text, usage);
+    return deltas.isNotEmpty ? deltas.toString() : (terminalText ?? '');
   }
 
   /// The assistant text inside a Responses `response` object: every

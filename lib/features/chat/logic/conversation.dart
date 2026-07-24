@@ -17,8 +17,6 @@ class Conversation {
     this.projectId,
     this.titleLocked = false,
     this.archivedAt,
-    this.contextTokens,
-    this.contextLimit,
   });
 
   final String id;
@@ -57,20 +55,6 @@ class Conversation {
   /// and is independent of [updatedAt] (when it was last talked in).
   final DateTime? archivedAt;
 
-  /// Tokens this conversation occupied in the model's context window as of its
-  /// last turn, as the model itself reported them — null for a chat that has
-  /// never been answered by something that counts (see [ContextUsage]).
-  ///
-  /// Persisted so reopening a chat shows how full it is straight away, instead
-  /// of leaving the composer blank until the user has sent one more message
-  /// into a window they can't see the bottom of.
-  final int? contextTokens;
-
-  /// The window [contextTokens] was measured against, when whoever answered
-  /// said how big it was. Null leaves the ring to fall back on what the grid
-  /// advertises for the model.
-  final int? contextLimit;
-
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -78,12 +62,6 @@ class Conversation {
   /// means setting it *back to null*, which that idiom can't express (it would
   /// read the null as "leave it alone" and the chat could never come back).
   /// Passing [clearArchivedAt] is how a caller says null on purpose.
-  ///
-  /// [clearContext] does the same for the two context figures, and for the same
-  /// kind of reason: a turn answered by something that counts no tokens leaves
-  /// the stored count describing an older, shorter conversation. Keeping it
-  /// would under-report a window that is in fact fuller — so the caller drops
-  /// it and the ring falls back to counting the transcript.
   Conversation copyWith({
     String? title,
     String? model,
@@ -92,9 +70,6 @@ class Conversation {
     bool? titleLocked,
     DateTime? archivedAt,
     bool clearArchivedAt = false,
-    int? contextTokens,
-    int? contextLimit,
-    bool clearContext = false,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -105,8 +80,6 @@ class Conversation {
     projectId: projectId,
     titleLocked: titleLocked ?? this.titleLocked,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
-    contextTokens: clearContext ? null : (contextTokens ?? this.contextTokens),
-    contextLimit: clearContext ? null : (contextLimit ?? this.contextLimit),
   );
 
   Map<String, dynamic> toJson() => {
@@ -120,10 +93,6 @@ class Conversation {
     // Written only when set, so a live chat's file is byte-identical to what
     // every build before archiving existed wrote.
     if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
-    // Written only once something reported them, for the same reason: a chat
-    // nobody counted stays byte-identical to what earlier builds wrote.
-    if (contextTokens != null) 'contextTokens': contextTokens,
-    if (contextLimit != null) 'contextLimit': contextLimit,
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -156,8 +125,6 @@ class Conversation {
       // means live — the safe reading, since it keeps the chat visible rather
       // than hiding it in a screen the user hasn't learned about yet.
       archivedAt: _parseNullableDate(json['archivedAt']),
-      contextTokens: _parseTokens(json['contextTokens']),
-      contextLimit: _parseTokens(json['contextLimit']),
       messages: [
         if (rawMessages is List)
           for (final m in rawMessages)
@@ -271,14 +238,6 @@ MediaKind _parseKind(Object? raw) {
     if (kind.name == raw) return kind;
   }
   return MediaKind.image;
-}
-
-/// A stored token count, or null when it's absent or nonsense. Zero counts as
-/// "nobody said": a window nothing has been sent into isn't worth a ring.
-int? _parseTokens(Object? raw) {
-  if (raw is! num) return null;
-  final value = raw.toInt();
-  return value > 0 ? value : null;
 }
 
 DateTime _parseDate(Object? raw) =>

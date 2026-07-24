@@ -30,7 +30,6 @@ class ComposerSection extends StatelessWidget {
     this.errorAction,
     required this.approvalPicker,
     required this.modelPicker,
-    this.contextMeter,
     required this.onAddAttachment,
     required this.onPickImage,
     required this.onRemoveAttachment,
@@ -57,11 +56,6 @@ class ComposerSection extends StatelessWidget {
   /// turn nothing can (a picture is made by the grid, which has no filesystem).
   final Widget? approvalPicker;
   final Widget modelPicker;
-
-  /// How full the model's memory is for this conversation, shown beside the
-  /// model that fills it. Null in a transcript that keeps no history to fill it
-  /// with (the Playground's one-off smoke test).
-  final Widget? contextMeter;
   final ValueChanged<MediaAttachment> onAddAttachment;
   final VoidCallback onPickImage;
   final ValueChanged<int> onRemoveAttachment;
@@ -154,7 +148,6 @@ class ComposerSection extends StatelessWidget {
                 canSend: canSend,
                 approvalPicker: approvalPicker,
                 modelPicker: modelPicker,
-                contextMeter: contextMeter,
                 onPickImage: onPickImage,
                 onOpenPrompts: onOpenPrompts,
                 promptsSaveInput: promptsSaveInput,

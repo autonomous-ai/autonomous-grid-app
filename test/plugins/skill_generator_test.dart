@@ -26,7 +26,7 @@ class _FakeTransport implements ChatTransport {
     this.endpoint = endpoint;
     this.apiKey = apiKey;
     this.model = model;
-    return (reply, null, error);
+    return (reply, error);
   }
 }
 

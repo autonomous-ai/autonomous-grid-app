@@ -37,7 +37,6 @@ import 'chat_composer.dart';
 import 'chat_header.dart';
 import 'chat_minimap.dart';
 import 'chat_starters.dart';
-import 'context_meter.dart';
 import 'grid_model_picker.dart';
 import 'plan_approve_bar.dart';
 
@@ -504,7 +503,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             currentModelId: _model.text,
                             onSelect: _pickGridModel,
                           ),
-                          contextMeter: const ContextMeter(),
                           onAddAttachment: (a) =>
                               setState(() => _attachments.add(a)),
                           onPickImage: _pickImage,

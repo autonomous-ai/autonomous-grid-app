@@ -73,11 +73,8 @@ class ChatController extends Notifier<ChatState> {
           case ChatSendStreaming(:final text):
             state = ChatState(messages: history, phase: SendStreaming(text));
           // The Playground's transcript is throwaway and has no name, so the
-          // agent's session id is of no use to it. Neither is how full the
-          // context window is: a smoke test is one exchange, and the tab that
-          // runs long conversations (Chat) is where the ring lives.
+          // agent's session id is of no use to it.
           case ChatSendAgentSession():
-          case ChatSendUsage():
             break;
           case ChatSendSuccess(:final reply):
             state = ChatState(messages: [...history, reply]);
