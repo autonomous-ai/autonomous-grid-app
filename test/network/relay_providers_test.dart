@@ -27,18 +27,38 @@ NetworkCredential _network(String id) => NetworkCredential(
   expiresAt: 0,
 );
 
+/// A relay overview payload, parsed the way the app parses a real one — so the
+/// snapshots a test compares are built exactly as production builds them.
+GridOverview _snapshot({List<String> models = const ['llama']}) =>
+    GridOverview.fromJson({
+      'grid': {'state': 'active'},
+      'stats': {'models': models.length, 'nodes': 1},
+      'models': [
+        for (final id in models) {'id': id},
+      ],
+      'nodes': [
+        {'name': 'mac', 'online': true, 'vram_gb': 16, 'models': models},
+      ],
+    });
+
 /// Canned [RelayApiClient] so the model/overview providers run offline: returns
 /// the given values, or throws the given [RelayUnavailable] for the error paths.
 class _FakeRelayApiClient implements RelayApiClient {
   _FakeRelayApiClient({
     List<String>? models,
     GridOverview? overview,
+    this.overviewBuilder,
     this.error,
   }) : _models = models ?? const [],
        _overview = overview;
 
   final List<String> _models;
   final GridOverview? _overview;
+
+  /// Builds a *fresh* overview per call — what the real relay does. Lets a test
+  /// re-poll and get an equal-but-not-identical snapshot, which is the only way
+  /// to prove the app compares them by value.
+  final GridOverview Function()? overviewBuilder;
   final RelayUnavailable? error;
 
   @override
@@ -56,7 +76,7 @@ class _FakeRelayApiClient implements RelayApiClient {
     required String apiKey,
   }) async {
     if (error != null) throw error!;
-    return _overview!;
+    return overviewBuilder?.call() ?? _overview!;
   }
 }
 
@@ -155,6 +175,35 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('a poll that brings back the same grid notifies nobody, so an '
+        'unchanged grid never rebuilds the screens reading it', () async {
+      // The relay hands back a new object every poll. Only value equality can
+      // tell "same grid" from "new object", and everything derived from the
+      // overview — the model list here — rebuilds on the difference.
+      var served = ['llama'];
+      final c = _container(
+        _FakeRelayApiClient(overviewBuilder: () => _snapshot(models: served)),
+      );
+
+      var notified = 0;
+      final sub = c.listen(gridModelsProvider, (previous, next) => notified++);
+      addTearDown(sub.close);
+      await pumpEventQueue();
+      // Ignore the first resolve; we're measuring what a *re-poll* costs.
+      notified = 0;
+
+      c.invalidate(gridOverviewForProvider('grid-foo'));
+      await pumpEventQueue();
+      expect(notified, 0);
+
+      // A grid that really did change still gets through.
+      served = ['llama', 'qwen'];
+      c.invalidate(gridOverviewForProvider('grid-foo'));
+      await pumpEventQueue();
+      expect(notified, 1);
+      expect(c.read(gridModelsProvider).map((m) => m.id), ['llama', 'qwen']);
     });
 
     test('maps a transport error to the "unreachable" message', () async {

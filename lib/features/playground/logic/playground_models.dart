@@ -91,8 +91,7 @@ final playgroundModelsProvider =
       final ids =
           ref.watch(networkModelsProvider).asData?.value ?? const <String>[];
       final nodes =
-          ref.watch(gridOverviewProvider).asData?.value.nodes ??
-          const <OverviewNode>[];
+          ref.watch(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[];
       return playgroundOptionsFrom(
         [for (final id in ids) OverviewModel(id: id)],
         [for (final node in nodes) ...node.models],

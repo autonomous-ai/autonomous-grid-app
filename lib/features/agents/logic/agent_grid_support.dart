@@ -35,10 +35,10 @@ String agentUnsupportedHere(AgentTool tool) =>
     "This grid doesn't serve a model ${tool.name} can talk to.";
 
 /// What the selected grid's overview says about the Responses API: true/false
-/// when the relay reports it, null while it loads, when it fails, or when the
-/// relay doesn't report it at all.
+/// when the relay reports it, null before the first overview lands, when it
+/// fails, or when the relay doesn't report it at all.
 final gridAdvertisesResponsesProvider = Provider.autoDispose<bool?>(
-  (ref) => ref.watch(gridOverviewProvider).asData?.value.advertisesResponses,
+  (ref) => ref.watch(gridOverviewSnapshot)?.advertisesResponses,
 );
 
 /// Whether [tool] can answer chats on the grid selected right now.
