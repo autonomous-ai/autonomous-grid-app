@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../shared/external_launch.dart';
 import 'media_chrome.dart';
 
 /// A network image referenced from a chat message — cached, capped in height,

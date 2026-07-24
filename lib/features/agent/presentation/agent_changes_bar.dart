@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/external_launch.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/composer_notice_bar.dart';
@@ -27,6 +28,16 @@ class AgentChangesBar extends ConsumerWidget {
           'The assistant changed ${changes.length} '
           '${changes.length == 1 ? 'file' : 'files'}',
       actions: [
+        // One file → offer to open it right here. That's usually the whole
+        // point (a page or a game the model just wrote), and without it a
+        // non-technical user is left with a file path in the reply and no way
+        // to act on it. With several files, "which one?" has no answer, so the
+        // per-file Open lives in Review instead.
+        if (changes.length == 1)
+          TextButton(
+            onPressed: () => openExternalUrl(changes.single.path),
+            child: const Text('Open'),
+          ),
         TextButton(
           onPressed: () => showAgentChangesDialog(context),
           child: const Text('Review'),
@@ -205,6 +216,10 @@ class _ChangeRowState extends ConsumerState<_ChangeRow> {
               ),
               if (change.isNew) const _NewTag(),
               const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => openExternalUrl(change.path),
+                child: const Text('Open'),
+              ),
               TextButton(
                 onPressed: _busy ? null : _undo,
                 child: Text(_busy ? 'Undoing…' : 'Undo'),
