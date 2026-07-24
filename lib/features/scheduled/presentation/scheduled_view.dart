@@ -7,6 +7,7 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../agent/logic/hermes_tool.dart';
+import '../logic/cron_output.dart';
 import '../logic/job_schedule.dart';
 import '../logic/scheduled_job.dart';
 import '../logic/scheduled_jobs_controller.dart';
@@ -189,7 +190,9 @@ class _ActivityCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final lines = run.text.split('\n');
+    // The answer, not the job-id/schedule header (see [cronOutputBody]). A
+    // teaser this small stays plain text — the rendered version is in the panel.
+    final lines = cronOutputBody(run.text).split('\n');
     final preview = lines.take(previewLines).join('\n').trim();
     final radius = BorderRadius.circular(14);
 

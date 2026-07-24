@@ -78,7 +78,11 @@ class _LatestResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final lines = run.text.split('\n');
+    // The answer, not the metadata Hermes wraps it in, rendered as the markdown
+    // it is — so a digest reads as a digest, not `**Job ID:**` and a raw cron
+    // line (see [cronOutputBody]).
+    final body = cronOutputBody(run.text);
+    final lines = body.split('\n');
     final preview = lines.take(_previewLines).join('\n');
     final more = lines.length - _previewLines;
 
@@ -94,10 +98,7 @@ class _LatestResult extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            preview,
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-          ),
+          MessageContent(text: preview, color: AppPalette.textPrimary),
           if (more > 0) ...[
             const SizedBox(height: 8),
             Text(

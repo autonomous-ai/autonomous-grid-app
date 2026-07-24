@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/hermes_cron_service.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import 'cron_output.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'scheduled_jobs_controller.dart';
@@ -19,9 +20,10 @@ String taskConversationId(String jobId) => 'task-$jobId';
 ///
 /// The stamp isn't decoration — three mornings of the same digest are otherwise
 /// indistinguishable, and a result from a run the user missed would look like it
-/// just arrived.
+/// just arrived. The answer only ([cronOutputBody]), not the job-id/schedule
+/// metadata Hermes wraps it in — the stamp above already carries the timing.
 String taskResultMessage(CronOutput run) =>
-    '*Ran ${jobTimeLabel(run.at)}*\n\n${run.text}';
+    '*Ran ${jobTimeLabel(run.at)}*\n\n${cronOutputBody(run.text)}';
 
 /// How often the app looks for runs that have finished.
 ///

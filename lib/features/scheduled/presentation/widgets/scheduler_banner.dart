@@ -55,8 +55,7 @@ class _SchedulerBannerState extends ConsumerState<SchedulerBanner> {
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
-              'Scheduled tasks are saved, but nothing is running them on this '
-              'computer yet.',
+              'Your tasks are saved, but they won\'t run until you turn this on.',
               style: TextStyle(fontSize: 13),
             ),
           ),
