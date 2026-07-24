@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/playground/logic/chat_controller.dart';
+import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/chat_transport.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
@@ -41,15 +42,40 @@ class _FakeChatTransport implements ChatTransport {
   List<Map<String, dynamic>>? messages;
 
   @override
-  Future<ChatCompletion> complete({
+  Stream<ChatStreamEvent> stream({
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
-  }) async {
+  }) async* {
     this.endpoint = endpoint;
     this.messages = messages;
-    return (reply, error);
+    if (error != null) {
+      yield ChatFailed(error!);
+      return;
+    }
+    if (reply != null && reply!.isNotEmpty) yield ChatDelta(reply!);
+    yield const ChatDone();
+  }
+}
+
+/// Streams a scripted sequence of text deltas, then a clean finish — the shape
+/// a real relay's SSE arrives in.
+class _DeltaTransport implements ChatTransport {
+  _DeltaTransport(this.deltas);
+  final List<String> deltas;
+
+  @override
+  Stream<ChatStreamEvent> stream({
+    required String endpoint,
+    required String apiKey,
+    required String model,
+    required List<Map<String, dynamic>> messages,
+  }) async* {
+    for (final delta in deltas) {
+      yield ChatDelta(delta);
+    }
+    yield const ChatDone();
   }
 }
 
@@ -136,6 +162,29 @@ void main() {
         );
       },
     );
+
+    test('the reply arrives token by token, then commits whole', () async {
+      // The relay chat streams now: a slow model fills the bubble as it goes,
+      // through SendStreaming phases, before the finished turn appends.
+      final container = _container(
+        chat: _DeltaTransport(const ['The ', 'Honda ', 'CR-V']),
+      );
+
+      final streamed = <String>[];
+      container.listen(chatControllerProvider, (_, next) {
+        if (next.phase case SendStreaming(:final text)) streamed.add(text);
+      });
+
+      await container
+          .read(chatControllerProvider.notifier)
+          .send(network: _credential(), model: 'm', message: 'hi');
+
+      // Each phase carried the whole answer so far — cumulative, not per-token.
+      expect(streamed, ['The ', 'The Honda ', 'The Honda CR-V']);
+      final state = container.read(chatControllerProvider);
+      expect(state.messages.last.text, 'The Honda CR-V');
+      expect(state.sending, isFalse);
+    });
 
     test('surfaces a transport error and keeps the user message', () async {
       final chat = _FakeChatTransport(

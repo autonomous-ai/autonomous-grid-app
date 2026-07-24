@@ -31,10 +31,12 @@ class ChatSendGenerating extends ChatSendUpdate {
   final String status;
 }
 
-/// The assistant's text as it streams in, token by token (Agent mode). [text] is
-/// the *whole* reply so far — cumulative — so the UI redraws the growing bubble
-/// by replacing, not appending. Only the agent sender emits it; the relay chat
-/// is one blocking request, so it goes straight to [ChatSendSuccess].
+/// The assistant's text as it streams in, token by token. [text] is the *whole*
+/// reply so far — cumulative — so the UI redraws the growing bubble by replacing,
+/// not appending. Emitted by every text path now: the agents over their own
+/// protocols, and the relay chat over SSE. A terminal [ChatSendSuccess] with the
+/// final text still follows, so a caller that ignores this shows the whole reply
+/// at the end.
 class ChatSendStreaming extends ChatSendUpdate {
   const ChatSendStreaming(this.text);
   final String text;
@@ -212,8 +214,10 @@ class DefaultChatSender implements ChatSender {
     }
   }
 
-  /// One-shot chat completion (relay or local). Mirrors the call into the Debug
-  /// tab and maps failures to a plain-language line.
+  /// Streaming chat completion (relay or local). Emits the reply as it arrives
+  /// so a slow model fills the bubble token by token instead of after a wait,
+  /// then a terminal success. Mirrors the call into the Debug tab and maps
+  /// failures to a plain-language line.
   Stream<ChatSendUpdate> _sendChat({
     required String endpoint,
     required NetworkCredential network,
@@ -223,24 +227,32 @@ class DefaultChatSender implements ChatSender {
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(CliCallKind.http, 'POST $endpoint');
 
-    final (reply, error) = await _ref
-        .read(chatTransportProvider)
-        .complete(
-          endpoint: endpoint,
-          apiKey: network.relayApiKey,
-          model: model,
-          messages: _messagesFor(history),
-        );
-    log.finish(id, exitCode: error?.statusCode ?? 200, error: error?.message);
-
-    if (error != null) {
-      yield ChatSendFailure(_friendlyChatError(error));
-      return;
+    final answer = StringBuffer();
+    await for (final event
+        in _ref
+            .read(chatTransportProvider)
+            .stream(
+              endpoint: endpoint,
+              apiKey: network.relayApiKey,
+              model: model,
+              messages: _messagesFor(history),
+            )) {
+      switch (event) {
+        case ChatDelta(:final text):
+          answer.write(text);
+          yield ChatSendStreaming(answer.toString());
+        case ChatFailed(:final error):
+          log.finish(id, exitCode: error.statusCode ?? 0, error: error.message);
+          yield ChatSendFailure(_friendlyChatError(error));
+          return;
+        case ChatDone():
+          break;
+      }
     }
-    final answer = (reply == null || reply.isEmpty)
-        ? 'The model returned no text.'
-        : reply;
-    yield ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: answer));
+    log.finish(id, exitCode: 200);
+
+    final text = answer.isEmpty ? 'The model returned no text.' : '$answer';
+    yield ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: text));
   }
 
   /// One-shot Responses completion (relay only). Same shape as [_sendChat] — mirror
