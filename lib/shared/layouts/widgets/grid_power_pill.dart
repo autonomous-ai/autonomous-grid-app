@@ -247,12 +247,11 @@ class _PowerPanel extends ConsumerWidget {
     AppTheme.watch(context);
     final power = ref.watch(gridPowerProvider);
     final nodes = ref.watch(gridOnlineNodesProvider);
-    final uptime = ref
-        .watch(gridOverviewProvider)
-        .asData
-        ?.value
-        .stats
-        .uptimePct;
+    // .value, not asData?.value: the panel refetches the moment it opens, and
+    // asData would read null through the round-trip — dropping the uptime line
+    // out of the header as it appears. .value holds the last figure until the
+    // fresh one lands.
+    final uptime = ref.watch(gridOverviewProvider).value?.stats.uptimePct;
 
     final vram = power.vramGb;
     final slices = vram == null

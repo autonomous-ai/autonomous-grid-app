@@ -29,9 +29,10 @@ class HostingSummary extends ConsumerWidget {
     // rule as [gridPowerProvider], and for the same reason: [gridModelsProvider]
     // below reaches the overview through the alias, so watching the family here
     // too would flush the same cache twice inside one build.
+    // And .value, not asData?.value, so a background poll doesn't blink the
+    // summary off — see [gridPowerProvider].
     final nodes =
-        ref.watch(gridOverviewProvider).asData?.value.nodes ??
-        const <OverviewNode>[];
+        ref.watch(gridOverviewProvider).value?.nodes ?? const <OverviewNode>[];
     final online = nodes.where((n) => n.online).length;
     final models = ref.watch(gridModelsProvider).length;
     if (online == 0 && models == 0) return const SizedBox.shrink();

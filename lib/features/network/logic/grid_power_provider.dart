@@ -50,6 +50,24 @@ class GridPower {
   /// "power" block to show at all, or only the node list.
   bool get hasSpecs =>
       vramGb != null || parallel != null || throughputTokS != null;
+
+  /// Value equality so a poll that changed nothing produces no pill rebuild.
+  /// [gridPowerProvider] recomputes on every overview notification — including
+  /// the background refresh that keeps the last value on screen — and without
+  /// this each identical result is a fresh instance the provider treats as a
+  /// change, rebuilding the top bar for no visible reason.
+  @override
+  bool operator ==(Object other) =>
+      other is GridPower &&
+      other.onlineNodes == onlineNodes &&
+      other.models == models &&
+      other.vramGb == vramGb &&
+      other.parallel == parallel &&
+      other.throughputTokS == throughputTokS;
+
+  @override
+  int get hashCode =>
+      Object.hash(onlineNodes, models, vramGb, parallel, throughputTokS);
 }
 
 /// GPU memory a node brings, in GB, or null when it reports none. Prefers the
@@ -129,7 +147,12 @@ final gridPowerProvider = Provider.autoDispose<GridPower>((ref) {
   if (ref.watch(selectedNetworkProvider) == null) {
     return const GridPower(onlineNodes: 0, models: 0);
   }
-  final overview = ref.watch(gridOverviewProvider).asData?.value;
+  // .value, not asData?.value: a poll (and the immediate refetch when the hover
+  // panel opens) flips the overview to loading, and asData reads null there —
+  // blanking the pill's numbers to zero for the ~200ms round-trip, the flicker
+  // the panel showed on hover. AsyncValue.value keeps the last good overview on
+  // screen through a background refresh and swaps only when the new one lands.
+  final overview = ref.watch(gridOverviewProvider).value;
   return gridPowerFrom(
     overview?.nodes ?? const <OverviewNode>[],
     ref.watch(gridModelsProvider).length,
@@ -149,9 +172,10 @@ final gridPowerProvider = Provider.autoDispose<GridPower>((ref) {
 /// mid-build flush this pair was fixed for.
 final gridOnlineNodesProvider = Provider.autoDispose<List<OverviewNode>>((ref) {
   if (ref.watch(selectedNetworkProvider) == null) return const [];
+  // .value keeps the panel's machine list on screen through a background
+  // refresh — see [gridPowerProvider].
   final nodes =
-      ref.watch(gridOverviewProvider).asData?.value.nodes ??
-      const <OverviewNode>[];
+      ref.watch(gridOverviewProvider).value?.nodes ?? const <OverviewNode>[];
   return sortNodesByPower([
     for (final n in nodes)
       if (n.online) n,
