@@ -506,7 +506,7 @@ void main() {
       final error = (updates.single as ChatSendFailure).error;
       expect(error.toLowerCase(), isNot(contains('pip')));
       expect(error.toLowerCase(), isNot(contains('acp')));
-      expect(error.toLowerCase(), contains('reinstall'));
+      expect(error.toLowerCase(), contains('agents'));
       expect(
         error,
         isNot(contains('Try sending again')),
