@@ -405,14 +405,26 @@ class NodeTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  node.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: kGridText.copyWith(
-                    fontSize: 14,
-                    fontWeight: AppFont.medium,
-                    color: AppPalette.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        node.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: kGridText.copyWith(
+                          fontSize: 14,
+                          fontWeight: AppFont.medium,
+                          color: AppPalette.textPrimary,
+                        ),
+                      ),
+                    ),
+                    // A subscription-backed node names its tier (Free / Plus /
+                    // Pro) so it reads as a seat, not an anonymous machine.
+                    if (nodePlanLabel(node) case final plan?) ...[
+                      const SizedBox(width: 8),
+                      _PlanBadge(label: plan),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -464,6 +476,35 @@ class _OnlineTag extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The subscription tier on a seat-backed node — a quiet accent pill. Like
+/// [_Pill] it's a *statement about* the node (Free / Plus / Pro plan), not
+/// something to click, so it wears a soft tint rather than a button's fill.
+class _PlanBadge extends StatelessWidget {
+  const _PlanBadge({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final color = AppPalette.accent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: kGridText.copyWith(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
     );
   }
 }

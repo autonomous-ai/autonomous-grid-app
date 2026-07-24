@@ -10,6 +10,7 @@ OverviewNode _node({
   double? vramGb,
   double? vramTotalMb,
   String? deviceClass,
+  String? planType,
 }) => OverviewNode.fromJson({
   'name': 'n',
   'engine': engine,
@@ -19,6 +20,7 @@ OverviewNode _node({
   'vram_gb': ?vramGb,
   'vram_total_mb': ?vramTotalMb,
   'device_class': ?deviceClass,
+  'plan_type': ?planType,
   'online': true,
 });
 
@@ -147,12 +149,33 @@ void main() {
     });
   });
 
+  group('nodePlanLabel', () {
+    test('capitalises the tier into a "… plan" label', () {
+      expect(nodePlanLabel(_node(planType: 'free')), 'Free plan');
+      expect(nodePlanLabel(_node(planType: 'plus')), 'Plus plan');
+      expect(nodePlanLabel(_node(planType: 'pro')), 'Pro plan');
+    });
+
+    test('null for a node that carries no plan', () {
+      expect(nodePlanLabel(_node()), isNull);
+      expect(nodePlanLabel(_node(planType: '  ')), isNull);
+    });
+  });
+
   group('nodeSpecLine', () {
     test('joins engine and device class', () {
       // The Art grid's own node: reports an engine and a GPU, but no VRAM.
       expect(
         nodeSpecLine(_node(engine: 'doggi', deviceClass: 'gpu')),
         'doggi · GPU',
+      );
+    });
+
+    test('appends the subscription tier when the node carries one', () {
+      // A codex seat node (no VRAM) reads as its tier, not an anonymous machine.
+      expect(
+        nodeSpecLine(_node(engine: 'codex', planType: 'free')),
+        'codex · Free plan',
       );
     });
 

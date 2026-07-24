@@ -21,7 +21,7 @@ void main() {
          "device": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition ×4",
          "chip": null, "memory_gb": 96, "vram_gb": 48.0, "vram_total_mb": 49152.0,
          "device_class": "server",
-         "model": "glm-5.2", "engine": "External",
+         "model": "glm-5.2", "engine": "External", "plan_type": "free",
          "throughput_tok_s": 52.8, "max_concurrency": 8, "online": true}
       ]
     }''';
@@ -47,6 +47,7 @@ void main() {
       expect(n.vramTotalMb, 49152.0);
       expect(n.engine, 'External');
       expect(n.throughputTokS, 52.8);
+      expect(n.planType, 'free');
       expect(n.online, isTrue);
     });
 
@@ -65,6 +66,7 @@ void main() {
       expect(partial.nodes.single.online, isFalse);
       expect(partial.nodes.single.device, isNull);
       expect(partial.nodes.single.throughputTokS, isNull);
+      expect(partial.nodes.single.planType, isNull);
     });
 
     test('reads the wire-dialect flags the relay advertises', () {
