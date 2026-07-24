@@ -82,24 +82,35 @@ ModelHosting hostingForEngine(String? engine) {
   return ModelHosting.unknown;
 }
 
-/// Where each model id on the grid is served from, by asking the online nodes
-/// that advertise it. A model served from two places at once (one machine, one
-/// cloud relay) reads as [ModelHosting.unknown] — the honest answer to "is this
+/// Where each model on the grid is served from, by asking the online nodes that
+/// advertise it. A model served from two places at once (one machine, one cloud
+/// relay) reads as [ModelHosting.unknown] — the honest answer to "is this
 /// private?" when it depends on which node the relay picks.
+///
+/// **Keyed by lower-cased id**, and read back the same way, because the two
+/// sources disagree on case for the same model: `/models` lists
+/// `Qwen3.6-35B-A3B` while the node advertising it says `qwen3.6-35b-a3b`. An
+/// exact-string lookup dropped exactly the models a user runs themselves — the
+/// one kind this mark exists to point out — and only those, since the hosted
+/// ids happen to be lower-case already.
 Map<String, ModelHosting> hostingByModel(Iterable<OverviewNode> nodes) {
   final byModel = <String, ModelHosting>{};
   for (final node in nodes) {
     if (!node.online) continue;
     final hosting = hostingForEngine(node.engine);
     for (final id in {node.model, ...node.models}.nonNulls) {
-      final seen = byModel[id];
-      byModel[id] = seen == null || seen == hosting
+      final key = modelKey(id);
+      final seen = byModel[key];
+      byModel[key] = seen == null || seen == hosting
           ? hosting
           : ModelHosting.unknown;
     }
   }
   return byModel;
 }
+
+/// One model id, in the form the app compares by. See [hostingByModel].
+String modelKey(String id) => id.trim().toLowerCase();
 
 /// Labels for the media modes — also the picker field value, so they must not
 /// collide with real model ids (they don't: model ids are `maker/name`).
@@ -147,9 +158,9 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
           id: model.id,
           label: model.id,
           modality: modalityFromString(model.modality),
-          hosting: model.id == kAutoModelId
+          hosting: modelKey(model.id) == kAutoModelId
               ? ModelHosting.routed
-              : hosting[model.id] ?? ModelHosting.unknown,
+              : hosting[modelKey(model.id)] ?? ModelHosting.unknown,
         ),
   ];
   final existingModalities = textOptions.map((o) => o.modality).toSet();

@@ -52,6 +52,31 @@ void main() {
       expect(byModel['laguna-s-2.1'], ModelHosting.onGrid);
     });
 
+    test('the two sources disagree on case for the same model, and the reading '
+        'survives it', () {
+      // Real payloads from one grid: /models lists `Qwen3.6-35B-A3B`, the node
+      // running it advertises `qwen3.6-35b-a3b`. Matching on the exact string
+      // dropped the models a user runs themselves — the one kind this mark
+      // exists to point out — while the hosted ids, lower-case in both, kept
+      // working.
+      final byModel = hostingByModel([
+        _node(engine: 'llama.cpp', models: ['qwen3.6-35b-a3b']),
+      ]);
+
+      final options = playgroundOptionsFrom(
+        const [OverviewModel(id: 'Qwen3.6-35B-A3B')],
+        const [],
+        hosting: byModel,
+      );
+
+      expect(options.single.hosting, ModelHosting.onGrid);
+      expect(
+        options.single.label,
+        'Qwen3.6-35B-A3B',
+        reason: "the row still shows the relay's own spelling",
+      );
+    });
+
     test('an offline node claims nothing — it is not answering anything', () {
       final byModel = hostingByModel([
         _node(engine: 'llama.cpp', online: false, models: ['qwen']),
