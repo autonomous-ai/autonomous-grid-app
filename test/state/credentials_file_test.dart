@@ -62,7 +62,7 @@ void main() {
     });
   });
 
-  group('CredentialsFile.active — owner-first default', () {
+  group('CredentialsFile.active — default landing grid', () {
     test(
       'a legacy active_network still wins over the owner/domain preference',
       () {
@@ -102,6 +102,54 @@ void main() {
         roles: const ['consumer'],
       );
       expect(_creds([consumer, domain]).active?.networkId, 'org');
+    });
+
+    test('a company login lands on the company grid, not on a public grid the '
+        'user happens to own — the app shares this computer on whatever it '
+        'lands on', () {
+      final ownedPublic = _net(
+        'e2e',
+        networkType: 'permissioned-providers',
+        roles: const ['admin'],
+      );
+      final domain = _net(
+        'org',
+        name: 'autonomous.ai',
+        networkType: 'private-domain',
+        roles: const ['consumer'],
+      );
+      expect(_creds([ownedPublic, domain]).active?.networkId, 'org');
+    });
+
+    test(
+      'among owned grids, a private one beats a public one listed first',
+      () {
+        final ownedPublic = _net(
+          'open',
+          networkType: 'permissioned-providers',
+          roles: const ['admin'],
+        );
+        final ownedPrivate = _net('closed', roles: const ['admin']);
+        expect(
+          _creds([
+            ownedPublic,
+            ownedPrivate,
+          ], email: 'dev@example.com').active?.networkId,
+          'closed',
+        );
+      },
+    );
+
+    test('never lands on a public grid while a private one is available', () {
+      final publicFirst = _net('open', networkType: 'permissioned-providers');
+      final private = _net('closed');
+      expect(
+        _creds([
+          publicFirst,
+          private,
+        ], email: 'dev@example.com').active?.networkId,
+        'closed',
+      );
     });
 
     test('falls back to the first grid with no owner and no domain match', () {

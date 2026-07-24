@@ -59,36 +59,38 @@ class CredentialsFile {
     if (at < 0) return null;
     final domain = email!.substring(at + 1).toLowerCase();
     if (domain.isEmpty) return null;
-    for (final n in networks) {
-      if (n.networkType.contains('domain') && n.name.toLowerCase() == domain) {
-        return n;
-      }
-    }
-    return null;
+    return _firstWhere(
+      (n) => n.networkType.contains('domain') && n.name.toLowerCase() == domain,
+    );
   }
 
-  /// Fallback selection, owner-first so a fresh session lands on a grid the user
-  /// can actually run, not one they only consume on: the legacy `active_network`
-  /// if present, then a grid the user owns (admin) — preferring their login-domain
-  /// grid among them — then the login-domain grid, else the first grid. The
-  /// primary active grid comes from `state.json` (see `activeRemoteGridProvider` /
-  /// [SelectedNetwork]).
+  /// Fallback selection when nothing on disk points at a grid: the legacy
+  /// `active_network` if present, then the login-domain (org) grid, then a
+  /// private grid the user owns, then any owned grid, then the first private
+  /// grid, else the first grid. The primary active grid comes from `state.json`
+  /// (see `activeRemoteGridProvider` / [SelectedNetwork]).
+  ///
+  /// Signing in with a company email means the company grid — it outranks a
+  /// grid the user merely happens to own, because owner-first sent a user with
+  /// a throwaway public test grid onto *that* grid, and the app then shared
+  /// their computer there. Public never wins a tie for the same reason: landing
+  /// on a public grid by default offers this machine's model to strangers.
   NetworkCredential? get active {
     if (networks.isEmpty) return null;
-    for (final n in networks) {
-      if (n.networkId == activeNetwork) return n;
-    }
-    final domain = domainGrid;
-    if (domain != null && domain.isOwner) return domain;
-    for (final n in networks) {
-      if (n.isOwner) return n;
-    }
-    return domain ?? networks.first;
+    return _firstWhere((n) => n.networkId == activeNetwork) ??
+        domainGrid ??
+        _firstWhere((n) => n.isOwner && !n.isPublic) ??
+        _firstWhere((n) => n.isOwner) ??
+        _firstWhere((n) => !n.isPublic) ??
+        networks.first;
   }
 
-  NetworkCredential? byName(String nameOrId) {
+  NetworkCredential? byName(String nameOrId) =>
+      _firstWhere((n) => n.networkId == nameOrId || n.name == nameOrId);
+
+  NetworkCredential? _firstWhere(bool Function(NetworkCredential) test) {
     for (final n in networks) {
-      if (n.networkId == nameOrId || n.name == nameOrId) return n;
+      if (test(n)) return n;
     }
     return null;
   }
