@@ -208,6 +208,7 @@ class OverviewNode {
     this.engine,
     this.throughputTokS,
     this.maxConcurrency,
+    this.planType,
     required this.online,
   });
 
@@ -215,6 +216,11 @@ class OverviewNode {
   final String? device;
   final String? chip;
   final int? memoryGb;
+
+  /// The subscription tier a seat-backed node serves on — `free` / `plus` /
+  /// `pro` from the relay's `plan_type` (a codex/ChatGPT subscription node, ADR
+  /// 0015). Null for an ordinary hardware node that carries no plan.
+  final String? planType;
 
   /// GPU memory the node brings, in GB. The relay's `vram_gb`; `vram_total_mb`
   /// is the raw fallback. Null on CPU-only nodes or providers that don't report
@@ -252,6 +258,7 @@ class OverviewNode {
     engine: j['engine'] as String?,
     throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
     maxConcurrency: (j['max_concurrency'] as num?)?.toInt(),
+    planType: j['plan_type'] as String?,
     online: j['online'] == true,
   );
 
@@ -270,6 +277,7 @@ class OverviewNode {
       other.engine == engine &&
       other.throughputTokS == throughputTokS &&
       other.maxConcurrency == maxConcurrency &&
+      other.planType == planType &&
       other.online == online;
 
   @override
@@ -286,6 +294,7 @@ class OverviewNode {
     engine,
     throughputTokS,
     maxConcurrency,
+    planType,
     online,
   );
 }

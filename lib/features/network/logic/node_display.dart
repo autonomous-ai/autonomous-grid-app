@@ -56,6 +56,16 @@ String? nodeVramLabel(OverviewNode node) {
 String _trimGb(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
 
+/// A node's subscription tier as a display label — `free` → "Free plan" — or
+/// null when it carries no plan (an ordinary hardware node). The tier names a
+/// codex/ChatGPT seat's entitlement (ADR 0015), shown so a subscription-backed
+/// node reads as what it is rather than an anonymous machine.
+String? nodePlanLabel(OverviewNode node) {
+  final plan = (node.planType ?? '').trim();
+  if (plan.isEmpty) return null;
+  return '${plan[0].toUpperCase()}${plan.substring(1)} plan';
+}
+
 /// A short spec line for a node whose VRAM is unknown: engine and device class,
 /// whichever of them says something ("doggi · GPU", "GPU", or empty).
 ///
@@ -73,6 +83,7 @@ String nodeSpecLine(OverviewNode node) {
   return [
     if (engine.isNotEmpty && engine != 'Engine') engine,
     if (device.isNotEmpty) device,
+    ?nodePlanLabel(node),
   ].join(' · ');
 }
 
