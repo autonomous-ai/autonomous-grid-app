@@ -49,7 +49,7 @@ class _FakeChatTransport implements ChatTransport {
   }) async {
     this.endpoint = endpoint;
     this.messages = messages;
-    return (reply, null, error);
+    return (reply, error);
   }
 }
 

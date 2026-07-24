@@ -43,17 +43,6 @@ class CodexPlanEvent extends CodexExecEvent {
   final List<AgentPlanEntry> entries;
 }
 
-/// What the conversation cost Codex this turn: [usedTokens] is the prompt it
-/// sent plus the answer it got back — i.e. what the thread now occupies.
-///
-/// Codex reports no context *window* alongside it (`turn.completed` carries the
-/// count only), so the caller pairs this with whatever the grid advertises for
-/// the model.
-class CodexUsageEvent extends CodexExecEvent {
-  const CodexUsageEvent(this.usedTokens);
-  final int usedTokens;
-}
-
 /// The turn failed for good — the model stream broke, auth was rejected, the
 /// grid didn't answer. Carries Codex's own last words, humanized by the sender.
 class CodexTurnFailed extends CodexExecEvent {
@@ -308,8 +297,6 @@ CodexExecEvent? parseCodexEvent(
       return CodexTurnFailed(
         message is Map ? '${message['message'] ?? ''}' : '',
       );
-    case 'turn.completed':
-      return _parseUsage(event['usage']);
     case 'item.started':
     case 'item.updated':
     case 'item.completed':
@@ -318,26 +305,10 @@ CodexExecEvent? parseCodexEvent(
           ? _parseItem(item.cast<String, dynamic>(), messages)
           : null;
     default:
-      // turn.started, transient errors: nothing to surface. A bare `error` here
-      // is a reconnect notice, not a turn failure.
+      // turn.started, turn.completed, transient errors: nothing to surface. A
+      // bare `error` here is a reconnect notice, not a turn failure.
       return null;
   }
-}
-
-/// `turn.completed`'s `usage` block: `{input_tokens, cached_input_tokens,
-/// output_tokens}`. The prompt plus the answer is what the thread now occupies;
-/// `cached_input_tokens` is a *subset* of `input_tokens` (Codex derives its own
-/// "non cached" figure by subtracting the two), so adding it would count the
-/// cached prefix twice. Null when the block is missing or unreadable — a turn
-/// that says nothing about tokens leaves the estimate in charge.
-CodexExecEvent? _parseUsage(Object? raw) {
-  if (raw is! Map) return null;
-  final input = raw['input_tokens'];
-  final output = raw['output_tokens'];
-  if (input is! num && output is! num) return null;
-  final used =
-      (input is num ? input.toInt() : 0) + (output is num ? output.toInt() : 0);
-  return used <= 0 ? null : CodexUsageEvent(used);
 }
 
 CodexExecEvent? _parseItem(

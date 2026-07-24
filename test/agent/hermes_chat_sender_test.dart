@@ -254,25 +254,6 @@ void main() {
     expect(File('${tmp.path}/.hermes/config.yaml').existsSync(), isTrue);
   });
 
-  test('Hermes usage becomes a context report carrying both the count and the '
-      'window — the one reading the ring never has to estimate', () async {
-    final service = _FakeAcp.single([
-      const HermesAcpUsage(used: 62000, size: 258000),
-      const HermesAcpMessage('done'),
-    ]);
-    final container = _container(service, tmp);
-
-    final updates = await container
-        .read(hermesChatSenderProvider)
-        .send(network: _credential(), model: 'm', history: _history('hi'))
-        .toList();
-
-    final usage = updates.whereType<ChatSendUsage>().single.usage;
-    expect(usage.usedTokens, 62000);
-    expect(usage.limitTokens, 258000);
-    expect(usage.percentUsed, 24);
-  });
-
   test(
     'web sources found mid-turn are pinned onto the answer and shown live',
     () async {
