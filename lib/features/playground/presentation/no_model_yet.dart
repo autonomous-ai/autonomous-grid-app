@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
+import '../../node_setup/logic/background_model_controller.dart';
 
 /// Blocked state when no model can answer yet. Points provider-capable users to
 /// the Engines tab to start one; pure consumers are told to wait for a provider.
@@ -11,7 +14,13 @@ import '../../../shared/theme/app_theme.dart';
 /// for an engine), so it reads as "not started yet", not "something broke": a
 /// depth-lit robot mark inside a breathing accent ring, a status pill naming the
 /// state, and a clear primary action.
-class NoModelYet extends StatelessWidget {
+///
+/// While the user's own model is still downloading (the "run local" path), that
+/// action would be a dead press — there's nothing to serve yet, and the engine
+/// starts itself the moment the download lands. So the whole state speaks to the
+/// download instead: the pill, the copy and the button all report it, and the
+/// button waits rather than sending the user to an Engines tab that can't help.
+class NoModelYet extends ConsumerWidget {
   const NoModelYet({
     super.key,
     required this.canManage,
@@ -22,9 +31,17 @@ class NoModelYet extends StatelessWidget {
   final VoidCallback onGoToEngines;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // rebuild on theme flip — reads AppPalette tokens
     final theme = Theme.of(context);
+
+    final download = ref.watch(backgroundModelControllerProvider);
+    // Only a manager can have started a local download, so a consumer never
+    // reads as "downloading" even if some other state leaked through.
+    final downloading = canManage && download is ModelDownloadRunning;
+    final pct = download is ModelDownloadRunning
+        ? download.progress?.pct?.round()
+        : null;
 
     return Center(
       child: ConstrainedBox(
@@ -34,20 +51,16 @@ class NoModelYet extends StatelessWidget {
           children: [
             const _EngineMark(),
             const SizedBox(height: 22),
-            _StatusPill(canManage: canManage),
+            _StatusPill(canManage: canManage, downloading: downloading),
             const SizedBox(height: 16),
             Text(
-              canManage ? 'No engine is running yet' : 'Waiting for a model',
+              _title(canManage: canManage, downloading: downloading),
               style: theme.textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              canManage
-                  ? 'Start an engine on this grid to open the chat and talk to a '
-                        'model.'
-                  : 'Wait for someone on this grid to bring a model online, or '
-                        'ask the grid owner to run one.',
+              _body(canManage: canManage, downloading: downloading),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: AppPalette.textSecondary,
@@ -55,15 +68,62 @@ class NoModelYet extends StatelessWidget {
             ),
             if (canManage) ...[
               const SizedBox(height: 22),
-              FilledButton.icon(
-                onPressed: onGoToEngines,
-                icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                label: const Text('Start an engine'),
-              ),
+              if (downloading)
+                _DownloadingButton(pct: pct)
+              else
+                FilledButton.icon(
+                  onPressed: onGoToEngines,
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: const Text('Start an engine'),
+                ),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  String _title({required bool canManage, required bool downloading}) {
+    if (!canManage) return 'Waiting for a model';
+    return downloading
+        ? 'Getting your model ready'
+        : 'No engine is running yet';
+  }
+
+  String _body({required bool canManage, required bool downloading}) {
+    if (!canManage) {
+      return 'Wait for someone on this grid to bring a model online, or ask the '
+          'grid owner to run one.';
+    }
+    if (downloading) {
+      return "Your model is downloading. The chat opens on its own once it's "
+          'ready — you can leave this and come back.';
+    }
+    return 'Start an engine to talk to a model here.';
+  }
+}
+
+/// The Start button while the model is still downloading: the same primary
+/// button, but showing the progress and un-pressable — "start" has nothing to
+/// act on until the download lands, and the engine starts itself then.
+class _DownloadingButton extends StatelessWidget {
+  const _DownloadingButton({required this.pct});
+
+  final int? pct;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = pct == null
+        ? 'Downloading model…'
+        : 'Downloading model · $pct%';
+    return FilledButton.icon(
+      onPressed: null,
+      icon: const SizedBox(
+        width: 16,
+        height: 16,
+        child: AppSpinner(size: SpinnerSize.small),
+      ),
+      label: Text(label),
     );
   }
 }
@@ -222,19 +282,26 @@ class _RippleRingsPainter extends CustomPainter {
       old.accent != accent;
 }
 
-/// A monospace-feeling status chip naming the state: amber "engine idle" for a
-/// manager (they can act), a neutral "waiting" for a consumer (they can't). The
-/// LED dot blinks unless Reduce Motion is on.
+/// A monospace-feeling status chip naming the state: accent "downloading" while
+/// the model arrives, amber "engine idle" for a manager who can start one, a
+/// neutral "waiting" for a consumer who can't. The LED dot blinks unless Reduce
+/// Motion is on.
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.canManage});
+  const _StatusPill({required this.canManage, this.downloading = false});
 
   final bool canManage;
+  final bool downloading;
 
   @override
   Widget build(BuildContext context) {
-    // Amber = "idle, ready to start"; grey = "nothing you can do yet".
-    final tone = canManage ? AppPalette.warn : AppPalette.offline;
-    final label = canManage ? 'ENGINE IDLE' : 'WAITING FOR PROVIDER';
+    // Accent = "on its way"; amber = "idle, ready to start"; grey = "nothing you
+    // can do yet".
+    final tone = downloading
+        ? AppPalette.accent
+        : (canManage ? AppPalette.warn : AppPalette.offline);
+    final label = downloading
+        ? 'DOWNLOADING MODEL'
+        : (canManage ? 'ENGINE IDLE' : 'WAITING FOR PROVIDER');
 
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 4, 12, 4),
