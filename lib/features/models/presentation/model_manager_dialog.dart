@@ -3,13 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/parsers/catalog_entry.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_spinner.dart';
 import '../../plugins/presentation/widgets/extension_tile_surface.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/model_shelf.dart';
 import '../logic/models_providers.dart';
 import 'model_pull_card.dart';
 import 'shelf_model_tile.dart';
+import 'suggested_models_section.dart';
 
 /// "Manage models" — the model hub that used to be its own tab: download a GGUF
 /// and see every model already under `~/.grid/models`. Opened from the local
@@ -128,107 +128,41 @@ class _DialogHeader extends StatelessWidget {
   }
 }
 
-/// The merged shelf: every model once, downloaded ones first.
-///
-/// Separated by air and a hover lift rather than by `Divider`s inside a bordered
-/// card — the construction the Plugins and Skills lists use.
+/// The model list: what's already on this computer, then device-aware
+/// suggestions from the catalog API ([SuggestedForDevice], which handles its own
+/// loading/empty/sign-in states and falls back to the offline `grid catalog`
+/// list). Separated by air and a hover lift rather than `Divider`s, the
+/// construction the Plugins and Skills lists use.
 class _ShelfList extends StatelessWidget {
   const _ShelfList({required this.shelf, required this.loading});
 
   final List<ShelfModel> shelf;
+
+  /// Whether the offline `grid catalog` fallback is still loading.
   final bool loading;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    if (loading) return const _ShelfLoading();
-    if (shelf.isEmpty) return const _ShelfEmpty();
 
     // Downloaded models lead: what's already here is what you can serve now,
     // and it's the reason most visits to this dialog happen.
     final ready = shelf.where((m) => m.isDownloaded).toList();
     final available = shelf.where((m) => !m.isDownloaded).toList();
 
-    final items = <Widget>[];
-    if (ready.isNotEmpty) {
-      items.add(
-        ExtensionSectionHeader(label: 'On this computer', count: ready.length),
-      );
-      for (final model in ready) {
-        items.add(ShelfModelTile(model: model));
-        items.add(const SizedBox(height: 8));
-      }
-      if (available.isNotEmpty) items.add(const SizedBox(height: 10));
-    }
-    if (available.isNotEmpty) {
-      items.add(
-        ExtensionSectionHeader(
-          label: 'Suggested for your device',
-          count: available.length,
-        ),
-      );
-      for (final model in available) {
-        items.add(ShelfModelTile(model: model));
-        items.add(const SizedBox(height: 8));
-      }
-    }
-
     return ListView(
       shrinkWrap: true,
       padding: EdgeInsets.zero,
-      children: items,
-    );
-  }
-}
-
-/// A quiet placeholder while `grid catalog` is being read.
-class _ShelfLoading extends StatelessWidget {
-  const _ShelfLoading();
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 28),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const AppSpinner(),
-          const SizedBox(width: 10),
-          Text(
-            'Looking for models…',
-            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
-          ),
+      children: [
+        if (ready.isNotEmpty) ...[
+          ExtensionSectionHeader(label: 'On this computer', count: ready.length),
+          for (final model in ready) ...[
+            ShelfModelTile(model: model),
+            const SizedBox(height: 8),
+          ],
         ],
-      ),
-    );
-  }
-}
-
-/// No catalog and nothing on disk — the CLI is unreachable or offline. Points at
-/// the advanced field below, which still works.
-class _ShelfEmpty extends StatelessWidget {
-  const _ShelfEmpty();
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 8),
-      child: Column(
-        children: [
-          Icon(Icons.cloud_off_outlined, size: 22, color: AppPalette.textFaint),
-          const SizedBox(height: 10),
-          // One line carrying both halves — what went wrong, and the way on
-          // that still works. It used to take two, and the second spent its
-          // first three words ("You can still") apologising for the first.
-          Text(
-            "Couldn't load suggestions — paste a model below.",
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
-          ),
-        ],
-      ),
+        SuggestedForDevice(fallback: available, fallbackLoading: loading),
+      ],
     );
   }
 }
