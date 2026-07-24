@@ -75,8 +75,8 @@ void main() {
   });
 
   group('a startup failure reads for a non-technical user', () {
-    test('the ACP-dependencies case never shows pip or acp, and points at the '
-        'one fix the user can carry out', () {
+    test('the ACP-dependencies case never shows pip or acp, and offers the '
+        'button without promising it works', () {
       final message = friendlyAgentStartupError(
         "Hermes exited during startup: ACP dependencies not installed. Install "
         "them with: pip install -e '.[acp]'",
@@ -86,9 +86,12 @@ void main() {
       expect(message.toLowerCase(), isNot(contains('pip')));
       expect(message.toLowerCase(), isNot(contains('acp')));
       expect(message.toLowerCase(), isNot(contains('dependenc')));
-      // What's left is plain, and names where the user can actually fix it.
-      expect(message.toLowerCase(), contains('reinstall'));
+      // It names where to try — but this state is usually a fresh install that
+      // simply arrived without the piece the chat needs, so Update runs the same
+      // command and lands in the same place. Telling the user to reinstall "then
+      // try again" is a loop with no end, so the copy must not claim it fixes it.
       expect(message.toLowerCase(), contains('agents'));
+      expect(message.toLowerCase(), contains("if that doesn't help"));
     });
 
     test('a Python import failure is the same missing-setup class', () {
@@ -106,7 +109,7 @@ void main() {
         'RuntimeError: something obscure',
       );
       expect(message.toLowerCase(), contains("wouldn't start"));
-      expect(message.toLowerCase(), contains('reinstall'));
+      expect(message.toLowerCase(), contains('agents'));
       expect(message, isNot(contains('Traceback')));
       expect(message, isNot(contains('RuntimeError')));
     });
