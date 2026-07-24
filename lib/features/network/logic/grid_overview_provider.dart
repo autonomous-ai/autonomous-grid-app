@@ -78,9 +78,10 @@ final gridOverviewProvider = FutureProvider.autoDispose<GridOverview>((
 /// as empty. Filtering at the source keeps every count, tile and empty-state
 /// derived from this list honest. See [kAutoModelId].
 final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
+  // .value, not asData?.value: keeps the last model list on screen through a
+  // background poll instead of emptying every count/tile for the round-trip.
   final rich =
-      ref.watch(gridOverviewProvider).asData?.value.models ??
-      const <OverviewModel>[];
+      ref.watch(gridOverviewProvider).value?.models ?? const <OverviewModel>[];
   final source = rich.isNotEmpty
       ? rich
       : [
@@ -140,8 +141,10 @@ GridMediaCapabilities gridMediaCapabilitiesFrom(Iterable<String> capabilities) {
 /// (no image/video) while loading or when no media provider is online.
 final gridMediaCapabilitiesProvider =
     Provider.autoDispose<GridMediaCapabilities>((ref) {
+      // .value survives a background refresh — media modes shouldn't blink off
+      // and back while the overview re-polls.
       final nodes =
-          ref.watch(gridOverviewProvider).asData?.value.nodes ??
+          ref.watch(gridOverviewProvider).value?.nodes ??
           const <OverviewNode>[];
       return gridMediaCapabilitiesFrom([
         for (final node in nodes) ...node.models,

@@ -19,6 +19,55 @@ OverviewNode _node({
 });
 
 void main() {
+  group('GridPower equality', () {
+    // The pill recomputes on every overview notification, including the
+    // background poll that keeps the last value on screen. Value equality is
+    // what turns an unchanged poll into zero rebuilds instead of a fresh
+    // instance the provider treats as a change.
+    test('two summaries of the same hardware are equal', () {
+      const a = GridPower(
+        onlineNodes: 2,
+        models: 5,
+        vramGb: 128,
+        parallel: 4,
+        throughputTokS: 90,
+      );
+      const b = GridPower(
+        onlineNodes: 2,
+        models: 5,
+        vramGb: 128,
+        parallel: 4,
+        throughputTokS: 90,
+      );
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+
+    test('a changed field breaks equality', () {
+      const base = GridPower(onlineNodes: 2, models: 5, vramGb: 128);
+      expect(
+        base == const GridPower(onlineNodes: 3, models: 5, vramGb: 128),
+        isFalse,
+      );
+      expect(
+        base == const GridPower(onlineNodes: 2, models: 6, vramGb: 128),
+        isFalse,
+      );
+      expect(
+        base == const GridPower(onlineNodes: 2, models: 5, vramGb: 64),
+        isFalse,
+      );
+    });
+
+    test('absent VRAM and zero VRAM are not equal — different claims', () {
+      expect(
+        const GridPower(onlineNodes: 1, models: 1) ==
+            const GridPower(onlineNodes: 1, models: 1, vramGb: 0),
+        isFalse,
+      );
+    });
+  });
+
   group('gridPowerFrom', () {
     test('sums hardware across online nodes only', () {
       final power = gridPowerFrom([
