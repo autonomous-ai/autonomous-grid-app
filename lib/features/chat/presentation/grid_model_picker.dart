@@ -95,7 +95,10 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         // reopening the menu. The menu has always keyed its tick on grid+id;
         // the pill was reporting half of what the menu knew.
         grid: ref.watch(selectedNetworkProvider)?.name,
-        modality: _triggerModality(widget.currentModelId),
+        option: _triggerOption(
+          ref.watch(gridModelCatalogProvider),
+          widget.currentModelId,
+        ),
         onTap: () => _toggleMenu(context, controller),
       ),
     );
@@ -108,16 +111,37 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     return slash == -1 ? trimmed : trimmed.substring(slash + 1);
   }
 
-  /// The two media modes carry fixed labels rather than `maker/name` ids (see
-  /// [kImageModeLabel]), so what's selected is readable straight from the id —
-  /// no need to thread the modality down from the catalog just to mark the pill.
-  /// Null while nothing is picked: "Choose model" is a prompt, not a mode.
-  PlaygroundModality? _triggerModality(String id) => switch (id.trim()) {
-    '' => null,
-    kImageModeLabel => PlaygroundModality.image,
-    kVideoModeLabel => PlaygroundModality.video,
-    _ => PlaygroundModality.text,
-  };
+  /// The selected model as the menu knows it, so the pill wears the same mark
+  /// the row did — including whether it runs on the grid or in a cloud. The pill
+  /// used to derive a bare modality from the id, which is all an id can tell
+  /// you, so every text model came out with the plain text glyph while the menu
+  /// two centimetres above it said otherwise.
+  ///
+  /// Falls back to what the id alone says when the catalog hasn't landed (or the
+  /// user typed an id by hand): the media modes carry fixed labels, and hosting
+  /// stays unclaimed. Null while nothing is picked — "Choose model" is a prompt,
+  /// not a selection.
+  PlaygroundModelOption? _triggerOption(
+    List<GridModelGroup> groups,
+    String id,
+  ) {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return null;
+    for (final group in groups) {
+      for (final option in group.options) {
+        if (modelKey(option.id) == modelKey(trimmed)) return option;
+      }
+    }
+    return PlaygroundModelOption(
+      id: trimmed,
+      label: trimmed,
+      modality: switch (trimmed) {
+        kImageModeLabel => PlaygroundModality.image,
+        kVideoModeLabel => PlaygroundModality.video,
+        _ => PlaygroundModality.text,
+      },
+    );
+  }
 }
 
 /// The pill that sits in the composer: the model that will answer, and a caret.
@@ -126,7 +150,7 @@ class _TriggerButton extends StatelessWidget {
   const _TriggerButton({
     required this.label,
     required this.grid,
-    required this.modality,
+    required this.option,
     required this.onTap,
   });
 
@@ -135,8 +159,9 @@ class _TriggerButton extends StatelessWidget {
   /// The grid serving [label], or null before one is resolved.
   final String? grid;
 
-  /// Null while nothing is picked — the pill is prompting, not reporting.
-  final PlaygroundModality? modality;
+  /// The model that will answer, as the menu knows it — null while nothing is
+  /// picked, when the pill is prompting rather than reporting.
+  final PlaygroundModelOption? option;
   final VoidCallback onTap;
 
   @override
@@ -151,7 +176,7 @@ class _TriggerButton extends StatelessWidget {
       // wonder about it. The menu's tick keys on grid+id, so the answer is one
       // hover or one click away; spending the composer's quietest strip on it
       // would be paying rent for a question that's asked once a session.
-      message: grid == null || modality == null
+      message: grid == null || option == null
           ? 'Choose which model answers'
           : '$label\non $grid',
       child: OutlinedButton(
@@ -184,11 +209,11 @@ class _TriggerButton extends StatelessWidget {
             // The same mark you picked by, kept next to the name — so "am I
             // about to chat or to draw?" is answerable at a glance, without
             // reopening the menu. A model id like "ornith-1.0-35b" never said.
-            if (modality != null) ...[
+            if (option != null) ...[
               Icon(
-                modalityIcon(modality!),
+                modelIcon(option!),
                 size: 13,
-                color: modalityTone(modality!),
+                color: modalityTone(option!.modality),
               ),
               const SizedBox(width: 5),
             ],
