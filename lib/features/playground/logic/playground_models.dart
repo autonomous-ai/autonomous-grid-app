@@ -97,3 +97,29 @@ final playgroundModelsProvider =
         [for (final node in nodes) ...node.models],
       );
     });
+
+/// Whether the option list is still waiting on its **first** answer.
+///
+/// Both sources are asked, because the options are built from both: one arriving
+/// ahead of the other leaves the list legitimately empty for a moment, and
+/// gating on that half-loaded state let it read as "no model on this grid".
+///
+/// A later refresh doesn't count. Both providers flip back to loading on every
+/// poll, so reading any loading frame as "not settled" made the no-model state
+/// blink off and back on each cadence — on precisely the grid, brand new and
+/// still empty, where that screen is the only thing guiding the user.
+final playgroundModelsResolvingProvider = Provider.autoDispose<bool>(
+  (ref) =>
+      ref.watch(gridOverviewProvider.select(awaitingFirstAnswer)) ||
+      ref.watch(networkModelsProvider.select(awaitingFirstAnswer)),
+);
+
+/// Loading with nothing behind it — as opposed to loading *again*, which still
+/// has last round's answer to show.
+///
+/// The distinction is the difference between "we don't know yet" and "we know,
+/// and we're checking again". Anything that hides UI while it waits wants this
+/// one, not `isLoading`: on a polled provider `isLoading` comes back true every
+/// cadence, forever.
+bool awaitingFirstAnswer(AsyncValue<Object?> value) =>
+    value.isLoading && !value.hasValue;

@@ -18,8 +18,6 @@ import '../../agent/presentation/agent_permission_card.dart';
 import '../../agent/presentation/approval_picker.dart';
 import '../../agent/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../network/logic/grid_overview_provider.dart';
-import '../../network/logic/network_models_provider.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/attachment_bar.dart';
@@ -331,15 +329,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   Widget build(BuildContext context) {
     final sessions = ref.watch(chatSessionsProvider);
     final options = ref.watch(playgroundModelsProvider);
-    // Still loading while *either* source is in flight: the options are built
-    // from both (`/models` plus the node capabilities), so one arriving first
-    // leaves the list legitimately empty. Gating on both-at-once (&&) let that
-    // half-loaded moment read as "no engine", flashing NoModelYet on the way in
-    // — the providers are autoDispose, so every return to Chat refetches and
-    // reopens that window.
-    final loadingModels =
-        ref.watch(gridOverviewProvider).isLoading ||
-        ref.watch(networkModelsProvider).isLoading;
+    // Still resolving means waiting on the *first* answer from either source —
+    // see [playgroundModelsResolvingProvider] for why a later poll must not
+    // count.
+    final loadingModels = ref.watch(playgroundModelsResolvingProvider);
 
     _syncModelField(sessions.active, options, widget.network.networkId);
 

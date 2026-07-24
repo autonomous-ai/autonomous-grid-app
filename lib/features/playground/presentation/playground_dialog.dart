@@ -7,8 +7,6 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../network/logic/grid_overview_provider.dart';
-import '../../network/logic/network_models_provider.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/chat_controller.dart';
 import '../logic/chat_message.dart';
@@ -172,12 +170,9 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
 
     final theme = Theme.of(context);
     final options = ref.watch(playgroundModelsProvider);
-    // Either source still in flight means the options list isn't settled yet —
-    // see the same gate in ChatView. Both-at-once (&&) would let the half-loaded
-    // moment flash NoModelYet.
-    final loadingModels =
-        ref.watch(gridOverviewProvider).isLoading ||
-        ref.watch(networkModelsProvider).isLoading;
+    // Waiting on the first answer from either source — the same gate ChatView
+    // uses; see [playgroundModelsResolvingProvider].
+    final loadingModels = ref.watch(playgroundModelsResolvingProvider);
     if (options.isNotEmpty) {
       _syncDefaultModel([for (final o in options) o.id]);
     }

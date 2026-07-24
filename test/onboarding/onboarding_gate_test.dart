@@ -1,9 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/auth/logic/session_controller.dart';
+import 'package:grid_app/features/models/logic/engine_status.dart';
+import 'package:grid_app/features/models/logic/models_providers.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/onboarding/logic/onboarding_gate.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
 import 'package:grid_app/infrastructure/api/models/media_event.dart';
+import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 import 'package:grid_app/infrastructure/state/onboarding_store.dart';
 
 GridOverview _overview({
@@ -103,7 +108,8 @@ void main() {
           decision: OnboardingDecision.openai,
           hasEngine: false,
           hasLocalModel: false,
-          overview: const AsyncValue.loading(),
+          overview: null,
+          overviewFailed: false,
         ),
         OnboardingRoute.home,
       );
@@ -116,7 +122,8 @@ void main() {
           decision: undecided,
           hasEngine: true,
           hasLocalModel: true,
-          overview: const AsyncValue.loading(),
+          overview: null,
+          overviewFailed: false,
         ),
         OnboardingRoute.home,
       );
@@ -128,7 +135,8 @@ void main() {
           decision: undecided,
           hasEngine: false,
           hasLocalModel: false,
-          overview: AsyncValue.data(_overview()),
+          overview: _overview(),
+          overviewFailed: false,
         ),
         OnboardingRoute.choose,
       );
@@ -142,7 +150,8 @@ void main() {
             decision: undecided,
             hasEngine: false,
             hasLocalModel: false,
-            overview: AsyncValue.data(_overview(nodes: [_node(model: 'qwen')])),
+            overview: _overview(nodes: [_node(model: 'qwen')]),
+            overviewFailed: false,
           ),
           OnboardingRoute.home,
         );
@@ -150,14 +159,15 @@ void main() {
     );
 
     test(
-      'while the grid check is loading, hold a splash — do not flash the fork',
+      'before the first overview lands, hold a splash — do not flash the fork',
       () {
         expect(
           routeFor(
             decision: undecided,
             hasEngine: false,
             hasLocalModel: false,
-            overview: const AsyncValue.loading(),
+            overview: null,
+            overviewFailed: false,
           ),
           OnboardingRoute.resolving,
         );
@@ -172,14 +182,76 @@ void main() {
             decision: undecided,
             hasEngine: false,
             hasLocalModel: false,
-            overview: AsyncValue.error(
-              const GridOverviewUnavailable('offline'),
-              StackTrace.empty,
-            ),
+            overview: null,
+            overviewFailed: true,
           ),
           OnboardingRoute.home,
         );
       },
     );
   });
+
+  group('onboardingRouteProvider — what it feeds the decision', () {
+    test('the poll behind the top bar does not put the splash back over a running '
+        'app', () async {
+      // The refresher invalidates the *per-grid* overview every cadence, which
+      // reaches the selected-grid alias as a dependency change — a reload, not
+      // a refresh, so it carries its previous value under an AsyncLoading that
+      // `asData` reads as nothing. Taking that as "still resolving" replaced
+      // the whole shell with the splash each cadence, which remounted the top
+      // bar, which polled again: three fetches a second and an app that never
+      // settled.
+      final container = ProviderContainer(
+        overrides: [
+          onboardingDecisionProvider.overrideWith(_Undecided.new),
+          engineStatusProvider.overrideWithValue(EngineStatus.notInstalled),
+          localModelsProvider.overrideWithValue(const []),
+          sessionProvider.overrideWithValue(
+            CredentialsFile(networks: [_network()], activeNetwork: 'grid-foo'),
+          ),
+          gridOverviewForProvider.overrideWith(
+            (ref, networkId) async => _overview(nodes: [_node(model: 'qwen')]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final sub = container.listen(onboardingRouteProvider, (_, _) {});
+      addTearDown(sub.close);
+      await pumpEventQueue();
+      expect(container.read(onboardingRouteProvider), OnboardingRoute.home);
+
+      // Exactly what GridOverviewRefresher.refreshNow does.
+      container.invalidate(gridOverviewForProvider('grid-foo'));
+      expect(
+        container.read(onboardingRouteProvider),
+        OnboardingRoute.home,
+        reason: 'a refetch in flight is not "we do not know yet"',
+      );
+    });
+  });
 }
+
+/// A user who hasn't chosen a path — the real controller reads that from disk,
+/// which a test must not touch.
+class _Undecided extends OnboardingController {
+  @override
+  OnboardingDecision? build() => null;
+}
+
+NetworkCredential _network() => NetworkCredential(
+  networkId: 'grid-foo',
+  name: 'foo',
+  networkType: 'permissioned',
+  lanSignalingUrl: 'http://127.0.0.1:8090',
+  accessToken: 'tok',
+  refreshToken: '',
+  email: 'dev@x.com',
+  nodeId: 'node',
+  deviceId: 'dev',
+  roles: const ['consumer'],
+  scopes: const ['consumer:chat'],
+  memberEpoch: 1,
+  networkEpoch: 1,
+  expiresAt: 0,
+);

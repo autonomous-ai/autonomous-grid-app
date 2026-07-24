@@ -58,23 +58,36 @@ bool _nodeServesChat(OverviewNode node) {
 /// model: a splash while that resolves, and — crucially — into the app on a relay
 /// error rather than stranding the user at a fork, where the "no model yet" state
 /// guides them.
+///
+/// Takes the overview itself rather than its `AsyncValue`, and that is the whole
+/// point: this decision must turn on *what we know*, never on whether a request
+/// happens to be in flight. It used to take the `AsyncValue` and read every
+/// loading frame as unresolved — including the poll that runs behind the top bar
+/// — so a running app was replaced by the splash every cadence, which remounted
+/// the top bar, which polled again. Three round-trips a second and a
+/// "Starting Grid…" screen on a grid that had been up for minutes.
+///
+/// [overview] is therefore the *last* overview the relay gave us, in flight or
+/// not, and null only before the first one ever lands.
 OnboardingRoute routeFor({
   required OnboardingDecision? decision,
   required bool hasEngine,
   required bool hasLocalModel,
-  required AsyncValue<GridOverview> overview,
+  required GridOverview? overview,
+  required bool overviewFailed,
 }) {
   if (decision != null) return OnboardingRoute.home;
   // An established local host (engine installed + a model on disk) has, in
   // effect, already chosen "run local" — even if its engine isn't up this
   // second. Never park it at the choice screen; the shell resumes serving.
   if (hasEngine && hasLocalModel) return OnboardingRoute.home;
-  return overview.when(
-    data: (o) =>
-        gridServesChatModel(o) ? OnboardingRoute.home : OnboardingRoute.choose,
-    loading: () => OnboardingRoute.resolving,
-    error: (_, _) => OnboardingRoute.home,
-  );
+  if (overview != null) {
+    return gridServesChatModel(overview)
+        ? OnboardingRoute.home
+        : OnboardingRoute.choose;
+  }
+  if (overviewFailed) return OnboardingRoute.home;
+  return OnboardingRoute.resolving;
 }
 
 /// The live route decision, wiring the app's providers into [routeFor].
@@ -87,10 +100,15 @@ final onboardingRouteProvider = Provider<OnboardingRoute>((ref) {
   if (decision != null || (hasEngine && hasLocalModel)) {
     return OnboardingRoute.home;
   }
+  final overview = ref.watch(gridOverviewProvider);
   return routeFor(
     decision: decision,
     hasEngine: hasEngine,
     hasLocalModel: hasLocalModel,
-    overview: ref.watch(gridOverviewProvider),
+    // `.value`, never `.asData`: it holds the last good overview through a
+    // background poll, which is what keeps the app from being swapped out for
+    // the splash every cadence. See [routeFor].
+    overview: overview.value,
+    overviewFailed: overview.hasError,
   );
 });
