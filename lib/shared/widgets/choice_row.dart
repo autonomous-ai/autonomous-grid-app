@@ -197,10 +197,11 @@ class ChoiceRowGroup extends StatelessWidget {
 
   /// Wear a visible rim instead of the usual white-and-a-whisper-of-shadow.
   ///
-  /// Set it on a **plain white page**, where the standard surface is invisible:
-  /// its fill is the same white as the page and the shadow alone doesn't carry
-  /// the edge, so the group renders as bare text with nothing to press. On the
-  /// tabs, which sit on a tinted pane, the default is right.
+  /// Set it on a **white ground** — the onboarding card — where the standard
+  /// surface is invisible: its fill is the same white it sits on and the shadow
+  /// alone doesn't carry the edge, so the group renders as bare text with
+  /// nothing to press. On the tabs, which sit on a tinted pane, the default is
+  /// right.
   final bool outlined;
 
   @override

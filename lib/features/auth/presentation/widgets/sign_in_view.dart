@@ -28,6 +28,7 @@ class SignInView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return OnboardingPage(
+      leading: const _BrandMark(),
       title: 'Sign in to Grid',
       subtitle: 'One private endpoint for the AI models you run.',
       corner: corner,
@@ -52,6 +53,35 @@ class SignInView extends StatelessWidget {
         const SizedBox(height: 22),
         const _SecureNote(),
       ],
+    );
+  }
+}
+
+/// The brand mark on the front door: the logo as a crafted tile — a hairline
+/// rim and a soft lift, so it reads as part of the card rather than a pasted
+/// image. Static: the halo that used to breathe behind it was the loudest thing
+/// on a screen whose job is one button.
+class _BrandMark extends StatelessWidget {
+  const _BrandMark();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppGlass.hair),
+        boxShadow: AppCard.shadow,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.asset(
+          'assets/brand/grid_logo_bg.png',
+          width: 54,
+          height: 54,
+          filterQuality: FilterQuality.medium,
+        ),
+      ),
     );
   }
 }

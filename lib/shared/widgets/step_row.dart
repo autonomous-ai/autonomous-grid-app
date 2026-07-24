@@ -95,8 +95,8 @@ class StepRow extends StatelessWidget {
     );
 
     if (!lifted) return Padding(padding: _gap, child: row);
-    // The same rim the choice rows wear: on these pages the background is the
-    // window's own white, where a fill-and-shadow surface leaves no edge at all.
+    // The same rim the choice rows wear: these sit on the onboarding card's
+    // white, where a fill-and-shadow surface leaves no edge at all.
     return Padding(
       padding: _gap,
       child: DecoratedBox(
