@@ -59,12 +59,12 @@ jobs:
           - platform: macos-latest      # Apple Silicon, native arm64 app + sidecar
             arch: arm64
             label: macOS-Apple-Silicon
-          # - platform: macos-latest      # Intel x86_64 sidecar, compiled under Rosetta 2 on
-          #   arch: x64                    # the same arm64 runner — GitHub retired the free
-          #   label: macOS-Intel           # macos-13 Intel image, so this avoids a paid runner.
-          # - platform: windows-latest    # Windows x64, native build. UNSIGNED zip (SmartScreen
-          #   arch: x64                    # may warn); the `if: runner.os == 'Windows'` steps
-          #   label: Windows-x64           # below build the onefile sidecar + package the zip.
+          - platform: macos-latest      # Intel x86_64 sidecar, compiled under Rosetta 2 on
+            arch: x64                   # the same arm64 runner — GitHub retired the free
+            label: macOS-Intel          # macos-13 Intel image, so this avoids a paid runner.
+          - platform: windows-latest    # Windows x64, native build. UNSIGNED zip (SmartScreen
+            arch: x64                   # may warn); the `if: runner.os == 'Windows'` steps
+            label: Windows-x64          # below build the onefile sidecar + package the zip.
 
     runs-on: ${{ matrix.platform }}
     # The Nuitka sidecar build is slow (macOS ~45m; Windows >56m), and macOS adds
