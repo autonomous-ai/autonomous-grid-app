@@ -15,6 +15,7 @@ import '../logic/grid_overview_provider.dart';
 import 'add_member_dialog.dart';
 import 'consumer_env_card.dart';
 import 'detail_widgets.dart';
+import 'grid_hardware_section.dart';
 import 'grid_overview_card.dart';
 import 'members_tab.dart';
 import 'rename_grid_dialog.dart';
@@ -112,6 +113,9 @@ class _OverviewTab extends StatelessWidget {
           const SizedBox(height: 18),
           const AutoRouterCard(),
         ],
+        // The grid's pooled hardware at a glance — memory split by machine,
+        // capacity, speed — read before the per-machine Nodes list below it.
+        const GridHardwareSection(),
         const GridNodesSection(),
         // Raw developer credentials are a consumer convenience; owners/providers
         // manage via the Engines tab and reach the guide from "Use this grid",
