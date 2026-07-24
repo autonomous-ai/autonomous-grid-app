@@ -231,10 +231,17 @@ class _HermesAcpSession implements HermesAcpSession {
       _process!.exitCode.then((_) {
         _closed = true;
         if (!_ready.isCompleted) {
-          // Quote Hermes's own words when it left any: "exited during startup"
-          // alone gives the user nothing to act on, whereas "ACP dependencies
-          // not installed" points straight at the fix.
+          // Hermes explains a failed startup on stderr and nowhere else. The
+          // chat now shows a humanized line ([friendlyAgentStartupError]), so
+          // the raw reason lives here — a durable record to diagnose from, not
+          // the wall of jargon the user used to read.
           final said = _stderrTail;
+          _log.warn(
+            'agent',
+            said.isEmpty
+                ? 'Hermes exited during startup with no message.'
+                : 'Hermes exited during startup: $said',
+          );
           _ready.completeError(
             HermesAcpException(
               said.isEmpty

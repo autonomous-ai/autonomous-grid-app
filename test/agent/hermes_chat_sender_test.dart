@@ -477,15 +477,17 @@ void main() {
   });
 
   test(
-    'a startup that retrying cannot fix reports why, and does not say to retry',
+    'a startup that retrying cannot fix is humanized, and does not say to retry',
     () async {
       // The real shape of this: hermes-agent installed without its `[acp]` extra,
-      // so `hermes acp` dies on startup saying exactly this. Retrying is futile —
-      // the message has to name the fault instead.
+      // so `hermes acp` dies on startup with a pip command. The user runs Grid,
+      // not a terminal, so the chat must not show that raw reason (it's logged
+      // instead) and must not tell them to retry a fault that never changes.
       final container = _container(
         _FailingAcp(
           const HermesAcpException(
-            'Hermes exited during startup: ACP dependencies not installed.',
+            "Hermes exited during startup: ACP dependencies not installed. "
+            "Install them with: pip install -e '.[acp]'",
             retryable: false,
           ),
         ),
@@ -502,7 +504,9 @@ void main() {
           .toList();
 
       final error = (updates.single as ChatSendFailure).error;
-      expect(error, contains('ACP dependencies not installed'));
+      expect(error.toLowerCase(), isNot(contains('pip')));
+      expect(error.toLowerCase(), isNot(contains('acp')));
+      expect(error.toLowerCase(), contains('reinstall'));
       expect(
         error,
         isNot(contains('Try sending again')),

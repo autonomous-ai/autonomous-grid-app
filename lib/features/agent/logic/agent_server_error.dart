@@ -4,6 +4,36 @@ import 'dart:convert';
 /// Hermes and a silent Codex read the same to the user.
 const String kAgentNoAnswer = "The agent didn't return an answer.";
 
+/// A plain line for why the assistant on *this computer* wouldn't start, from
+/// the raw reason it left on stderr as it died.
+///
+/// The user runs Grid, not a terminal. Hermes's own words — "ACP dependencies
+/// not installed. Install them with: pip install -e '.[acp]'" — name a fix they
+/// can't carry out and a tool they've never opened, so quoting it verbatim (as
+/// the chat did) is worse than useless: it reads as a wall of jargon with a
+/// dead-end instruction. Grid installs and repairs the assistant itself, from
+/// the Agents screen, so every case points there instead — and a reason we
+/// don't recognise stays a calm "wouldn't start" rather than dumping a Python
+/// traceback into the conversation. Retryable failures never reach here; they
+/// keep their own "try again". The raw reason is logged separately (§6), so
+/// humanizing it here is never the only record.
+String friendlyAgentStartupError(String raw) {
+  final said = raw.toLowerCase();
+  // A half-finished install: the binary is there but its extras aren't — the
+  // one class the user can actually fix, by reinstalling.
+  final incomplete =
+      (said.contains('acp') || said.contains('dependenc')) &&
+          (said.contains('not installed') || said.contains('pip install')) ||
+      said.contains('no module named') ||
+      said.contains('modulenotfound');
+  if (incomplete) {
+    return "Part of the assistant's setup is missing on this computer. "
+        'Reinstall it from the Agents screen, then try again.';
+  }
+  return "The assistant on this computer wouldn't start. Reinstall it from the "
+      'Agents screen, then try again.';
+}
+
 /// The grid's own refusal, as Hermes hands it over: the assistant's whole answer
 /// is the failed HTTP call, verbatim — `HTTP 400: {"detail":"No active provider
 /// for this model supports tools"}`.

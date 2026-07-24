@@ -73,4 +73,42 @@ void main() {
       expect(friendlyAgentServerError('   '), isNull);
     });
   });
+
+  group('a startup failure reads for a non-technical user', () {
+    test('the ACP-dependencies case never shows pip or acp, and points at the '
+        'one fix the user can carry out', () {
+      final message = friendlyAgentStartupError(
+        "Hermes exited during startup: ACP dependencies not installed. Install "
+        "them with: pip install -e '.[acp]'",
+      );
+
+      // None of Hermes's terminal jargon reaches the chat.
+      expect(message.toLowerCase(), isNot(contains('pip')));
+      expect(message.toLowerCase(), isNot(contains('acp')));
+      expect(message.toLowerCase(), isNot(contains('dependenc')));
+      // What's left is plain, and names where the user can actually fix it.
+      expect(message.toLowerCase(), contains('reinstall'));
+      expect(message.toLowerCase(), contains('agents'));
+    });
+
+    test('a Python import failure is the same missing-setup class', () {
+      final message = friendlyAgentStartupError(
+        "Hermes exited during startup: ModuleNotFoundError: No module named "
+        "'acp'",
+      );
+      expect(message.toLowerCase(), contains('setup is missing'));
+      expect(message, isNot(contains('ModuleNotFoundError')));
+    });
+
+    test('an unrecognised reason stays calm — no traceback in the chat', () {
+      final message = friendlyAgentStartupError(
+        'Hermes exited during startup: Traceback (most recent call last): '
+        'RuntimeError: something obscure',
+      );
+      expect(message.toLowerCase(), contains("wouldn't start"));
+      expect(message.toLowerCase(), contains('reinstall'));
+      expect(message, isNot(contains('Traceback')));
+      expect(message, isNot(contains('RuntimeError')));
+    });
+  });
 }
