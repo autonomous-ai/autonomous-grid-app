@@ -8,6 +8,7 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/typing_dots.dart';
 import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
@@ -532,8 +533,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// streams in, or a spinner while the agent works before its first token.
   Widget? _trailingBubble(SendPhase phase, bool agentMode) => switch (phase) {
     SendGenerating g => GeneratingBubble(phase: g),
-    SendStreaming(:final text) when text.isNotEmpty => ChatBubble(
-      message: ChatMessage(role: ChatRole.assistant, text: text),
+    SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
+      text: text,
     ),
     SendStreaming() => const AgentWorkingBubble(),
     SendBusy() when agentMode => const AgentWorkingBubble(),
@@ -551,6 +552,37 @@ class _ChatViewState extends ConsumerState<ChatView> {
     PlaygroundModality.video => 'Attach an image, then describe the motion',
     PlaygroundModality.text => 'What should we create?',
   };
+}
+
+/// The reply as it streams in: the partial text, exactly as [ChatBubble] draws
+/// the finished turn, with the [TypingDots] cue under it so a pause between
+/// bursts reads as "still going", not "stopped".
+///
+/// Reuses [ChatBubble] rather than re-laying-out the text, so a half-streamed
+/// reply and the same reply once committed are pixel-identical — no reflow at
+/// the moment the dots drop away. The dots sit at the content's left edge (the
+/// assistant column starts there), a touch below.
+class _StreamingReply extends StatelessWidget {
+  const _StreamingReply({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ChatBubble(
+          message: ChatMessage(role: ChatRole.assistant, text: text),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 10),
+          child: TypingDots(),
+        ),
+      ],
+    );
+  }
 }
 
 /// The scrolling conversation: the minimap rail down the left, the turns in a
