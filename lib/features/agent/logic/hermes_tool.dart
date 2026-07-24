@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/hermes_acp_setup.dart';
 import '../../../infrastructure/cli/host_environment.dart';
+import '../../../infrastructure/logging/app_log.dart';
 
 /// The agent that answers chat: Hermes, an agent loop the app spawns and streams
 /// into the conversation. The `grid` CLI installs it
@@ -19,3 +21,15 @@ final hermesPathProvider = Provider<String?>(
 final hermesInstalledProvider = Provider<bool>(
   (ref) => ref.watch(hermesPathProvider) != null,
 );
+
+/// Reads and repairs Hermes's ACP support, or null when Hermes isn't installed
+/// at all — there is nothing to repair until the CLI has put it here.
+///
+/// Kept beside [hermesPathProvider] so a repair always drives the same binary
+/// the rest of the app found, and re-probing after an install swaps both.
+final hermesAcpSetupProvider = Provider<HermesAcpSetup?>((ref) {
+  final path = ref.watch(hermesPathProvider);
+  return path == null
+      ? null
+      : HermesAcpSetupImpl(path, log: ref.watch(appLogProvider));
+});

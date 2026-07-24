@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
+import '../../agent/logic/agent_server_error.dart';
+import '../../agent/logic/hermes_tool.dart';
 import 'agent_catalog.dart';
 import 'agent_status.dart';
 
@@ -67,7 +69,32 @@ class AgentInstallController extends Notifier<AgentInstallState> {
     // The binary is on PATH now (or gone, if the user removed it) — re-probe the
     // one we installed, so its row stops claiming what it said beforehand.
     reprobeAgent(ref, tool);
+
+    final unfinished = await _finishAcpSetup(tool);
+    if (unfinished != null) {
+      state = AgentInstallFailed(tool, unfinished);
+      return;
+    }
     state = const AgentInstallIdle();
+  }
+
+  /// Make sure Hermes can actually serve ACP — the mode chat drives it in.
+  ///
+  /// The CLI on this machine may be an older build, which installs Hermes
+  /// without that piece: the row would then read "installed" while every chat
+  /// turn failed. Installing is the moment to finish the job, so Update repairs
+  /// such a machine instead of running the same broken install again. Returns
+  /// null when there's nothing to do (or it worked), else the line to show.
+  Future<String?> _finishAcpSetup(AgentTool tool) async {
+    if (tool != AgentTool.hermes) return null;
+    final setup = ref.read(hermesAcpSetupProvider);
+    if (setup == null || await setup.isReady()) return null;
+    // The raw reason is logged by the repair itself (§6) — this is the line the
+    // user reads.
+    return await setup.repair() == null
+        ? null
+        : '$kAgentSetupUnfinished Check your internet connection, then try '
+              'again.';
   }
 
   void clearError() {
