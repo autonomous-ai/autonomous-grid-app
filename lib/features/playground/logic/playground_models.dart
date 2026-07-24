@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../network/logic/grid_overview_provider.dart';
+import '../../provider_node/logic/api_engine_catalog.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../network/logic/node_display.dart';
 import 'playground_request.dart';
@@ -15,11 +16,89 @@ class PlaygroundModelOption {
     required this.id,
     required this.label,
     required this.modality,
+    this.hosting = ModelHosting.unknown,
   });
 
   final String id;
   final String label;
   final PlaygroundModality modality;
+
+  /// Where the answer actually comes from — see [ModelHosting].
+  final ModelHosting hosting;
+}
+
+/// Where a model runs, which is the difference between "a machine on this grid
+/// answers you" and "somebody's cloud subscription does".
+///
+/// It matters more here than in most apps: the whole pitch is models you run
+/// yourself, and a grid mixes both kinds in one list under names that give
+/// nothing away (`laguna-s-2.1` runs on a 4090 in the room; `codex:gpt-5.5` is
+/// relayed to OpenAI). Only the *node* serving a model knows which — `/models`
+/// reports every entry the same way — so this is read off the overview's nodes.
+enum ModelHosting {
+  /// A machine on the grid is running it — the local engine, a connected
+  /// server, an image node.
+  onGrid,
+
+  /// A node is relaying it to a provider's API on someone's key or subscription.
+  cloud,
+
+  /// The virtual router: it picks a model per request, so it is neither until
+  /// it has picked.
+  routed,
+
+  /// Nothing on the grid claims it, or it claims an engine we don't recognise.
+  /// Says nothing rather than guessing — calling a cloud model "on the grid"
+  /// promises a privacy it doesn't have.
+  unknown,
+}
+
+/// Engines that answer from the machine they run on. Everything the app can
+/// install or connect, plus the media node.
+const _localEngines = {
+  'llama.cpp',
+  'llamacpp',
+  'llama_cpp',
+  'ollama',
+  'comfyui',
+  'vllm',
+  'lmstudio',
+  // `grid join --at <url>` — someone's own server, still a machine they run.
+  'external',
+};
+
+/// The relay's `engine` for a node, read as where its models actually run.
+///
+/// Unrecognised engines stay [ModelHosting.unknown] on purpose: a wrong "runs on
+/// the grid" is a privacy claim the app can't back, and a wrong "cloud" libels a
+/// machine the user is paying to keep on.
+ModelHosting hostingForEngine(String? engine) {
+  final name = (engine ?? '').trim().toLowerCase();
+  if (name.isEmpty) return ModelHosting.unknown;
+  if (_localEngines.contains(name)) return ModelHosting.onGrid;
+  // Every hosted provider the CLI whitelists — `codex`, `openai`, and whatever
+  // joins them — is a node relaying to that vendor's API.
+  if (kApiProviders.any((p) => p.kind == name)) return ModelHosting.cloud;
+  return ModelHosting.unknown;
+}
+
+/// Where each model id on the grid is served from, by asking the online nodes
+/// that advertise it. A model served from two places at once (one machine, one
+/// cloud relay) reads as [ModelHosting.unknown] — the honest answer to "is this
+/// private?" when it depends on which node the relay picks.
+Map<String, ModelHosting> hostingByModel(Iterable<OverviewNode> nodes) {
+  final byModel = <String, ModelHosting>{};
+  for (final node in nodes) {
+    if (!node.online) continue;
+    final hosting = hostingForEngine(node.engine);
+    for (final id in {node.model, ...node.models}.nonNulls) {
+      final seen = byModel[id];
+      byModel[id] = seen == null || seen == hosting
+          ? hosting
+          : ModelHosting.unknown;
+    }
+  }
+  return byModel;
 }
 
 /// Labels for the media modes — also the picker field value, so they must not
@@ -58,8 +137,9 @@ List<PlaygroundModelOption> mediaModeOptions(Iterable<String> capabilities) {
 /// twice. Pure so it's unit-tested without a container.
 List<PlaygroundModelOption> playgroundOptionsFrom(
   List<OverviewModel> models,
-  Iterable<String> capabilities,
-) {
+  Iterable<String> capabilities, {
+  Map<String, ModelHosting> hosting = const {},
+}) {
   final textOptions = [
     for (final model in models)
       if (mediaCapabilityLabel(model.id) == null)
@@ -67,6 +147,9 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
           id: model.id,
           label: model.id,
           modality: modalityFromString(model.modality),
+          hosting: model.id == kAutoModelId
+              ? ModelHosting.routed
+              : hosting[model.id] ?? ModelHosting.unknown,
         ),
   ];
   final existingModalities = textOptions.map((o) => o.modality).toSet();
@@ -83,9 +166,10 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
 /// The model list is the relay's OpenAI-standard `/models` ([networkModelsProvider]),
 /// the canonical list of what the grid serves — so the `auto` auto-routing model
 /// shows here too, not just node-advertised engines, unless it is the only entry
-/// (a router with nothing behind it reads as no model). The overview is read only
-/// for the node comfyui capabilities behind the Image/Video modes (those never
-/// appear in `/models`).
+/// (a router with nothing behind it reads as no model). The overview supplies
+/// what `/models` can't: the comfyui capabilities behind the Image/Video modes,
+/// and which engine is behind each model — the only place a cloud relay and a
+/// machine in the room can be told apart.
 final playgroundModelsProvider =
     Provider.autoDispose<List<PlaygroundModelOption>>((ref) {
       final ids =
@@ -95,6 +179,7 @@ final playgroundModelsProvider =
       return playgroundOptionsFrom(
         [for (final id in ids) OverviewModel(id: id)],
         [for (final node in nodes) ...node.models],
+        hosting: hostingByModel(nodes),
       );
     });
 

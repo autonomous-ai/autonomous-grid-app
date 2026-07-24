@@ -47,34 +47,35 @@ final gridModelCatalogProvider = Provider.autoDispose<List<GridModelGroup>>((
     gridModelGroupFrom(
       grid,
       ref.watch(networkModelsForProvider(grid.networkId)),
-      mediaCapabilitiesOf(ref.watch(gridOverviewForProvider(grid.networkId))),
+      nodesOf(ref.watch(gridOverviewForProvider(grid.networkId))),
     ),
   ];
 });
 
-/// The comfyui capabilities a grid's overview advertises across its nodes, or
-/// none while it's still loading / offline — media modes are a bonus on top of
-/// the `/models` list, never a reason to block or fail the group.
-List<String> mediaCapabilitiesOf(AsyncValue<GridOverview> overview) => [
-  for (final node in overview.asData?.value.nodes ?? const <OverviewNode>[])
-    ...node.models,
-];
+/// The nodes a grid's overview reports, or none while it's still loading /
+/// offline — what they add (the Image/Video modes, and which engine is behind
+/// each model) is a bonus on top of the `/models` list, never a reason to block
+/// or fail the group.
+List<OverviewNode> nodesOf(AsyncValue<GridOverview> overview) =>
+    overview.value?.nodes ?? const <OverviewNode>[];
 
-/// Maps a grid's served-model list plus its media [capabilities] into a menu
-/// group. The list's [models] async drives the loading / ready / offline state;
-/// capabilities only add the Image/Video modes. Pure so the mapping is
-/// unit-tested without any async or provider timing.
+/// Maps a grid's served-model list plus its [nodes] into a menu group. The
+/// list's [models] async drives the loading / ready / offline state; the nodes
+/// add the Image/Video modes and say where each model actually runs. Pure so the
+/// mapping is unit-tested without any async or provider timing.
 GridModelGroup gridModelGroupFrom(
   NetworkCredential grid,
   AsyncValue<List<String>> models,
-  List<String> capabilities,
+  List<OverviewNode> nodes,
 ) => models.when(
   skipLoadingOnReload: false,
   data: (ids) => GridModelGroup(
     grid: grid,
-    options: playgroundOptionsFrom([
-      for (final id in ids) OverviewModel(id: id),
-    ], capabilities),
+    options: playgroundOptionsFrom(
+      [for (final id in ids) OverviewModel(id: id)],
+      [for (final node in nodes) ...node.models],
+      hosting: hostingByModel(nodes),
+    ),
     status: GridModelStatus.ready,
   ),
   loading: () => GridModelGroup(

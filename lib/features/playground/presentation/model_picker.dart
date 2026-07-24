@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/modality_mark.dart';
 import '../logic/playground_models.dart';
-import '../logic/playground_request.dart';
 
 /// Editable model dropdown — lists what the grid can do (chat models plus any
 /// image / video generation modes, each with its own icon), yet stays typeable
@@ -54,10 +54,7 @@ class ModelPicker extends StatelessWidget {
           DropdownMenuEntry(
             value: option.id,
             label: option.label,
-            leadingIcon: Icon(
-              _modalityIcon(option.modality),
-              size: kFieldIconSize,
-            ),
+            leadingIcon: Icon(modelIcon(option), size: kFieldIconSize),
             style: MenuItemButton.styleFrom(textStyle: kFieldTextStyle),
           ),
       ],
@@ -66,11 +63,4 @@ class ModelPicker extends StatelessWidget {
       },
     );
   }
-
-  static IconData _modalityIcon(PlaygroundModality modality) =>
-      switch (modality) {
-        PlaygroundModality.image => Icons.image_outlined,
-        PlaygroundModality.video => Icons.movie_outlined,
-        PlaygroundModality.text => Icons.smart_toy_outlined,
-      };
 }

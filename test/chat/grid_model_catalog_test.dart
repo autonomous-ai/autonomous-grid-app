@@ -54,7 +54,9 @@ void main() {
       final group = gridModelGroupFrom(
         foo,
         const AsyncData(['maker/m1']),
-        const ['comfyui:i2v'],
+        const [
+          OverviewNode(name: 'n1', online: true, models: ['comfyui:i2v']),
+        ],
       );
       expect(group.options.map((o) => o.id), contains('maker/m1'));
       expect(group.options.map((o) => o.label), contains('Image → video'));
@@ -77,8 +79,8 @@ void main() {
     });
   });
 
-  group('mediaCapabilitiesOf', () {
-    test('flattens a ready overview\'s node capabilities', () {
+  group('nodesOf', () {
+    test('hands over a ready overview\'s nodes', () {
       final overview = AsyncData(
         GridOverview(
           stats: const GridStats(models: 0, nodes: 1),
@@ -92,13 +94,13 @@ void main() {
           ],
         ),
       );
-      expect(mediaCapabilitiesOf(overview), ['comfyui:i2v', 'maker/m1']);
+      expect(nodesOf(overview).single.models, ['comfyui:i2v', 'maker/m1']);
     });
 
     test('is empty while the overview is loading or offline', () {
-      expect(mediaCapabilitiesOf(const AsyncLoading()), isEmpty);
+      expect(nodesOf(const AsyncLoading()), isEmpty);
       expect(
-        mediaCapabilitiesOf(
+        nodesOf(
           AsyncError(const GridOverviewUnavailable('x'), StackTrace.empty),
         ),
         isEmpty,
