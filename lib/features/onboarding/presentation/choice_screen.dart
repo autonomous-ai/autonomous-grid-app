@@ -13,14 +13,16 @@ import 'widgets/choice_options.dart';
 /// First-run choice: the user's grid has no model to chat with yet, so ask how
 /// it should get one.
 ///
-/// Three cards, in the order they cost the user something — sign in with a
-/// ChatGPT subscription (nothing to fetch or find), run a model on this computer
-/// (a download), paste an API key (the field appears only once they say that's
-/// their way in). Each is a title, one line and one button: this is the first
-/// screen of the app, before any decision has been made, so the detail belongs
-/// after the choice. Every card hides itself when this machine or the installed
-/// CLI can't offer it, and Skip is always there — the screen is a fork, not a
-/// wall.
+/// Two rows carry the decision, in the order they cost the user something — sign
+/// in with a ChatGPT subscription (nothing to fetch or find), or run a model on
+/// this computer (a download). Each is a title, one line, and a badge naming
+/// what it saves you; the detail belongs after the choice, not in front of it.
+/// The key path is folded away underneath, because it's the rarest way in and
+/// the only one that sends the user off to find something first.
+///
+/// Every option hides itself when this machine or the installed CLI can't offer
+/// it, and "I'll set this up later" is always there — the screen is a fork, not
+/// a wall.
 class OnboardingChoiceScreen extends ConsumerWidget {
   const OnboardingChoiceScreen({super.key});
 
@@ -65,25 +67,29 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Get started', style: theme.textTheme.headlineSmall),
-                  const SizedBox(height: 6),
                   Text(
-                    'Choose how you want to chat.',
+                    'Connect an AI model',
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  // Says the decision is reversible up front, which is what lets
+                  // the rest of the screen stay this short.
+                  Text(
+                    'Choose where your AI runs. You can change this later.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // One card per way in, quickest first: sign in with a
-                  // subscription, run a model here, or paste a key. Each hides
-                  // itself when this computer or the installed CLI can't offer
-                  // it, so the screen never shows a road that leads nowhere.
+                  // One row per way in, quickest first. Each hides itself when
+                  // this computer or the installed CLI can't offer it — and
+                  // carries its own gap, so a hidden option leaves no hole.
                   if (network != null) SubscriptionOption(network: network),
                   if (ref.watch(supportsBuiltInEngineProvider))
                     const LocalOption(),
                   if (network != null) ...[
-                    ApiKeyOption(network: network),
                     const CloudStartError(),
+                    ApiKeyDisclosure(network: network),
                   ],
                   const SizedBox(height: 4),
                   Center(
@@ -91,18 +97,7 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                       onPressed: () => ref
                           .read(onboardingChoiceControllerProvider.notifier)
                           .chooseLater(),
-                      child: const Text('Skip'),
-                    ),
-                  ),
-                  // What skipping actually leaves the user with. Without it they
-                  // land in a chat that answers nothing and have to work out why
-                  // — the cost of the quiet option belongs beside the option.
-                  Text(
-                    'Your grid has no model yet, so chat won’t answer until you '
-                    'add one. You can do this later in Settings.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                      child: const Text('I’ll set this up later'),
                     ),
                   ),
                 ],
