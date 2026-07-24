@@ -65,6 +65,9 @@ class ServingEnginesSection extends ConsumerWidget {
               engine: engine,
               gridId: network.networkId,
               stopping: stopping,
+              // A lone engine leaves its Stop to the header — one control, no
+              // duplicate. Per-engine Stop returns the moment a second joins.
+              showStop: engines.length > 1,
             ),
           if (signInUrl != null) ...[
             const SizedBox(height: 12),
