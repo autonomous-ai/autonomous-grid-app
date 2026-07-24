@@ -17,16 +17,21 @@ class _FakeTransport implements ChatTransport {
   String? apiKey;
 
   @override
-  Future<ChatCompletion> complete({
+  Stream<ChatStreamEvent> stream({
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
-  }) async {
+  }) async* {
     this.endpoint = endpoint;
     this.apiKey = apiKey;
     this.model = model;
-    return (reply, error);
+    if (error != null) {
+      yield ChatFailed(error!);
+      return;
+    }
+    if (reply != null && reply!.isNotEmpty) yield ChatDelta(reply!);
+    yield const ChatDone();
   }
 }
 
