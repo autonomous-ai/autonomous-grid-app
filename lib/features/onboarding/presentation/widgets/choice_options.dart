@@ -119,8 +119,8 @@ class _Option extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
-    // Outlined: this screen is a plain white page, where the tabs' white-on-
-    // tinted surface leaves nothing on screen to press.
+    // Outlined: these sit on the onboarding card's white, where the tabs'
+    // white-on-tinted surface leaves nothing on screen to press.
     child: ChoiceRowGroup(outlined: true, children: [child]),
   );
 }
