@@ -19,23 +19,26 @@ const _model = 'qwen3.gguf';
 
 /// A grid the user owns. [provider] mirrors whether their token already carries
 /// the `provider:poll` scope — i.e. whether sharing is already set up.
-NetworkCredential _grid({bool owner = true, bool provider = false}) =>
-    NetworkCredential(
-      networkId: 'ag-1',
-      name: 'My AI Grid',
-      networkType: 'permissioned',
-      lanSignalingUrl: 'http://127.0.0.1:8090',
-      accessToken: 'tok',
-      refreshToken: '',
-      email: 'me@x.com',
-      nodeId: 'node',
-      deviceId: 'dev',
-      roles: owner ? const ['admin'] : const ['consumer'],
-      scopes: provider ? const ['provider:poll'] : const ['consumer:chat'],
-      memberEpoch: 1,
-      networkEpoch: 1,
-      expiresAt: 0,
-    );
+NetworkCredential _grid({
+  bool owner = true,
+  bool provider = false,
+  bool public = false,
+}) => NetworkCredential(
+  networkId: 'ag-1',
+  name: 'My AI Grid',
+  networkType: public ? 'permissioned-providers' : 'permissioned',
+  lanSignalingUrl: 'http://127.0.0.1:8090',
+  accessToken: 'tok',
+  refreshToken: '',
+  email: 'me@x.com',
+  nodeId: 'node',
+  deviceId: 'dev',
+  roles: owner ? const ['admin'] : const ['consumer'],
+  scopes: provider ? const ['provider:poll'] : const ['consumer:chat'],
+  memberEpoch: 1,
+  networkEpoch: 1,
+  expiresAt: 0,
+);
 
 /// Pins the active grid, since the real one resolves from disk.
 class _FixedNetwork extends SelectedNetwork {
@@ -179,6 +182,24 @@ void main() {
       "on someone else's grid — a guest is a consumer, not a host",
       () async {
         final h = _harness(network: _grid(owner: false));
+
+        await h.container
+            .read(autoHostControllerProvider.notifier)
+            .startIfReady();
+
+        expect(h.cli.lastStartArgs, isNull);
+        expect(
+          h.container.read(autoHostControllerProvider),
+          isA<AutoHostIdle>(),
+        );
+      },
+    );
+
+    test(
+      'on a public grid — strangers would get this computer without the user '
+      'ever choosing to offer it',
+      () async {
+        final h = _harness(network: _grid(provider: true, public: true));
 
         await h.container
             .read(autoHostControllerProvider.notifier)

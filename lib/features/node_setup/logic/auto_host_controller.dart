@@ -74,6 +74,10 @@ class AutoHostController extends Notifier<AutoHostState> {
     // only an owner can grant it to themselves. A guest on someone else's grid
     // is a consumer — nothing to do.
     if (!network.isOwner && !network.isProvider) return;
+    // Never onto a public grid unasked: everyone on it could then run models on
+    // this computer. Putting a machine in front of strangers is a decision the
+    // user makes on the Engines tab, not something setup does for them.
+    if (network.isPublic) return;
 
     if (!ref.read(engineStatusProvider).llamaInstalled) return;
     final models = ref.read(modelGroupsProvider);
