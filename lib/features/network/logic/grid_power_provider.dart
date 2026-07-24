@@ -136,7 +136,7 @@ GridPower gridPowerFrom(
 /// overview loads, when it fails, or when no grid is selected — the top bar
 /// stays quiet rather than flashing a skeleton on every grid switch.
 ///
-/// Reads the overview through [gridOverviewProvider], the same door
+/// Reads the overview through [gridOverviewSnapshot], the same door
 /// [gridModelsProvider] uses, and **not** through `gridOverviewForProvider`
 /// directly. Watching both doors in one body reached the same cache twice: the
 /// direct watch flushed the family member, which dirtied the alias, which then
@@ -147,12 +147,7 @@ final gridPowerProvider = Provider.autoDispose<GridPower>((ref) {
   if (ref.watch(selectedNetworkProvider) == null) {
     return const GridPower(onlineNodes: 0, models: 0);
   }
-  // .value, not asData?.value: a poll (and the immediate refetch when the hover
-  // panel opens) flips the overview to loading, and asData reads null there —
-  // blanking the pill's numbers to zero for the ~200ms round-trip, the flicker
-  // the panel showed on hover. AsyncValue.value keeps the last good overview on
-  // screen through a background refresh and swaps only when the new one lands.
-  final overview = ref.watch(gridOverviewProvider).value;
+  final overview = ref.watch(gridOverviewSnapshot);
   return gridPowerFrom(
     overview?.nodes ?? const <OverviewNode>[],
     ref.watch(gridModelsProvider).length,
@@ -172,10 +167,8 @@ final gridPowerProvider = Provider.autoDispose<GridPower>((ref) {
 /// mid-build flush this pair was fixed for.
 final gridOnlineNodesProvider = Provider.autoDispose<List<OverviewNode>>((ref) {
   if (ref.watch(selectedNetworkProvider) == null) return const [];
-  // .value keeps the panel's machine list on screen through a background
-  // refresh — see [gridPowerProvider].
   final nodes =
-      ref.watch(gridOverviewProvider).value?.nodes ?? const <OverviewNode>[];
+      ref.watch(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[];
   return sortNodesByPower([
     for (final n in nodes)
       if (n.online) n,

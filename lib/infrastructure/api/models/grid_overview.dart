@@ -1,6 +1,18 @@
+import 'package:flutter/foundation.dart' show listEquals;
+
 /// Parsed `GET {relayBaseUrl}/grid/overview` — the live snapshot a grid's relay
 /// serves: headline stats, the models it advertises, and the nodes backing them.
 /// Every field is null-tolerant so a partial/evolving payload never throws.
+///
+/// Every class here compares **by value**, and that is load-bearing, not tidiness.
+/// The overview is re-fetched on a timer; without value equality each poll handed
+/// Riverpod a brand-new object, so identity alone counted as "changed" and the
+/// whole derived graph — models, media capabilities, grid power, online nodes —
+/// recomputed and rebuilt every cadence for figures that hadn't moved. Worse, a
+/// notification landing while a screen was mounting its providers made those
+/// dependents invalidate mid-build, which is the `setState() during build` the
+/// framework then reports against `UncontrolledProviderScope`. A grid that hasn't
+/// changed now notifies nobody.
 class GridOverview {
   const GridOverview({
     this.state,
@@ -57,6 +69,26 @@ class GridOverview {
             .map((m) => parse(m.cast<String, dynamic>()))
             .toList()
       : const [];
+
+  @override
+  bool operator ==(Object other) =>
+      other is GridOverview &&
+      other.state == state &&
+      other.stats == stats &&
+      listEquals(other.models, models) &&
+      listEquals(other.nodes, nodes) &&
+      other.advertisesChatCompletions == advertisesChatCompletions &&
+      other.advertisesResponses == advertisesResponses;
+
+  @override
+  int get hashCode => Object.hash(
+    state,
+    stats,
+    Object.hashAll(models),
+    Object.hashAll(nodes),
+    advertisesChatCompletions,
+    advertisesResponses,
+  );
 }
 
 class GridStats {
@@ -78,6 +110,17 @@ class GridStats {
     concurrentCapacity: (j['concurrent_capacity'] as num?)?.toInt(),
     uptimePct: (j['uptime_pct'] as num?)?.toDouble(),
   );
+
+  @override
+  bool operator ==(Object other) =>
+      other is GridStats &&
+      other.models == models &&
+      other.nodes == nodes &&
+      other.concurrentCapacity == concurrentCapacity &&
+      other.uptimePct == uptimePct;
+
+  @override
+  int get hashCode => Object.hash(models, nodes, concurrentCapacity, uptimePct);
 }
 
 class OverviewModel {
@@ -110,6 +153,21 @@ class OverviewModel {
         : null,
     status: j['status'] as String?,
   );
+
+  @override
+  bool operator ==(Object other) =>
+      other is OverviewModel &&
+      other.id == id &&
+      other.name == name &&
+      other.maker == maker &&
+      other.modality == modality &&
+      other.contextLength == contextLength &&
+      other.pricing == pricing &&
+      other.status == status;
+
+  @override
+  int get hashCode =>
+      Object.hash(id, name, maker, modality, contextLength, pricing, status);
 }
 
 class ModelPricing {
@@ -124,6 +182,16 @@ class ModelPricing {
     inputPer1m: (j['input_per_1m'] as num?)?.toDouble(),
     outputPer1m: (j['output_per_1m'] as num?)?.toDouble(),
   );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ModelPricing &&
+      other.unit == unit &&
+      other.inputPer1m == inputPer1m &&
+      other.outputPer1m == outputPer1m;
+
+  @override
+  int get hashCode => Object.hash(unit, inputPer1m, outputPer1m);
 }
 
 class OverviewNode {
@@ -185,5 +253,39 @@ class OverviewNode {
     throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
     maxConcurrency: (j['max_concurrency'] as num?)?.toInt(),
     online: j['online'] == true,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is OverviewNode &&
+      other.name == name &&
+      other.device == device &&
+      other.chip == chip &&
+      other.memoryGb == memoryGb &&
+      other.vramGb == vramGb &&
+      other.vramTotalMb == vramTotalMb &&
+      other.deviceClass == deviceClass &&
+      other.model == model &&
+      listEquals(other.models, models) &&
+      other.engine == engine &&
+      other.throughputTokS == throughputTokS &&
+      other.maxConcurrency == maxConcurrency &&
+      other.online == online;
+
+  @override
+  int get hashCode => Object.hash(
+    name,
+    device,
+    chip,
+    memoryGb,
+    vramGb,
+    vramTotalMb,
+    deviceClass,
+    model,
+    Object.hashAll(models),
+    engine,
+    throughputTokS,
+    maxConcurrency,
+    online,
   );
 }

@@ -67,6 +67,25 @@ final gridOverviewProvider = FutureProvider.autoDispose<GridOverview>((
   return ref.watch(gridOverviewForProvider(network.networkId).future);
 });
 
+/// The last overview the selected grid resolved — null until the first one
+/// lands, and the previous one while a refresh is in flight.
+///
+/// **Everything derived from the overview reads it through this**, never through
+/// `ref.watch(gridOverviewProvider)` directly. Two reasons, both learned the hard
+/// way:
+///
+/// - `.value`, not `.asData`: a poll flips the overview to loading, where
+///   `asData` reads null — blanking the pill's numbers to zero for the whole
+///   round-trip. The last good snapshot stays until a new one lands.
+/// - selecting the snapshot *out* of the `AsyncValue` makes the loading→data
+///   flip a change only when the grid itself changed. Watching the whole
+///   `AsyncValue` meant every poll notified twice no matter what came back, so
+///   the derived graph recomputed each cadence — and when that landed while a
+///   screen was mounting its providers, a dependent invalidated itself mid-build,
+///   which the framework reports as `setState() called during build`. Paired with
+///   the value equality on [GridOverview], an unchanged grid now notifies nobody.
+final gridOverviewSnapshot = gridOverviewProvider.select((a) => a.value);
+
 /// The grid's models to surface in the UI, richest source first: the relay
 /// overview's detailed list (id + modality + pricing) when it has one, otherwise
 /// plain ids from the OpenAI-style `/models`. Both the Models section (tiles) and
@@ -78,10 +97,8 @@ final gridOverviewProvider = FutureProvider.autoDispose<GridOverview>((
 /// as empty. Filtering at the source keeps every count, tile and empty-state
 /// derived from this list honest. See [kAutoModelId].
 final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
-  // .value, not asData?.value: keeps the last model list on screen through a
-  // background poll instead of emptying every count/tile for the round-trip.
   final rich =
-      ref.watch(gridOverviewProvider).value?.models ?? const <OverviewModel>[];
+      ref.watch(gridOverviewSnapshot)?.models ?? const <OverviewModel>[];
   final source = rich.isNotEmpty
       ? rich
       : [
@@ -141,11 +158,8 @@ GridMediaCapabilities gridMediaCapabilitiesFrom(Iterable<String> capabilities) {
 /// (no image/video) while loading or when no media provider is online.
 final gridMediaCapabilitiesProvider =
     Provider.autoDispose<GridMediaCapabilities>((ref) {
-      // .value survives a background refresh — media modes shouldn't blink off
-      // and back while the overview re-polls.
       final nodes =
-          ref.watch(gridOverviewProvider).value?.nodes ??
-          const <OverviewNode>[];
+          ref.watch(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[];
       return gridMediaCapabilitiesFrom([
         for (final node in nodes) ...node.models,
       ]);

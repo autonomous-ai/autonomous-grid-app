@@ -247,11 +247,12 @@ class _PowerPanel extends ConsumerWidget {
     AppTheme.watch(context);
     final power = ref.watch(gridPowerProvider);
     final nodes = ref.watch(gridOnlineNodesProvider);
-    // .value, not asData?.value: the panel refetches the moment it opens, and
-    // asData would read null through the round-trip — dropping the uptime line
-    // out of the header as it appears. .value holds the last figure until the
-    // fresh one lands.
-    final uptime = ref.watch(gridOverviewProvider).value?.stats.uptimePct;
+    // One figure, not the whole snapshot: the panel refetches the moment it
+    // opens, and this line repaints only if the uptime itself moved. Through
+    // [gridOverviewSnapshot] so a poll in flight can't blank it — see there.
+    final uptime = ref.watch(
+      gridOverviewSnapshot.select((o) => o?.stats.uptimePct),
+    );
 
     final vram = power.vramGb;
     final slices = vram == null
