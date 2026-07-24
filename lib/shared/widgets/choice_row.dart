@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../../features/provider_node/presentation/engine_block.dart';
+import 'app_spinner.dart';
 
 /// What pressing a [ChoiceRow] does, so the mark on its right can tell the
 /// truth about it.
@@ -15,17 +16,18 @@ enum ChoiceRowAction {
   leave,
 }
 
-/// The same choice [ChoiceCard] offers, worn as a row you press.
+/// One way to do a thing, worn as a row you press: an icon, a title, one line,
+/// and a mark saying what pressing it does.
 ///
-/// A card spends a title, a line and a *button* on one option — and the button
-/// mostly repeated the title ("Use an API key" → Enter a key). Four of them
-/// stacked ran past the fold, all four at identical weight, with the real target
-/// a small button inside each. As a row the whole strip is the target, the
-/// button goes, and the same four options cost a third of the height.
+/// This replaced a card that spent a title, a line and a *button* on each option
+/// — and the button mostly repeated the title ("Use an API key" → Enter a key).
+/// Four of them stacked ran past the fold, all four at identical weight, with the
+/// real target a small button inside each. As a row the whole strip is the
+/// target, the button goes, and the same four options cost a third of the height.
 ///
-/// The card shape is still right where a choice is the *whole screen* — first
-/// run, three options, nothing else competing — which is why both exist. Use
-/// [ChoiceCard] there; use this inside a page that has other things to say.
+/// Shared between the first-run screen and the Model Engines tab on purpose:
+/// they offer the *same* ways onto a grid, and a user who picked one on the way
+/// in should meet it wearing the same clothes later.
 class ChoiceRow extends StatelessWidget {
   const ChoiceRow({
     super.key,
@@ -34,6 +36,8 @@ class ChoiceRow extends StatelessWidget {
     required this.line,
     required this.action,
     required this.onPressed,
+    this.badge,
+    this.busy = false,
     this.expanded = false,
     this.child,
   });
@@ -47,6 +51,16 @@ class ChoiceRow extends StatelessWidget {
   /// The one line under the title. One, not a paragraph — the detail belongs in
   /// what the row opens, not in front of it.
   final String line;
+
+  /// Two or three words naming what this option *saves* the user — "no setup",
+  /// "private & offline". A benefit, never a restatement of the title: it earns
+  /// its place only by answering "why this one?" at a glance.
+  final String? badge;
+
+  /// The press is under way — the row waits instead of taking another. Only
+  /// worth setting where the screen stays put while it works; a page that leaves
+  /// the moment a press lands has nothing to show a spinner to.
+  final bool busy;
 
   final ChoiceRowAction action;
   final VoidCallback onPressed;
@@ -65,7 +79,7 @@ class ChoiceRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         InkWell(
-          onTap: onPressed,
+          onTap: busy ? null : onPressed,
           // No ripple: a macOS row answers a click with an instant state
           // change, so the hover tint carries the whole affordance (as in the
           // chat composer's buttons).
@@ -107,14 +121,47 @@ class ChoiceRow extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (badge != null) ...[
+                  const SizedBox(width: 10),
+                  _Badge(label: badge!),
+                ],
                 const SizedBox(width: 10),
-                _Marker(action: action, expanded: expanded),
+                if (busy)
+                  const SizedBox(
+                    width: 19,
+                    height: 19,
+                    child: Center(child: AppSpinner(size: SpinnerSize.small)),
+                  )
+                else
+                  _Marker(action: action, expanded: expanded),
               ],
             ),
           ),
         ),
         ?child,
       ],
+    );
+  }
+}
+
+/// The row's one-glance reason: small, quiet, upper-case — read as a property of
+/// the option, not as something to press. Deliberately no fill or border; a chip
+/// beside a chevron reads as a second target on a row that only has one.
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label.toUpperCase(),
+      style: TextStyle(
+        fontSize: 10.5,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.7,
+        color: AppPalette.textFaint,
+      ),
     );
   }
 }

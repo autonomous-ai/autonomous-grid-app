@@ -31,8 +31,8 @@ import 'external_servers.dart';
 /// So: rows. The whole row is the target, which lets the button go; four options
 /// cost a third of the height; and the hairlines say these are four answers to
 /// one question rather than four things to get through. The first-run screen
-/// keeps its cards ([ChoiceCard]) — there the choice *is* the screen, with room
-/// to spend and nothing competing.
+/// offers the same rows, but one surface each — there the choice *is* the
+/// screen, and two separated targets read as two choices rather than a list.
 ///
 /// A row the machine can't offer at all isn't drawn; whether this computer has
 /// room for an engine is the page's call, not a row's — these are shown only
