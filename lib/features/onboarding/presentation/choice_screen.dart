@@ -97,6 +97,12 @@ class OnboardingChoiceScreen extends ConsumerWidget {
                       onPressed: () => ref
                           .read(onboardingChoiceControllerProvider.notifier)
                           .chooseLater(),
+                      // Quiet, not accent — it's the way out, not one of the
+                      // answers. Not `textFaint` though: that reads at 3.3:1 on
+                      // this white page, and a control has to clear 4.5 (§11).
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppPalette.textSecondary,
+                      ),
                       child: const Text('I’ll set this up later'),
                     ),
                   ),

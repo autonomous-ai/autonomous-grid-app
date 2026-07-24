@@ -89,10 +89,11 @@ class LocalOption extends ConsumerWidget {
       child: ChoiceRow(
         icon: const Icon(Icons.computer_outlined),
         title: 'Run locally',
-        // No download figure: the model comes from `grid catalog`, which reports
+        // The cost, since the badge already carries the benefit — and one line,
+        // not two. No figure: the model comes from `grid catalog`, which reports
         // no size, and a number invented here would be a promise the download
         // desk can't keep.
-        line: 'Nothing leaves this computer. Downloads several GB.',
+        line: 'Downloads a model — several GB.',
         badge: 'Private & offline',
         action: ChoiceRowAction.open,
         busy: state is OnboardingInstallingLocal,
@@ -122,12 +123,14 @@ class _Option extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
-    child: ChoiceRowGroup(children: [child]),
+    // Outlined: this screen is a plain white page, where the tabs' white-on-
+    // tinted surface leaves nothing on screen to press.
+    child: ChoiceRowGroup(outlined: true, children: [child]),
   );
 }
 
-/// The key path, folded away: a line the user opens only if a key is how they
-/// get in.
+/// The remaining way in, folded away: a line the user opens only if a key is how
+/// they get in.
 ///
 /// Not a third row. Pasting a key is the rarest of the three ways and the only
 /// one that asks for something the user has to go and find — as a row of equal
@@ -157,10 +160,17 @@ class _ApiKeyDisclosureState extends ConsumerState<ApiKeyDisclosure> {
         Center(
           child: TextButton(
             onPressed: () => setState(() => _open = !_open),
+            // Quiet, not accent: two blue links on a two-choice screen pull the
+            // eye away from the choices themselves.
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.textSecondary,
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Connect with an API key instead'),
+                // Named for what it opens, not for the one way in it happens to
+                // hold today — the CLI's key list is what decides that.
+                const Text('More ways to connect'),
                 const SizedBox(width: 4),
                 // Points down at what it opened — the same turn the choice rows
                 // use, so one chevron language runs through the screen.

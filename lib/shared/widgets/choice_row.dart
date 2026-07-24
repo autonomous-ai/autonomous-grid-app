@@ -160,7 +160,10 @@ class _Badge extends StatelessWidget {
         fontSize: 10.5,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.7,
-        color: AppPalette.textFaint,
+        // Secondary, not faint: at this size the faint grey lands near 3.3:1 on
+        // white, and the caps/size/tracking already carry "this is a label"
+        // without borrowing contrast to do it (§11).
+        color: AppPalette.textSecondary,
       ),
     );
   }
@@ -205,32 +208,59 @@ class _Marker extends StatelessWidget {
 /// The divider follows each row's *opened* form rather than the row itself, so
 /// an expanded option stays visibly one piece with what it opened.
 class ChoiceRowGroup extends StatelessWidget {
-  const ChoiceRowGroup({super.key, required this.children});
+  const ChoiceRowGroup({
+    super.key,
+    required this.children,
+    this.outlined = false,
+  });
 
   /// One [ChoiceRow] each — or the stateful widget that builds one, which is
   /// why this can't be typed tighter: a row that remembers whether it's open
   /// owns that state itself.
   final List<Widget> children;
 
+  /// Wear a visible rim instead of the usual white-and-a-whisper-of-shadow.
+  ///
+  /// Set it on a **plain white page**, where the standard surface is invisible:
+  /// its fill is the same white as the page and the shadow alone doesn't carry
+  /// the edge, so the group renders as bare text with nothing to press. On the
+  /// tabs, which sit on a tinted pane, the default is right.
+  final bool outlined;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(EngineSurface.radius),
-      child: EngineSurface(
-        // The rows bring their own padding — the surface supplies only the
-        // fill, so a hover tint reaches the full width of the row.
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final (index, row) in children.indexed) ...[
-              row,
-              if (index != children.length - 1)
-                Divider(height: 1, thickness: 1, color: AppPalette.divider),
-            ],
-          ],
-        ),
+    final radius = BorderRadius.circular(EngineSurface.radius);
+    // The rows bring their own padding — the surface supplies only the fill, so
+    // a hover tint reaches the full width of the row.
+    final rows = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (index, row) in children.indexed) ...[
+          row,
+          if (index != children.length - 1)
+            Divider(height: 1, thickness: 1, color: AppPalette.divider),
+        ],
+      ],
+    );
+
+    if (!outlined) {
+      return ClipRRect(
+        borderRadius: radius,
+        child: EngineSurface(padding: EdgeInsets.zero, child: rows),
+      );
+    }
+    return DecoratedBox(
+      // In the foreground, so a row's hover fill runs under the rim rather than
+      // painting over it.
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(color: AppGlass.lift),
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: ColoredBox(color: AppGlass.surfaceFill, child: rows),
       ),
     );
   }
