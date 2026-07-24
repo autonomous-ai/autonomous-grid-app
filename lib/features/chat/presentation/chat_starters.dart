@@ -3,6 +3,17 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
+/// A starter card's rim width. Its border sits *outside* the card's content
+/// box, so the grid has to count it when it works out whether four cards fit —
+/// shared here so the layout math and the card that draws the rim can't drift.
+const double _starterCardRim = 1.5;
+
+/// The title's font size and line-height factor, named so the card can reserve
+/// exactly two lines of it: a one- and a two-line title then leave their
+/// descriptions on the same row instead of one shoving the other down.
+const double _titleFontSize = 14;
+const double _titleHeightFactor = 1.16;
+
 /// A fresh chat's empty state: a greeting and four things to try. Tapping one
 /// drops its prompt into the composer, so a first-time user has something to send
 /// instead of a blank box and a blinking cursor.
@@ -22,11 +33,29 @@ class ChatStarters extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 620;
+        final cardWidth = (compact ? 166 : 178) * AppFont.uiScale;
+        // Four cards want a 4-up strip or a 2×2 grid — never the ragged 3+1 a
+        // Wrap produces when a fourth card is 20px shy of fitting. Decide the
+        // shape from the width the cards *actually* occupy (they scale with the
+        // UI font, so a hard 760 stopped matching them the moment the user sized
+        // type up), and stretch the content box to match that choice so the row
+        // is centred on real content, not on a constant that no longer fits.
+        const gap = 12.0;
+        // A card's painted width is its content box plus the 1.5px rim on each
+        // side (_StarterCard's Border.all sits outside the SizedBox). Leave that
+        // out and four cards overrun the row by 4×3px — the exact 3+1-looking
+        // overflow this layout exists to prevent.
+        const rimTotal = _starterCardRim * 2;
+        final cardOuter = cardWidth + rimTotal;
+        final fourUpWidth = cardOuter * 4 + gap * 3;
+        final twoUpWidth = cardOuter * 2 + gap;
+        final fourUp = constraints.maxWidth >= fourUpWidth + 48;
+        final rowWidth = fourUp ? fourUpWidth : twoUpWidth;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(24, compact ? 34 : 66, 24, 28),
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
+              constraints: BoxConstraints(maxWidth: rowWidth),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -62,24 +91,12 @@ class ChatStarters extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 30),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (final starter in _starters)
-                        _StarterCard(
-                          starter: starter,
-                          // Scaled with the type it holds: at a fixed 178 a
-                          // larger UI size wraps "Write something" onto two
-                          // lines, which is what pushed the card past its own
-                          // height. The Wrap above reflows them to fewer per
-                          // row when they no longer fit, which is the right
-                          // answer on a narrow pane too.
-                          width: (compact ? 166 : 178) * AppFont.uiScale,
-                          onTap: () => onPick(starter.prompt),
-                        ),
-                    ],
+                  _StarterGrid(
+                    starters: _starters,
+                    cardWidth: cardWidth,
+                    gap: gap,
+                    fourUp: fourUp,
+                    onPick: onPick,
                   ),
                 ],
               ),
@@ -87,6 +104,60 @@ class ChatStarters extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The four starter cards, laid out as one row of four or a 2×2 block — the two
+/// shapes that stay balanced for exactly four items. A Wrap was used before and
+/// gave a lop-sided 3+1 whenever the fourth card fell a hair short of the row.
+class _StarterGrid extends StatelessWidget {
+  const _StarterGrid({
+    required this.starters,
+    required this.cardWidth,
+    required this.gap,
+    required this.fourUp,
+    required this.onPick,
+  });
+
+  final List<_Starter> starters;
+  final double cardWidth;
+  final double gap;
+  final bool fourUp;
+  final ValueChanged<String> onPick;
+
+  Widget _card(_Starter starter) => _StarterCard(
+    starter: starter,
+    width: cardWidth,
+    onTap: () => onPick(starter.prompt),
+  );
+
+  Widget _row(List<_Starter> row) => Row(
+    mainAxisSize: MainAxisSize.min,
+    // Not stretch: the cards set their own fixed height, and stretching a Row
+    // that has no bounded height of its own asks each card to be infinitely
+    // tall. Equal heights come from the cards themselves, not the row.
+    children: [
+      for (var i = 0; i < row.length; i++) ...[
+        if (i > 0) SizedBox(width: gap),
+        _card(row[i]),
+      ],
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    if (fourUp) return _row(starters);
+    // 2×2: split down the middle so each row holds two, and the rows are the
+    // same width — no orphaned card on a line of its own.
+    final half = (starters.length / 2).ceil();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _row(starters.sublist(0, half)),
+        SizedBox(height: gap),
+        _row(starters.sublist(half)),
+      ],
     );
   }
 }
@@ -242,7 +313,7 @@ class _StarterCardState extends State<_StarterCard> {
           borderRadius: radius,
           // Rim stays 1.5px at rest and on hover — only its colour animates, so
           // the content never nudges by the half-pixel a width change would add.
-          border: Border.all(color: borderColor, width: 1.5),
+          border: Border.all(color: borderColor, width: _starterCardRim),
           boxShadow: _hovered ? AppCard.shadow : AppGlass.cardShadow,
         ),
         child: Material(
@@ -260,7 +331,12 @@ class _StarterCardState extends State<_StarterCard> {
               // size. At 19px the titles that wrapped to two lines overflowed a
               // fixed 142 by exactly the extra line — the card is one of the few
               // places in the app that pins a height to text it doesn't measure.
-              height: 142 * AppFont.uiScale,
+              // Sized for the worst case now that the text block is rigid
+              // rather than Spacer-cushioned: icon + a fixed gap + two lines of
+              // title + two lines of description all have to fit without the
+              // Spacer that used to soak up the slack. 152 clears it across the
+              // whole UI-size range; smaller sizes leave a little air at the foot.
+              height: 152 * AppFont.uiScale,
               child: Padding(
                 padding:
                     const EdgeInsets.fromLTRB(16, 16, 16, 15) * AppFont.uiScale,
@@ -310,17 +386,29 @@ class _StarterContent extends StatelessWidget {
             child: Icon(starter.icon, size: 18, color: starter.color),
           ),
         ),
-        const Spacer(),
-        Text(
-          starter.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 14,
-            height: 1.16,
-            letterSpacing: -0.1,
-            fontWeight: AppFont.medium,
-            color: AppPalette.textPrimary,
+        // A fixed gap, not a Spacer. A Spacer pins the text to the card's
+        // bottom, so a card whose title wraps to two lines pushes its whole text
+        // block *upward*, and four cards side by side then have their titles on
+        // different lines. A set distance puts every title on the same baseline.
+        SizedBox(height: 10 * AppFont.uiScale),
+        // The title reserves two lines' height whether it needs them or not, so
+        // a one-line title and a two-line one leave their descriptions at the
+        // same y — the second line grows *down* into space already held, instead
+        // of pushing the description around. maxLines caps it; the box height is
+        // what keeps the row below it aligned.
+        SizedBox(
+          height: _titleFontSize * _titleHeightFactor * 2 * AppFont.uiScale,
+          child: Text(
+            starter.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: _titleFontSize,
+              height: _titleHeightFactor,
+              letterSpacing: -0.1,
+              fontWeight: AppFont.medium,
+              color: AppPalette.textPrimary,
+            ),
           ),
         ),
         const SizedBox(height: 3),

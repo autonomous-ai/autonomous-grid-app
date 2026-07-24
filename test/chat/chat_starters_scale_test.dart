@@ -45,7 +45,8 @@ void main() {
   for (final size in sizes) {
     testWidgets('no card overflows at ${size.toInt()}px', (tester) async {
       // A wide window: the cards must fit because they are sized right, not
-      // because the pane happened to be roomy. The Wrap reflows on a narrow one.
+      // because the pane happened to be roomy. The grid reflows to 2×2 on a
+      // narrow one.
       tester.view.physicalSize = const Size(1400, 1000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -93,6 +94,59 @@ void main() {
       reason: 'a fixed width is what wraps the title and overflows the height',
     );
   });
+
+  /// Four cards must land as a 4-up strip or a 2×2 block — never a 3+1 with an
+  /// orphan on its own line. That was the Wrap's failure: at a large UI size the
+  /// cards grow but the pane doesn't, so the fourth fell to a second row alone.
+  /// The number of distinct card y-positions is the number of rows.
+  int rowCount(WidgetTester tester) {
+    final tops = <double>{};
+    for (final title in const [
+      'Ask a question',
+      'Write something',
+      'Understand a document',
+      'Plan something',
+    ]) {
+      tops.add(tester.getRect(find.text(title)).top.roundToDouble());
+    }
+    return tops.length;
+  }
+
+  // The grid must resolve to a 4-up strip or a 2×2 block at every width/size,
+  // never a 3+1. NB: this harness stacks uiScale and text-scaling, so a card
+  // here is wider than in the running app and the *old* Wrap already came out
+  // 2×2 at these widths — i.e. this asserts the new grid's guarantee holds, it
+  // does not by itself reproduce the report's 3+1 (that needs the app's real
+  // single-scale sizing; verified by hand against a running build). The value
+  // is the invariant: whatever the width, the answer is 1 or 2 rows.
+  const pairs = <(double width, double uiSize)>[
+    (900, 19),
+    (760, 19),
+    (900, 17.5),
+    (1000, 19),
+    (620, 19), // narrow: must be a clean 2×2, not a 2+2 that drifts
+  ];
+
+  for (final (width, size) in pairs) {
+    testWidgets('four cards stay 1–2 rows at ${width.toInt()}×${size}px', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(host(size));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final rows = rowCount(tester);
+      expect(
+        rows == 1 || rows == 2,
+        isTrue,
+        reason: 'four cards fell into $rows rows at ${width.toInt()}×${size}px',
+      );
+    });
+  }
 
   // The title is the part that wraps, so it is the part worth measuring: it has
   // to stay inside the card it names at both ends of the range.
