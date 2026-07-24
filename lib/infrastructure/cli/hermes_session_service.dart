@@ -45,7 +45,7 @@ class HermesSessionServiceImpl implements HermesSessionService {
           '--yes',
           '-',
         ],
-        environment: {...Platform.environment, 'PATH': HostEnvironment.path()},
+        environment: HostEnvironment.hermesEnvironment(),
       );
     } on ProcessException {
       return null;

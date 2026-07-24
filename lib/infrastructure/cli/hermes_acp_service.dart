@@ -206,7 +206,7 @@ class _HermesAcpSession implements HermesAcpSession {
         _path,
         ['acp'],
         workingDirectory: _workdir,
-        environment: {...Platform.environment, 'PATH': HostEnvironment.path()},
+        environment: HostEnvironment.hermesEnvironment(),
       );
     } on ProcessException catch (e) {
       throw HermesAcpException('Hermes could not start: ${e.message}');

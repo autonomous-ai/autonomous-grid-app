@@ -30,6 +30,31 @@ class HostEnvironment {
   /// spawns a process, so it's cached).
   static String path() => _cachedPath ??= _buildPath();
 
+  /// The config/state directory Hermes must read and write (`<home>/.hermes`),
+  /// i.e. exactly where [ClientAppConfigurator] writes Hermes's `config.yaml`
+  /// and `.env` (the grid endpoint + access token).
+  ///
+  /// Hermes 0.19.0 changed its *default* config directory on **native Windows**
+  /// to `%LOCALAPPDATA%\hermes`, while the app still writes Hermes's config to
+  /// `<home>/.hermes`. Left to its default, Hermes on Windows then reads an empty
+  /// config — no grid provider, no api key — falls back to a built-in provider,
+  /// and every turn dies on a relay 401 ("Missing Authentication header") that
+  /// the chat mislabels as "sign out and back in". Pointing `HERMES_HOME` at the
+  /// directory the app actually wrote fixes it. Set on every platform (on POSIX
+  /// it equals Hermes's own default, so it's a harmless no-op) so the two
+  /// locations can never drift again.
+  static String get hermesHome => '${GridPaths.userHome}/.hermes';
+
+  /// The spawn environment for a Hermes process: the augmented [path] and
+  /// [hermesHome], merged over the inherited environment. Used by every service
+  /// that launches `hermes`, so none can forget `HERMES_HOME` and read the wrong
+  /// config directory.
+  static Map<String, String> hermesEnvironment() => {
+    ...Platform.environment,
+    'PATH': path(),
+    'HERMES_HOME': hermesHome,
+  };
+
   /// Absolute path to executable [name] on the augmented [path], or null when it
   /// isn't installed. Rebuilding `PATH` first means a packaged GUI app finds
   /// Homebrew / login-shell tools its minimal inherited `PATH` would miss.

@@ -156,8 +156,7 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
         exe,
         args,
         environment: {
-          ...Platform.environment,
-          'PATH': HostEnvironment.path(),
+          ...HostEnvironment.hermesEnvironment(),
           ...env,
         },
       );

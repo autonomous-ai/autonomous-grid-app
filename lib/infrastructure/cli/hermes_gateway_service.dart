@@ -133,7 +133,7 @@ class HermesGatewayServiceImpl implements HermesGatewayService {
     final result = await Process.run(
       binPath,
       args,
-      environment: {...Platform.environment, 'PATH': HostEnvironment.path()},
+      environment: HostEnvironment.hermesEnvironment(),
     );
     if (result.exitCode == 0) return;
     final stderr = (result.stderr as String).trim();

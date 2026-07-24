@@ -259,21 +259,6 @@ class _PowerPanel extends ConsumerWidget {
         ? const <NodeSlice>[]
         : buildMemorySlices(nodes, vram);
 
-    // A node either brings hardware (its VRAM feeds the split above) or a
-    // subscription seat (a plan, no VRAM to split). Sub nodes are the ones the
-    // memory bar can't represent — list them by plan instead of dropping them.
-    final subNodes = [
-      for (final node in nodes)
-        if (nodeVramGb(node) == null && nodePlanLabel(node) != null) node,
-    ];
-    // The plain fallback names only the machines the two sections above don't:
-    // hardware nodes that report no VRAM and carry no plan. With a memory bar
-    // present those already-listed VRAM nodes are excluded here anyway.
-    final plainNodes = [
-      for (final node in nodes)
-        if (nodeVramGb(node) == null && nodePlanLabel(node) == null) node,
-    ];
-
     return Positioned(
       width: _width,
       child: CompositedTransformFollower(
@@ -290,20 +275,18 @@ class _PowerPanel extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _PanelHeader(name: gridName, uptimePct: uptime),
+                // The GPU-memory split, as a bar, when any node reports VRAM.
                 if (slices.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _MemorySplit(totalGb: vram!, slices: slices),
-                ] else if (plainNodes.isNotEmpty) ...[
-                  // No node reports VRAM, so there is no bar to split — name the
-                  // machines instead of leaving the panel with only its footer.
-                  const SizedBox(height: 12),
-                  _PlainNodeList(nodes: plainNodes),
                 ],
-                // Subscription seats carry a plan, not VRAM, so they sit in their
-                // own block below the hardware — each named by its tier.
-                if (subNodes.isNotEmpty) ...[
+                // One list of every machine, each row carrying its *own* metric:
+                // GPU memory for a hardware node, its plan for a subscription
+                // seat. Kept in a single list — the figure belongs on the node,
+                // not in a section beside it.
+                if (nodes.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _SubscriptionList(nodes: subNodes),
+                  _NodeBreakdown(nodes: nodes, totalGb: vram),
                 ],
                 const SizedBox(height: 11),
                 _FooterStats(power: power),
@@ -384,7 +367,9 @@ class _PanelHeader extends StatelessWidget {
 String _trimPct(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
 
-/// GPU memory as one bar split by machine, then the legend naming each slice.
+/// GPU memory as one bar split by machine — the label, the total, and the bar.
+/// Each machine's own figure is named in the node list below (see
+/// [_NodeBreakdown]), whose row ticks pick up the same slice colours.
 ///
 /// The split is the point: a total of "478.4 GB" says nothing about whether that
 /// is one strong box or ten weak ones, and those are very different grids. One
@@ -403,17 +388,10 @@ class _MemorySplit extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _SectionLabel(label: 'Graphics memory', trailing: formatVram(totalGb)),
-        // The bar belongs to the legend below it, not to the label above, so it
-        // sits closer to what it explains. Equal gaps read as three unrelated
-        // rows stacked up.
+        // The bar belongs to the list below it, not to the label above, so it
+        // sits closer to what it explains.
         const SizedBox(height: 9),
         MemorySplitBar(slices: slices),
-        const SizedBox(height: 7),
-        for (final slice in slices)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2.5),
-            child: _LegendRow(slice: slice, totalGb: totalGb),
-          ),
       ],
     );
   }
@@ -573,117 +551,109 @@ class _StatRow extends StatelessWidget {
   }
 }
 
-/// The machines, for a grid whose nodes report no GPU memory at all — the bar
-/// above has nothing to split, so they're listed plainly instead of vanishing.
-///
-/// Each row carries what the machine *does* report (its engine, its device
-/// class) in place of the memory share it can't. Without that the fallback is a
-/// column of bare hostnames, which says less about the grid than the section it
-/// replaced.
-class _PlainNodeList extends StatelessWidget {
-  const _PlainNodeList({required this.nodes});
+/// Every online machine as one row, each carrying its *own* metric: a hardware
+/// node its GPU-memory share (coloured to match its slice up in the bar), a
+/// subscription seat its plan, and a VRAM-less hardware node whatever spec it
+/// reports. One list, not a section per kind — the figure belongs on the node,
+/// so "which machine, and what does it bring?" is read down a single column.
+class _NodeBreakdown extends StatelessWidget {
+  const _NodeBreakdown({required this.nodes, required this.totalGb});
 
   final List<OverviewNode> nodes;
+
+  /// The grid's total GPU memory, to turn a node's VRAM into its share. Null
+  /// when no node reports any — then every row falls to its plan or spec.
+  final double? totalGb;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final labels = shortenNodeNames([for (final n in nodes) n.name]);
+    final total = totalGb;
+    final rows = <Widget>[];
+    // Only VRAM nodes take a bar colour, and they sort first, so a counter that
+    // advances only on them keeps each row's tick matched to its slice.
+    var vramIndex = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      final node = nodes[i];
+      final gb = nodeVramGb(node);
+      final Widget row;
+      if (gb != null && total != null && total > 0) {
+        row = _LegendRow(
+          slice: NodeSlice(
+            label: labels[i],
+            gb: gb,
+            fraction: gb / total,
+            color: sliceColor(vramIndex),
+          ),
+          totalGb: total,
+        );
+        vramIndex++;
+      } else if (nodePlanLabel(node) case final plan?) {
+        row = _NodeRow(label: labels[i], trailing: _PlanBadge(label: plan));
+      } else if (nodeSpecLine(node) case final spec when spec.isNotEmpty) {
+        row = _NodeRow(
+          label: labels[i],
+          trailing: Text(
+            spec,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: AppPalette.textFaint,
+            ),
+          ),
+        );
+      } else {
+        row = _NodeRow(label: labels[i], trailing: const SizedBox.shrink());
+      }
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2.5),
+          child: row,
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      children: [
-        _SectionLabel(
-          label: plural(nodes.length, 'Machine'),
-          trailing: '${nodes.length} online',
-        ),
-        const SizedBox(height: 8),
-        for (var i = 0; i < nodes.length; i++)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2.5),
-            child: Row(
-              children: [
-                StatusDot(color: AppPalette.online, size: 6),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    labels[i],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppPalette.textPrimary,
-                    ),
-                  ),
-                ),
-                if (nodeSpecLine(nodes[i]) case final spec when spec.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                      spec,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w500,
-                        color: AppPalette.textFaint,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-      ],
+      children: rows,
     );
   }
 }
 
-/// The subscription seats behind a grid — ChatGPT/Codex nodes that bring a plan
-/// rather than GPU memory. They can't take a slice of the memory bar, so they're
-/// named here by their tier instead, each with an accent plan badge that echoes
-/// the per-node badge on the grid page (and the top bar's plan pill).
-class _SubscriptionList extends StatelessWidget {
-  const _SubscriptionList({required this.nodes});
+/// A node row without a memory share — a subscription seat (plan badge) or a
+/// VRAM-less machine (spec). A neutral tick keeps its name aligned with the
+/// coloured memory rows above without implying a slice of the bar it isn't in.
+class _NodeRow extends StatelessWidget {
+  const _NodeRow({required this.label, required this.trailing});
 
-  final List<OverviewNode> nodes;
+  final String label;
+  final Widget trailing;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final labels = shortenNodeNames([for (final n in nodes) n.name]);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    return Row(
       children: [
-        _SectionLabel(
-          label: plural(nodes.length, 'Subscription'),
-          trailing: '${nodes.length} online',
-        ),
-        const SizedBox(height: 8),
-        for (var i = 0; i < nodes.length; i++)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2.5),
-            child: Row(
-              children: [
-                StatusDot(color: AppPalette.online, size: 6),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    labels[i],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppPalette.textPrimary,
-                    ),
-                  ),
-                ),
-                if (nodePlanLabel(nodes[i]) case final plan?)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: _PlanBadge(label: plan),
-                  ),
-              ],
-            ),
+        Container(
+          width: 3,
+          height: 12,
+          decoration: BoxDecoration(
+            color: AppPalette.textFaint,
+            borderRadius: BorderRadius.circular(1.5),
           ),
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: AppPalette.textPrimary),
+          ),
+        ),
+        const SizedBox(width: 8),
+        trailing,
       ],
     );
   }

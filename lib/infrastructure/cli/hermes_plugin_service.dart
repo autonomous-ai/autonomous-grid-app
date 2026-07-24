@@ -67,7 +67,7 @@ class HermesPluginServiceImpl implements HermesPluginService {
     final result = await Process.run(
       binPath,
       args,
-      environment: {...Platform.environment, 'PATH': HostEnvironment.path()},
+      environment: HostEnvironment.hermesEnvironment(),
     );
     final stdout = (result.stdout as String).trim();
     if (result.exitCode == 0) return stdout;
