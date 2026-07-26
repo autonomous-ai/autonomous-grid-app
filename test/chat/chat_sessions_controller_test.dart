@@ -101,6 +101,40 @@ class _OpenEndedSender implements ChatSender {
   }) => _controller.stream;
 }
 
+/// An open-ended reply per conversation, so a test can have several chats
+/// streaming at once and drive each independently — keyed by the conversation id
+/// the send carries.
+class _PerChatSender implements ChatSender {
+  final controllers = <String, StreamController<ChatSendUpdate>>{};
+  final cancelled = <String>{};
+
+  void emit(String conversationId, ChatSendUpdate update) =>
+      controllers[conversationId]!.add(update);
+
+  Future<void> close(String conversationId) =>
+      controllers[conversationId]!.close();
+
+  @override
+  Stream<ChatSendUpdate> send({
+    required NetworkCredential network,
+    required String model,
+    required List<ChatMessage> history,
+    PlaygroundModality modality = PlaygroundModality.text,
+    List<MediaAttachment> attachments = const [],
+    String? localBaseUrl,
+    String? workdir,
+    String? conversationId,
+    String? instructions,
+    bool planFirst = false,
+  }) {
+    final id = conversationId!;
+    final controller = controllers[id] = StreamController<ChatSendUpdate>(
+      onCancel: () => cancelled.add(id),
+    );
+    return controller.stream;
+  }
+}
+
 /// A fixed selected grid, so approving a plan (which reads the current grid to
 /// send the execute turn) never touches the real `~/.grid`.
 class _FixedNetwork extends SelectedNetwork {
@@ -242,6 +276,120 @@ void main() {
       expect(reloaded.single.messages.last.text, 'hi back');
     },
   );
+
+  group('concurrent sessions', () {
+    test('a second chat can be started and stream while the first is still '
+        'generating — neither blocks the other, and each reply folds into its '
+        'own transcript without stealing focus', () async {
+      final answering = _PerChatSender();
+      final h = _harness(tmp, updates: const [], answering: answering);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+
+      // Chat A starts generating.
+      final sentA = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'first',
+      );
+      await pumpEventQueue();
+      final aId = read().activeId!;
+      answering.emit(aId, const ChatSendStreaming('working on first'));
+      await pumpEventQueue();
+
+      // Starting a new chat is NOT blocked by A still streaming (the bug).
+      c.newChat();
+      expect(read().activeId, isNull);
+
+      // Chat B starts and streams too — both are now in flight at once.
+      final sentB = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'second',
+      );
+      await pumpEventQueue();
+      final bId = read().activeId!;
+      expect(bId, isNot(aId));
+      expect(read().sendingFor(aId), isTrue);
+      expect(read().sendingFor(bId), isTrue);
+
+      // Switching to A mid-send is allowed and doesn't derail B.
+      c.select(aId);
+      expect(read().activeId, aId);
+      expect(read().sending, isTrue); // A, now open, is the one streaming
+
+      // B's reply lands while A is open: it folds into B and must not yank the
+      // user off A.
+      answering.emit(
+        bId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'done second'),
+        ),
+      );
+      await answering.close(bId);
+      await sentB;
+      expect(read().activeId, aId, reason: 'a background reply keeps focus');
+      expect(read().sendingFor(bId), isFalse);
+
+      // A's reply lands into A.
+      answering.emit(
+        aId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'done first'),
+        ),
+      );
+      await answering.close(aId);
+      await sentA;
+
+      final s = read();
+      expect(s.sending, isFalse);
+      final a = s.conversations.firstWhere((x) => x.id == aId);
+      final b = s.conversations.firstWhere((x) => x.id == bId);
+      expect(a.messages.last.text, 'done first');
+      expect(b.messages.last.text, 'done second');
+    });
+
+    test('stopping the open chat leaves another chat still streaming', () async {
+      final answering = _PerChatSender();
+      final h = _harness(tmp, updates: const [], answering: answering);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+
+      final sentA = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'first',
+      );
+      await pumpEventQueue();
+      final aId = read().activeId!;
+      c.newChat();
+      final sentB = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'second',
+      );
+      await pumpEventQueue();
+      final bId = read().activeId!;
+
+      // Stop targets the open chat (B) only.
+      c.stop();
+      expect(answering.cancelled.contains(bId), isTrue);
+      expect(answering.cancelled.contains(aId), isFalse);
+      expect(read().sendingFor(bId), isFalse);
+      expect(read().sendingFor(aId), isTrue, reason: 'A keeps streaming');
+
+      answering.emit(
+        aId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'done first'),
+        ),
+      );
+      await answering.close(aId);
+      await sentA;
+      expect(read().sendingFor(aId), isFalse);
+      await sentB;
+    });
+  });
 
   group('stop', () {
     test('keeps what the assistant had already said — the user stopped because '

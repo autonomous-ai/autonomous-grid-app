@@ -290,11 +290,9 @@ class _ChatRow extends ConsumerWidget {
     final selected =
         ref.watch(chatSessionsProvider).activeId == chat.id &&
         ref.watch(shellSectionProvider) == ShellSection.chat;
-    // Mirrors archiveConversation's own guard: this chat is the one a reply is
-    // streaming into.
-    final streaming =
-        ref.watch(chatSessionsProvider).sending &&
-        ref.watch(chatSessionsProvider).activeId == chat.id;
+    // A reply is streaming into this chat — shown on whichever chat is working,
+    // open or in the background, now that several can generate at once.
+    final streaming = ref.watch(chatSessionsProvider).sendingFor(chat.id);
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its

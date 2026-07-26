@@ -28,29 +28,45 @@ export '../../playground/logic/chat_message.dart'
         SendGenerating,
         SendStreaming;
 
+/// Sentinel for [ChatSessionsState.copyWith] so `activeId: null` can clear the
+/// open chat (compose a new one) while omitting it keeps the current one.
+const Object _keep = Object();
+
 /// The Chat tab's whole state: every saved conversation (newest first), which
-/// one is open, and the in-flight send [phase] / [error]. A null [activeId]
-/// means the user is composing a brand-new chat that isn't saved yet — it gets
-/// persisted the moment they send the first message.
+/// one is open, and the in-flight send state **per conversation**, so a reply
+/// can stream in one chat while the user starts or reads another. A null
+/// [activeId] means the user is composing a brand-new chat that isn't saved yet
+/// — it gets persisted the moment they send the first message.
+///
+/// [phases], [errors] and [awaitingPlanIds] are keyed by conversation id and
+/// hold only the chats that have something in flight; a chat that is idle simply
+/// isn't in them. The plain [phase]/[error]/[sending]/[awaitingPlan] getters
+/// report the **open** conversation's state — what the composer and transcript
+/// on screen react to — while [phaseFor]/[sendingFor] answer for any chat, so
+/// the sidebar can mark a background chat that is still working.
 class ChatSessionsState {
   const ChatSessionsState({
     this.conversations = const [],
     this.activeId,
-    this.phase = const SendIdle(),
-    this.error,
-    this.awaitingPlan = false,
+    this.phases = const {},
+    this.errors = const {},
+    this.awaitingPlanIds = const {},
   });
 
   final List<Conversation> conversations;
   final String? activeId;
-  final SendPhase phase;
-  final String? error;
 
-  /// True when the last turn was Plan mode's planning turn and its plan is
-  /// waiting on the user: the chat shows an "approve & run" bar. Cleared the
-  /// moment anything else happens (a new send, approving, dismissing, switching
-  /// chat) — it's live interaction state, not saved with the conversation.
-  final bool awaitingPlan;
+  /// In-flight send phase per conversation id — absent means idle.
+  final Map<String, SendPhase> phases;
+
+  /// The last turn's error per conversation id — absent/null means none.
+  final Map<String, String?> errors;
+
+  /// Conversations whose last turn was Plan mode's planning turn and whose plan
+  /// is waiting on the user: the chat shows an "approve & run" bar. Cleared the
+  /// moment anything else happens in that chat (a new send, approving,
+  /// dismissing) — it's live interaction state, not saved with the conversation.
+  final Set<String> awaitingPlanIds;
 
   /// The open conversation, or null while composing a new one.
   Conversation? get active {
@@ -78,22 +94,117 @@ class ChatSessionsState {
       if (c.isArchived) c,
   ]..sort((a, b) => b.archivedAt!.compareTo(a.archivedAt!));
 
-  /// True while a request is in flight — the composer disables on this.
-  bool get sending => phase is! SendIdle;
+  /// The send phase of the chat with [id] (idle when it has nothing in flight).
+  SendPhase phaseFor(String? id) =>
+      (id == null ? null : phases[id]) ?? const SendIdle();
+
+  /// Whether the chat with [id] has a reply in flight.
+  bool sendingFor(String? id) => phaseFor(id) is! SendIdle;
+
+  /// The last error on the chat with [id], or null.
+  String? errorFor(String? id) => id == null ? null : errors[id];
+
+  /// Whether the chat with [id] has a plan waiting on approval.
+  bool awaitingPlanFor(String? id) => id != null && awaitingPlanIds.contains(id);
+
+  /// The open conversation's send phase — what the on-screen transcript shows.
+  SendPhase get phase => phaseFor(activeId);
+
+  /// True while the **open** conversation has a request in flight — the composer
+  /// disables on this. A reply streaming in a chat the user has switched away
+  /// from leaves this false, so that other chat's composer stays usable.
+  bool get sending => sendingFor(activeId);
+
+  /// The open conversation's last error.
+  String? get error => errorFor(activeId);
+
+  /// Whether the open conversation has a plan waiting on approval.
+  bool get awaitingPlan => awaitingPlanFor(activeId);
+
+  ChatSessionsState copyWith({
+    List<Conversation>? conversations,
+    Object? activeId = _keep,
+    Map<String, SendPhase>? phases,
+    Map<String, String?>? errors,
+    Set<String>? awaitingPlanIds,
+  }) => ChatSessionsState(
+    conversations: conversations ?? this.conversations,
+    activeId: identical(activeId, _keep) ? this.activeId : activeId as String?,
+    phases: phases ?? this.phases,
+    errors: errors ?? this.errors,
+    awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
+  );
+
+  /// This state with the chat [id]'s phase set — removed from the map when it
+  /// goes idle, so [phases] only ever holds the chats actually working.
+  ChatSessionsState withPhase(String id, SendPhase phase) {
+    final next = Map<String, SendPhase>.from(phases);
+    if (phase is SendIdle) {
+      next.remove(id);
+    } else {
+      next[id] = phase;
+    }
+    return copyWith(phases: next);
+  }
+
+  /// This state with the chat [id]'s error set (or cleared when null).
+  ChatSessionsState withError(String id, String? error) {
+    final next = Map<String, String?>.from(errors);
+    if (error == null) {
+      next.remove(id);
+    } else {
+      next[id] = error;
+    }
+    return copyWith(errors: next);
+  }
+
+  /// This state with the chat [id]'s plan-waiting flag set or cleared.
+  ChatSessionsState withAwaitingPlan(String id, bool awaiting) {
+    final next = Set<String>.from(awaitingPlanIds);
+    if (awaiting) {
+      next.add(id);
+    } else {
+      next.remove(id);
+    }
+    return copyWith(awaitingPlanIds: next);
+  }
+
+  /// Drop every trace of the chats in [ids] — their in-flight phase, error and
+  /// plan flag — for when they're deleted.
+  ChatSessionsState withoutInFlight(Set<String> ids) => copyWith(
+    phases: {
+      for (final e in phases.entries)
+        if (!ids.contains(e.key)) e.key: e.value,
+    },
+    errors: {
+      for (final e in errors.entries)
+        if (!ids.contains(e.key)) e.key: e.value,
+    },
+    awaitingPlanIds: {
+      for (final id in awaitingPlanIds)
+        if (!ids.contains(id)) id,
+    },
+  );
 }
 
 /// Drives the persistent Chat tab. Loads saved conversations on start, and on
-/// each send appends the turn to the open conversation and writes it to disk
+/// each send appends the turn to the sending conversation and writes it to disk
 /// via [ChatStore]. The actual dispatch is delegated to the shared [ChatSender]
 /// so text/image/video routing and error copy match the Playground exactly.
+///
+/// Sends are tracked per conversation ([_subs]/[_dones] keyed by id), so several
+/// chats can be generating replies at once and starting or switching chats is
+/// never blocked by one that is still streaming.
 final chatSessionsProvider =
     NotifierProvider<ChatSessionsController, ChatSessionsState>(
       ChatSessionsController.new,
     );
 
 class ChatSessionsController extends Notifier<ChatSessionsState> {
-  StreamSubscription<ChatSendUpdate>? _sub;
-  Completer<void>? _done;
+  /// One live subscription per streaming conversation, so [stop] and disposal
+  /// tear down exactly the one they mean and each reply folds into its own chat.
+  final Map<String, StreamSubscription<ChatSendUpdate>> _subs = {};
+  final Map<String, Completer<void>> _dones = {};
 
   /// The project a not-yet-saved chat belongs to. A new chat isn't persisted
   /// until its first message, so the choice has to be held here until then.
@@ -107,7 +218,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   ChatSessionsState build() {
     ref.onDispose(() {
       _disposed = true;
-      _cancel();
+      _cancelAll();
     });
     final conversations = ref.read(chatStoreProvider).loadAll();
     // Opens on the newest *live* chat: `conversations` holds the archived ones
@@ -133,38 +244,38 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// assistant may read while answering it. Not persisted until the first
   /// message, so clicking "New chat" repeatedly never litters the history with
   /// blanks.
+  ///
+  /// Allowed while another chat is still streaming: its reply keeps folding into
+  /// that chat in the background, and the user gets a clean composer here.
   void newChat({String? projectId}) {
-    if (state.sending) return;
     _draftProjectId = projectId;
-    state = ChatSessionsState(conversations: state.conversations);
+    state = state.copyWith(activeId: null);
   }
 
-  /// Switch to a saved conversation. Ignored mid-send so a reply can't land in
-  /// the wrong transcript.
+  /// Switch to a saved conversation. Allowed mid-send — a reply streaming into
+  /// another chat keeps going in the background and the switch never lands it in
+  /// the wrong transcript, because each send folds into its own conversation id.
   void select(String id) {
-    if (state.sending || id == state.activeId) return;
-    state = ChatSessionsState(conversations: state.conversations, activeId: id);
+    if (id == state.activeId) return;
+    state = state.copyWith(activeId: id);
   }
 
   /// Remember the model chosen for the open conversation, so leaving the chat and
   /// coming back — or reopening it later — restores *that* choice, not the grid's
   /// default. A no-op for a not-yet-saved compose (its model rides the first
-  /// send) and while a reply is streaming. Leaves `updatedAt` untouched, so
-  /// picking a model never re-sorts the sidebar.
+  /// send) and while *this* chat's reply is streaming. Leaves `updatedAt`
+  /// untouched, so picking a model never re-sorts the sidebar.
   void setActiveModel(String model) {
     if (state.sending || model.isEmpty) return;
     final active = state.active;
     if (active == null || active.model == model) return;
     final updated = active.copyWith(model: model);
     _store.save(updated);
-    state = ChatSessionsState(
+    state = state.copyWith(
       conversations: [
         for (final c in state.conversations)
           if (c.id == updated.id) updated else c,
       ],
-      activeId: state.activeId,
-      phase: state.phase,
-      error: state.error,
     );
   }
 
@@ -183,20 +294,19 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // seconds out, and it must not overwrite the one the user just typed.
     final renamed = chat.copyWith(title: trimmed, titleLocked: true);
     _store.save(renamed);
-    state = ChatSessionsState(
+    state = state.copyWith(
       conversations: [
         for (final c in state.conversations)
           if (c.id == renamed.id) renamed else c,
       ],
-      activeId: state.activeId,
-      phase: state.phase,
-      error: state.error,
     );
   }
 
   /// Delete a conversation from disk and state, falling back to the newest
-  /// remaining one (or a new compose) when the open one is removed.
+  /// remaining one (or a new compose) when the open one is removed. A reply
+  /// streaming into it is cancelled first, so nothing writes back afterwards.
   void deleteConversation(String id) {
+    _cancel(id);
     _store.delete(id);
     final remaining = [
       for (final c in state.conversations)
@@ -205,11 +315,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final activeId = state.activeId == id
         ? (remaining.isEmpty ? null : remaining.first.id)
         : state.activeId;
-    state = ChatSessionsState(
+    state = state.withoutInFlight({id}).copyWith(
       conversations: remaining,
       activeId: activeId,
-      phase: state.phase,
-      error: state.error,
     );
   }
 
@@ -217,11 +325,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// touching a single message in it. The transcript stays on disk and comes
   /// back whole from [unarchiveConversation].
   ///
-  /// Ignored mid-send, for the same reason [select] is: filing away the chat a
-  /// reply is streaming into would leave that reply landing in a transcript the
-  /// user can no longer see.
+  /// Ignored while a reply is streaming into it: filing away a chat mid-reply
+  /// would leave that reply landing in a transcript the user can no longer see.
   void archiveConversation(String id) {
-    if (state.sending && state.activeId == id) return;
+    if (state.sendingFor(id)) return;
     final chat = _find(id);
     if (chat == null || chat.isArchived) return;
     final archived = chat.copyWith(archivedAt: DateTime.now());
@@ -253,6 +360,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     ];
     if (doomed.isEmpty) return;
     for (final id in doomed) {
+      _cancel(id);
       _store.delete(id);
     }
     final gone = doomed.toSet();
@@ -266,12 +374,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final activeId = gone.contains(state.activeId)
         ? (remaining.isEmpty ? null : remaining.first.id)
         : state.activeId;
-    state = ChatSessionsState(
+    state = state.withoutInFlight(gone).copyWith(
       conversations: remaining,
       activeId: activeId,
-      phase: state.phase,
-      error: state.error,
-      awaitingPlan: state.awaitingPlan,
     );
   }
 
@@ -290,15 +395,12 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Deliberately does not re-sort: archiving and unarchiving both leave
   /// [Conversation.updatedAt] alone, so the list order is already right.
   void _replace(Conversation conversation, {required String? activeId}) {
-    state = ChatSessionsState(
+    state = state.copyWith(
       conversations: [
         for (final c in state.conversations)
           if (c.id == conversation.id) conversation else c,
       ],
       activeId: activeId,
-      phase: state.phase,
-      error: state.error,
-      awaitingPlan: state.awaitingPlan,
     );
   }
 
@@ -335,15 +437,12 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             );
 
     _store.save(conversation);
-    state = ChatSessionsState(
+    state = state.copyWith(
       conversations: [
         if (existing == null) conversation,
         for (final c in state.conversations)
           if (c.id == id) conversation else c,
       ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
-      activeId: state.activeId,
-      phase: state.phase,
-      error: state.error,
     );
   }
 
@@ -356,6 +455,8 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     bool? planFirst,
   }) async {
     final text = message.trim();
+    // Block only a re-send into the *open* chat while its own reply streams;
+    // another chat generating in the background never stops this one.
     if (text.isEmpty || state.sending) return;
 
     // Plan mode's planning turn: only when the composer is set to Plan (unless
@@ -391,7 +492,8 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final conversation = withUser.title == kNewConversationTitle
         ? withUser.copyWith(title: deriveConversationTitle(withUser.messages))
         : withUser;
-    _commit(conversation, phase: const SendBusy());
+    // The send owns the open slot: make it active and clear any prior error.
+    _commit(conversation, phase: const SendBusy(), makeActive: true);
 
     // Plain text goes through the agent (it can use tools and keeps the
     // conversation's context); pictures — generating one, or a turn that carries
@@ -417,23 +519,26 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       planFirst: planTurn,
     );
 
-    // Fold updates through a stored subscription so [stop] and disposal can
-    // cancel an in-flight reply instead of letting it write back later.
-    final done = _done = Completer<void>();
+    // Fold updates through a stored subscription keyed by conversation, so
+    // [stop] and disposal cancel exactly this reply and it never writes back
+    // into the wrong chat after the user has moved on.
+    final id = conversation.id;
+    final done = _dones[id] = Completer<void>();
     String? agentSessionId;
-    _sub = updates.listen(
+    _subs[id] = updates.listen(
       (update) {
         // The conversation may have been deleted mid-flight — drop the update
         // rather than resurrect it.
-        final current = _find(conversation.id);
+        final current = _find(id);
         if (current == null) return;
         switch (update) {
           case ChatSendGenerating(:final progress, :final status):
-            state = _withPhase(
+            state = state.withPhase(
+              id,
               SendGenerating(progress: progress, status: status),
             );
           case ChatSendStreaming(:final text):
-            state = _withPhase(SendStreaming(text));
+            state = state.withPhase(id, SendStreaming(text));
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
           case ChatSendSuccess(:final reply):
@@ -442,15 +547,17 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               messages: [...current.messages, reply],
             );
             // A planning turn's reply is a plan waiting on approval — light the
-            // "approve & run" bar. Any other reply leaves it dark.
+            // "approve & run" bar for this chat. Any other reply leaves it dark.
+            // Does not steal focus: a reply landing in a background chat leaves
+            // whatever the user is reading open.
             _commit(answered, phase: const SendIdle(), awaitingPlan: planTurn);
             _adoptAgentName(answered, agentSessionId);
           case ChatSendFailure(:final error):
-            state = _withPhase(const SendIdle(), error: error);
+            state = state.withPhase(id, const SendIdle()).withError(id, error);
         }
       },
-      onDone: _finish,
-      onError: (Object _) => _finish(),
+      onDone: () => _finish(id),
+      onError: (Object _) => _finish(id),
       cancelOnError: true,
     );
     return done.future;
@@ -483,14 +590,11 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     }
     final renamed = current.copyWith(title: title);
     _store.save(renamed);
-    state = ChatSessionsState(
+    state = state.copyWith(
       conversations: [
         for (final c in state.conversations)
           if (c.id == conversationId) renamed else c,
       ],
-      activeId: state.activeId,
-      phase: state.phase,
-      error: state.error,
     );
   }
 
@@ -510,21 +614,23 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         : ref.read(chatSenderProvider);
   }
 
-  /// Stop an in-flight reply, keeping whatever the assistant had already said.
+  /// Stop the **open** chat's in-flight reply, keeping whatever the assistant had
+  /// already said. A reply streaming in another chat is left running.
   ///
   /// The user's turn is persisted up front, but a half-written answer lives only
   /// in [SendStreaming] — dropping it would wipe text the user is reading, and
   /// they usually stop *because* they've read enough of it. Nothing streamed yet
   /// (the agent still thinking) means there's nothing to keep.
   void stop() {
-    _cancel();
-    if (!state.sending) return;
+    final id = state.activeId;
+    if (id == null || !state.sendingFor(id)) return;
+    final phase = state.phaseFor(id);
+    _cancel(id);
 
-    final phase = state.phase;
     final partial = phase is SendStreaming ? phase.text.trim() : '';
     final current = state.active;
     if (partial.isEmpty || current == null) {
-      state = _withPhase(const SendIdle());
+      state = state.withPhase(id, const SendIdle());
       return;
     }
     _commit(
@@ -539,18 +645,27 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
-  /// Settle the current send: drop the subscription and complete the future
-  /// [send] returned (whether it finished on its own or was cancelled).
-  void _finish() {
-    _sub = null;
-    final done = _done;
-    _done = null;
+  /// Settle one conversation's send: drop its subscription and complete the
+  /// future [send] returned (whether it finished on its own or was cancelled).
+  void _finish(String id) {
+    _subs.remove(id);
+    final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
   }
 
-  void _cancel() {
-    _sub?.cancel();
-    _finish();
+  /// Cancel one conversation's in-flight reply (if any) and settle it.
+  void _cancel(String id) {
+    final sub = _subs.remove(id);
+    sub?.cancel();
+    final done = _dones.remove(id);
+    if (done != null && !done.isCompleted) done.complete();
+  }
+
+  /// Tear down every in-flight reply — for disposal.
+  void _cancelAll() {
+    for (final id in _subs.keys.toList()) {
+      _cancel(id);
+    }
   }
 
   /// The open conversation, or a fresh (unsaved) one seeded with [model] and the
@@ -579,7 +694,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Approve the plan the agent just proposed: carry it out. The execute turn
   /// continues the same session (so the agent already has the plan in context)
   /// with the planning flag off, so it runs asking per action rather than
-  /// planning again. A no-op unless a plan is actually waiting.
+  /// planning again. A no-op unless a plan is actually waiting on the open chat.
   Future<void> approvePlan() {
     if (!state.awaitingPlan || state.sending) return Future.value();
     final network = ref.read(selectedNetworkProvider);
@@ -597,39 +712,35 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// transcript, but the "approve & run" bar goes away and the user can just
   /// carry on chatting.
   void dismissPlan() {
-    if (!state.awaitingPlan) return;
-    state = ChatSessionsState(
-      conversations: state.conversations,
-      activeId: state.activeId,
-      phase: state.phase,
-      error: state.error,
-    );
+    final id = state.activeId;
+    if (id == null || !state.awaitingPlanFor(id)) return;
+    state = state.withAwaitingPlan(id, false);
   }
 
-  /// Drop the last turn's failure.
+  /// Drop the open chat's last-turn failure.
   ///
   /// For when the thing the message described stops being true — handing the
   /// chat to a different agent, say. Left up, the sentence keeps blaming an
   /// agent that is no longer answering, above a button offering to switch back
   /// to it.
   void clearError() {
-    if (state.error == null) return;
-    state = ChatSessionsState(
-      conversations: state.conversations,
-      activeId: state.activeId,
-      phase: state.phase,
-      awaitingPlan: state.awaitingPlan,
-    );
+    final id = state.activeId;
+    if (id == null || state.errorFor(id) == null) return;
+    state = state.withError(id, null);
   }
 
-  /// Upsert [conversation], re-sort newest-first, make it active and persist.
-  /// [awaitingPlan] lights the plan-approval bar — set only after a planning
-  /// turn's reply lands, and default-off everywhere else so any other commit
-  /// (a new send, a stopped turn) clears it.
+  /// Upsert [conversation], re-sort newest-first, set its send [phase], and
+  /// persist. [makeActive] opens it (used when the user sends into it); a reply
+  /// landing in a background chat leaves it false so focus stays put.
+  /// [awaitingPlan] lights that chat's plan-approval bar — set only after a
+  /// planning turn's reply lands, and default-off everywhere else so any other
+  /// commit (a new send, a stopped turn) clears it. Every commit clears that
+  /// chat's prior error.
   void _commit(
     Conversation conversation, {
     required SendPhase phase,
     bool awaitingPlan = false,
+    bool makeActive = false,
   }) {
     // Talking in a chat un-files it. Reaching an archived chat takes opening it
     // from the Archived screen, and once the user types into it, leaving it
@@ -644,19 +755,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       for (final c in state.conversations)
         if (c.id != saved.id) c,
     ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    state = ChatSessionsState(
-      conversations: list,
-      activeId: saved.id,
-      phase: phase,
-      awaitingPlan: awaitingPlan,
-    );
+    state = state
+        .copyWith(
+          conversations: list,
+          activeId: makeActive ? saved.id : state.activeId,
+        )
+        .withPhase(saved.id, phase)
+        .withError(saved.id, null)
+        .withAwaitingPlan(saved.id, awaitingPlan);
   }
-
-  ChatSessionsState _withPhase(SendPhase phase, {String? error}) =>
-      ChatSessionsState(
-        conversations: state.conversations,
-        activeId: state.activeId,
-        phase: phase,
-        error: error,
-      );
 }
