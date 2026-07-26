@@ -29,6 +29,7 @@ class ComposerSection extends StatelessWidget {
     required this.error,
     this.errorAction,
     required this.approvalPicker,
+    this.agentPicker,
     required this.modelPicker,
     required this.onAddAttachment,
     required this.onPickImage,
@@ -55,6 +56,11 @@ class ComposerSection extends StatelessWidget {
   /// The control for what the assistant may do to this computer, or null on a
   /// turn nothing can (a picture is made by the grid, which has no filesystem).
   final Widget? approvalPicker;
+
+  /// The control for which agent answers, shown beside the model on an
+  /// agent-answered turn. Null when the grid (not an agent) answers, so it isn't
+  /// offered where picking an agent would change nothing.
+  final Widget? agentPicker;
   final Widget modelPicker;
   final ValueChanged<MediaAttachment> onAddAttachment;
   final VoidCallback onPickImage;
@@ -147,6 +153,7 @@ class ComposerSection extends StatelessWidget {
                 sending: sending,
                 canSend: canSend,
                 approvalPicker: approvalPicker,
+                agentPicker: agentPicker,
                 modelPicker: modelPicker,
                 onPickImage: onPickImage,
                 onOpenPrompts: onOpenPrompts,

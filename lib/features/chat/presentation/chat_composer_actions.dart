@@ -26,6 +26,7 @@ class _Actions extends StatelessWidget {
     required this.sending,
     required this.canSend,
     required this.approvalPicker,
+    this.agentPicker,
     required this.modelPicker,
     required this.onPickImage,
     required this.onOpenPrompts,
@@ -42,6 +43,10 @@ class _Actions extends StatelessWidget {
   /// can touch it (a picture goes to the grid, which has no filesystem), so the
   /// control isn't offered where it would mean nothing.
   final Widget? approvalPicker;
+
+  /// Which agent answers — sits just left of the model it runs. Null on a turn
+  /// no agent answers (a picture goes to the grid).
+  final Widget? agentPicker;
   final Widget modelPicker;
   final VoidCallback onPickImage;
   final VoidCallback onOpenPrompts;
@@ -74,7 +79,17 @@ class _Actions extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // The two pills are chips, not push buttons, so both sit at
+              // Agent then model, the two halves of "who answers, and with what"
+              // — bounded (not fixed) so the pill sizes to the agent's name while
+              // its inner label can still ellipsis on a narrow window.
+              if (agentPicker != null) ...[
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 132),
+                  child: agentPicker!,
+                ),
+                const SizedBox(width: 8),
+              ],
+              // The pills are chips, not push buttons, so both sit at
               // heightSmall. This used to force a bare 30 — a fifth number in a
               // row that already had 32/32/28/32, and it silently overrode the
               // AppControl.height the picker itself asks for.

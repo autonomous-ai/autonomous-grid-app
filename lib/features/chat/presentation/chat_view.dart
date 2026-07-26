@@ -13,6 +13,7 @@ import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
 import '../../agents/logic/agent_status.dart';
+import '../../agents/presentation/agent_picker.dart';
 import '../../agent/presentation/agent_changes_bar.dart';
 import '../../agent/presentation/agent_permission_card.dart';
 import '../../agent/presentation/approval_picker.dart';
@@ -493,6 +494,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           approvalPicker: agentMode
                               ? const ApprovalPicker()
                               : null,
+                          // Which agent answers, beside the model it runs — only
+                          // when an agent is the one answering this turn.
+                          agentPicker: agentMode ? const AgentPicker() : null,
                           modelPicker: GridModelPicker(
                             currentModelId: _model.text,
                             onSelect: _pickGridModel,
