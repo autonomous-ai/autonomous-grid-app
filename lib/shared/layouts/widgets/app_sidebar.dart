@@ -48,7 +48,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
     // when some *other* change (clicking a row) happened to rebuild it.
     AppTheme.watch(context);
     final section = ref.watch(shellSectionProvider);
-    final sending = ref.watch(chatSessionsProvider).sending;
 
     // Codex keeps the rail flat and quiet: a near-white fill set apart from the
     // content by a single hairline on its right edge — no gradient, no cast
@@ -77,10 +76,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
                         icon: LucideIcons.squarePen300,
                         label: 'New chat',
                         emphasized: true,
-                        enabled: !sending,
-                        tooltip: sending
-                            ? 'Wait for the reply to finish'
-                            : null,
                         onTap: _newChat,
                       ),
                       // A hair of air between the one thing you *do* (start a
