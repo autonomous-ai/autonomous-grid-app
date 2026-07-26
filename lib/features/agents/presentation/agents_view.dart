@@ -83,80 +83,93 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
         ? AppGlass.surfaceHoverFill
         : AppGlass.surfaceFill;
 
+    // Tapping the card hands the chat to this agent — the whole row is the
+    // affordance, so the user never has to hunt for a specific button. Only when
+    // there's a switch to make: an installed agent this grid can run that isn't
+    // already the one answering. The Update button carries its own tap, so it
+    // never triggers this. Uninstalled/unavailable/active cards aren't tappable.
+    final canSwitch = installed && runsHere && !isActive;
+
     return MouseRegion(
+      cursor: canSwitch ? SystemMouseCursors.click : MouseCursor.defer,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        // The house row-hover timing, shared with the plugin and job lists.
-        duration: const Duration(milliseconds: 130),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          color: isActive
-              ? Color.alphaBlend(
-                  AppPalette.brandBolt.withValues(alpha: 0.08),
-                  baseFill,
-                )
-              : baseFill,
-          borderRadius: BorderRadius.circular(14),
-          border: isActive
-              ? Border.all(
-                  color: AppPalette.brandBolt.withValues(alpha: 0.55),
-                  width: 1.5,
-                )
-              : null,
-          boxShadow: AppGlass.cardShadow,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _AgentGlyph(tool: tool),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              tool.name,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: AppPalette.textPrimary,
+      child: GestureDetector(
+        onTap: canSwitch
+            ? () => ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id)
+            : null,
+        child: AnimatedContainer(
+          // The house row-hover timing, shared with the plugin and job lists.
+          duration: const Duration(milliseconds: 130),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            color: isActive
+                ? Color.alphaBlend(
+                    AppPalette.brandBolt.withValues(alpha: 0.08),
+                    baseFill,
+                  )
+                : baseFill,
+            borderRadius: BorderRadius.circular(14),
+            border: isActive
+                ? Border.all(
+                    color: AppPalette.brandBolt.withValues(alpha: 0.55),
+                    width: 1.5,
+                  )
+                : null,
+            boxShadow: AppGlass.cardShadow,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _AgentGlyph(tool: tool),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                tool.name,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  color: AppPalette.textPrimary,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            _StatusChip(
-                              tool: tool,
-                              installed: installed,
-                              runsHere: runsHere,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          // What the grid can't do outranks what the agent is
-                          // for: a user reading this row wants to know why it
-                          // isn't answering before what it would be good at.
-                          installed && !runsHere
-                              ? agentUnsupportedHere(tool)
-                              : tool.tagline,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppPalette.textSecondary,
+                              const SizedBox(width: 10),
+                              _StatusChip(
+                                tool: tool,
+                                installed: installed,
+                                runsHere: runsHere,
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 4),
+                          Text(
+                            // What the grid can't do outranks what the agent is
+                            // for: a user reading this row wants to know why it
+                            // isn't answering before what it would be good at.
+                            installed && !runsHere
+                                ? agentUnsupportedHere(tool)
+                                : tool.tagline,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppPalette.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  _Action(tool: tool, installed: installed, runsHere: runsHere),
-                ],
-              ),
-              _Error(tool: tool),
-            ],
+                    const SizedBox(width: 12),
+                    _Action(tool: tool, installed: installed),
+                  ],
+                ),
+                _Error(tool: tool),
+              ],
+            ),
           ),
         ),
       ),
@@ -303,20 +316,16 @@ class _Chip extends StatelessWidget {
 }
 
 /// Install, or update what's there.
+///
+/// Switching the chat to this agent is the card's own tap now (see [_AgentCard]),
+/// so there's no "use for chat" button here — this stays a single job: get the
+/// agent onto the machine, or pull a newer build. The button carries its own
+/// tap, so updating never doubles as a switch.
 class _Action extends ConsumerWidget {
-  const _Action({
-    required this.tool,
-    required this.installed,
-    required this.runsHere,
-  });
+  const _Action({required this.tool, required this.installed});
 
   final AgentTool tool;
   final bool installed;
-
-  /// Whether the open grid can run this agent. False hides "Use for chat": a
-  /// button that hands the chat to something that would fail on the very next
-  /// message is worse than no button.
-  final bool runsHere;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -333,26 +342,9 @@ class _Action extends ConsumerWidget {
       );
     }
 
-    // With a second agent installed, the one that isn't answering chats offers
-    // to take over — the active one already says so in its status chip, so it
-    // needs no button. One agent installed → it's always active, no choice shown.
-    final isActive = ref.watch(activeChatAgentProvider) == tool;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (!isActive && runsHere) ...[
-          TextButton(
-            onPressed: () =>
-                ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id),
-            child: const Text('Use for chat'),
-          ),
-          const SizedBox(width: 4),
-        ],
-        OutlinedButton(
-          onPressed: () => controller.install(tool, upgrade: true),
-          child: const Text('Update'),
-        ),
-      ],
+    return OutlinedButton(
+      onPressed: () => controller.install(tool, upgrade: true),
+      child: const Text('Update'),
     );
   }
 }
