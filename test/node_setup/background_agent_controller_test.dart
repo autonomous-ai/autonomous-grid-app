@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agents/logic/agent_catalog.dart';
-import 'package:grid_app/features/agent/logic/codex_tool.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agent/agent_registry.dart';
+import 'package:grid_app/features/agent/codex/codex_tool.dart';
+import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/background_agent_controller.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';
@@ -14,7 +14,7 @@ import 'package:grid_app/infrastructure/providers.dart';
 /// overridden wholesale so the test never probes the real machine.
 ProviderContainer _container(
   FakeGridCliService? cli, {
-  Set<AgentTool> installed = const {},
+  Set<String> installed = const {},
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -25,7 +25,7 @@ ProviderContainer _container(
           engine: EngineStatus.notInstalled,
           media: MediaStatus.notInstalled,
           localModelCount: 0,
-          installedAgents: installed,
+          installedAgentIds: installed,
         ),
       ),
       // The re-probe at the end must not walk the real PATH.
@@ -45,20 +45,20 @@ void main() {
       // at all, so an agent added to the catalog later would never arrive on a
       // computer that was already set up.
       final cli = FakeGridCliService();
-      final container = _container(cli, installed: {AgentTool.hermes});
+      final container = _container(cli, installed: {'hermes'});
 
       await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
       expect(cli.runCalls, [
-        for (final tool in AgentTool.values)
-          if (tool != AgentTool.hermes) ['agent', 'install', tool.id],
+        for (final agent in kAgents)
+          if (agent.id != 'hermes') ['agent', 'install', agent.id],
       ]);
     },
   );
 
   test('a computer with every agent installs nothing', () async {
     final cli = FakeGridCliService();
-    final container = _container(cli, installed: AgentTool.values.toSet());
+    final container = _container(cli, installed: kAgents.map((a) => a.id).toSet());
 
     await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
@@ -69,13 +69,13 @@ void main() {
     'it runs at most once a session, however often the shell asks',
     () async {
       final cli = FakeGridCliService();
-      final container = _container(cli, installed: {AgentTool.hermes});
+      final container = _container(cli, installed: {'hermes'});
       final installer = container.read(backgroundAgentInstallerProvider);
 
       await installer.startIfNeeded();
       await installer.startIfNeeded();
 
-      expect(cli.runCalls, hasLength(AgentTool.values.length - 1));
+      expect(cli.runCalls, hasLength(kAgents.length - 1));
     },
   );
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/edit_diff.dart';
+import 'package:grid_app/features/agent/common/edit_diff.dart';
 
 String _render(List<DiffLine> lines) => [
   for (final line in lines)

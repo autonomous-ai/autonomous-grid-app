@@ -11,7 +11,7 @@ import '../../../shared/widgets/pill_choice.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 // For platform_connected_panel.dart, a part of this library.
 import '../../../shared/widgets/toast.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agent/hermes/hermes_tool.dart';
 import '../logic/messaging_controller.dart';
 import '../logic/messaging_platform.dart';
 

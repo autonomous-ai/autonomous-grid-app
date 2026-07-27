@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_cron_service.dart';
-import '../../agent/logic/agent_providers.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agent/common/agent_providers.dart';
+import '../../agent/hermes/hermes_tool.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'task_delivery.dart';

@@ -31,7 +31,7 @@ class AgentHandoverBar extends ConsumerWidget {
     // it, on a grid Codex can't use). Then there is no hand-over to report —
     // there's an install to do, and the notice has to say so or the chat just
     // fails on send with nothing pointing anywhere.
-    final ready = ref.watch(agentInstalledProvider(answering));
+    final ready = ref.watch(agentInstalledProvider(answering.id));
     return ComposerNoticeBar(
       icon: Icons.swap_horiz_rounded,
       label: ready

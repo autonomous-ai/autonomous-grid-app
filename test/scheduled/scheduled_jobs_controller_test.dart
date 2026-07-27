@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agent/common/agent_providers.dart';
 import 'package:grid_app/features/scheduled/logic/job_schedule.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_job.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_jobs_controller.dart';

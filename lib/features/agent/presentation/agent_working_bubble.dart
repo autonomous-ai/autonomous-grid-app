@@ -6,7 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../playground/presentation/message_plan.dart';
 import '../../playground/presentation/message_sources.dart';
-import '../logic/agent_providers.dart';
+import '../common/agent_providers.dart';
 
 /// The "agent is working" bubble shown in the chat while the agent is answering.
 ///

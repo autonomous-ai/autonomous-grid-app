@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_routing.dart';
+import 'package:grid_app/features/agent/common/agent_routing.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
 
 void main() {

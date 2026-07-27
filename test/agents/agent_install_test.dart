@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agents/logic/agent_catalog.dart';
-import 'package:grid_app/features/agent/logic/agent_server_error.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agent/agent_registry.dart';
+import 'package:grid_app/features/agent/common/agent_server_error.dart';
+import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_install_controller.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_acp_setup.dart';
@@ -74,6 +74,9 @@ ProviderContainer _container(GridCliService? cli, {HermesAcpSetup? setup}) {
 }
 
 void main() {
+  final hermes = agentById('hermes')!;
+  final codex = agentById('codex')!;
+
   group('installing an agent', () {
     test(
       'asks the CLI for it by name — and asks to replace it when updating',
@@ -82,11 +85,11 @@ void main() {
         final container = _container(cli);
         final controller = container.read(agentInstallProvider.notifier);
 
-        await controller.install(AgentTool.hermes);
+        await controller.install(hermes);
         expect(cli.calls.single, ['agent', 'install', 'hermes']);
         expect(container.read(agentInstallProvider), isA<AgentInstallIdle>());
 
-        await controller.install(AgentTool.hermes, upgrade: true);
+        await controller.install(hermes, upgrade: true);
         expect(cli.calls.last, ['agent', 'install', 'hermes', '--force']);
       },
     );
@@ -102,7 +105,7 @@ void main() {
 
         await container
             .read(agentInstallProvider.notifier)
-            .install(AgentTool.hermes);
+            .install(hermes);
 
         final state = container.read(agentInstallProvider);
         expect(state, isA<AgentInstallFailed>());
@@ -110,7 +113,7 @@ void main() {
           (state as AgentInstallFailed).message,
           contains('could not reach github.com'),
         );
-        expect(state.tool, AgentTool.hermes);
+        expect(state.agent, hermes);
       },
     );
 
@@ -123,7 +126,7 @@ void main() {
 
         await container
             .read(agentInstallProvider.notifier)
-            .install(AgentTool.hermes);
+            .install(hermes);
 
         final state =
             container.read(agentInstallProvider) as AgentInstallFailed;
@@ -136,7 +139,7 @@ void main() {
 
       await container
           .read(agentInstallProvider.notifier)
-          .install(AgentTool.hermes);
+          .install(hermes);
 
       final state = container.read(agentInstallProvider) as AgentInstallFailed;
       expect(state.message, contains('try again'));
@@ -149,7 +152,7 @@ void main() {
 
       await container
           .read(agentInstallProvider.notifier)
-          .install(AgentTool.hermes, upgrade: true);
+          .install(hermes, upgrade: true);
 
       expect(setup.repairs, 1);
       expect(setup.ready, isTrue);
@@ -164,7 +167,7 @@ void main() {
 
         await container
             .read(agentInstallProvider.notifier)
-            .install(AgentTool.hermes);
+            .install(hermes);
 
         expect(setup.repairs, 0);
       },
@@ -182,7 +185,7 @@ void main() {
 
       await container
           .read(agentInstallProvider.notifier)
-          .install(AgentTool.hermes);
+          .install(hermes);
 
       final state = container.read(agentInstallProvider) as AgentInstallFailed;
       expect(state.message, contains(kAgentSetupUnfinished));
@@ -196,7 +199,7 @@ void main() {
 
       await container
           .read(agentInstallProvider.notifier)
-          .install(AgentTool.hermes);
+          .install(hermes);
 
       final state = container.read(agentInstallProvider) as AgentInstallFailed;
       expect(state.message, contains("grid tool isn't installed"));
@@ -206,13 +209,13 @@ void main() {
   group('the catalog', () {
     test('lists only agents the app can install, so no row on the screen is '
         'there to be looked at rather than used', () {
-      expect(AgentTool.values, [AgentTool.hermes, AgentTool.codex]);
-      expect(kChatAgent, AgentTool.hermes);
+      expect(kAgents, [hermes, codex]);
+      expect(kDefaultChatAgent, hermes);
     });
 
     test('the id is what `grid agent install` takes', () {
-      expect(AgentTool.hermes.id, 'hermes');
-      expect(AgentTool.codex.id, 'codex');
+      expect(hermes.id, 'hermes');
+      expect(codex.id, 'codex');
     });
   });
 

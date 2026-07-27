@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../features/agent/logic/hermes_tool.dart';
+import '../../features/agent/hermes/hermes_tool.dart';
 import 'agent_version_service.dart';
 
 /// Null when Hermes isn't installed — there's nothing to ask.

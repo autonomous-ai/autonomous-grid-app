@@ -51,9 +51,10 @@ class ChatPrefs {
   static const double maxCodeFontSize = 22;
 
   /// The agent that answers chats out of the box — `hermes`, mirroring the
-  /// `kChatAgent` default in the agents catalog. Stored as a bare id string
-  /// because this layer can't reach the `AgentTool` enum (infrastructure never
-  /// depends on a feature); the agents feature maps the id back to the tool.
+  /// `kDefaultChatAgent` default in the agent registry. Stored as a bare id
+  /// string because this layer can't reach the `AgentDefinition` registry
+  /// (infrastructure never depends on a feature); the agents feature maps the id
+  /// back to the definition.
   static const defaultChatAgent = 'hermes';
 
   /// No remembered selection yet — the state before the first launch that saves.

@@ -6,8 +6,8 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/composer_notice_bar.dart';
 import '../../../shared/widgets/toast.dart';
-import '../logic/agent_changes.dart';
-import '../logic/edit_diff.dart';
+import '../common/agent_changes.dart';
+import '../common/edit_diff.dart';
 import 'diff_view.dart';
 
 /// A slim bar above the composer summarising what the agent changed this session,

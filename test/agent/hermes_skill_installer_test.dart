@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
+import 'package:grid_app/features/agent/hermes/hermes_skill_installer.dart';
 
 void main() {
   late Directory home;

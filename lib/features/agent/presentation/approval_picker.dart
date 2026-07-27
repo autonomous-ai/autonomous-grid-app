@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../logic/agent_permissions.dart';
+import '../common/agent_permissions.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
 ///

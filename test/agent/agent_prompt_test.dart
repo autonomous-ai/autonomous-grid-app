@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_prompt.dart';
+import 'package:grid_app/features/agent/common/agent_prompt.dart';
 
 void main() {
   group('withProjectInstructions', () {

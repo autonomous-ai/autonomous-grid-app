@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agent/common/agent_providers.dart';
 import 'package:grid_app/features/projects/logic/agent_workspace.dart';
 
 void main() {

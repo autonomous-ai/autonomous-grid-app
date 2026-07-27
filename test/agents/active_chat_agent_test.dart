@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/codex_chat_sender.dart';
-import 'package:grid_app/features/agent/logic/codex_tool.dart';
-import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agent/codex/codex_chat_sender.dart';
+import 'package:grid_app/features/agent/codex/codex_tool.dart';
+import 'package:grid_app/features/agent/hermes/hermes_chat_sender.dart';
+import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
-import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/features/agent/agent_registry.dart';
 import 'package:grid_app/features/agents/logic/agent_grid_support.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 
@@ -47,19 +47,19 @@ void main() {
   group('which agent answers chats', () {
     test('the remembered choice wins when it is installed', () {
       final container = _container(chosen: 'codex', hermes: true, codex: true);
-      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+      expect(container.read(activeChatAgentProvider).id, 'codex');
     });
 
     test('a choice for a since-removed agent falls back to one installed', () {
       // The user picked Codex, then uninstalled it — chat must not stay pointed
       // at an agent that isn't there.
       final container = _container(chosen: 'codex', hermes: true, codex: false);
-      expect(container.read(activeChatAgentProvider), AgentTool.hermes);
+      expect(container.read(activeChatAgentProvider).id, 'hermes');
     });
 
     test('the default choice is Hermes when it is installed', () {
       final container = _container(chosen: 'hermes', hermes: true, codex: true);
-      expect(container.read(activeChatAgentProvider), AgentTool.hermes);
+      expect(container.read(activeChatAgentProvider).id, 'hermes');
     });
 
     test('with nothing installed it reports the catalog default', () {
@@ -68,7 +68,7 @@ void main() {
         hermes: false,
         codex: false,
       );
-      expect(container.read(activeChatAgentProvider), kChatAgent);
+      expect(container.read(activeChatAgentProvider), kDefaultChatAgent);
     });
   });
 
@@ -82,8 +82,8 @@ void main() {
         codex: true,
         responses: false,
       );
-      expect(container.read(activeChatAgentProvider), AgentTool.hermes);
-      expect(container.read(blockedChatAgentProvider), AgentTool.codex);
+      expect(container.read(activeChatAgentProvider).id, 'hermes');
+      expect(container.read(blockedChatAgentProvider)?.id, 'codex');
     });
 
     test('gives the chat back on a grid that can run it', () {
@@ -95,13 +95,13 @@ void main() {
         codex: true,
         responses: true,
       );
-      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+      expect(container.read(activeChatAgentProvider).id, 'codex');
       expect(container.read(blockedChatAgentProvider), isNull);
     });
 
     test('reports nothing while the grid has not said either way', () {
       final container = _container(chosen: 'codex', hermes: true, codex: true);
-      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+      expect(container.read(activeChatAgentProvider).id, 'codex');
       expect(container.read(blockedChatAgentProvider), isNull);
     });
 
@@ -122,7 +122,7 @@ void main() {
   group('the agent a failed turn can be handed to', () {
     test('is the other installed agent this grid can run', () {
       final container = _container(chosen: 'codex', hermes: true, codex: true);
-      expect(container.read(alternativeChatAgentProvider), AgentTool.hermes);
+      expect(container.read(alternativeChatAgentProvider)?.id, 'hermes');
     });
 
     test('is nothing when no other agent could do better', () {

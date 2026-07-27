@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_server_error.dart';
+import 'package:grid_app/features/agent/common/agent_server_error.dart';
 
 /// Hermes hands the grid's failed HTTP call over as if it were the answer, so
 /// the chat used to show `HTTP 400: {"detail":…}` in an assistant bubble. These

@@ -6,8 +6,9 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
+import '../../agent/agent_definition.dart';
+import '../../agent/agent_registry.dart';
 import '../logic/active_chat_agent.dart';
-import '../logic/agent_catalog.dart';
 import '../logic/agent_grid_support.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_status.dart';
@@ -42,9 +43,9 @@ class AgentsView extends ConsumerWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 940),
           child: ListView.separated(
-            itemCount: AgentTool.values.length,
+            itemCount: kAgents.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, i) => _AgentCard(tool: AgentTool.values[i]),
+            itemBuilder: (context, i) => _AgentCard(agent: kAgents[i]),
           ),
         ),
       ),
@@ -53,9 +54,9 @@ class AgentsView extends ConsumerWidget {
 }
 
 class _AgentCard extends ConsumerStatefulWidget {
-  const _AgentCard({required this.tool});
+  const _AgentCard({required this.agent});
 
-  final AgentTool tool;
+  final AgentDefinition agent;
 
   @override
   ConsumerState<_AgentCard> createState() => _AgentCardState();
@@ -67,18 +68,18 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads color tokens; follow theme flips.
-    final tool = widget.tool;
+    final agent = widget.agent;
     final theme = Theme.of(context);
     // Each row probes its own agent, so it reads its own state.
-    final installed = ref.watch(agentInstalledProvider(tool));
+    final installed = ref.watch(agentInstalledProvider(agent.id));
     // Installed isn't enough: the open grid has to serve a model this agent can
     // talk to. One that can't is shown as unavailable *here* rather than hidden
     // — the row is how the user learns the grid is the reason.
-    final runsHere = ref.watch(agentRunsOnGridProvider(tool));
+    final runsHere = ref.watch(agentRunsOnGridProvider(agent.id));
 
     // The agent answering chats right now wears the brand: a gold rim and a faint
     // gold wash lift it out of the quiet list so it's obvious which one is live.
-    final isActive = installed && tool == ref.watch(activeChatAgentProvider);
+    final isActive = installed && agent == ref.watch(activeChatAgentProvider);
     final baseFill = _hovered
         ? AppGlass.surfaceHoverFill
         : AppGlass.surfaceFill;
@@ -96,7 +97,7 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: canSwitch
-            ? () => ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id)
+            ? () => ref.read(chatPrefsProvider.notifier).setChatAgent(agent.id)
             : null,
         child: AnimatedContainer(
           // The house row-hover timing, shared with the plugin and job lists.
@@ -126,7 +127,7 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _AgentGlyph(tool: tool),
+                    _AgentGlyph(agent: agent),
                     const SizedBox(width: 11),
                     Expanded(
                       child: Column(
@@ -135,14 +136,14 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                           Row(
                             children: [
                               Text(
-                                tool.name,
+                                agent.name,
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   color: AppPalette.textPrimary,
                                 ),
                               ),
                               const SizedBox(width: 10),
                               _StatusChip(
-                                tool: tool,
+                                agent: agent,
                                 installed: installed,
                                 runsHere: runsHere,
                               ),
@@ -154,8 +155,8 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                             // for: a user reading this row wants to know why it
                             // isn't answering before what it would be good at.
                             installed && !runsHere
-                                ? agentUnsupportedHere(tool)
-                                : tool.tagline,
+                                ? agentUnsupportedHere(agent)
+                                : agent.tagline,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: AppPalette.textSecondary,
                             ),
@@ -164,10 +165,10 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    _Action(tool: tool, installed: installed),
+                    _Action(agent: agent, installed: installed),
                   ],
                 ),
-                _Error(tool: tool),
+                _Error(agent: agent),
               ],
             ),
           ),
@@ -188,11 +189,11 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
 /// one-colour glyph that reads fine small. These are detailed artwork — a face,
 /// a robot — and at 30 they turn to mush before they turn into a logo.
 class _AgentGlyph extends StatelessWidget {
-  const _AgentGlyph({required this.tool});
+  const _AgentGlyph({required this.agent});
 
   static const _size = 34.0;
 
-  final AgentTool tool;
+  final AgentDefinition agent;
 
   @override
   Widget build(BuildContext context) {
@@ -211,7 +212,7 @@ class _AgentGlyph extends StatelessWidget {
         // Inset by the border so the image doesn't paint over the hairline.
         borderRadius: BorderRadius.circular(9),
         child: Image.asset(
-          tool.iconAsset,
+          agent.iconAsset,
           width: _size,
           height: _size,
           fit: BoxFit.cover,
@@ -226,12 +227,12 @@ class _AgentGlyph extends StatelessWidget {
 /// there uninstalled.
 class _StatusChip extends ConsumerWidget {
   const _StatusChip({
-    required this.tool,
+    required this.agent,
     required this.installed,
     required this.runsHere,
   });
 
-  final AgentTool tool;
+  final AgentDefinition agent;
   final bool installed;
   final bool runsHere;
 
@@ -252,8 +253,8 @@ class _StatusChip extends ConsumerWidget {
     }
     // The version is a nice-to-have: an agent that won't say which build it is
     // still answers chats, so the chip must not wait on it.
-    final version = ref.watch(agentVersionProvider(tool)).asData?.value;
-    final answering = tool == ref.watch(activeChatAgentProvider);
+    final version = ref.watch(agentVersionProvider(agent.id)).asData?.value;
+    final answering = agent == ref.watch(activeChatAgentProvider);
     return _Chip(
       label: [
         if (answering) 'Answers your chats' else 'Installed',
@@ -322,28 +323,28 @@ class _Chip extends StatelessWidget {
 /// agent onto the machine, or pull a newer build. The button carries its own
 /// tap, so updating never doubles as a switch.
 class _Action extends ConsumerWidget {
-  const _Action({required this.tool, required this.installed});
+  const _Action({required this.agent, required this.installed});
 
-  final AgentTool tool;
+  final AgentDefinition agent;
   final bool installed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(agentInstallProvider);
-    if (state is AgentInstallRunning && state.tool == tool) {
+    if (state is AgentInstallRunning && state.agent == agent) {
       return const _Working();
     }
 
     final controller = ref.read(agentInstallProvider.notifier);
     if (!installed) {
       return FilledButton(
-        onPressed: () => controller.install(tool),
+        onPressed: () => controller.install(agent),
         child: const Text('Install'),
       );
     }
 
     return OutlinedButton(
-      onPressed: () => controller.install(tool, upgrade: true),
+      onPressed: () => controller.install(agent, upgrade: true),
       child: const Text('Update'),
     );
   }
@@ -372,14 +373,14 @@ class _Working extends StatelessWidget {
 
 /// What went wrong, in the CLI's own last words — with the way to try again.
 class _Error extends ConsumerWidget {
-  const _Error({required this.tool});
+  const _Error({required this.agent});
 
-  final AgentTool tool;
+  final AgentDefinition agent;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(agentInstallProvider);
-    if (state is! AgentInstallFailed || state.tool != tool) {
+    if (state is! AgentInstallFailed || state.agent != agent) {
       return const SizedBox.shrink();
     }
     return Padding(
@@ -399,7 +400,7 @@ class _Error extends ConsumerWidget {
           const SizedBox(width: 8),
           TextButton(
             onPressed: () =>
-                ref.read(agentInstallProvider.notifier).install(tool),
+                ref.read(agentInstallProvider.notifier).install(agent),
             child: const Text('Try again'),
           ),
         ],

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_plugin_service.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agent/hermes/hermes_tool.dart';
 import 'hermes_plugin.dart';
 
 /// Which section of the screen is open: the plugins (tool backends), the skills

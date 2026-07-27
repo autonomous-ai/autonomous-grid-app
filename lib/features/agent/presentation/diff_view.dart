@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/code_text_scope.dart';
-import '../logic/edit_diff.dart';
+import '../common/edit_diff.dart';
 
 /// A monospace, `+`/`-` rendering of an edit's [DiffLine]s.
 ///

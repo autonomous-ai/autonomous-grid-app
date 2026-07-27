@@ -11,13 +11,13 @@ import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../../infrastructure/cli/agent_event.dart';
-import 'agent_changes.dart';
-import 'agent_server_error.dart';
-import 'agent_permissions.dart';
-import 'agent_prompt.dart';
+import '../common/agent_changes.dart';
+import '../common/agent_server_error.dart';
+import '../common/agent_permissions.dart';
+import '../common/agent_prompt.dart';
 import 'hermes_grid_link.dart';
 import 'hermes_tool.dart';
-import 'agent_providers.dart';
+import '../common/agent_providers.dart';
 
 /// The hermes ACP seam, or null when hermes is absent.
 ///

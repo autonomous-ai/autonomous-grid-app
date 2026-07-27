@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/providers.dart';
-import '../../agents/logic/agent_catalog.dart';
+import '../../agent/agent_registry.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
@@ -21,7 +21,7 @@ class NodeCapabilities {
     required this.engine,
     required this.media,
     required this.localModelCount,
-    this.installedAgents = const {},
+    this.installedAgentIds = const {},
     this.recommendedModel,
   });
 
@@ -30,10 +30,11 @@ class NodeCapabilities {
   final MediaStatus media;
   final int localModelCount;
 
-  /// Which chat agents are already on this computer. They're what let chat use
-  /// tools, so first-run setup fetches the ones that are missing — per agent,
-  /// not "any", or a machine with one of them would never be offered the other.
-  final Set<AgentTool> installedAgents;
+  /// The ids of the chat agents already on this computer. They're what let chat
+  /// use tools, so first-run setup fetches the ones that are missing — per
+  /// agent, not "any", or a machine with one of them would never be offered the
+  /// other.
+  final Set<String> installedAgentIds;
 
   /// Default model to auto-download, from `grid catalog`. Null when the CLI
   /// recommends none for this machine (then no model is pulled).
@@ -93,9 +94,9 @@ final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
     engine: EngineDetector().detect(),
     media: await mediaFuture,
     localModelCount: modelCount,
-    installedAgents: {
-      for (final tool in AgentTool.values)
-        if (ref.read(agentInstalledProvider(tool))) tool,
+    installedAgentIds: {
+      for (final agent in kAgents)
+        if (ref.read(agentInstalledProvider(agent.id))) agent.id,
     },
     recommendedModel: recommended,
   );

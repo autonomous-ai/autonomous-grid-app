@@ -2,9 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
-import '../../agent/logic/agent_server_error.dart';
-import '../../agent/logic/hermes_tool.dart';
-import 'agent_catalog.dart';
+import '../../agent/agent_definition.dart';
 import 'agent_status.dart';
 
 sealed class AgentInstallState {
@@ -15,16 +13,16 @@ class AgentInstallIdle extends AgentInstallState {
   const AgentInstallIdle();
 }
 
-/// [tool] is being fetched right now — it downloads, so the row says so and the
+/// [agent] is being fetched right now — it downloads, so the row says so and the
 /// button can't be pressed twice.
 class AgentInstallRunning extends AgentInstallState {
-  const AgentInstallRunning(this.tool);
-  final AgentTool tool;
+  const AgentInstallRunning(this.agent);
+  final AgentDefinition agent;
 }
 
 class AgentInstallFailed extends AgentInstallState {
-  const AgentInstallFailed(this.tool, this.message);
-  final AgentTool tool;
+  const AgentInstallFailed(this.agent, this.message);
+  final AgentDefinition agent;
   final String message;
 }
 
@@ -40,61 +38,44 @@ class AgentInstallController extends Notifier<AgentInstallState> {
   @override
   AgentInstallState build() => const AgentInstallIdle();
 
-  /// Fetch [tool]. [upgrade] reinstalls one that's already present.
-  Future<void> install(AgentTool tool, {bool upgrade = false}) async {
+  /// Fetch [agent]. [upgrade] reinstalls one that's already present.
+  Future<void> install(AgentDefinition agent, {bool upgrade = false}) async {
     if (state is AgentInstallRunning) return;
 
     final cli = ref.read(gridCliServiceProvider);
     if (cli == null) {
       state = AgentInstallFailed(
-        tool,
+        agent,
         "The grid tool isn't installed on this computer, so there's nothing to "
-        'install ${tool.name} with.',
+        'install ${agent.name} with.',
       );
       return;
     }
 
-    state = AgentInstallRunning(tool);
+    state = AgentInstallRunning(agent);
     final result = await cli.run([
       'agent',
       'install',
-      tool.id,
+      agent.id,
       if (upgrade) '--force',
     ]);
     if (!result.ok) {
-      state = AgentInstallFailed(tool, _friendlyError(result, tool));
+      state = AgentInstallFailed(agent, _friendlyError(result, agent));
       return;
     }
 
     // The binary is on PATH now (or gone, if the user removed it) — re-probe the
     // one we installed, so its row stops claiming what it said beforehand.
-    reprobeAgent(ref, tool);
+    reprobeAgent(ref, agent);
 
-    final unfinished = await _finishAcpSetup(tool);
+    // Some agents finish installing themselves on the first run (Hermes repairs
+    // its ACP support); most have nothing to do and return null.
+    final unfinished = await agent.finishInstall(ref);
     if (unfinished != null) {
-      state = AgentInstallFailed(tool, unfinished);
+      state = AgentInstallFailed(agent, unfinished);
       return;
     }
     state = const AgentInstallIdle();
-  }
-
-  /// Make sure Hermes can actually serve ACP — the mode chat drives it in.
-  ///
-  /// The CLI on this machine may be an older build, which installs Hermes
-  /// without that piece: the row would then read "installed" while every chat
-  /// turn failed. Installing is the moment to finish the job, so Update repairs
-  /// such a machine instead of running the same broken install again. Returns
-  /// null when there's nothing to do (or it worked), else the line to show.
-  Future<String?> _finishAcpSetup(AgentTool tool) async {
-    if (tool != AgentTool.hermes) return null;
-    final setup = ref.read(hermesAcpSetupProvider);
-    if (setup == null || await setup.isReady()) return null;
-    // The raw reason is logged by the repair itself (§6) — this is the line the
-    // user reads.
-    return await setup.repair() == null
-        ? null
-        : '$kAgentSetupUnfinished Check your internet connection, then try '
-              'again.';
   }
 
   void clearError() {
@@ -104,14 +85,15 @@ class AgentInstallController extends Notifier<AgentInstallState> {
 
 /// The CLI's last words, or a plain sentence when it said nothing useful — never
 /// a bare exit code, which tells the user nothing they can do something about.
-String _friendlyError(CliResult result, AgentTool tool) {
+String _friendlyError(CliResult result, AgentDefinition agent) {
   final detail = [
     ...result.stderr.trim().split('\n'),
     ...result.stdout.trim().split('\n'),
   ].map((line) => line.trim()).where((line) => line.isNotEmpty).lastOrNull;
 
   if (detail == null) {
-    return "Couldn't install ${tool.name}. Check your connection and try again.";
+    return "Couldn't install ${agent.name}. Check your connection and try "
+        'again.';
   }
-  return "Couldn't install ${tool.name}: $detail";
+  return "Couldn't install ${agent.name}: $detail";
 }

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_permissions.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agent/common/agent_permissions.dart';
+import 'package:grid_app/features/agent/common/agent_providers.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/hermes_permission_policy.dart';
 

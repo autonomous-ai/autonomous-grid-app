@@ -7,7 +7,7 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/skeleton.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agent/hermes/hermes_tool.dart';
 import '../logic/agent_skill.dart';
 import '../logic/mcp_controller.dart';
 import '../logic/mcp_server.dart';

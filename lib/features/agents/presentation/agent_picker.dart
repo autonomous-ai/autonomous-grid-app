@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../agent/agent_definition.dart';
+import '../../agent/agent_registry.dart';
 import '../logic/active_chat_agent.dart';
-import '../logic/agent_catalog.dart';
 import '../logic/agent_grid_support.dart';
 import '../logic/agent_status.dart';
 
@@ -31,8 +32,8 @@ final _rowRadius = BorderRadius.circular(AppControl.radius);
 class _AgentPickerState extends ConsumerState<AgentPicker> {
   final _menu = MenuController();
 
-  void _select(AgentTool tool) {
-    ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id);
+  void _select(AgentDefinition agent) {
+    ref.read(chatPrefsProvider.notifier).setChatAgent(agent.id);
     _menu.close();
   }
 
@@ -42,8 +43,8 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     AppTheme.watch(context);
     final active = ref.watch(activeChatAgentProvider);
     final installed = [
-      for (final tool in AgentTool.values)
-        if (ref.watch(agentInstalledProvider(tool))) tool,
+      for (final agent in kAgents)
+        if (ref.watch(agentInstalledProvider(agent.id))) agent,
     ];
     return MenuAnchor(
       controller: _menu,
@@ -61,18 +62,18 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
         ),
       ),
       menuChildren: [
-        for (final tool in installed)
+        for (final agent in installed)
           _AgentItem(
-            tool: tool,
-            selected: tool == active,
+            agent: agent,
+            selected: agent == active,
             // An installed agent this grid serves no model for still shows, but
             // says so — picking it borrows the chat until a grid that can run it.
-            runsHere: ref.watch(agentRunsOnGridProvider(tool)),
-            onTap: () => _select(tool),
+            runsHere: ref.watch(agentRunsOnGridProvider(agent.id)),
+            onTap: () => _select(agent),
           ),
       ],
       builder: (context, controller, _) => _Trigger(
-        tool: active,
+        agent: active,
         onTap: () => controller.isOpen ? controller.close() : controller.open(),
       ),
     );
@@ -81,9 +82,9 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
 
 /// The pill in the composer: the agent in force, its mark, and a caret.
 class _Trigger extends StatelessWidget {
-  const _Trigger({required this.tool, required this.onTap});
+  const _Trigger({required this.agent, required this.onTap});
 
-  final AgentTool tool;
+  final AgentDefinition agent;
   final VoidCallback onTap;
 
   @override
@@ -91,7 +92,7 @@ class _Trigger extends StatelessWidget {
     AppTheme.watch(context);
     final radius = BorderRadius.circular(AppControl.radius);
     return Tooltip(
-      message: 'Which agent answers · ${tool.name}',
+      message: 'Which agent answers · ${agent.name}',
       child: Material(
         color: AppGlass.surfaceFill,
         borderRadius: radius,
@@ -111,11 +112,11 @@ class _Trigger extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _AgentMark(tool: tool, size: 14),
+                _AgentMark(agent: agent, size: 14),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
-                    tool.name,
+                    agent.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -144,13 +145,13 @@ class _Trigger extends StatelessWidget {
 /// note when it can't run here, and a tick when it's the one answering.
 class _AgentItem extends StatelessWidget {
   const _AgentItem({
-    required this.tool,
+    required this.agent,
     required this.selected,
     required this.runsHere,
     required this.onTap,
   });
 
-  final AgentTool tool;
+  final AgentDefinition agent;
   final bool selected;
   final bool runsHere;
   final VoidCallback onTap;
@@ -180,14 +181,14 @@ class _AgentItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _AgentMark(tool: tool, size: 20),
+              _AgentMark(agent: agent, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      tool.name,
+                      agent.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -199,7 +200,7 @@ class _AgentItem extends StatelessWidget {
                     const SizedBox(height: 1),
                     Text(
                       runsHere
-                          ? tool.tagline
+                          ? agent.tagline
                           : "Not available on this grid — pick borrows chat "
                                 "until a grid that runs it.",
                       maxLines: 2,
@@ -235,9 +236,9 @@ class _AgentItem extends StatelessWidget {
 /// each is a real logo with its own colour — the same treatment the Agents list
 /// gives it.
 class _AgentMark extends StatelessWidget {
-  const _AgentMark({required this.tool, required this.size});
+  const _AgentMark({required this.agent, required this.size});
 
-  final AgentTool tool;
+  final AgentDefinition agent;
   final double size;
 
   @override
@@ -245,12 +246,12 @@ class _AgentMark extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(size * 0.28),
       child: Image.asset(
-        tool.iconAsset,
+        agent.iconAsset,
         width: size,
         height: size,
         fit: BoxFit.cover,
         // A missing/undeclared asset must not crash the composer — fall back to a
-        // neutral glyph (agent_catalog_test guards the real assets in CI).
+        // neutral glyph (agent_registry_test guards the real assets in CI).
         errorBuilder: (_, _, _) => Icon(
           Icons.smart_toy_outlined,
           size: size,

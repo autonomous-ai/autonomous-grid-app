@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/features/agent/agent_registry.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';
 import 'package:grid_app/features/node_setup/logic/node_capabilities.dart';
@@ -17,7 +17,7 @@ NodeCapabilities _readyCaps() => NodeCapabilities(
   engine: const EngineStatus(llamaInstalled: true),
   media: MediaStatus.notInstalled,
   localModelCount: 0,
-  installedAgents: AgentTool.values.toSet(),
+  installedAgentIds: kAgents.map((a) => a.id).toSet(),
 );
 
 void main() {

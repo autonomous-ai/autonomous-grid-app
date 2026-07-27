@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_session_title.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agent/common/agent_session_title.dart';
+import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
 import 'package:grid_app/infrastructure/cli/hermes_session_service.dart';
 
 /// A session store that hands back [_titles] one look-up at a time — the agent

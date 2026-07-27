@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_permissions.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
-import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
+import 'package:grid_app/features/agent/common/agent_permissions.dart';
+import 'package:grid_app/features/agent/common/agent_providers.dart';
+import 'package:grid_app/features/agent/hermes/hermes_chat_sender.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';

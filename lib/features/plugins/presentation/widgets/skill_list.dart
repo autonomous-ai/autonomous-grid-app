@@ -5,7 +5,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../../agent/logic/hermes_skill_installer.dart';
+import '../../../agent/hermes/hermes_skill_installer.dart';
 import '../../logic/agent_skill.dart';
 import '../../logic/skill_author.dart';
 import 'extension_tile_surface.dart';

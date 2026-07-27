@@ -2,8 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
-import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_status.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_controller.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_plan.dart';
@@ -144,14 +143,14 @@ void main() {
         onDisk: () => installed ? '/Users/x/.grid/bin/hermes' : null,
       );
 
-      expect(container.read(agentInstalledProvider(AgentTool.hermes)), isFalse);
+      expect(container.read(agentInstalledProvider('hermes')), isFalse);
 
       installed = true; // what the install step puts on disk
       await container.read(nodeSetupControllerProvider.notifier).run([
         _agentStep,
       ]);
 
-      expect(container.read(agentInstalledProvider(AgentTool.hermes)), isTrue);
+      expect(container.read(agentInstalledProvider('hermes')), isTrue);
     },
   );
 

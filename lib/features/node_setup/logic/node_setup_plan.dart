@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import '../../agents/logic/agent_catalog.dart';
+import '../../agent/agent_definition.dart';
+import '../../agent/agent_registry.dart';
 import 'node_capabilities.dart';
 import 'node_setup_config.dart';
 
@@ -133,27 +134,27 @@ List<SetupStep> buildSetupPlan(
 /// Every agent in the catalog is fetched, not just the default one: an agent
 /// the user can't choose because nobody installed it is a row that answers
 /// nothing, and `grid agent install` needs no Homebrew and no admin rights —
-/// it drops each one in `~/.grid`. Only [kChatAgent] is required, so a machine
-/// always ends up with something that can answer; the rest are [SetupStep
-/// .optional] and a first run survives one of them failing to download.
+/// it drops each one in `~/.grid`. Only [kDefaultChatAgent] is required, so a
+/// machine always ends up with something that can answer; the rest are
+/// [SetupStep.optional] and a first run survives one failing to download.
 List<SetupStep> agentInstallSteps(NodeCapabilities caps) => [
-  for (final tool in _agentInstallOrder)
-    if (!caps.installedAgents.contains(tool))
+  for (final agent in _agentInstallOrder)
+    if (!caps.installedAgentIds.contains(agent.id))
       SetupStep(
         action: SetupAction.installAgent,
-        title: 'Install ${tool.name}',
-        detail: tool.tagline,
-        args: ['agent', 'install', tool.id],
+        title: 'Install ${agent.name}',
+        detail: agent.tagline,
+        args: ['agent', 'install', agent.id],
         isDownload: false,
-        optional: tool != kChatAgent,
+        optional: agent != kDefaultChatAgent,
       ),
 ];
 
 /// The default agent first, then the rest in catalog order — the one that must
 /// succeed is also the one the user waits the least for.
-List<AgentTool> get _agentInstallOrder => [
-  kChatAgent,
-  ...AgentTool.values.where((tool) => tool != kChatAgent),
+List<AgentDefinition> get _agentInstallOrder => [
+  kDefaultChatAgent,
+  ...kAgents.where((agent) => agent != kDefaultChatAgent),
 ];
 
 /// The model-download step for [caps], or null when a model is already on disk.
