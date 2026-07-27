@@ -194,6 +194,93 @@ class ModelPricing {
   int get hashCode => Object.hash(unit, inputPer1m, outputPer1m);
 }
 
+/// One rate-limit window (primary/secondary) of a codex seat, from the relay's
+/// `codex_rate_limits`. Percentages are 0–100; `windowMinutes` is the quota
+/// period (43200 = 30d free, 10080 = 7d weekly on paid); `resetAt` is a Unix
+/// epoch (seconds) and `resetAfterSeconds` the seconds until it rolls. All
+/// null-tolerant — an evolving/absent payload never throws.
+class CodexWindow {
+  const CodexWindow({
+    this.usedPercent,
+    this.remainingPercent,
+    this.windowMinutes,
+    this.resetAt,
+    this.resetAfterSeconds,
+  });
+
+  final int? usedPercent;
+  final int? remainingPercent;
+  final int? windowMinutes;
+  final int? resetAt;
+  final int? resetAfterSeconds;
+
+  factory CodexWindow.fromJson(Map<String, dynamic> j) => CodexWindow(
+    usedPercent: (j['used_percent'] as num?)?.toInt(),
+    remainingPercent: (j['remaining_percent'] as num?)?.toInt(),
+    windowMinutes: (j['window_minutes'] as num?)?.toInt(),
+    resetAt: (j['reset_at'] as num?)?.toInt(),
+    resetAfterSeconds: (j['reset_after_seconds'] as num?)?.toInt(),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is CodexWindow &&
+      other.usedPercent == usedPercent &&
+      other.remainingPercent == remainingPercent &&
+      other.windowMinutes == windowMinutes &&
+      other.resetAt == resetAt &&
+      other.resetAfterSeconds == resetAfterSeconds;
+
+  @override
+  int get hashCode => Object.hash(
+    usedPercent,
+    remainingPercent,
+    windowMinutes,
+    resetAt,
+    resetAfterSeconds,
+  );
+}
+
+/// A codex seat's rate-limit snapshot the provider harvested from the vendor's
+/// `x-codex-*` headers (relay `codex_rate_limits`). Only present on a node whose
+/// `engine == 'codex'`; null for hardware nodes. `primary` is the main quota
+/// window; `secondary` is a shorter window some tiers add.
+class CodexRateLimits {
+  const CodexRateLimits({
+    this.planType,
+    this.activeLimit,
+    this.primary,
+    this.secondary,
+  });
+
+  final String? planType;
+  final String? activeLimit;
+  final CodexWindow? primary;
+  final CodexWindow? secondary;
+
+  factory CodexRateLimits.fromJson(Map<String, dynamic> j) => CodexRateLimits(
+    planType: j['plan_type'] as String?,
+    activeLimit: j['active_limit'] as String?,
+    primary: j['primary'] is Map
+        ? CodexWindow.fromJson((j['primary'] as Map).cast<String, dynamic>())
+        : null,
+    secondary: j['secondary'] is Map
+        ? CodexWindow.fromJson((j['secondary'] as Map).cast<String, dynamic>())
+        : null,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is CodexRateLimits &&
+      other.planType == planType &&
+      other.activeLimit == activeLimit &&
+      other.primary == primary &&
+      other.secondary == secondary;
+
+  @override
+  int get hashCode => Object.hash(planType, activeLimit, primary, secondary);
+}
+
 class OverviewNode {
   const OverviewNode({
     required this.name,
@@ -206,9 +293,11 @@ class OverviewNode {
     this.model,
     this.models = const [],
     this.engine,
+    this.platform,
     this.throughputTokS,
     this.maxConcurrency,
     this.planType,
+    this.codexRateLimits,
     required this.online,
   });
 
@@ -239,9 +328,20 @@ class OverviewNode {
   final List<String> models;
 
   final String? engine;
+
+  /// OS/arch the node reported: `macos-arm64` (Apple Silicon — unified memory,
+  /// so its "GPU memory" is really RAM), `macos-x86_64` / `linux` / `windows`
+  /// (discrete GPU with its own VRAM). Null on older providers that omit it.
+  final String? platform;
+
   final double? throughputTokS;
   final int? maxConcurrency;
   final bool online;
+
+  /// The codex seat's rate-limit snapshot, when this node serves a codex engine
+  /// (`engine == 'codex'`). Null for every other engine. Stale between the
+  /// provider's served requests — the relay only refreshes it on a response/seed.
+  final CodexRateLimits? codexRateLimits;
 
   factory OverviewNode.fromJson(Map<String, dynamic> j) => OverviewNode(
     name: '${j['name'] ?? ''}',
@@ -256,9 +356,15 @@ class OverviewNode {
         ? [for (final m in j['models'] as List) '$m']
         : const [],
     engine: j['engine'] as String?,
+    platform: j['platform'] as String?,
     throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
     maxConcurrency: (j['max_concurrency'] as num?)?.toInt(),
     planType: j['plan_type'] as String?,
+    codexRateLimits: j['codex_rate_limits'] is Map
+        ? CodexRateLimits.fromJson(
+            (j['codex_rate_limits'] as Map).cast<String, dynamic>(),
+          )
+        : null,
     online: j['online'] == true,
   );
 
@@ -275,9 +381,11 @@ class OverviewNode {
       other.model == model &&
       listEquals(other.models, models) &&
       other.engine == engine &&
+      other.platform == platform &&
       other.throughputTokS == throughputTokS &&
       other.maxConcurrency == maxConcurrency &&
       other.planType == planType &&
+      other.codexRateLimits == codexRateLimits &&
       other.online == online;
 
   @override
@@ -292,9 +400,11 @@ class OverviewNode {
     model,
     Object.hashAll(models),
     engine,
+    platform,
     throughputTokS,
     maxConcurrency,
     planType,
+    codexRateLimits,
     online,
   );
 }
