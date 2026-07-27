@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_icon_button.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
@@ -38,7 +39,11 @@ class ShelfModelTile extends ConsumerWidget {
     return ExtensionTileSurface(
       // Sits on a dialog, not a page — see ExtensionTileSurface.onDialog.
       onDialog: true,
-      child: Row(
+      // childBuilder, not child: delete is revealed by hovering the row rather
+      // than sitting on every row permanently. A destructive control shown at
+      // rest on every line reads as part of the layout and competes with the
+      // model's name for the eye.
+      childBuilder: (context, rowHovered) => Row(
         children: [
           ExtensionIconBadge(
             // A downloaded model reads as the "on" state of this list — the
@@ -53,7 +58,7 @@ class ShelfModelTile extends ConsumerWidget {
             child: _Lines(model: model, inUse: inUse),
           ),
           const SizedBox(width: 12),
-          _Action(model: model, inUse: inUse),
+          _Action(model: model, inUse: inUse, rowHovered: rowHovered),
         ],
       ),
     );
@@ -173,10 +178,21 @@ class _RunningTag extends StatelessWidget {
 /// A model being served has neither — its files can't be pulled out from under a
 /// live engine, and it's already here. It gets the tooltip explaining why.
 class _Action extends ConsumerWidget {
-  const _Action({required this.model, required this.inUse});
+  const _Action({
+    required this.model,
+    required this.inUse,
+    required this.rowHovered,
+  });
 
   final ShelfModel model;
   final bool inUse;
+
+  /// Whether the pointer is anywhere on the row — what reveals delete.
+  ///
+  /// Only delete is gated on it. A spinner mid-delete and the lock on a running
+  /// model both report state rather than offer an action, and hiding *those*
+  /// until hover would mean the row silently stops explaining itself.
+  final bool rowHovered;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -206,12 +222,36 @@ class _Action extends ConsumerWidget {
     }
 
     if (group != null) {
-      return IconButton(
-        icon: const Icon(Icons.delete_outline, size: 18),
-        color: AppPalette.textSecondary,
-        tooltip: 'Delete from this computer',
-        visualDensity: VisualDensity.compact,
-        onPressed: () => _confirmAndDelete(context, ref, group),
+      // Faded rather than removed: taking the button out of the tree would let
+      // the name and meta line stretch into its place and snap back on every
+      // pointer cross, so the row would twitch as the eye moves down the list.
+      // Opacity keeps the geometry fixed.
+      //
+      // `IgnorePointer` while invisible so an unseen button can't be clicked —
+      // an invisible *destructive* one especially.
+      return IgnorePointer(
+        ignoring: !rowHovered,
+        child: AnimatedOpacity(
+          opacity: rowHovered ? 1 : 0,
+          duration: AppMotion.hover,
+          curve: AppMotion.curve,
+          child: AppIconButton(
+            icon: Icons.delete_outline,
+            size: 17,
+            tooltip: 'Delete from this computer',
+            // Hover turns the glyph red. This is the one control on the row
+            // that doesn't undo, and a neutral lift said only where the pointer
+            // was, never what pressing would do.
+            destructive: true,
+            // Two hovers, two jobs. The row's reveals the button; the button's
+            // own (inside AppIconButton) lifts its glyph to textPrimary and lays
+            // a fill behind it — without that second one the button would appear
+            // and then sit inert-looking under the very pointer that summoned
+            // it. The row already lightens, so colour alone couldn't say "you're
+            // on the button" either; the fill is what draws that line.
+            onPressed: () => _confirmAndDelete(context, ref, group),
+          ),
+        ),
       );
     }
 
