@@ -3,30 +3,64 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/parsers/catalog_entry.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../plugins/presentation/widgets/extension_tile_surface.dart';
+import '../../../shared/widgets/app_icon_button.dart';
+import '../../../shared/widgets/app_segmented.dart';
+import '../logic/model_manager_filter.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/model_shelf.dart';
 import '../logic/models_providers.dart';
-import 'model_pull_card.dart';
-import 'shelf_model_tile.dart';
-import 'suggested_models_section.dart';
+import 'manager_search_field.dart';
+import 'discover_tab.dart';
+import 'installed_tab.dart';
 
 /// "Manage models" — the model hub that used to be its own tab: download a GGUF
 /// and see every model already under `~/.grid/models`. Opened from the local
 /// engine block. (Node setup / installing llama.cpp lives in the Engines tab.)
+///
+/// Split into two tabs ([ModelManagerTab]). The single-column version stacked
+/// three unrelated jobs — the shelf, the catalog's suggestions, and a fold-out
+/// paste box — inside one 720px-tall dialog whose content rarely filled half of
+/// it. Now each tab answers one question, the dialog is sized by what's in it,
+/// and a running download is a row in the list rather than something folded away.
 Future<void> showModelManager(BuildContext context) => showDialog<void>(
   context: context,
   // A download can be running in the background — an accidental tap outside
   // shouldn't dismiss the dialog. Only the Close/X button closes it.
   barrierDismissible: false,
-  builder: (_) => const _ModelManagerDialog(),
+  builder: (_) => const ModelManagerDialog(),
 );
 
-class _ModelManagerDialog extends ConsumerWidget {
-  const _ModelManagerDialog();
+@visibleForTesting
+class ModelManagerDialog extends ConsumerStatefulWidget {
+  const ModelManagerDialog({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ModelManagerDialog> createState() => _ModelManagerDialogState();
+}
+
+class _ModelManagerDialogState extends ConsumerState<ModelManagerDialog> {
+  var _tab = ModelManagerTab.installed;
+
+  /// One controller per tab. Sharing one would carry a filename typed under
+  /// Installed into Discover, where it filters the catalog to nothing and looks
+  /// like the catalog failed.
+  final _installedQuery = TextEditingController();
+  final _discoverQuery = TextEditingController();
+
+  @override
+  void dispose() {
+    _installedQuery.dispose();
+    _discoverQuery.dispose();
+    super.dispose();
+  }
+
+  /// Jumps to Discover — used by the Installed tab's empty state and its
+  /// "Add a model" button, so the only two dead ends on that tab both lead
+  /// somewhere.
+  void _goDiscover() => setState(() => _tab = ModelManagerTab.discover);
+
+  @override
+  Widget build(BuildContext context) {
     AppTheme.watch(context); // dialog content: re-colour on a theme flip.
     final catalog = ref.watch(catalogModelsProvider);
     final groups = ref.watch(modelGroupsProvider);
@@ -34,11 +68,21 @@ class _ModelManagerDialog extends ConsumerWidget {
     // empty, and the shelf is then whatever is already on disk.
     final entries = catalog.asData?.value ?? const <CatalogEntry>[];
     final shelf = buildModelShelf(catalog: entries, groups: groups);
-    final downloaded = shelf.where((m) => m.isDownloaded).length;
+    final installed = [
+      for (final model in shelf)
+        if (model.isDownloaded) model,
+    ];
+    final available = [
+      for (final model in shelf)
+        if (!model.isDownloaded) model,
+    ];
 
     final screen = MediaQuery.sizeOf(context);
     final maxWidth = screen.width < 800 ? screen.width - 96 : 640.0;
-    final maxHeight = screen.height < 860 ? screen.height * 0.9 : 720.0;
+    // A ceiling, not a height. The old dialog set 720 and left the middle empty
+    // whenever the content came up short; the Column below is `min`, so it now
+    // shrink-wraps and only hits this bound when a list is genuinely long.
+    final maxHeight = screen.height < 860 ? screen.height * 0.9 : 660.0;
 
     // No backgroundColor override: the app's dialogTheme already sets the lifted
     // menuFill (#1E1E1E dark / white light). AppPalette.windowBg is #0A0A0A in
@@ -47,179 +91,245 @@ class _ModelManagerDialog extends ConsumerWidget {
     return Dialog(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(26, 22, 26, 22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _DialogHeader(downloaded: downloaded, total: shelf.length),
-              const SizedBox(height: 18),
-              Flexible(
-                child: _ShelfList(
-                  shelf: shelf,
-                  loading: catalog.isLoading && groups.isEmpty,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Header(
+              tab: _tab,
+              installed: installed,
+              onClose: () => Navigator.of(context).pop(),
+            ),
+            _Controls(
+              tab: _tab,
+              installedCount: installed.length,
+              controller: _tab == ModelManagerTab.installed
+                  ? _installedQuery
+                  : _discoverQuery,
+              onTab: (tab) => setState(() => _tab = tab),
+            ),
+            Flexible(
+              child: switch (_tab) {
+                ModelManagerTab.installed => InstalledTab(
+                  installed: installed,
+                  query: _installedQuery,
+                  onDiscover: _goDiscover,
                 ),
-              ),
-              const SizedBox(height: 14),
-              const _AdvancedPull(),
-            ],
-          ),
+                ModelManagerTab.discover => DiscoverTab(
+                  fallback: available,
+                  fallbackLoading: catalog.isLoading && groups.isEmpty,
+                  // Whether `grid catalog` itself answered, which is *not* the
+                  // same question as whether `available` has rows in it — see
+                  // SuggestedForDevice._fallbackSection.
+                  catalogReadable: entries.isNotEmpty,
+                  query: _discoverQuery,
+                ),
+              },
+            ),
+            _Footer(tab: _tab, onAdd: _goDiscover),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Title, a one-line subtitle that reports the actual state of this computer,
-/// and close.
+/// Title, one line reporting the actual state of this computer, and close.
 ///
-/// The subtitle used to be static copy ("Download a model to serve, or see
-/// what's already on this computer") — a restatement of the title that told you
-/// nothing. It now answers the question the dialog is opened to answer.
-class _DialogHeader extends StatelessWidget {
-  const _DialogHeader({required this.downloaded, required this.total});
+/// The subtitle used to read "1 of 1 ready to use" — a ratio that is always
+/// `n of n` once everything suggested is downloaded, and which never mentions
+/// the number this screen exists to act on. It now leads with disk.
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.tab,
+    required this.installed,
+    required this.onClose,
+  });
 
-  final int downloaded;
-  final int total;
+  final ModelManagerTab tab;
+  final List<ShelfModel> installed;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    // "on this computer" used to close this line, one row above a section
-    // header that says ON THIS COMPUTER — the same three words twice.
-    final summary = downloaded == 0
-        ? 'Nothing downloaded yet — pick one below.'
-        : '$downloaded of $total ready to use.';
+    final bytes = totalInstalledBytes(installed);
+    final summary = switch (tab) {
+      ModelManagerTab.discover => 'Models ranked for this computer.',
+      _ when installed.isEmpty => 'Nothing downloaded yet.',
+      _ =>
+        '${formatGb(bytes)} used by '
+            '${installed.length} model${installed.length == 1 ? '' : 's'}',
+    };
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Manage models',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 16, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Manage models',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                summary,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: AppPalette.textSecondary,
+                const SizedBox(height: 4),
+                Text(
+                  summary,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.28,
+                    color: AppPalette.textSecondary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        IconButton(
-          icon: const Icon(Icons.close, size: 18),
-          tooltip: 'Close',
-          visualDensity: VisualDensity.compact,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ],
+          const SizedBox(width: 12),
+          AppIconButton(
+            icon: Icons.close,
+            // 18 — a dialog's close, the size the app draws it at elsewhere.
+            size: 18,
+            tooltip: 'Close',
+            onPressed: onClose,
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// The model list: what's already on this computer, then device-aware
-/// suggestions from the catalog API ([SuggestedForDevice], which handles its own
-/// loading/empty/sign-in states and falls back to the offline `grid catalog`
-/// list). Separated by air and a hover lift rather than `Divider`s, the
-/// construction the Plugins and Skills lists use.
-class _ShelfList extends StatelessWidget {
-  const _ShelfList({required this.shelf, required this.loading});
+/// The tab switch and the search box, on one strip.
+///
+/// They share a row because they act on the same thing: the switch picks which
+/// list is showing, the box narrows it. Stacked, the box would read as belonging
+/// to the dialog rather than to the tab under it.
+class _Controls extends StatelessWidget {
+  const _Controls({
+    required this.tab,
+    required this.installedCount,
+    required this.controller,
+    required this.onTab,
+  });
 
-  final List<ShelfModel> shelf;
-
-  /// Whether the offline `grid catalog` fallback is still loading.
-  final bool loading;
+  final ModelManagerTab tab;
+  final int installedCount;
+  final TextEditingController controller;
+  final ValueChanged<ModelManagerTab> onTab;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-
-    // Downloaded models lead: what's already here is what you can serve now,
-    // and it's the reason most visits to this dialog happen.
-    final ready = shelf.where((m) => m.isDownloaded).toList();
-    final available = shelf.where((m) => !m.isDownloaded).toList();
-
-    return ListView(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      children: [
-        if (ready.isNotEmpty) ...[
-          ExtensionSectionHeader(
-            label: 'On this computer',
-            count: ready.length,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: Row(
+        children: [
+          AppSegmented(
+            segments: [
+              SegmentSpec(
+                label: ModelManagerTab.installed.label,
+                // Hidden at zero: a "0" beside the tab reads as a broken
+                // counter, and the empty state on the tab says it better.
+                count: installedCount == 0 ? null : installedCount,
+              ),
+              SegmentSpec(label: ModelManagerTab.discover.label),
+            ],
+            selected: tab.index,
+            onChanged: (i) => onTab(ModelManagerTab.values[i]),
           ),
-          for (final model in ready) ...[
-            ShelfModelTile(model: model),
-            const SizedBox(height: 8),
-          ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: ManagerSearchField(
+              controller: controller,
+              // Discover's box doubles as the paste box — see DiscoverTab.
+              hint: tab == ModelManagerTab.installed
+                  ? 'Filter…'
+                  : 'Search, or paste owner/repo:file.gguf',
+            ),
+          ),
         ],
-        SuggestedForDevice(fallback: available, fallbackLoading: loading),
-      ],
+      ),
     );
   }
 }
 
-/// The free-text `owner/repo:file.gguf` field, folded away.
+/// The strip under the list: where the files live, and the way to the other tab.
 ///
-/// It used to open the dialog — the first thing shown was a paste box demanding
-/// a format most people don't know, above the one-tap list that makes it
-/// unnecessary. It stays fully available, just no longer the opening ask.
-///
-/// Auto-expands while a download is running so the progress bar and its Cancel
-/// button can't be hidden behind a collapsed tile.
-class _AdvancedPull extends ConsumerWidget {
-  const _AdvancedPull();
+/// Discover's half carries the Hugging Face link that used to sit inside the
+/// fold-out paste card, where it was only reachable after expanding a tile.
+class _Footer extends ConsumerWidget {
+  const _Footer({required this.tab, required this.onAdd});
+
+  final ModelManagerTab tab;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
+    // A download in flight owns the footer: it's the one thing in the dialog
+    // that can still be acted on while everything else waits.
     final pulling = ref.watch(modelPullControllerProvider) is ModelPulling;
 
-    // bubbleFill, matching the rows above: the dialog's own fill is #1E1E1E
-    // dark / white light, against which surfaceFill measures 1.023:1 / 1.000:1 —
-    // invisible. bubbleFill lifts the right way in both themes, and the field
-    // inside stays recessed against it.
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppGlass.bubbleFill,
-        borderRadius: BorderRadius.circular(AppCard.insetRadius),
-        boxShadow: AppGlass.cardShadow,
-      ),
-      child: ExpansionTile(
-        // A running download must stay on screen; a finished/idle one starts
-        // folded. `key` forces the tile to rebuild its initial state when the
-        // download starts, since initiallyExpanded is only read on first build.
-        key: ValueKey(pulling),
-        initiallyExpanded: pulling,
-        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        leading: Icon(
-          Icons.link_rounded,
-          size: 17,
-          color: AppPalette.textSecondary,
-        ),
-        title: Text(
-          'Paste a model from Hugging Face',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: AppFont.medium,
-            color: AppPalette.textPrimary,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              switch (tab) {
+                ModelManagerTab.installed =>
+                  'Models are stored in ~/.grid/models',
+                ModelManagerTab.discover when pulling =>
+                  'The download continues if you close this.',
+                ModelManagerTab.discover =>
+                  'Paste owner/repo:file.gguf above — one line per file.',
+              },
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.28,
+                color: AppPalette.textSecondary,
+              ),
+            ),
           ),
-        ),
-        children: const [ModelPullCard()],
+          const SizedBox(width: 12),
+          if (tab == ModelManagerTab.installed)
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add, size: AppControl.iconSize),
+              label: const Text('Add a model'),
+            )
+          else
+            const _BrowseButton(),
+        ],
+      ),
+    );
+  }
+}
+
+/// Opens Hugging Face's GGUF listing in the browser.
+class _BrowseButton extends StatelessWidget {
+  const _BrowseButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: openHuggingFaceGguf,
+      icon: const Icon(Icons.open_in_new, size: AppControl.iconSize),
+      // The field above already says Hugging Face; repeating it here would
+      // spend half the label saying where the user knows they are.
+      label: const Text('Browse models'),
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, AppControl.heightSmall),
+        padding: AppControl.paddingSmall,
       ),
     );
   }
