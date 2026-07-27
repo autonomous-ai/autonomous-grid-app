@@ -113,13 +113,56 @@ void main() {
       expect(event, isNull);
     });
 
+    test('reasoning becomes a thinking step, so a pause reads as work', () {
+      final event = parseCodexEvent({
+        'type': 'item.started',
+        'item': {
+          'id': 'r1',
+          'type': 'reasoning',
+          'text': 'Checking where the file lives',
+          'status': 'in_progress',
+        },
+      }, {});
+      final activity = (event as CodexActivityEvent).activity;
+      expect(activity.kind, AgentActivityKind.thinking);
+      expect(activity.label, 'Checking where the file lives');
+      expect(activity.status, AgentActivityStatus.running);
+    });
+
+    test('reasoning carried as a summary list is read too', () {
+      final event = parseCodexEvent({
+        'type': 'item.completed',
+        'item': {
+          'id': 'r2',
+          'type': 'reasoning',
+          'summary': [
+            {'text': 'First I will read the files'},
+          ],
+        },
+      }, {});
+      expect(
+        (event as CodexActivityEvent).activity.label,
+        'First I will read the files',
+      );
+    });
+
+    test('an empty reasoning item carries nothing to show', () {
+      expect(
+        parseCodexEvent({
+          'type': 'item.completed',
+          'item': {'id': 'r3', 'type': 'reasoning', 'text': '   '},
+        }, {}),
+        isNull,
+      );
+    });
+
     test('turn lifecycle chatter and unknown items surface nothing', () {
       expect(parseCodexEvent({'type': 'turn.started'}, {}), isNull);
       expect(parseCodexEvent({'type': 'turn.completed'}, {}), isNull);
       expect(
         parseCodexEvent({
           'type': 'item.completed',
-          'item': {'id': 'r1', 'type': 'reasoning', 'text': 'thinking'},
+          'item': {'id': 'f1', 'type': 'file_change', 'path': 'a.dart'},
         }, {}),
         isNull,
       );

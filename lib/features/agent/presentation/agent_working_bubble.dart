@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -66,9 +68,12 @@ class AgentActivityFeed extends ConsumerWidget {
     final steps = ref.watch(agentActivityProvider);
     final sources = ref.watch(agentSourcesProvider);
     final plan = ref.watch(agentPlanProvider);
-    if (plan.isEmpty && steps.isEmpty && sources.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    // This feed only exists during an in-flight turn, so when nothing is
+    // actively running the model is composing its next step. Show that, with a
+    // live count, so a long pause reads as work rather than a stall.
+    final thinking = steps.every(
+      (step) => step.status != AgentActivityStatus.running,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -81,11 +86,74 @@ class AgentActivityFeed extends ConsumerWidget {
           const SizedBox(height: 10),
           for (final step in steps) _StepRow(step: step),
         ],
+        if (thinking) ...[
+          SizedBox(height: steps.isEmpty ? 10 : 4),
+          // Reset the elapsed count each time the step list changes, so it reads
+          // as time since the last action, not since the turn began.
+          _ThinkingRow(key: ValueKey(steps.length)),
+        ],
         if (sources.isNotEmpty) ...[
           const SizedBox(height: 12),
           MessageSources(sources: sources),
         ],
       ],
+    );
+  }
+}
+
+/// The "the model is composing its next step" line, shown in the feed while a
+/// turn is in flight but nothing is running — a small spinner and the seconds
+/// elapsed, so a pause between commands (long when the context is large) reads
+/// as work in progress rather than a hang.
+class _ThinkingRow extends StatefulWidget {
+  const _ThinkingRow({super.key});
+
+  @override
+  State<_ThinkingRow> createState() => _ThinkingRowState();
+}
+
+class _ThinkingRowState extends State<_ThinkingRow> {
+  Timer? _tick;
+  int _seconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _seconds += 1);
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = _seconds > 0 ? 'Thinking… ${_seconds}s' : 'Thinking…';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          const AppSpinner(size: SpinnerSize.small),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.psychology_outlined,
+            size: 14,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -103,6 +171,7 @@ class _StepRow extends StatelessWidget {
       AgentActivityKind.command => Icons.terminal,
       AgentActivityKind.web => Icons.public,
       AgentActivityKind.tool => Icons.build_outlined,
+      AgentActivityKind.thinking => Icons.psychology_outlined,
     };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),

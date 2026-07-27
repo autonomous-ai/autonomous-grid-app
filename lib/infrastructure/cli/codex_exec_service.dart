@@ -352,14 +352,48 @@ CodexExecEvent? _parseItem(
           status: _statusOf(item['status']),
         ),
       );
+    case 'reasoning':
+      // The model's summary of what it's about to do — surfaced so the pauses
+      // between commands read as thinking rather than a hang.
+      // TODO(BE): the item tag ('reasoning') and its text field are unverified
+      // against live output — the grid's `auto` model emits no reasoning summary
+      // (codex falls back to metadata that doesn't support it), so there is no
+      // real stream to test this against yet; `text` then a `summary` list cover
+      // the shapes Codex uses elsewhere. Confirm once a model surfaces reasoning.
+      final reasoning = _reasoningText(item);
+      if (reasoning.isEmpty) return null;
+      return CodexActivityEvent(
+        AgentActivity(
+          id: id,
+          kind: AgentActivityKind.thinking,
+          label: reasoning,
+          status: _statusOf(item['status']),
+        ),
+      );
     case 'todo_list':
       return CodexPlanEvent(_parseTodoList(item['items']));
     default:
-      // reasoning, file_change, error warnings: not shown.
+      // file_change, error warnings: not shown.
       // TODO(BE): now that Codex may write, `file_change` is worth surfacing —
       // Hermes's edits feed the undo bar and Codex's don't.
       return null;
   }
+}
+
+/// The summary text of a `reasoning` item. Codex has carried this as a flat
+/// `text` and as a `summary` list of `{text}` across builds, so take whichever
+/// is present — the feed row ellipsizes a long one to a single line.
+String _reasoningText(Map<String, dynamic> item) {
+  final text = item['text'];
+  if (text is String && text.trim().isNotEmpty) return text.trim();
+  final summary = item['summary'];
+  if (summary is List) {
+    for (final part in summary) {
+      final value = part is Map ? part['text'] : part;
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    }
+  }
+  return '';
 }
 
 /// Codex reports an item's lifecycle as `in_progress` / `completed` / `failed`;

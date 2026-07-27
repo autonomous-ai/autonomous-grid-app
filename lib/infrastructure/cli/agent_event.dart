@@ -1,8 +1,9 @@
 import 'hermes_permission_policy.dart';
 
 /// What kind of step the agent is running — a shell command, a look-up on the
-/// web, or any other tool. The kind picks the icon in the activity feed.
-enum AgentActivityKind { command, web, tool }
+/// web, the model's own reasoning, or any other tool. The kind picks the icon
+/// in the activity feed.
+enum AgentActivityKind { command, web, tool, thinking }
 
 /// Lifecycle of one agent step, driving its live status indicator.
 enum AgentActivityStatus { running, done, failed }
