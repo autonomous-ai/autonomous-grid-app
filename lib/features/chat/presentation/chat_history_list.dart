@@ -10,7 +10,6 @@ import '../../../shared/widgets/typing_dots.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/add_project.dart';
 import '../../projects/presentation/project_menu.dart';
-import '../logic/chat_row_status.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 
@@ -292,14 +291,13 @@ class _ChatRow extends ConsumerWidget {
     final selected =
         ref.watch(chatSessionsProvider).activeId == chat.id &&
         ref.watch(shellSectionProvider) == ShellSection.chat;
-    // What this chat's assistant is doing right now, if anything — shown on
-    // whichever chat is working, open or in the background, now that several can
-    // be in flight at once. Selecting on the coarse [ChatActivity] (not the raw
-    // phase) keeps the row from rebuilding on every streamed token.
-    final activity = ref.watch(
-      chatSessionsProvider.select((s) => chatActivityFor(s.phaseFor(chat.id))),
+    // A reply is coming into this chat — shown on whichever chat is working,
+    // open or in the background, now that several can be in flight at once.
+    // Selecting on the bool (not the raw phase) keeps the row from rebuilding on
+    // every streamed token.
+    final working = ref.watch(
+      chatSessionsProvider.select((s) => s.sendingFor(chat.id)),
     );
-    final working = activity != null;
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
@@ -315,69 +313,39 @@ class _ChatRow extends ConsumerWidget {
           controller.select(chat.id);
           ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
         },
-        // While a reply is coming in, the row shows a live status instead of the
-        // archive action — you can't archive mid-reply anyway, and "what is this
-        // chat doing?" is the useful thing to see, at a glance, without hovering.
-        // Idle, it's the archive affordance revealed on hover: reversible, so it
-        // belongs on a list where a mis-aimed click lands on the row below;
-        // deleting a transcript stays behind the chat's own "…" menu.
-        trailingWidth: working ? _ChatActivityBadge.width : 24,
+        // While a reply is coming in, the row shows a live cue instead of the
+        // archive action — you can't archive mid-reply anyway, and a pulsing
+        // cue says "still working" at a glance without hovering. Idle, it's the
+        // archive affordance revealed on hover: reversible, so it belongs on a
+        // list where a mis-aimed click lands on the row below; deleting a
+        // transcript stays behind the chat's own "…" menu.
         trailingAlwaysVisible: working,
-        trailing: activity != null
-            ? _ChatActivityBadge(activity: activity)
+        trailing: working
+            ? const _ChatActivityCue()
             : _ArchiveButton(onTap: () => _archive(context, ref)),
       ),
     );
   }
 }
 
-/// The live status on a chat row while a reply is coming in — a short word for
-/// what the assistant is doing, with a pulsing cue so a background chat reads as
-/// still working, not stalled.
+/// The live cue on a chat row while a reply is coming in — pulsing dots so a
+/// background chat reads as still working, not stalled. Sits where the archive
+/// action would, at the same 24px width, so nothing reflows when it appears.
 ///
 /// Kept muted rather than accented: the selected row already owns the rail's one
 /// bright mark, and a second lit element in the list would blur which chat is on
 /// screen.
-class _ChatActivityBadge extends StatelessWidget {
-  const _ChatActivityBadge({required this.activity});
-
-  final ChatActivity activity;
-
-  /// Room for the widest label ("Thinking") plus the cue, so switching between
-  /// states never nudges the title's width.
-  static const double width = 76;
+class _ChatActivityCue extends StatelessWidget {
+  const _ChatActivityCue();
 
   @override
   Widget build(BuildContext context) {
-    // Reads AppPalette tokens from inside a lazy list's child — watch here or
-    // the badge keeps the palette it was first painted with.
+    // Reads AppPalette from inside a lazy list's child — watch here or the cue
+    // keeps the palette it was first painted with.
     AppTheme.watch(context);
-    final label = switch (activity) {
-      ChatActivity.thinking => 'Thinking',
-      ChatActivity.typing => 'Typing',
-      ChatActivity.creating => 'Creating',
-    };
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.clip,
-            style: TextStyle(
-              color: AppPalette.textSecondary,
-              fontSize: 11,
-              fontWeight: AppFont.medium,
-            ),
-          ),
-        ),
-        const SizedBox(width: 5),
-        // The dots carry the motion — the "…" of "Typing…", live.
-        TypingDots(color: AppPalette.textFaint, dotSize: 3.5),
-      ],
+    return Align(
+      alignment: Alignment.centerRight,
+      child: TypingDots(color: AppPalette.textFaint, dotSize: 3.5),
     );
   }
 }
