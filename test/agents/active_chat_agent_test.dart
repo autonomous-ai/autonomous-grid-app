@@ -4,6 +4,7 @@ import 'package:grid_app/features/agent/codex/codex_chat_sender.dart';
 import 'package:grid_app/features/agent/codex/codex_tool.dart';
 import 'package:grid_app/features/agent/hermes/hermes_chat_sender.dart';
 import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
+import 'package:grid_app/features/agent/openclaw/openclaw_tool.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agent/agent_registry.dart';
 import 'package:grid_app/features/agents/logic/agent_grid_support.dart';
@@ -36,6 +37,10 @@ ProviderContainer _container({
       ),
       hermesInstalledProvider.overrideWithValue(hermes),
       codexInstalledProvider.overrideWithValue(codex),
+      // OpenClaw is a developer-only agent that shows up in buildAgents under
+      // test (debug = developer mode); pin it absent so it never probes the real
+      // PATH or slips into a fallback these cases don't expect.
+      openClawInstalledProvider.overrideWithValue(false),
       gridAdvertisesResponsesProvider.overrideWithValue(responses),
     ],
   );

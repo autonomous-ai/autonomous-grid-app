@@ -95,7 +95,9 @@ final nodeCapabilitiesProvider = FutureProvider<NodeCapabilities>((ref) async {
     media: await mediaFuture,
     localModelCount: modelCount,
     installedAgentIds: {
-      for (final agent in kAgents)
+      // Only the grid-managed agents setup can fetch — one that installs from
+      // its own site isn't setup's to reason about.
+      for (final agent in installableAgents)
         if (ref.read(agentInstalledProvider(agent.id))) agent.id,
     },
     recommendedModel: recommended,

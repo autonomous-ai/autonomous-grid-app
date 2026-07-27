@@ -49,7 +49,8 @@ void main() {
         'file': 'qwen2.5-3b-instruct-q5_k_m.gguf',
         'max_ctx': 32768,
         'est_tok_s': 8.1,
-        'pull_spec': 'Qwen/Qwen2.5-3B-Instruct-GGUF:qwen2.5-3b-instruct-q5_k_m.gguf',
+        'pull_spec':
+            'Qwen/Qwen2.5-3B-Instruct-GGUF:qwen2.5-3b-instruct-q5_k_m.gguf',
         'urls': ['https://huggingface.co/a', 'https://huggingface.co/b'],
       });
       expect(pick.hasModel, isTrue);

@@ -40,6 +40,21 @@ abstract base class AgentDefinition {
   /// "chat"`, so it has nothing to say to a chat-completions-only grid.
   bool get needsResponses;
 
+  /// Hidden from a shipped release, shown only in developer builds — for an
+  /// agent whose integration isn't finished enough to put in front of a user
+  /// yet (e.g. a transport that still needs verifying against a live binary).
+  /// The registry drops these from `buildAgents` outside developer mode, so a
+  /// user never meets an agent that can't answer. Defaults to false.
+  bool get devOnly => false;
+
+  /// Where the user installs this agent when the `grid` CLI can't. Null means
+  /// grid-managed — `grid agent install <id>` fetches it, and first-run setup
+  /// can too. A non-null URL means the agent installs itself from its own site
+  /// (a standalone app like OpenClaw): the Agents screen sends the user there
+  /// instead of running a CLI that would reject the name, and setup leaves it
+  /// alone (see `installableAgents`). Defaults to null.
+  Uri? get installUrl => null;
+
   /// Whether this agent is installed on this computer right now — a **reactive**
   /// read, so an install that invalidates the probe (see [reprobe]) refreshes
   /// every watcher.

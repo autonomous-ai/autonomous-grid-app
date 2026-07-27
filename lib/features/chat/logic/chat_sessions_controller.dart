@@ -113,7 +113,8 @@ class ChatSessionsState {
   String? errorFor(String? id) => id == null ? null : errors[id];
 
   /// Whether the chat with [id] has a plan waiting on approval.
-  bool awaitingPlanFor(String? id) => id != null && awaitingPlanIds.contains(id);
+  bool awaitingPlanFor(String? id) =>
+      id != null && awaitingPlanIds.contains(id);
 
   /// The open conversation's send phase — what the on-screen transcript shows.
   SendPhase get phase => phaseFor(activeId);
@@ -336,10 +337,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final activeId = state.activeId == id
         ? (remaining.isEmpty ? null : remaining.first.id)
         : state.activeId;
-    state = state.withoutInFlight({id}).copyWith(
-      conversations: remaining,
-      activeId: activeId,
-    );
+    state = state
+        .withoutInFlight({id})
+        .copyWith(conversations: remaining, activeId: activeId);
   }
 
   /// Archive a conversation: hide it from the sidebar, the tray and ⌘K without
@@ -395,10 +395,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final activeId = gone.contains(state.activeId)
         ? (remaining.isEmpty ? null : remaining.first.id)
         : state.activeId;
-    state = state.withoutInFlight(gone).copyWith(
-      conversations: remaining,
-      activeId: activeId,
-    );
+    state = state
+        .withoutInFlight(gone)
+        .copyWith(conversations: remaining, activeId: activeId);
   }
 
   /// Where to send the user when the chat with [id] stops being visible: stay

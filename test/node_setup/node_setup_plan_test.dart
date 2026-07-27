@@ -31,16 +31,19 @@ NodeCapabilities _caps({
   recommendedModel: recommended,
 );
 
-/// Every agent the catalog knows — a machine with nothing left to install.
-final _allAgentIds = kAgents.map((a) => a.id).toSet();
+/// The agents first-run setup can actually fetch (`grid agent install`) — the
+/// grid-managed ones. An agent that installs from its own site (OpenClaw) is
+/// left to the user, so setup never installs it and it never appears in these
+/// expectations.
+final _installable = installableAgents;
 
-/// What a bare machine owes the agentIds: one install step each. Written as a
+/// Every installable agent's id — a machine with nothing left to install.
+final _allAgentIds = _installable.map((a) => a.id).toSet();
+
+/// What a bare machine owes the agents: one install step each. Written as a
 /// function of the catalog so adding an agent doesn't need every expectation in
 /// this file rewritten.
-final _agentSteps = List.filled(
-  kAgents.length,
-  SetupAction.installAgent,
-);
+final _agentSteps = List.filled(_installable.length, SetupAction.installAgent);
 
 DetectedBackend _ollama({
   List<String> models = const ['gemma'],
@@ -91,7 +94,7 @@ void main() {
     final steps = agentInstallSteps(_caps());
     expect(
       steps.map((s) => s.args),
-      kAgents.map((a) => ['agent', 'install', a.id]),
+      _installable.map((a) => ['agent', 'install', a.id]),
     );
     expect(steps.first.args.last, kDefaultChatAgent.id);
   });
@@ -107,7 +110,7 @@ void main() {
 
   test('having one agent still gets you the other', () {
     final steps = agentInstallSteps(_caps(agentIds: {kDefaultChatAgent.id}));
-    expect(steps, hasLength(kAgents.length - 1));
+    expect(steps, hasLength(_installable.length - 1));
     expect(steps.every((s) => s.args.last != kDefaultChatAgent.id), isTrue);
   });
 

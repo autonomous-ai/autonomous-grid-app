@@ -256,7 +256,8 @@ class ClientAppConfigurator {
       );
       return ApplyOk(
         'Pointed Buzz at this grid (${_display(file)}).',
-        note: 'Quit and reopen Buzz (or restart its agents) so it picks up '
+        note:
+            'Quit and reopen Buzz (or restart its agents) so it picks up '
             'the change.',
       );
     } on Object catch (e) {

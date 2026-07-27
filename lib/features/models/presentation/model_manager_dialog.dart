@@ -155,7 +155,10 @@ class _ShelfList extends StatelessWidget {
       padding: EdgeInsets.zero,
       children: [
         if (ready.isNotEmpty) ...[
-          ExtensionSectionHeader(label: 'On this computer', count: ready.length),
+          ExtensionSectionHeader(
+            label: 'On this computer',
+            count: ready.length,
+          ),
           for (final model in ready) ...[
             ShelfModelTile(model: model),
             const SizedBox(height: 8),

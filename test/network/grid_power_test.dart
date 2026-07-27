@@ -220,12 +220,15 @@ void main() {
       expect(nodeVramGb(_node(vramGb: 64)), 64);
     });
 
-    test('a subscription seat brings no pool memory however much RAM it reports '
-        '— it relays to a hosted model, so its machine memory runs nothing for '
-        'the grid and would only inflate the pool', () {
-      expect(nodeVramGb(_node(vramGb: 64, planType: 'prolite')), isNull);
-      expect(nodeVramGb(_node(vramTotalMb: 65536, planType: 'pro')), isNull);
-    });
+    test(
+      'a subscription seat brings no pool memory however much RAM it reports '
+      '— it relays to a hosted model, so its machine memory runs nothing for '
+      'the grid and would only inflate the pool',
+      () {
+        expect(nodeVramGb(_node(vramGb: 64, planType: 'prolite')), isNull);
+        expect(nodeVramGb(_node(vramTotalMb: 65536, planType: 'pro')), isNull);
+      },
+    );
   });
 
   group('the graphics-memory pool', () {

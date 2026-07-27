@@ -14,7 +14,7 @@ final agentInstalledProvider = Provider.family<bool, String>(
 /// to decide between an agent answering and the grid's chat API. Which agent
 /// answers is `activeChatAgentProvider`'s job.
 final anyAgentInstalledProvider = Provider<bool>((ref) {
-  for (final agent in kAgents) {
+  for (final agent in buildAgents) {
     if (ref.watch(agentInstalledProvider(agent.id))) return true;
   }
   return false;
@@ -44,7 +44,7 @@ void reprobeAgent(Ref ref, AgentDefinition agent) => agent.reprobe(ref);
 /// first-run installer runs a *plan*, so it knows something was installed but
 /// not which agent it was.
 void reprobeAgents(Ref ref) {
-  for (final agent in kAgents) {
+  for (final agent in buildAgents) {
     agent.reprobe(ref);
   }
 }

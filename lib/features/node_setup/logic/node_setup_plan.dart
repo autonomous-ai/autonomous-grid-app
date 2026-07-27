@@ -151,10 +151,12 @@ List<SetupStep> agentInstallSteps(NodeCapabilities caps) => [
 ];
 
 /// The default agent first, then the rest in catalog order — the one that must
-/// succeed is also the one the user waits the least for.
+/// succeed is also the one the user waits the least for. Only the grid-managed
+/// agents ([installableAgents]); one that installs from its own site is left to
+/// the user, so setup never runs a `grid agent install` the CLI would reject.
 List<AgentDefinition> get _agentInstallOrder => [
   kDefaultChatAgent,
-  ...kAgents.where((agent) => agent != kDefaultChatAgent),
+  ...installableAgents.where((agent) => agent != kDefaultChatAgent),
 ];
 
 /// The model-download step for [caps], or null when a model is already on disk.

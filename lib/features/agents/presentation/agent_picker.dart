@@ -43,7 +43,7 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     AppTheme.watch(context);
     final active = ref.watch(activeChatAgentProvider);
     final installed = [
-      for (final agent in kAgents)
+      for (final agent in buildAgents)
         if (ref.watch(agentInstalledProvider(agent.id))) agent,
     ];
     return MenuAnchor(
@@ -171,7 +171,10 @@ class _AgentItem extends StatelessWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: _rowGutter, vertical: 3),
+        padding: const EdgeInsets.symmetric(
+          horizontal: _rowGutter,
+          vertical: 3,
+        ),
         child: Container(
           width: _menuWidth - _rowGutter * 2,
           padding: const EdgeInsets.fromLTRB(_rowInnerPad, 8, 8, 8),
@@ -218,11 +221,7 @@ class _AgentItem extends StatelessWidget {
               ),
               if (selected) ...[
                 const SizedBox(width: 8),
-                Icon(
-                  Icons.check_rounded,
-                  size: 16,
-                  color: AppPalette.accent,
-                ),
+                Icon(Icons.check_rounded, size: 16, color: AppPalette.accent),
               ],
             ],
           ),

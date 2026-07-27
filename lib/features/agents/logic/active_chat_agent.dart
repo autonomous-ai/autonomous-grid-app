@@ -25,7 +25,7 @@ final activeChatAgentProvider = Provider<AgentDefinition>((ref) {
   final picked = agentById(chosen);
   if (picked != null && _canAnswer(ref, picked)) return picked;
   // The choice isn't available — fall back to any agent that can answer.
-  for (final agent in kAgents) {
+  for (final agent in buildAgents) {
     if (_canAnswer(ref, agent)) return agent;
   }
   return kDefaultChatAgent;
@@ -53,7 +53,7 @@ final blockedChatAgentProvider = Provider<AgentDefinition?>((ref) {
 /// change nothing.
 final alternativeChatAgentProvider = Provider<AgentDefinition?>((ref) {
   final active = ref.watch(activeChatAgentProvider);
-  for (final agent in kAgents) {
+  for (final agent in buildAgents) {
     if (agent != active && _canAnswer(ref, agent)) return agent;
   }
   return null;

@@ -103,9 +103,7 @@ void main() {
         );
         final container = _container(cli);
 
-        await container
-            .read(agentInstallProvider.notifier)
-            .install(hermes);
+        await container.read(agentInstallProvider.notifier).install(hermes);
 
         final state = container.read(agentInstallProvider);
         expect(state, isA<AgentInstallFailed>());
@@ -124,9 +122,7 @@ void main() {
           _FakeCli(exitCode: 1, stdout: 'no space left on device'),
         );
 
-        await container
-            .read(agentInstallProvider.notifier)
-            .install(hermes);
+        await container.read(agentInstallProvider.notifier).install(hermes);
 
         final state =
             container.read(agentInstallProvider) as AgentInstallFailed;
@@ -137,9 +133,7 @@ void main() {
     test('a failure that said nothing still says what to do', () async {
       final container = _container(_FakeCli(exitCode: 2));
 
-      await container
-          .read(agentInstallProvider.notifier)
-          .install(hermes);
+      await container.read(agentInstallProvider.notifier).install(hermes);
 
       final state = container.read(agentInstallProvider) as AgentInstallFailed;
       expect(state.message, contains('try again'));
@@ -165,9 +159,7 @@ void main() {
         final setup = _FakeSetup();
         final container = _container(_FakeCli(), setup: setup);
 
-        await container
-            .read(agentInstallProvider.notifier)
-            .install(hermes);
+        await container.read(agentInstallProvider.notifier).install(hermes);
 
         expect(setup.repairs, 0);
       },
@@ -183,9 +175,7 @@ void main() {
         ),
       );
 
-      await container
-          .read(agentInstallProvider.notifier)
-          .install(hermes);
+      await container.read(agentInstallProvider.notifier).install(hermes);
 
       final state = container.read(agentInstallProvider) as AgentInstallFailed;
       expect(state.message, contains(kAgentSetupUnfinished));
@@ -197,9 +187,7 @@ void main() {
         'instead of failing quietly', () async {
       final container = _container(null);
 
-      await container
-          .read(agentInstallProvider.notifier)
-          .install(hermes);
+      await container.read(agentInstallProvider.notifier).install(hermes);
 
       final state = container.read(agentInstallProvider) as AgentInstallFailed;
       expect(state.message, contains("grid tool isn't installed"));
@@ -207,10 +195,18 @@ void main() {
   });
 
   group('the catalog', () {
-    test('lists only agents the app can install, so no row on the screen is '
-        'there to be looked at rather than used', () {
-      expect(kAgents, [hermes, codex]);
+    test('registers the agents this build knows, default first', () {
+      expect(kAgents.map((a) => a.id), ['hermes', 'codex', 'openclaw']);
       expect(kDefaultChatAgent, hermes);
+    });
+
+    test('a dev-only agent is dropped from a shipped release, not the '
+        'default', () {
+      // OpenClaw's transport isn't verified against a live binary yet, so it is
+      // developer-only; the agents that answer today are not.
+      expect(agentById('openclaw')!.devOnly, isTrue);
+      expect(hermes.devOnly, isFalse);
+      expect(codex.devOnly, isFalse);
     });
 
     test('the id is what `grid agent install` takes', () {

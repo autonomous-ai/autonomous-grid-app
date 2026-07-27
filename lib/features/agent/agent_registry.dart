@@ -1,22 +1,49 @@
+import '../../core/app_environment.dart';
 import 'agent_definition.dart';
 import 'codex/codex_agent.dart';
 import 'hermes/hermes_agent.dart';
+import 'openclaw/openclaw_agent.dart';
 
-/// The agents this build can run, in display order — the one list that replaces
+/// Every agent this build knows, in display order — the one list that replaces
 /// `AgentTool.values`.
 ///
-/// Every entry runs today: installed through the `grid` CLI (`grid agent
-/// install`) and able to answer chats on this computer. An agent the app
-/// can't install doesn't belong here — a row the user can only look at answers
-/// nothing. Adding an agent is adding its [AgentDefinition] to this list (and
-/// its icon to `pubspec.yaml`).
-const List<AgentDefinition> kAgents = [HermesAgent(), CodexAgent()];
+/// Installed through the `grid` CLI (or driven by its own tool) and able to
+/// answer chats on this computer. Adding an agent is adding its
+/// [AgentDefinition] here (and its icon to `pubspec.yaml`). A dev-only entry
+/// (see [AgentDefinition.devOnly]) stays in this list but is filtered out of
+/// [buildAgents] outside developer mode.
+const List<AgentDefinition> kAgents = [
+  HermesAgent(),
+  CodexAgent(),
+  OpenClawAgent(),
+];
 
-/// The definition for [id], or null when this build has no such agent — a
-/// remembered choice for a since-dropped agent resolves to null and the caller
-/// falls back (see `activeChatAgentProvider`).
+/// The agents this build actually offers the user. A dev-only agent — one whose
+/// integration isn't finished (OpenClaw's transport still needs verifying
+/// against a live binary) — appears only in developer builds; a shipped release
+/// drops it so no user meets an agent that can't yet answer. Everything the UI
+/// iterates and chat routing resolves goes through this, not [kAgents].
+List<AgentDefinition> get buildAgents => [
+  for (final agent in kAgents)
+    if (!agent.devOnly || AppEnvironment.isDeveloperMode) agent,
+];
+
+/// The agents first-run setup can install and manage on its own — the
+/// grid-managed ones ([AgentDefinition.installUrl] is null) among those this
+/// build offers. An agent that installs from its own site (OpenClaw) is left to
+/// the user, so setup never runs a `grid agent install` the CLI would reject.
+List<AgentDefinition> get installableAgents => [
+  for (final agent in buildAgents)
+    if (agent.installUrl == null) agent,
+];
+
+/// The definition for [id] *offered in this build*, or null when there's no such
+/// agent — a remembered choice for a since-dropped (or dev-only, in a release)
+/// agent resolves to null and the caller falls back (see
+/// `activeChatAgentProvider`). Resolves within [buildAgents], so a dev-only agent
+/// can never come back to life through a stale preference in a shipped release.
 AgentDefinition? agentById(String id) {
-  for (final agent in kAgents) {
+  for (final agent in buildAgents) {
     if (agent.id == id) return agent;
   }
   return null;

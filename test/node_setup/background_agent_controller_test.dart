@@ -37,6 +37,10 @@ ProviderContainer _container(
   return container;
 }
 
+/// The agents background setup can fetch — the grid-managed ones. OpenClaw
+/// installs from its own site, so it never appears in an install run.
+final _installable = installableAgents;
+
 void main() {
   test(
     'a computer missing an agent gets it without the installer screen',
@@ -50,7 +54,7 @@ void main() {
       await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
       expect(cli.runCalls, [
-        for (final agent in kAgents)
+        for (final agent in _installable)
           if (agent.id != 'hermes') ['agent', 'install', agent.id],
       ]);
     },
@@ -58,7 +62,10 @@ void main() {
 
   test('a computer with every agent installs nothing', () async {
     final cli = FakeGridCliService();
-    final container = _container(cli, installed: kAgents.map((a) => a.id).toSet());
+    final container = _container(
+      cli,
+      installed: _installable.map((a) => a.id).toSet(),
+    );
 
     await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
@@ -75,7 +82,7 @@ void main() {
       await installer.startIfNeeded();
       await installer.startIfNeeded();
 
-      expect(cli.runCalls, hasLength(kAgents.length - 1));
+      expect(cli.runCalls, hasLength(_installable.length - 1));
     },
   );
 

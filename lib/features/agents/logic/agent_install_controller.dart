@@ -41,6 +41,10 @@ class AgentInstallController extends Notifier<AgentInstallState> {
   /// Fetch [agent]. [upgrade] reinstalls one that's already present.
   Future<void> install(AgentDefinition agent, {bool upgrade = false}) async {
     if (state is AgentInstallRunning) return;
+    // A standalone-install agent isn't ours to fetch — `grid agent install`
+    // would reject the name. The Agents screen sends the user to its site
+    // instead; guard here so a mis-wire can't run a doomed command.
+    if (agent.installUrl != null) return;
 
     final cli = ref.read(gridCliServiceProvider);
     if (cli == null) {

@@ -112,9 +112,8 @@ class _ApiSuggestions extends ConsumerWidget {
         _SuggestedTile(
           model: model,
           recommended: identical(model, pick),
-          downloaded: model.file != null && onDisk.contains(
-            model.file!.toLowerCase(),
-          ),
+          downloaded:
+              model.file != null && onDisk.contains(model.file!.toLowerCase()),
         ),
       );
     }
@@ -137,7 +136,10 @@ class _SectionBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 10),
-        ExtensionSectionHeader(label: 'Suggested for your device', count: count),
+        ExtensionSectionHeader(
+          label: 'Suggested for your device',
+          count: count,
+        ),
         for (final child in children) ...[child, const SizedBox(height: 8)],
       ],
     );
