@@ -12,23 +12,27 @@ void main() {
   });
   tearDown(() => tmp.delete(recursive: true));
 
-  group('the grid-web skill card is what makes the agent reach for search', () {
+  String card() => gridWebSkillMd(
+        uvPath: '/grid/bin/uv',
+        searchScriptPath: '/skills/grid-web/scripts/search.py',
+        readScriptPath: '/skills/grid-web/scripts/read.py',
+      );
+
+  group('the grid-web skill card is what makes the agent reach for it', () {
     test('frontmatter names it and says when to use it — the only part the '
         'agent reads to decide', () {
-      final md = gridWebSkillMd(uvPath: '/uv', scriptPath: '/s/search.py');
+      final md = card();
       expect(md, contains('name: grid-web'));
-      // The description carries the intent (news / current / online), since that
-      // is what the agent matches against.
+      // The description carries the intent — search *and* read — since that is
+      // what the agent matches against.
       expect(md.toLowerCase(), contains('current'));
       expect(md.toLowerCase(), contains('news'));
+      expect(md.toLowerCase(), contains('read'));
     });
 
-    test('the body spells out one runnable command with the real uv and script '
-        'paths', () {
-      final md = gridWebSkillMd(
-        uvPath: '/grid/bin/uv',
-        scriptPath: '/skills/grid-web/scripts/search.py',
-      );
+    test('spells out both runnable commands with the real uv and script paths',
+        () {
+      final md = card();
       expect(
         md,
         contains(
@@ -36,24 +40,40 @@ void main() {
           '"/skills/grid-web/scripts/search.py"',
         ),
       );
+      expect(
+        md,
+        contains(
+          '"/grid/bin/uv" run --with trafilatura python3 '
+          '"/skills/grid-web/scripts/read.py"',
+        ),
+      );
     });
 
-    test('the script searches via ddgs and degrades to a typed exit, never a '
-        'crash', () {
+    test('is honest that X search needs a login — never sells a partial one as '
+        'complete', () {
+      expect(card().toLowerCase(), contains('login'));
+      expect(card(), contains('X/Twitter'));
+    });
+
+    test('both scripts degrade to a typed exit, never a crash', () {
       expect(kGridWebSearchScript, contains('from ddgs import DDGS'));
-      // Exit 2 when the backend can't be provisioned — the skill card reads this
-      // as "search isn't available", not a stack trace.
       expect(kGridWebSearchScript, contains('return 2'));
+      // Read pulls the article body, then falls back to page metadata (a tweet's
+      // text lives there), and never throws on a missing reader.
+      expect(kGridWebReadScript, contains('import trafilatura'));
+      expect(kGridWebReadScript, contains('extract_metadata'));
+      expect(kGridWebReadScript, contains('return 2'));
     });
   });
 
   group('writeGridWebSkill lays the skill down where the agent looks', () {
-    test('writes the card and the script under the given folder', () async {
+    test('writes the card and both scripts under the given folder', () async {
       final dir = Directory('${tmp.path}/grid-web');
       await writeGridWebSkill(dir, uvPath: '/uv');
 
       expect(File('${dir.path}/SKILL.md').existsSync(), isTrue);
       expect(File('${dir.path}/scripts/search.py').existsSync(), isTrue);
+      expect(File('${dir.path}/scripts/read.py').existsSync(), isTrue);
     });
 
     test('a rewrite wipes the old copy first, so a stale file never lingers '
@@ -77,6 +97,7 @@ void main() {
     final skill = Directory('${tmp.path}/.codex/skills/grid-web');
     expect(File('${skill.path}/SKILL.md').existsSync(), isTrue);
     expect(File('${skill.path}/scripts/search.py').existsSync(), isTrue);
+    expect(File('${skill.path}/scripts/read.py').existsSync(), isTrue);
   });
 
   test('HermesSkillInstaller installs grid-web alongside the media skills',
