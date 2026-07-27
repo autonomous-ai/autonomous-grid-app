@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/anchored_menu_position.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/modality_mark.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../auth/logic/session_controller.dart';
@@ -24,6 +26,44 @@ const _rowInnerPad = 9.0;
 const _rowIconSlot = 16.0;
 const _rowIconGap = 9.0;
 final _rowRadius = BorderRadius.circular(AppControl.radius);
+
+/// The panel's fixed width, and what the list can grow to before it scrolls.
+const _menuWidth = 340.0;
+const _menuMaxListHeight = 300.0;
+
+/// The panel's own vertical padding — [appMenuStyle]'s `vertical: 5`. Read off
+/// that style rather than guessed: the two drifting apart is what pushes a menu
+/// off its button.
+const _menuPadding = 5.0;
+
+/// What one option row measures, measured with `getRect` rather than derived:
+/// text at 13/1.2 rounds up to a 16px line box inside `vertical: 8`, and the
+/// gutter adds 1px above and below. Reading the row's padding off the source and
+/// adding it up gives 33.6 and drifts the panel — this is the number the row
+/// actually occupies.
+const _optionRowHeight = 34.0;
+
+/// The list's own padding, above the first row and below the last.
+const _listPadding = 6.0;
+
+/// How many rows [_LoadingRows] stands in with. Shared so the placement made
+/// while the catalog is in flight matches the panel that actually draws.
+const _loadingRowCount = 3;
+
+/// What the menu will measure for a catalog of [rows] options.
+///
+/// Summed from the row's own parts rather than guessed, so
+/// [anchoredMenuPosition] lands the panel on the pill instead of near it — and
+/// so it follows if the row's padding ever changes. Unlike the other menus in
+/// the app this height can't be a constant: the list grows with what the grid
+/// serves, and a stale constant is exactly what floats a menu off its anchor.
+Size _menuSize(int rows) {
+  final list = (_optionRowHeight * rows + _listPadding * 2).clamp(
+    0.0,
+    _menuMaxListHeight,
+  );
+  return Size(_menuWidth, _menuPadding * 2 + list);
+}
 
 /// The composer's model control: a compact pill that opens the list of models
 /// the grid you're on is serving.
@@ -54,7 +94,42 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
       controller.close();
       return;
     }
-    controller.open();
+    // Positioned, not aligned. `MenuStyle.alignment: topRight` reads as "put the
+    // menu's top-*left* on the pill's top-right", so a 340px panel grew off to
+    // the right and the window-edge clamp parked it against the screen edge —
+    // 270px clear of the pill it belongs to. This is the recipe the app's other
+    // four menus use.
+    controller.open(
+      position: anchoredMenuPosition(
+        context,
+        menuSize: _menuSize(_rowCount()),
+        margin: 8,
+        gap: 6,
+        alignEnd: true,
+        // The pill lives at the bottom of the window, so the menu opens upward;
+        // `anchoredMenuPosition` drops back below on its own if it won't fit.
+        preferAbove: true,
+      ),
+    );
+  }
+
+  /// How many rows the menu is about to show — what [_menuSize] needs to place
+  /// the panel. Counts what [_ModelMenu] builds: one row per option, one note
+  /// per grid that can't list any, and the empty note when there's nothing.
+  int _rowCount() {
+    final catalog = ref.read(gridModelCatalogProvider);
+    if (catalog.any((g) => g.status == GridModelStatus.loading)) {
+      return _loadingRowCount;
+    }
+    var rows = 0;
+    for (final group in catalog) {
+      if (group.options.isEmpty) {
+        if (group.status != GridModelStatus.ready) rows++;
+        continue;
+      }
+      rows += group.options.length;
+    }
+    return rows == 0 ? 1 : rows;
   }
 
   @override
@@ -63,22 +138,15 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     AppTheme.watch(context);
     return MenuAnchor(
       controller: _menu,
-      // Hang the menu off the pill's top-right and let MenuAnchor measure it.
-      // A declared height can't be right here: the list grows with the number of
-      // grids and shrinks as you type in the search, so any constant is stale the
-      // moment the catalog loads — too short clipped the last row, too tall
-      // floated the menu off the pill.
-      alignmentOffset: const Offset(0, -8),
-      style: MenuStyle(
-        alignment: Alignment.topRight,
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        visualDensity: VisualDensity.compact,
-        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(8),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      // The shared surface, not a hand-rolled one. This menu used to carry its
+      // own: `AppPalette.cardBg` is picked to be read *on the page*, so as a
+      // floating panel over the composer it had no edge of its own, and its
+      // 8/radius-14 lift disagreed with every other menu in the app.
+      style: appMenuStyle().copyWith(
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(vertical: _menuPadding),
         ),
+        visualDensity: VisualDensity.compact,
       ),
       menuChildren: [
         _ModelMenu(
@@ -286,17 +354,17 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
     // list. A SingleChildScrollView (unlike a lazy ListView) can be
     // intrinsic-measured, so it's safe inside the menu.
     return SizedBox(
-      width: 340,
+      width: _menuWidth,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 300),
+            constraints: const BoxConstraints(maxHeight: _menuMaxListHeight),
             child: SingleChildScrollView(
               controller: _scroll,
               primary: false,
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.symmetric(vertical: _listPadding),
               child: settling
                   ? const _LoadingRows()
                   : Column(
@@ -452,7 +520,13 @@ class _LoadingRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const rows = 3;
+    const rows = _loadingRowCount;
+    // The glyph is the tallest thing in the row, so the padding that makes a
+    // skeleton row measure a model row's height is whatever's left over. Spelled
+    // as the difference rather than hand-added: the placement in _menuSize sizes
+    // the panel off _optionRowHeight, and a skeleton row that measured something
+    // else would move the list under the pointer as the catalog lands.
+    const pad = (_optionRowHeight - _rowIconSlot) / 2;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -463,13 +537,11 @@ class _LoadingRows extends StatelessWidget {
             // than a slab that stops dead — the same trick SkeletonList uses.
             opacity: 1 - (r / rows) * 0.5,
             child: Padding(
-              // Matches _OptionRow's own gutter + inner pad + row height, so a
-              // skeleton row occupies exactly what a model row will.
               padding: const EdgeInsets.fromLTRB(
                 _rowGutter + _rowInnerPad,
-                5,
+                pad,
                 _rowInnerPad,
-                5,
+                pad,
               ),
               child: Row(
                 children: [
