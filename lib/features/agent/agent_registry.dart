@@ -28,13 +28,12 @@ List<AgentDefinition> get buildAgents => [
     if (!agent.devOnly || AppEnvironment.isDeveloperMode) agent,
 ];
 
-/// The agents first-run setup can install and manage on its own — the
-/// grid-managed ones ([AgentDefinition.installUrl] is null) among those this
-/// build offers. An agent that installs from its own site (OpenClaw) is left to
-/// the user, so setup never runs a `grid agent install` the CLI would reject.
+/// The agents first-run setup fetches on its own — the non-dev-only ones this
+/// build offers. A dev-only agent (OpenClaw, whose install path isn't proven out
+/// yet) is left to a developer's explicit click, never auto-installed.
 List<AgentDefinition> get installableAgents => [
   for (final agent in buildAgents)
-    if (agent.installUrl == null) agent,
+    if (!agent.devOnly) agent,
 ];
 
 /// The definition for [id] *offered in this build*, or null when there's no such

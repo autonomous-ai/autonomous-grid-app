@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../infrastructure/cli/agent_installer.dart';
 import '../playground/logic/chat_sender.dart';
 
 /// Everything the app needs to run and manage one agent backend — the app-side
@@ -47,13 +48,11 @@ abstract base class AgentDefinition {
   /// user never meets an agent that can't answer. Defaults to false.
   bool get devOnly => false;
 
-  /// Where the user installs this agent when the `grid` CLI can't. Null means
-  /// grid-managed — `grid agent install <id>` fetches it, and first-run setup
-  /// can too. A non-null URL means the agent installs itself from its own site
-  /// (a standalone app like OpenClaw): the Agents screen sends the user there
-  /// instead of running a CLI that would reject the name, and setup leaves it
-  /// alone (see `installableAgents`). Defaults to null.
-  Uri? get installUrl => null;
+  /// How the app installs this agent — the recipe it runs itself, without the
+  /// `grid` CLI (a pinned uv tool, a GitHub release binary, or a package-manager
+  /// command). The [AgentInstaller] executes it; adding an agent means declaring
+  /// one here, not editing a CLI whitelist.
+  AgentInstallSpec get installSpec;
 
   /// Whether this agent is installed on this computer right now — a **reactive**
   /// read, so an install that invalidates the probe (see [reprobe]) refreshes

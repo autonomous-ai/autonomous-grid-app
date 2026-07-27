@@ -6,6 +6,7 @@ import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_status.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_controller.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_plan.dart';
+import 'package:grid_app/infrastructure/cli/agent_installer.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/parsers/download_progress.dart';
@@ -103,12 +104,41 @@ const _optionalAgentStep = SetupStep(
   optional: true,
 );
 
+/// Installs agents without a package manager or the network — agent steps no
+/// longer go through the `grid` CLI, so the controller reads this instead.
+/// [failFor] fails any spec whose package/executable/command contains it, with
+/// a fixed reason, so the skip/stop paths can be driven.
+class _FakeInstaller implements AgentInstaller {
+  _FakeInstaller({this.failFor});
+
+  final String? failFor;
+
+  @override
+  Future<void> run(
+    AgentInstallSpec spec, {
+    bool upgrade = false,
+    void Function(String line)? onLog,
+  }) async {
+    onLog?.call('installing');
+    final label = switch (spec) {
+      UvToolInstall(:final package) => package,
+      GithubReleaseBinary(:final executable) => executable,
+      CommandInstall(:final command) => command.join(' '),
+    };
+    if (failFor != null && label.contains(failFor!)) {
+      onLog?.call('network unreachable');
+      throw const AgentInstallException('network unreachable');
+    }
+  }
+}
+
 /// [onDisk] stands in for the PATH probe, so a test can put the binary "there"
 /// mid-run the way an install does and see whether the app notices.
 ProviderContainer _container(
   GridCliService? fake, {
   NodeSetupLog? log,
   String? Function()? onDisk,
+  AgentInstaller? installer,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -116,6 +146,8 @@ ProviderContainer _container(
       gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
       // Always override so no test ever writes to the real ~/.grid/logs.
       nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
+      // Agent installs run through this, not the grid CLI — never the network.
+      agentInstallerProvider.overrideWithValue(installer ?? _FakeInstaller()),
       if (onDisk != null) hermesPathProvider.overrideWith((_) => onDisk()),
     ],
   );
@@ -132,14 +164,8 @@ void main() {
       // read "Not installed" and chat routed past the agent on a machine that
       // had just installed one, until the user quit and reopened.
       var installed = false;
-      final fake = FakeGridCliService()
-        ..stubStart(
-          ['agent', 'install', 'hermes'],
-          exitCode: 0,
-          lines: const [],
-        );
       final container = _container(
-        fake,
+        FakeGridCliService(),
         onDisk: () => installed ? '/Users/x/.grid/bin/hermes' : null,
       );
 
@@ -161,18 +187,12 @@ void main() {
       // required. A second one that won't download must leave the user in the
       // app, not at a red screen — and must not be reported as installed.
       final log = _RecordingLog();
-      final fake = FakeGridCliService()
-        ..stubStart(
-          ['agent', 'install', 'hermes'],
-          exitCode: 0,
-          lines: const [],
-        )
-        ..stubStart(
-          ['agent', 'install', 'codex'],
-          exitCode: 1,
-          lines: const [CliLine(isStderr: true, text: 'network unreachable')],
-        );
-      final container = _container(fake, log: log);
+      // Hermes installs; Codex (optional) fails to download.
+      final container = _container(
+        FakeGridCliService(),
+        log: log,
+        installer: _FakeInstaller(failFor: 'codex'),
+      );
 
       await container.read(nodeSetupControllerProvider.notifier).run([
         _agentStep,
@@ -190,13 +210,11 @@ void main() {
   );
 
   test('a required step that fails still stops the run', () async {
-    final fake = FakeGridCliService()
-      ..stubStart(
-        ['agent', 'install', 'hermes'],
-        exitCode: 1,
-        lines: const [CliLine(isStderr: true, text: 'network unreachable')],
-      );
-    final container = _container(fake);
+    // The required Hermes install fails, so the run stops before the optional.
+    final container = _container(
+      FakeGridCliService(),
+      installer: _FakeInstaller(failFor: 'hermes'),
+    );
 
     await container.read(nodeSetupControllerProvider.notifier).run([
       _agentStep,

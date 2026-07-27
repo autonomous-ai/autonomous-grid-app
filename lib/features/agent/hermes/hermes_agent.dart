@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_installer.dart';
 import '../../../infrastructure/cli/hermes_version_service.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../agent_definition.dart';
@@ -27,6 +28,12 @@ final class HermesAgent extends AgentDefinition {
 
   @override
   bool get needsResponses => false;
+
+  /// Hermes ships as a Python package; uv installs it (with the `[acp]` extra
+  /// the Grid app's ACP channel needs) onto a private CPython, inside ~/.grid.
+  @override
+  AgentInstallSpec get installSpec =>
+      const UvToolInstall(package: 'hermes-agent[acp]', python: '3.13');
 
   @override
   bool installed(Ref ref) => ref.watch(hermesInstalledProvider);

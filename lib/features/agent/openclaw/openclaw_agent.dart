@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_installer.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../agent_definition.dart';
 import 'openclaw_chat_sender.dart';
@@ -35,11 +36,13 @@ final class OpenClawAgent extends AgentDefinition {
   @override
   bool get devOnly => true;
 
-  /// OpenClaw is a standalone app, not something `grid agent install` knows —
-  /// the CLI rejects the name outright. So the user installs it from its own
-  /// site, and the app sends them there rather than running a doomed command.
+  /// OpenClaw isn't a self-contained binary — it installs as an npm global. The
+  /// app runs that command on an explicit click; it lands in npm's global bin
+  /// (which needs to be on PATH for the app to find it), so OpenClaw stays
+  /// developer-only until that's proven out.
   @override
-  Uri? get installUrl => Uri.parse('https://docs.openclaw.ai/install');
+  AgentInstallSpec get installSpec =>
+      const CommandInstall(['npm', 'i', '-g', 'openclaw@latest']);
 
   @override
   bool installed(Ref ref) => ref.watch(openClawInstalledProvider);

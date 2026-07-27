@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_installer.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/logging/node_setup_log.dart';
 import '../../../infrastructure/providers.dart';
+import '../../agent/agent_registry.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
@@ -128,9 +130,18 @@ class NodeSetupController extends Notifier<NodeSetupState> {
         log: List.unmodifiable(log),
       );
 
-      final ok = steps[i].isDownload
-          ? await _runDownload(service, steps, i, log)
-          : await _runStreaming(service, steps, i, log);
+      final ok = switch (steps[i].action) {
+        // Agent installs no longer go through `grid agent install` — the app
+        // runs the agent's own recipe (uv tool / release binary / command).
+        SetupAction.installAgent => await _runAgentInstall(steps, i, log),
+        _ when steps[i].isDownload => await _runDownload(
+          service,
+          steps,
+          i,
+          log,
+        ),
+        _ => await _runStreaming(service, steps, i, log),
+      };
       if (_cancelled) return; // cancel() writes its own footer
       if (!ok) {
         if (_skipOptional(steps, i, log)) continue;
@@ -167,6 +178,53 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     final why = failure is NodeSetupFailed ? failure.message : 'it failed';
     _logFile.endStep('skipped — $why');
     _memo(log, '… skipped ${steps[i].title}: $why');
+    return true;
+  }
+
+  /// Install an agent via the app's own installer (not `grid`). Streams the
+  /// tool's output into the same running-step log; a thrown
+  /// [AgentInstallException] becomes the step's failure line.
+  Future<bool> _runAgentInstall(
+    List<SetupStep> steps,
+    int i,
+    List<String> log,
+  ) async {
+    final step = steps[i];
+    final agent = agentById(step.args.last);
+    if (agent == null) {
+      state = NodeSetupFailed(
+        step: step,
+        message: 'Unknown agent: ${step.args.last}',
+        log: List.unmodifiable(log),
+      );
+      return false;
+    }
+    try {
+      await ref
+          .read(agentInstallerProvider)
+          .run(
+            agent.installSpec,
+            onLog: (line) {
+              if (_cancelled || state is! NodeSetupRunning) return;
+              _logFile.write(line, isError: false);
+              _memo(log, line);
+              state = NodeSetupRunning(
+                steps: steps,
+                index: i,
+                log: List.unmodifiable(log),
+              );
+            },
+          );
+    } on Object catch (error) {
+      if (_cancelled) return false;
+      final message = error is AgentInstallException ? error.message : '$error';
+      state = NodeSetupFailed(
+        step: step,
+        message: message,
+        log: List.unmodifiable(log),
+      );
+      return false;
+    }
     return true;
   }
 

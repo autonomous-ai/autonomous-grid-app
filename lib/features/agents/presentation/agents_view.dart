@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -22,10 +21,9 @@ import '../logic/agent_status.dart';
 /// which wears the brand (a gold rim and a filled "Answers your chats" badge) so
 /// it's obvious at a glance which one is live.
 ///
-/// Only agents that actually run here are listed — the grid installs most of
-/// them, and the odd one that installs from its own site links out to it. No
-/// "coming soon" rows: one costs a first-time user the same read as a working
-/// one and gives nothing back.
+/// Only agents that actually run here are listed, and the app installs each one
+/// itself (into `~/.grid`, no admin rights). No "coming soon" rows: one costs a
+/// first-time user the same read as a working one and gives nothing back.
 class AgentsView extends ConsumerWidget {
   const AgentsView({super.key});
 
@@ -332,17 +330,6 @@ class _Action extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // An agent that installs from its own site (OpenClaw) isn't ours to fetch —
-    // `grid agent install` would reject the name. Send the user there; once it's
-    // installed it keeps itself up to date, so there's nothing more to offer.
-    if (agent.installUrl case final url?) {
-      if (installed) return const SizedBox.shrink();
-      return OutlinedButton(
-        onPressed: () => launchUrl(url, mode: LaunchMode.externalApplication),
-        child: Text('Get ${agent.name}'),
-      );
-    }
-
     final state = ref.watch(agentInstallProvider);
     if (state is AgentInstallRunning && state.agent == agent) {
       return const _Working();

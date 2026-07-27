@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_installer.dart';
+import '../../../infrastructure/cli/agent_release_pins.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../agent_definition.dart';
 import 'codex_chat_sender.dart';
@@ -26,6 +28,15 @@ final class CodexAgent extends AgentDefinition {
 
   @override
   bool get needsResponses => true;
+
+  /// Codex ships a prebuilt binary per OS/arch on GitHub — the app fetches the
+  /// pinned, hash-verified archive and drops the binary into ~/.grid/bin.
+  @override
+  AgentInstallSpec get installSpec => const GithubReleaseBinary(
+    executable: 'codex',
+    buildFor: codexBuildFor,
+    linuxMusl: true,
+  );
 
   @override
   bool installed(Ref ref) => ref.watch(codexInstalledProvider);
