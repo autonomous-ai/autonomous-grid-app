@@ -149,6 +149,17 @@ List<AgentPlanEntry> parseAgentPlan(Object? entries) {
   return List.unmodifiable(plan);
 }
 
+/// Whether the agent left its to-do plan unfinished — it laid out steps and the
+/// turn ended before every one reached [AgentPlanStatus.done].
+///
+/// An empty plan is *not* unfinished: a turn that never made a plan (a plain
+/// answer, or planning mode's text-only outline) has nothing left hanging. The
+/// chat uses this to tell an honest "stopped part-way" from a real answer — a
+/// turn that announces a plan and then stalls (no steps ticked off, nothing
+/// built) must not read as success (§5).
+bool agentPlanUnfinished(List<AgentPlanEntry> plan) =>
+    plan.isNotEmpty && plan.any((step) => step.status != AgentPlanStatus.done);
+
 /// A persisted status is this enum's own [AgentPlanStatus] name; unknown reads as
 /// pending — a step we can't place is one not started, never one shown as done.
 AgentPlanStatus _planStatusByName(Object? raw) {

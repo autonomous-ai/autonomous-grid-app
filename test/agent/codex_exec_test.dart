@@ -282,4 +282,43 @@ void main() {
       expect(friendlyCodexError('   '), contains('try again'));
     });
   });
+
+  group('agentPlanUnfinished — a stalled turn must not read as an answer', () {
+    AgentPlanEntry step(String content, AgentPlanStatus status) =>
+        AgentPlanEntry(content: content, status: status);
+
+    test('a plan with a step still pending stopped short of its own work', () {
+      // The tank-game turn: it announced steps, ticked none off, then ended —
+      // the chat used to show that as a success with a bare "let me write it".
+      expect(
+        agentPlanUnfinished([
+          step('Design the game', AgentPlanStatus.pending),
+          step('Write the file', AgentPlanStatus.pending),
+          step('Verify it runs', AgentPlanStatus.pending),
+        ]),
+        isTrue,
+      );
+    });
+
+    test('a step left active mid-flight is unfinished too', () {
+      expect(
+        agentPlanUnfinished([step('Writing the file', AgentPlanStatus.active)]),
+        isTrue,
+      );
+    });
+
+    test('every step done is a finished plan — a real answer, not a stall', () {
+      expect(
+        agentPlanUnfinished([
+          step('Read the files', AgentPlanStatus.done),
+          step('Write the answer', AgentPlanStatus.done),
+        ]),
+        isFalse,
+      );
+    });
+
+    test('no plan is not an unfinished one — a plain answer never made one', () {
+      expect(agentPlanUnfinished(const []), isFalse);
+    });
+  });
 }

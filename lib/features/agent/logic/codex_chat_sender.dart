@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/codex_exec_service.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/logging/app_log.dart';
@@ -135,6 +136,7 @@ class CodexChatSender implements ChatSender {
       ),
       resumeThreadId: resolved.resumeThreadId,
       model: model,
+      planFirst: planFirst,
     );
   }
 
@@ -183,6 +185,7 @@ class CodexChatSender implements ChatSender {
     required String prompt,
     required String? resumeThreadId,
     required String model,
+    required bool planFirst,
   }) {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
     final planLog = _ref.read(agentPlanProvider.notifier)..clear();
@@ -235,7 +238,17 @@ class CodexChatSender implements ChatSender {
         await run.done;
         settled = true;
         final reply = answer.toString().trim();
-        final error = failure ?? (reply.isEmpty ? kAgentNoAnswer : null);
+        final plan = _ref.read(agentPlanProvider);
+        // A turn that laid out a plan and never finished it stalled — even with
+        // a line of text, the work it promised didn't happen, so it must not
+        // read as an answer (§5). Planning mode is the exception: there an
+        // unfinished plan is the whole point.
+        final stalled = !planFirst && agentPlanUnfinished(plan);
+        final error =
+            failure ??
+            (stalled
+                ? kAgentStalledPlan
+                : (reply.isEmpty ? kAgentNoAnswer : null));
         log.finish(logId, error: error);
         updates.add(
           error != null
@@ -244,7 +257,7 @@ class CodexChatSender implements ChatSender {
                   ChatMessage(
                     role: ChatRole.assistant,
                     text: reply,
-                    plan: _ref.read(agentPlanProvider),
+                    plan: plan,
                   ),
                 ),
         );
