@@ -59,6 +59,9 @@ class _FakeSetup implements HermesAcpSetup {
     ready = true;
     return null;
   }
+
+  @override
+  Future<void> ensureWebSearch() async {}
 }
 
 ProviderContainer _container(GridCliService? cli, {HermesAcpSetup? setup}) {

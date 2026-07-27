@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
@@ -5,6 +7,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
 import 'hermes_skill_installer.dart';
+import 'hermes_tool.dart';
 
 /// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
 /// `~/.hermes` when the target grid or model changes. ACP reads the model from
@@ -60,6 +63,12 @@ class HermesGridLink {
     } on Object {
       // Non-fatal: the agent still chats, just without the image skill.
     }
+    // Give Hermes's native web search a keyless backend, so it isn't offered a
+    // `web_search` tool that silently has no provider. Fire-and-forget: the
+    // install can take a moment and a chat must never wait on it — it lights up
+    // for the next turn, and the `grid-web` skill covers search meanwhile.
+    final setup = _ref.read(hermesAcpSetupProvider);
+    if (setup != null) unawaited(setup.ensureWebSearch());
     _ref.read(hermesConfiguredProvider.notifier).set(key);
     return null;
   }
