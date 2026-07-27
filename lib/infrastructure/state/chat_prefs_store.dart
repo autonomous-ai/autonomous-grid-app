@@ -16,7 +16,7 @@ class ChatPrefs {
   const ChatPrefs({
     this.networkId,
     this.model,
-    this.approval = AgentApprovalMode.ask,
+    this.approval = AgentApprovalMode.full,
     this.themeMode = ThemeMode.light,
     this.chatAgent = defaultChatAgent,
     this.uiFontFamily,
@@ -63,8 +63,9 @@ class ChatPrefs {
   final String? model;
 
   /// What the agent may do without asking. Deliberately remembered: a user who
-  /// turned the asking off shouldn't have it turned back on behind their back —
-  /// and one who never touched it stays on [AgentApprovalMode.ask].
+  /// dialled the access back shouldn't have it widened behind their back — and
+  /// one who never touched it starts on [AgentApprovalMode.full], free to run
+  /// commands and change files without stopping to ask.
   final AgentApprovalMode approval;
 
   /// The Light/Dark/System choice. Defaults to [ThemeMode.light] — the app ships
@@ -188,8 +189,9 @@ class ChatPrefs {
     return value.clamp(min, max);
   }
 
-  /// A missing or unrecognised value reads as "ask" — a hand-edited file must
-  /// never quietly hand the agent more than the user granted.
+  /// A missing or unrecognised value in an existing file reads as "ask" — not
+  /// the Full a brand-new install ([ChatPrefs.empty]) starts on: a hand-edited
+  /// or corrupt file must never quietly hand the agent more than was granted.
   static AgentApprovalMode _approvalFrom(Object? raw) {
     for (final mode in AgentApprovalMode.values) {
       if (mode.name == raw) return mode;

@@ -585,6 +585,12 @@ void main() {
       final container = _container(service, tmp);
       final sender = container.read(hermesChatSenderProvider);
 
+      // Start on Ask so the switch below is the only thing that can move the
+      // second turn's mode — the point of the test, whatever the shipped default.
+      container
+          .read(chatPrefsProvider.notifier)
+          .setApproval(AgentApprovalMode.ask);
+
       await sender
           .send(
             network: _credential(),

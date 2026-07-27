@@ -56,9 +56,12 @@ void main() {
       );
     });
 
-    test('an unset or hand-edited approval reads as "ask" — a broken file must '
+    test('a brand-new install lets the agent work without asking (Full)', () {
+      expect(ChatPrefs.empty.approval, AgentApprovalMode.full);
+    });
+
+    test('a hand-edited or corrupt approval reads as "ask" — a broken file must '
         'never hand the agent more than the user granted', () {
-      expect(ChatPrefs.empty.approval, AgentApprovalMode.ask);
       file.parent.createSync(recursive: true);
       file.writeAsStringSync('{"approval": "sudo-everything"}');
 
