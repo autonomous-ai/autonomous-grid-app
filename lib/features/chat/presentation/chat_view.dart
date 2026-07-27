@@ -553,6 +553,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
         SendGenerating g => GeneratingBubble(phase: g),
         SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
           text: text,
+          showActivity: agentMode,
         ),
         SendStreaming() => const AgentWorkingBubble(),
         SendBusy() when agentMode && running => const AgentWorkingBubble(),
@@ -582,9 +583,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
 /// the moment the dots drop away. The dots sit at the content's left edge (the
 /// assistant column starts there), a touch below.
 class _StreamingReply extends StatelessWidget {
-  const _StreamingReply({required this.text});
+  const _StreamingReply({required this.text, this.showActivity = false});
 
   final String text;
+
+  /// Whether to show the live step feed under the text. On for an agent turn,
+  /// so the commands it keeps running after its first sentence stay visible
+  /// instead of disappearing behind the dots; off for a plain model reply, which
+  /// has no steps to show.
+  final bool showActivity;
 
   @override
   Widget build(BuildContext context) {
@@ -595,6 +602,7 @@ class _StreamingReply extends StatelessWidget {
         ChatBubble(
           message: ChatMessage(role: ChatRole.assistant, text: text),
         ),
+        if (showActivity) const AgentActivityFeed(),
         const Padding(
           padding: EdgeInsets.only(left: 2, bottom: 10),
           child: TypingDots(),

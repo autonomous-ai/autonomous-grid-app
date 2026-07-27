@@ -14,14 +14,11 @@ import '../logic/agent_providers.dart';
 /// produces text, not a percentage): a spinner header plus a live feed of the
 /// steps the agent runs — each shell command and tool call, with its status —
 /// so the user can see *what* the agent is doing, not just that it's busy.
-class AgentWorkingBubble extends ConsumerWidget {
+class AgentWorkingBubble extends StatelessWidget {
   const AgentWorkingBubble({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final steps = ref.watch(agentActivityProvider);
-    final sources = ref.watch(agentSourcesProvider);
-    final plan = ref.watch(agentPlanProvider);
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Align(
       alignment: Alignment.centerLeft,
@@ -45,21 +42,50 @@ class AgentWorkingBubble extends ConsumerWidget {
                 Text('Agent is working…', style: theme.textTheme.bodyMedium),
               ],
             ),
-            if (plan.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              MessagePlan(entries: plan),
-            ],
-            if (steps.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              for (final step in steps) _StepRow(step: step),
-            ],
-            if (sources.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              MessageSources(sources: sources),
-            ],
+            const AgentActivityFeed(),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The live feed under an in-flight agent turn: its to-do plan, the steps it is
+/// running (each shell command or tool call, with status), and any web sources.
+///
+/// The shared body of both [AgentWorkingBubble] and the chat's streaming reply,
+/// so a turn that has *already begun narrating* still shows what it is doing —
+/// before this was extracted, the moment the agent streamed a first sentence the
+/// chat swapped the working bubble for plain text and the steps vanished behind a
+/// row of dots. Renders nothing (no spacing) while there is nothing to show.
+class AgentActivityFeed extends ConsumerWidget {
+  const AgentActivityFeed({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final steps = ref.watch(agentActivityProvider);
+    final sources = ref.watch(agentSourcesProvider);
+    final plan = ref.watch(agentPlanProvider);
+    if (plan.isEmpty && steps.isEmpty && sources.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (plan.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          MessagePlan(entries: plan),
+        ],
+        if (steps.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          for (final step in steps) _StepRow(step: step),
+        ],
+        if (sources.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          MessageSources(sources: sources),
+        ],
+      ],
     );
   }
 }
