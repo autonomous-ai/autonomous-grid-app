@@ -451,10 +451,15 @@ class _LegendRow extends StatelessWidget {
         ),
         const SizedBox(width: 7),
         SizedBox(
-          width: 30,
+          // Wide enough for "100%" so it never wraps to a second line; softWrap
+          // off + single line keeps it on the row even if a locale widens it.
+          width: 36,
           child: Text(
             '$pct%',
             textAlign: TextAlign.right,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.visible,
             style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w500,
