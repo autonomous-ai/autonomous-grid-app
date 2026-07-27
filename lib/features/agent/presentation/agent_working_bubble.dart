@@ -10,12 +10,15 @@ import '../../playground/presentation/message_plan.dart';
 import '../../playground/presentation/message_sources.dart';
 import '../logic/agent_providers.dart';
 
-/// The "agent is working" bubble shown in the chat while the agent is answering.
+/// The "agent is working" bubble shown in the chat while the agent is answering
+/// but before it has streamed any text.
 ///
 /// Deliberately distinct from the media `GeneratingBubble` (an agent turn
-/// produces text, not a percentage): a spinner header plus a live feed of the
-/// steps the agent runs — each shell command and tool call, with its status —
-/// so the user can see *what* the agent is doing, not just that it's busy.
+/// produces text, not a percentage): a live feed of the steps the agent runs —
+/// each shell command and tool call with its status, and a "Thinking…" line
+/// while it composes the next one — so the user sees *what* it is doing, not
+/// just that it's busy. The feed carries its own spinner, so there is no
+/// separate "working" header to say the same thing twice.
 class AgentWorkingBubble extends StatelessWidget {
   const AgentWorkingBubble({super.key});
 
@@ -32,36 +35,27 @@ class AgentWorkingBubble extends StatelessWidget {
           color: theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const AppSpinner(),
-                const SizedBox(width: 10),
-                Text('Agent is working…', style: theme.textTheme.bodyMedium),
-              ],
-            ),
-            const AgentActivityFeed(),
-          ],
-        ),
+        child: const AgentActivityFeed(leadingGap: false),
       ),
     );
   }
 }
 
 /// The live feed under an in-flight agent turn: its to-do plan, the steps it is
-/// running (each shell command or tool call, with status), and any web sources.
+/// running (each shell command or tool call, with status), and a "Thinking…"
+/// line — carrying its own spinner — while it composes the next step.
 ///
 /// The shared body of both [AgentWorkingBubble] and the chat's streaming reply,
 /// so a turn that has *already begun narrating* still shows what it is doing —
 /// before this was extracted, the moment the agent streamed a first sentence the
 /// chat swapped the working bubble for plain text and the steps vanished behind a
-/// row of dots. Renders nothing (no spacing) while there is nothing to show.
+/// row of dots. [leadingGap] leaves room above the first row when the feed
+/// follows other content (a streaming reply); it is off when the feed is the
+/// whole bubble.
 class AgentActivityFeed extends ConsumerWidget {
-  const AgentActivityFeed({super.key});
+  const AgentActivityFeed({super.key, this.leadingGap = true});
+
+  final bool leadingGap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -74,27 +68,27 @@ class AgentActivityFeed extends ConsumerWidget {
     final thinking = steps.every(
       (step) => step.status != AgentActivityStatus.running,
     );
+    final sections = <Widget>[
+      if (plan.isNotEmpty) MessagePlan(entries: plan),
+      if (steps.isNotEmpty)
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [for (final step in steps) _StepRow(step: step)],
+        ),
+      if (thinking)
+        // Reset the elapsed count each time the step list changes, so it reads
+        // as time since the last action, not since the turn began.
+        _ThinkingRow(key: ValueKey(steps.length)),
+      if (sources.isNotEmpty) MessageSources(sources: sources),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (plan.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          MessagePlan(entries: plan),
-        ],
-        if (steps.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          for (final step in steps) _StepRow(step: step),
-        ],
-        if (thinking) ...[
-          SizedBox(height: steps.isEmpty ? 10 : 4),
-          // Reset the elapsed count each time the step list changes, so it reads
-          // as time since the last action, not since the turn began.
-          _ThinkingRow(key: ValueKey(steps.length)),
-        ],
-        if (sources.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          MessageSources(sources: sources),
+        for (var i = 0; i < sections.length; i++) ...[
+          if (i > 0 || leadingGap) SizedBox(height: i == 0 ? 10 : 8),
+          sections[i],
         ],
       ],
     );
