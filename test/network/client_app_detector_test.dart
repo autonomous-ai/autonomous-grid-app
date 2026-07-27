@@ -20,12 +20,12 @@ void main() {
     expect(d.detect(), {ClientApp.hermes});
   });
 
-  test('an app the build hides is never reported as installed', () {
-    // OpenClaw on disk must not light up a chip for a tab the picker doesn't
-    // draw — isInstalled still answers honestly, detect() is what the UI reads.
+  test('OpenClaw on disk is detected, now that the guide offers it', () {
+    // OpenClaw is a selectable client again, so a config dir on disk lights up
+    // its chip like any other app's.
     final d = _detector(dirs: {'$_home/.openclaw'});
     expect(d.isInstalled(ClientApp.openClaw), isTrue);
-    expect(d.detect(), isEmpty);
+    expect(d.detect(), {ClientApp.openClaw});
   });
 
   test('an executable on PATH counts even without a config dir', () {
@@ -47,21 +47,21 @@ void main() {
         '$_home/${kClientApps[ClientApp.buzz]!.configDir}',
       },
     );
-    // An installed-but-hidden app (OpenClaw) must not come back as installed —
-    // it would light up a chip the picker doesn't render.
+    // detect() walks kSelectableClientApps, so it comes back in that tab order.
     expect(d.detect().toList(), kSelectableClientApps);
   });
 
-  test('the guide offers Hermes, Codex and Buzz, never OpenClaw', () {
-    // Codex and Buzz ship to everyone: whether a grid can answer is the grid's
-    // call, per grid, not something the build decides for all of them. OpenClaw
-    // is off the list outright.
+  test('the guide offers every client, Hermes first then OpenClaw', () {
+    // All four ship to everyone: whether a given grid can answer is the grid's
+    // call, per grid, not something the build decides for all of them. The list
+    // is the tab order the picker draws.
     expect(ClientApp.hermes.isSelectable, isTrue);
+    expect(ClientApp.openClaw.isSelectable, isTrue);
     expect(ClientApp.codex.isSelectable, isTrue);
     expect(ClientApp.buzz.isSelectable, isTrue);
-    expect(ClientApp.openClaw.isSelectable, isFalse);
     expect(kSelectableClientApps, [
       ClientApp.hermes,
+      ClientApp.openClaw,
       ClientApp.codex,
       ClientApp.buzz,
     ]);

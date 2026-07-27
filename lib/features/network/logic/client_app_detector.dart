@@ -7,11 +7,15 @@ import '../../../infrastructure/cli/host_environment.dart';
 
 /// A local AI client the user can point at a grid. Each one has a config file we
 /// know how to write ("Apply for me") and a download page for when it's absent.
-enum ClientApp { openClaw, hermes, codex, buzz }
+///
+/// Declaration order is the guide's tab order — Hermes leads, then OpenClaw
+/// beside it, then Codex and Buzz.
+enum ClientApp { hermes, openClaw, codex, buzz }
 
 extension ClientAppX on ClientApp {
-  /// Whether the guide offers this client at all — one switch, so a hidden app
-  /// can't reappear through a picker or a default that forgot about it.
+  /// Whether the guide offers this client at all — one switch, so an app can be
+  /// hidden in a single place rather than through a picker or a default that
+  /// forgot about it.
   ///
   /// **Codex** ships to everyone. It only talks to the Responses API (codex ≥
   /// 0.141 rejects `wire_api = "chat"`), which not every relay serves yet — so
@@ -22,16 +26,19 @@ extension ClientAppX on ClientApp {
   /// `/v1/responses`. Wire [agentRunsOnGridProvider] into it so such a grid
   /// says so, instead of handing out steps that end in a 404.
   ///
-  /// **OpenClaw** is off the list entirely — it isn't an app we point people at
-  /// any more. The config writer and its snippet stay behind this switch so
-  /// flipping it back is one line, not a rewrite.
+  /// **OpenClaw** is offered too — an agent client the guide points at a grid
+  /// by writing `~/.openclaw/openclaw.json` (its config writer and snippet are
+  /// the same shape as the others'), sitting beside Hermes as another local
+  /// agent.
   ///
   /// **Buzz** ships to everyone. Its agents pick a provider/model per agent, so
   /// pointing it at a grid means writing the grid as the *default* provider in
   /// [kBuzzConfigRelPath] — one file, every agent, no builtin disturbed.
   bool get isSelectable => switch (this) {
-    ClientApp.openClaw => false,
-    ClientApp.codex || ClientApp.hermes || ClientApp.buzz => true,
+    ClientApp.hermes => true,
+    ClientApp.openClaw => true,
+    ClientApp.codex => true,
+    ClientApp.buzz => true,
   };
 }
 
@@ -88,14 +95,6 @@ class ClientAppInfo {
 
 /// The known clients, keyed by [ClientApp]. Ordered by [ClientApp.values].
 const Map<ClientApp, ClientAppInfo> kClientApps = {
-  ClientApp.openClaw: ClientAppInfo(
-    app: ClientApp.openClaw,
-    name: 'OpenClaw',
-    downloadUrl: 'https://docs.openclaw.ai/install',
-    configDir: '.openclaw',
-    configPath: '~/.openclaw/openclaw.json',
-    executable: 'openclaw',
-  ),
   ClientApp.hermes: ClientAppInfo(
     app: ClientApp.hermes,
     name: 'Hermes',
@@ -103,6 +102,14 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
     configDir: '.hermes',
     configPath: '~/.hermes/config.yaml',
     executable: 'hermes',
+  ),
+  ClientApp.openClaw: ClientAppInfo(
+    app: ClientApp.openClaw,
+    name: 'OpenClaw',
+    downloadUrl: 'https://docs.openclaw.ai/install',
+    configDir: '.openclaw',
+    configPath: '~/.openclaw/openclaw.json',
+    executable: 'openclaw',
   ),
   ClientApp.codex: ClientAppInfo(
     app: ClientApp.codex,
