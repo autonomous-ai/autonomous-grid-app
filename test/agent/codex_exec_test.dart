@@ -162,10 +162,95 @@ void main() {
       expect(
         parseCodexEvent({
           'type': 'item.completed',
-          'item': {'id': 'f1', 'type': 'file_change', 'path': 'a.dart'},
+          'item': {'id': 'x1', 'type': 'reasoning_summary'},
         }, {}),
         isNull,
       );
+    });
+  });
+
+  group('file_change — so a file Codex writes becomes openable', () {
+    test('a completed add surfaces the created file for the chat to open', () {
+      final event = parseCodexEvent({
+        'type': 'item.completed',
+        'item': {
+          'id': 'f1',
+          'type': 'file_change',
+          'status': 'completed',
+          'changes': [
+            {'path': '/tmp/ws/tank1990.html', 'kind': 'add'},
+          ],
+        },
+      }, {});
+      expect(event, isA<CodexFileChangeEvent>());
+      final change = (event as CodexFileChangeEvent).changes.single;
+      expect(change.path, '/tmp/ws/tank1990.html');
+      expect(change.kind, CodexFileChangeKind.add);
+    });
+
+    test('an in-flight apply has written nothing yet, so it surfaces nothing', () {
+      expect(
+        parseCodexEvent({
+          'type': 'item.started',
+          'item': {
+            'id': 'f1',
+            'type': 'file_change',
+            'status': 'in_progress',
+            'changes': [
+              {'path': '/tmp/a.txt', 'kind': 'add'},
+            ],
+          },
+        }, {}),
+        isNull,
+      );
+    });
+
+    test('a file_change carrying no usable path surfaces nothing', () {
+      expect(
+        parseCodexEvent({
+          'type': 'item.completed',
+          'item': {
+            'id': 'f1',
+            'type': 'file_change',
+            'status': 'completed',
+            'changes': [],
+          },
+        }, {}),
+        isNull,
+      );
+    });
+
+    test('every kind is parsed faithfully, add / update / delete alike', () {
+      final event =
+          parseCodexEvent({
+                'type': 'item.completed',
+                'item': {
+                  'id': 'f1',
+                  'type': 'file_change',
+                  'status': 'completed',
+                  'changes': [
+                    {'path': '/tmp/new.html', 'kind': 'add'},
+                    {'path': '/tmp/old.dart', 'kind': 'update'},
+                    {'path': '/tmp/gone.txt', 'kind': 'delete'},
+                  ],
+                },
+              }, {})
+              as CodexFileChangeEvent;
+      expect(event.changes.map((c) => c.kind), [
+        CodexFileChangeKind.add,
+        CodexFileChangeKind.update,
+        CodexFileChangeKind.delete,
+      ]);
+    });
+
+    test('only created files are recorded — an edit or a delete has no honest '
+        'before to diff or undo', () {
+      const changes = [
+        (path: '/tmp/new.html', kind: CodexFileChangeKind.add),
+        (path: '/tmp/old.dart', kind: CodexFileChangeKind.update),
+        (path: '/tmp/gone.txt', kind: CodexFileChangeKind.delete),
+      ];
+      expect(codexAddedPaths(changes), ['/tmp/new.html']);
     });
   });
 

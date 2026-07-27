@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +13,7 @@ import '../../network/logic/client_app_detector.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
+import 'agent_changes.dart';
 import 'agent_prompt.dart';
 import 'agent_server_error.dart';
 import 'agent_providers.dart';
@@ -216,6 +218,8 @@ class CodexChatSender implements ChatSender {
             activityLog.upsert(activity);
           case CodexPlanEvent(:final entries):
             planLog.replace(entries);
+          case CodexFileChangeEvent(:final changes):
+            _recordAddedFiles(changes);
           case CodexMessageEvent(:final text):
             answer
               ..clear()
@@ -274,6 +278,35 @@ class CodexChatSender implements ChatSender {
       log.finish(logId, error: 'stopped');
     };
     return updates.stream;
+  }
+
+  /// Record every file Codex freshly created so the chat can offer to open it —
+  /// the point of a "make me a page or a game" turn, which otherwise leaves the
+  /// user a bare file path in the reply and no way to act on it (see
+  /// `AgentChangesBar`). Only adds are recorded: Codex reports an edit's path but
+  /// not its old contents, so an update has no honest before to diff or undo.
+  void _recordAddedFiles(List<CodexFileChange> changes) {
+    final changesLog = _ref.read(agentChangesProvider.notifier);
+    for (final path in codexAddedPaths(changes)) {
+      unawaited(_recordAddedFile(path, changesLog));
+    }
+  }
+
+  /// Read the just-written file so its "before → after" diff shows the whole new
+  /// file, and record it with a null [AgentChange.before] so undo deletes it. A
+  /// path that can't be read (binary, or already gone) is still worth an Open, so
+  /// it's recorded with no diff rather than dropped.
+  Future<void> _recordAddedFile(
+    String path,
+    AgentChangesController changesLog,
+  ) async {
+    String after;
+    try {
+      after = await File(path).readAsString();
+    } on Object {
+      after = '';
+    }
+    changesLog.record(path: path, before: null, after: after);
   }
 
   /// Keep Codex's own words for the log while the chat shows the friendly line.

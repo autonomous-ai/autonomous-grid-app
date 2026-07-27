@@ -43,6 +43,24 @@ class CodexPlanEvent extends CodexExecEvent {
   final List<AgentPlanEntry> entries;
 }
 
+/// What happened to one file in a landed `apply_patch`.
+enum CodexFileChangeKind { add, update, delete }
+
+/// One file Codex touched this turn: its (absolute) path and what happened to it.
+///
+/// Codex's `exec --json` reports the path and the kind but *not* the file's
+/// previous contents — it drops the unified diff the core protocol carries — so
+/// downstream only a freshly *added* file can be shown with an honest
+/// before/after (see [codexAddedPaths]).
+typedef CodexFileChange = ({String path, CodexFileChangeKind kind});
+
+/// The files Codex created, edited or removed in one `apply_patch`, surfaced
+/// once the patch has landed so the chat can offer to open what it just wrote.
+class CodexFileChangeEvent extends CodexExecEvent {
+  const CodexFileChangeEvent(this.changes);
+  final List<CodexFileChange> changes;
+}
+
 /// The turn failed for good — the model stream broke, auth was rejected, the
 /// grid didn't answer. Carries Codex's own last words, humanized by the sender.
 class CodexTurnFailed extends CodexExecEvent {
@@ -372,13 +390,48 @@ CodexExecEvent? _parseItem(
       );
     case 'todo_list':
       return CodexPlanEvent(_parseTodoList(item['items']));
+    case 'file_change':
+      return _parseFileChange(item);
     default:
-      // file_change, error warnings: not shown.
-      // TODO(BE): now that Codex may write, `file_change` is worth surfacing —
-      // Hermes's edits feed the undo bar and Codex's don't.
+      // error warnings and item types we don't render: nothing to surface.
       return null;
   }
 }
+
+/// A landed `apply_patch`, as the chat's open/undo bar's raw material. Only
+/// surfaced once `completed`: an in-flight apply has written nothing to open,
+/// and treating the `in_progress`/`completed` pair alike would record it twice.
+CodexExecEvent? _parseFileChange(Map<String, dynamic> item) {
+  if (_statusOf(item['status']) != AgentActivityStatus.done) return null;
+  final raw = item['changes'];
+  if (raw is! List) return null;
+  final changes = <CodexFileChange>[];
+  for (final entry in raw) {
+    if (entry is! Map) continue;
+    final path = '${entry['path'] ?? ''}'.trim();
+    if (path.isEmpty) continue;
+    changes.add((path: path, kind: _fileChangeKind(entry['kind'])));
+  }
+  return changes.isEmpty ? null : CodexFileChangeEvent(changes);
+}
+
+/// Codex's `file_change` kinds are `add` / `update` / `delete`; an unrecognised
+/// one reads as an update — the conservative choice, since only an add is ever
+/// recorded, so mislabelling one merely drops it, never fakes an undo.
+CodexFileChangeKind _fileChangeKind(Object? raw) => switch (raw) {
+  'add' => CodexFileChangeKind.add,
+  'delete' => CodexFileChangeKind.delete,
+  _ => CodexFileChangeKind.update,
+};
+
+/// The paths of files Codex freshly *created* in [changes]. Only an add can be
+/// shown with an honest diff and undo — Codex reports an update's path but not
+/// its old contents — so the chat records just these for its open/undo bar; an
+/// update or delete is left out rather than given a diff or undo it can't back.
+List<String> codexAddedPaths(List<CodexFileChange> changes) => [
+  for (final change in changes)
+    if (change.kind == CodexFileChangeKind.add) change.path,
+];
 
 /// The summary text of a `reasoning` item. Codex has carried this as a flat
 /// `text` and as a `summary` list of `{text}` across builds, so take whichever
