@@ -590,7 +590,10 @@ class _NodeBreakdown extends StatelessWidget {
         );
         vramIndex++;
       } else if (nodePlanLabel(node) case final plan?) {
-        row = _NodeRow(label: labels[i], trailing: _PlanBadge(label: plan));
+        row = _NodeRow(
+          label: labels[i],
+          trailing: _PlanBadge(label: plan),
+        );
       } else if (nodeSpecLine(node) case final spec when spec.isNotEmpty) {
         row = _NodeRow(
           label: labels[i],
@@ -607,10 +610,7 @@ class _NodeBreakdown extends StatelessWidget {
         row = _NodeRow(label: labels[i], trailing: const SizedBox.shrink());
       }
       rows.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2.5),
-          child: row,
-        ),
+        Padding(padding: const EdgeInsets.symmetric(vertical: 2.5), child: row),
       );
     }
     return Column(

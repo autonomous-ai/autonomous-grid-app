@@ -47,31 +47,40 @@ ProviderContainer _container({
 
 void main() {
   group('suggestedCatalogProvider', () {
-    test('no session token → sign-in required (no device probe, no call)',
-        () async {
-      var called = false;
-      final container = _container(
-        token: null,
-        fn: ({required apiUrl, required sessionToken, required device}) async {
-          called = true;
-          return (null, null);
-        },
-      );
+    test(
+      'no session token → sign-in required (no device probe, no call)',
+      () async {
+        var called = false;
+        final container = _container(
+          token: null,
+          fn:
+              ({
+                required apiUrl,
+                required sessionToken,
+                required device,
+              }) async {
+                called = true;
+                return (null, null);
+              },
+        );
 
-      final outcome = await container.read(suggestedCatalogProvider.future);
-      expect(outcome, isA<SuggestSignInRequired>());
-      expect(called, isFalse); // signed-out short-circuits before the network
-    });
+        final outcome = await container.read(suggestedCatalogProvider.future);
+        expect(outcome, isA<SuggestSignInRequired>());
+        expect(called, isFalse); // signed-out short-circuits before the network
+      },
+    );
 
-    test('device probe failing → unavailable (falls back to offline list)',
-        () async {
-      final container = _container(
-        device: null,
-        fn: _fnReturning((null, null)),
-      );
-      final outcome = await container.read(suggestedCatalogProvider.future);
-      expect(outcome, isA<SuggestUnavailable>());
-    });
+    test(
+      'device probe failing → unavailable (falls back to offline list)',
+      () async {
+        final container = _container(
+          device: null,
+          fn: _fnReturning((null, null)),
+        );
+        final outcome = await container.read(suggestedCatalogProvider.future);
+        expect(outcome, isA<SuggestUnavailable>());
+      },
+    );
 
     test('ranked picks → ready, pick is the first', () async {
       final suggestion = CatalogSuggestion(
@@ -102,7 +111,11 @@ void main() {
       final container = _container(
         fn: _fnReturning((
           null,
-          const ModelCatalogError('expired', statusCode: 401, sessionExpired: true),
+          const ModelCatalogError(
+            'expired',
+            statusCode: 401,
+            sessionExpired: true,
+          ),
         )),
       );
       final outcome = await container.read(suggestedCatalogProvider.future);
@@ -113,7 +126,9 @@ void main() {
       final container = _container(
         fn: _fnReturning((
           null,
-          const ModelCatalogError('The catalog is warming up. Try again shortly.'),
+          const ModelCatalogError(
+            'The catalog is warming up. Try again shortly.',
+          ),
         )),
       );
       final outcome = await container.read(suggestedCatalogProvider.future);

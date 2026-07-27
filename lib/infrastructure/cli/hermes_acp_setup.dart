@@ -155,10 +155,7 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
       process = await Process.start(
         exe,
         args,
-        environment: {
-          ...HostEnvironment.hermesEnvironment(),
-          ...env,
-        },
+        environment: {...HostEnvironment.hermesEnvironment(), ...env},
       );
     } on ProcessException catch (e) {
       return (code: -1, output: e.message);
