@@ -4,8 +4,13 @@ import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
 import 'package:grid_app/shared/layouts/widgets/memory_split_bar.dart';
 import 'package:grid_app/shared/theme/app_theme.dart';
 
-OverviewNode _node({required String name, double? vramGb}) =>
-    OverviewNode.fromJson({'name': name, 'online': true, 'vram_gb': ?vramGb});
+OverviewNode _node({required String name, double? vramGb, String? planType}) =>
+    OverviewNode.fromJson({
+      'name': name,
+      'online': true,
+      'vram_gb': ?vramGb,
+      'plan_type': ?planType,
+    });
 
 Future<void> _pump(WidgetTester tester, List<NodeSlice> slices) async {
   await tester.pumpWidget(
@@ -190,6 +195,17 @@ void main() {
         _node(name: 'gpu', vramGb: 64),
         _node(name: 'cpu-only'),
       ], 64);
+
+      expect(slices.length, 1);
+      expect(slices.single.label, 'gpu');
+    });
+
+    test('skips a subscription seat, whatever RAM its machine reports — it '
+        'brings a plan, shown as such elsewhere, not a share of this bar', () {
+      final slices = buildMemorySlices([
+        _node(name: 'gpu', vramGb: 128),
+        _node(name: 'codex-seat', vramGb: 64, planType: 'prolite'),
+      ], 128);
 
       expect(slices.length, 1);
       expect(slices.single.label, 'gpu');

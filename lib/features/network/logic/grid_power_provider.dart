@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../auth/logic/session_controller.dart';
 import 'grid_overview_provider.dart';
+import 'node_display.dart';
 
 /// The hardware a grid actually brings to bear, summed across its *online*
 /// nodes: GPU memory, how many requests it can serve at once, and how fast.
@@ -70,13 +71,20 @@ class GridPower {
       Object.hash(onlineNodes, models, vramGb, parallel, throughputTokS);
 }
 
-/// GPU memory a node brings, in GB, or null when it reports none. Prefers the
-/// relay's `vram_gb`, falling back to `vram_total_mb ÷ 1024`.
+/// GPU memory a node contributes to the grid pool, in GB, or null when it brings
+/// none. Prefers the relay's `vram_gb`, falling back to `vram_total_mb ÷ 1024`.
 ///
-/// Mirrors the same preference order as `nodeVramLabel`, which formats this for
-/// a single node's spec line. Kept separate because that one returns a display
-/// string ("64 GB VRAM") and this one has to stay summable.
+/// A subscription seat (codex/ChatGPT) returns null however much memory its
+/// machine reports: it relays to a hosted model, so that RAM never runs a model
+/// for the grid, and counting it would inflate the graphics-memory pool with
+/// capacity no one on the grid can use — it brings a plan, shown as such, not
+/// GPU memory (see [nodeIsSubscription]).
+///
+/// Mirrors the same preference order as `nodeVramLabel`, which formats a single
+/// machine's own spec line — that one still shows the machine's RAM, because a
+/// subscription box does have it; this one answers what the *pool* gets.
 double? nodeVramGb(OverviewNode node) {
+  if (nodeIsSubscription(node)) return null;
   final gb =
       node.vramGb ??
       (node.vramTotalMb == null ? null : node.vramTotalMb! / 1024);

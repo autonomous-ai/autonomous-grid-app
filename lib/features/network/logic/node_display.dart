@@ -56,13 +56,21 @@ String? nodeVramLabel(OverviewNode node) {
 String _trimGb(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
 
+/// Whether a node is a subscription seat rather than a hardware node — it relays
+/// to a hosted model on a plan tier (a codex/ChatGPT seat, ADR 0015), so it
+/// brings a subscription, not local GPU memory. The signal is a non-empty
+/// `plan_type`. The one predicate the memory pool and the plan label share, so
+/// "does this machine contribute a plan or graphics memory?" is answered once.
+bool nodeIsSubscription(OverviewNode node) =>
+    (node.planType ?? '').trim().isNotEmpty;
+
 /// A node's subscription tier as a display label — `free` → "Free plan" — or
 /// null when it carries no plan (an ordinary hardware node). The tier names a
 /// codex/ChatGPT seat's entitlement (ADR 0015), shown so a subscription-backed
 /// node reads as what it is rather than an anonymous machine.
 String? nodePlanLabel(OverviewNode node) {
-  final plan = (node.planType ?? '').trim();
-  if (plan.isEmpty) return null;
+  if (!nodeIsSubscription(node)) return null;
+  final plan = node.planType!.trim();
   return '${plan[0].toUpperCase()}${plan.substring(1)} plan';
 }
 

@@ -162,6 +162,18 @@ void main() {
     });
   });
 
+  group('nodeIsSubscription', () {
+    test('a node with a plan tier is a subscription seat', () {
+      expect(nodeIsSubscription(_node(planType: 'pro')), isTrue);
+    });
+
+    test('a hardware node — even one reporting VRAM — is not', () {
+      expect(nodeIsSubscription(_node()), isFalse);
+      expect(nodeIsSubscription(_node(vramGb: 64)), isFalse);
+      expect(nodeIsSubscription(_node(planType: '  ')), isFalse);
+    });
+  });
+
   group('nodeSpecLine', () {
     test('joins engine and device class', () {
       // The Art grid's own node: reports an engine and a GPU, but no VRAM.
