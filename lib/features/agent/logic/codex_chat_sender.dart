@@ -17,6 +17,7 @@ import 'agent_changes.dart';
 import 'agent_prompt.dart';
 import 'agent_server_error.dart';
 import 'agent_providers.dart';
+import 'codex_skill_installer.dart';
 import 'codex_tool.dart';
 
 /// The Codex exec seam, or null when Codex is absent.
@@ -331,6 +332,14 @@ class CodexChatSender implements ChatSender {
     );
     if (result is ApplyError) {
       return "Couldn't point Codex at this grid: ${result.message}";
+    }
+    // Give Codex the web-search skill — its only way to reach the web on a grid,
+    // since the relay doesn't serve the OpenAI web_search tool. A skill-install
+    // hiccup must not block chatting, so its failure is swallowed here.
+    try {
+      await _ref.read(codexSkillInstallerProvider).install();
+    } on Object {
+      // Non-fatal: Codex still chats, just without web search this session.
     }
     _ref.read(codexConfiguredProvider.notifier).set(key);
     return null;

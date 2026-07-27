@@ -26,6 +26,11 @@ class _FakeSetup implements HermesAcpSetup {
     ready = true;
     return null;
   }
+
+  int webSearchEnsures = 0;
+
+  @override
+  Future<void> ensureWebSearch() async => webSearchEnsures++;
 }
 
 /// A `hermes acp` that fails with [_error] until [healAfter] starts have gone by
@@ -91,6 +96,27 @@ void main() {
       expect(env['UV_TOOL_BIN_DIR'], '/tmp/grid-home/bin');
       expect(env['UV_TOOL_DIR'], '/tmp/grid-home/tools');
       expect(env['UV_PYTHON_INSTALL_DIR'], '/tmp/grid-home/python');
+    });
+  });
+
+  group('ensuring a keyless web-search backend', () {
+    test('installs the free ddgs package into the very interpreter Hermes runs '
+        'on, so its native web_search has a provider', () {
+      final args = hermesWebSearchInstallArgs('/g/tools/hermes-agent/bin/python');
+      expect(kHermesWebSearchPackage, 'ddgs');
+      expect(args, containsAllInOrder(['pip', 'install']));
+      // Pinned to Hermes's own interpreter — a backend in any other environment
+      // is one its web_search tool can't import.
+      expect(
+        args,
+        containsAllInOrder([
+          '--python',
+          '/g/tools/hermes-agent/bin/python',
+          'ddgs',
+        ]),
+      );
+      // Not --force: a fast no-op once ddgs is already there.
+      expect(args, isNot(contains('--force')));
     });
   });
 
