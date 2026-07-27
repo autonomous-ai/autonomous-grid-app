@@ -90,6 +90,13 @@ class _AppSelectFieldState<T> extends State<AppSelectField<T>> {
     return widget.placeholder;
   }
 
+  String? get _detail {
+    for (final option in widget.options) {
+      if (option.value == widget.value) return option.detail;
+    }
+    return null;
+  }
+
   bool get _hasSelection =>
       widget.options.any((option) => option.value == widget.value);
 
@@ -118,6 +125,7 @@ class _AppSelectFieldState<T> extends State<AppSelectField<T>> {
                 summary: _summary,
                 muted: !_hasSelection,
                 fill: widget.fill,
+                detail: _detail,
                 onTap: controller.isOpen ? controller.close : controller.open,
               ),
             ),
@@ -148,6 +156,7 @@ class _FieldSurface extends StatelessWidget {
     required this.muted,
     required this.onTap,
     this.fill,
+    this.detail,
   });
 
   final String summary;
@@ -156,6 +165,9 @@ class _FieldSurface extends StatelessWidget {
 
   /// The surface, when the default doesn't recess against what it sits on.
   final Color? fill;
+
+  /// Optional detail line (e.g. "2.5 GB · runnable") rendered as small badges below the main text.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -169,16 +181,29 @@ class _FieldSurface extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                summary,
-                overflow: TextOverflow.ellipsis,
-                style: muted
-                    ? kFieldTextStyle.copyWith(color: AppPalette.textFaint)
-                    : kFieldTextStyle,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      summary,
+                      overflow: TextOverflow.ellipsis,
+                      style: muted
+                          ? kFieldTextStyle.copyWith(color: AppPalette.textFaint)
+                          : kFieldTextStyle.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (detail != null && detail!.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    for (final part in detail!.split(' · '))
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: _Badge(text: part),
+                      ),
+                  ],
+                ],
               ),
             ),
-            // Size 24 (a dropdown's default arrow) so the field keeps the
-            // theme's field height instead of shrinking to the 18px icon theme.
             Icon(
               Icons.arrow_drop_down,
               size: 24,
@@ -186,6 +211,31 @@ class _FieldSurface extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppSurface.selectedFill,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppPalette.divider),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.textSecondary,
+              fontSize: 11,
+            ),
       ),
     );
   }
@@ -261,6 +311,10 @@ class _OptionRow<T> extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Expanded(
+                    child: _Lines(option: option, selected: selected),
+                  ),
+                  const SizedBox(width: _rowTickGap),
                   SizedBox(
                     width: _rowTickSlot,
                     // Kept in the layout even when unselected so labels don't
@@ -272,10 +326,6 @@ class _OptionRow<T> extends StatelessWidget {
                             color: AppPalette.accentMuted,
                           )
                         : null,
-                  ),
-                  const SizedBox(width: _rowTickGap),
-                  Expanded(
-                    child: _Lines(option: option, selected: selected),
                   ),
                 ],
               ),

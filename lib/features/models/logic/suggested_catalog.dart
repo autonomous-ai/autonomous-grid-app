@@ -31,11 +31,9 @@ sealed class SuggestOutcome {
   const SuggestOutcome();
 }
 
-/// The catalog ranked models for this device. [pick] is the top recommendation
-/// (already first in [ranked]); [ranked] is best-first, pick then alternatives.
+/// The catalog ranked models for this device, best-first. Empty when nothing fits.
 class SuggestReady extends SuggestOutcome {
-  const SuggestReady({required this.pick, required this.ranked});
-  final CatalogModelPick pick;
+  const SuggestReady({required this.ranked});
   final List<CatalogModelPick> ranked;
 }
 
@@ -69,6 +67,22 @@ final catalogSuggestFnProvider = Provider<CatalogSuggestFn>(
   (ref) => ModelCatalogClient.suggest,
 );
 
+/// `GET /v1/grid/catalog?sort=...` — paginated list of catalog models, sorted by
+/// trending/downloads/newest. Used by the Models sidebar's "Most liked" /
+/// "Most downloaded" sort modes (the CLI `grid catalog` fallback has no such
+/// fields). Returns null when the user isn't signed in or the call fails.
+final catalogListProvider = FutureProvider.family<List<CatalogListEntry>?, String>((ref, sort) async {
+  final token = ref.watch(sessionProvider).sessionToken;
+  if (token == null || token.isEmpty) return null;
+  final apiUrl = ref.watch(gridApiUrlProvider);
+  final (entries, _) = await ModelCatalogClient.list(
+    apiUrl: apiUrl,
+    sessionToken: token,
+    sort: sort,
+  );
+  return entries;
+});
+
 /// Device-aware model suggestions for the model manager: read the session token,
 /// probe the hardware, and ask `POST /v1/grid/catalog` for the ranked picks.
 /// Every failure maps to a [SuggestOutcome] the UI can act on rather than an
@@ -95,7 +109,7 @@ final suggestedCatalogProvider = FutureProvider<SuggestOutcome>((ref) async {
         : SuggestUnavailable(error.message);
   }
 
-  final ranked = suggestion!.ranked;
+  final ranked = suggestion!.models.where((m) => m.hasModel).toList();
   if (ranked.isEmpty) return const SuggestNoMatch();
-  return SuggestReady(pick: ranked.first, ranked: ranked);
+  return SuggestReady(ranked: ranked);
 });

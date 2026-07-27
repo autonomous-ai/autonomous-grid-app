@@ -185,6 +185,7 @@ MenuStyle appMenuStyle() {
     // their hover highlight reads as an inset pill; adding side padding here
     // would double it.
     padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 5)),
+    maximumSize: const WidgetStatePropertyAll(Size.fromHeight(240)),
     shape: WidgetStatePropertyAll(
       RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),

@@ -10,6 +10,7 @@ import '../logic/model_pull_controller.dart';
 import '../logic/model_shelf.dart';
 import '../logic/models_providers.dart';
 import '../logic/suggested_catalog.dart';
+import 'model_detail_panel.dart';
 import 'shelf_model_tile.dart';
 
 /// The "Suggested for your device" block of the model manager.
@@ -47,10 +48,7 @@ class SuggestedForDevice extends ConsumerWidget {
       // list rather than an error box.
       error: (_, _) => _fallbackSection(),
       data: (result) => switch (result) {
-        SuggestReady(:final ranked, :final pick) => _ApiSuggestions(
-          ranked: ranked,
-          pick: pick,
-        ),
+        SuggestReady(:final ranked) => _ApiSuggestions(ranked: ranked),
         SuggestNoMatch() => const _SuggestStatus(
           icon: Icons.search_off_outlined,
           text:
@@ -79,13 +77,12 @@ class SuggestedForDevice extends ConsumerWidget {
   }
 }
 
-/// The API-ranked list: the recommended pick, its alternatives, and a divider
-/// marking where models start running noticeably slower on this machine.
+/// The API-ranked list: best-first, with a divider marking where models start
+/// running noticeably slower on this machine.
 class _ApiSuggestions extends ConsumerWidget {
-  const _ApiSuggestions({required this.ranked, required this.pick});
+  const _ApiSuggestions({required this.ranked});
 
   final List<CatalogModelPick> ranked;
-  final CatalogModelPick pick;
 
   /// Below this tokens/sec a model runs noticeably slower — the doc's cue for a
   /// "── slower below here ──" divider so the user sees the boundary.
@@ -102,7 +99,8 @@ class _ApiSuggestions extends ConsumerWidget {
 
     final children = <Widget>[];
     var dividerShown = false;
-    for (final model in ranked) {
+    for (var i = 0; i < ranked.length; i++) {
+      final model = ranked[i];
       final slow = model.estTokPerSec > 0 && model.estTokPerSec < _slowBelow;
       if (slow && !dividerShown && children.isNotEmpty) {
         children.add(const _SlowerDivider());
@@ -111,7 +109,7 @@ class _ApiSuggestions extends ConsumerWidget {
       children.add(
         _SuggestedTile(
           model: model,
-          recommended: identical(model, pick),
+          recommended: i == 0,
           downloaded: model.file != null && onDisk.contains(
             model.file!.toLowerCase(),
           ),
@@ -161,34 +159,53 @@ class _SuggestedTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    return ExtensionTileSurface(
-      onDialog: true,
-      child: Row(
-        children: [
-          ExtensionIconBadge(
-            icon: downloaded
-                ? Icons.memory_outlined
-                : Icons.cloud_download_outlined,
-            active: downloaded || recommended,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _TitleRow(name: _displayName(model), recommended: recommended),
-                const SizedBox(height: 4),
-                _MetaLine(model: model),
-              ],
+    return InkWell(
+      onTap: () => _openDetailSheet(context, model.repoId ?? ''),
+      borderRadius: BorderRadius.circular(AppCard.insetRadius),
+      child: ExtensionTileSurface(
+        onDialog: true,
+        child: Row(
+          children: [
+            ExtensionIconBadge(
+              icon: downloaded
+                  ? Icons.memory_outlined
+                  : Icons.cloud_download_outlined,
+              active: downloaded || recommended,
             ),
-          ),
-          const SizedBox(width: 12),
-          _Action(model: model, downloaded: downloaded),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TitleRow(name: _displayName(model), recommended: recommended),
+                  const SizedBox(height: 4),
+                  _MetaLine(model: model),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            _Action(model: model, downloaded: downloaded),
+          ],
+        ),
       ),
     );
   }
+}
+
+void _openDetailSheet(BuildContext context, String repoId) {
+  if (repoId.isEmpty) return;
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, controller) => ModelDetailPanel(repoId: repoId),
+    ),
+  );
 }
 
 /// The model name with a "Recommended" pill on the top pick.
@@ -417,12 +434,17 @@ class _SignInHint extends ConsumerWidget {
   }
 }
 
-/// `Qwen/Qwen2.5-3B-Instruct-GGUF` → `Qwen2.5-3B-Instruct` — the model name
+/// `Qwen/Qwen2.5-3B-Instruct-GGUF` → `Qwen2.5 3B Instruct` — the model name
 /// without the owner prefix or the `-GGUF` suffix that every row would repeat.
 String _displayName(CatalogModelPick model) {
   final repo = model.repoId ?? model.file ?? 'Model';
   final tail = repo.contains('/') ? repo.split('/').last : repo;
-  return tail.replaceAll(RegExp(r'[-_]GGUF$', caseSensitive: false), '');
+  final stripped = tail.replaceAll(RegExp(r'[-_]GGUF$', caseSensitive: false), '');
+  return stripped
+      .split(RegExp(r'[-_]'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => w[0].toUpperCase() + w.substring(1))
+      .join(' ');
 }
 
 /// Bytes → a compact GB label: `2.4 GB`, or `12 GB` once it's big enough that a
