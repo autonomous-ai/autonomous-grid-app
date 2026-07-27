@@ -4,6 +4,8 @@
 /// grid's real relay BASE_URL / API_KEY — the same pair `grid info --env` prints.
 library;
 
+import 'dart:convert';
+
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'client_app_detector.dart';
 
@@ -130,6 +132,49 @@ String codexConfigSnippet(String base, String model) =>
 /// itself, so the user never has to export a variable in their shell.
 String codexEnvSnippet(String key) => '$gridApiKeyEnv=$key';
 
+/// Buzz's `provider` value for an OpenAI-compatible endpoint. The desktop
+/// translates it to `BUZZ_AGENT_PROVIDER=openai` and reads the `OPENAI_COMPAT_*`
+/// pair when it launches `buzz-agent`; a free-text value (e.g. `"Grid"`) makes
+/// the agent die at startup with `BUZZ_AGENT_PROVIDER=<x> not supported`.
+const String kBuzzProvider = 'openai-compat';
+
+/// The env keys `buzz-agent` reads its connection from — the `OPENAI_COMPAT_*`
+/// names, **not** the bare `OPENAI_*` ones (those fail with
+/// `OPENAI_COMPAT_API_KEY required`). `kBuzzApiModeEnv` picks the wire dialect:
+/// `chat` (chat-completions) or `responses`.
+const String kBuzzBaseUrlEnv = 'OPENAI_COMPAT_BASE_URL';
+const String kBuzzApiKeyEnv = 'OPENAI_COMPAT_API_KEY';
+const String kBuzzApiModeEnv = 'OPENAI_COMPAT_API';
+
+/// Which OpenAI wire dialect Buzz should speak to the grid for [model]: the
+/// Responses API for a responses-only model (codex), else chat-completions.
+/// Pinned explicitly rather than left to Buzz's `auto`, whose name-based
+/// heuristic routes anything containing `gpt-5` to `/responses` — wrong for a
+/// chat model that merely has that in its id.
+String buzzApiMode(String model) =>
+    isResponsesOnlyModel(model) ? 'responses' : 'chat';
+
+/// The `provider` / `model` / `env_vars` map Buzz stores in
+/// [kBuzzConfigRelPath] to make a grid the default model for every agent. One
+/// source of truth for both the copy-paste block ([buzzGlobalConfigSnippet]) and
+/// the "Set up for me" merge ([ClientAppConfigurator]).
+Map<String, Object> buzzGlobalConfig(String base, String key, String model) => {
+  'provider': kBuzzProvider,
+  'model': model,
+  'env_vars': {
+    kBuzzBaseUrlEnv: base,
+    kBuzzApiKeyEnv: key,
+    kBuzzApiModeEnv: buzzApiMode(model),
+  },
+};
+
+/// The paste-ready `global-agent-config.json` for Buzz — pretty JSON so it
+/// matches how the desktop writes the file and stays valid on a literal paste.
+String buzzGlobalConfigSnippet(String base, String key, String model) =>
+    const JsonEncoder.withIndent(
+      '  ',
+    ).convert(buzzGlobalConfig(base, key, model));
+
 /// The paste-ready blocks for [info]'s manual setup — one per file the app needs
 /// (Codex takes two: its config and the dotenv holding the key). Each block
 /// carries the [label] + [caption] shown above it, so the panel just renders
@@ -168,6 +213,13 @@ List<({String label, String caption, String code})> appSnippets(
         label: 'Your API key',
         caption: 'Paste into $kCodexEnvPath',
         code: codexEnvSnippet(key),
+      ),
+    ],
+    ClientApp.buzz => [
+      (
+        label: info.name,
+        caption: 'Paste into ${info.configPath}',
+        code: buzzGlobalConfigSnippet(base, key, model),
       ),
     ],
   };

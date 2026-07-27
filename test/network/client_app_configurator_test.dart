@@ -450,6 +450,67 @@ void main() {
     });
   });
 
+  group('Buzz', () {
+    Map<String, dynamic> readConfig() =>
+        readJson(kBuzzConfigRelPath); // global-agent-config.json under home
+
+    test('creates the global config pointing every agent at the grid', () async {
+      final result = await sut.apply(ClientApp.buzz, _base, _key, [_model]);
+
+      expect(result, isA<ApplyOk>());
+      // Buzz has to reload it ⇒ a follow-up note.
+      expect((result as ApplyOk).note, isNotNull);
+      final json = readConfig();
+      expect(json['provider'], kBuzzProvider);
+      expect(json['model'], _model);
+      final env = json['env_vars'] as Map;
+      expect(env[kBuzzBaseUrlEnv], _base);
+      expect(env[kBuzzApiKeyEnv], _key);
+      expect(env[kBuzzApiModeEnv], 'chat'); // plain chat model
+    });
+
+    test('a codex model pins Buzz to the Responses API', () async {
+      await sut.apply(ClientApp.buzz, _base, _key, const ['codex:gpt-5.5']);
+      final env = readConfig()['env_vars'] as Map;
+      expect(env[kBuzzApiModeEnv], 'responses');
+    });
+
+    test('merges without dropping other env vars, backing the old file up', () async {
+      final file = File('${home.path}/$kBuzzConfigRelPath');
+      await file.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode({
+          'provider': 'anthropic',
+          'model': 'claude',
+          'preferred_runtime': 'buzz-agent',
+          'env_vars': {'MY_OWN': 'keep', kBuzzApiKeyEnv: 'old'},
+        }),
+      );
+
+      await sut.apply(ClientApp.buzz, _base, _key, [_model]);
+
+      final json = readConfig();
+      // Repointed at the grid…
+      expect(json['provider'], kBuzzProvider);
+      expect(json['model'], _model);
+      // …while an unrelated setting and env var the user set both survive.
+      expect(json['preferred_runtime'], 'buzz-agent');
+      final env = json['env_vars'] as Map;
+      expect(env['MY_OWN'], 'keep');
+      expect(env[kBuzzApiKeyEnv], _key); // the grid key overwrote the stale one
+      expect(File('${file.path}.bak').existsSync(), isTrue);
+    });
+
+    test('reports an error for a corrupt config instead of throwing', () async {
+      final file = File('${home.path}/$kBuzzConfigRelPath');
+      await file.create(recursive: true);
+      await file.writeAsString('not json at all');
+
+      final result = await sut.apply(ClientApp.buzz, _base, _key, [_model]);
+      expect(result, isA<ApplyError>());
+    });
+  });
+
   group('ensureAgentToolsets', () {
     test('adds every toolset the agent works with, keeping the rest', () {
       // `toolsets:` is an allowlist — whatever isn't named is off. A list

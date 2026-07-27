@@ -60,6 +60,10 @@ class ClientAppConfigurator {
       case ClientApp.codex:
         // Codex names a single model in its config; the key goes to its dotenv.
         return _applyCodex(base, key, ids.first);
+      case ClientApp.buzz:
+        // Buzz sets one default provider/model for every agent in its global
+        // config; the key lives in that file's `env_vars`.
+        return _applyBuzz(base, key, ids.first);
     }
   }
 
@@ -223,6 +227,40 @@ class ClientAppConfigurator {
       );
     } on Object catch (e) {
       return ApplyError('Couldn\'t update Codex config: ${_reason(e)}');
+    }
+  }
+
+  /// Points Buzz at the grid by making it the default model for every agent:
+  /// writes `provider` / `model` and the `OPENAI_COMPAT_*` pair into Buzz's
+  /// global agent config ([kBuzzConfigRelPath]). Merges — a `provider`/`model`
+  /// and any other `env_vars` the user set survive, only the grid keys are
+  /// (re)written — and backs the old file up.
+  ///
+  /// Targets the *global* config, not `managed-agents.json`: it leaves the
+  /// builtin agents alone and isn't the file the running desktop rewrites on
+  /// agent-lifecycle events. Buzz still has to reload it — hence the note.
+  Future<ApplyResult> _applyBuzz(String base, String key, String model) async {
+    final file = File('$_home/$kBuzzConfigRelPath');
+    try {
+      final root = await _readJsonObject(file);
+      root['provider'] = kBuzzProvider;
+      root['model'] = model;
+      final env = _childMap(root, 'env_vars');
+      env[kBuzzBaseUrlEnv] = base;
+      env[kBuzzApiKeyEnv] = key;
+      env[kBuzzApiModeEnv] = buzzApiMode(model);
+
+      await _backupThenWrite(
+        file,
+        const JsonEncoder.withIndent('  ').convert(root),
+      );
+      return ApplyOk(
+        'Pointed Buzz at this grid (${_display(file)}).',
+        note: 'Quit and reopen Buzz (or restart its agents) so it picks up '
+            'the change.',
+      );
+    } on Object catch (e) {
+      return ApplyError('Couldn\'t update Buzz config: ${_reason(e)}');
     }
   }
 

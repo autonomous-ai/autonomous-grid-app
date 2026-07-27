@@ -7,7 +7,7 @@ import '../../../infrastructure/cli/host_environment.dart';
 
 /// A local AI client the user can point at a grid. Each one has a config file we
 /// know how to write ("Apply for me") and a download page for when it's absent.
-enum ClientApp { openClaw, hermes, codex }
+enum ClientApp { openClaw, hermes, codex, buzz }
 
 extension ClientAppX on ClientApp {
   /// Whether the guide offers this client at all — one switch, so a hidden app
@@ -25,11 +25,28 @@ extension ClientAppX on ClientApp {
   /// **OpenClaw** is off the list entirely — it isn't an app we point people at
   /// any more. The config writer and its snippet stay behind this switch so
   /// flipping it back is one line, not a rewrite.
+  ///
+  /// **Buzz** ships to everyone. Its agents pick a provider/model per agent, so
+  /// pointing it at a grid means writing the grid as the *default* provider in
+  /// [kBuzzConfigRelPath] — one file, every agent, no builtin disturbed.
   bool get isSelectable => switch (this) {
     ClientApp.openClaw => false,
-    ClientApp.codex || ClientApp.hermes => true,
+    ClientApp.codex || ClientApp.hermes || ClientApp.buzz => true,
   };
 }
+
+/// Home-relative path to Buzz's global agent config — the single JSON file that
+/// sets the default `provider` / `model` / `env_vars` for every Buzz agent.
+///
+/// This, not `managed-agents.json`, is the "Set up for me" write target: it
+/// leaves the builtin agents untouched and the running desktop rewrites the
+/// per-agent file (not this one) on agent-lifecycle events. Shared by the
+/// detector (as the "installed" signal's parent), the guide (paste target) and
+/// [ClientAppConfigurator]. Buzz stores `provider: "openai-compat"`, a top-level
+/// `model`, and the `OPENAI_COMPAT_*` pair under `env_vars` here.
+const String kBuzzConfigRelPath =
+    'Library/Application Support/xyz.block.buzz.app/agents/'
+    'global-agent-config.json';
 
 /// The clients the guide may show, in [ClientApp.values] order — everything the
 /// build is allowed to offer (see [ClientAppX.isSelectable]). The one list the
@@ -95,6 +112,17 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
     configPath: '~/.codex/config.toml',
     executable: 'codex',
   ),
+  ClientApp.buzz: ClientAppInfo(
+    app: ClientApp.buzz,
+    name: 'Buzz',
+    downloadUrl: 'https://github.com/block/buzz',
+    // Buzz keeps its data under the app-support bundle, not a home dotfile — its
+    // presence is the "installed" signal (alongside /Applications/Buzz.app and
+    // the `buzz` CLI on PATH).
+    configDir: 'Library/Application Support/xyz.block.buzz.app',
+    configPath: '~/$kBuzzConfigRelPath',
+    executable: 'buzz',
+  ),
 };
 
 /// Where Codex reads a key from: it has no `api_key` config field, so the
@@ -137,6 +165,19 @@ const String kCodexEnvPath = '~/.codex/.env';
       'Open ${info.configPath}',
       'Paste the block below (or fill Base URL + API key yourself)',
       'Restart ${info.name}',
+    ],
+  ),
+  // Buzz rewrites this file itself while running, so the paste path leads with
+  // quitting it — otherwise the running app overwrites the edit. The block sets
+  // the grid as the default model for every Buzz agent.
+  ClientApp.buzz => (
+    title: 'Add it to ${info.name}',
+    steps: [
+      'Quit ${info.name} first — it rewrites this file while it runs',
+      'Open ${info.configPath} (create it if it isn\'t there)',
+      'Paste the block below — it makes this grid the default model '
+          'for every ${info.name} agent',
+      'Reopen ${info.name}; its agents now answer with this grid',
     ],
   ),
 };

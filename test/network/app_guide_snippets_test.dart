@@ -131,6 +131,40 @@ void main() {
     });
   });
 
+  group('Buzz', () {
+    test('global config is valid JSON with the openai-compat pair', () {
+      final decoded =
+          jsonDecode(buzzGlobalConfigSnippet(_base, _key, _model)) as Map;
+      // The desktop translates this provider to BUZZ_AGENT_PROVIDER=openai; a
+      // free-text value kills the agent at startup.
+      expect(decoded['provider'], kBuzzProvider);
+      expect(decoded['model'], _model);
+      final env = decoded['env_vars'] as Map;
+      // Must be the OPENAI_COMPAT_* names — the bare OPENAI_* ones fail with
+      // "OPENAI_COMPAT_API_KEY required".
+      expect(env[kBuzzBaseUrlEnv], _base);
+      expect(env[kBuzzApiKeyEnv], _key);
+      // A plain chat model speaks chat-completions, not the Responses API.
+      expect(env[kBuzzApiModeEnv], 'chat');
+    });
+
+    test('a codex model switches Buzz onto the Responses API', () {
+      final decoded =
+          jsonDecode(buzzGlobalConfigSnippet(_base, _key, 'codex:gpt-5.5'))
+              as Map;
+      expect((decoded['env_vars'] as Map)[kBuzzApiModeEnv], 'responses');
+    });
+
+    test('appSnippets gives Buzz a single block naming its config file', () {
+      final blocks = appSnippets(kClientApps[ClientApp.buzz]!, _base, _key, [
+        _model,
+      ]);
+      expect(blocks.single.caption, contains('global-agent-config.json'));
+      expect(blocks.single.code, contains('"$kBuzzProvider"'));
+      expect(blocks.single.code, contains(_base));
+    });
+  });
+
   test('Python snippet points the SDK at the pair', () {
     final out = pythonSnippet(_base, _key, _model);
     expect(out, contains('base_url="$_base"'));
