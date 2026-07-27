@@ -31,15 +31,18 @@ Future<void> writeGridWebSkill(Directory skillDir, {String? uvPath}) async {
   await scripts.create(recursive: true);
   final searchScriptPath = '${scripts.path}/search.py';
   final readScriptPath = '${scripts.path}/read.py';
+  final browseScriptPath = '${scripts.path}/browse.py';
   await File('${skillDir.path}/SKILL.md').writeAsString(
     gridWebSkillMd(
       uvPath: uvPath ?? gridWebUvPath(),
       searchScriptPath: searchScriptPath,
       readScriptPath: readScriptPath,
+      browseScriptPath: browseScriptPath,
     ),
   );
   await File(searchScriptPath).writeAsString(kGridWebSearchScript);
   await File(readScriptPath).writeAsString(kGridWebReadScript);
+  await File(browseScriptPath).writeAsString(kGridWebBrowseScript);
 }
 
 /// The skill card both agents read. Only the `name`/`description` frontmatter
@@ -49,6 +52,7 @@ String gridWebSkillMd({
   required String uvPath,
   required String searchScriptPath,
   required String readScriptPath,
+  required String browseScriptPath,
 }) =>
     '''
 ---
@@ -82,8 +86,22 @@ Fetches the page and prints its main article text, boilerplate stripped. For a
 page with no article body — a single X/Twitter post, or a JS-only page — it falls
 back to the page's title and description, which for a tweet is the post text.
 
-**Typical flow:** `search` to find URLs, then `read` the most relevant one for
-detail. Answer in your own words and **cite the URLs** you used.
+## Browse — a real browser, for a page `read` couldn't get
+Only when `read` came back empty or too thin because the page builds itself with
+JavaScript (a web app), or blocked the plain fetch. Heavier — it drives a real
+headless browser — so try `read` first every time.
+```
+"$uvPath" run --with playwright --with trafilatura python3 "$browseScriptPath" "<url>" [--max-chars N]
+```
+If it exits 3 (`the browser isn't installed yet`), the browser needs a one-time
+download (~170MB). Tell the user that, run it **once**, then retry the browse:
+```
+"$uvPath" run --with playwright playwright install chromium
+```
+
+**Typical flow:** `search` to find URLs, then `read` the most relevant one; only
+reach for `browse` when `read` couldn't. Answer in your own words and **cite the
+URLs** you used.
 
 ## What this can and can't do
 - Reading ONE known URL — an article, or a specific tweet — works.
@@ -94,7 +112,9 @@ detail. Answer in your own words and **cite the URLs** you used.
 ## If it fails
 - Exit code 2 = a backend couldn't be provisioned (no `uv`/network). Tell the
   user web access isn't available right now.
-- Exit code 1 on `read` = the page couldn't be fetched; try another source.
+- Exit code 1 on `read`/`browse` = the page couldn't be fetched; try another
+  source.
+- Exit code 3 on `browse` = one-time browser download needed (see above).
 - Empty output = nothing found or readable; reword once, then say so.
 - DuckDuckGo can rate-limit a burst of searches — if it errors, wait and retry
   once rather than hammering it.
@@ -210,6 +230,112 @@ def main() -> int:
                 parts.append(meta.description)
         if parts:
             text = "\n".join(parts)
+
+    text = text.strip()
+    if not text:
+        print("No readable text found on the page.")
+        return 0
+
+    limit = max(500, args.max_chars)
+    if len(text) > limit:
+        text = f"{text[:limit]}\n…(truncated)"
+    print(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+''';
+
+/// Read a page a plain fetch can't: one that renders with JavaScript, or blocks
+/// non-browser requests. The heavy fallback behind `read` — it drives a real
+/// headless Chromium via Playwright, so the app keeps it off the default install
+/// and lets it pull the browser on first use.
+///
+/// Run under `uv run --with playwright --with trafilatura`. The `playwright`
+/// package comes on demand, but the ~170MB Chromium binary does not — so a launch
+/// on a machine that has never downloaded it exits 3 with the one-time
+/// `playwright install chromium` to run, rather than blocking a turn on a silent
+/// download. Renders the page, then hands the HTML to trafilatura for the same
+/// clean extraction `read` uses, falling back to the body's visible text.
+const String kGridWebBrowseScript = r'''#!/usr/bin/env python3
+"""Read a JavaScript-rendered or bot-blocked page with a real browser.
+
+Heavier than read.py — use only when read.py came back empty or too thin. Run as:
+    <uv> run --with playwright --with trafilatura python3 browse.py "<url>" [--max-chars N]
+
+Exit codes: 0 ok, 1 the page wouldn't load, 2 Playwright unavailable,
+3 the browser isn't downloaded yet (run `playwright install chromium` once).
+"""
+
+import argparse
+import sys
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Read a JS-rendered page.")
+    parser.add_argument("url", help="the page to read")
+    parser.add_argument("--max-chars", type=int, default=6000, dest="max_chars")
+    args = parser.parse_args()
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("the browser reader is not available", file=sys.stderr)
+        return 2
+
+    html = ""
+    body_text = ""
+    try:
+        with sync_playwright() as play:
+            try:
+                browser = play.chromium.launch(headless=True)
+            except Exception as exc:  # noqa: BLE001 - classify missing browser
+                low = str(exc).lower()
+                if "executable doesn't exist" in low or "playwright install" in low:
+                    print(
+                        "the browser isn't installed yet — run once: "
+                        "playwright install chromium",
+                        file=sys.stderr,
+                    )
+                    return 3
+                raise
+            try:
+                page = browser.new_page()
+                page.goto(args.url, wait_until="domcontentloaded", timeout=25000)
+                # Give client-side rendering a beat to settle; some pages never go
+                # idle, so a timeout here is fine, not a failure.
+                try:
+                    page.wait_for_load_state("networkidle", timeout=8000)
+                except Exception:  # noqa: BLE001
+                    pass
+                html = page.content()
+                try:
+                    body_text = page.inner_text("body")
+                except Exception:  # noqa: BLE001
+                    body_text = ""
+            finally:
+                browser.close()
+    except Exception as exc:  # noqa: BLE001 - any load failure
+        print(
+            f"couldn't load the page: {str(exc).splitlines()[0][:180]}",
+            file=sys.stderr,
+        )
+        return 1
+
+    text = ""
+    try:
+        import trafilatura
+
+        text = (
+            trafilatura.extract(html, include_comments=False, include_tables=False)
+            or ""
+        )
+    except ImportError:
+        pass
+    # No article body — fall back to the rendered visible text of the page.
+    if len(text.strip()) < 120:
+        text = body_text
 
     text = text.strip()
     if not text:

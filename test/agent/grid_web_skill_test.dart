@@ -16,6 +16,7 @@ void main() {
         uvPath: '/grid/bin/uv',
         searchScriptPath: '/skills/grid-web/scripts/search.py',
         readScriptPath: '/skills/grid-web/scripts/read.py',
+        browseScriptPath: '/skills/grid-web/scripts/browse.py',
       );
 
   group('the grid-web skill card is what makes the agent reach for it', () {
@@ -30,8 +31,8 @@ void main() {
       expect(md.toLowerCase(), contains('read'));
     });
 
-    test('spells out both runnable commands with the real uv and script paths',
-        () {
+    test('spells out all three runnable commands with the real uv and script '
+        'paths', () {
       final md = card();
       expect(
         md,
@@ -47,6 +48,22 @@ void main() {
           '"/skills/grid-web/scripts/read.py"',
         ),
       );
+      expect(
+        md,
+        contains(
+          '"/grid/bin/uv" run --with playwright --with trafilatura python3 '
+          '"/skills/grid-web/scripts/browse.py"',
+        ),
+      );
+      // The one-time browser download is named, so the agent can run it rather
+      // than dead-end when browse reports it's needed.
+      expect(md, contains('playwright install chromium'));
+    });
+
+    test('leads with the light tools and marks browse as the heavy fallback — '
+        'so the agent tries read before spinning up a browser', () {
+      expect(card(), contains('try `read` first'));
+      expect(card().toLowerCase(), contains('heavier'));
     });
 
     test('is honest that X search needs a login — never sells a partial one as '
@@ -55,7 +72,7 @@ void main() {
       expect(card(), contains('X/Twitter'));
     });
 
-    test('both scripts degrade to a typed exit, never a crash', () {
+    test('all three scripts degrade to a typed exit, never a crash', () {
       expect(kGridWebSearchScript, contains('from ddgs import DDGS'));
       expect(kGridWebSearchScript, contains('return 2'));
       // Read pulls the article body, then falls back to page metadata (a tweet's
@@ -63,6 +80,10 @@ void main() {
       expect(kGridWebReadScript, contains('import trafilatura'));
       expect(kGridWebReadScript, contains('extract_metadata'));
       expect(kGridWebReadScript, contains('return 2'));
+      // Browse detects a missing browser and asks for the one-time install
+      // (exit 3) rather than blocking a turn on a silent download.
+      expect(kGridWebBrowseScript, contains('sync_playwright'));
+      expect(kGridWebBrowseScript, contains('return 3'));
     });
   });
 
@@ -74,6 +95,7 @@ void main() {
       expect(File('${dir.path}/SKILL.md').existsSync(), isTrue);
       expect(File('${dir.path}/scripts/search.py').existsSync(), isTrue);
       expect(File('${dir.path}/scripts/read.py').existsSync(), isTrue);
+      expect(File('${dir.path}/scripts/browse.py').existsSync(), isTrue);
     });
 
     test('a rewrite wipes the old copy first, so a stale file never lingers '
