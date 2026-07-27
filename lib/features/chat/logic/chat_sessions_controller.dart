@@ -51,10 +51,18 @@ class ChatSessionsState {
     this.phases = const {},
     this.errors = const {},
     this.awaitingPlanIds = const {},
+    this.runningAgentId,
   });
 
   final List<Conversation> conversations;
   final String? activeId;
+
+  /// The conversation whose **agent** turn is running right now, or null. Agent
+  /// turns are serialized onto one live session and one shared activity/
+  /// permission feed, so exactly one chat owns that feed at a time — the UI reads
+  /// this to show the "agent is working" steps on that chat and a plain "waiting"
+  /// cue on any other agent chat still queued behind it.
+  final String? runningAgentId;
 
   /// In-flight send phase per conversation id — absent means idle.
   final Map<String, SendPhase> phases;
@@ -127,12 +135,16 @@ class ChatSessionsState {
     Map<String, SendPhase>? phases,
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
+    Object? runningAgentId = _keep,
   }) => ChatSessionsState(
     conversations: conversations ?? this.conversations,
     activeId: identical(activeId, _keep) ? this.activeId : activeId as String?,
     phases: phases ?? this.phases,
     errors: errors ?? this.errors,
     awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
+    runningAgentId: identical(runningAgentId, _keep)
+        ? this.runningAgentId
+        : runningAgentId as String?,
   );
 
   /// This state with the chat [id]'s phase set — removed from the map when it
@@ -214,15 +226,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
 
-  /// The conversation whose **agent** turn is in flight, or null. The local
-  /// agent holds one live session and one permission focus, so agent turns are
-  /// serialized: a second one waits in [_agentQueue] rather than clobbering the
-  /// first. Two at once used to leave one chat hung on a permission the other
-  /// had already cleared. Relay/media turns touch none of this and never queue.
-  String? _runningAgentId;
-
-  /// Agent turns waiting for the slot, oldest first. The user turn is already
-  /// committed and the chat sits in [SendBusy] until its [dispatch] runs.
+  /// Agent turns waiting for the slot, oldest first. The chat holding the slot
+  /// is [ChatSessionsState.runningAgentId]; the local agent has one live session
+  /// and one permission focus, so agent turns are serialized — a second waits
+  /// here rather than clobbering the first (two at once left one chat hung on a
+  /// permission the other had cleared). The user turn is already committed and
+  /// the chat sits in [SendBusy] until its [dispatch] runs. Relay/media turns
+  /// touch none of this and never queue.
   final List<({String id, void Function() dispatch})> _agentQueue = [];
 
   @override
@@ -532,12 +542,14 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       done: done,
     );
 
-    // Serialize agent turns (see [_runningAgentId]): a second one waits its turn
-    // rather than running concurrently and corrupting the first's session and
-    // permission card. The chat sits in its [SendBusy] "thinking" state until
-    // the slot frees. Relay/media turns share none of that and go straight out,
-    // still fully concurrent.
-    if (viaAgent && _runningAgentId != null && _runningAgentId != id) {
+    // Serialize agent turns (see [ChatSessionsState.runningAgentId]): a second
+    // one waits its turn rather than running concurrently and corrupting the
+    // first's session and permission card. The chat sits in its [SendBusy]
+    // "thinking" state until the slot frees. Relay/media turns share none of
+    // that and go straight out, still fully concurrent.
+    if (viaAgent &&
+        state.runningAgentId != null &&
+        state.runningAgentId != id) {
       _agentQueue.add((id: id, dispatch: dispatch));
     } else {
       dispatch();
@@ -566,7 +578,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final id = conversation.id;
     // Claim the agent's single turn slot — released on finish/stop, which then
     // starts the next queued agent turn.
-    if (viaAgent) _runningAgentId = id;
+    if (viaAgent) state = state.copyWith(runningAgentId: id);
 
     final updates = _senderFor(modality, attachments).send(
       network: network,
@@ -730,15 +742,15 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// waiting agent turn. A no-op for a relay turn or a background chat that
   /// never held the slot.
   void _releaseAgentSlot(String id) {
-    if (_runningAgentId != id) return;
-    _runningAgentId = null;
+    if (state.runningAgentId != id) return;
+    state = state.copyWith(runningAgentId: null);
     _pumpAgentQueue();
   }
 
   /// Dispatch the oldest queued agent turn whose chat is still around, if the
   /// slot is free. One at a time: [dispatch] claims the slot again.
   void _pumpAgentQueue() {
-    while (_runningAgentId == null && _agentQueue.isNotEmpty) {
+    while (state.runningAgentId == null && _agentQueue.isNotEmpty) {
       final next = _agentQueue.removeAt(0);
       // Skip a turn whose chat was deleted, or whose send was already settled,
       // while it waited — its future is (or will be) completed by [_cancel].

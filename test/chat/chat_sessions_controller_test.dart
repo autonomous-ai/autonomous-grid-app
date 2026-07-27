@@ -414,6 +414,7 @@ void main() {
       await pumpEventQueue();
       final aId = read().activeId!;
       expect(answering.controllers.containsKey(aId), isTrue);
+      expect(read().runningAgentId, aId, reason: 'A holds the agent slot');
 
       // Chat B (tin thế giới) is sent while A is still generating. It must NOT
       // reach the agent yet — it waits in the queue, showing its own busy state.
@@ -433,6 +434,11 @@ void main() {
       );
       expect(read().sendingFor(aId), isTrue);
       expect(read().sendingFor(bId), isTrue, reason: 'B waits in its busy state');
+      expect(
+        read().runningAgentId,
+        aId,
+        reason: 'A still owns the slot while B waits — B must not borrow its feed',
+      );
 
       // A finishes. Only now does B reach the agent — and A never hung.
       answering.emit(
@@ -450,6 +456,7 @@ void main() {
         isTrue,
         reason: 'B dispatches once the slot frees',
       );
+      expect(read().runningAgentId, bId, reason: 'the slot passes to B');
 
       answering.emit(
         bId,
@@ -462,6 +469,7 @@ void main() {
 
       final s = read();
       expect(s.sending, isFalse);
+      expect(s.runningAgentId, isNull, reason: 'no agent turn left running');
       final a = s.conversations.firstWhere((x) => x.id == aId);
       final b = s.conversations.firstWhere((x) => x.id == bId);
       expect(a.messages.last.text, 'giá vàng: ...');

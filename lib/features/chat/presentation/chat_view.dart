@@ -8,6 +8,7 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/typing_dots.dart';
 import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
@@ -379,7 +380,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
         !sessions.sending &&
         (!needsImage || _attachments.isNotEmpty);
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
-    final trailing = _trailingBubble(sessions.phase, agentMode);
+    // The "agent is working" feed and the permission card read one shared,
+    // app-wide state, but only the chat whose agent turn is actually running
+    // owns it — an agent chat still queued behind another must show its own
+    // waiting cue, not borrow the running chat's steps (or its permission).
+    final thisChatIsRunning =
+        sessions.activeId != null &&
+        sessions.activeId == sessions.runningAgentId;
+    final trailing = _trailingBubble(
+      sessions.phase,
+      agentMode,
+      thisChatIsRunning,
+    );
     final isNewChat = messages.isEmpty && !sessions.sending;
 
     // The header naming this conversation lives in the top bar, so it shares
@@ -395,8 +407,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
       ref.read(chatHeaderVisibleProvider.notifier).set(wantsHeader);
     });
 
-    // The agent has stopped and is asking before it touches this computer.
-    final permission = ref.watch(agentPermissionProvider);
+    // The agent has stopped and is asking before it touches this computer. Only
+    // the chat whose turn is running owns that request — on any other chat the
+    // card would be asking about work the user can't see.
+    final permission = thisChatIsRunning
+        ? ref.watch(agentPermissionProvider)
+        : null;
     // A leading "/" (with no space yet) opens the saved-prompt menu; an "@"
     // token opens the file menu. Only one shows at a time, prompts first.
     final slash = sessions.sending ? null : slashQuery(_message.text);
@@ -528,15 +544,21 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// The bubble appended after the transcript for the in-flight turn: the media
   /// progress bar while a generation streams, the answer growing live as it
   /// streams in, or a spinner while the agent works before its first token.
-  Widget? _trailingBubble(SendPhase phase, bool agentMode) => switch (phase) {
-    SendGenerating g => GeneratingBubble(phase: g),
-    SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
-      text: text,
-    ),
-    SendStreaming() => const AgentWorkingBubble(),
-    SendBusy() when agentMode => const AgentWorkingBubble(),
-    _ => null,
-  };
+  /// The bubble after the transcript for the in-flight turn. [running] is whether
+  /// this chat holds the agent's live turn: only then does the working bubble
+  /// (which reads the shared activity feed) belong to it — an agent chat still
+  /// queued behind another shows a plain waiting cue instead.
+  Widget? _trailingBubble(SendPhase phase, bool agentMode, bool running) =>
+      switch (phase) {
+        SendGenerating g => GeneratingBubble(phase: g),
+        SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
+          text: text,
+        ),
+        SendStreaming() => const AgentWorkingBubble(),
+        SendBusy() when agentMode && running => const AgentWorkingBubble(),
+        SendBusy() when agentMode => const _QueuedBubble(),
+        _ => null,
+      };
 
   double _permissionCardHeight(BuildContext context) {
     final height = MediaQuery.sizeOf(context).height * 0.42;
@@ -578,6 +600,44 @@ class _StreamingReply extends StatelessWidget {
           child: TypingDots(),
         ),
       ],
+    );
+  }
+}
+
+/// Shown on an agent chat whose turn is queued behind another that's still
+/// running — the local agent answers one at a time.
+///
+/// Deliberately NOT [AgentWorkingBubble]: that bubble reads the shared activity
+/// feed, which belongs to the chat actually running, so it would show this chat
+/// another chat's steps. This says, honestly, that the assistant is finishing
+/// something else first — a spinner and one line, no borrowed feed.
+class _QueuedBubble extends StatelessWidget {
+  const _QueuedBubble();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AppSpinner(),
+            const SizedBox(width: 10),
+            Text(
+              'Finishing another chat first…',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
