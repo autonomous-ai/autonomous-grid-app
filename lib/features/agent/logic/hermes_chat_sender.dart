@@ -163,7 +163,7 @@ class HermesChatSender implements ChatSender {
     // the Chat tab uses that name for the conversation once it lands.
     if (session.sessionId case final id?) yield ChatSendAgentSession(id);
 
-    yield* _runTurn(session, turnText, model);
+    yield* _runTurn(session, turnText, model, planFirst: planFirst);
   }
 
   /// Reuse the live session when this is the next turn of the same conversation,
@@ -217,8 +217,9 @@ class HermesChatSender implements ChatSender {
   Stream<ChatSendUpdate> _runTurn(
     HermesAcpSession session,
     String text,
-    String model,
-  ) {
+    String model, {
+    required bool planFirst,
+  }) {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
     final sourcesLog = _ref.read(agentSourcesProvider.notifier)..clear();
     final planLog = _ref.read(agentPlanProvider.notifier)..clear();
@@ -272,7 +273,18 @@ class HermesChatSender implements ChatSender {
         // keep the raw envelope in the log to diagnose from.
         final refused = friendlyAgentServerError(reply);
         if (refused != null) _ref.read(appLogProvider).failure('agent', reply);
-        final failure = reply.isEmpty ? kAgentNoAnswer : refused;
+        // A turn that laid out a plan and never finished it stalled — even with
+        // a line of text, the work it promised didn't happen, so it must not
+        // read as an answer (§5). Planning mode is the exception: there an
+        // unfinished plan is the whole point. Shared with Codex so a stalled
+        // turn reads the same whichever agent ran it.
+        final plan = _ref.read(agentPlanProvider);
+        final stalled = !planFirst && agentPlanUnfinished(plan);
+        final failure =
+            refused ??
+            (stalled
+                ? kAgentStalledPlan
+                : (reply.isEmpty ? kAgentNoAnswer : null));
 
         log.finish(logId, error: failure);
         updates.add(
@@ -283,7 +295,7 @@ class HermesChatSender implements ChatSender {
                     role: ChatRole.assistant,
                     text: reply,
                     sources: _ref.read(agentSourcesProvider),
-                    plan: _ref.read(agentPlanProvider),
+                    plan: plan,
                   ),
                 ),
         );
