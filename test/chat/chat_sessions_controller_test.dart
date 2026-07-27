@@ -391,6 +391,135 @@ void main() {
     });
   });
 
+  group('agent turns are serialized', () {
+    test('a second agent turn waits for the first instead of running at once — '
+        'the local agent has one session and one permission focus, and two at '
+        'once left one chat hung on a permission the other had cleared', () async {
+      final answering = _PerChatSender();
+      final h = _harness(
+        tmp,
+        updates: const [],
+        agentInstalled: true,
+        answering: answering,
+      );
+      final c = h.container.read(chatSessionsProvider.notifier);
+      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+
+      // Chat A (giá vàng) starts on the agent.
+      final sentA = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'giá vàng hôm nay',
+      );
+      await pumpEventQueue();
+      final aId = read().activeId!;
+      expect(answering.controllers.containsKey(aId), isTrue);
+
+      // Chat B (tin thế giới) is sent while A is still generating. It must NOT
+      // reach the agent yet — it waits in the queue, showing its own busy state.
+      c.newChat();
+      final sentB = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'tin thế giới',
+      );
+      await pumpEventQueue();
+      final bId = read().activeId!;
+      expect(bId, isNot(aId));
+      expect(
+        answering.controllers.containsKey(bId),
+        isFalse,
+        reason: 'the second agent turn is queued, not dispatched',
+      );
+      expect(read().sendingFor(aId), isTrue);
+      expect(read().sendingFor(bId), isTrue, reason: 'B waits in its busy state');
+
+      // A finishes. Only now does B reach the agent — and A never hung.
+      answering.emit(
+        aId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'giá vàng: ...'),
+        ),
+      );
+      await answering.close(aId);
+      await sentA;
+      await pumpEventQueue();
+      expect(read().sendingFor(aId), isFalse);
+      expect(
+        answering.controllers.containsKey(bId),
+        isTrue,
+        reason: 'B dispatches once the slot frees',
+      );
+
+      answering.emit(
+        bId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'tin thế giới: ...'),
+        ),
+      );
+      await answering.close(bId);
+      await sentB;
+
+      final s = read();
+      expect(s.sending, isFalse);
+      final a = s.conversations.firstWhere((x) => x.id == aId);
+      final b = s.conversations.firstWhere((x) => x.id == bId);
+      expect(a.messages.last.text, 'giá vàng: ...');
+      expect(b.messages.last.text, 'tin thế giới: ...');
+    });
+
+    test('deleting the chat holding the agent slot lets the queued one run — '
+        'a cancelled turn must not strand the ones waiting behind it', () async {
+      final answering = _PerChatSender();
+      final h = _harness(
+        tmp,
+        updates: const [],
+        agentInstalled: true,
+        answering: answering,
+      );
+      final c = h.container.read(chatSessionsProvider.notifier);
+      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+
+      final sentA = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'first',
+      );
+      await pumpEventQueue();
+      final aId = read().activeId!;
+      c.newChat();
+      final sentB = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'second',
+      );
+      await pumpEventQueue();
+      final bId = read().activeId!;
+      expect(answering.controllers.containsKey(bId), isFalse);
+
+      // Delete A while it holds the slot: B must not wait forever.
+      c.deleteConversation(aId);
+      await sentA;
+      await pumpEventQueue();
+      expect(
+        answering.controllers.containsKey(bId),
+        isTrue,
+        reason: 'B runs once A releases the slot',
+      );
+      expect(read().sendingFor(bId), isTrue);
+
+      answering.emit(
+        bId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'done second'),
+        ),
+      );
+      await answering.close(bId);
+      await sentB;
+      expect(read().sendingFor(bId), isFalse);
+    });
+  });
+
   group('stop', () {
     test('keeps what the assistant had already said — the user stopped because '
         'they had read enough of it, not to throw it away', () async {

@@ -214,6 +214,17 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
 
+  /// The conversation whose **agent** turn is in flight, or null. The local
+  /// agent holds one live session and one permission focus, so agent turns are
+  /// serialized: a second one waits in [_agentQueue] rather than clobbering the
+  /// first. Two at once used to leave one chat hung on a permission the other
+  /// had already cleared. Relay/media turns touch none of this and never queue.
+  String? _runningAgentId;
+
+  /// Agent turns waiting for the slot, oldest first. The user turn is already
+  /// committed and the chat sits in [SendBusy] until its [dispatch] runs.
+  final List<({String id, void Function() dispatch})> _agentQueue = [];
+
   @override
   ChatSessionsState build() {
     ref.onDispose(() {
@@ -495,12 +506,68 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // The send owns the open slot: make it active and clear any prior error.
     _commit(conversation, phase: const SendBusy(), makeActive: true);
 
+    final id = conversation.id;
+    final done = _dones[id] = Completer<void>();
+    final project = ref.read(projectByIdProvider(conversation.projectId));
     // Plain text goes through the agent (it can use tools and keeps the
     // conversation's context); pictures — generating one, or a turn that carries
     // attachments — go straight to the grid's chat API, which is the only one
-    // that can see or make them. Everything downstream (folding updates,
-    // persistence) is identical: both implement [ChatSender].
-    final project = ref.read(projectByIdProvider(conversation.projectId));
+    // that can see or make them.
+    final viaAgent = agentAnswersTurn(
+      modality: modality,
+      hasAttachments: attachments.isNotEmpty,
+      agentInstalled: ref.read(anyAgentInstalledProvider),
+    );
+
+    void dispatch() => _dispatch(
+      conversation: conversation,
+      network: network,
+      model: model,
+      modality: modality,
+      attachments: attachments,
+      workdir: project?.path,
+      instructions: project?.instructions,
+      planTurn: planTurn,
+      viaAgent: viaAgent,
+      done: done,
+    );
+
+    // Serialize agent turns (see [_runningAgentId]): a second one waits its turn
+    // rather than running concurrently and corrupting the first's session and
+    // permission card. The chat sits in its [SendBusy] "thinking" state until
+    // the slot frees. Relay/media turns share none of that and go straight out,
+    // still fully concurrent.
+    if (viaAgent && _runningAgentId != null && _runningAgentId != id) {
+      _agentQueue.add((id: id, dispatch: dispatch));
+    } else {
+      dispatch();
+    }
+    return done.future;
+  }
+
+  /// Send [conversation]'s turn to its [ChatSender] and fold the reply back in.
+  ///
+  /// Split out from [send] so an agent turn can be deferred (see [_agentQueue])
+  /// and dispatched later with the same committed history. The subscription is
+  /// keyed by conversation, so [stop] and disposal cancel exactly this reply and
+  /// it never writes back into the wrong chat after the user has moved on.
+  void _dispatch({
+    required Conversation conversation,
+    required NetworkCredential network,
+    required String model,
+    required PlaygroundModality modality,
+    required List<MediaAttachment> attachments,
+    required String? workdir,
+    required String? instructions,
+    required bool planTurn,
+    required bool viaAgent,
+    required Completer<void> done,
+  }) {
+    final id = conversation.id;
+    // Claim the agent's single turn slot — released on finish/stop, which then
+    // starts the next queued agent turn.
+    if (viaAgent) _runningAgentId = id;
+
     final updates = _senderFor(modality, attachments).send(
       network: network,
       model: model,
@@ -509,21 +576,16 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       attachments: attachments,
       // The chat's project, so the agent answers with that folder open. Null for
       // a chat that belongs to no project (it falls back to the app's folder).
-      workdir: project?.path,
+      workdir: workdir,
       // The project's house rules, prepended to the agent's first turn.
-      instructions: project?.instructions,
+      instructions: instructions,
       // Lets the agent sender keep one live session per conversation and send
       // only the new turn (the API sender ignores it).
-      conversationId: conversation.id,
+      conversationId: id,
       // A planning turn runs read-only and asks the agent to lay out a plan.
       planFirst: planTurn,
     );
 
-    // Fold updates through a stored subscription keyed by conversation, so
-    // [stop] and disposal cancel exactly this reply and it never writes back
-    // into the wrong chat after the user has moved on.
-    final id = conversation.id;
-    final done = _dones[id] = Completer<void>();
     String? agentSessionId;
     _subs[id] = updates.listen(
       (update) {
@@ -560,7 +622,6 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       onError: (Object _) => _finish(id),
       cancelOnError: true,
     );
-    return done.future;
   }
 
   /// Let the agent name the chat, replacing the placeholder taken from the first
@@ -651,20 +712,50 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     _subs.remove(id);
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
+    _releaseAgentSlot(id);
   }
 
-  /// Cancel one conversation's in-flight reply (if any) and settle it.
+  /// Cancel one conversation's in-flight reply (if any) and settle it. Also
+  /// drops it from [_agentQueue] in case it was still waiting to dispatch.
   void _cancel(String id) {
     final sub = _subs.remove(id);
     sub?.cancel();
+    _agentQueue.removeWhere((queued) => queued.id == id);
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
+    _releaseAgentSlot(id);
+  }
+
+  /// Free the agent's single turn slot when [id] held it, then start the next
+  /// waiting agent turn. A no-op for a relay turn or a background chat that
+  /// never held the slot.
+  void _releaseAgentSlot(String id) {
+    if (_runningAgentId != id) return;
+    _runningAgentId = null;
+    _pumpAgentQueue();
+  }
+
+  /// Dispatch the oldest queued agent turn whose chat is still around, if the
+  /// slot is free. One at a time: [dispatch] claims the slot again.
+  void _pumpAgentQueue() {
+    while (_runningAgentId == null && _agentQueue.isNotEmpty) {
+      final next = _agentQueue.removeAt(0);
+      // Skip a turn whose chat was deleted, or whose send was already settled,
+      // while it waited — its future is (or will be) completed by [_cancel].
+      final done = _dones[next.id];
+      if (done == null || done.isCompleted || _find(next.id) == null) continue;
+      next.dispatch();
+    }
   }
 
   /// Tear down every in-flight reply — for disposal.
   void _cancelAll() {
     for (final id in _subs.keys.toList()) {
       _cancel(id);
+    }
+    // Queued turns never got a subscription; complete their futures too.
+    for (final queued in _agentQueue.toList()) {
+      _cancel(queued.id);
     }
   }
 
