@@ -9,6 +9,7 @@ OverviewNode _node({
   double? vramTotalMb,
   int? concurrency,
   double? throughput,
+  String? planType,
 }) => OverviewNode.fromJson({
   'name': name,
   'online': online,
@@ -16,6 +17,7 @@ OverviewNode _node({
   'vram_total_mb': ?vramTotalMb,
   'max_concurrency': ?concurrency,
   'throughput_tok_s': ?throughput,
+  'plan_type': ?planType,
 });
 
 void main() {
@@ -216,6 +218,32 @@ void main() {
       expect(nodeVramGb(_node()), isNull);
       expect(nodeVramGb(_node(vramGb: 0)), isNull);
       expect(nodeVramGb(_node(vramGb: 64)), 64);
+    });
+
+    test('a subscription seat brings no pool memory however much RAM it reports '
+        '— it relays to a hosted model, so its machine memory runs nothing for '
+        'the grid and would only inflate the pool', () {
+      expect(nodeVramGb(_node(vramGb: 64, planType: 'prolite')), isNull);
+      expect(nodeVramGb(_node(vramTotalMb: 65536, planType: 'pro')), isNull);
+    });
+  });
+
+  group('the graphics-memory pool', () {
+    test("leaves out a subscription seat's memory, keeping only real GPUs", () {
+      final power = gridPowerFrom([
+        _node(vramGb: 128),
+        _node(vramGb: 64, planType: 'prolite'),
+      ], 3);
+      // 128, not 192 — the subscription seat's 64 GB never joins the pool.
+      expect(power.vramGb, 128);
+    });
+
+    test('a grid of only subscription seats reports no pooled memory', () {
+      final power = gridPowerFrom([
+        _node(vramGb: 64, planType: 'plus'),
+        _node(vramGb: 32, planType: 'pro'),
+      ], 2);
+      expect(power.vramGb, isNull);
     });
   });
 
