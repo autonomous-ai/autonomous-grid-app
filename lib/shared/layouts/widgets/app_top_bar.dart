@@ -8,7 +8,6 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
 import '../shell_state.dart';
 import 'grid_power_pill.dart';
-import 'plan_type_pill.dart';
 import 'top_bar_pill.dart';
 
 /// The slim strip above the open section: on the left, the conversation you're
@@ -78,7 +77,6 @@ class AppTopBar extends ConsumerWidget {
                       : const SizedBox.shrink(),
                 ),
                 const _ModelDownloadPill(),
-                const PlanTypePill(),
                 const GridPowerPill(),
               ],
             ),

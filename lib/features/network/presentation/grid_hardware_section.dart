@@ -154,7 +154,7 @@ class _LegendRow extends StatelessWidget {
   }
 }
 
-/// The non-memory figures: requests at a time, and throughput when reported.
+/// The non-memory figures: tasks run at once, and throughput when reported.
 /// Sits under a hairline below the memory block (or alone, when no node reports
 /// VRAM but does report capacity/speed).
 class _FooterStats extends StatelessWidget {
@@ -171,9 +171,9 @@ class _FooterStats extends StatelessWidget {
     final rows = <Widget>[
       if (parallel != null)
         _StatRow(
-          label: 'At a time',
+          label: 'Runs at once',
           value: '$parallel',
-          unit: plural(parallel, 'request'),
+          unit: plural(parallel, 'task'),
         ),
       if (toks != null)
         _StatRow(label: 'Speed', value: formatThroughput(toks), unit: 'tok/s'),

@@ -116,7 +116,7 @@ String _semanticsLabel(String name, GridPower power) {
     '${power.models} ${plural(power.models, 'model')} available',
     if (power.vramGb != null) '${formatVram(power.vramGb!)} of graphics memory',
     if (power.parallel != null)
-      '${power.parallel} ${plural(power.parallel!, 'request')} at a time',
+      '${power.parallel} ${plural(power.parallel!, 'task')} at once',
   ];
   return parts.join(', ');
 }
@@ -255,9 +255,22 @@ class _PowerPanel extends ConsumerWidget {
     );
 
     final vram = power.vramGb;
+    // Two kinds of machine, shown as two labelled sections instead of one mixed
+    // list: hardware nodes that bring GPU memory ("Local models"), and codex
+    // subscription seats that bring a plan + usage ("Codex subscription"). The
+    // split is `nodeIsSubscription` — the same predicate the VRAM pool uses, so a
+    // seat never lands in the memory bar and a GPU never lands under a plan.
+    final localNodes = [
+      for (final n in nodes)
+        if (!nodeIsSubscription(n)) n,
+    ];
+    final subNodes = [
+      for (final n in nodes)
+        if (nodeIsSubscription(n)) n,
+    ];
     final slices = vram == null
         ? const <NodeSlice>[]
-        : buildMemorySlices(nodes, vram);
+        : buildMemorySlices(localNodes, vram);
 
     return Positioned(
       width: _width,
@@ -275,18 +288,28 @@ class _PowerPanel extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _PanelHeader(name: gridName, uptimePct: uptime),
-                // The GPU-memory split, as a bar, when any node reports VRAM.
-                if (slices.isNotEmpty) ...[
+                // LOCAL MODELS — hardware nodes: the GPU-memory bar (when any
+                // node reports VRAM) above one row per machine.
+                if (localNodes.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _MemorySplit(totalGb: vram!, slices: slices),
+                  _SectionLabel(
+                    label: 'Self-host',
+                    trailing: vram != null ? formatVram(vram) : null,
+                  ),
+                  if (slices.isNotEmpty) ...[
+                    const SizedBox(height: 9),
+                    MemorySplitBar(slices: slices),
+                  ],
+                  const SizedBox(height: 10),
+                  _NodeBreakdown(nodes: localNodes, totalGb: vram),
                 ],
-                // One list of every machine, each row carrying its *own* metric:
-                // GPU memory for a hardware node, its plan for a subscription
-                // seat. Kept in a single list — the figure belongs on the node,
-                // not in a section beside it.
-                if (nodes.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _NodeBreakdown(nodes: nodes, totalGb: vram),
+                // CODEX SUBSCRIPTION — seat nodes: name + used% + plan badge,
+                // each click-expandable to its usage bars.
+                if (subNodes.isNotEmpty) ...[
+                  const SizedBox(height: 13),
+                  const _SectionLabel(label: 'Codex subscription'),
+                  const SizedBox(height: 8),
+                  _NodeBreakdown(nodes: subNodes, totalGb: null),
                 ],
                 const SizedBox(height: 11),
                 _FooterStats(power: power),
@@ -367,41 +390,19 @@ class _PanelHeader extends StatelessWidget {
 String _trimPct(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
 
-/// GPU memory as one bar split by machine — the label, the total, and the bar.
-/// Each machine's own figure is named in the node list below (see
-/// [_NodeBreakdown]), whose row ticks pick up the same slice colours.
-///
-/// The split is the point: a total of "478.4 GB" says nothing about whether that
-/// is one strong box or ten weak ones, and those are very different grids. One
-/// glance at the bar answers it.
-class _MemorySplit extends StatelessWidget {
-  const _MemorySplit({required this.totalGb, required this.slices});
-
-  final double totalGb;
-  final List<NodeSlice> slices;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _SectionLabel(label: 'Graphics memory', trailing: formatVram(totalGb)),
-        // The bar belongs to the list below it, not to the label above, so it
-        // sits closer to what it explains.
-        const SizedBox(height: 9),
-        MemorySplitBar(slices: slices),
-      ],
-    );
-  }
-}
-
 class _LegendRow extends StatelessWidget {
-  const _LegendRow({required this.slice, required this.totalGb});
+  const _LegendRow({
+    required this.slice,
+    required this.totalGb,
+    required this.memoryKind,
+  });
 
   final NodeSlice slice;
   final double totalGb;
+
+  /// "VRAM" for a discrete GPU, "RAM" for Apple Silicon's unified memory — this
+  /// node's own kind, so the figure reads "48 GB VRAM" / "32 GB RAM".
+  final String memoryKind;
 
   @override
   Widget build(BuildContext context) {
@@ -430,14 +431,16 @@ class _LegendRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        // Fixed width and right-aligned: tabular figures keep each digit the
-        // same width, but "382.4 GB" and "32 GB" are different lengths, so
-        // without a column the numbers step raggedly down the panel.
+        // Fixed width and right-aligned: tabular figures keep each digit the same
+        // width, but "48 GB VRAM" and "32 GB RAM" are different lengths, so
+        // without a column the values step raggedly down the panel.
         SizedBox(
-          width: 54,
+          width: 84,
           child: Text(
-            formatVram(slice.gb),
+            '${formatVram(slice.gb)} $memoryKind',
             textAlign: TextAlign.right,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 11,
               fontWeight: AppFont.medium,
@@ -448,7 +451,7 @@ class _LegendRow extends StatelessWidget {
         ),
         const SizedBox(width: 7),
         SizedBox(
-          width: 26,
+          width: 30,
           child: Text(
             '$pct%',
             textAlign: TextAlign.right,
@@ -465,7 +468,7 @@ class _LegendRow extends StatelessWidget {
   }
 }
 
-/// The figures that aren't memory: how many requests at once, how many models,
+/// The figures that aren't memory: how many tasks at once, how many models,
 /// and throughput when the grid reports it. Rows rather than the bar above,
 /// because none of them decompose by machine in a way worth drawing.
 class _FooterStats extends StatelessWidget {
@@ -485,9 +488,9 @@ class _FooterStats extends StatelessWidget {
         const SizedBox(height: 7),
         if (parallel != null)
           _StatRow(
-            label: 'At a time',
+            label: 'Runs at once',
             value: '$parallel',
-            unit: plural(parallel, 'request'),
+            unit: plural(parallel, 'task'),
           ),
         if (toks != null)
           _StatRow(
@@ -577,7 +580,7 @@ class _NodeBreakdown extends StatelessWidget {
     for (var i = 0; i < nodes.length; i++) {
       final node = nodes[i];
       final gb = nodeVramGb(node);
-      final Widget row;
+      Widget row;
       if (gb != null && total != null && total > 0) {
         row = _LegendRow(
           slice: NodeSlice(
@@ -587,12 +590,36 @@ class _NodeBreakdown extends StatelessWidget {
             color: sliceColor(vramIndex),
           ),
           totalGb: total,
+          memoryKind: _isUnifiedMemory(node.platform) ? 'RAM' : 'VRAM',
         );
         vramIndex++;
       } else if (nodePlanLabel(node) case final plan?) {
+        // A codex seat shows its primary used-% between the name and the plan
+        // badge, so the headline "how much have I burned" reads without opening
+        // the usage disclosure below. Non-codex plan rows keep just the badge.
+        final usedPct = node.engine == 'codex'
+            ? node.codexRateLimits?.primary?.usedPercent
+            : null;
         row = _NodeRow(
           label: labels[i],
-          trailing: _PlanBadge(label: plan),
+          trailing: usedPct == null
+              ? _PlanBadge(label: plan)
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$usedPct%',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppPalette.textFaint,
+                        fontFeatures: AppFont.tabularFigures,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _PlanBadge(label: plan),
+                  ],
+                ),
         );
       } else if (nodeSpecLine(node) case final spec when spec.isNotEmpty) {
         row = _NodeRow(
@@ -608,6 +635,12 @@ class _NodeBreakdown extends StatelessWidget {
         );
       } else {
         row = _NodeRow(label: labels[i], trailing: const SizedBox.shrink());
+      }
+      // A codex seat carries a rate-limit snapshot — click the row to disclose its
+      // usage bars below (the row stays a clean name+plan line otherwise). Only for
+      // codex nodes that actually reported a window.
+      if (node.engine == 'codex' && node.codexRateLimits?.primary != null) {
+        row = _CodexUsageDisclosure(rates: node.codexRateLimits!, child: row);
       }
       rows.add(
         Padding(padding: const EdgeInsets.symmetric(vertical: 2.5), child: row),
@@ -685,6 +718,176 @@ class _PlanBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Click-to-open usage disclosure for a codex seat: tapping the node row toggles
+/// a panel below it showing each rate-limit window as a labelled progress bar
+/// (used %, and when it resets). Click rather than hover — the panel it sits in
+/// is itself a hover popup, so a nested hover would be fiddly. Only mounted for
+/// `engine == 'codex'` nodes that reported at least a primary window.
+class _CodexUsageDisclosure extends StatefulWidget {
+  const _CodexUsageDisclosure({required this.rates, required this.child});
+
+  final CodexRateLimits rates;
+  final Widget child;
+
+  @override
+  State<_CodexUsageDisclosure> createState() => _CodexUsageDisclosureState();
+}
+
+class _CodexUsageDisclosureState extends State<_CodexUsageDisclosure> {
+  bool _open = false;
+
+  static bool _hasPeriod(CodexWindow? w) =>
+      w != null && w.usedPercent != null && (w.windowMinutes ?? 0) > 0;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    // Every window the seat reported, primary first — a bar each. A window with
+    // no real period (free seats leave `secondary` at 0) is dropped.
+    final windows = <CodexWindow>[
+      if (_hasPeriod(widget.rates.primary)) widget.rates.primary!,
+      if (_hasPeriod(widget.rates.secondary)) widget.rates.secondary!,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _open = !_open),
+            child: widget.child,
+          ),
+        ),
+        if (_open && windows.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 9, left: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _SectionLabel(label: 'Usage'),
+                for (final w in windows) ...[
+                  const SizedBox(height: 8),
+                  _UsageBar(window: w),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// One rate-limit window as the screenshot's block: a title, the used percent, a
+/// filled track for it, then "Resets in …".
+class _UsageBar extends StatelessWidget {
+  const _UsageBar({required this.window});
+
+  final CodexWindow window;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final used = (window.usedPercent ?? 0).clamp(0, 100);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _windowTitle(window.windowMinutes),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: AppPalette.textPrimary),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$used%',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: AppFont.medium,
+                color: AppPalette.textPrimary,
+                fontFeatures: AppFont.tabularFigures,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // A rounded track with the used fraction filled in accent — a plain
+        // Container split rather than LinearProgressIndicator so the height,
+        // radius and colours match the panel exactly.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: Container(
+            height: 5,
+            color: AppPalette.textFaint.withValues(alpha: 0.22),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: used / 100,
+                child: Container(color: AppPalette.accent),
+              ),
+            ),
+          ),
+        ),
+        if (window.resetAfterSeconds != null) ...[
+          const SizedBox(height: 5),
+          Text(
+            'Resets in ${_resetsShort(window.resetAfterSeconds!)}',
+            style: TextStyle(fontSize: 10.5, color: AppPalette.textFaint),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Apple Silicon shares one unified memory pool, so a node's "GPU memory" there
+/// is really system RAM; discrete GPUs (Windows/Linux/Intel Mac) have their own
+/// VRAM. `macos-arm64` is the Apple Silicon tag the provider reports.
+bool _isUnifiedMemory(String? platform) => (platform ?? '') == 'macos-arm64';
+
+/// "Session (5hr)" / "Weekly (7d)" / "Monthly (30d)" — a name for the window's
+/// length plus the length itself, matching how the seat's own client frames it.
+String _windowTitle(int? minutes) {
+  if (minutes == null || minutes <= 0) return 'Usage';
+  final name = minutes <= 360
+      ? 'Session'
+      : minutes <= 1440
+      ? 'Daily'
+      : minutes <= 10080
+      ? 'Weekly'
+      : 'Monthly';
+  return '$name (${_windowShort(minutes)})';
+}
+
+String _windowShort(int minutes) {
+  if (minutes % 1440 == 0) return '${minutes ~/ 1440}d';
+  if (minutes % 60 == 0) return '${minutes ~/ 60}hr';
+  return '${minutes}m';
+}
+
+/// Seconds-until-reset, compact: "36m", "2hr 10m", "5d 3hr".
+String _resetsShort(int seconds) {
+  if (seconds <= 0) return 'now';
+  final days = seconds ~/ 86400;
+  if (days >= 1) {
+    final hours = (seconds % 86400) ~/ 3600;
+    return hours > 0 ? '${days}d ${hours}hr' : '${days}d';
+  }
+  final hours = seconds ~/ 3600;
+  if (hours >= 1) {
+    final mins = (seconds % 3600) ~/ 60;
+    return mins > 0 ? '${hours}hr ${mins}m' : '${hours}hr';
+  }
+  return '${seconds ~/ 60}m';
 }
 
 class _SectionLabel extends StatelessWidget {
