@@ -63,6 +63,28 @@ void main() {
     });
   });
 
+  group('a command-installed agent with its tool missing', () {
+    test('is an honest dead end naming the tool, not a retryable spawn error — '
+        'no npm on the machine is not "check your connection"', () async {
+      // A bogus tool name never resolves on any PATH, so this is the "user has
+      // no npm/node" case: install must say what to install, and must not be
+      // retryable, because no retry conjures a missing runtime.
+      const spec = CommandInstall(['grid-no-such-tool-xyz', 'i', '-g', 'x']);
+      await expectLater(
+        const AgentInstallerImpl().run(spec),
+        throwsA(
+          isA<AgentInstallException>()
+              .having((e) => e.retryable, 'retryable', isFalse)
+              .having(
+                (e) => e.message,
+                'message',
+                contains('grid-no-such-tool-xyz'),
+              ),
+        ),
+      );
+    });
+  });
+
   group('verifySha256', () {
     late Directory tmp;
     setUp(() async {

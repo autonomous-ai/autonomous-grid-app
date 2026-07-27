@@ -208,9 +208,20 @@ class AgentInstallerImpl implements AgentInstaller {
     if (command.isEmpty) {
       throw const AgentInstallException('No install command was given.');
     }
+    // Resolve the tool on the augmented PATH (where nvm/asdf node lives), not the
+    // parent process's. Absent means it simply isn't installed — no retry and no
+    // "check your connection" fixes that — so this is an honest dead end naming
+    // what to install, not a transient failure.
+    final tool = HostEnvironment.findExecutable(command.first);
+    if (tool == null) {
+      throw AgentInstallException(
+        "'${command.first}' isn't installed on this computer. Install it, then "
+        'try again.',
+      );
+    }
     final env = {...Platform.environment, 'PATH': HostEnvironment.path()};
     onLog?.call('Running ${command.join(' ')} …');
-    await _stream(command.first, command.sublist(1), env, onLog);
+    await _stream(tool, command.sublist(1), env, onLog);
   }
 
   /// Spawn [exe] with [args], stream its output to [onLog], and throw its last

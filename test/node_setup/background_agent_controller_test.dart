@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/codex/codex_tool.dart';
 import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
+import 'package:grid_app/features/agent/openclaw/openclaw_tool.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/background_agent_controller.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';
@@ -43,6 +44,7 @@ class _FakeInstaller implements AgentInstaller {
       // The re-probe at the end must not walk the real PATH.
       hermesPathProvider.overrideWith((_) => null),
       codexPathProvider.overrideWith((_) => null),
+      openClawPathProvider.overrideWith((_) => null),
     ],
   );
   addTearDown(container.dispose);

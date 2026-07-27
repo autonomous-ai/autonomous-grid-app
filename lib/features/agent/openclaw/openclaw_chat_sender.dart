@@ -14,6 +14,7 @@ import '../../playground/logic/playground_request.dart';
 import '../common/agent_prompt.dart';
 import '../common/agent_providers.dart';
 import '../common/agent_server_error.dart';
+import 'openclaw_error.dart';
 import 'openclaw_tool.dart';
 
 /// The OpenClaw inference seam, or null when OpenClaw is absent.
@@ -152,7 +153,7 @@ class OpenClawChatSender implements ChatSender {
               ? (error.retryable
                     ? "Couldn't start OpenClaw on this computer. Try sending "
                           'again.'
-                    : "OpenClaw couldn't finish: ${error.message}")
+                    : friendlyOpenClawError(error.message))
               : "OpenClaw couldn't finish: $error";
           log.finish(logId, error: message);
           _ref.read(appLogProvider).failure('agent', 'openclaw turn: $error');

@@ -11,6 +11,7 @@ import 'package:grid_app/features/agent/common/agent_session_title.dart';
 import 'package:grid_app/features/agent/codex/codex_tool.dart';
 import 'package:grid_app/features/agent/hermes/hermes_chat_sender.dart';
 import 'package:grid_app/features/agent/hermes/hermes_tool.dart';
+import 'package:grid_app/features/agent/openclaw/openclaw_tool.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
@@ -201,12 +202,14 @@ _harness(
         Directory('${dir.path}/outputs'),
       ),
       // Whether this computer has the agent — the one thing that decides who
-      // answers a plain text turn. Codex is pinned absent so the real machine's
-      // PATH (which may have codex installed) can't leak in and change routing.
+      // answers a plain text turn. Every other agent is pinned absent so the
+      // real machine's PATH (which may have codex or openclaw installed) can't
+      // leak in, pick itself as the active agent, and spawn a real binary.
       hermesPathProvider.overrideWithValue(
         agentInstalled ? '/bin/hermes' : null,
       ),
       codexPathProvider.overrideWithValue(null),
+      openClawPathProvider.overrideWithValue(null),
       // Keep the remembered model and the projects off the real `~/.grid`.
       chatPrefsStoreProvider.overrideWithValue(
         ChatPrefsStore(file: File('${dir.path}/chat_prefs.json')),

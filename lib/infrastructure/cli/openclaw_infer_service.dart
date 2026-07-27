@@ -133,10 +133,14 @@ class OpenClawInferServiceImpl implements OpenClawInferService {
           final stderr = await started.stderr.transform(utf8.decoder).join();
           final code = await started.exitCode;
           if (killed || completer.isCompleted) return;
+          final complaint = stderr.trim();
           if (code != 0) {
+            // The whole complaint, not its last line: OpenClaw's node-version
+            // refusal ends in a bare `nvm alias default 24`, so the last line is
+            // the least useful thing on it. The humanizer reads the first line.
             completer.completeError(
               OpenClawInferException(
-                _lastLine(stderr) ?? 'exited with code $code',
+                complaint.isEmpty ? 'exited with code $code' : complaint,
               ),
             );
             return;
@@ -145,7 +149,7 @@ class OpenClawInferServiceImpl implements OpenClawInferService {
           if (reply == null) {
             completer.completeError(
               OpenClawInferException(
-                _lastLine(stderr) ?? 'OpenClaw returned no text.',
+                complaint.isEmpty ? 'it returned no text.' : complaint,
               ),
             );
             return;
@@ -166,17 +170,9 @@ class OpenClawInferServiceImpl implements OpenClawInferService {
       kOpenClawTurnTimeout,
       onTimeout: () {
         kill();
-        throw const OpenClawInferException('OpenClaw took too long to answer.');
+        throw const OpenClawInferException('it took too long to answer.');
       },
     );
     return OpenClawInferRun(reply: reply, kill: kill);
   }
-
-  /// The process's last non-empty stderr line — what it complained about, when
-  /// it complained — or null when it said nothing.
-  static String? _lastLine(String text) => text
-      .split('\n')
-      .map((line) => line.trim())
-      .where((line) => line.isNotEmpty)
-      .lastOrNull;
 }
