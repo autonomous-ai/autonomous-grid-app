@@ -18,6 +18,7 @@ class SidebarItem extends StatefulWidget {
     this.emphasized = false,
     this.trailing,
     this.trailingWidth = 24,
+    this.trailingAlwaysVisible = false,
     this.tooltip,
   });
 
@@ -37,6 +38,10 @@ class SidebarItem extends StatefulWidget {
   /// Width reserved for [trailing]. Defaults to one 24px action; a row with two
   /// (like a project's menu + new-chat) passes a wider value so neither clips.
   final double trailingWidth;
+
+  /// Keep [trailing] visible without hovering — for a live status (a chat's
+  /// "typing…" cue) that has to read at a glance, not a hover-only action.
+  final bool trailingAlwaysVisible;
   final String? tooltip;
 
   /// The row's left inset — where its icon starts, measured from the row's own
@@ -168,14 +173,19 @@ class _SidebarItemState extends State<SidebarItem> {
                             ),
                           ),
                           // Keep the action mounted so hovering never changes text
-                          // metrics or row height.
+                          // metrics or row height. A persistent trailing (a live
+                          // status) shows without hover; a hover action stays
+                          // hidden until the pointer lands.
                           SizedBox(
                             width: widget.trailingWidth,
                             height: 24,
                             child: IgnorePointer(
-                              ignoring: !_hovered,
+                              ignoring:
+                                  !_hovered && !widget.trailingAlwaysVisible,
                               child: AnimatedOpacity(
-                                opacity: _hovered ? 1 : 0,
+                                opacity: _hovered || widget.trailingAlwaysVisible
+                                    ? 1
+                                    : 0,
                                 duration: const Duration(milliseconds: 100),
                                 curve: Curves.easeOut,
                                 child: widget.trailing,

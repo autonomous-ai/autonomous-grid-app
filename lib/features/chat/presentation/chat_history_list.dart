@@ -6,9 +6,11 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../../shared/widgets/typing_dots.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/add_project.dart';
 import '../../projects/presentation/project_menu.dart';
+import '../logic/chat_row_status.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 
@@ -290,9 +292,14 @@ class _ChatRow extends ConsumerWidget {
     final selected =
         ref.watch(chatSessionsProvider).activeId == chat.id &&
         ref.watch(shellSectionProvider) == ShellSection.chat;
-    // A reply is streaming into this chat — shown on whichever chat is working,
-    // open or in the background, now that several can generate at once.
-    final streaming = ref.watch(chatSessionsProvider).sendingFor(chat.id);
+    // What this chat's assistant is doing right now, if anything — shown on
+    // whichever chat is working, open or in the background, now that several can
+    // be in flight at once. Selecting on the coarse [ChatActivity] (not the raw
+    // phase) keeps the row from rebuilding on every streamed token.
+    final activity = ref.watch(
+      chatSessionsProvider.select((s) => chatActivityFor(s.phaseFor(chat.id))),
+    );
+    final working = activity != null;
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
@@ -308,15 +315,69 @@ class _ChatRow extends ConsumerWidget {
           controller.select(chat.id);
           ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
         },
-        // Archive, not delete: the hover affordance on a whole list of chats is
-        // one mis-aimed click away from the row below it, so the reversible
-        // action is the one that belongs here. Destroying a transcript stays
-        // behind the chat's own "…" menu, where it asks first.
-        trailing: _ArchiveButton(
-          enabled: !streaming,
-          onTap: () => _archive(context, ref),
-        ),
+        // While a reply is coming in, the row shows a live status instead of the
+        // archive action — you can't archive mid-reply anyway, and "what is this
+        // chat doing?" is the useful thing to see, at a glance, without hovering.
+        // Idle, it's the archive affordance revealed on hover: reversible, so it
+        // belongs on a list where a mis-aimed click lands on the row below;
+        // deleting a transcript stays behind the chat's own "…" menu.
+        trailingWidth: working ? _ChatActivityBadge.width : 24,
+        trailingAlwaysVisible: working,
+        trailing: activity != null
+            ? _ChatActivityBadge(activity: activity)
+            : _ArchiveButton(onTap: () => _archive(context, ref)),
       ),
+    );
+  }
+}
+
+/// The live status on a chat row while a reply is coming in — a short word for
+/// what the assistant is doing, with a pulsing cue so a background chat reads as
+/// still working, not stalled.
+///
+/// Kept muted rather than accented: the selected row already owns the rail's one
+/// bright mark, and a second lit element in the list would blur which chat is on
+/// screen.
+class _ChatActivityBadge extends StatelessWidget {
+  const _ChatActivityBadge({required this.activity});
+
+  final ChatActivity activity;
+
+  /// Room for the widest label ("Thinking") plus the cue, so switching between
+  /// states never nudges the title's width.
+  static const double width = 76;
+
+  @override
+  Widget build(BuildContext context) {
+    // Reads AppPalette tokens from inside a lazy list's child — watch here or
+    // the badge keeps the palette it was first painted with.
+    AppTheme.watch(context);
+    final label = switch (activity) {
+      ChatActivity.thinking => 'Thinking',
+      ChatActivity.typing => 'Typing',
+      ChatActivity.creating => 'Creating',
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.clip,
+            style: TextStyle(
+              color: AppPalette.textSecondary,
+              fontSize: 11,
+              fontWeight: AppFont.medium,
+            ),
+          ),
+        ),
+        const SizedBox(width: 5),
+        // The dots carry the motion — the "…" of "Typing…", live.
+        TypingDots(color: AppPalette.textFaint, dotSize: 3.5),
+      ],
     );
   }
 }
@@ -329,13 +390,9 @@ class _ChatRow extends ConsumerWidget {
 /// at its resting tint while you're aiming at it, and the click target reads as
 /// decoration.
 class _ArchiveButton extends StatefulWidget {
-  const _ArchiveButton({required this.onTap, required this.enabled});
+  const _ArchiveButton({required this.onTap});
 
   final VoidCallback onTap;
-
-  /// False while a reply is streaming into this chat — [archiveConversation]
-  /// no-ops then, and a button that silently does nothing reads as broken.
-  final bool enabled;
 
   @override
   State<_ArchiveButton> createState() => _ArchiveButtonState();
@@ -349,34 +406,25 @@ class _ArchiveButtonState extends State<_ArchiveButton> {
     // Reads AppPalette/AppSurface from inside a lazy list's child — watch here
     // or this glyph keeps the palette it was first painted with.
     AppTheme.watch(context);
-    final hot = _hovered && widget.enabled;
+    final hot = _hovered;
     // Rests at textFaint so it stays a whisper once revealed, and climbs to
     // textPrimary under the pointer — the same destination as the project row's
     // trigger, so two neighbouring rail actions light up identically.
-    final ink = !widget.enabled
-        ? AppPalette.textFaint.withValues(alpha: 0.4)
-        : hot
-        ? AppPalette.textPrimary
-        : AppPalette.textFaint;
+    final ink = hot ? AppPalette.textPrimary : AppPalette.textFaint;
 
     return Semantics(
       button: true,
-      enabled: widget.enabled,
       label: 'Archive chat',
       child: Tooltip(
-        message: widget.enabled
-            ? 'Archive chat'
-            : "Can't archive while replying",
+        message: 'Archive chat',
         waitDuration: const Duration(milliseconds: 600),
         child: MouseRegion(
-          cursor: widget.enabled
-              ? SystemMouseCursors.click
-              : SystemMouseCursors.basic,
+          cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() => _hovered = false),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: widget.enabled ? widget.onTap : null,
+            onTap: widget.onTap,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               curve: Curves.easeOut,
