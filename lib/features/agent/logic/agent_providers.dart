@@ -5,6 +5,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 
+/// How many conversations keep a live agent session at once.
+///
+/// For Hermes one session is one `hermes acp` process, so this is a ceiling on
+/// *processes*, not just memory. Flipping between a couple of chats — what
+/// people actually do — costs nothing; past that the least recently used session
+/// is closed, and that chat replays its history next time exactly as every chat
+/// used to. Codex keeps only a thread id, so forgetting one costs it a replay
+/// and nothing else; it honours the same cap so the two behave alike.
+///
+/// Deliberately small. A process this app fails to reap outlives it as an
+/// orphan, and Windows has form here (`kill_group` and `pid_alive` were both
+/// POSIX-only), so the number of processes in flight is worth keeping boring.
+const int kMaxLiveAgentSessions = 5;
+
 /// The folder the agent opens in when no project is picked, created on first
 /// read. A starting point, not a fence — the agent may read and write outside it.
 final agentWorkspaceDirProvider = Provider<Directory>((ref) {

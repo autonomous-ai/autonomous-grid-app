@@ -62,18 +62,6 @@ final hermesChatSenderProvider = Provider<ChatSender>((ref) {
   return sender;
 });
 
-/// How many conversations keep a live agent session at once.
-///
-/// One session is one `hermes acp` process, so this is a ceiling on *processes*,
-/// not just memory. Flipping between a couple of chats — what people actually do
-/// — now costs nothing; past that the least recently used session is closed and
-/// that chat replays its history next time, exactly as every chat used to.
-///
-/// Deliberately small. A process this app fails to reap outlives it as an
-/// orphan, and Windows has form here (`kill_group` and `pid_alive` were both
-/// POSIX-only), so the number of processes in flight is worth keeping boring.
-const int kMaxLiveAgentSessions = 3;
-
 /// A live Hermes session and what it has already seen, so the sender can decide
 /// between continuing it (send only what's new) and restarting it.
 class _LiveSession {

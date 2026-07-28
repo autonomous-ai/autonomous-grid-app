@@ -604,7 +604,8 @@ void main() {
     },
   );
 
-  test('switching conversation starts a fresh session', () async {
+  test('switching conversation starts a fresh session, and leaves the one it '
+      'came from open', () async {
     final service = _FakeAcp([
       [const HermesAcpMessage('a')],
       [const HermesAcpMessage('b')],
@@ -630,7 +631,101 @@ void main() {
         .toList();
 
     expect(service.startCount, 2);
-    expect(service.sessions.first.isClosed, isTrue, reason: 'old one closed');
+    // Each chat keeps its own. Closing the one being left meant flipping between
+    // two conversations replayed the whole history on every single turn.
+    expect(service.sessions.first.isClosed, isFalse);
+  });
+
+  test(
+    'going back to a chat resumes its session rather than respawning',
+    () async {
+      final service = _FakeAcp([
+        [const HermesAcpMessage('a')],
+        [const HermesAcpMessage('b')],
+      ]);
+      final container = _container(service, tmp);
+      final sender = container.read(hermesChatSenderProvider);
+
+      Future<void> turn(String conv, List<ChatMessage> history) => sender
+          .send(
+            network: _credential(),
+            model: 'm',
+            conversationId: conv,
+            history: history,
+          )
+          .toList();
+
+      await turn('conv-1', _history('one'));
+      await turn('conv-2', _history('two'));
+      await turn('conv-1', const [
+        ChatMessage(role: ChatRole.user, text: 'one'),
+        ChatMessage(role: ChatRole.assistant, text: 'a'),
+        ChatMessage(role: ChatRole.user, text: 'again'),
+      ]);
+
+      // Two chats, two processes — the third turn reused conv-1's.
+      expect(service.startCount, 2);
+      expect(service.sessions.first.prompts, ['one', 'again']);
+    },
+  );
+
+  test('past the cap the least recently used session is closed', () async {
+    final service = _FakeAcp([
+      [const HermesAcpMessage('a')],
+    ]);
+    final container = _container(service, tmp);
+    final sender = container.read(hermesChatSenderProvider);
+
+    // One conversation more than the cap allows.
+    for (var i = 0; i <= kMaxLiveAgentSessions; i++) {
+      await sender
+          .send(
+            network: _credential(),
+            model: 'm',
+            conversationId: 'conv-$i',
+            history: _history('hello $i'),
+          )
+          .toList();
+    }
+
+    expect(service.startCount, kMaxLiveAgentSessions + 1);
+    expect(
+      service.sessions.first.isClosed,
+      isTrue,
+      reason: 'the oldest chat gave up its process',
+    );
+    expect(service.sessions.last.isClosed, isFalse);
+    // Exactly one was evicted — the cap is a ceiling, not a stampede.
+    expect(service.sessions.where((s) => s.isClosed).length, 1);
+  });
+
+  test('disposing the sender kills every live session', () async {
+    final service = _FakeAcp([
+      [const HermesAcpMessage('a')],
+    ]);
+    final container = _container(service, tmp);
+    final sender = container.read(hermesChatSenderProvider) as HermesChatSender;
+
+    await sender
+        .send(
+          network: _credential(),
+          model: 'm',
+          conversationId: 'conv-1',
+          history: _history('one'),
+        )
+        .toList();
+    await sender
+        .send(
+          network: _credential(),
+          model: 'm',
+          conversationId: 'conv-2',
+          history: _history('two'),
+        )
+        .toList();
+
+    await sender.dispose();
+
+    expect(service.sessions.every((s) => s.isClosed), isTrue);
   });
 
   test('no agent installed says so in plain language', () async {

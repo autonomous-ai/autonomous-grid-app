@@ -153,6 +153,7 @@ class CodexChatSender implements ChatSender {
       resumeThreadId: resolved.resumeThreadId,
       model: model,
       planFirst: planFirst,
+      live: resolved.live,
     );
   }
 
@@ -225,6 +226,7 @@ class CodexChatSender implements ChatSender {
     required String? resumeThreadId,
     required String model,
     required bool planFirst,
+    required _LiveThread live,
   }) {
     // The feed was reset up front in [send], before the grid setup — see
     // [resetAgentFeed]; here we only take the notifiers to append to. That reset
@@ -251,7 +253,7 @@ class CodexChatSender implements ChatSender {
       (event) {
         switch (event) {
           case CodexThreadStarted(:final threadId):
-            _live?.threadId = threadId;
+            live.threadId = threadId;
           case CodexActivityEvent(:final activity):
             activityLog.upsert(activity);
           case CodexPlanEvent(:final entries):
@@ -296,7 +298,7 @@ class CodexChatSender implements ChatSender {
         // so its thread already holds it. Counting it here keeps the next turn
         // from quoting Codex's own words back at it as "context you missed".
         // Only on success: a failed turn appends nothing.
-        if (error == null) _live?.seen++;
+        if (error == null) live.seen++;
         updates.add(
           error != null
               ? ChatSendFailure(error)
