@@ -16,10 +16,11 @@ enum JobStatus {
   /// a glance, so warn rather than fault.
   lastRunFailed,
 
-  /// Still enabled, but the scheduler is skipping every run and won't stop until
-  /// the user acts (today: the model drifted from what the task was created on).
-  /// A "failed last run" reads as bad luck that might pass; this won't pass on
-  /// its own, so it gets its own, blunter label.
+  /// Still enabled, but every run fails the same way and won't stop until the
+  /// user acts — the model drifted from what the task was created on, or this
+  /// computer has no model set for tasks at all. A "failed last run" reads as
+  /// bad luck that might pass; this won't pass on its own, so it gets its own,
+  /// blunter label.
   blocked,
 
   /// The user paused it: it stays in the list but won't run.
@@ -31,7 +32,9 @@ enum JobStatus {
 /// run (it's the reason the run failed, and it won't clear itself).
 JobStatus jobStatusOf(ScheduledJob job) {
   if (!job.enabled) return JobStatus.paused;
-  if (job.failed && isModelDriftSkip(job.lastError!)) return JobStatus.blocked;
+  if (job.failed && isBlockingCronError(job.lastError!)) {
+    return JobStatus.blocked;
+  }
   if (job.failed) return JobStatus.lastRunFailed;
   return JobStatus.running;
 }

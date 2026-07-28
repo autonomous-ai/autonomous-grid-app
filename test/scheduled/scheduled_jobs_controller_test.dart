@@ -3,12 +3,50 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agent/logic/hermes_grid_link.dart';
+import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
+import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/auth/logic/session_controller.dart';
+import 'package:grid_app/features/network/logic/client_app_configurator.dart';
+import 'package:grid_app/features/network/logic/network_models_provider.dart';
 import 'package:grid_app/features/scheduled/logic/job_schedule.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_job.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_jobs_controller.dart';
 import 'package:grid_app/features/scheduled/logic/task_power_controller.dart';
+import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_task_policy.dart';
+import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
+
+/// A grid the app has selected, with the models it serves stubbed per-test.
+NetworkCredential _network(String id) => NetworkCredential(
+  networkId: id,
+  name: 'Test grid',
+  networkType: 'permissioned',
+  lanSignalingUrl: 'http://127.0.0.1:8090',
+  accessToken: 'tok-$id',
+  refreshToken: '',
+  email: 'dev@x.com',
+  nodeId: 'node-$id',
+  deviceId: 'dev',
+  roles: const ['consumer'],
+  scopes: const ['consumer:chat'],
+  memberEpoch: 1,
+  networkEpoch: 1,
+  expiresAt: 0,
+);
+
+final _grid = _network('grid-foo');
+
+/// A [SelectedNetwork] pinned to a fixed grid, so the controller resolves one
+/// without the session/prefs wiring the real notifier reads from disk.
+class _FixedSelectedNetwork extends SelectedNetwork {
+  _FixedSelectedNetwork(this._fixed);
+  final NetworkCredential? _fixed;
+  @override
+  NetworkCredential? build() => _fixed;
+}
 
 /// A fake scheduler: records what it was asked to write, and hands back a store
 /// the test controls. No `hermes` process is spawned.
@@ -116,18 +154,44 @@ void main() {
     String? jobsJson = _oneJob,
     String? failWith,
     bool agentInstalled = true,
+    bool gridSelected = true,
+    List<String> models = const ['maker/m1'],
   }) {
     final cron = _FakeCron(jobsJson: jobsJson, failWith: failWith);
+    final grid = gridSelected ? _grid : null;
     final container = ProviderContainer(
       overrides: [
         hermesCronServiceProvider.overrideWithValue(
           agentInstalled ? cron : null,
         ),
         agentWorkspaceDirProvider.overrideWithValue(workspace),
-        // What a task is allowed to do is written into Hermes's config — point
-        // that at the temp dir, never the real `~/.hermes`.
+        // Every Hermes write — the task's powers and the grid it answers with —
+        // goes to the temp dir, never the real `~/.hermes`. The null binary
+        // path drops the ACP probe too, so pointing the grid never spawns
+        // `hermes` to set up web search.
         hermesTaskPolicyProvider.overrideWithValue(
           agentInstalled ? HermesTaskPolicy(home: workspace.path) : null,
+        ),
+        hermesPathProvider.overrideWithValue(null),
+        selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(grid)),
+        if (grid != null)
+          networkModelsForProvider(
+            grid.networkId,
+          ).overrideWith((ref) => Future.value(models)),
+        hermesGridLinkProvider.overrideWith(
+          (ref) => HermesGridLink(
+            ref,
+            config: HermesConfigFile(home: workspace.path),
+          ),
+        ),
+        clientAppConfiguratorProvider.overrideWithValue(
+          ClientAppConfigurator(home: workspace.path),
+        ),
+        hermesSkillInstallerProvider.overrideWithValue(
+          HermesSkillInstaller(home: workspace.path),
+        ),
+        chatPrefsStoreProvider.overrideWithValue(
+          ChatPrefsStore(file: File('${workspace.path}/app/chat_prefs.json')),
         ),
       ],
     );
@@ -257,6 +321,115 @@ void main() {
     );
   });
 
+  test(
+    'saving a task points Hermes at the selected grid, so it has a model to '
+    'run with instead of failing at 8am with "no model configured"',
+    () async {
+      final h = harness();
+      await h.container.read(scheduledJobsProvider.future);
+
+      final result = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .create(
+            name: 'Digest',
+            prompt: 'Summarise',
+            schedule: const JobSchedule(
+              cadence: JobCadence.everyDay,
+              hour: 8,
+              minute: 0,
+            ),
+          );
+
+      expect(result.error, isNull);
+      expect(h.cron.created, isNotNull);
+      expect(
+        await HermesConfigFile(
+          home: workspace.path,
+        ).valueAt(['model', 'default']),
+        'maker/m1',
+        reason: 'the task runs on the grid the app has selected',
+      );
+    },
+  );
+
+  test('a task that could only ever fail is refused, not saved — no grid '
+      'picked and no model configured is the "no model configured" bug waiting '
+      'to happen', () async {
+    final h = harness(gridSelected: false);
+    await h.container.read(scheduledJobsProvider.future);
+
+    final result = await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: 'Digest',
+          prompt: 'Summarise',
+          schedule: const JobSchedule(
+            cadence: JobCadence.everyDay,
+            hour: 8,
+            minute: 0,
+          ),
+        );
+
+    expect(result.error, contains('Pick a grid'));
+    expect(result.id, isNull);
+    expect(
+      h.cron.created,
+      isNull,
+      reason: 'nothing was written to the scheduler',
+    );
+  });
+
+  test('a grid sharing no AI yet is refused with what to do, not a task that '
+      'answers nothing', () async {
+    final h = harness(models: const []);
+    await h.container.read(scheduledJobsProvider.future);
+
+    final result = await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: 'Digest',
+          prompt: 'Summarise',
+          schedule: const JobSchedule(
+            cadence: JobCadence.everyDay,
+            hour: 8,
+            minute: 0,
+          ),
+        );
+
+    expect(result.error, contains('This computer'));
+    expect(h.cron.created, isNull);
+  });
+
+  test(
+    'a task still saves when the user configured Hermes themselves — no '
+    'grid picked is no reason to refuse a model that is already there',
+    () async {
+      // A config that already names a model: Hermes has something to answer with,
+      // whoever wrote it, so the task is not blocked.
+      await HermesConfigFile(home: workspace.path).edit(
+        (editor) =>
+            HermesConfigFile.upsert(editor, ['model', 'default'], 'mine/own'),
+      );
+      final h = harness(gridSelected: false);
+      await h.container.read(scheduledJobsProvider.future);
+
+      final result = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .create(
+            name: 'Digest',
+            prompt: 'Summarise',
+            schedule: const JobSchedule(
+              cadence: JobCadence.everyDay,
+              hour: 8,
+              minute: 0,
+            ),
+          );
+
+      expect(result.error, isNull);
+      expect(h.cron.created, isNotNull);
+    },
+  );
+
   test('a task saved with "no commands" leaves the scheduler with no terminal '
       'at all — the limit is real, not a promise', () async {
     final h = harness();
@@ -277,12 +450,23 @@ void main() {
           ),
         );
 
+    // Assert on the cron toolset list — what a scheduled run actually loads —
+    // not the whole file: pointing Hermes at the grid also writes a top-level
+    // chat `toolsets:` that does include `terminal`, but that key never gates
+    // cron. The limit that matters is `platform_toolsets.cron`.
+    expect(
+      await HermesTaskPolicy(home: workspace.path).read(),
+      TaskPower.noCommands,
+    );
+    final cronTools = await HermesConfigFile(
+      home: workspace.path,
+    ).valueAt(['platform_toolsets', 'cron']);
+    expect(cronTools, isNot(contains('terminal')));
+    expect(cronTools, contains('file'), reason: 'it still reads your project');
     final config = File(
       '${workspace.path}/.hermes/config.yaml',
     ).readAsStringSync();
     expect(config, contains('cron_mode: deny'));
-    expect(config, isNot(contains('terminal')));
-    expect(config, contains('file'), reason: 'it still reads your project');
   });
 
   test(

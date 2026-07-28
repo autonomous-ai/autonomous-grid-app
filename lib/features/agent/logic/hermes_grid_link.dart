@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../auth/logic/session_controller.dart';
 import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
+import '../../network/logic/network_models_provider.dart';
 import 'hermes_skill_installer.dart';
 import 'hermes_tool.dart';
 
@@ -80,5 +83,45 @@ class HermesGridLink {
   Future<bool> hasModel() async {
     final model = await _config.valueAt(['model', 'default']);
     return model is String && model.trim().isNotEmpty;
+  }
+
+  /// Point Hermes at whatever grid the app has selected, resolving a model for
+  /// it, so an unattended surface can actually answer. Returns null when Hermes
+  /// is ready — including when it was already configured by an earlier chat or
+  /// by hand — else a user-facing line naming what to fix.
+  ///
+  /// A scheduled task fires at 8am and a chat-platform bot answers a stranger's
+  /// message: both run with nobody there to pick a model. Until Hermes's own
+  /// config names one, every such run fails with a raw "no model configured".
+  /// Writing the selected grid here, before the task is saved or the bot goes
+  /// live, is what stops that — so both the scheduler and the platforms share
+  /// this one path rather than each pointing Hermes their own way.
+  Future<String?> ensureModelForSelectedGrid() async {
+    final grid = _ref.read(selectedNetworkProvider);
+    if (grid == null) {
+      // Already configured (by hand, or an earlier chat) — leave it be rather
+      // than refusing over a grid we only wanted for setup.
+      if (await hasModel()) return null;
+      return 'Pick a grid in Chat first — the assistant answers with that '
+          "grid, and there's no answer without one.";
+    }
+    final model = await _modelForGrid(grid.networkId);
+    if (model == null) {
+      if (await hasModel()) return null;
+      return "This grid isn't sharing any AI yet, so the assistant would have "
+          'nothing to answer with. Start sharing on this computer (Settings ▸ '
+          'This computer), then try again.';
+    }
+    return point(grid, model);
+  }
+
+  /// The model to answer [networkId] with: the one the user last chatted with
+  /// when the grid still serves it, else whatever that grid serves first. Null
+  /// when the grid serves nothing at all.
+  Future<String?> _modelForGrid(String networkId) async {
+    final served = await _ref.read(networkModelsForProvider(networkId).future);
+    if (served.isEmpty) return null;
+    final chosen = _ref.read(chatPrefsProvider).model;
+    return served.contains(chosen) ? chosen : served.first;
   }
 }
