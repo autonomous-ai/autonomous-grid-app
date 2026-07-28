@@ -67,18 +67,30 @@ final catalogSuggestFnProvider = Provider<CatalogSuggestFn>(
   (ref) => ModelCatalogClient.suggest,
 );
 
-/// `GET /v1/grid/catalog?sort=...` — paginated list of catalog models, sorted by
-/// trending/downloads/newest. Used by the Models sidebar's "Most liked" /
-/// "Most downloaded" sort modes (the CLI `grid catalog` fallback has no such
-/// fields). Returns null when the user isn't signed in or the call fails.
-final catalogListProvider = FutureProvider.family<List<CatalogListEntry>?, String>((ref, sort) async {
+/// What the sidebar is asking the catalog for: a search term, a ranking, or
+/// both. A record so the family keys by value — `(sort: '', query: 'qwen')` and
+/// `(sort: 'likes', query: 'qwen')` are two different requests, each cached.
+///
+/// [sort] empty means "don't pin a ranking": the sidebar sends no `sort` at all
+/// while the user is typing, and only attaches one once they pick from the sort
+/// menu.
+typedef CatalogListArgs = ({String sort, String query});
+
+/// `POST /v1/grid/catalog` in list mode — the catalog's models filtered by
+/// [CatalogListArgs.query] and ranked by [CatalogListArgs.sort]. Used by the
+/// Models sidebar's search box and its Trending / Most liked / Newest modes
+/// (the CLI `grid catalog` fallback has no such fields). Returns null when the
+/// user isn't signed in or the call fails.
+final catalogListProvider =
+    FutureProvider.family<List<CatalogListEntry>?, CatalogListArgs>((ref, args) async {
   final token = ref.watch(sessionProvider).sessionToken;
   if (token == null || token.isEmpty) return null;
   final apiUrl = ref.watch(gridApiUrlProvider);
   final (entries, _) = await ModelCatalogClient.list(
     apiUrl: apiUrl,
     sessionToken: token,
-    sort: sort,
+    sort: args.sort.isEmpty ? null : args.sort,
+    query: args.query.isEmpty ? null : args.query,
   );
   return entries;
 });

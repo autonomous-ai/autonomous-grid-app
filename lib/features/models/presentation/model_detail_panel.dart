@@ -205,6 +205,26 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
     return gb >= 10 ? '${gb.toStringAsFixed(0)} GB' : '${gb.toStringAsFixed(1)} GB';
   }
 
+  /// The pills for one version. Quantisation and size are facts, so they stay
+  /// neutral; the two badges that carry a verdict — will it run here, is it
+  /// already on disk — take the colour, which is what makes them findable when
+  /// the menu lists a dozen versions.
+  List<AppSelectBadge> _versionBadges(ModelVersion v) => [
+        AppSelectBadge(v.version ?? '—'),
+        AppSelectBadge(_sizeLabel(v.sizeBytes)),
+        if (v.status case final status?)
+          AppSelectBadge(
+            status.label,
+            tone: switch (status) {
+              VersionStatus.runnable => AppBadgeTone.positive,
+              VersionStatus.partial => AppBadgeTone.warning,
+              VersionStatus.tooLarge => AppBadgeTone.danger,
+            },
+          ),
+        if (_isVersionDownloaded(v))
+          const AppSelectBadge('Downloaded', tone: AppBadgeTone.positive),
+      ];
+
   List<Widget> _buildProgressSection(
     cli_progress.DownloadProgress progress,
     double fraction,
@@ -310,7 +330,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                   AppSelectOption<ModelVersion>(
                     value: v,
                     label: _displayName(widget.detail.repoId),
-                    detail: '${v.version ?? "—"} · ${_sizeLabel(v.sizeBytes)} · ${v.status?.label ?? "unknown"}${_isVersionDownloaded(v) ? ' · ✓ Downloaded' : ''}',
+                    badges: _versionBadges(v),
                   ),
               ],
               onChanged: (v) => setState(() => _selected = v),
@@ -420,25 +440,46 @@ class _DetailBadgeGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final items = <_BadgeItemData>[
+    // Popularity stays as it was — two loose pills under the title, the way the
+    // sidebar row shows the same two numbers.
+    final stats = <_BadgeItemData>[
       if (detail.likes > 0)
         _BadgeItemData(label: 'Likes', value: _formatCount(detail.likes)),
       if (detail.downloads > 0)
         _BadgeItemData(label: 'Downloads', value: _formatCount(detail.downloads)),
+    ];
+    // What the model *is* — the specs you compare between models — collected
+    // into one block so they read as a set rather than as six loose chips.
+    final specs = <_BadgeItemData>[
       if (detail.paramsB != null)
         _BadgeItemData(label: 'Parameters', value: '${detail.paramsB!.toStringAsFixed(1)}B'),
       if (detail.architecture != null && detail.architecture!.isNotEmpty)
         _BadgeItemData(label: 'Architecture', value: _formatValue(detail.architecture!)),
       if (detail.format != null)
         _BadgeItemData(label: 'Format', value: _formatValue(detail.format!)),
-      if (detail.task != null && detail.task!.isNotEmpty)
-        _BadgeItemData(label: 'Capability', value: _formatValue(detail.task!)),
     ];
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Wrap(
-      spacing: 8,
-      runSpacing: 6,
-      children: items.map((item) => _BadgeItem(data: item)).toList(),
+    final capability = detail.task != null && detail.task!.isNotEmpty
+        ? _formatValue(detail.task!)
+        : null;
+
+    if (stats.isEmpty && specs.isEmpty && capability == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (stats.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: stats.map((item) => _BadgeItem(data: item)).toList(),
+          ),
+        if (specs.isNotEmpty || capability != null) ...[
+          if (stats.isNotEmpty) const SizedBox(height: 10),
+          _SpecBlock(specs: specs, capability: capability),
+        ],
+      ],
     );
   }
 
@@ -456,6 +497,89 @@ class _DetailBadgeGrid extends StatelessWidget {
         .where((w) => w.isNotEmpty)
         .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
         .join(' ');
+  }
+}
+
+/// The model's specs as one framed block of two rows: what it is on top, what
+/// it's for underneath, a hairline between them.
+///
+/// The specs are label-over-value columns rather than "Label: Value" pills —
+/// three values on one baseline can be compared at a glance, which is the whole
+/// reason to group them; a row of chips each carrying its own label reads as six
+/// unrelated facts.
+class _SpecBlock extends StatelessWidget {
+  const _SpecBlock({required this.specs, required this.capability});
+
+  final List<_BadgeItemData> specs;
+  final String? capability;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppCard.inset,
+        borderRadius: BorderRadius.circular(AppCard.insetRadius),
+        border: Border.all(color: AppCard.insetHair),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (specs.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Wrap(
+                spacing: 28,
+                runSpacing: 10,
+                children: [for (final s in specs) _SpecCell(data: s)],
+              ),
+            ),
+          if (specs.isNotEmpty && capability != null)
+            Divider(height: 1, thickness: 1, color: AppCard.insetHair),
+          if (capability case final task?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: _SpecCell(
+                data: _BadgeItemData(label: 'Capability', value: task),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One label-over-value column inside [_SpecBlock].
+class _SpecCell extends StatelessWidget {
+  const _SpecCell({required this.data});
+
+  final _BadgeItemData data;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          data.label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: AppPalette.textFaint,
+            fontSize: 11,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          data.value,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: AppPalette.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 }
 

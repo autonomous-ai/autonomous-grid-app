@@ -139,12 +139,17 @@ class ModelCatalogClient {
     return null;
   }
 
-  /// `POST /v1/grid/catalog` with `device` absent, sorted by [sort].
-  /// Used by the Models sidebar's Trending / Most liked / Newest modes.
+  /// `POST /v1/grid/catalog` with `device` absent — the list/filter mode.
+  ///
+  /// [query] is the sidebar's search text, sent as `q` (the API matches it
+  /// against `repo_id`). [sort] is omitted from the body when null or empty, so
+  /// a plain search doesn't pin the results to a ranking the user didn't pick —
+  /// the server then applies its own default.
   static Future<(List<CatalogListEntry>?, ModelCatalogError?)> list({
     required String apiUrl,
     required String sessionToken,
-    String sort = 'trending',
+    String? sort = 'trending',
+    String? query,
     int pageSize = 50,
   }) async {
     final client = HttpClient()
@@ -159,7 +164,8 @@ class ModelCatalogClient {
         'Bearer $sessionToken',
       );
       request.add(utf8.encode(jsonEncode({
-        'sort': sort,
+        if (sort != null && sort.isNotEmpty) 'sort': sort,
+        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
         'page_size': pageSize,
       })));
       final response = await request.close().timeout(

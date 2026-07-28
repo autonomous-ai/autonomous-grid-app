@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/model_catalog.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/labeled_field.dart';
+import '../../../shared/widgets/labeled_field.dart' show appMenuStyle;
 import '../logic/suggested_catalog.dart';
 import 'model_detail_panel.dart';
 
@@ -18,13 +20,18 @@ extension on _SortMode {
         _SortMode.newest => 'Newest',
       };
 
-  /// Value sent to `?sort=` on `GET /v1/grid/catalog`. Empty for the local-only
-  /// "Recommended" mode (the suggest endpoint has its own ranking).
+  /// Value sent as `sort` on `POST /v1/grid/catalog`. Empty for the local-only
+  /// "Recommended" mode (the suggest endpoint has its own ranking), which means
+  /// the key is left out of the body entirely.
+  ///
+  /// These are the API's own keys — it accepts `trending | downloads | likes |
+  /// created` and silently falls back to `trending` for anything else, so
+  /// "Newest" has to send `created`, not the word in its label.
   String get apiValue => switch (this) {
         _SortMode.recommended => '',
         _SortMode.trending => 'trending',
         _SortMode.mostLiked => 'likes',
-        _SortMode.newest => 'newest',
+        _SortMode.newest => 'created',
       };
 }
 
@@ -35,16 +42,65 @@ class ModelManagerSplitView extends ConsumerStatefulWidget {
   ConsumerState<ModelManagerSplitView> createState() => _ModelManagerSplitViewState();
 }
 
+/// How long the search box waits after the last keystroke before it asks the
+/// catalog. Long enough that typing a repo name is one request rather than a
+/// dozen, short enough that the list still feels like it's following along.
+const _searchDebounce = Duration(milliseconds: 350);
+
 class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
   String? _selectedRepoId;
+
+  /// What's in the search box right now, updated on every keystroke. Never hits
+  /// the network by itself — it's here so picking a sort can send the term the
+  /// user can *see*, even mid-debounce.
+  String _input = '';
+
+  /// The term actually sent to the catalog: [_input] once it has settled.
   String _query = '';
+
   _SortMode _sort = _SortMode.recommended;
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     // Auto-select the first model once the list/suggestion resolves.
     _autoSelectFirst();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  /// A keystroke. The request goes out on [_searchDebounce], carrying `q` only:
+  /// a search isn't a ranking, so it drops back to Recommended rather than
+  /// quietly filtering inside whichever sort was left selected — that way the
+  /// menu's label always names what was actually sent.
+  void _onQuery(String value) {
+    _input = value;
+    _debounce?.cancel();
+    if (_sort != _SortMode.recommended) {
+      setState(() => _sort = _SortMode.recommended);
+    }
+    _debounce = Timer(_searchDebounce, () {
+      if (!mounted) return;
+      final settled = value.trim();
+      if (settled == _query) return;
+      setState(() => _query = settled);
+    });
+  }
+
+  /// A pick from the sort menu — the one gesture that sends a `sort`. It also
+  /// flushes any pending keystrokes, so the results are ranked over the term
+  /// showing in the box rather than the one from a third of a second ago.
+  void _onSort(_SortMode mode) {
+    _debounce?.cancel();
+    setState(() {
+      _sort = mode;
+      _query = _input.trim();
+    });
   }
 
   Future<void> _autoSelectFirst() async {
@@ -92,8 +148,8 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
             selectedRepoId: _selectedRepoId,
             query: _query,
             sort: _sort,
-            onQuery: (q) => setState(() => _query = q),
-            onSort: (s) => setState(() => _sort = s),
+            onQuery: _onQuery,
+            onSort: _onSort,
             onSelect: (id) => setState(() => _selectedRepoId = id),
           ),
         ),
@@ -127,12 +183,27 @@ class _Sidebar extends ConsumerWidget {
   final ValueChanged<_SortMode> onSort;
   final ValueChanged<String> onSelect;
 
+  /// True when the device-fit suggestion came back with nothing to show, so the
+  /// column falls back to the plain catalog list instead of an empty panel.
+  /// Signed-out isn't one of these — that case has its own message.
+  bool get _suggestionFellThrough => switch (suggestion) {
+        AsyncData(:final value) => value is SuggestNoMatch || value is SuggestUnavailable,
+        AsyncError() => true,
+        _ => false,
+      };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final listAsync = sort.apiValue.isEmpty
-        ? const AsyncValue<List<CatalogListEntry>?>.data(null)
-        : ref.watch(catalogListProvider(sort.apiValue));
+    final needle = query.trim();
+    // The list call is only made when something asks for it: a search term, a
+    // chosen ranking, or a suggestion that fell through. Recommended-with-no-
+    // search stays on the suggest endpoint and costs no extra request.
+    final wantsList =
+        needle.isNotEmpty || sort.apiValue.isNotEmpty || _suggestionFellThrough;
+    final listAsync = wantsList
+        ? ref.watch(catalogListProvider((sort: sort.apiValue, query: needle)))
+        : const AsyncValue<List<CatalogListEntry>?>.data(null);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -157,17 +228,22 @@ class _Sidebar extends ConsumerWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-          child: _SortDropdown(
-            value: sort,
-            onChanged: onSort,
+          // Sized to its own label, not to the column: a picker that spans the
+          // full width reads as a second, heavier search field.
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _SortDropdown(
+              value: sort,
+              onChanged: onSort,
+            ),
           ),
         ),
         Expanded(
-          child: switch (sort) {
-            _SortMode.recommended => _suggestionBody(ref, listAsync),
-            _SortMode.trending || _SortMode.mostLiked || _SortMode.newest =>
-              _listBody(ref, listAsync),
-          },
+          // A search term always means catalog results — the device-fit picks
+          // are a ranking of what fits this Mac, not something to filter.
+          child: sort == _SortMode.recommended && needle.isEmpty
+              ? _suggestionBody(ref, listAsync)
+              : _listBody(ref, listAsync),
         ),
       ],
     );
@@ -177,7 +253,7 @@ class _Sidebar extends ConsumerWidget {
     return switch (suggestion) {
       AsyncData(:final value) => switch (value) {
           SuggestReady(:final ranked) => _RankedList(
-              ranked: _filterPicks(ranked, query),
+              ranked: ranked,
               selectedRepoId: selectedRepoId,
               onSelect: onSelect,
             ),
@@ -196,7 +272,6 @@ class _Sidebar extends ConsumerWidget {
     return switch (listAsync) {
       AsyncData(:final value) when value != null && value.isNotEmpty => _EntryList(
           entries: value,
-          query: query,
           selectedRepoId: selectedRepoId,
           onSelect: onSelect,
         ),
@@ -211,42 +286,31 @@ class _Sidebar extends ConsumerWidget {
       _ => const Center(child: CircularProgressIndicator()),
     };
   }
-
-  List<CatalogModelPick> _filterPicks(List<CatalogModelPick> picks, String q) {
-    final needle = q.trim().toLowerCase();
-    if (needle.isEmpty) return picks;
-    return picks
-        .where((m) => (m.repoId ?? '').toLowerCase().contains(needle))
-        .toList();
-  }
 }
 
+/// The catalog's results. No local filtering: the search term went to the API
+/// as `q`, so what came back *is* the match set — narrowing it again here would
+/// hide rows the server matched on fields the repo id doesn't show.
 class _EntryList extends StatelessWidget {
   const _EntryList({
     required this.entries,
-    required this.query,
     required this.selectedRepoId,
     required this.onSelect,
   });
 
   final List<CatalogListEntry> entries;
-  final String query;
   final String? selectedRepoId;
   final ValueChanged<String> onSelect;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final needle = query.trim().toLowerCase();
-    final filtered = needle.isEmpty
-        ? entries
-        : entries.where((e) => e.repoId.toLowerCase().contains(needle)).toList();
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      itemCount: filtered.length,
+      itemCount: entries.length,
       separatorBuilder: (_, __) => const SizedBox(height: 2),
       itemBuilder: (_, i) {
-        final e = filtered[i];
+        final e = entries[i];
         final selected = e.repoId == selectedRepoId;
         return _SidebarTile(
           title: _displayName(e.repoId),
@@ -298,7 +362,12 @@ class _RankedList extends StatelessWidget {
   }
 }
 
-class _SidebarTile extends StatelessWidget {
+/// One model in the column. Highlights exactly like the app's own sidebar rows
+/// ([SidebarItem]): the neutral selected fill rather than an accent wash, a
+/// lighter fill under the pointer, and the 3px accent rail on the selected row —
+/// two lists in the same window that mean "this one" two different ways read as
+/// two different apps.
+class _SidebarTile extends StatefulWidget {
   const _SidebarTile({
     required this.title,
     this.likes = 0,
@@ -317,111 +386,169 @@ class _SidebarTile extends StatelessWidget {
   final String? iconUrl;
   final VoidCallback? onTap;
 
-@override
+  @override
+  State<_SidebarTile> createState() => _SidebarTileState();
+}
+
+class _SidebarTileState extends State<_SidebarTile> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
+    final selected = widget.selected;
+    final iconUrl = widget.iconUrl;
     final bg = selected
-        ? AppPalette.accent.withValues(alpha: 0.15)
-        : Colors.transparent;
+        ? AppSurface.selectedFill
+        : (_hovered && widget.onTap != null
+            ? AppSurface.hoverFill
+            : Colors.transparent);
+    final radius = BorderRadius.circular(AppCard.insetRadius);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        GestureDetector(
-          onTap: onTap,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(AppCard.insetRadius),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Icon with white border
-                  if (iconUrl != null) ...[
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: CachedNetworkImage(
-                          imageUrl: iconUrl!,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => Container(
-                            color: Colors.white,
-                            decoration: BoxDecoration(
-                              color: AppPalette.textSecondary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Icon(
-                              Icons.dns_outlined,
-                              size: 24,
-                              color: AppPalette.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  Expanded(
-                    child: Column(
+        MouseRegion(
+          cursor: widget.onTap == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: Stack(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 130),
+                  curve: Curves.easeOut,
+                  decoration: BoxDecoration(color: bg, borderRadius: radius),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Title
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: AppPalette.textPrimary,
+                        // Icon with white border
+                        if (iconUrl != null) ...[
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: CachedNetworkImage(
+                                imageUrl: iconUrl,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => Container(
+                                  color: Colors.white,
+                                  decoration: BoxDecoration(
+                                    color: AppPalette.textSecondary
+                                        .withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(
+                                    Icons.dns_outlined,
+                                    size: 24,
+                                    color: AppPalette.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        // Likes, Downloads & Created at - same row
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (likes > 0) ...[
-                              Icon(Icons.favorite_border, size: 14, color: AppPalette.textSecondary),
-                              const SizedBox(width: 4),
+                          const SizedBox(width: 12),
+                        ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Title
                               Text(
-                                _formatCount(likes),
-                                style: theme.textTheme.labelSmall?.copyWith(color: AppPalette.textSecondary),
+                                widget.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppPalette.textPrimary,
+                                ),
                               ),
-                              const SizedBox(width: 12),
-                            ],
-                            if (downloads > 0) ...[
-                              Icon(Icons.download_outlined, size: 14, color: AppPalette.textSecondary),
-                              const SizedBox(width: 4),
-                              Text(
-                                _formatCount(downloads),
-                                style: theme.textTheme.labelSmall?.copyWith(color: AppPalette.textSecondary),
+                              const SizedBox(height: 4),
+                              // Likes, Downloads & Created at - same row
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (widget.likes > 0) ...[
+                                    Icon(Icons.favorite_border,
+                                        size: 14, color: AppPalette.textSecondary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _formatCount(widget.likes),
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                          color: AppPalette.textSecondary),
+                                    ),
+                                    const SizedBox(width: 12),
+                                  ],
+                                  if (widget.downloads > 0) ...[
+                                    Icon(Icons.download_outlined,
+                                        size: 14, color: AppPalette.textSecondary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _formatCount(widget.downloads),
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                          color: AppPalette.textSecondary),
+                                    ),
+                                  ],
+                                  if (widget.createdAt case final created?) ...[
+                                    const Spacer(),
+                                    Text(
+                                      _formatDate(created),
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                          color: AppPalette.textSecondary),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ],
-                            if (createdAt != null) ...[
-                              const Spacer(),
-                              Text(
-                                '${createdAt!.year}-${createdAt!.month.toString().padLeft(2, '0')}-${createdAt!.day.toString().padLeft(2, '0')}',
-                                style: theme.textTheme.labelSmall?.copyWith(color: AppPalette.textSecondary),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                // The accent rail, hugging the selected row's left edge — the
+                // same mark the app sidebar uses, sliding in from the left so
+                // moving the selection glides rather than blinks.
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: AnimatedSlide(
+                      offset: Offset(selected ? 0 : -0.6, 0),
+                      duration: const Duration(milliseconds: 160),
+                      curve: Curves.easeOut,
+                      child: AnimatedOpacity(
+                        opacity: selected ? 1 : 0,
+                        duration: const Duration(milliseconds: 140),
+                        curve: Curves.easeOut,
+                        child: Container(
+                          width: 3,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: AppPalette.accentOnSurface,
+                            borderRadius: const BorderRadius.horizontal(
+                              right: Radius.circular(3),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -435,6 +562,9 @@ class _SidebarTile extends StatelessWidget {
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
     return '$count';
   }
+
+  static String _formatDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
 class _EmptyDetail extends StatelessWidget {
@@ -498,7 +628,14 @@ String _displayName(String repoId) {
 }
 
 /// Sort-mode picker: matches the chat composer's model pill in construction —
-/// a borderless capsule field that opens a `MenuAnchor` panel with styled rows.
+/// a borderless capsule that opens a `MenuAnchor` panel with styled rows.
+///
+/// Deliberately *not* a form field. Rendered through `labeledFieldDecoration`
+/// it inherited a text field's height and stretched to the column's width,
+/// which put a control taller and wider than the search box directly beneath
+/// it — the picker read as the primary input and the search as an afterthought.
+/// So it shrink-wraps its label and sits at [AppControl.heightSmall], a step
+/// under the search field's [AppControl.heightField].
 class _SortDropdown extends StatefulWidget {
   const _SortDropdown({required this.value, required this.onChanged});
 
@@ -511,38 +648,53 @@ class _SortDropdown extends StatefulWidget {
 
 class _SortDropdownState extends State<_SortDropdown> {
   final _menu = MenuController();
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final radius = BorderRadius.circular(AppControl.radius);
     return MenuAnchor(
       controller: _menu,
       style: appMenuStyle(),
       alignmentOffset: const Offset(0, 6),
       builder: (context, controller, _) => Semantics(
         label: 'Sort models',
-        child: InkWell(
-          onTap: controller.isOpen ? controller.close : controller.open,
-          borderRadius: BorderRadius.circular(AppCard.insetRadius),
-          child: InputDecorator(
-            isEmpty: false,
-            decoration: labeledFieldDecoration('', fill: AppCard.inset),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.sort, size: 14, color: AppPalette.textSecondary),
-                const SizedBox(width: 6),
-                Text(
-                  widget.value.label,
-                  style: TextStyle(fontSize: 12, color: AppPalette.textSecondary),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.arrow_drop_down,
-                  size: 20,
-                  color: AppPalette.textSecondary,
-                ),
-              ],
+        button: true,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: controller.isOpen ? controller.close : controller.open,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 130),
+              curve: Curves.easeOut,
+              height: AppControl.heightSmall,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: _hovered || controller.isOpen
+                    ? AppSurface.recessHover
+                    : AppCard.inset,
+                borderRadius: radius,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.sort, size: 14, color: AppPalette.textSecondary),
+                  const SizedBox(width: 6),
+                  Text(
+                    widget.value.label,
+                    style: TextStyle(fontSize: 12, color: AppPalette.textSecondary),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    size: 18,
+                    color: AppPalette.textSecondary,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
