@@ -1,20 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Whether the project rail shows by default for the chat on screen: on a fresh
-/// compose (there's room beside the starters), or on a pane wide enough to sit
-/// the rail beside the conversation.
-///
-/// It only *auto*-hides in the one case where the conversation needs the width:
-/// a narrow pane with a conversation already in it. There the top-bar toggle
-/// brings it back as an overlay — it never just vanishes with no way in.
-bool railShowsByDefault({required bool isNewChat, required bool isWide}) =>
-    isNewChat || isWide;
-
-/// The user's manual override of [railShowsByDefault], or null to follow it.
+/// The user's manual override of the rail's width-driven default, or null to
+/// follow it (shown beside the chat when the window is wide enough for both, the
+/// panel stepping aside otherwise).
 ///
 /// Cleared on every chat switch (see the chat pane), so each chat starts from
-/// the default again — a new chat shows the rail, opening a conversation on a
-/// narrow pane hides it — while a deliberate toggle still sticks within a chat.
+/// the default again, while a deliberate toggle still sticks within a chat.
 final chatRailOverrideProvider = NotifierProvider<ChatRailOverride, bool?>(
   ChatRailOverride.new,
 );

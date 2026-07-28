@@ -77,7 +77,8 @@ class ChatController extends Notifier<ChatState> {
           case ChatSendAgentSession():
             break;
           case ChatSendSuccess(:final reply):
-            state = ChatState(messages: [...history, reply]);
+            // Stamp the reply with the model that answered — shown under it.
+            state = ChatState(messages: [...history, reply.copyWith(model: model)]);
           case ChatSendFailure(:final error):
             state = ChatState(messages: history, error: error);
         }

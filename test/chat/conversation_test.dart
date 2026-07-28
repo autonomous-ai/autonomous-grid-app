@@ -76,6 +76,26 @@ void main() {
       expect(restored.messages.first.sources, isEmpty);
     });
 
+    test('round-trips the model that answered, so the transcript still names '
+        'it after a reload', () {
+      final original = _conversation(
+        messages: [
+          const ChatMessage(role: ChatRole.user, text: 'hi'),
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'Hello!',
+            model: 'qwen/qwen3.6-27b',
+          ),
+        ],
+      );
+
+      final restored = Conversation.fromJson(original.toJson());
+
+      expect(restored.messages.last.model, 'qwen/qwen3.6-27b');
+      // The user turn carries no model — it isn't an answer.
+      expect(restored.messages.first.model, isNull);
+    });
+
     test(
       'round-trips an agent turn with its to-do plan and each step status',
       () {
