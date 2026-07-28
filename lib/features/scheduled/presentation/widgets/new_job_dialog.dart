@@ -7,6 +7,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../messaging/logic/messaging_controller.dart';
 import '../../../messaging/logic/messaging_platform.dart';
+import '../../../projects/logic/project.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/job_suggestions.dart';
 import '../../logic/scheduled_jobs_controller.dart';
@@ -23,17 +24,27 @@ part 'new_job_dialog_schedule.dart';
 ///
 /// No cron in sight: the user picks "every weekday at 08:00" and the app writes
 /// the expression. Opened blank from "New task", or prefilled from a suggestion.
-Future<void> showNewJobDialog(BuildContext context, {JobSuggestion? from}) =>
-    showDialog<void>(
-      context: context,
-      barrierColor: const Color(0x66000000),
-      builder: (_) => _NewJobDialog(suggestion: from),
-    );
+///
+/// Pass [project] to scope the task to a folder: it runs there (so it can read
+/// that project's files) and shows under that project's rail, rather than in the
+/// shared workspace with no project.
+Future<void> showNewJobDialog(
+  BuildContext context, {
+  JobSuggestion? from,
+  Project? project,
+}) => showDialog<void>(
+  context: context,
+  barrierColor: const Color(0x66000000),
+  builder: (_) => _NewJobDialog(suggestion: from, project: project),
+);
 
 class _NewJobDialog extends ConsumerStatefulWidget {
-  const _NewJobDialog({this.suggestion});
+  const _NewJobDialog({this.suggestion, this.project});
 
   final JobSuggestion? suggestion;
+
+  /// The project this task belongs to, or null for a workspace-wide task.
+  final Project? project;
 
   @override
   ConsumerState<_NewJobDialog> createState() => _NewJobDialogState();
@@ -116,6 +127,8 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
           name: _name.text.trim(),
           prompt: _prompt.text.trim(),
           schedule: _schedule,
+          workdir: widget.project?.path,
+          projectId: widget.project?.id,
           toTelegram: _toTelegram,
           runNow: runNow,
         );
@@ -220,7 +233,10 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                   onChanged: (value) => setState(() => _toTelegram = value),
                 ),
                 const SizedBox(height: 20),
-                _WhatItMayDo(schedule: _schedule),
+                _WhatItMayDo(
+                  schedule: _schedule,
+                  projectName: widget.project?.name,
+                ),
                 const SizedBox(height: 22),
                 _DialogActions(
                   saving: _saving,
@@ -241,14 +257,21 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
 /// When it runs, where — and what it's allowed to do while nobody is watching.
 /// The last part is the one the user can't guess, so it isn't left out.
 class _WhatItMayDo extends ConsumerWidget {
-  const _WhatItMayDo({required this.schedule});
+  const _WhatItMayDo({required this.schedule, this.projectName});
 
   final JobSchedule schedule;
+
+  /// The project the task will run in, when it's scoped to one — named so the
+  /// line says where it actually runs instead of a vague "Projects folder".
+  final String? projectName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final power = ref.watch(taskPowerProvider).value;
     final risky = power == TaskPower.fullAccess;
+    final where = projectName == null
+        ? 'in your Projects folder'
+        : 'in "$projectName"';
 
     return Container(
       width: double.infinity,
@@ -265,7 +288,7 @@ class _WhatItMayDo extends ConsumerWidget {
             icon: Icons.folder_outlined,
             text:
                 'Runs ${schedule.describe().toLowerCase()}, on this computer, '
-                'in your Projects folder.',
+                '$where.',
           ),
           // The asleep warning is about a single nightly time; an interval task
           // runs all day, so it doesn't apply the same way.
