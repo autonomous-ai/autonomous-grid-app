@@ -7,8 +7,12 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../agent/logic/agent_providers.dart';
+import '../../projects/logic/project.dart';
+import '../logic/active_workdir.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import 'workspace_files_dialog.dart';
 
 const _menuWidth = 208.0;
 const _rowHeight = 34.0;
@@ -79,10 +83,56 @@ class ChatHeader extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 4),
+        const _ChatFilesButton(),
+        const SizedBox(width: 2),
         ChatHeaderMenuButton(conversation: active),
       ],
     );
+  }
+}
+
+/// Opens the browser for the folder this chat runs in — where the assistant
+/// reads and saves files.
+///
+/// The point of it is the loose chat: with no project, the assistant's files
+/// land in an app folder the user would never think to look in, and the reply's
+/// bare path is no way to reach them. This is the standing door to that folder
+/// (the "changed files" bar over the composer is a passing notice that hides
+/// itself); in a project it browses the project folder instead.
+class _ChatFilesButton extends ConsumerWidget {
+  const _ChatFilesButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workdir = ref.watch(activeChatWorkdirProvider);
+    final isWorkspace = workdir == ref.watch(agentWorkspaceDirProvider).path;
+    final project = ref.watch(
+      projectByIdProvider(ref.watch(chatSessionsProvider).openProjectId),
+    );
+    // "Workspace" for a loose chat's app folder; the project's name when the
+    // chat belongs to one — the label the breadcrumb roots itself under.
+    final rootLabel = isWorkspace
+        ? 'Workspace'
+        : (project?.name ?? _basename(workdir));
+    return _HeaderHoverButton(
+      icon: LucideIcons.folder300,
+      tooltip: 'Files in this chat’s folder',
+      semanticsLabel: 'Chat files',
+      onTap: () => showWorkspaceFilesDialog(
+        context,
+        rootPath: workdir,
+        rootLabel: rootLabel,
+      ),
+    );
+  }
+
+  static String _basename(String path) {
+    final trimmed = path.endsWith('/')
+        ? path.substring(0, path.length - 1)
+        : path;
+    final cut = trimmed.lastIndexOf('/');
+    return cut < 0 ? trimmed : trimmed.substring(cut + 1);
   }
 }
 
@@ -201,24 +251,37 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
           onDelete: _delete,
         ),
       ],
-      builder: (context, controller, _) =>
-          _MenuTrigger(onTap: () => _toggle(context, controller)),
+      builder: (context, controller, _) => _HeaderHoverButton(
+        icon: LucideIcons.ellipsis300,
+        tooltip: 'Chat options',
+        semanticsLabel: 'Chat options',
+        onTap: () => _toggle(context, controller),
+      ),
     );
   }
 }
 
-/// The "…" itself: a quiet target that warms and fills under the pointer, so it
-/// says "click me" the way the project and account menus do.
-class _MenuTrigger extends StatefulWidget {
-  const _MenuTrigger({required this.onTap});
+/// A quiet 24px square icon target that warms and fills under the pointer — the
+/// header's hover treatment, shared by the files button and the "…" menu so they
+/// read as one family of controls instead of two hand-styled buttons.
+class _HeaderHoverButton extends StatefulWidget {
+  const _HeaderHoverButton({
+    required this.icon,
+    required this.tooltip,
+    required this.semanticsLabel,
+    required this.onTap,
+  });
 
+  final IconData icon;
+  final String tooltip;
+  final String semanticsLabel;
   final VoidCallback onTap;
 
   @override
-  State<_MenuTrigger> createState() => _MenuTriggerState();
+  State<_HeaderHoverButton> createState() => _HeaderHoverButtonState();
 }
 
-class _MenuTriggerState extends State<_MenuTrigger> {
+class _HeaderHoverButtonState extends State<_HeaderHoverButton> {
   bool _hovered = false;
 
   @override
@@ -226,9 +289,9 @@ class _MenuTriggerState extends State<_MenuTrigger> {
     AppTheme.watch(context);
     return Semantics(
       button: true,
-      label: 'Chat options',
+      label: widget.semanticsLabel,
       child: Tooltip(
-        message: 'Chat options',
+        message: widget.tooltip,
         waitDuration: const Duration(milliseconds: 600),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
@@ -248,7 +311,7 @@ class _MenuTriggerState extends State<_MenuTrigger> {
               ),
               alignment: Alignment.center,
               child: Icon(
-                LucideIcons.ellipsis300,
+                widget.icon,
                 size: 17,
                 color: _hovered
                     ? AppPalette.textPrimary
