@@ -18,6 +18,7 @@ class ComposerNoticeBar extends StatelessWidget {
     required this.icon,
     required this.label,
     this.actions = const [],
+    this.onDismiss,
   });
 
   final IconData icon;
@@ -29,6 +30,11 @@ class ComposerNoticeBar extends StatelessWidget {
   /// What the user can do about it, left to right, most-final last. Empty when
   /// the bar is purely reporting.
   final List<Widget> actions;
+
+  /// When set, a trailing close button waves the bar away. For a notice the user
+  /// may simply want gone — not one whose only exit is acting on it — so it's
+  /// opt-in per caller rather than shown on every bar.
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +59,46 @@ class ComposerNoticeBar extends StatelessWidget {
             ),
           ),
           for (final action in actions) ...[const SizedBox(width: 4), action],
+          if (onDismiss != null) ...[
+            const SizedBox(width: 4),
+            _DismissButton(onTap: onDismiss!),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// The trailing close button: hides the bar without acting on what it reports.
+class _DismissButton extends StatelessWidget {
+  const _DismissButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(8);
+    return Tooltip(
+      message: 'Dismiss',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          // macOS answers a click instantly; the app's Android-style ripple would
+          // spread a circle across this small square. Hover carries it.
+          splashFactory: NoSplash.splashFactory,
+          hoverColor: AppSurface.hoverFill,
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Icon(
+              Icons.close_rounded,
+              size: 15,
+              color: AppPalette.textFaint,
+            ),
+          ),
+        ),
       ),
     );
   }
