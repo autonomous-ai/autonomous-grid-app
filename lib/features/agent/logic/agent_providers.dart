@@ -89,3 +89,19 @@ class AgentPlanLog extends Notifier<List<AgentPlanEntry>> {
   void replace(List<AgentPlanEntry> entries) =>
       state = List.unmodifiable(entries);
 }
+
+/// Empty the shared agent feed — the running turn's steps, cited sources and
+/// plan — so a starting turn never shows the previous one's (or another chat's).
+///
+/// Called at the very top of an agent send, *before* the turn's awaited setup
+/// (pointing Hermes/Codex at the grid, opening the session): the chat flips to
+/// its "working" bubble the instant the send is committed, and that bubble reads
+/// this one app-wide feed. Clearing it only once the stream reached the turn body
+/// — after that setup await — left the last turn's steps on screen for the whole
+/// wait. Clearing here, synchronously as the stream is first listened, closes
+/// that window.
+void resetAgentFeed(Ref ref) {
+  ref.read(agentActivityProvider.notifier).clear();
+  ref.read(agentSourcesProvider.notifier).clear();
+  ref.read(agentPlanProvider.notifier).clear();
+}
