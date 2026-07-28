@@ -13,11 +13,12 @@ import '../../network/logic/client_app_detector.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
+import '../../agents/logic/agent_catalog.dart';
 import 'agent_changes.dart';
 import 'agent_prompt.dart';
 import 'agent_server_error.dart';
 import 'agent_providers.dart';
-import 'codex_skill_installer.dart';
+import 'agent_skill_installer.dart';
 import 'codex_tool.dart';
 
 /// The Codex exec seam, or null when Codex is absent.
@@ -344,7 +345,7 @@ class CodexChatSender implements ChatSender {
     // since the relay doesn't serve the OpenAI web_search tool. A skill-install
     // hiccup must not block chatting, so its failure is swallowed here.
     try {
-      await _ref.read(codexSkillInstallerProvider).install();
+      await _ref.read(agentSkillInstallerProvider).install(AgentTool.codex);
     } on Object {
       // Non-fatal: Codex still chats, just without web search this session.
     }

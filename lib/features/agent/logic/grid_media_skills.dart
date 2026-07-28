@@ -1,83 +1,35 @@
-import 'dart:io';
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../../../core/grid_paths.dart';
-import 'grid_web_skill.dart';
-
-/// Installs the Grid skills Hermes uses in Agent mode: generating an image, and
-/// animating one into a video, through the grid's media API.
+/// The two media skills an agent gets on a grid: generating an image, and
+/// animating one into a video, both through the grid's media API.
 ///
-/// A Hermes "skill" is a `SKILL.md` (when to use it + how) plus a script it
-/// runs. Both are **credential-free**: the scripts read the grid endpoint and
-/// key from `~/.hermes/.env` (which the app already writes) at run time, so they
-/// always target whatever grid the app pointed Hermes at and never bake a token
-/// into a file. Both also read the *same* pair — `OPENAI_BASE_URL` /
-/// `OPENAI_API_KEY` — differing only by endpoint (image vs video), so switching
-/// grids repoints both at once. A hand-made video prototype hardcoded a stale
-/// grid and read `GRID_API_KEY` instead, so it kept hitting the wrong grid —
-/// [install] overwrites it.
-class HermesSkillInstaller {
-  HermesSkillInstaller({String? home}) : _home = home ?? GridPaths.userHome;
+/// A "skill" is a `SKILL.md` (when to use it + how) plus a script it runs. Both
+/// are **credential-free**: the scripts read the grid endpoint and key from
+/// `~/.hermes/.env` (which the app already writes) at run time, so they always
+/// target whatever grid the app pointed the agent at and never bake a token into
+/// a file. Both also read the *same* pair — `OPENAI_BASE_URL` / `OPENAI_API_KEY`
+/// — differing only by endpoint (image vs video), so switching grids repoints
+/// both at once. A hand-made video prototype hardcoded a stale grid and read
+/// `GRID_API_KEY` instead, so it kept hitting the wrong grid — the installer
+/// overwrites it.
+library;
 
-  final String _home;
+import '../../../shared/skills/agent_skill_home.dart';
 
-  Directory _skillDir(String name) =>
-      Directory('$_home/.hermes/skills/grid/$name');
+/// What `grid agent install` and the skill card call the image skill.
+const String kGridImageSkillName = 'grid-image-gen';
 
-  /// Write (or refresh) both skills, then clear out the leaked prototypes.
-  /// Idempotent — safe to call every time the app points Hermes at a grid.
-  Future<void> install() async {
-    await _writeSkill(
-      'grid-image-gen',
-      _gridImageSkillMd,
-      _gridImageSkillScript,
-    );
-    await _writeSkill(
-      'grid-video-gen',
-      _gridVideoSkillMd,
-      _gridVideoSkillScript,
-    );
-    // The same web-search skill Codex gets, so search behaves the same whichever
-    // agent answers. Hermes also has a native `web_search` (once ddgs is in its
-    // env — see ensureHermesWebSearch); both hit the same DuckDuckGo backend.
-    await writeGridWebSkill(_skillDir(kGridWebSkillName));
-    await _removeLeakedPrototype();
-  }
+/// What the video skill is named on disk.
+const String kGridVideoSkillName = 'grid-video-gen';
 
-  /// Write one skill from scratch: wipe the folder first so a hand-made
-  /// prototype's stale files (a hardcoded grid, a `references/` dir, a
-  /// `GRID_API_KEY` reader) can never linger beside the credential-free version.
-  Future<void> _writeSkill(String name, String md, String script) async {
-    final dir = _skillDir(name);
-    if (await dir.exists()) await dir.delete(recursive: true);
-    await Directory('${dir.path}/scripts').create(recursive: true);
-    await File('${dir.path}/SKILL.md').writeAsString(md);
-    await File('${dir.path}/scripts/generate.py').writeAsString(script);
-  }
+/// The image-generation skill: its card plus the single script it runs.
+GridSkillFiles gridImageSkillFiles() => const GridSkillFiles(
+  card: _gridImageSkillMd,
+  files: {'scripts/generate.py': _gridImageSkillScript},
+);
 
-  /// The hand-made Grid prototypes baked a live API key into their scripts (and
-  /// a `config.env`), living under Hermes's own `creative` category or at the
-  /// skills root. Remove them so no credential lingers and the agent never sees
-  /// two same-named skills. The `grid/` copies are owned and rewritten by
-  /// [_writeSkill], so they're not touched here.
-  Future<void> _removeLeakedPrototype() async {
-    for (final legacy in const [
-      '.hermes/skills/creative/grid-image-gen',
-      '.hermes/skills/creative/grid-video-gen',
-      '.hermes/skills/grid-image-gen',
-      '.hermes/skills/grid-video-gen',
-    ]) {
-      final dir = Directory('$_home/$legacy');
-      if (await dir.exists()) await dir.delete(recursive: true);
-    }
-  }
-}
-
-/// Wire through the container so the sender gets it via `ref.read`, and tests can
-/// point it at a temp home.
-final hermesSkillInstallerProvider = Provider<HermesSkillInstaller>(
-  (ref) => HermesSkillInstaller(),
+/// The image-to-video skill: its card plus the single script it runs.
+GridSkillFiles gridVideoSkillFiles() => const GridSkillFiles(
+  card: _gridVideoSkillMd,
+  files: {'scripts/generate.py': _gridVideoSkillScript},
 );
 
 const _gridImageSkillMd = '''

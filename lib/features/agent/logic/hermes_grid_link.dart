@@ -9,7 +9,8 @@ import '../../auth/logic/session_controller.dart';
 import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
 import '../../network/logic/network_models_provider.dart';
-import 'hermes_skill_installer.dart';
+import '../../agents/logic/agent_catalog.dart';
+import 'agent_skill_installer.dart';
 import 'hermes_tool.dart';
 
 /// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
@@ -62,7 +63,7 @@ class HermesGridLink {
     // skill reads the endpoint/key from the `.env` just written. A skill-install
     // hiccup must not block chatting, so its failure is swallowed here.
     try {
-      await _ref.read(hermesSkillInstallerProvider).install();
+      await _ref.read(agentSkillInstallerProvider).install(AgentTool.hermes);
     } on Object {
       // Non-fatal: the agent still chats, just without the image skill.
     }

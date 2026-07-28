@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/codex_skill_installer.dart';
+import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agent/logic/grid_web_skill.dart';
-import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
+import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 
 void main() {
   late Directory tmp;
@@ -112,9 +112,9 @@ void main() {
     });
   });
 
-  test('CodexSkillInstaller drops grid-web where Codex auto-discovers skills',
+  test('the installer drops grid-web where Codex auto-discovers skills',
       () async {
-    await CodexSkillInstaller(home: tmp.path).install();
+    await AgentSkillInstaller(home: tmp.path).install(AgentTool.codex);
 
     final skill = Directory('${tmp.path}/.codex/skills/grid-web');
     expect(File('${skill.path}/SKILL.md').existsSync(), isTrue);
@@ -122,9 +122,9 @@ void main() {
     expect(File('${skill.path}/scripts/read.py').existsSync(), isTrue);
   });
 
-  test('HermesSkillInstaller installs grid-web alongside the media skills',
+  test('the installer puts grid-web alongside the media skills for Hermes',
       () async {
-    await HermesSkillInstaller(home: tmp.path).install();
+    await AgentSkillInstaller(home: tmp.path).install(AgentTool.hermes);
 
     final base = '${tmp.path}/.hermes/skills/grid';
     expect(File('$base/grid-web/SKILL.md').existsSync(), isTrue);

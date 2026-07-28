@@ -2,14 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/grid_paths.dart';
+import '../../../shared/skills/agent_skill_home.dart';
+import '../../agents/logic/agent_catalog.dart';
 
-/// The category folder user-written skills live under, kept apart from Hermes's
-/// bundled skills and Grid's so an update can never overwrite them.
-///
-/// Skills here are the only ones the app authored, so the only ones it offers to
-/// edit — see [AgentSkill.isMine].
-const String kMySkillsCategory = 'my-skills';
+// [kMySkillsCategory] now lives with the other skill-home vocabulary in
+// shared/skills, since the installer, author and this scanner all need it —
+// re-exported so callers that reach it through this file keep working.
+export '../../../shared/skills/agent_skill_home.dart' show kMySkillsCategory;
 
 /// One thing the assistant knows how to do beyond talking — Hermes calls these
 /// "skills"; the app calls them plugins, because that's what they are to a user.
@@ -125,11 +124,12 @@ String parseSkillInstructions(String markdown) {
 /// `SKILL.md` files. Pure filesystem reads — nothing is written here, so opening
 /// the Plugins screen can never break a working agent.
 class AgentSkillScanner {
-  AgentSkillScanner({String? home}) : _home = home ?? GridPaths.userHome;
+  AgentSkillScanner({String? home})
+    : _skillHome = AgentSkillHome(AgentTool.hermes, home: home);
 
-  final String _home;
+  final AgentSkillHome _skillHome;
 
-  Directory get root => Directory('$_home/.hermes/skills');
+  Directory get root => _skillHome.root;
 
   /// Every installed skill, sorted by name so the list is stable between
   /// refreshes.
