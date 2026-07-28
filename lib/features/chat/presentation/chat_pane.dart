@@ -7,6 +7,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/project_rail.dart';
+import '../logic/chat_rail.dart';
 import '../logic/chat_sessions_controller.dart';
 import 'chat_view.dart';
 
@@ -39,19 +40,46 @@ class ChatPane extends ConsumerWidget {
       chatSessionsProvider.select((s) => s.openProjectId),
     );
     final project = ref.watch(projectByIdProvider(projectId));
+    final railOpen = ref.watch(chatRailOpenProvider);
+    final showRail = project != null && railOpen;
 
-    // The conversation always sits in the same slot (Expanded, first child) so
-    // toggling the rail — switching to a plain chat, or resizing past the
-    // breakpoint — never rebuilds ChatView and drops its scroll or a draft.
+    // ChatView always sits in the same slot — Positioned.fill in a Stack, first
+    // child of the Row — so toggling the rail, overlaying it, switching to a
+    // plain chat, or resizing never rebuilds ChatView and drops its scroll or a
+    // half-typed draft.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final showRail =
-            project != null && constraints.maxWidth >= _railBreakpoint;
+        // Wide enough for the rail to sit beside the conversation; otherwise it
+        // opens over it, so a narrow window still reaches the panel.
+        final inline = showRail && constraints.maxWidth >= _railBreakpoint;
+        final overlay = showRail && !inline;
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: ChatView(network: network)),
-            if (showRail) ...[
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(child: ChatView(network: network)),
+                  if (overlay) ...[
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: () =>
+                            ref.read(chatRailOpenProvider.notifier).set(false),
+                        child: const ColoredBox(color: Color(0x33000000)),
+                      ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      width: _railWidth,
+                      child: _RailPanel(project: project),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (inline) ...[
               const VerticalDivider(width: 1),
               SizedBox(
                 width: _railWidth,
@@ -64,6 +92,31 @@ class ChatPane extends ConsumerWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The rail floated over the conversation on a window too narrow to sit it
+/// alongside — a raised surface with its own edge and lift so it reads as a layer
+/// above the chat, not part of it.
+class _RailPanel extends StatelessWidget {
+  const _RailPanel({required this.project});
+
+  final Project project;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppPalette.windowBg,
+        border: Border(left: BorderSide(color: AppPalette.divider)),
+        boxShadow: AppSurface.composerShadow,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ProjectRail(project: project),
+      ),
     );
   }
 }
