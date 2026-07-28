@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/chat/logic/chat_rail.dart';
+import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/presentation/chat_header.dart';
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
@@ -78,10 +80,43 @@ class AppTopBar extends ConsumerWidget {
                 ),
                 const _ModelDownloadPill(),
                 const GridPowerPill(),
+                const _ProjectRailToggle(),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Shows and hides the project rail beside a chat — the top-bar counterpart to
+/// the panel itself, so a narrow window (where the rail can't sit alongside and
+/// opens as an overlay) still has an obvious way in and out.
+///
+/// Only appears while a project chat is open: a plain chat has no rail to toggle.
+class _ProjectRailToggle extends ConsumerWidget {
+  const _ProjectRailToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final inChat = ref.watch(shellSectionProvider) == ShellSection.chat;
+    final inProject = ref.watch(
+      chatSessionsProvider.select((s) => s.openProjectId != null),
+    );
+    if (!inChat || !inProject) return const SizedBox.shrink();
+
+    final open = ref.watch(chatRailOpenProvider);
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: IconButton(
+        tooltip: open ? 'Hide project panel' : 'Show project panel',
+        iconSize: 18,
+        visualDensity: VisualDensity.compact,
+        color: open ? AppPalette.accent : AppPalette.textSecondary,
+        icon: Icon(open ? Icons.vertical_split : Icons.vertical_split_outlined),
+        onPressed: () => ref.read(chatRailOpenProvider.notifier).toggle(),
       ),
     );
   }
