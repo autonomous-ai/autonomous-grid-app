@@ -18,9 +18,20 @@ const double _titleHeightFactor = 1.16;
 /// drops its prompt into the composer, so a first-time user has something to send
 /// instead of a blank box and a blinking cursor.
 class ChatStarters extends StatelessWidget {
-  const ChatStarters({super.key, required this.greeting, required this.onPick});
+  const ChatStarters({
+    super.key,
+    required this.greeting,
+    required this.onPick,
+    this.projectName,
+  });
 
   final String greeting;
+
+  /// The project this chat is being started in, or null for a loose chat. Named
+  /// in the greeting when set — `…create in <project>?` — so a chat opened inside
+  /// a project reads differently from one that belongs to none, rather than
+  /// showing the same blank prompt.
+  final String? projectName;
 
   /// Called with the tapped starter's prompt, to prefill the composer.
   final ValueChanged<String> onPick;
@@ -29,7 +40,6 @@ class ChatStarters extends StatelessWidget {
   Widget build(BuildContext context) {
     // Reads AppPalette tokens (the subtitle) — follow theme flips.
     AppTheme.watch(context);
-    final theme = Theme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 620;
@@ -61,24 +71,10 @@ class ChatStarters extends StatelessWidget {
                 children: [
                   const _Glyph(),
                   const SizedBox(height: 20),
-                  Text(
-                    greeting,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontSize: compact ? 27 : 31,
-                      // Semibold at 31pt, not bold. Size already carries all
-                      // the emphasis a greeting needs — past ~28pt the weight
-                      // stops adding rank and just adds ink, and this is the
-                      // largest type in the app, so it was the heaviest thing
-                      // on the screen by a wide margin.
-                      fontWeight: AppFont.semibold,
-                      height: 1.06,
-                      // Less negative than -0.4: tight tracking on large type
-                      // is a display-face trick, and it was doing to a whole
-                      // sentence what it's meant to do to a two-word logotype —
-                      // packing the letters until the line reads as one mass.
-                      letterSpacing: -0.2,
-                    ),
+                  _Heading(
+                    greeting: greeting,
+                    projectName: projectName,
+                    compact: compact,
                   ),
                   const SizedBox(height: 9),
                   Text(
@@ -104,6 +100,57 @@ class ChatStarters extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The greeting over the starters — plain for a loose chat, or naming the
+/// project a chat is being started in (`…create in <project>?`) with the name in
+/// the accent, so it reads like Codex's `build in <repo>` rather than the same
+/// blank prompt everywhere.
+class _Heading extends StatelessWidget {
+  const _Heading({
+    required this.greeting,
+    required this.projectName,
+    required this.compact,
+  });
+
+  final String greeting;
+  final String? projectName;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    // Reads AppPalette.accent for the project name — follow theme flips.
+    AppTheme.watch(context);
+    final style = Theme.of(context).textTheme.headlineMedium?.copyWith(
+      fontSize: compact ? 27 : 31,
+      // Semibold at 31pt, not bold. Size already carries all the emphasis a
+      // greeting needs — past ~28pt the weight stops adding rank and just adds
+      // ink, and this is the largest type in the app.
+      fontWeight: AppFont.semibold,
+      height: 1.06,
+      // Less negative than -0.4: tight tracking on large type is a display-face
+      // trick, and it was packing a whole sentence the way it's meant to pack a
+      // two-word logotype.
+      letterSpacing: -0.2,
+    );
+    final name = projectName;
+    // Only the question greeting ("…create?") takes an "in <project>" tail; the
+    // video prompt isn't a sentence that reads that way, so it stays plain.
+    if (name == null || !greeting.endsWith('?')) {
+      return Text(greeting, textAlign: TextAlign.center, style: style);
+    }
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: '${greeting.substring(0, greeting.length - 1)} in '),
+          TextSpan(text: name, style: TextStyle(color: AppPalette.accent)),
+          const TextSpan(text: '?'),
+        ],
+      ),
+      textAlign: TextAlign.center,
+      style: style,
     );
   }
 }

@@ -22,6 +22,7 @@ import '../../agent/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
+import '../../projects/logic/project.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/chat_bubble.dart';
 import '../../playground/presentation/no_model_yet.dart';
@@ -444,6 +445,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     : isNewChat
                     ? ChatStarters(
                         greeting: _greeting(modality),
+                        // Name the project a new chat is being composed in, so
+                        // its empty state reads "…in <project>?" rather than the
+                        // same blank greeting a loose chat shows.
+                        projectName: ref
+                            .watch(projectByIdProvider(sessions.openProjectId))
+                            ?.name,
                         onPick: _useStarter,
                       )
                     : _Transcript(
