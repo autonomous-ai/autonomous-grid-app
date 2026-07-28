@@ -349,46 +349,49 @@ void main() {
       expect(b.messages.last.text, 'done second');
     });
 
-    test('stopping the open chat leaves another chat still streaming', () async {
-      final answering = _PerChatSender();
-      final h = _harness(tmp, updates: const [], answering: answering);
-      final c = h.container.read(chatSessionsProvider.notifier);
-      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+    test(
+      'stopping the open chat leaves another chat still streaming',
+      () async {
+        final answering = _PerChatSender();
+        final h = _harness(tmp, updates: const [], answering: answering);
+        final c = h.container.read(chatSessionsProvider.notifier);
+        ChatSessionsState read() => h.container.read(chatSessionsProvider);
 
-      final sentA = c.send(
-        network: _credential(),
-        model: 'qwen',
-        message: 'first',
-      );
-      await pumpEventQueue();
-      final aId = read().activeId!;
-      c.newChat();
-      final sentB = c.send(
-        network: _credential(),
-        model: 'qwen',
-        message: 'second',
-      );
-      await pumpEventQueue();
-      final bId = read().activeId!;
+        final sentA = c.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'first',
+        );
+        await pumpEventQueue();
+        final aId = read().activeId!;
+        c.newChat();
+        final sentB = c.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'second',
+        );
+        await pumpEventQueue();
+        final bId = read().activeId!;
 
-      // Stop targets the open chat (B) only.
-      c.stop();
-      expect(answering.cancelled.contains(bId), isTrue);
-      expect(answering.cancelled.contains(aId), isFalse);
-      expect(read().sendingFor(bId), isFalse);
-      expect(read().sendingFor(aId), isTrue, reason: 'A keeps streaming');
+        // Stop targets the open chat (B) only.
+        c.stop();
+        expect(answering.cancelled.contains(bId), isTrue);
+        expect(answering.cancelled.contains(aId), isFalse);
+        expect(read().sendingFor(bId), isFalse);
+        expect(read().sendingFor(aId), isTrue, reason: 'A keeps streaming');
 
-      answering.emit(
-        aId,
-        const ChatSendSuccess(
-          ChatMessage(role: ChatRole.assistant, text: 'done first'),
-        ),
-      );
-      await answering.close(aId);
-      await sentA;
-      expect(read().sendingFor(aId), isFalse);
-      await sentB;
-    });
+        answering.emit(
+          aId,
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'done first'),
+          ),
+        );
+        await answering.close(aId);
+        await sentA;
+        expect(read().sendingFor(aId), isFalse);
+        await sentB;
+      },
+    );
   });
 
   group('agent turns are serialized', () {
@@ -433,11 +436,16 @@ void main() {
         reason: 'the second agent turn is queued, not dispatched',
       );
       expect(read().sendingFor(aId), isTrue);
-      expect(read().sendingFor(bId), isTrue, reason: 'B waits in its busy state');
+      expect(
+        read().sendingFor(bId),
+        isTrue,
+        reason: 'B waits in its busy state',
+      );
       expect(
         read().runningAgentId,
         aId,
-        reason: 'A still owns the slot while B waits — B must not borrow its feed',
+        reason:
+            'A still owns the slot while B waits — B must not borrow its feed',
       );
 
       // A finishes. Only now does B reach the agent — and A never hung.
@@ -476,56 +484,59 @@ void main() {
       expect(b.messages.last.text, 'tin thế giới: ...');
     });
 
-    test('deleting the chat holding the agent slot lets the queued one run — '
-        'a cancelled turn must not strand the ones waiting behind it', () async {
-      final answering = _PerChatSender();
-      final h = _harness(
-        tmp,
-        updates: const [],
-        agentInstalled: true,
-        answering: answering,
-      );
-      final c = h.container.read(chatSessionsProvider.notifier);
-      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+    test(
+      'deleting the chat holding the agent slot lets the queued one run — '
+      'a cancelled turn must not strand the ones waiting behind it',
+      () async {
+        final answering = _PerChatSender();
+        final h = _harness(
+          tmp,
+          updates: const [],
+          agentInstalled: true,
+          answering: answering,
+        );
+        final c = h.container.read(chatSessionsProvider.notifier);
+        ChatSessionsState read() => h.container.read(chatSessionsProvider);
 
-      final sentA = c.send(
-        network: _credential(),
-        model: 'qwen',
-        message: 'first',
-      );
-      await pumpEventQueue();
-      final aId = read().activeId!;
-      c.newChat();
-      final sentB = c.send(
-        network: _credential(),
-        model: 'qwen',
-        message: 'second',
-      );
-      await pumpEventQueue();
-      final bId = read().activeId!;
-      expect(answering.controllers.containsKey(bId), isFalse);
+        final sentA = c.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'first',
+        );
+        await pumpEventQueue();
+        final aId = read().activeId!;
+        c.newChat();
+        final sentB = c.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'second',
+        );
+        await pumpEventQueue();
+        final bId = read().activeId!;
+        expect(answering.controllers.containsKey(bId), isFalse);
 
-      // Delete A while it holds the slot: B must not wait forever.
-      c.deleteConversation(aId);
-      await sentA;
-      await pumpEventQueue();
-      expect(
-        answering.controllers.containsKey(bId),
-        isTrue,
-        reason: 'B runs once A releases the slot',
-      );
-      expect(read().sendingFor(bId), isTrue);
+        // Delete A while it holds the slot: B must not wait forever.
+        c.deleteConversation(aId);
+        await sentA;
+        await pumpEventQueue();
+        expect(
+          answering.controllers.containsKey(bId),
+          isTrue,
+          reason: 'B runs once A releases the slot',
+        );
+        expect(read().sendingFor(bId), isTrue);
 
-      answering.emit(
-        bId,
-        const ChatSendSuccess(
-          ChatMessage(role: ChatRole.assistant, text: 'done second'),
-        ),
-      );
-      await answering.close(bId);
-      await sentB;
-      expect(read().sendingFor(bId), isFalse);
-    });
+        answering.emit(
+          bId,
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'done second'),
+          ),
+        );
+        await answering.close(bId);
+        await sentB;
+        expect(read().sendingFor(bId), isFalse);
+      },
+    );
   });
 
   group('stop', () {

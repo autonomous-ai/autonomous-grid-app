@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/codex_exec_service.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/logging/app_log.dart';
@@ -11,9 +13,11 @@ import '../../network/logic/client_app_detector.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
+import 'agent_changes.dart';
 import 'agent_prompt.dart';
 import 'agent_server_error.dart';
 import 'agent_providers.dart';
+import 'codex_skill_installer.dart';
 import 'codex_tool.dart';
 
 /// The Codex exec seam, or null when Codex is absent.
@@ -135,6 +139,7 @@ class CodexChatSender implements ChatSender {
       ),
       resumeThreadId: resolved.resumeThreadId,
       model: model,
+      planFirst: planFirst,
     );
   }
 
@@ -183,6 +188,7 @@ class CodexChatSender implements ChatSender {
     required String prompt,
     required String? resumeThreadId,
     required String model,
+    required bool planFirst,
   }) {
     final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
     final planLog = _ref.read(agentPlanProvider.notifier)..clear();
@@ -213,6 +219,8 @@ class CodexChatSender implements ChatSender {
             activityLog.upsert(activity);
           case CodexPlanEvent(:final entries):
             planLog.replace(entries);
+          case CodexFileChangeEvent(:final changes):
+            _recordAddedFiles(changes);
           case CodexMessageEvent(:final text):
             answer
               ..clear()
@@ -235,7 +243,17 @@ class CodexChatSender implements ChatSender {
         await run.done;
         settled = true;
         final reply = answer.toString().trim();
-        final error = failure ?? (reply.isEmpty ? kAgentNoAnswer : null);
+        final plan = _ref.read(agentPlanProvider);
+        // A turn that laid out a plan and never finished it stalled — even with
+        // a line of text, the work it promised didn't happen, so it must not
+        // read as an answer (§5). Planning mode is the exception: there an
+        // unfinished plan is the whole point.
+        final stalled = !planFirst && agentPlanUnfinished(plan);
+        final error =
+            failure ??
+            (stalled
+                ? kAgentStalledPlan
+                : (reply.isEmpty ? kAgentNoAnswer : null));
         log.finish(logId, error: error);
         updates.add(
           error != null
@@ -244,7 +262,7 @@ class CodexChatSender implements ChatSender {
                   ChatMessage(
                     role: ChatRole.assistant,
                     text: reply,
-                    plan: _ref.read(agentPlanProvider),
+                    plan: plan,
                   ),
                 ),
         );
@@ -261,6 +279,35 @@ class CodexChatSender implements ChatSender {
       log.finish(logId, error: 'stopped');
     };
     return updates.stream;
+  }
+
+  /// Record every file Codex freshly created so the chat can offer to open it —
+  /// the point of a "make me a page or a game" turn, which otherwise leaves the
+  /// user a bare file path in the reply and no way to act on it (see
+  /// `AgentChangesBar`). Only adds are recorded: Codex reports an edit's path but
+  /// not its old contents, so an update has no honest before to diff or undo.
+  void _recordAddedFiles(List<CodexFileChange> changes) {
+    final changesLog = _ref.read(agentChangesProvider.notifier);
+    for (final path in codexAddedPaths(changes)) {
+      unawaited(_recordAddedFile(path, changesLog));
+    }
+  }
+
+  /// Read the just-written file so its "before → after" diff shows the whole new
+  /// file, and record it with a null [AgentChange.before] so undo deletes it. A
+  /// path that can't be read (binary, or already gone) is still worth an Open, so
+  /// it's recorded with no diff rather than dropped.
+  Future<void> _recordAddedFile(
+    String path,
+    AgentChangesController changesLog,
+  ) async {
+    String after;
+    try {
+      after = await File(path).readAsString();
+    } on Object {
+      after = '';
+    }
+    changesLog.record(path: path, before: null, after: after);
   }
 
   /// Keep Codex's own words for the log while the chat shows the friendly line.
@@ -285,6 +332,14 @@ class CodexChatSender implements ChatSender {
     );
     if (result is ApplyError) {
       return "Couldn't point Codex at this grid: ${result.message}";
+    }
+    // Give Codex the web-search skill — its only way to reach the web on a grid,
+    // since the relay doesn't serve the OpenAI web_search tool. A skill-install
+    // hiccup must not block chatting, so its failure is swallowed here.
+    try {
+      await _ref.read(codexSkillInstallerProvider).install();
+    } on Object {
+      // Non-fatal: Codex still chats, just without web search this session.
     }
     _ref.read(codexConfiguredProvider.notifier).set(key);
     return null;

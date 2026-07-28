@@ -45,6 +45,25 @@ Map<String, String> hermesAcpRepairEnv({required String gridHome}) => {
   'UV_PYTHON_INSTALL_DIR': '$gridHome/python',
 };
 
+/// The free, keyless search backend Hermes's native `web_search` needs. Hermes
+/// picks a backend from `tavily/exa/…/ddgs`, all of which want a key or account
+/// except `ddgs` (just this package) — a stock install ships none, so the tool
+/// silently drops and "search the news" has nothing to run. See
+/// [hermesWebSearchInstallArgs].
+const String kHermesWebSearchPackage = 'ddgs';
+
+/// `uv` argv that adds [kHermesWebSearchPackage] to the environment [venvPython]
+/// belongs to — Hermes's own venv — so its native web search lights up. Installs
+/// in place (not `--force`), so it's a fast no-op once present. Pure and
+/// unit-tested: a wrong arg would fail silently, like a tool that just never ran.
+List<String> hermesWebSearchInstallArgs(String venvPython) => [
+  'pip',
+  'install',
+  '--python',
+  venvPython,
+  kHermesWebSearchPackage,
+];
+
 /// Whether [raw] — an agent's dying words — says its install is missing a piece,
 /// rather than that it failed for some other reason.
 ///
@@ -73,6 +92,12 @@ abstract interface class HermesAcpSetup {
   /// Install the missing piece. Returns null once ACP really works, else the raw
   /// reason it still doesn't — for the log; callers humanize it (§6).
   Future<String?> repair();
+
+  /// Best-effort: make sure Hermes's native web search has a backend, adding the
+  /// free [kHermesWebSearchPackage] to its env when one isn't there. Never throws
+  /// and returns nothing — a chat must not wait on it, and a failure just leaves
+  /// the agent to fall back on its `grid-web` skill; the reason is logged (§6).
+  Future<void> ensureWebSearch();
 }
 
 /// Real [HermesAcpSetup], driving the pinned `uv` the CLI installed into
@@ -141,6 +166,36 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
     return 'hermes acp still fails after installing $kHermesAcpRequirement';
   }
 
+  @override
+  Future<void> ensureWebSearch() async {
+    final venvPython = _venvPython();
+    if (!File(_uv).existsSync() || venvPython == null) return;
+    final ran = await _run(
+      _uv,
+      hermesWebSearchInstallArgs(venvPython),
+      _repairTimeout,
+      env: hermesAcpRepairEnv(gridHome: _gridHome),
+    );
+    if (ran.code != 0) {
+      _log.warn(
+        'agent',
+        'Could not provision Hermes web search (${ran.code})\n${ran.output}',
+      );
+    }
+  }
+
+  /// The interpreter beside the hermes binary (`.../bin/hermes` → `.../bin/python`
+  /// on macOS/Linux, `.../Scripts/python.exe` on Windows), or null when the
+  /// layout isn't the one the CLI's uv install produces — then there's nothing
+  /// safe to install into.
+  String? _venvPython() {
+    final bin = File(_hermes).parent.path;
+    for (final candidate in ['$bin/python', '$bin/python3', '$bin/python.exe']) {
+      if (File(candidate).existsSync()) return candidate;
+    }
+    return null;
+  }
+
   /// Run [exe] to completion, collecting both streams, and kill it if it
   /// outstays [timeout] — an install that hangs must not hang the chat behind
   /// it forever.
@@ -155,10 +210,7 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
       process = await Process.start(
         exe,
         args,
-        environment: {
-          ...HostEnvironment.hermesEnvironment(),
-          ...env,
-        },
+        environment: {...HostEnvironment.hermesEnvironment(), ...env},
       );
     } on ProcessException catch (e) {
       return (code: -1, output: e.message);

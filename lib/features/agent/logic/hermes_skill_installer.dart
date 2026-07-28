@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+import 'grid_web_skill.dart';
 
 /// Installs the Grid skills Hermes uses in Agent mode: generating an image, and
 /// animating one into a video, through the grid's media API.
@@ -37,6 +38,10 @@ class HermesSkillInstaller {
       _gridVideoSkillMd,
       _gridVideoSkillScript,
     );
+    // The same web-search skill Codex gets, so search behaves the same whichever
+    // agent answers. Hermes also has a native `web_search` (once ddgs is in its
+    // env — see ensureHermesWebSearch); both hit the same DuckDuckGo backend.
+    await writeGridWebSkill(_skillDir(kGridWebSkillName));
     await _removeLeakedPrototype();
   }
 

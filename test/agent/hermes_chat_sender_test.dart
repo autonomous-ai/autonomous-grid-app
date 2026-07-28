@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_permissions.dart';
 import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agent/logic/agent_server_error.dart';
 import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
@@ -333,6 +334,62 @@ void main() {
     },
   );
 
+  test(
+    'a turn that lays out a plan then stops before finishing it is a failure, '
+    'not an answer — even with a line of text',
+    () async {
+      final service = _FakeAcp.single([
+        const HermesAcpPlan([
+          AgentPlanEntry(content: 'Read', status: AgentPlanStatus.done),
+          // Left hanging: the work it promised didn't happen.
+          AgentPlanEntry(content: 'Write', status: AgentPlanStatus.pending),
+        ]),
+        const HermesAcpMessage('Let me write it for you.'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('go'))
+          .toList();
+
+      // A bare "let me write it" over an unfinished plan must not read as done.
+      expect(updates.last, isA<ChatSendFailure>());
+      expect((updates.last as ChatSendFailure).error, kAgentStalledPlan);
+    },
+  );
+
+  test(
+    'in planning mode an unfinished plan is the point, not a stall — the plan '
+    'lands as the answer',
+    () async {
+      final service = _FakeAcp.single([
+        const HermesAcpPlan([
+          AgentPlanEntry(content: 'Read', status: AgentPlanStatus.pending),
+          AgentPlanEntry(content: 'Write', status: AgentPlanStatus.pending),
+        ]),
+        const HermesAcpMessage('Here is my plan…'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(
+            network: _credential(),
+            model: 'm',
+            history: _history('refactor the parser'),
+            planFirst: true,
+          )
+          .toList();
+
+      expect(updates.last, isA<ChatSendSuccess>());
+      expect(
+        (updates.last as ChatSendSuccess).reply.text,
+        'Here is my plan…',
+      );
+    },
+  );
+
   test('Plan mode planning turn runs read-only and asks the agent to plan, not '
       'act', () async {
     final service = _FakeAcp.single([
@@ -584,6 +641,12 @@ void main() {
       ]);
       final container = _container(service, tmp);
       final sender = container.read(hermesChatSenderProvider);
+
+      // Start on Ask so the switch below is the only thing that can move the
+      // second turn's mode — the point of the test, whatever the shipped default.
+      container
+          .read(chatPrefsProvider.notifier)
+          .setApproval(AgentApprovalMode.ask);
 
       await sender
           .send(

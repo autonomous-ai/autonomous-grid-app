@@ -183,7 +183,8 @@ class _SidebarItemState extends State<SidebarItem> {
                               ignoring:
                                   !_hovered && !widget.trailingAlwaysVisible,
                               child: AnimatedOpacity(
-                                opacity: _hovered || widget.trailingAlwaysVisible
+                                opacity:
+                                    _hovered || widget.trailingAlwaysVisible
                                     ? 1
                                     : 0,
                                 duration: const Duration(milliseconds: 100),

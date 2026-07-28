@@ -6,6 +6,14 @@ import '../../../infrastructure/cli/hermes_acp_setup.dart';
 /// Hermes and a silent Codex read the same to the user.
 const String kAgentNoAnswer = "The agent didn't return an answer.";
 
+/// A turn that laid out a plan and then stopped before finishing it — no steps
+/// ticked off, nothing built. Shared by both agents so a stalled Hermes and a
+/// stalled Codex read the same. The chat pairs it with the switch-agent button,
+/// so "let another agent take this chat" is an offer to try, not a promise (§5).
+const String kAgentStalledPlan =
+    'The agent planned the work but stopped before finishing it. Try sending '
+    'again, or let another agent take this chat.';
+
 /// The fact behind an assistant that installed but can't run: Grid tried to
 /// complete the install and couldn't. Shared by the chat and the Agents screen
 /// so the same problem doesn't read as two (§5); each adds its own next step,

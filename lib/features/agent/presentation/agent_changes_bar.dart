@@ -14,19 +14,23 @@ import 'diff_view.dart';
 /// with one tap to review the changes and one to undo them all.
 ///
 /// Shown only when there's something to undo — the honest answer to Full access's
-/// old "Nothing to undo". Hidden otherwise so it never nags an empty chat.
+/// old "Nothing to undo" — and only while the bar hasn't hidden itself or been
+/// waved away ([agentChangesBarProvider]). Undoing stays possible after either:
+/// hiding drops the notice, not the snapshots behind it.
 class AgentChangesBar extends ConsumerWidget {
   const AgentChangesBar({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final changes = ref.watch(agentChangesProvider);
-    if (changes.isEmpty) return const SizedBox.shrink();
+    final barVisible = ref.watch(agentChangesBarProvider);
+    if (changes.isEmpty || !barVisible) return const SizedBox.shrink();
     return ComposerNoticeBar(
       icon: Icons.history_rounded,
       label:
           'The assistant changed ${changes.length} '
           '${changes.length == 1 ? 'file' : 'files'}',
+      onDismiss: () => ref.read(agentChangesBarProvider.notifier).dismiss(),
       actions: [
         // One file → offer to open it right here. That's usually the whole
         // point (a page or a game the model just wrote), and without it a

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -139,4 +140,66 @@ String expandHome(String path, String home) {
   if (path == '~') return home;
   if (path.startsWith('~/')) return '$home${path.substring(1)}';
   return path;
+}
+
+/// How long the "what the assistant changed" bar lingers after the last change
+/// before it hides itself, so it reads as a notice rather than a fixture parked
+/// over the composer for the rest of the conversation.
+const Duration kAgentChangesAutoHide = Duration(seconds: 10);
+
+/// Overridable so tests don't sit through the ten-second countdown.
+final agentChangesAutoHideProvider = Provider<Duration>(
+  (ref) => kAgentChangesAutoHide,
+);
+
+/// Whether the bar summarising [agentChangesProvider] is currently on screen.
+///
+/// The bar is a transient notice, not a permanent fixture: it appears when the
+/// agent touches a file, hides itself after [agentChangesAutoHideProvider], and
+/// can be waved away by hand. Hiding it never undoes anything — the snapshots in
+/// [agentChangesProvider] outlive the bar, so a later change raises it again over
+/// the whole set, and leaving the conversation clears those snapshots (which drops
+/// the bar with them).
+final agentChangesBarProvider =
+    NotifierProvider<AgentChangesBarController, bool>(
+      AgentChangesBarController.new,
+    );
+
+class AgentChangesBarController extends Notifier<bool> {
+  Timer? _hideTimer;
+
+  @override
+  bool build() {
+    ref.onDispose(_cancelTimer);
+    // The bar mirrors the change list it summarises — a change shows it and
+    // restarts the countdown, an emptied list drops it. Reading the data from
+    // here, rather than the undo store pushing to us, keeps that store unaware of
+    // how (or whether) its contents are shown.
+    ref.listen(agentChangesProvider, (_, next) {
+      next.isEmpty ? _hide() : _show();
+    });
+    // Whatever the list already holds when the bar first mounts — usually empty,
+    // since the composer builds before the agent has touched anything.
+    return ref.read(agentChangesProvider).isNotEmpty;
+  }
+
+  /// Hide the bar now without undoing anything: the snapshots stay recorded, so a
+  /// later change brings it back over the full set.
+  void dismiss() => _hide();
+
+  void _show() {
+    _cancelTimer();
+    state = true;
+    _hideTimer = Timer(ref.read(agentChangesAutoHideProvider), _hide);
+  }
+
+  void _hide() {
+    _cancelTimer();
+    if (state) state = false;
+  }
+
+  void _cancelTimer() {
+    _hideTimer?.cancel();
+    _hideTimer = null;
+  }
 }

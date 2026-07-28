@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_cron_service.dart';
 import '../../agent/logic/agent_providers.dart';
+import '../../agent/logic/hermes_grid_link.dart';
 import '../../agent/logic/hermes_tool.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
@@ -109,6 +110,15 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     bool toTelegram = false,
     bool runNow = false,
   }) async {
+    // A task fires with nobody there to pick a model. Unless Hermes already has
+    // one, every run would fail with a raw "no model configured", so point it
+    // at the selected grid now — and refuse to save a task that could only
+    // ever fail, handing back a line that says what to fix instead.
+    final unpointed = await ref
+        .read(hermesGridLinkProvider)
+        .ensureModelForSelectedGrid();
+    if (unpointed != null) return (error: unpointed, id: null);
+
     // Nobody is there to answer for a task that fires at 8am, so what it's
     // allowed to do is settled here, before it can run at all — and it's what
     // the screen said it would be.

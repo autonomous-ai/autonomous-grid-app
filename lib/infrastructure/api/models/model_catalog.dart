@@ -108,11 +108,13 @@ class CatalogModelPick {
         repoId: json['repo_id'] as String?,
         version: json['version'] as String?,
         // Suggest speaks `size`; list's versions speak `size_bytes`.
-        sizeBytes: (json['size'] as num?)?.toInt() ??
+        sizeBytes:
+            (json['size'] as num?)?.toInt() ??
             (json['size_bytes'] as num?)?.toInt() ??
             0,
         file: json['file'] as String?,
-        maxCtx: (json['max_ctx'] as num?)?.toInt() ??
+        maxCtx:
+            (json['max_ctx'] as num?)?.toInt() ??
             (json['max_context'] as num?)?.toInt() ??
             0,
         estTokPerSec: (json['est_tok_s'] as num?)?.toDouble() ?? 0,

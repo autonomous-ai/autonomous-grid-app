@@ -1,8 +1,9 @@
 import 'hermes_permission_policy.dart';
 
 /// What kind of step the agent is running — a shell command, a look-up on the
-/// web, or any other tool. The kind picks the icon in the activity feed.
-enum AgentActivityKind { command, web, tool }
+/// web, the model's own reasoning, or any other tool. The kind picks the icon
+/// in the activity feed.
+enum AgentActivityKind { command, web, tool, thinking }
 
 /// Lifecycle of one agent step, driving its live status indicator.
 enum AgentActivityStatus { running, done, failed }
@@ -147,6 +148,17 @@ List<AgentPlanEntry> parseAgentPlan(Object? entries) {
   }
   return List.unmodifiable(plan);
 }
+
+/// Whether the agent left its to-do plan unfinished — it laid out steps and the
+/// turn ended before every one reached [AgentPlanStatus.done].
+///
+/// An empty plan is *not* unfinished: a turn that never made a plan (a plain
+/// answer, or planning mode's text-only outline) has nothing left hanging. The
+/// chat uses this to tell an honest "stopped part-way" from a real answer — a
+/// turn that announces a plan and then stalls (no steps ticked off, nothing
+/// built) must not read as success (§5).
+bool agentPlanUnfinished(List<AgentPlanEntry> plan) =>
+    plan.isNotEmpty && plan.any((step) => step.status != AgentPlanStatus.done);
 
 /// A persisted status is this enum's own [AgentPlanStatus] name; unknown reads as
 /// pending — a step we can't place is one not started, never one shown as done.

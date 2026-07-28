@@ -32,6 +32,16 @@ CronRunError describeCronRunError(String raw) {
           'current model.',
     );
   }
+  if (isNoModelConfigured(text)) {
+    return const CronRunError(
+      summary:
+          'This computer has no AI model set for your tasks yet, so this one '
+          "couldn't run.",
+      hint:
+          'Delete this task and create it again — the app sets up a model for '
+          'it when you do (pick a grid in Chat first if you have not).',
+    );
+  }
   return CronRunError(summary: text);
 }
 
@@ -48,3 +58,26 @@ bool isModelDriftSkip(String text) {
   return lower.contains('unintended spend') ||
       (lower.contains('unpinned') && lower.contains('drift'));
 }
+
+/// Hermes ran the job but had no model to answer with — nothing pinned on the
+/// job, no `HERMES_MODEL`, and `config.yaml`'s `model.default` missing or empty.
+/// This is the app's own gap when a task was created before Hermes was ever
+/// pointed at a grid (`HermesGridLink.ensureModelForSelectedGrid` now closes it
+/// at creation).
+///
+/// Like the drift skip, it won't clear on its own: every future run fails the
+/// same way until a model is set, so the status layer treats it as a task that
+/// won't run rather than one with a merely unlucky last run. Matched on the
+/// stable wording, not the exact env/config detail Hermes prints alongside it.
+bool isNoModelConfigured(String text) {
+  final lower = text.toLowerCase();
+  return lower.contains('no model configured') ||
+      lower.contains('model.default missing or empty');
+}
+
+/// Cron failures that keep failing until the user acts — they get the blunter
+/// "Won't run" status, not the hopeful "Last run failed". One predicate so the
+/// status layer and any future caller can't disagree about which errors those
+/// are.
+bool isBlockingCronError(String text) =>
+    isModelDriftSkip(text) || isNoModelConfigured(text);

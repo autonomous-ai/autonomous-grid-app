@@ -33,20 +33,16 @@ class HermesSessionServiceImpl implements HermesSessionService {
     // noise in there.
     final Process process;
     try {
-      process = await Process.start(
-        binPath,
-        [
-          'sessions',
-          'export',
-          '--session-id',
-          sessionId,
-          '--format',
-          'jsonl',
-          '--yes',
-          '-',
-        ],
-        environment: HostEnvironment.hermesEnvironment(),
-      );
+      process = await Process.start(binPath, [
+        'sessions',
+        'export',
+        '--session-id',
+        sessionId,
+        '--format',
+        'jsonl',
+        '--yes',
+        '-',
+      ], environment: HostEnvironment.hermesEnvironment());
     } on ProcessException {
       return null;
     }

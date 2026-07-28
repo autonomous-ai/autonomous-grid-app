@@ -11,11 +11,29 @@ import '../../../../shared/theme/app_theme.dart';
 class ExtensionTileSurface extends StatefulWidget {
   const ExtensionTileSurface({
     super.key,
-    required this.child,
+    this.child,
+    this.childBuilder,
     this.onDialog = false,
-  });
+  }) : assert(
+         (child == null) != (childBuilder == null),
+         'pass exactly one of child / childBuilder',
+       );
 
-  final Widget child;
+  /// The row's contents, when they don't care whether the row is hovered.
+  final Widget? child;
+
+  /// The row's contents, told whether the pointer is on the row.
+  ///
+  /// A row that reveals a control on hover — a delete button that shouldn't sit
+  /// there permanently competing with the model's name — needs this: the
+  /// surface tracks the pointer for its own fill, and without handing that down,
+  /// the child has no way to know. (CLAUDE.md names this trap: "a parent's hover
+  /// doesn't tell its children".)
+  ///
+  /// The revealed control still has to track its *own* hover for its own ink and
+  /// fill — see [AppIconButton]. Row-hover says "show me"; button-hover says
+  /// "you're on me". They are different questions and both must be answered.
+  final Widget Function(BuildContext context, bool hovered)? childBuilder;
 
   /// Set when the row sits inside a dialog rather than on a page.
   ///
@@ -67,7 +85,7 @@ class _ExtensionTileSurfaceState extends State<ExtensionTileSurface> {
             : null,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
-          child: widget.child,
+          child: widget.child ?? widget.childBuilder!(context, _hovered),
         ),
       ),
     );

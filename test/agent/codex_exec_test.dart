@@ -113,16 +113,144 @@ void main() {
       expect(event, isNull);
     });
 
+    test('reasoning becomes a thinking step, so a pause reads as work', () {
+      final event = parseCodexEvent({
+        'type': 'item.started',
+        'item': {
+          'id': 'r1',
+          'type': 'reasoning',
+          'text': 'Checking where the file lives',
+          'status': 'in_progress',
+        },
+      }, {});
+      final activity = (event as CodexActivityEvent).activity;
+      expect(activity.kind, AgentActivityKind.thinking);
+      expect(activity.label, 'Checking where the file lives');
+      expect(activity.status, AgentActivityStatus.running);
+    });
+
+    test('reasoning carried as a summary list is read too', () {
+      final event = parseCodexEvent({
+        'type': 'item.completed',
+        'item': {
+          'id': 'r2',
+          'type': 'reasoning',
+          'summary': [
+            {'text': 'First I will read the files'},
+          ],
+        },
+      }, {});
+      expect(
+        (event as CodexActivityEvent).activity.label,
+        'First I will read the files',
+      );
+    });
+
+    test('an empty reasoning item carries nothing to show', () {
+      expect(
+        parseCodexEvent({
+          'type': 'item.completed',
+          'item': {'id': 'r3', 'type': 'reasoning', 'text': '   '},
+        }, {}),
+        isNull,
+      );
+    });
+
     test('turn lifecycle chatter and unknown items surface nothing', () {
       expect(parseCodexEvent({'type': 'turn.started'}, {}), isNull);
       expect(parseCodexEvent({'type': 'turn.completed'}, {}), isNull);
       expect(
         parseCodexEvent({
           'type': 'item.completed',
-          'item': {'id': 'r1', 'type': 'reasoning', 'text': 'thinking'},
+          'item': {'id': 'x1', 'type': 'reasoning_summary'},
         }, {}),
         isNull,
       );
+    });
+  });
+
+  group('file_change — so a file Codex writes becomes openable', () {
+    test('a completed add surfaces the created file for the chat to open', () {
+      final event = parseCodexEvent({
+        'type': 'item.completed',
+        'item': {
+          'id': 'f1',
+          'type': 'file_change',
+          'status': 'completed',
+          'changes': [
+            {'path': '/tmp/ws/tank1990.html', 'kind': 'add'},
+          ],
+        },
+      }, {});
+      expect(event, isA<CodexFileChangeEvent>());
+      final change = (event as CodexFileChangeEvent).changes.single;
+      expect(change.path, '/tmp/ws/tank1990.html');
+      expect(change.kind, CodexFileChangeKind.add);
+    });
+
+    test('an in-flight apply has written nothing yet, so it surfaces nothing', () {
+      expect(
+        parseCodexEvent({
+          'type': 'item.started',
+          'item': {
+            'id': 'f1',
+            'type': 'file_change',
+            'status': 'in_progress',
+            'changes': [
+              {'path': '/tmp/a.txt', 'kind': 'add'},
+            ],
+          },
+        }, {}),
+        isNull,
+      );
+    });
+
+    test('a file_change carrying no usable path surfaces nothing', () {
+      expect(
+        parseCodexEvent({
+          'type': 'item.completed',
+          'item': {
+            'id': 'f1',
+            'type': 'file_change',
+            'status': 'completed',
+            'changes': [],
+          },
+        }, {}),
+        isNull,
+      );
+    });
+
+    test('every kind is parsed faithfully, add / update / delete alike', () {
+      final event =
+          parseCodexEvent({
+                'type': 'item.completed',
+                'item': {
+                  'id': 'f1',
+                  'type': 'file_change',
+                  'status': 'completed',
+                  'changes': [
+                    {'path': '/tmp/new.html', 'kind': 'add'},
+                    {'path': '/tmp/old.dart', 'kind': 'update'},
+                    {'path': '/tmp/gone.txt', 'kind': 'delete'},
+                  ],
+                },
+              }, {})
+              as CodexFileChangeEvent;
+      expect(event.changes.map((c) => c.kind), [
+        CodexFileChangeKind.add,
+        CodexFileChangeKind.update,
+        CodexFileChangeKind.delete,
+      ]);
+    });
+
+    test('only created files are recorded — an edit or a delete has no honest '
+        'before to diff or undo', () {
+      const changes = [
+        (path: '/tmp/new.html', kind: CodexFileChangeKind.add),
+        (path: '/tmp/old.dart', kind: CodexFileChangeKind.update),
+        (path: '/tmp/gone.txt', kind: CodexFileChangeKind.delete),
+      ];
+      expect(codexAddedPaths(changes), ['/tmp/new.html']);
     });
   });
 
@@ -237,6 +365,45 @@ void main() {
 
     test('a silent failure still says what to do', () {
       expect(friendlyCodexError('   '), contains('try again'));
+    });
+  });
+
+  group('agentPlanUnfinished — a stalled turn must not read as an answer', () {
+    AgentPlanEntry step(String content, AgentPlanStatus status) =>
+        AgentPlanEntry(content: content, status: status);
+
+    test('a plan with a step still pending stopped short of its own work', () {
+      // The tank-game turn: it announced steps, ticked none off, then ended —
+      // the chat used to show that as a success with a bare "let me write it".
+      expect(
+        agentPlanUnfinished([
+          step('Design the game', AgentPlanStatus.pending),
+          step('Write the file', AgentPlanStatus.pending),
+          step('Verify it runs', AgentPlanStatus.pending),
+        ]),
+        isTrue,
+      );
+    });
+
+    test('a step left active mid-flight is unfinished too', () {
+      expect(
+        agentPlanUnfinished([step('Writing the file', AgentPlanStatus.active)]),
+        isTrue,
+      );
+    });
+
+    test('every step done is a finished plan — a real answer, not a stall', () {
+      expect(
+        agentPlanUnfinished([
+          step('Read the files', AgentPlanStatus.done),
+          step('Write the answer', AgentPlanStatus.done),
+        ]),
+        isFalse,
+      );
+    });
+
+    test('no plan is not an unfinished one — a plain answer never made one', () {
+      expect(agentPlanUnfinished(const []), isFalse);
     });
   });
 }

@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/model_catalog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/labeled_field.dart' show appMenuStyle;
+import '../logic/model_manager_filter.dart';
+import '../logic/models_providers.dart';
 import '../logic/suggested_catalog.dart';
 import 'model_detail_panel.dart';
 
@@ -35,6 +37,30 @@ extension on _SortMode {
       };
 }
 
+/// Whether the column shows everything, only what's already on this computer,
+/// or only what isn't.
+///
+/// This is the Installed/Discover split as a filter rather than as two tabs:
+/// the same question ("do I have this one?"), asked without splitting the list
+/// in two and without a second search box and a second scroll position to keep
+/// in sync.
+enum _InstallFilter { all, installed, notInstalled }
+
+extension on _InstallFilter {
+  String get label => switch (this) {
+        _InstallFilter.all => 'All models',
+        _InstallFilter.installed => 'Installed',
+        _InstallFilter.notInstalled => 'Not installed',
+      };
+
+  /// Whether a row in [state] survives this filter.
+  bool admits({required bool installed}) => switch (this) {
+        _InstallFilter.all => true,
+        _InstallFilter.installed => installed,
+        _InstallFilter.notInstalled => !installed,
+      };
+}
+
 class ModelManagerSplitView extends ConsumerStatefulWidget {
   const ModelManagerSplitView({super.key});
 
@@ -59,6 +85,7 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
   String _query = '';
 
   _SortMode _sort = _SortMode.recommended;
+  _InstallFilter _install = _InstallFilter.all;
   Timer? _debounce;
 
   @override
@@ -148,8 +175,10 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
             selectedRepoId: _selectedRepoId,
             query: _query,
             sort: _sort,
+            install: _install,
             onQuery: _onQuery,
             onSort: _onSort,
+            onInstall: (f) => setState(() => _install = f),
             onSelect: (id) => setState(() => _selectedRepoId = id),
           ),
         ),
@@ -170,8 +199,10 @@ class _Sidebar extends ConsumerWidget {
     required this.selectedRepoId,
     required this.query,
     required this.sort,
+    required this.install,
     required this.onQuery,
     required this.onSort,
+    required this.onInstall,
     required this.onSelect,
   });
 
@@ -179,8 +210,10 @@ class _Sidebar extends ConsumerWidget {
   final String? selectedRepoId;
   final String query;
   final _SortMode sort;
+  final _InstallFilter install;
   final ValueChanged<String> onQuery;
   final ValueChanged<_SortMode> onSort;
+  final ValueChanged<_InstallFilter> onInstall;
   final ValueChanged<String> onSelect;
 
   /// True when the device-fit suggestion came back with nothing to show, so the
@@ -228,14 +261,30 @@ class _Sidebar extends ConsumerWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-          // Sized to its own label, not to the column: a picker that spans the
-          // full width reads as a second, heavier search field.
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: _SortDropdown(
-              value: sort,
-              onChanged: onSort,
-            ),
+          // Sized to their own labels, not to the column: a picker that spans
+          // the full width reads as a second, heavier search field. Wrapped so
+          // a narrow column stacks them instead of clipping the second.
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _PillDropdown<_SortMode>(
+                value: sort,
+                options: _SortMode.values,
+                labelOf: (mode) => mode.label,
+                icon: Icons.sort,
+                semanticLabel: 'Sort models',
+                onChanged: onSort,
+              ),
+              _PillDropdown<_InstallFilter>(
+                value: install,
+                options: _InstallFilter.values,
+                labelOf: (filter) => filter.label,
+                icon: Icons.inventory_2_outlined,
+                semanticLabel: 'Filter by install state',
+                onChanged: onInstall,
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -252,11 +301,7 @@ class _Sidebar extends ConsumerWidget {
   Widget _suggestionBody(WidgetRef ref, AsyncValue<List<CatalogListEntry>?> listAsync) {
     return switch (suggestion) {
       AsyncData(:final value) => switch (value) {
-          SuggestReady(:final ranked) => _RankedList(
-              ranked: ranked,
-              selectedRepoId: selectedRepoId,
-              onSelect: onSelect,
-            ),
+          SuggestReady(:final ranked) => _rankedListOrEmpty(_keepPicks(ranked, ref)),
           SuggestNoMatch() || SuggestUnavailable() => _listBody(ref, listAsync),
           SuggestSignInRequired() => const _SidebarMessage(
               icon: Icons.lock_outline,
@@ -270,11 +315,8 @@ class _Sidebar extends ConsumerWidget {
 
   Widget _listBody(WidgetRef ref, AsyncValue<List<CatalogListEntry>?> listAsync) {
     return switch (listAsync) {
-      AsyncData(:final value) when value != null && value.isNotEmpty => _EntryList(
-          entries: value,
-          selectedRepoId: selectedRepoId,
-          onSelect: onSelect,
-        ),
+      AsyncData(:final value) when value != null && value.isNotEmpty =>
+        _entryListOrEmpty(_keepEntries(value, ref)),
       AsyncData() => const _SidebarMessage(
           icon: Icons.search_off_outlined,
           text: 'No models found.',
@@ -285,6 +327,68 @@ class _Sidebar extends ConsumerWidget {
         ),
       _ => const Center(child: CircularProgressIndicator()),
     };
+  }
+
+  Widget _entryListOrEmpty(List<CatalogListEntry> entries) => entries.isEmpty
+      ? _emptyForFilter
+      : _EntryList(
+          entries: entries,
+          selectedRepoId: selectedRepoId,
+          onSelect: onSelect,
+        );
+
+  Widget _rankedListOrEmpty(List<CatalogModelPick> ranked) => ranked.isEmpty
+      ? _emptyForFilter
+      : _RankedList(
+          ranked: ranked,
+          selectedRepoId: selectedRepoId,
+          onSelect: onSelect,
+        );
+
+  /// Distinct from "No models found": the catalog *did* answer, and the install
+  /// filter is what emptied the column — so the message names the filter rather
+  /// than sending the user off to fix a search that isn't wrong.
+  Widget get _emptyForFilter => _SidebarMessage(
+        icon: Icons.filter_alt_off_outlined,
+        text: install == _InstallFilter.installed
+            ? "None of these are on this computer yet."
+            : 'Every model here is already installed.',
+      );
+
+  /// The names on disk, as the install test wants them. Read through the widget
+  /// ref so the column re-filters the moment a download lands.
+  List<String> _localNames(WidgetRef ref) =>
+      [for (final model in ref.watch(localModelsProvider)) model.name];
+
+  List<CatalogListEntry> _keepEntries(List<CatalogListEntry> entries, WidgetRef ref) {
+    if (install == _InstallFilter.all) return entries;
+    final local = _localNames(ref);
+    return [
+      for (final entry in entries)
+        if (install.admits(
+          installed: isCatalogModelInstalled(
+            repoId: entry.repoId,
+            localFileNames: local,
+          ),
+        ))
+          entry,
+    ];
+  }
+
+  List<CatalogModelPick> _keepPicks(List<CatalogModelPick> picks, WidgetRef ref) {
+    if (install == _InstallFilter.all) return picks;
+    final local = _localNames(ref);
+    return [
+      for (final pick in picks)
+        if (install.admits(
+          installed: isCatalogModelInstalled(
+            repoId: pick.repoId ?? '',
+            file: pick.file,
+            localFileNames: local,
+          ),
+        ))
+          pick,
+    ];
   }
 }
 
@@ -627,26 +731,45 @@ String _displayName(String repoId) {
       .join(' ');
 }
 
-/// Sort-mode picker: matches the chat composer's model pill in construction —
-/// a borderless capsule that opens a `MenuAnchor` panel with styled rows.
+/// The column's filter pills — sort, and install state. Matches the chat
+/// composer's model pill in construction: a borderless capsule that opens a
+/// `MenuAnchor` panel with styled rows.
 ///
 /// Deliberately *not* a form field. Rendered through `labeledFieldDecoration`
 /// it inherited a text field's height and stretched to the column's width,
-/// which put a control taller and wider than the search box directly beneath
+/// which put a control taller and wider than the search box directly above
 /// it — the picker read as the primary input and the search as an afterthought.
 /// So it shrink-wraps its label and sits at [AppControl.heightSmall], a step
 /// under the search field's [AppControl.heightField].
-class _SortDropdown extends StatefulWidget {
-  const _SortDropdown({required this.value, required this.onChanged});
+///
+/// Generic over its value so the two pills are the same control rather than two
+/// near-copies that drift apart the first time one of them is restyled.
+class _PillDropdown<T> extends StatefulWidget {
+  const _PillDropdown({
+    super.key,
+    required this.value,
+    required this.options,
+    required this.labelOf,
+    required this.icon,
+    required this.semanticLabel,
+    required this.onChanged,
+  });
 
-  final _SortMode value;
-  final ValueChanged<_SortMode> onChanged;
+  final T value;
+  final List<T> options;
+  final String Function(T) labelOf;
+  final IconData icon;
+
+  /// The control's accessible name — the pill shows only its current value,
+  /// which says nothing about what it sets.
+  final String semanticLabel;
+  final ValueChanged<T> onChanged;
 
   @override
-  State<_SortDropdown> createState() => _SortDropdownState();
+  State<_PillDropdown<T>> createState() => _PillDropdownState<T>();
 }
 
-class _SortDropdownState extends State<_SortDropdown> {
+class _PillDropdownState<T> extends State<_PillDropdown<T>> {
   final _menu = MenuController();
   bool _hovered = false;
 
@@ -659,7 +782,7 @@ class _SortDropdownState extends State<_SortDropdown> {
       style: appMenuStyle(),
       alignmentOffset: const Offset(0, 6),
       builder: (context, controller, _) => Semantics(
-        label: 'Sort models',
+        label: widget.semanticLabel,
         button: true,
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
@@ -681,10 +804,10 @@ class _SortDropdownState extends State<_SortDropdown> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.sort, size: 14, color: AppPalette.textSecondary),
+                  Icon(widget.icon, size: 14, color: AppPalette.textSecondary),
                   const SizedBox(width: 6),
                   Text(
-                    widget.value.label,
+                    widget.labelOf(widget.value),
                     style: TextStyle(fontSize: 12, color: AppPalette.textSecondary),
                   ),
                   const SizedBox(width: 2),
@@ -700,13 +823,13 @@ class _SortDropdownState extends State<_SortDropdown> {
         ),
       ),
       menuChildren: [
-        for (final m in _SortMode.values)
-          _SortOptionRow(
-            mode: m,
-            selected: m == widget.value,
+        for (final option in widget.options)
+          _PillOptionRow(
+            label: widget.labelOf(option),
+            selected: option == widget.value,
             onTap: () {
               _menu.close();
-              widget.onChanged(m);
+              widget.onChanged(option);
             },
           ),
       ],
@@ -719,14 +842,14 @@ const _sortRowInnerPad = 9.0;
 const _sortRowTickSlot = 16.0;
 const _sortRowTickGap = 9.0;
 
-class _SortOptionRow extends StatelessWidget {
-  const _SortOptionRow({
-    required this.mode,
+class _PillOptionRow extends StatelessWidget {
+  const _PillOptionRow({
+    required this.label,
     required this.selected,
     required this.onTap,
   });
 
-  final _SortMode mode;
+  final String label;
   final bool selected;
   final VoidCallback onTap;
 
@@ -766,7 +889,7 @@ class _SortOptionRow extends StatelessWidget {
                 const SizedBox(width: _sortRowTickGap),
                 Expanded(
                   child: Text(
-                    mode.label,
+                    label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
