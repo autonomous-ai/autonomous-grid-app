@@ -14,6 +14,12 @@ CatalogModelPick _pick(String repo) => CatalogModelPick(
   file: '$repo.gguf',
   maxCtx: 32768,
   estTokPerSec: 10,
+  createdAt: DateTime.now(),
+  downloads: 0,
+  likes: 0,
+  paramsB: 7.0,
+  arch: {'architecture': 'qwen2'},
+  format: 'GGUF',
   pullSpec: '$repo:$repo.gguf',
   urls: const [],
 );
@@ -82,25 +88,22 @@ void main() {
       },
     );
 
-    test('ranked picks → ready, pick is the first', () async {
-      final suggestion = CatalogSuggestion(
-        pick: _pick('Qwen/Qwen2.5-3B-Instruct-GGUF'),
-        alternatives: [_pick('meta-llama/Llama-3.2-3B-Instruct-GGUF')],
-      );
+    test('ranked models → ready, best-first', () async {
+      final suggestion = CatalogSuggestion(models: [
+        _pick('Qwen/Qwen2.5-3B-Instruct-GGUF'),
+        _pick('meta-llama/Llama-3.2-3B-Instruct-GGUF'),
+      ]);
       final container = _container(fn: _fnReturning((suggestion, null)));
 
       final outcome = await container.read(suggestedCatalogProvider.future);
       expect(outcome, isA<SuggestReady>());
       final ready = outcome as SuggestReady;
-      expect(ready.pick.repoId, 'Qwen/Qwen2.5-3B-Instruct-GGUF');
       expect(ready.ranked, hasLength(2));
+      expect(ready.ranked.first.repoId, 'Qwen/Qwen2.5-3B-Instruct-GGUF');
     });
 
-    test('empty ranking (no-match sentinel) → no match', () async {
-      final empty = CatalogSuggestion(
-        pick: CatalogModelPick.fromJson(const {'repo_id': null}),
-        alternatives: const [],
-      );
+    test('empty models list → no match', () async {
+      final empty = CatalogSuggestion(models: const []);
       final container = _container(fn: _fnReturning((empty, null)));
 
       final outcome = await container.read(suggestedCatalogProvider.future);

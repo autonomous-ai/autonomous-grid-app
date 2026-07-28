@@ -31,11 +31,9 @@ sealed class SuggestOutcome {
   const SuggestOutcome();
 }
 
-/// The catalog ranked models for this device. [pick] is the top recommendation
-/// (already first in [ranked]); [ranked] is best-first, pick then alternatives.
+/// The catalog ranked models for this device, best-first. Empty when nothing fits.
 class SuggestReady extends SuggestOutcome {
-  const SuggestReady({required this.pick, required this.ranked});
-  final CatalogModelPick pick;
+  const SuggestReady({required this.ranked});
   final List<CatalogModelPick> ranked;
 }
 
@@ -69,6 +67,34 @@ final catalogSuggestFnProvider = Provider<CatalogSuggestFn>(
   (ref) => ModelCatalogClient.suggest,
 );
 
+/// What the sidebar is asking the catalog for: a search term, a ranking, or
+/// both. A record so the family keys by value — `(sort: '', query: 'qwen')` and
+/// `(sort: 'likes', query: 'qwen')` are two different requests, each cached.
+///
+/// [sort] empty means "don't pin a ranking": the sidebar sends no `sort` at all
+/// while the user is typing, and only attaches one once they pick from the sort
+/// menu.
+typedef CatalogListArgs = ({String sort, String query});
+
+/// `POST /v1/grid/catalog` in list mode — the catalog's models filtered by
+/// [CatalogListArgs.query] and ranked by [CatalogListArgs.sort]. Used by the
+/// Models sidebar's search box and its Trending / Most liked / Newest modes
+/// (the CLI `grid catalog` fallback has no such fields). Returns null when the
+/// user isn't signed in or the call fails.
+final catalogListProvider =
+    FutureProvider.family<List<CatalogListEntry>?, CatalogListArgs>((ref, args) async {
+  final token = ref.watch(sessionProvider).sessionToken;
+  if (token == null || token.isEmpty) return null;
+  final apiUrl = ref.watch(gridApiUrlProvider);
+  final (entries, _) = await ModelCatalogClient.list(
+    apiUrl: apiUrl,
+    sessionToken: token,
+    sort: args.sort.isEmpty ? null : args.sort,
+    query: args.query.isEmpty ? null : args.query,
+  );
+  return entries;
+});
+
 /// Device-aware model suggestions for the model manager: read the session token,
 /// probe the hardware, and ask `POST /v1/grid/catalog` for the ranked picks.
 /// Every failure maps to a [SuggestOutcome] the UI can act on rather than an
@@ -95,7 +121,7 @@ final suggestedCatalogProvider = FutureProvider<SuggestOutcome>((ref) async {
         : SuggestUnavailable(error.message);
   }
 
-  final ranked = suggestion!.ranked;
+  final ranked = suggestion!.models.where((m) => m.hasModel).toList();
   if (ranked.isEmpty) return const SuggestNoMatch();
-  return SuggestReady(pick: ranked.first, ranked: ranked);
+  return SuggestReady(ranked: ranked);
 });

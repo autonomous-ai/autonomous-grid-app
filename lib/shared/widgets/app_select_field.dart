@@ -3,12 +3,30 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'labeled_field.dart';
 
+/// What a badge *means*, not what colour it is — the widget maps it to the
+/// palette so a verdict reads the same everywhere it appears.
+///
+/// Only a judgement earns colour. A fact (a quant name, a file size) stays
+/// [neutral]: if every badge is tinted, the tint stops carrying information and
+/// the row turns into a fruit salad.
+enum AppBadgeTone { neutral, positive, warning, danger }
+
+/// A small pill beside an option's label — a version's size, its quantisation,
+/// whether it will actually run on this machine.
+class AppSelectBadge {
+  const AppSelectBadge(this.text, {this.tone = AppBadgeTone.neutral});
+
+  final String text;
+  final AppBadgeTone tone;
+}
+
 /// One option in an [AppSelectField].
 class AppSelectOption<T> {
   const AppSelectOption({
     required this.value,
     required this.label,
     this.detail,
+    this.badges = const [],
   });
 
   final T value;
@@ -19,6 +37,13 @@ class AppSelectOption<T> {
   /// An optional second line under [label] — context the choice needs but the
   /// closed field has no room for.
   final String? detail;
+
+  /// Pills rendered beside [label], in both the closed field and the open menu.
+  ///
+  /// Takes precedence over [detail]'s legacy ` · `-split rendering: a caller
+  /// that has to distinguish "runs here" from "too large" needs to say which is
+  /// which, and a delimited string can't.
+  final List<AppSelectBadge> badges;
 }
 
 /// A select control that opens the app's floating menu.
@@ -90,6 +115,20 @@ class _AppSelectFieldState<T> extends State<AppSelectField<T>> {
     return widget.placeholder;
   }
 
+  String? get _detail {
+    for (final option in widget.options) {
+      if (option.value == widget.value) return option.detail;
+    }
+    return null;
+  }
+
+  List<AppSelectBadge> get _badges {
+    for (final option in widget.options) {
+      if (option.value == widget.value) return option.badges;
+    }
+    return const [];
+  }
+
   bool get _hasSelection =>
       widget.options.any((option) => option.value == widget.value);
 
@@ -118,6 +157,8 @@ class _AppSelectFieldState<T> extends State<AppSelectField<T>> {
                 summary: _summary,
                 muted: !_hasSelection,
                 fill: widget.fill,
+                detail: _detail,
+                badges: _badges,
                 onTap: controller.isOpen ? controller.close : controller.open,
               ),
             ),
@@ -148,6 +189,8 @@ class _FieldSurface extends StatelessWidget {
     required this.muted,
     required this.onTap,
     this.fill,
+    this.detail,
+    this.badges = const [],
   });
 
   final String summary;
@@ -156,6 +199,12 @@ class _FieldSurface extends StatelessWidget {
 
   /// The surface, when the default doesn't recess against what it sits on.
   final Color? fill;
+
+  /// Optional detail line (e.g. "2.5 GB · runnable") rendered as small badges
+  /// beside the main text. Used only when [badges] is empty.
+  final String? detail;
+
+  final List<AppSelectBadge> badges;
 
   @override
   Widget build(BuildContext context) {
@@ -169,22 +218,85 @@ class _FieldSurface extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                summary,
-                overflow: TextOverflow.ellipsis,
-                style: muted
-                    ? kFieldTextStyle.copyWith(color: AppPalette.textFaint)
-                    : kFieldTextStyle,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      summary,
+                      overflow: TextOverflow.ellipsis,
+                      style: muted
+                          ? kFieldTextStyle.copyWith(color: AppPalette.textFaint)
+                          : kFieldTextStyle.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (badges.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    for (final badge in badges)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: _Badge(badge: badge),
+                      ),
+                  ] else if (detail != null && detail!.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    for (final part in detail!.split(' · '))
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: _Badge(badge: AppSelectBadge(part)),
+                      ),
+                  ],
+                ],
               ),
             ),
-            // Size 24 (a dropdown's default arrow) so the field keeps the
-            // theme's field height instead of shrinking to the 18px icon theme.
             Icon(
               Icons.arrow_drop_down,
               size: 24,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A pill beside an option's label.
+///
+/// A toned badge is a wash of its status colour, not a filled chip: the ink is
+/// the full-strength token and the fill a ~14% tint of it, so it stays pastel in
+/// light and doesn't glow on charcoal in dark. The status tokens are the ones
+/// the rest of the app already reads as good/caution/bad ([AppPalette.online],
+/// [AppPalette.warn], the scheme's error), so a green here means what a green
+/// means anywhere else in the window.
+class _Badge extends StatelessWidget {
+  const _Badge({required this.badge});
+  final AppSelectBadge badge;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final theme = Theme.of(context);
+    final tint = switch (badge.tone) {
+      AppBadgeTone.neutral => null,
+      AppBadgeTone.positive => AppPalette.online,
+      AppBadgeTone.warning => AppPalette.warn,
+      AppBadgeTone.danger => theme.colorScheme.error,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: tint?.withValues(alpha: 0.14) ?? AppSurface.selectedFill,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: tint?.withValues(alpha: 0.28) ?? AppPalette.divider,
+        ),
+      ),
+      child: Text(
+        badge.text,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: tint ?? AppPalette.textSecondary,
+          fontSize: 11,
+          fontWeight: tint == null ? FontWeight.w400 : FontWeight.w600,
         ),
       ),
     );
@@ -261,6 +373,10 @@ class _OptionRow<T> extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Expanded(
+                    child: _Lines(option: option, selected: selected),
+                  ),
+                  const SizedBox(width: _rowTickGap),
                   SizedBox(
                     width: _rowTickSlot,
                     // Kept in the layout even when unselected so labels don't
@@ -272,10 +388,6 @@ class _OptionRow<T> extends StatelessWidget {
                             color: AppPalette.accentMuted,
                           )
                         : null,
-                  ),
-                  const SizedBox(width: _rowTickGap),
-                  Expanded(
-                    child: _Lines(option: option, selected: selected),
                   ),
                 ],
               ),
@@ -313,7 +425,16 @@ class _Lines<T> extends StatelessWidget {
             color: AppPalette.textPrimary,
           ),
         ),
-        if (option.detail case final detail?) ...[
+        // The same pills the closed field shows — the verdict that decides which
+        // option to pick has to be visible *while* picking, not only after.
+        if (option.badges.isNotEmpty) ...[
+          const SizedBox(height: 5),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [for (final badge in option.badges) _Badge(badge: badge)],
+          ),
+        ] else if (option.detail case final detail?) ...[
           const SizedBox(height: 3),
           Text(
             detail,

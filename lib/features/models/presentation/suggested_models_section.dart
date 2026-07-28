@@ -3,17 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/model_catalog.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../plugins/presentation/widgets/extension_tile_surface.dart';
 import '../logic/context_length.dart';
-import '../logic/model_manager_filter.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/model_shelf.dart';
 import '../logic/models_providers.dart';
 import '../logic/suggested_catalog.dart';
-import 'discover_tab.dart';
+import 'model_detail_panel.dart';
 import 'shelf_model_tile.dart';
 
-/// The ranked-suggestions body of the Discover tab.
+/// The "Suggested for your device" block of the model manager.
 ///
 /// Asks the catalog API (`POST /v1/grid/catalog` with this machine's hardware)
 /// for models ranked best-first for this computer, showing each with its size,
@@ -25,23 +25,14 @@ class SuggestedForDevice extends ConsumerWidget {
     super.key,
     required this.fallback,
     required this.fallbackLoading,
-    required this.catalogReadable,
-    this.filter = '',
   });
 
-  /// The offline `grid catalog` suggestions to show when the API is unavailable
-  /// — already filtered down to what isn't downloaded yet.
+  /// The offline `grid catalog` suggestions to show when the API is unavailable.
   final List<ShelfModel> fallback;
 
   /// Whether the offline catalog is still loading (so a transient API failure
   /// doesn't flash an empty fallback before it arrives).
   final bool fallbackLoading;
-
-  /// Whether `grid catalog` returned anything at all. See [_fallbackSection].
-  final bool catalogReadable;
-
-  /// What's typed in the Discover search box. Empty shows everything.
-  final String filter;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,104 +40,49 @@ class SuggestedForDevice extends ConsumerWidget {
     final outcome = ref.watch(suggestedCatalogProvider);
 
     return outcome.when(
-      loading: () => const DiscoverStatusRow(
+      loading: () => const _SuggestStatus(
         icon: null,
-        title: 'Finding models for this computer',
-        message: 'Reading your hardware and asking the catalog…',
+        text: 'Finding models that fit this computer…',
       ),
       // An unexpected throw (not a mapped outcome) still degrades to the offline
       // list rather than an error box.
-      error: (_, _) => _fallbackSection(ref),
+      error: (_, _) => _fallbackSection(),
       data: (result) => switch (result) {
-        SuggestReady(:final ranked, :final pick) => _ApiSuggestions(
-          ranked: ranked,
-          pick: pick,
-          filter: filter,
+        SuggestReady(:final ranked) => _ApiSuggestions(ranked: ranked),
+        SuggestNoMatch() => const _SuggestStatus(
+          icon: Icons.search_off_outlined,
+          text:
+              'No model fits this computer yet. You can still paste one below.',
         ),
-        SuggestNoMatch() => const DiscoverStatusRow(
-          icon: Icons.search_off_rounded,
-          title: 'No model fits this computer',
-          message: 'You can still paste one in the box above.',
-        ),
-        SuggestSignInRequired() => const DiscoverStatusRow(
-          icon: Icons.person_outline,
-          title: 'Sign in to see models for this computer',
-          message: 'Or paste a owner/repo:file.gguf in the box above.',
-        ),
-        SuggestUnavailable() => _fallbackSection(ref),
+        SuggestSignInRequired() => const _SignInHint(),
+        SuggestUnavailable() => _fallbackSection(),
       },
     );
   }
 
-  /// The offline list, or — when there isn't one — a row saying why.
-  ///
-  /// Three ways this list can come up empty, and they are *not* the same thing:
-  ///
-  ///  1. still loading;
-  ///  2. `grid catalog` answered, but every model it knows about is already on
-  ///     disk ([catalogReadable] true, [fallback] empty);
-  ///  3. `grid catalog` gave us nothing at all.
-  ///
-  /// Only (3) is a failure. An earlier version keyed the error row on
-  /// `fallback.isEmpty` alone, so a machine that had simply downloaded
-  /// everything the catalog offers — one model, on this developer's Mac — was
-  /// told the catalog couldn't be reached while `grid catalog` was answering
-  /// fine. "Empty because it's all filtered out" is not "empty because it
-  /// broke".
-  Widget _fallbackSection(WidgetRef ref) {
-    final matches = filterInstalled(fallback, filter);
-
+  Widget _fallbackSection() {
     if (fallbackLoading && fallback.isEmpty) {
-      return const DiscoverStatusRow(
-        icon: null,
-        title: 'Looking for models',
-        message: 'Reading the offline catalog…',
-      );
-    }
-    if (fallback.isEmpty && catalogReadable) {
-      return const DiscoverStatusRow(
-        icon: Icons.check_circle_outline,
-        title: "You've already got everything suggested",
-        message:
-            'Nothing new for this computer right now. Paste a '
-            'owner/repo:file.gguf above to add another.',
-      );
+      return const _SuggestStatus(icon: null, text: 'Looking for models…');
     }
     if (fallback.isEmpty) {
-      return DiscoverStatusRow(
-        icon: Icons.cloud_off_rounded,
-        title: "Couldn't reach the model catalog",
-        message: 'Check your connection, or paste a model in the box above.',
-        // Invalidating both is deliberate: the API call is what usually failed,
-        // but a missing CLI takes out the offline list too, and a user pressing
-        // Retry means "try all of it again".
-        onRetry: () {
-          ref.invalidate(suggestedCatalogProvider);
-          ref.invalidate(catalogModelsProvider);
-        },
+      return const _SuggestStatus(
+        icon: Icons.cloud_off_outlined,
+        text: "Couldn't load suggestions — paste a model below.",
       );
     }
-    if (matches.isEmpty) return DiscoverNoMatch(needle: filter.trim());
-
     return _SectionBody(
-      count: matches.length,
-      children: [for (final model in matches) ShelfModelTile(model: model)],
+      count: fallback.length,
+      children: [for (final model in fallback) ShelfModelTile(model: model)],
     );
   }
 }
 
-/// The API-ranked list: the recommended pick, its alternatives, and a divider
-/// marking where models start running noticeably slower on this machine.
+/// The API-ranked list: best-first, with a divider marking where models start
+/// running noticeably slower on this machine.
 class _ApiSuggestions extends ConsumerWidget {
-  const _ApiSuggestions({
-    required this.ranked,
-    required this.pick,
-    required this.filter,
-  });
+  const _ApiSuggestions({required this.ranked});
 
   final List<CatalogModelPick> ranked;
-  final CatalogModelPick pick;
-  final String filter;
 
   /// Below this tokens/sec a model runs noticeably slower — the doc's cue for a
   /// "── slower below here ──" divider so the user sees the boundary.
@@ -156,17 +92,15 @@ class _ApiSuggestions extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     // Cross-reference what's already on disk (by GGUF filename) so a suggestion
-    // already downloaded reads "Downloaded" instead of offering Get again.
+    // already downloaded reads "On this computer" instead of offering Get again.
     final onDisk = {
       for (final m in ref.watch(localModelsProvider)) m.name.toLowerCase(),
     };
 
-    final matches = filterPicks(ranked, filter);
-    if (matches.isEmpty) return DiscoverNoMatch(needle: filter.trim());
-
     final children = <Widget>[];
     var dividerShown = false;
-    for (final model in matches) {
+    for (var i = 0; i < ranked.length; i++) {
+      final model = ranked[i];
       final slow = model.estTokPerSec > 0 && model.estTokPerSec < _slowBelow;
       if (slow && !dividerShown && children.isNotEmpty) {
         children.add(const _SlowerDivider());
@@ -175,22 +109,20 @@ class _ApiSuggestions extends ConsumerWidget {
       children.add(
         _SuggestedTile(
           model: model,
-          // Only while unfiltered: with a query typed, whichever row happens to
-          // match first is not "the recommendation", and washing it accent
-          // would say it is.
-          recommended: identical(model, pick) && filter.trim().isEmpty,
-          downloaded:
-              model.file != null && onDisk.contains(model.file!.toLowerCase()),
+          recommended: i == 0,
+          downloaded: model.file != null && onDisk.contains(
+            model.file!.toLowerCase(),
+          ),
         ),
       );
     }
 
-    return _SectionBody(count: matches.length, children: children);
+    return _SectionBody(count: ranked.length, children: children);
   }
 }
 
-/// Header + spaced tiles, kept in one place so the API and fallback lists look
-/// identical.
+/// Header + spaced tiles — the layout the shelf sections use, kept in one place
+/// so the API and fallback lists look identical.
 class _SectionBody extends StatelessWidget {
   const _SectionBody({required this.count, required this.children});
 
@@ -202,7 +134,8 @@ class _SectionBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ExtensionSectionHeader(label: 'Ranked for this computer', count: count),
+        const SizedBox(height: 10),
+        ExtensionSectionHeader(label: 'Suggested for your device', count: count),
         for (final child in children) ...[child, const SizedBox(height: 8)],
       ],
     );
@@ -210,13 +143,8 @@ class _SectionBody extends StatelessWidget {
 }
 
 /// One catalog suggestion: name, a facts line (quant · size · context · speed),
-/// and the one action — Get, or a "Downloaded" tag when it's already here.
-///
-/// The top pick is raised onto an accent wash instead of wearing a pill. A
-/// filled "Recommended" chip measured **3.78:1** against that wash in dark
-/// (accentOnSurface on `tint25` over `tint18`), under the 4.5:1 a label of that
-/// size needs; the wash itself carries the meaning, and the label rides on the
-/// row where it reaches 4.73:1.
+/// and the one action — Get, a spinner while any download runs, or a
+/// "Downloaded" tag when it's already here.
 class _SuggestedTile extends ConsumerWidget {
   const _SuggestedTile({
     required this.model,
@@ -231,50 +159,56 @@ class _SuggestedTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final row = Row(
-      children: [
-        ExtensionIconBadge(
-          icon: downloaded
-              ? Icons.memory_outlined
-              : Icons.cloud_download_outlined,
-          active: downloaded || recommended,
+    return InkWell(
+      onTap: () => _openDetailSheet(context, model.repoId ?? ''),
+      borderRadius: BorderRadius.circular(AppCard.insetRadius),
+      child: ExtensionTileSurface(
+        onDialog: true,
+        child: Row(
+          children: [
+            ExtensionIconBadge(
+              icon: downloaded
+                  ? Icons.memory_outlined
+                  : Icons.cloud_download_outlined,
+              active: downloaded || recommended,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TitleRow(name: _displayName(model), recommended: recommended),
+                  const SizedBox(height: 4),
+                  _MetaLine(model: model),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            _Action(model: model, downloaded: downloaded),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _TitleRow(name: _displayName(model), recommended: recommended),
-              const SizedBox(height: 4),
-              _MetaLine(model: model),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        _Action(model: model, downloaded: downloaded, recommended: recommended),
-      ],
-    );
-
-    if (!recommended) return ExtensionTileSurface(onDialog: true, child: row);
-
-    // The wash is the marker, so it's built by hand — GlassCard would add its
-    // own indigo wash and aura on top of this one (§2).
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppCard.tint18,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: AppGlass.cardShadow,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
-        child: row,
       ),
     );
   }
 }
 
-/// The model name, with the "Recommended" label on the top pick.
+void _openDetailSheet(BuildContext context, String repoId) {
+  if (repoId.isEmpty) return;
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, controller) => ModelDetailPanel(repoId: repoId),
+    ),
+  );
+}
+
+/// The model name with a "Recommended" pill on the top pick.
 class _TitleRow extends StatelessWidget {
   const _TitleRow({required this.name, required this.recommended});
 
@@ -283,7 +217,6 @@ class _TitleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context);
     return Row(
       children: [
         Flexible(
@@ -299,27 +232,40 @@ class _TitleRow extends StatelessWidget {
             ),
           ),
         ),
-        if (recommended) ...[
-          const SizedBox(width: 8),
-          Icon(
-            Icons.auto_awesome,
-            size: 11,
-            // accentOnSurface (#6E8BFF dark), not accentStrong (#5C7CFF): on
-            // this wash accentStrong measures 4.02:1, accentOnSurface 4.73:1.
-            color: AppPalette.accentOnSurface,
-          ),
+        if (recommended) ...[const SizedBox(width: 8), const _PickBadge()],
+      ],
+    );
+  }
+}
+
+/// The "Recommended" pill on the server's top pick for this device.
+class _PickBadge extends StatelessWidget {
+  const _PickBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = AppPalette.online;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome, size: 11, color: color),
           const SizedBox(width: 4),
           Text(
             'Recommended',
             style: TextStyle(
-              fontSize: 11,
-              height: 1.2,
+              fontSize: 10.5,
               fontWeight: FontWeight.w700,
-              color: AppPalette.accentOnSurface,
+              color: color,
             ),
           ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -332,10 +278,9 @@ class _MetaLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context);
     final parts = <String>[
       if (model.version != null && model.version!.isNotEmpty) model.version!,
-      if (model.sizeBytes > 0) formatGb(model.sizeBytes),
+      if (model.sizeBytes > 0) _gbLabel(model.sizeBytes),
       if (model.maxCtx > 0) 'ctx ${formatContextLength(model.maxCtx)}',
       if (model.estTokPerSec > 0) '~${_speed(model.estTokPerSec)} tok/s',
     ];
@@ -347,30 +292,21 @@ class _MetaLine extends StatelessWidget {
       style: TextStyle(
         fontSize: 12,
         height: 1.28,
-        fontFeatures: AppFont.tabularFigures,
         color: AppPalette.textSecondary,
       ),
     );
   }
 }
 
-/// Get / Downloaded — mirrors the shelf tile's action so the two lists behave
-/// the same. Only one download runs at a time (the global
+/// Get / spinner / Downloaded — mirrors the shelf tile's action so the two
+/// lists behave the same. Only one download runs at a time (the global
 /// [modelPullControllerProvider]), so every Get disables while one is in flight;
-/// its progress shows as a row at the top of this same list.
+/// the progress bar shows in the "Paste a model" card, which auto-expands.
 class _Action extends ConsumerWidget {
-  const _Action({
-    required this.model,
-    required this.downloaded,
-    required this.recommended,
-  });
+  const _Action({required this.model, required this.downloaded});
 
   final CatalogModelPick model;
   final bool downloaded;
-
-  /// The top pick's Get is filled — one primary action per list, on the row the
-  /// server says to take.
-  final bool recommended;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -395,27 +331,12 @@ class _Action extends ConsumerWidget {
 
     final pulling = ref.watch(modelPullControllerProvider) is ModelPulling;
     final spec = model.pullSpec;
-    final onPressed = (pulling || spec == null)
-        ? null
-        : () => ref.read(modelPullControllerProvider.notifier).pull(spec);
-    final icon = const Icon(Icons.download_outlined, size: AppControl.iconSize);
-    const label = Text('Get');
-
-    if (recommended) {
-      return FilledButton.icon(
-        onPressed: onPressed,
-        icon: icon,
-        label: label,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(0, AppControl.heightSmall),
-          padding: AppControl.paddingSmall,
-        ),
-      );
-    }
     return TextButton.icon(
-      onPressed: onPressed,
-      icon: icon,
-      label: label,
+      onPressed: (pulling || spec == null)
+          ? null
+          : () => ref.read(modelPullControllerProvider.notifier).pull(spec),
+      icon: const Icon(Icons.download_outlined, size: AppControl.iconSize),
+      label: const Text('Get'),
       style: TextButton.styleFrom(
         minimumSize: const Size(0, AppControl.heightSmall),
         padding: AppControl.paddingSmall,
@@ -431,8 +352,7 @@ class _SlowerDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final color = AppPalette.divider;
+    final color = AppPalette.textFaint;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -452,12 +372,88 @@ class _SlowerDivider extends StatelessWidget {
   }
 }
 
-/// `Qwen/Qwen2.5-3B-Instruct-GGUF` → `Qwen2.5-3B-Instruct` — the model name
+/// A one-line status row (loading / no-match) in the suggested section.
+class _SuggestStatus extends StatelessWidget {
+  const _SuggestStatus({required this.icon, required this.text});
+
+  final IconData? icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 22),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon == null)
+            const AppSpinner()
+          else
+            Icon(icon, size: 18, color: AppPalette.textFaint),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown when there's no session token: the catalog needs the user signed in to
+/// rank models for their device.
+class _SignInHint extends ConsumerWidget {
+  const _SignInHint();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+      child: Column(
+        children: [
+          Icon(Icons.person_outline, size: 20, color: AppPalette.textFaint),
+          const SizedBox(height: 8),
+          Text(
+            'Sign in to see models picked for this computer.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Or paste a model from Hugging Face below.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// `Qwen/Qwen2.5-3B-Instruct-GGUF` → `Qwen2.5 3B Instruct` — the model name
 /// without the owner prefix or the `-GGUF` suffix that every row would repeat.
 String _displayName(CatalogModelPick model) {
   final repo = model.repoId ?? model.file ?? 'Model';
   final tail = repo.contains('/') ? repo.split('/').last : repo;
-  return tail.replaceAll(RegExp(r'[-_]GGUF$', caseSensitive: false), '');
+  final stripped = tail.replaceAll(RegExp(r'[-_]GGUF$', caseSensitive: false), '');
+  return stripped
+      .split(RegExp(r'[-_]'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => w[0].toUpperCase() + w.substring(1))
+      .join(' ');
+}
+
+/// Bytes → a compact GB label: `2.4 GB`, or `12 GB` once it's big enough that a
+/// decimal is noise.
+String _gbLabel(int bytes) {
+  final gb = bytes / 1e9;
+  return gb >= 10
+      ? '${gb.toStringAsFixed(0)} GB'
+      : '${gb.toStringAsFixed(1)} GB';
 }
 
 /// Estimated tokens/sec rounded for display — whole numbers read cleaner than
