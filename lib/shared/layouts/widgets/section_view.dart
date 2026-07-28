@@ -4,6 +4,7 @@ import '../../../features/agents/presentation/agents_view.dart';
 import '../../../features/appearance/presentation/appearance_view.dart';
 import '../../../features/chat/presentation/archived_chats_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
+import '../../../features/connectors/presentation/connectors_view.dart';
 import '../../../features/debug/presentation/debug_view.dart';
 import '../../../features/messaging/presentation/messages_view.dart';
 import '../../../features/network/presentation/how_to_use_view.dart';
@@ -35,6 +36,7 @@ class SectionView extends StatelessWidget {
       ShellSection.scheduled => const ScheduledView(),
       ShellSection.agents => const AgentsView(),
       ShellSection.plugins => const PluginsView(),
+      ShellSection.connectors => const ConnectorsView(),
       ShellSection.projects => const ProjectsView(),
       ShellSection.messages => const MessagesView(),
       ShellSection.grids => const NetworksPane(),

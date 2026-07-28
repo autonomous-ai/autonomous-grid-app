@@ -32,6 +32,11 @@ enum ShellSection {
     thinIcon: LucideIcons.puzzle300,
     devOnly: true,
   ),
+  connectors(
+    LucideIcons.plug,
+    'Connectors',
+    thinIcon: LucideIcons.plug300,
+  ),
   projects(
     LucideIcons.folderOpen,
     'Projects',
