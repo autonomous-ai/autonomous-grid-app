@@ -24,18 +24,15 @@ class AgentWorkingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Align(
+    // No fill: the feed sits bare at the assistant column's left edge, exactly
+    // where its text lands once it starts streaming (see [_StreamingReply]), so
+    // "thinking" and the answer that follows share one left margin instead of
+    // the steps jumping out of a tinted box the moment the first token arrives.
+    return const Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        constraints: const BoxConstraints(maxWidth: 440),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const AgentActivityFeed(leadingGap: false),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: AgentActivityFeed(leadingGap: false),
       ),
     );
   }

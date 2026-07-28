@@ -575,12 +575,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
 }
 
 /// The reply as it streams in: the partial text, exactly as [ChatBubble] draws
-/// the finished turn, with the [TypingDots] cue under it so a pause between
-/// bursts reads as "still going", not "stopped".
+/// the finished turn.
+///
+/// A plain model reply carries the [TypingDots] cue under it so a pause between
+/// bursts reads as "still going", not "stopped". An agent turn shows the live
+/// step feed instead — which already carries its own spinner (a running step,
+/// or the "Thinking…" line) — so the dots would just say the same thing twice
+/// and are dropped.
 ///
 /// Reuses [ChatBubble] rather than re-laying-out the text, so a half-streamed
 /// reply and the same reply once committed are pixel-identical — no reflow at
-/// the moment the dots drop away. The dots sit at the content's left edge (the
+/// the moment the cue drops away. The cue sits at the content's left edge (the
 /// assistant column starts there), a touch below.
 class _StreamingReply extends StatelessWidget {
   const _StreamingReply({required this.text, this.showActivity = false});
@@ -602,11 +607,15 @@ class _StreamingReply extends StatelessWidget {
         ChatBubble(
           message: ChatMessage(role: ChatRole.assistant, text: text),
         ),
-        if (showActivity) const AgentActivityFeed(),
-        const Padding(
-          padding: EdgeInsets.only(left: 2, bottom: 10),
-          child: TypingDots(),
-        ),
+        // Agent turn: the feed's own spinner is the "still going" cue, so no
+        // dots. Plain reply: no feed, so the dots carry it.
+        if (showActivity)
+          const AgentActivityFeed()
+        else
+          const Padding(
+            padding: EdgeInsets.only(left: 2, bottom: 10),
+            child: TypingDots(),
+          ),
       ],
     );
   }
