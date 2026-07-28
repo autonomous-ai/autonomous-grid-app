@@ -885,6 +885,32 @@ void main() {
     expect(reloaded.projectId, project.id);
   });
 
+  test('a new chat in a project exposes that project before its first message, '
+      'so the pane shows the project rail from the very first "New chat"', () {
+    final h = _harness(tmp, updates: const []);
+    final project = h.container
+        .read(projectsProvider.notifier)
+        .add('${tmp.path}/my-notes');
+
+    h.container
+        .read(chatSessionsProvider.notifier)
+        .newChat(projectId: project.id);
+
+    final state = h.container.read(chatSessionsProvider);
+    // The draft isn't saved yet — there's no active conversation to read a
+    // project off of — but the pane can still tell which project it's in.
+    expect(state.active, isNull);
+    expect(state.openProjectId, project.id);
+  });
+
+  test('a plain new chat belongs to no project', () {
+    final h = _harness(tmp, updates: const []);
+
+    h.container.read(chatSessionsProvider.notifier).newChat();
+
+    expect(h.container.read(chatSessionsProvider).openProjectId, isNull);
+  });
+
   test(
     'the chat is named by the agent, not by the first thing typed',
     () async {

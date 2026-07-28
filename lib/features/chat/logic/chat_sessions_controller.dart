@@ -48,6 +48,7 @@ class ChatSessionsState {
   const ChatSessionsState({
     this.conversations = const [],
     this.activeId,
+    this.draftProjectId,
     this.phases = const {},
     this.errors = const {},
     this.awaitingPlanIds = const {},
@@ -56,6 +57,12 @@ class ChatSessionsState {
 
   final List<Conversation> conversations;
   final String? activeId;
+
+  /// The project a not-yet-saved chat is being composed in, or null. A new chat
+  /// isn't persisted until its first message, so [active] is null while it's
+  /// composed — this holds the project so the pane can still show its rail (and
+  /// the `@`-mention menu its folder) before the first send saves it.
+  final String? draftProjectId;
 
   /// The conversation whose **agent** turn is running right now, or null. Agent
   /// turns are serialized onto one live session and one shared activity/
@@ -85,6 +92,12 @@ class ChatSessionsState {
     }
     return null;
   }
+
+  /// The project the chat on screen belongs to — a saved chat's own project, or
+  /// the [draftProjectId] while a new one is still being composed. Null for a
+  /// plain chat outside any project.
+  String? get openProjectId =>
+      activeId == null ? draftProjectId : active?.projectId;
 
   /// The chats that haven't been archived — what the sidebar, the tray menu and
   /// ⌘K all list. [conversations] stays the whole set so the Archived screen
@@ -133,6 +146,7 @@ class ChatSessionsState {
   ChatSessionsState copyWith({
     List<Conversation>? conversations,
     Object? activeId = _keep,
+    Object? draftProjectId = _keep,
     Map<String, SendPhase>? phases,
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
@@ -140,6 +154,9 @@ class ChatSessionsState {
   }) => ChatSessionsState(
     conversations: conversations ?? this.conversations,
     activeId: identical(activeId, _keep) ? this.activeId : activeId as String?,
+    draftProjectId: identical(draftProjectId, _keep)
+        ? this.draftProjectId
+        : draftProjectId as String?,
     phases: phases ?? this.phases,
     errors: errors ?? this.errors,
     awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
@@ -219,10 +236,6 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   final Map<String, StreamSubscription<ChatSendUpdate>> _subs = {};
   final Map<String, Completer<void>> _dones = {};
 
-  /// The project a not-yet-saved chat belongs to. A new chat isn't persisted
-  /// until its first message, so the choice has to be held here until then.
-  String? _draftProjectId;
-
   /// Naming a chat outlives the send it started in (the agent writes the name
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
@@ -260,7 +273,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
 
   /// The project a not-yet-saved chat is being composed in, so the `@`-mention
   /// menu can list that folder before the chat is persisted.
-  String? get draftProjectId => _draftProjectId;
+  String? get draftProjectId => state.draftProjectId;
 
   /// Open a fresh, empty compose, optionally inside [projectId] — the folder the
   /// assistant may read while answering it. Not persisted until the first
@@ -270,8 +283,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Allowed while another chat is still streaming: its reply keeps folding into
   /// that chat in the background, and the user gets a clean composer here.
   void newChat({String? projectId}) {
-    _draftProjectId = projectId;
-    state = state.copyWith(activeId: null);
+    state = state.copyWith(activeId: null, draftProjectId: projectId);
   }
 
   /// Switch to a saved conversation. Allowed mid-send — a reply streaming into
@@ -784,7 +796,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       model: model,
       createdAt: now,
       updatedAt: now,
-      projectId: _draftProjectId,
+      projectId: state.draftProjectId,
     );
   }
 

@@ -31,11 +31,12 @@ class ChatPane extends ConsumerWidget {
     final network = ref.watch(selectedNetworkProvider);
     if (network == null) return const _NoGrid();
 
-    // Only the active chat's project matters here, so select it narrowly — this
-    // pane shouldn't rebuild on every streamed token, only when the open chat
-    // (and so its project) changes.
+    // The project the open chat belongs to — a saved chat's own, or the one a
+    // brand-new (not-yet-saved) chat is being composed in, so the rail shows
+    // from the very first "New chat in this project", before any message. Select
+    // it narrowly so this pane doesn't rebuild on every streamed token.
     final projectId = ref.watch(
-      chatSessionsProvider.select((s) => s.active?.projectId),
+      chatSessionsProvider.select((s) => s.openProjectId),
     );
     final project = ref.watch(projectByIdProvider(projectId));
 
