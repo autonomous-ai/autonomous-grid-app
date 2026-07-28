@@ -2,11 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_gateway_service.dart';
 import '../../../infrastructure/cli/hermes_platform_policy.dart';
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../agent/logic/hermes_grid_link.dart';
 import '../../agent/logic/hermes_tool.dart';
-import '../../auth/logic/session_controller.dart';
-import '../../network/logic/network_models_provider.dart';
 import 'messaging_platform.dart';
 import 'messaging_state.dart';
 
@@ -170,45 +167,16 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     return _platform.userIdValidate(userId);
   }
 
-  /// Make sure the assistant has a grid to answer with, and say what's missing
-  /// when it can't have one. Returns null when it's set — including when the
-  /// assistant was already pointed somewhere (by the Chat tab, or by a user who
-  /// configured it themselves).
+  /// Make sure the assistant has a grid to answer with before a bot goes live,
+  /// and say what's missing when it can't have one. Shared with the scheduler —
+  /// see [HermesGridLink.ensureModelForSelectedGrid].
   ///
   /// Not a nicety: the assistant keeps its own config, and until that names a
   /// grid it has no model to call. A bot connected before the user ever chatted
   /// in the app would come up, show as "Answering", and fail on every message —
   /// so the grid is written here rather than only on the way to a chat message.
-  Future<String?> _pointAtGrid() async {
-    final link = ref.read(hermesGridLinkProvider);
-    final grid = ref.read(selectedNetworkProvider);
-    if (grid == null) {
-      // Already configured (by hand, or by an earlier chat) — leave it alone
-      // rather than refusing to connect over a grid we only wanted for setup.
-      if (await link.hasModel()) return null;
-      return 'Pick a grid in Chat first — the bot answers with that grid, and '
-          "there's no answer without one.";
-    }
-
-    final model = await _modelFor(grid.networkId);
-    if (model == null) {
-      if (await link.hasModel()) return null;
-      return "This grid isn't sharing any AI yet, so the bot would have "
-          'nothing to answer with. Start sharing on this computer (Settings ▸ '
-          'This computer), then connect the bot.';
-    }
-    return link.point(grid, model);
-  }
-
-  /// The model the bot answers with: the one the user last chatted with when the
-  /// grid still serves it, else whatever that grid serves first. Null when the
-  /// grid serves nothing at all.
-  Future<String?> _modelFor(String networkId) async {
-    final served = await ref.read(networkModelsForProvider(networkId).future);
-    if (served.isEmpty) return null;
-    final chosen = ref.read(chatPrefsProvider).model;
-    return served.contains(chosen) ? chosen : served.first;
-  }
+  Future<String?> _pointAtGrid() =>
+      ref.read(hermesGridLinkProvider).ensureModelForSelectedGrid();
 
   /// Let this platform use whatever Hermes itself loads, dropping the
   /// read-and-answer pin an older build wrote. Best-effort: a config the app

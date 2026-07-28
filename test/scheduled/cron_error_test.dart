@@ -39,6 +39,27 @@ void main() {
       expect(result.hint, isNotNull);
     });
 
+    test('turns a "no model configured" run into a plain message with a next '
+        'step, so the user never faces the raw RuntimeError and env dump', () {
+      const raw =
+          "RuntimeError: Cron job 'tin mới nhất hôm nay' has no model "
+          "configured (job.model=None, HERMES_MODEL='', config.yaml "
+          'model.default missing or empty). Set a per-job model via `cronjob '
+          'action=update job_id=73ee873b963f model=<name>` or set a default '
+          'with `hermes model <name>`.';
+
+      final result = describeCronRunError(raw);
+
+      expect(result.summary.toLowerCase(), contains('no ai model'));
+      // None of the engineering detail leaks into the user-facing summary.
+      expect(result.summary, isNot(contains('RuntimeError')));
+      expect(result.summary, isNot(contains('cronjob')));
+      expect(result.summary, isNot(contains('HERMES_MODEL')));
+      expect(result.summary, isNot(contains('config.yaml')));
+      expect(result.hint, isNotNull);
+      expect(result.hint, contains('create it again'));
+    });
+
     test(
       'passes an unrecognized error through verbatim so no detail is lost',
       () {
@@ -55,6 +76,31 @@ void main() {
       final result = describeCronRunError('  boom  ');
 
       expect(result.summary, 'boom');
+    });
+  });
+
+  group('isBlockingCronError', () {
+    test('a model-drift skip and a missing model both count as blocking, so '
+        'the status reads "Won\'t run" rather than a hopeful "last run '
+        'failed"', () {
+      expect(
+        isBlockingCronError(
+          'Skipped to prevent unintended spend: the job is unpinned and the '
+          'model drifted.',
+        ),
+        isTrue,
+      );
+      expect(
+        isBlockingCronError("Cron job 'x' has no model configured."),
+        isTrue,
+      );
+    });
+
+    test('a one-off failure that could pass next time is not blocking', () {
+      expect(
+        isBlockingCronError('ConnectionError: relay unreachable'),
+        isFalse,
+      );
     });
   });
 }
