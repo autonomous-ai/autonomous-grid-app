@@ -49,12 +49,6 @@ class ChatPane extends ConsumerWidget {
     final project = ref.watch(projectByIdProvider(projectId));
     final override = ref.watch(chatRailOverrideProvider);
 
-    // Each chat starts from the default — the width decides — so switching chats
-    // drops a manual toggle; a toggle within one chat still sticks.
-    ref.listen(chatSessionsProvider.select((s) => s.activeId), (_, _) {
-      ref.read(chatRailOverrideProvider.notifier).clear();
-    });
-
     // Measured on the whole window, not the pane inside the sidebar.
     final width = MediaQuery.sizeOf(context).width;
     final fits = width >= _inlineWidth;
