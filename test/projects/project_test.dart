@@ -190,148 +190,67 @@ void main() {
     },
   );
 
-  test('a project starts remembering nothing', () {
-    final c = container();
-    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
-    expect(project.memory, isEmpty);
-  });
+  test(
+    'create names the project, sets its rules, trims both, and persists',
+    () {
+      final c = container();
 
-  test('remembering a fact trims it, persists, and reloads next launch', () {
-    final c = container();
-    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+      final project = c
+          .read(projectsProvider.notifier)
+          .create(
+            path: '${tmp.path}/notes',
+            name: '  My notes  ',
+            instructions: '  Answer in Vietnamese.  ',
+          );
 
-    c
+      expect(project.name, 'My notes');
+      expect(project.instructions, 'Answer in Vietnamese.');
+      // Survives a relaunch (a fresh controller reading the same store).
+      final reloaded = container().read(projectsProvider).single;
+      expect(reloaded.name, 'My notes');
+      expect(reloaded.instructions, 'Answer in Vietnamese.');
+    },
+  );
+
+  test('create with a blank name falls back to the folder name', () {
+    final c = container();
+
+    final project = c
         .read(projectsProvider.notifier)
-        .addMemory(project.id, '  The prod DB is read-only.  ');
+        .create(path: '${tmp.path}/notes', name: '   ');
 
-    expect(c.read(projectByIdProvider(project.id))?.memory, [
-      'The prod DB is read-only.',
-    ]);
-    // Survives a relaunch (a fresh controller reading the same store).
-    expect(container().read(projectsProvider).single.memory, [
-      'The prod DB is read-only.',
-    ]);
+    expect(project.name, 'notes');
+    expect(project.instructions, isEmpty);
   });
 
-  test('the same fact is remembered once, not twice', () {
+  test('create on a folder that is already a project returns it untouched, '
+      'never a duplicate', () {
     final c = container();
-    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+    final first = c
+        .read(projectsProvider.notifier)
+        .create(path: '${tmp.path}/notes', name: 'First', instructions: 'Keep');
 
-    c.read(projectsProvider.notifier).addMemory(project.id, 'Ship to #eng');
-    c.read(projectsProvider.notifier).addMemory(project.id, 'Ship to #eng');
-
-    expect(c.read(projectByIdProvider(project.id))?.memory, ['Ship to #eng']);
-  });
-
-  test('a blank fact is not remembered', () {
-    final c = container();
-    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
-
-    c.read(projectsProvider.notifier).addMemory(project.id, '   ');
-
-    expect(c.read(projectByIdProvider(project.id))?.memory, isEmpty);
-  });
-
-  test('forgetting a fact drops just that one, keeping the order', () {
-    final c = container();
-    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
-    final notifier = c.read(projectsProvider.notifier);
-    notifier.addMemory(project.id, 'one');
-    notifier.addMemory(project.id, 'two');
-    notifier.addMemory(project.id, 'three');
-
-    notifier.removeMemoryAt(project.id, 1);
-
-    expect(c.read(projectByIdProvider(project.id))?.memory, ['one', 'three']);
-  });
-
-  test('forgetting an out-of-range fact is a no-op, not a crash', () {
-    final c = container();
-    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
-    c.read(projectsProvider.notifier).addMemory(project.id, 'only');
-
-    c.read(projectsProvider.notifier).removeMemoryAt(project.id, 5);
-
-    expect(c.read(projectByIdProvider(project.id))?.memory, ['only']);
-  });
-
-  test('remembering against a missing project is a no-op, not a crash', () {
-    final c = container();
-    c.read(projectsProvider.notifier).add('${tmp.path}/notes');
-
-    c.read(projectsProvider.notifier).addMemory('nope', 'Hi.');
-
-    expect(c.read(projectsProvider).single.memory, isEmpty);
-  });
-
-  test(
-    'memory round-trips through JSON and drops out of the file when empty',
-    () {
-      final project = const Project(
-        id: '1',
-        name: 'notes',
-        path: '/tmp/notes',
-        memory: ['a', 'b'],
-      );
-
-      final reread = Project.fromJson(project.toJson().cast());
-      expect(reread?.memory, ['a', 'b']);
-
-      // An empty memory shouldn't clutter the saved file.
-      const empty = Project(id: '1', name: 'notes', path: '/tmp/notes');
-      expect(empty.toJson().containsKey('memory'), isFalse);
-    },
-  );
-
-  test(
-    'loading memory skips blank and non-string entries, trimming the rest',
-    () {
-      final project = Project.fromJson({
-        'id': '1',
-        'path': '/tmp/notes',
-        'memory': ['  keep  ', '', 42, null, 'also'],
-      });
-      expect(project?.memory, ['keep', 'also']);
-    },
-  );
-
-  group('projectStandingBrief', () {
-    Project make({String instructions = '', List<String> memory = const []}) =>
-        Project(
-          id: '1',
-          name: 'notes',
-          path: '/tmp/notes',
-          instructions: instructions,
-          memory: memory,
+    final again = c
+        .read(projectsProvider.notifier)
+        .create(
+          path: '${tmp.path}/notes',
+          name: 'Second',
+          instructions: 'Overwrite',
         );
 
-    test('is empty when the project steers nothing, so a chat carries no '
-        'preamble', () {
-      expect(projectStandingBrief(make()), isEmpty);
-    });
+    expect(again.id, first.id);
+    expect(c.read(projectsProvider), hasLength(1));
+    // Re-adding a folder must not clobber the rules already on it.
+    expect(again.name, 'First');
+    expect(again.instructions, 'Keep');
+  });
 
-    test('is just the rules when there is no memory', () {
-      expect(
-        projectStandingBrief(make(instructions: 'Be brief.')),
-        'Be brief.',
-      );
-    });
+  test('add is the bare form of create — folder name, no rules', () {
+    final c = container();
 
-    test('lists the remembered facts as bullets when there are no rules', () {
-      expect(
-        projectStandingBrief(make(memory: ['A', 'B'])),
-        'Remember about this project:\n- A\n- B',
-      );
-    });
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
 
-    test(
-      'joins rules then memory so the agent gets both on its first turn',
-      () {
-        expect(
-          projectStandingBrief(make(instructions: 'Be brief.', memory: ['A'])),
-          'Be brief.\n\nRemember about this project:\n- A',
-        );
-      },
-    );
+    expect(project.name, 'notes');
+    expect(project.instructions, isEmpty);
   });
 }

@@ -8,7 +8,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
 import '../../projects/logic/project.dart';
-import '../../projects/presentation/add_project.dart';
+import '../../projects/presentation/create_project_dialog.dart';
 import '../../projects/presentation/project_menu.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
@@ -64,7 +64,7 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
         padding: const EdgeInsets.only(left: 10, right: 16),
         children: [
           _ProjectsHeader(
-            onAdd: () => addProjectFromPicker(ref),
+            onAdd: () => showCreateProjectDialog(context),
             onManage: () => ref
                 .read(shellSectionProvider.notifier)
                 .select(ShellSection.projects),
@@ -435,7 +435,7 @@ class _AddFirstProjectHint extends ConsumerWidget {
           ),
           const SizedBox(height: 6),
           TextButton.icon(
-            onPressed: () => addProjectFromPicker(ref),
+            onPressed: () => showCreateProjectDialog(context),
             // Compact: this sits inline under the project list, not as a
             // standalone action.
             style: TextButton.styleFrom(

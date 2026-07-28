@@ -535,9 +535,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       modality: modality,
       attachments: attachments,
       workdir: project?.path,
-      // Both the project's house rules and the facts it's been asked to
-      // remember — one standing brief the agent reads on its first turn.
-      instructions: project == null ? null : projectStandingBrief(project),
+      instructions: project?.instructions,
       planTurn: planTurn,
       viaAgent: viaAgent,
       done: done,
