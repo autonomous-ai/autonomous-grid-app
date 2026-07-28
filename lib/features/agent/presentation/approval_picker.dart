@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/composer_trigger.dart';
 import '../logic/agent_permissions.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
@@ -81,81 +82,17 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
             onTap: () => _select(mode),
           ),
       ],
-      builder: (context, controller, _) => _Trigger(
-        mode: current,
-        onTap: () => _toggleMenu(context, controller),
-      ),
-    );
-  }
-}
-
-/// The pill in the composer: the mode in force, and a caret.
-class _Trigger extends StatelessWidget {
-  const _Trigger({required this.mode, required this.onTap});
-
-  final AgentApprovalMode mode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads color tokens; follow theme flips.
-    final color = approvalColor(mode);
-    final radius = BorderRadius.circular(AppControl.radius);
-    return Tooltip(
-      message: approvalDetail(mode),
-      child: Material(
-        // Neutral, like every other control in the composer. Tinting the fill and
-        // the rim as well as the icon made this the loudest thing on screen on
-        // the one mode that is orange — a warning parked next to the text box you
-        // type in, permanently. The icon alone carries the mode; the pill itself
-        // has no reason to shout, least of all forever.
-        color: AppGlass.surfaceFill,
-        borderRadius: radius,
-        child: InkWell(
-          borderRadius: radius,
-          onTap: onTap,
-          // macOS answers a click instantly; the app's global InkRipple spreads
-          // an Android-style circle across the pill instead. Hover carries it.
-          splashFactory: NoSplash.splashFactory,
-          hoverColor: AppGlass.surfaceHoverFill,
-          child: Container(
-            height: AppControl.heightSmall,
-            padding: const EdgeInsets.only(left: 8, right: 7),
-            decoration: BoxDecoration(
-              borderRadius: radius,
-              border: Border.all(color: AppGlass.hair),
-              boxShadow: AppGlass.cardShadow,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(approvalIcon(mode), size: 13, color: color),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    approvalLabel(mode),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      // Ink, not the accent: a whole label in the mode's colour
-                      // fights the icon for the same job and turns the pill into
-                      // a badge. The chip is the signal; the word is the caption.
-                      color: AppPalette.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.expand_more_rounded,
-                  size: 14,
-                  color: AppPalette.textFaint,
-                ),
-              ],
-            ),
-          ),
+      builder: (context, controller, _) => ComposerTrigger(
+        label: approvalLabel(current),
+        tooltip: approvalDetail(current),
+        // The icon alone carries the mode (orange for Full access); the pill
+        // itself stays neutral, like every other control in the composer.
+        leading: Icon(
+          approvalIcon(current),
+          size: 13,
+          color: approvalColor(current),
         ),
+        onTap: () => _toggleMenu(context, controller),
       ),
     );
   }

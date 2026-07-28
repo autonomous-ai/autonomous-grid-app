@@ -1,0 +1,79 @@
+import 'package:flutter/material.dart';
+
+import '../theme/app_theme.dart';
+
+/// A flat, unfilled dropdown trigger for the composer's toolbar — the shared
+/// shape of the model, agent and access controls that sit under the text box.
+///
+/// Chrome, not a call to action: transparent, unrimmed and shadowless, it lets
+/// the composer's own surface carry it and reports a choice rather than shouting
+/// for one. [leading] is the choice's mark (a tinted glyph, or an agent's logo),
+/// [label] its name, and a caret says it opens a menu.
+///
+/// One widget so the three controls can't drift apart in height, radius or weight
+/// the way three hand-rolled pills did — one filled, one rimmed, one flat.
+class ComposerTrigger extends StatelessWidget {
+  const ComposerTrigger({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.leading,
+    this.tooltip,
+  });
+
+  /// The mark shown before the label — a small [Icon], or an agent's logo. Null
+  /// when there's nothing to mark yet (a model not chosen).
+  final Widget? leading;
+
+  final String label;
+
+  /// Hover text; the button carries none when null.
+  final String? tooltip;
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette tokens — follow theme flips.
+    final button = OutlinedButton(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppPalette.textPrimary,
+        backgroundColor: Colors.transparent,
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppControl.radius),
+        ),
+        padding: AppControl.paddingSmall,
+        // Pin both ends so the button sizes to the toolbar's row height instead
+        // of the 48px its own padding would otherwise force.
+        minimumSize: const Size.fromHeight(AppControl.heightSmall),
+        maximumSize: const Size.fromHeight(AppControl.heightSmall),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        splashFactory: NoSplash.splashFactory,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (leading != null) ...[leading!, const SizedBox(width: 5)],
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 1),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 15,
+            color: AppPalette.textFaint,
+          ),
+        ],
+      ),
+    );
+    if (tooltip == null) return button;
+    return Tooltip(message: tooltip!, child: button);
+  }
+}
