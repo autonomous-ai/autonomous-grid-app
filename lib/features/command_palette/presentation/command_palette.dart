@@ -6,7 +6,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../projects/logic/project.dart';
-import '../../projects/presentation/add_project.dart';
+import '../../projects/presentation/create_project_dialog.dart';
 import '../../scheduled/logic/scheduled_jobs_controller.dart';
 import '../logic/command_item.dart';
 
@@ -49,11 +49,14 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
     setState(() => _highlight = (_highlight + delta) % count);
   }
 
-  /// Do the thing, then close — in that order, because the picker a command may
-  /// open outlives this dialog.
+  /// Close first, then act: a command may open its own dialog (Add a project),
+  /// which must land on the navigator that outlives this palette rather than be
+  /// popped along with it. Every command reads its providers synchronously, so
+  /// `ref` is still valid across the pop.
   void _run(CommandItem item) {
-    runCommand(ref, item);
-    Navigator.of(context).pop();
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    runCommand(navigator.context, ref, item);
   }
 
   @override
@@ -122,7 +125,7 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
 
 /// Perform [item]. Everything it needs is read straight away, so a command that
 /// opens a picker still works after the palette has closed.
-void runCommand(WidgetRef ref, CommandItem item) {
+void runCommand(BuildContext context, WidgetRef ref, CommandItem item) {
   final shell = ref.read(shellSectionProvider.notifier);
   switch (item) {
     case OpenChatCommand(:final chat):
@@ -135,7 +138,7 @@ void runCommand(WidgetRef ref, CommandItem item) {
       ref.read(selectedJobIdProvider.notifier).select(job.id);
       shell.select(ShellSection.scheduled);
     case AddProjectCommand():
-      addProjectFromPicker(ref);
+      showCreateProjectDialog(context);
     case OpenSettingsCommand():
       shell.select(kDefaultSettingsSection);
     case GoToCommand(:final section):

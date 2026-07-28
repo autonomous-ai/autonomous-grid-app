@@ -17,7 +17,6 @@ class Project {
     required this.name,
     required this.path,
     this.instructions = '',
-    this.memory = const [],
     this.pinned = false,
   });
 
@@ -37,19 +36,11 @@ class Project {
   /// Vietnamese", "this is a Flutter app, use Dart idioms"). Empty means none.
   final String instructions;
 
-  /// Facts the user asked the assistant to remember about this project, one per
-  /// entry ("the prod DB is read-only", "ship notes to #eng"). Like
-  /// [instructions] these ride along on the agent's first turn (see
-  /// [projectStandingBrief]) — rules say *how* to work, memory says *what's
-  /// true here*. Empty means nothing is remembered yet.
-  final List<String> memory;
-
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
     'path': path,
     if (instructions.isNotEmpty) 'instructions': instructions,
-    if (memory.isNotEmpty) 'memory': memory,
     if (pinned) 'pinned': true,
   };
 
@@ -60,37 +51,25 @@ class Project {
     if (path is! String || path.isEmpty) return null;
     final name = json['name'];
     final instructions = json['instructions'];
-    final memory = json['memory'];
     return Project(
       id: id,
       name: name is String && name.isNotEmpty ? name : folderName(path),
       path: path,
       instructions: instructions is String ? instructions : '',
-      memory: memory is List
-          ? [
-              for (final entry in memory)
-                if (entry is String && entry.trim().isNotEmpty) entry.trim(),
-            ]
-          : const [],
       pinned: json['pinned'] == true,
     );
   }
 
-  /// A copy with [name], [instructions], [memory] or [pinned] changed; id and
-  /// path are the project's identity and never move.
-  Project copyWith({
-    String? name,
-    String? instructions,
-    List<String>? memory,
-    bool? pinned,
-  }) => Project(
-    id: id,
-    name: name ?? this.name,
-    path: path,
-    instructions: instructions ?? this.instructions,
-    memory: memory ?? this.memory,
-    pinned: pinned ?? this.pinned,
-  );
+  /// A copy with [name], [instructions] or [pinned] changed; id and path are the
+  /// project's identity and never move.
+  Project copyWith({String? name, String? instructions, bool? pinned}) =>
+      Project(
+        id: id,
+        name: name ?? this.name,
+        path: path,
+        instructions: instructions ?? this.instructions,
+        pinned: pinned ?? this.pinned,
+      );
 
   /// Whether the folder is still there. A project whose folder was moved or
   /// deleted stays in the list but is shown as missing — silently dropping it
@@ -102,33 +81,6 @@ class Project {
 String folderName(String path) {
   final parts = path.split('/').where((p) => p.isNotEmpty).toList();
   return parts.isEmpty ? path : parts.last;
-}
-
-/// The standing guidance the assistant reads at the start of every chat in a
-/// project: its house rules ([Project.instructions]) followed by the facts it's
-/// been asked to remember ([Project.memory]). Returns '' when the project sets
-/// neither, so a plain chat carries no preamble.
-///
-/// Pure so it can be unit-tested and shared by both agent senders (via
-/// `withProjectInstructions`) — memory that never reaches the agent would be a
-/// lie the card tells.
-String projectStandingBrief(Project project) {
-  final rules = project.instructions.trim();
-  final memory = [
-    for (final entry in project.memory)
-      if (entry.trim().isNotEmpty) '- ${entry.trim()}',
-  ];
-  if (rules.isEmpty && memory.isEmpty) return '';
-
-  final buffer = StringBuffer();
-  if (rules.isNotEmpty) buffer.write(rules);
-  if (memory.isNotEmpty) {
-    if (rules.isNotEmpty) buffer.write('\n\n');
-    buffer
-      ..write('Remember about this project:\n')
-      ..write(memory.join('\n'));
-  }
-  return buffer.toString();
 }
 
 /// Persists the projects as `~/.grid/app/projects.json`. App-owned (the CLI never
@@ -176,20 +128,34 @@ class ProjectsController extends Notifier<List<Project>> {
   @override
   List<Project> build() => ref.read(projectsStoreProvider).load();
 
-  /// Add the folder at [path]. A folder that's already a project is returned as
-  /// it stands rather than added twice.
-  Project add(String path) {
+  /// Create a project for the folder at [path], carrying the [name] the user
+  /// gave it and any standing [instructions] they wrote up front.
+  ///
+  /// A blank [name] falls back to the folder's own name. A folder that's already
+  /// a project is returned as it stands rather than added twice — this creates,
+  /// it doesn't overwrite, so re-adding a folder never clobbers rules already on
+  /// it.
+  Project create({
+    required String path,
+    String name = '',
+    String instructions = '',
+  }) {
     final existing = state.where((p) => p.path == path).firstOrNull;
     if (existing != null) return existing;
 
     final project = Project(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
-      name: folderName(path),
+      name: name.trim().isEmpty ? folderName(path) : name.trim(),
       path: path,
+      instructions: instructions.trim(),
     );
     _commit([...state, project]);
     return project;
   }
+
+  /// Add the folder at [path] with the folder's own name and no rules — the bare
+  /// form of [create], kept for callers that just want a folder in the list.
+  Project add(String path) => create(path: path);
 
   /// Set the standing rules the assistant follows in [id]'s chats. Trimmed;
   /// passing blank clears them. A project that isn't there any more is a no-op.
@@ -203,32 +169,6 @@ class ProjectsController extends Notifier<List<Project>> {
           project,
     ]);
   }
-
-  /// Remember [note] about [id] — appended to the project's [Project.memory] so
-  /// the assistant carries it into every chat here. Trimmed; a blank note or a
-  /// project that isn't there any more is a no-op. Duplicates are dropped so the
-  /// same fact isn't remembered twice.
-  void addMemory(String id, String note) {
-    final trimmed = note.trim();
-    if (trimmed.isEmpty) return;
-    _commit([
-      for (final project in state)
-        if (project.id == id && !project.memory.contains(trimmed))
-          project.copyWith(memory: [...project.memory, trimmed])
-        else
-          project,
-    ]);
-  }
-
-  /// Forget the memory at [index] for [id]. An out-of-range index or a project
-  /// that isn't there any more is a no-op.
-  void removeMemoryAt(String id, int index) => _commit([
-    for (final project in state)
-      if (project.id == id && index >= 0 && index < project.memory.length)
-        project.copyWith(memory: [...project.memory]..removeAt(index))
-      else
-        project,
-  ]);
 
   /// Rename a project. The folder on disk is untouched — only the label the user
   /// sees changes. A blank name is ignored (a nameless row can't be told apart),

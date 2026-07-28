@@ -1,37 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/host_shell_service.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../logic/project.dart';
-import '../logic/selected_project.dart';
-import 'add_project.dart';
-import 'project_actions.dart';
+import 'create_project_dialog.dart';
 import 'project_instructions_dialog.dart';
 import 'project_menu.dart';
-import 'project_rail.dart';
 
-/// The Projects screen: the folders on this computer the assistant may read, and
-/// — beside a wide-enough window — a rail of cards for the selected one.
+/// The Projects screen: the folders on this computer the assistant may read.
 ///
-/// A chat opened inside a project can answer about the files in it: nothing is
+/// A chat opened inside a project can answer about the files in it — nothing is
 /// copied or uploaded, the agent simply runs with that folder open. This screen
-/// is where projects are added, steered (rules, memory, scheduled tasks), opened
-/// in Finder, and forgotten again.
+/// is where projects are added, opened in Finder, and forgotten again.
 class ProjectsView extends ConsumerWidget {
   const ProjectsView({super.key});
-
-  /// Below this the window is too narrow for a list and a rail side by side, so
-  /// the rail folds away and the list's own row actions carry the screen.
-  static const _railBreakpoint = 720.0;
-  static const _railWidth = 344.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projects = ref.watch(sortedProjectsProvider);
-    final selected = ref.watch(resolvedSelectedProjectProvider);
 
     return SectionScaffold(
       title: 'Projects',
@@ -39,89 +31,41 @@ class ProjectsView extends ConsumerWidget {
           'Folders the assistant may read while it answers you. Open a chat '
           "inside one and you can ask about its files — it looks, it doesn't "
           'change them.',
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final showRail =
-              projects.isNotEmpty && constraints.maxWidth >= _railBreakpoint;
-          if (!showRail) return const _ProjectList(selectable: false);
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Expanded(child: _ProjectList(selectable: true)),
-              const SizedBox(width: 20),
-              SizedBox(
-                width: _railWidth,
-                child: selected == null
-                    ? const SizedBox.shrink()
-                    : ProjectRail(project: selected),
-              ),
-            ],
-          );
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: () => showCreateProjectDialog(context),
+              icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+              label: const Text('Add a project'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: projects.isEmpty
+                ? const _Empty()
+                : ListView.separated(
+                    padding: EdgeInsets.zero,
+                    itemCount: projects.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) =>
+                        _ProjectCard(project: projects[i]),
+                  ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// The add button and the list of project rows. When [selectable], tapping a row
-/// picks the project the rail is dressed for; otherwise the rows are plain.
-class _ProjectList extends ConsumerWidget {
-  const _ProjectList({required this.selectable});
-
-  final bool selectable;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final projects = ref.watch(sortedProjectsProvider);
-    final selectedId = selectable
-        ? ref.watch(resolvedSelectedProjectProvider)?.id
-        : null;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: () => addProjectFromPicker(ref),
-            icon: const Icon(Icons.create_new_folder_outlined, size: 18),
-            label: const Text('Add a project'),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: projects.isEmpty
-              ? const _Empty()
-              : ListView.separated(
-                  padding: EdgeInsets.zero,
-                  itemCount: projects.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) => _ProjectCard(
-                    project: projects[i],
-                    selectable: selectable,
-                    selected: selectable && projects[i].id == selectedId,
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-/// One project: where it is, how many chats live in it, and what you can do.
-/// When [selectable] the whole row picks the project for the rail, and the
-/// selected one wears the focal [GlassCardStyle.hero] dressing.
+/// One project: where it is, how many chats live in it, and what you can do —
+/// start a chat in it, open the folder, or forget it.
 class _ProjectCard extends ConsumerWidget {
-  const _ProjectCard({
-    required this.project,
-    required this.selectable,
-    required this.selected,
-  });
+  const _ProjectCard({required this.project});
 
   final Project project;
-  final bool selectable;
-  final bool selected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -135,8 +79,7 @@ class _ProjectCard extends ConsumerWidget {
         .length;
     final missing = !project.exists;
 
-    final card = GlassCard(
-      style: selected ? GlassCardStyle.hero : GlassCardStyle.card,
+    return GlassCard(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,7 +94,10 @@ class _ProjectCard extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(project.name, style: theme.textTheme.titleSmall),
+                Text(
+                  project.name,
+                  style: theme.textTheme.titleSmall?.copyWith(),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   project.path,
@@ -180,20 +126,8 @@ class _ProjectCard extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // With the rail open it carries new-chat / rules / open; the row keeps
-          // only the one thing the rail can't do — forget the project.
-          _Actions(project: project, missing: missing, compact: selectable),
+          _Actions(project: project, missing: missing),
         ],
-      ),
-    );
-
-    if (!selectable) return card;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: () =>
-            ref.read(selectedProjectIdProvider.notifier).select(project.id),
-        child: card,
       ),
     );
   }
@@ -205,18 +139,30 @@ class _ProjectCard extends ConsumerWidget {
   };
 }
 
-/// The row's actions. [compact] drops to the single action the rail doesn't
-/// offer (forget), since the rail beside it carries the rest.
 class _Actions extends ConsumerWidget {
-  const _Actions({
-    required this.project,
-    required this.missing,
-    required this.compact,
-  });
+  const _Actions({required this.project, required this.missing});
 
   final Project project;
   final bool missing;
-  final bool compact;
+
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    final opened = await ref
+        .read(hostShellServiceProvider)
+        .openFolder(project.path);
+    if (!context.mounted || opened) return;
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message: "Couldn't open ${project.path}",
+        severity: ToastSeverity.error,
+      ),
+    );
+  }
+
+  void _newChat(WidgetRef ref) {
+    ref.read(chatSessionsProvider.notifier).newChat(projectId: project.id);
+    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+  }
 
   Future<void> _forget(BuildContext context, WidgetRef ref) async {
     if (await confirmRemoveProject(context, project)) {
@@ -230,15 +176,15 @@ class _Actions extends ConsumerWidget {
     return Wrap(
       spacing: 6,
       children: [
-        if (!compact && !missing)
+        if (!missing)
           IconButton(
             tooltip: 'New chat in this project',
             iconSize: 18,
             color: AppPalette.textSecondary,
             icon: const Icon(Icons.add_comment_outlined),
-            onPressed: () => startProjectChat(ref, project),
+            onPressed: () => _newChat(ref),
           ),
-        if (!compact && !missing)
+        if (!missing)
           IconButton(
             tooltip: hasRules ? 'Edit agent rules' : 'Add agent rules',
             iconSize: 18,
@@ -246,13 +192,13 @@ class _Actions extends ConsumerWidget {
             icon: const Icon(Icons.rule_rounded),
             onPressed: () => showProjectInstructionsDialog(context, project),
           ),
-        if (!compact && !missing)
+        if (!missing)
           IconButton(
             tooltip: 'Open folder',
             iconSize: 18,
             color: AppPalette.textSecondary,
             icon: const Icon(Icons.drive_folder_upload_outlined),
-            onPressed: () => openProjectFolder(context, ref, project),
+            onPressed: () => _open(context, ref),
           ),
         IconButton(
           tooltip: 'Remove from Grid',
@@ -327,7 +273,7 @@ class _Empty extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: () => addProjectFromPicker(ref),
+              onPressed: () => showCreateProjectDialog(context),
               icon: const Icon(Icons.create_new_folder_outlined, size: 18),
               label: const Text('Add a project'),
             ),
