@@ -4,6 +4,7 @@ import '../../../infrastructure/cli/hermes_cron_service.dart';
 import '../../agent/logic/agent_providers.dart';
 import '../../agent/logic/hermes_grid_link.dart';
 import '../../agent/logic/hermes_tool.dart';
+import '../../projects/logic/project_tasks_store.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'task_delivery.dart';
@@ -103,10 +104,17 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
   /// The job runs in the Projects folder, so a task like "summarise my notes"
   /// can actually see them. Set [runNow] to fire it once straight away — a "try
   /// it now" that doesn't make the user hunt the task down afterwards.
+  ///
+  /// Pass [workdir] to run the task in a specific folder (a project's, so it can
+  /// read that project's files) instead of the shared agent workspace; pass
+  /// [projectId] to record which project it belongs to, so the project's rail
+  /// can list it. The two go together — a project-scoped task supplies both.
   Future<({String? error, String? id})> create({
     required String name,
     required String prompt,
     required JobSchedule schedule,
+    String? workdir,
+    String? projectId,
     bool toTelegram = false,
     bool runNow = false,
   }) async {
@@ -134,7 +142,7 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
         schedule: schedule.toSchedule(),
         prompt: prompt,
         name: name,
-        workdir: ref.read(agentWorkspaceDirProvider).path,
+        workdir: workdir ?? ref.read(agentWorkspaceDirProvider).path,
         deliver: toTelegram ? kDeliverTelegram : kDeliverLocal,
       ),
     );
@@ -143,6 +151,10 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     final created = (state.value ?? const <ScheduledJob>[])
         .where((job) => !before.contains(job.id))
         .firstOrNull;
+    // Tie the new task to its project so the project's rail shows only its own.
+    if (created != null && projectId != null) {
+      ref.read(projectTasksProvider.notifier).assign(created.id, projectId);
+    }
     if (created != null && runNow) {
       // Best-effort: the task is saved either way, so a run that can't be
       // kicked off now isn't worth failing the whole create over.
@@ -159,10 +171,14 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
 
   Future<String?> remove(String id) async {
     final error = await _act((s) => s.remove(id));
-    if (error == null && ref.read(selectedJobIdProvider) == id) {
+    if (error != null) return error;
+    // Drop the project link too, so a project's rail doesn't keep pointing at a
+    // task that's gone.
+    ref.read(projectTasksProvider.notifier).unassign(id);
+    if (ref.read(selectedJobIdProvider) == id) {
       ref.read(selectedJobIdProvider.notifier).select(null);
     }
-    return error;
+    return null;
   }
 
   /// Start the scheduler, then re-check — so the warning banner clears itself
