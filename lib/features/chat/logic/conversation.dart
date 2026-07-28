@@ -203,6 +203,7 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
     'sources': [for (final s in message.sources) s.toJson()],
   if (message.plan.isNotEmpty)
     'plan': [for (final p in message.plan) p.toJson()],
+  if (message.model != null) 'model': message.model,
 };
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
@@ -230,6 +231,7 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
         for (final p in rawPlan)
           if (p is Map<String, dynamic>) ?AgentPlanEntry.fromJson(p),
     ],
+    model: json['model'] is String ? json['model'] as String : null,
   );
 }
 

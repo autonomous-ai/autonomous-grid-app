@@ -9,6 +9,7 @@ import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/modality_mark.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../logic/grid_model_catalog.dart';
@@ -191,8 +192,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
   String _triggerLabel(String id) {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return 'Choose model';
-    final slash = trimmed.lastIndexOf('/');
-    return slash == -1 ? trimmed : trimmed.substring(slash + 1);
+    return modelShortLabel(trimmed);
   }
 
   /// The selected model as the menu knows it, so the pill wears the same mark

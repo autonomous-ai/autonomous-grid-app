@@ -43,7 +43,9 @@ Future<void> main() async {
   await windowManager.setPreventClose(true);
 
   final options = WindowOptions(
-    size: const Size(1100, 720),
+    // Wide enough to open with the project rail beside a chat — the conversation
+    // column still clears its composer at this width (see ChatPane._inlineWidth).
+    size: const Size(1280, 800),
     minimumSize: const Size(880, 560),
     title: 'Grid',
     center: true,

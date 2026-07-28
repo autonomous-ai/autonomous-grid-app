@@ -631,7 +631,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
           case ChatSendSuccess(:final reply):
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
-              messages: [...current.messages, reply],
+              // Stamp the reply with the model that answered, so the transcript
+              // says which one spoke even after switching models mid-chat.
+              messages: [...current.messages, reply.copyWith(model: model)],
             );
             // A planning turn's reply is a plan waiting on approval — light the
             // "approve & run" bar for this chat. Any other reply leaves it dark.

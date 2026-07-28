@@ -54,6 +54,10 @@ class ChatBubble extends StatelessWidget {
                 const SizedBox(height: 12),
                 MessageSources(sources: message.sources),
               ],
+              if (message.model != null) ...[
+                const SizedBox(height: 8),
+                _ModelTag(model: message.model!),
+              ],
             ],
           ),
         ),
@@ -88,6 +92,39 @@ class ChatBubble extends StatelessWidget {
           color: AppPalette.textPrimary,
         ),
       ),
+    );
+  }
+}
+
+/// A quiet footer under an assistant reply naming the model that produced it —
+/// the bare model name, so the transcript says which one spoke without shouting
+/// it. Faint by design: it's a caption on the answer, not part of it.
+class _ModelTag extends StatelessWidget {
+  const _ModelTag({required this.model});
+
+  final String model;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette tokens — follow theme flips.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.auto_awesome_outlined,
+          size: 12,
+          color: AppPalette.textFaint,
+        ),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            modelShortLabel(model),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11.5, color: AppPalette.textFaint),
+          ),
+        ),
+      ],
     );
   }
 }

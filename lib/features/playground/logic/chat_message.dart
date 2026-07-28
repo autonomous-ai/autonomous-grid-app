@@ -23,6 +23,7 @@ class ChatMessage {
     this.media = const [],
     this.sources = const [],
     this.plan = const [],
+    this.model,
   });
 
   final ChatRole role;
@@ -38,6 +39,40 @@ class ChatMessage {
   /// under the reply. Empty for user turns and for simple answers the agent
   /// didn't plan out.
   final List<AgentPlanEntry> plan;
+
+  /// The model that produced this reply, as the id the turn was sent with (e.g.
+  /// `qwen/qwen3.6-27b`, or `auto`). Shown under the answer so the transcript
+  /// says which model spoke. Set on assistant turns; null on the user's own, and
+  /// on replies saved before this was recorded.
+  final String? model;
+
+  ChatMessage copyWith({
+    ChatRole? role,
+    String? text,
+    List<ChatMedia>? media,
+    List<WebSource>? sources,
+    List<AgentPlanEntry>? plan,
+    String? model,
+  }) => ChatMessage(
+    role: role ?? this.role,
+    text: text ?? this.text,
+    media: media ?? this.media,
+    sources: sources ?? this.sources,
+    plan: plan ?? this.plan,
+    model: model ?? this.model,
+  );
+}
+
+/// A model id as the transcript shows it: the bare model name, dropping any
+/// `maker/` prefix (`qwen/qwen3.6-27b` → `qwen3.6-27b`).
+///
+/// Trimmed; an id that is blank or only a maker prefix comes back as given
+/// rather than as an empty string.
+String modelShortLabel(String id) {
+  final trimmed = id.trim();
+  final slash = trimmed.lastIndexOf('/');
+  if (slash == -1 || slash == trimmed.length - 1) return trimmed;
+  return trimmed.substring(slash + 1);
 }
 
 /// What the controller is doing right now — modelled as a sealed hierarchy so
