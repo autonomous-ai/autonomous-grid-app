@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
+import '../../../shared/widgets/composer_trigger.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/modality_mark.dart';
 import '../../../shared/widgets/skeleton.dart';
@@ -155,20 +156,35 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
           onClose: _menu.close,
         ),
       ],
-      builder: (context, controller, _) => _TriggerButton(
-        label: _triggerLabel(widget.currentModelId),
-        // Which grid, not just which model: two grids can serve the same id (and
-        // do — the same qwen sits on several), so the name alone left "whose
-        // machine is answering, and on whose bill" unanswerable without
-        // reopening the menu. The menu has always keyed its tick on grid+id;
-        // the pill was reporting half of what the menu knew.
-        grid: ref.watch(selectedNetworkProvider)?.name,
-        option: _triggerOption(
+      builder: (context, controller, _) {
+        final option = _triggerOption(
           ref.watch(gridModelCatalogProvider),
           widget.currentModelId,
-        ),
-        onTap: () => _toggleMenu(context, controller),
-      ),
+        );
+        // Which grid, not just which model: two grids can serve the same id (and
+        // do — the same qwen sits on several), so the name alone left "whose
+        // machine is answering, and on whose bill" unanswerable. It rides the
+        // tooltip, not the pill's face — a question asked once a session.
+        final grid = ref.watch(selectedNetworkProvider)?.name;
+        final label = _triggerLabel(widget.currentModelId);
+        return ComposerTrigger(
+          label: label,
+          tooltip: grid == null || option == null
+              ? 'Choose which model answers'
+              : '$label\non $grid',
+          // The same mark you picked by, so "am I about to chat or to draw?" is
+          // answerable at a glance. Null while nothing's picked — the pill then
+          // prompts rather than reports.
+          leading: option == null
+              ? null
+              : Icon(
+                  modelIcon(option),
+                  size: 13,
+                  color: modalityTone(option.modality),
+                ),
+          onTap: () => _toggleMenu(context, controller),
+        );
+      },
     );
   }
 
@@ -212,99 +228,6 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
   }
 }
 
-/// The pill that sits in the composer: the model that will answer, and a caret.
-/// Quiet by design — it's a property of the message, not a call to action.
-class _TriggerButton extends StatelessWidget {
-  const _TriggerButton({
-    required this.label,
-    required this.grid,
-    required this.option,
-    required this.onTap,
-  });
-
-  final String label;
-
-  /// The grid serving [label], or null before one is resolved.
-  final String? grid;
-
-  /// The model that will answer, as the menu knows it — null while nothing is
-  /// picked, when the pill is prompting rather than reporting.
-  final PlaygroundModelOption? option;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(
-      context,
-    ); // reads AppPalette/AppGlass tokens — follow theme flips
-    return Tooltip(
-      // Which grid lives here, not on the pill's face. There is room for it —
-      // the label uses 86 of the pill's 140px — but the pill is chrome that sits
-      // under the text box all day, and the grid only matters at the moment you
-      // wonder about it. The menu's tick keys on grid+id, so the answer is one
-      // hover or one click away; spending the composer's quietest strip on it
-      // would be paying rent for a question that's asked once a session.
-      message: grid == null || option == null
-          ? 'Choose which model answers'
-          : '$label\non $grid',
-      child: OutlinedButton(
-        onPressed: onTap,
-        // Chrome, not a call to action: it reports what will answer, so it stays
-        // unfilled and unrimmed and lets the composer's own surface carry it.
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppPalette.textPrimary,
-          backgroundColor: Colors.transparent,
-          side: BorderSide.none,
-          // Matches the approval pill beside it: same height, same radius. The
-          // two used to disagree on both — stadium at a forced 30 next to a
-          // circular(999) at 28.
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppControl.radius),
-          ),
-          padding: AppControl.paddingSmall,
-          // minimumSize alone is only a floor — the button's own vertical
-          // padding still pushed this to 48, which is why the call site used to
-          // wrap it in a SizedBox(height: 30) to force it back down. Pin both
-          // ends and the pill sizes itself.
-          minimumSize: const Size.fromHeight(AppControl.heightSmall),
-          maximumSize: const Size.fromHeight(AppControl.heightSmall),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          splashFactory: NoSplash.splashFactory,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // The same mark you picked by, kept next to the name — so "am I
-            // about to chat or to draw?" is answerable at a glance, without
-            // reopening the menu. A model id like "ornith-1.0-35b" never said.
-            if (option != null) ...[
-              Icon(
-                modelIcon(option!),
-                size: 13,
-                color: modalityTone(option!.modality),
-              ),
-              const SizedBox(width: 5),
-            ],
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-            const SizedBox(width: 1),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 15,
-              color: AppPalette.textFaint,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// The dropdown body: the scrollable list of what this grid serves. Stateful for
 /// its own scroll controller; the models come from [gridModelCatalogProvider].

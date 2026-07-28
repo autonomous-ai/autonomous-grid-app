@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/composer_trigger.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
 import '../logic/agent_grid_support.dart';
@@ -71,70 +72,11 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
             onTap: () => _select(tool),
           ),
       ],
-      builder: (context, controller, _) => _Trigger(
-        tool: active,
+      builder: (context, controller, _) => ComposerTrigger(
+        label: active.name,
+        tooltip: 'Which agent answers · ${active.name}',
+        leading: _AgentMark(tool: active, size: 14),
         onTap: () => controller.isOpen ? controller.close() : controller.open(),
-      ),
-    );
-  }
-}
-
-/// The pill in the composer: the agent in force, its mark, and a caret.
-class _Trigger extends StatelessWidget {
-  const _Trigger({required this.tool, required this.onTap});
-
-  final AgentTool tool;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final radius = BorderRadius.circular(AppControl.radius);
-    return Tooltip(
-      message: 'Which agent answers · ${tool.name}',
-      child: Material(
-        color: AppGlass.surfaceFill,
-        borderRadius: radius,
-        child: InkWell(
-          borderRadius: radius,
-          onTap: onTap,
-          splashFactory: NoSplash.splashFactory,
-          hoverColor: AppGlass.surfaceHoverFill,
-          child: Container(
-            height: AppControl.heightSmall,
-            padding: const EdgeInsets.only(left: 7, right: 7),
-            decoration: BoxDecoration(
-              borderRadius: radius,
-              border: Border.all(color: AppGlass.hair),
-              boxShadow: AppGlass.cardShadow,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _AgentMark(tool: tool, size: 14),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    tool.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppPalette.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.expand_more_rounded,
-                  size: 14,
-                  color: AppPalette.textFaint,
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
