@@ -114,6 +114,12 @@ class HermesChatSender implements ChatSender {
       return;
     }
 
+    // Clear the shared feed now — synchronously, before the awaited setup below —
+    // so the chat's "working" bubble, already on screen, can't flash the previous
+    // turn's steps (or another chat's) while the session opens. See
+    // [resetAgentFeed].
+    resetAgentFeed(_ref);
+
     final pointed = await _ref
         .read(hermesGridLinkProvider)
         .point(network, model);
@@ -220,9 +226,11 @@ class HermesChatSender implements ChatSender {
     String model, {
     required bool planFirst,
   }) {
-    final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
-    final sourcesLog = _ref.read(agentSourcesProvider.notifier)..clear();
-    final planLog = _ref.read(agentPlanProvider.notifier)..clear();
+    // The feed was reset up front in [send], before the session setup — see
+    // [resetAgentFeed]; here we only take the notifiers to append to.
+    final activityLog = _ref.read(agentActivityProvider.notifier);
+    final sourcesLog = _ref.read(agentSourcesProvider.notifier);
+    final planLog = _ref.read(agentPlanProvider.notifier);
     final permissions = _ref.read(agentPermissionProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'hermes acp -m $model (agent)');

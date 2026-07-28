@@ -115,6 +115,12 @@ class CodexChatSender implements ChatSender {
       return;
     }
 
+    // Clear the shared feed now — synchronously, before the awaited grid setup
+    // and skill install below — so the chat's "working" bubble, already on
+    // screen, can't flash the previous turn's steps (or another chat's) while
+    // Codex is pointed at the grid. See [resetAgentFeed].
+    resetAgentFeed(_ref);
+
     final pointed = await _pointAtGrid(network, model);
     if (pointed != null) {
       yield ChatSendFailure(pointed);
@@ -190,11 +196,12 @@ class CodexChatSender implements ChatSender {
     required String model,
     required bool planFirst,
   }) {
-    final activityLog = _ref.read(agentActivityProvider.notifier)..clear();
-    final planLog = _ref.read(agentPlanProvider.notifier)..clear();
-    // Codex cites no sources today, but a prior Hermes turn's citations would
-    // otherwise linger under a Codex answer — start each turn with none.
-    _ref.read(agentSourcesProvider.notifier).clear();
+    // The feed was reset up front in [send], before the grid setup — see
+    // [resetAgentFeed]; here we only take the notifiers to append to. That reset
+    // also drops any prior Hermes turn's citations, so they can't linger under a
+    // Codex answer (Codex cites no sources of its own today).
+    final activityLog = _ref.read(agentActivityProvider.notifier);
+    final planLog = _ref.read(agentPlanProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     final logId = log.begin(CliCallKind.start, 'codex exec -m $model (agent)');
 

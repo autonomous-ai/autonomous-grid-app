@@ -71,6 +71,29 @@ class _FailingAcp implements HermesAcpService {
       throw _error;
 }
 
+/// A service whose session start hangs until the test lets it go, so a test can
+/// inspect the shared feed while a turn is still in its awaited setup — before the
+/// session has opened and before any turn event has fired.
+class _HangingStartAcp implements HermesAcpService {
+  final _gate = Completer<HermesAcpSession>();
+  var startCalled = false;
+
+  @override
+  Future<HermesAcpSession> start({required String workdir}) {
+    startCalled = true;
+    return _gate.future;
+  }
+
+  /// Let the hung start finish (with an empty, immediately-closing turn) so the
+  /// turn and its subscription can unwind at teardown instead of hanging on the
+  /// gate forever.
+  void release() {
+    if (!_gate.isCompleted) {
+      _gate.complete(_FakeAcpSession(const [[]], 'sess-hang'));
+    }
+  }
+}
+
 class _FakeAcpSession implements HermesAcpSession {
   _FakeAcpSession(this._turns, this.sessionId);
 
@@ -254,6 +277,56 @@ void main() {
     // Pointed Hermes at the grid.
     expect(File('${tmp.path}/.hermes/config.yaml').existsSync(), isTrue);
   });
+
+  test(
+    'a starting turn empties the shared feed up front — before the session even '
+    'opens — so the working bubble never flashes the last turn’s steps',
+    () async {
+      final service = _HangingStartAcp();
+      final container = _container(service, tmp);
+
+      // A prior turn (or another chat) left steps, a citation and a plan behind
+      // in the one app-wide feed the working bubble reads.
+      container
+          .read(agentActivityProvider.notifier)
+          .upsert(_step('stale', AgentActivityStatus.done));
+      container.read(agentSourcesProvider.notifier).addAll(const [
+        WebSource(title: 'old', url: 'https://old.example'),
+      ]);
+      container.read(agentPlanProvider.notifier).replace(const [
+        AgentPlanEntry(content: 'old', status: AgentPlanStatus.pending),
+      ]);
+
+      final sub = container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('hi'))
+          .listen((_) {});
+      // LIFO: release the gate first so the async turn unwinds, then cancel — a
+      // cancel while it's still hung on the gate would never complete.
+      addTearDown(sub.cancel);
+      addTearDown(service.release);
+
+      // Let the send run up to the hanging session start — point-at-grid writes
+      // config first, which is real file I/O, so drain generously (as
+      // [_untilListening] does).
+      for (var i = 0; i < 500 && !service.startCalled; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(
+        service.startCalled,
+        isTrue,
+        reason: 'setup never reached session start',
+      );
+
+      // The session hasn’t opened and no turn event has fired, yet the feed is
+      // already empty: it was cleared up front, not once the turn body ran. Were
+      // the reset back in the turn body (after this await), the stale entries
+      // would still be here.
+      expect(container.read(agentActivityProvider), isEmpty);
+      expect(container.read(agentSourcesProvider), isEmpty);
+      expect(container.read(agentPlanProvider), isEmpty);
+    },
+  );
 
   test(
     'web sources found mid-turn are pinned onto the answer and shown live',
