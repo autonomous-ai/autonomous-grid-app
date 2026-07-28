@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:yaml_edit/yaml_edit.dart';
 
+import '../../../core/grid_paths.dart';
 import 'mcp_server.dart';
 
 /// Reads and writes the MCP servers in `~/.hermes/config.yaml`.
@@ -15,8 +16,7 @@ import 'mcp_server.dart';
 /// half-written server is skipped, see [parseMcpServers]) and writes are
 /// surgical (only the one server's key changes).
 class HermesMcpConfig {
-  HermesMcpConfig({String? home})
-    : _home = home ?? Platform.environment['HOME'] ?? '';
+  HermesMcpConfig({String? home}) : _home = home ?? GridPaths.userHome;
 
   final String _home;
 

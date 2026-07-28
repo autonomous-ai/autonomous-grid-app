@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../../core/grid_paths.dart';
 import 'host_environment.dart';
 
 /// Raised when a `hermes cron` command fails, carrying the line the CLI printed
@@ -83,7 +84,7 @@ abstract interface class HermesCronService {
 /// Real implementation: spawns the `hermes` binary and reads its cron store.
 class HermesCronServiceImpl implements HermesCronService {
   HermesCronServiceImpl(this.binPath, {String? home})
-    : _home = home ?? Platform.environment['HOME'] ?? '';
+    : _home = home ?? GridPaths.userHome;
 
   /// Absolute path to the hermes binary (it isn't on a GUI app's default PATH).
   final String binPath;

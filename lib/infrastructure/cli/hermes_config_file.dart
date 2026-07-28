@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:yaml_edit/yaml_edit.dart';
 
+import '../../core/grid_paths.dart';
+
 /// Reads and edits Hermes's own `~/.hermes/config.yaml` without disturbing the
 /// rest of it.
 ///
@@ -11,8 +13,7 @@ import 'package:yaml_edit/yaml_edit.dart';
 /// whatever else is in there and keeps a `<file>.bak` first, so a hand-edited
 /// config is never clobbered.
 class HermesConfigFile {
-  HermesConfigFile({String? home})
-    : _home = home ?? Platform.environment['HOME'] ?? '';
+  HermesConfigFile({String? home}) : _home = home ?? GridPaths.userHome;
 
   final String _home;
 
