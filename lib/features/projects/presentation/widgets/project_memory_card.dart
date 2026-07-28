@@ -129,22 +129,18 @@ class _AddNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: controller,
-            style: const TextStyle(fontSize: 13),
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => onAdd(),
-            decoration: const InputDecoration(
-              isDense: true,
-              hintText: 'Remember something…',
-            ),
-          ),
-        ),
-        const SizedBox(width: 6),
-        IconButton(
+    // The add button lives *inside* the field as a suffix, so the field centres
+    // it — a plain Row centred a 40px tap target against a dense field and left
+    // it hanging below the box.
+    return TextField(
+      controller: controller,
+      style: const TextStyle(fontSize: 13),
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => onAdd(),
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: 'Remember something…',
+        suffixIcon: IconButton(
           tooltip: 'Remember it',
           iconSize: 18,
           visualDensity: VisualDensity.compact,
@@ -152,7 +148,11 @@ class _AddNote extends StatelessWidget {
           icon: const Icon(Icons.add_rounded),
           onPressed: onAdd,
         ),
-      ],
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: 34,
+          minHeight: 34,
+        ),
+      ),
     );
   }
 }
