@@ -76,8 +76,9 @@ class _LiveThread {
   /// until then, which forces the next turn to start fresh.
   String? threadId;
 
-  /// The history length at the last prompt. A longer history next time is a
-  /// continuation of the same chat; anything else restarts.
+  /// How many of the conversation's messages the agent has been given. A longer
+  /// history next time is a continuation of the same chat (and everything past
+  /// this mark goes with the next turn); anything else restarts.
   int seen;
 }
 
@@ -85,7 +86,12 @@ class CodexChatSender implements ChatSender {
   CodexChatSender(this._ref);
 
   final Ref _ref;
-  _LiveThread? _live;
+
+  /// Remembered threads by conversation, least recently used **first** — the
+  /// order they get dropped in. A thread is an id and a counter, not a process,
+  /// so forgetting one costs only a replay; the cap is [kMaxLiveAgentSessions]
+  /// all the same, so the two senders behave alike.
+  final _live = <String, _LiveThread>{};
 
   @override
   Stream<ChatSendUpdate> send({
@@ -150,10 +156,12 @@ class CodexChatSender implements ChatSender {
     );
   }
 
-  /// Decide between resuming this conversation's thread (send only the new turn)
-  /// and starting fresh (replay the history). Returns the text to send, the
-  /// thread to resume (null when starting fresh) and whether it's a fresh start.
-  ({String text, String? resumeThreadId, bool freshStart}) _resolveTurn(
+  /// Decide between resuming this conversation's thread (send what the agent
+  /// hasn't seen) and starting fresh (replay the history). Returns the text to
+  /// send, the thread to resume (null when starting fresh) and whether it's a
+  /// fresh start.
+  ({String text, String? resumeThreadId, bool freshStart, _LiveThread live})
+  _resolveTurn(
     NetworkCredential network,
     String model,
     String? conversationId,
@@ -161,7 +169,10 @@ class CodexChatSender implements ChatSender {
     String root,
   ) {
     final key = '${network.networkId}|$model|$conversationId|$root';
-    final live = _live;
+    // A conversation gets one slot; the key still decides whether what's in it
+    // can be resumed.
+    final slot = conversationId ?? '';
+    final live = _live[slot];
     final continues =
         live != null &&
         live.key == key &&
@@ -169,20 +180,38 @@ class CodexChatSender implements ChatSender {
         history.length > live.seen;
 
     if (continues) {
+      _touch(slot);
+      // Everything appended since the agent's last turn, not just the newest
+      // message — see [buildAgentPrompt]. A picture turn and a scheduled task's
+      // result both reach the chat without an agent turn behind them.
+      final unseen = history.sublist(live.seen);
       live.seen = history.length;
       return (
-        text: history.last.text.trim(),
+        text: buildAgentPrompt(unseen),
         resumeThreadId: live.threadId,
         freshStart: false,
+        live: live,
       );
     }
 
-    _live = _LiveThread(key: key, seen: history.length);
+    _live.remove(slot);
+    while (_live.length >= kMaxLiveAgentSessions) {
+      _live.remove(_live.keys.first);
+    }
+    final fresh = _LiveThread(key: key, seen: history.length);
+    _live[slot] = fresh;
     return (
       text: buildAgentPrompt(history),
       resumeThreadId: null,
       freshStart: true,
+      live: fresh,
     );
+  }
+
+  /// Move [slot] to the most-recently-used end — see [_live].
+  void _touch(String slot) {
+    final entry = _live.remove(slot);
+    if (entry != null) _live[slot] = entry;
   }
 
   /// Run one turn: stream the answer into the bubble as it arrives, mirror tool
@@ -263,6 +292,11 @@ class CodexChatSender implements ChatSender {
                 ? kAgentStalledPlan
                 : (reply.isEmpty ? kAgentNoAnswer : null));
         log.finish(logId, error: error);
+        // The answer is about to be appended to the chat, and Codex wrote it —
+        // so its thread already holds it. Counting it here keeps the next turn
+        // from quoting Codex's own words back at it as "context you missed".
+        // Only on success: a failed turn appends nothing.
+        if (error == null) _live?.seen++;
         updates.add(
           error != null
               ? ChatSendFailure(error)

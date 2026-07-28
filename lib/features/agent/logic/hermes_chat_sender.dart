@@ -41,12 +41,17 @@ final hermesAcpServiceProvider = Provider<HermesAcpService?>((ref) {
 /// The chat's default [ChatSender], backed by Hermes over ACP (Agent Client
 /// Protocol).
 ///
-/// It keeps **one live `hermes acp` session per conversation**. The process is
-/// spawned once, the handshake runs once, and each turn sends only the new
-/// message — Hermes holds the conversation context itself. Switching
-/// conversation, grid or model starts a fresh session. The old sender re-spawned
+/// It keeps **one live `hermes acp` session per conversation**, up to
+/// [kMaxLiveAgentSessions] at a time. The process is spawned once per chat, the
+/// handshake runs once, and each turn sends only what the agent hasn't seen —
+/// Hermes holds the conversation context itself. Switching grid, model or
+/// project folder starts that chat a fresh session. The old sender re-spawned
 /// the process and resent the entire history every turn, which got slower and
 /// more token-hungry the longer a chat ran.
+///
+/// Holding one session — rather than one per chat — meant flipping between two
+/// conversations put every turn back on that path, since each switch closed the
+/// other's session.
 ///
 /// ACP streams `tool_call` / `agent_message_chunk` updates, so this feeds the
 /// live activity feed ([agentActivityProvider]) and streams the answer into the
@@ -57,8 +62,20 @@ final hermesChatSenderProvider = Provider<ChatSender>((ref) {
   return sender;
 });
 
+/// How many conversations keep a live agent session at once.
+///
+/// One session is one `hermes acp` process, so this is a ceiling on *processes*,
+/// not just memory. Flipping between a couple of chats — what people actually do
+/// — now costs nothing; past that the least recently used session is closed and
+/// that chat replays its history next time, exactly as every chat used to.
+///
+/// Deliberately small. A process this app fails to reap outlives it as an
+/// orphan, and Windows has form here (`kill_group` and `pid_alive` were both
+/// POSIX-only), so the number of processes in flight is worth keeping boring.
+const int kMaxLiveAgentSessions = 3;
+
 /// A live Hermes session and what it has already seen, so the sender can decide
-/// between continuing it (send only the new turn) and restarting it.
+/// between continuing it (send only what's new) and restarting it.
 class _LiveSession {
   _LiveSession({required this.session, required this.key, required this.seen});
 
@@ -68,8 +85,9 @@ class _LiveSession {
   /// session (a different grid, model, or conversation).
   final String key;
 
-  /// The history length at the last prompt. A longer history next time is a
-  /// continuation of the same chat; anything else restarts.
+  /// How many of the conversation's messages the agent has been given. A longer
+  /// history next time is a continuation of the same chat (and everything past
+  /// this mark goes with the next turn); anything else restarts.
   int seen;
 }
 
@@ -77,12 +95,34 @@ class HermesChatSender implements ChatSender {
   HermesChatSender(this._ref);
 
   final Ref _ref;
-  _LiveSession? _live;
 
-  /// Kill any live session — wired to the provider's dispose.
+  /// Live sessions by conversation, least recently used **first** — which is the
+  /// order they get closed in. A conversation holds at most one session, and at
+  /// most [kMaxLiveAgentSessions] are open at a time.
+  final _live = <String, _LiveSession>{};
+
+  /// Kill every live session — wired to the provider's dispose.
   Future<void> dispose() async {
-    await _live?.session.close();
-    _live = null;
+    final open = _live.values.toList();
+    _live.clear();
+    for (final entry in open) {
+      await entry.session.close();
+    }
+  }
+
+  /// Move [slot] to the most-recently-used end. Dart maps keep insertion order,
+  /// so removing and re-adding is the whole of the bookkeeping.
+  void _touch(String slot) {
+    final entry = _live.remove(slot);
+    if (entry != null) _live[slot] = entry;
+  }
+
+  /// Close least-recently-used sessions until there is room for one more.
+  Future<void> _makeRoom() async {
+    while (_live.length >= kMaxLiveAgentSessions) {
+      final evicted = _live.remove(_live.keys.first);
+      await evicted?.session.close();
+    }
   }
 
   @override
@@ -130,6 +170,7 @@ class HermesChatSender implements ChatSender {
 
     final HermesAcpSession session;
     final String text;
+    final _LiveSession live;
     try {
       final resolved = await _sessionFor(
         network,
@@ -141,6 +182,7 @@ class HermesChatSender implements ChatSender {
       );
       session = resolved.session;
       text = resolved.text;
+      live = resolved.live;
     } on HermesAcpException catch (e) {
       // Only suggest retrying when retrying could work. A machine missing a
       // dependency fails identically every time, so it gets a plain, actionable
@@ -169,13 +211,14 @@ class HermesChatSender implements ChatSender {
     // the Chat tab uses that name for the conversation once it lands.
     if (session.sessionId case final id?) yield ChatSendAgentSession(id);
 
-    yield* _runTurn(session, turnText, model, planFirst: planFirst);
+    yield* _runTurn(session, turnText, model, planFirst: planFirst, live: live);
   }
 
   /// Reuse the live session when this is the next turn of the same conversation,
-  /// else start a fresh one. Returns the session and the text to send — only the
-  /// new user turn on a continuation, the whole history when (re)starting.
-  Future<({HermesAcpSession session, String text})> _sessionFor(
+  /// else start a fresh one. Returns the session and the text to send — what the
+  /// agent hasn't seen on a continuation, the whole history when (re)starting.
+  Future<({HermesAcpSession session, String text, _LiveSession live})>
+  _sessionFor(
     NetworkCredential network,
     String model,
     String? conversationId,
@@ -187,7 +230,11 @@ class HermesChatSender implements ChatSender {
     // a fresh session, or the agent would keep reading the old folder.
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final key = '${network.networkId}|$model|$conversationId|$root';
-    final live = _live;
+    // A conversation gets one slot. The key still decides whether what's in it
+    // is reusable — a chat moved to another grid, model or folder must not carry
+    // on in the session that was pointed at the old one.
+    final slot = conversationId ?? '';
+    final live = _live[slot];
     final continues =
         live != null &&
         !live.session.isClosed &&
@@ -195,19 +242,42 @@ class HermesChatSender implements ChatSender {
         history.length > live.seen;
 
     if (continues) {
+      _touch(slot);
+      // Everything appended since the agent's last turn, not just the newest
+      // message. A turn carrying a picture goes to the grid's API rather than
+      // the agent, and a scheduled task's result is written straight into the
+      // chat — both land here with no agent turn behind them, and sending only
+      // `history.last` left the agent discussing a conversation it had half of.
+      final unseen = history.sublist(live.seen);
       live.seen = history.length;
-      return (session: live.session, text: history.last.text.trim());
+      return (
+        session: live.session,
+        text: buildAgentPrompt(unseen),
+        live: live,
+      );
     }
 
+    // This conversation's own session is unusable — close it before replacing
+    // it, then make room so opening a new one can't push the process count past
+    // the cap.
     await live?.session.close();
+    _live.remove(slot);
+    await _makeRoom();
+
     final service = _ref.read(hermesAcpServiceProvider)!;
     final session = await service.start(workdir: root);
-    _live = _LiveSession(session: session, key: key, seen: history.length);
+    final fresh = _LiveSession(
+      session: session,
+      key: key,
+      seen: history.length,
+    );
+    _live[slot] = fresh;
     // A fresh session has no context, so replay the history into the first turn
     // — led by the project's house rules, so the agent starts on the same page.
     return (
       session: session,
       text: withProjectInstructions(buildAgentPrompt(history), instructions),
+      live: fresh,
     );
   }
 
@@ -225,6 +295,7 @@ class HermesChatSender implements ChatSender {
     String text,
     String model, {
     required bool planFirst,
+    required _LiveSession live,
   }) {
     // The feed was reset up front in [send], before the session setup — see
     // [resetAgentFeed]; here we only take the notifiers to append to.
@@ -295,6 +366,11 @@ class HermesChatSender implements ChatSender {
                 : (reply.isEmpty ? kAgentNoAnswer : null));
 
         log.finish(logId, error: failure);
+        // The answer is about to be appended to the chat, and the agent wrote it
+        // — so it already knows it. Counting it here keeps the next turn from
+        // quoting the agent's own words back at it as "context you missed".
+        // Only on success: a failed turn appends nothing.
+        if (failure == null) live.seen++;
         updates.add(
           failure != null
               ? ChatSendFailure(failure)

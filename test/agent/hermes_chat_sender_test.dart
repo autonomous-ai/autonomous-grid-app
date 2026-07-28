@@ -456,10 +456,7 @@ void main() {
           .toList();
 
       expect(updates.last, isA<ChatSendSuccess>());
-      expect(
-        (updates.last as ChatSendSuccess).reply.text,
-        'Here is my plan…',
-      );
+      expect((updates.last as ChatSendSuccess).reply.text, 'Here is my plan…');
     },
   );
 
@@ -553,9 +550,59 @@ void main() {
     // The process was spawned once and reused.
     expect(service.startCount, 1);
     // First turn seeded context; the second sent only the new user turn, not
-    // the whole history re-flattened.
+    // the whole history re-flattened. The agent wrote 'hi there' itself, so it
+    // is never quoted back at it.
     expect(service.prompts, ['hello', 'thanks']);
   });
+
+  // A turn carrying a picture is answered by the grid's API, never the agent
+  // (see `agentAnswersTurn`), so it lands in the chat with no agent turn behind
+  // it. Sending only the newest message left the agent confidently discussing a
+  // conversation it had half of.
+  test(
+    'a turn the agent never handled is carried into its next turn',
+    () async {
+      final service = _FakeAcp([
+        [const HermesAcpMessage('hi there')],
+        [const HermesAcpMessage('a tabby')],
+      ]);
+      final container = _container(service, tmp);
+      final sender = container.read(hermesChatSenderProvider);
+
+      await sender
+          .send(
+            network: _credential(),
+            model: 'm',
+            conversationId: 'conv-1',
+            history: const [ChatMessage(role: ChatRole.user, text: 'hello')],
+          )
+          .toList();
+
+      await sender
+          .send(
+            network: _credential(),
+            model: 'm',
+            conversationId: 'conv-1',
+            history: const [
+              ChatMessage(role: ChatRole.user, text: 'hello'),
+              ChatMessage(role: ChatRole.assistant, text: 'hi there'),
+              // These two went to the grid, not the agent.
+              ChatMessage(role: ChatRole.user, text: 'look at this picture'),
+              ChatMessage(role: ChatRole.assistant, text: 'I see a cat.'),
+              ChatMessage(role: ChatRole.user, text: 'what breed?'),
+            ],
+          )
+          .toList();
+
+      expect(service.startCount, 1);
+      final second = service.prompts.last;
+      expect(second, contains('look at this picture'));
+      expect(second, contains('I see a cat.'));
+      expect(second, endsWith('what breed?'));
+      // Still not the agent's own reply from turn one — it already has that.
+      expect(second, isNot(contains('hi there')));
+    },
+  );
 
   test('switching conversation starts a fresh session', () async {
     final service = _FakeAcp([
@@ -704,57 +751,54 @@ void main() {
     expect(service.startCount, 0);
   });
 
-  test(
-    'every turn is sent under the mode showing in the composer — changing it '
-    'lands on the next message, not the next session',
-    () async {
-      final service = _FakeAcp([
-        [const HermesAcpMessage('a')],
-        [const HermesAcpMessage('b')],
-      ]);
-      final container = _container(service, tmp);
-      final sender = container.read(hermesChatSenderProvider);
+  test('every turn is sent under the mode showing in the composer — changing it '
+      'lands on the next message, not the next session', () async {
+    final service = _FakeAcp([
+      [const HermesAcpMessage('a')],
+      [const HermesAcpMessage('b')],
+    ]);
+    final container = _container(service, tmp);
+    final sender = container.read(hermesChatSenderProvider);
 
-      // Start on Ask so the switch below is the only thing that can move the
-      // second turn's mode — the point of the test, whatever the shipped default.
-      container
-          .read(chatPrefsProvider.notifier)
-          .setApproval(AgentApprovalMode.ask);
+    // Start on Ask so the switch below is the only thing that can move the
+    // second turn's mode — the point of the test, whatever the shipped default.
+    container
+        .read(chatPrefsProvider.notifier)
+        .setApproval(AgentApprovalMode.ask);
 
-      await sender
-          .send(
-            network: _credential(),
-            model: 'm',
-            conversationId: 'c1',
-            history: _history('hi'),
-          )
-          .toList();
+    await sender
+        .send(
+          network: _credential(),
+          model: 'm',
+          conversationId: 'c1',
+          history: _history('hi'),
+        )
+        .toList();
 
-      container
-          .read(chatPrefsProvider.notifier)
-          .setApproval(AgentApprovalMode.full);
+    container
+        .read(chatPrefsProvider.notifier)
+        .setApproval(AgentApprovalMode.full);
 
-      await sender
-          .send(
-            network: _credential(),
-            model: 'm',
-            conversationId: 'c1',
-            history: const [
-              ChatMessage(role: ChatRole.user, text: 'hi'),
-              ChatMessage(role: ChatRole.assistant, text: 'a'),
-              ChatMessage(role: ChatRole.user, text: 'now do it'),
-            ],
-          )
-          .toList();
+    await sender
+        .send(
+          network: _credential(),
+          model: 'm',
+          conversationId: 'c1',
+          history: const [
+            ChatMessage(role: ChatRole.user, text: 'hi'),
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+            ChatMessage(role: ChatRole.user, text: 'now do it'),
+          ],
+        )
+        .toList();
 
-      // Same (reused) session, but the second turn ran under the new mode.
-      expect(service.startCount, 1);
-      expect(service.sessions.single.modes, [
-        AgentApprovalMode.ask,
-        AgentApprovalMode.full,
-      ]);
-    },
-  );
+    // Same (reused) session, but the second turn ran under the new mode.
+    expect(service.startCount, 1);
+    expect(service.sessions.single.modes, [
+      AgentApprovalMode.ask,
+      AgentApprovalMode.full,
+    ]);
+  });
 
   test('the agent asking to run a command stalls the turn and puts it to the '
       'user; their answer goes back down the same session', () async {
