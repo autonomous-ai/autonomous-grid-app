@@ -68,6 +68,13 @@ class GridPaths {
   /// "inside", so the assistant may read them. App-owned.
   static File get projectsFile => File('${home.path}/app/projects.json');
 
+  /// Which scheduled task belongs to which project (`{"<jobId>": "<projectId>"}`),
+  /// so a project's rail can show only its own tasks. The scheduler is Hermes's
+  /// (jobs live in `~/.hermes/cron`); this app-owned map is the only record of
+  /// the project a task was created for, since Hermes doesn't know about projects.
+  static File get projectTasksFile =>
+      File('${home.path}/app/project_tasks.json');
+
   /// The user's saved prompts — reusable messages they insert into the composer
   /// with `/`. App-owned; the CLI never touches it.
   static File get promptsFile => File('${home.path}/app/prompts.json');
