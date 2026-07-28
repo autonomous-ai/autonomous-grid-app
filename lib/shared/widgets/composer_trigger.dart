@@ -45,9 +45,12 @@ class ComposerTrigger extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppControl.radius),
         ),
         padding: AppControl.paddingSmall,
-        // Pin both ends so the button sizes to the toolbar's row height instead
-        // of the 48px its own padding would otherwise force.
-        minimumSize: const Size.fromHeight(AppControl.heightSmall),
+        // Pin the height at both ends so the button can't inflate to the 48px its
+        // own vertical padding would otherwise force — but leave the width free
+        // (min 0), so the pill hugs its label instead of stretching to fill the
+        // box it's dropped in. `Size.fromHeight` sets minWidth to infinity, which
+        // made these fill their maxWidth cap and trail empty space to the right.
+        minimumSize: const Size(0, AppControl.heightSmall),
         maximumSize: const Size.fromHeight(AppControl.heightSmall),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         splashFactory: NoSplash.splashFactory,
