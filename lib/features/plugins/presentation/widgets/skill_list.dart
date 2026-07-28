@@ -5,7 +5,8 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../../agent/logic/hermes_skill_installer.dart';
+import '../../../agent/logic/agent_skill_installer.dart';
+import '../../../agents/logic/agent_catalog.dart';
 import '../../logic/agent_skill.dart';
 import '../../logic/skill_author.dart';
 import 'extension_tile_surface.dart';
@@ -356,7 +357,7 @@ class _ReinstallGridSkillsButtonState
     setState(() => _busy = true);
     String? failure;
     try {
-      await ref.read(hermesSkillInstallerProvider).install();
+      await ref.read(agentSkillInstallerProvider).install(AgentTool.hermes);
       ref.invalidate(agentSkillsProvider);
     } on Object catch (error) {
       failure = "Couldn't install Grid's skills: $error";

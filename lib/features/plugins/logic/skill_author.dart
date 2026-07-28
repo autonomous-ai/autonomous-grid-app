@@ -2,7 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/grid_paths.dart';
+import '../../../shared/skills/agent_skill_home.dart';
+import '../../agents/logic/agent_catalog.dart';
 import 'agent_skill.dart';
 
 /// A folder name for [title] — lowercase, dashes, nothing a filesystem will
@@ -41,14 +42,12 @@ String skillMarkdown({
 /// Writes skills the user authors in the app into Hermes's skills folder, where
 /// the agent picks them up on its next run.
 class SkillAuthor {
-  SkillAuthor({String? home}) : _home = home ?? GridPaths.userHome;
+  SkillAuthor({String? home})
+    : _skillHome = AgentSkillHome(AgentTool.hermes, home: home);
 
-  final String _home;
+  final AgentSkillHome _skillHome;
 
-  String get _skillsRoot => '$_home/.hermes/skills';
-
-  Directory dirFor(String slug) =>
-      Directory('$_skillsRoot/$kMySkillsCategory/$slug');
+  Directory dirFor(String slug) => _skillHome.myDir(slug);
 
   /// True when a skill of this name is already there — the dialog checks first
   /// rather than silently overwriting someone's work.
@@ -103,7 +102,7 @@ class SkillAuthor {
   /// Delete a skill's folder. Guards against a path outside the skills tree, so
   /// a bad `path` can never take out something it shouldn't.
   Future<void> delete(String path) async {
-    if (!path.startsWith('$_skillsRoot/')) {
+    if (!path.startsWith('${_skillHome.root.path}/')) {
       throw ArgumentError(
         'Refusing to delete outside the skills folder: $path',
       );

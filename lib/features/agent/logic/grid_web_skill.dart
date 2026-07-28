@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../../core/grid_paths.dart';
+import '../../../shared/skills/agent_skill_home.dart';
 
 /// The one web-search skill both agents get, so "search the news" works the same
 /// whichever is answering.
@@ -21,29 +22,33 @@ const String kGridWebSkillName = 'grid-web';
 /// the ACP repair uses, so the skill never depends on a `uv` being on PATH.
 String gridWebUvPath() => '${GridPaths.binDir.path}/uv';
 
-/// Write (or refresh) the `grid-web` skill into [skillDir] — a `SKILL.md` the
-/// agent reads to know when and how to use it, plus the two scripts it runs
-/// (search, and read one page). Wipes the folder first so a stale copy can't
-/// linger beside the current one. Idempotent.
-Future<void> writeGridWebSkill(Directory skillDir, {String? uvPath}) async {
-  if (await skillDir.exists()) await skillDir.delete(recursive: true);
-  final scripts = Directory('${skillDir.path}/scripts');
-  await scripts.create(recursive: true);
-  final searchScriptPath = '${scripts.path}/search.py';
-  final readScriptPath = '${scripts.path}/read.py';
-  final browseScriptPath = '${scripts.path}/browse.py';
-  await File('${skillDir.path}/SKILL.md').writeAsString(
-    gridWebSkillMd(
+/// The `grid-web` skill as it lands in [skillDir]: the `SKILL.md` the agent reads
+/// to know when and how to use it, plus the three scripts it runs (search, read
+/// one page, and the heavy browser fallback).
+///
+/// The card names the scripts by absolute path, so it's a function of where the
+/// skill lands — hence built from [skillDir] rather than a constant.
+GridSkillFiles gridWebSkillFiles(Directory skillDir, {String? uvPath}) {
+  final scripts = '${skillDir.path}/scripts';
+  return GridSkillFiles(
+    card: gridWebSkillMd(
       uvPath: uvPath ?? gridWebUvPath(),
-      searchScriptPath: searchScriptPath,
-      readScriptPath: readScriptPath,
-      browseScriptPath: browseScriptPath,
+      searchScriptPath: '$scripts/search.py',
+      readScriptPath: '$scripts/read.py',
+      browseScriptPath: '$scripts/browse.py',
     ),
+    files: const {
+      'scripts/search.py': kGridWebSearchScript,
+      'scripts/read.py': kGridWebReadScript,
+      'scripts/browse.py': kGridWebBrowseScript,
+    },
   );
-  await File(searchScriptPath).writeAsString(kGridWebSearchScript);
-  await File(readScriptPath).writeAsString(kGridWebReadScript);
-  await File(browseScriptPath).writeAsString(kGridWebBrowseScript);
 }
+
+/// Write (or refresh) the `grid-web` skill into [skillDir]. Wipes the folder
+/// first so a stale copy can't linger beside the current one. Idempotent.
+Future<void> writeGridWebSkill(Directory skillDir, {String? uvPath}) =>
+    writeSkillFolder(skillDir, gridWebSkillFiles(skillDir, uvPath: uvPath));
 
 /// The skill card both agents read. Only the `name`/`description` frontmatter
 /// decides *when* it triggers, so those carry the intent; the body is loaded only
