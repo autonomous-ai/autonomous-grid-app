@@ -107,16 +107,21 @@ class _ProjectRailToggle extends ConsumerWidget {
     );
     if (!inChat || !inProject) return const SizedBox.shrink();
 
-    final open = ref.watch(chatRailOpenProvider);
+    // Mirror the pane's resolved visibility (it alone knows its width); a tap
+    // forces the opposite, overriding the smart default until the next chat.
+    final visible = ref.watch(chatRailVisibleProvider);
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: IconButton(
-        tooltip: open ? 'Hide project panel' : 'Show project panel',
+        tooltip: visible ? 'Hide project panel' : 'Show project panel',
         iconSize: 18,
         visualDensity: VisualDensity.compact,
-        color: open ? AppPalette.accent : AppPalette.textSecondary,
-        icon: Icon(open ? Icons.vertical_split : Icons.vertical_split_outlined),
-        onPressed: () => ref.read(chatRailOpenProvider.notifier).toggle(),
+        color: visible ? AppPalette.accent : AppPalette.textSecondary,
+        icon: Icon(
+          visible ? Icons.vertical_split : Icons.vertical_split_outlined,
+        ),
+        onPressed: () =>
+            ref.read(chatRailOverrideProvider.notifier).set(!visible),
       ),
     );
   }

@@ -40,8 +40,20 @@ class ChatPane extends ConsumerWidget {
       chatSessionsProvider.select((s) => s.openProjectId),
     );
     final project = ref.watch(projectByIdProvider(projectId));
-    final railOpen = ref.watch(chatRailOpenProvider);
-    final showRail = project != null && railOpen;
+    // A fresh compose (draft, or a chat with no turns yet) still shows the rail;
+    // once a conversation is under way it's the width that decides.
+    final isNewChat = ref.watch(
+      chatSessionsProvider.select((s) => s.active?.messages.isEmpty ?? true),
+    );
+    final override = ref.watch(chatRailOverrideProvider);
+
+    // Each chat starts from the smart default: switching chats (and sending the
+    // first message, which turns a draft into a saved chat) drops any manual
+    // toggle, so a new chat re-shows the rail and opening a conversation on a
+    // narrow pane re-hides it. A toggle within one chat still sticks.
+    ref.listen(chatSessionsProvider.select((s) => s.activeId), (_, _) {
+      ref.read(chatRailOverrideProvider.notifier).clear();
+    });
 
     // ChatView always sits in the same slot — Positioned.fill in a Stack, first
     // child of the Row — so toggling the rail, overlaying it, switching to a
@@ -49,10 +61,23 @@ class ChatPane extends ConsumerWidget {
     // half-typed draft.
     return LayoutBuilder(
       builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= _railBreakpoint;
+        final open =
+            project != null &&
+            (override ??
+                railShowsByDefault(isNewChat: isNewChat, isWide: isWide));
+        // The top bar can't see this pane's width, so publish the resolved
+        // visibility for its toggle to mirror. Post-frame: writing a provider
+        // during build would throw.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) {
+            ref.read(chatRailVisibleProvider.notifier).set(open);
+          }
+        });
         // Wide enough for the rail to sit beside the conversation; otherwise it
         // opens over it, so a narrow window still reaches the panel.
-        final inline = showRail && constraints.maxWidth >= _railBreakpoint;
-        final overlay = showRail && !inline;
+        final inline = open && isWide;
+        final overlay = open && !isWide;
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -63,8 +88,9 @@ class ChatPane extends ConsumerWidget {
                   if (overlay) ...[
                     Positioned.fill(
                       child: GestureDetector(
-                        onTap: () =>
-                            ref.read(chatRailOpenProvider.notifier).set(false),
+                        onTap: () => ref
+                            .read(chatRailOverrideProvider.notifier)
+                            .set(false),
                         child: const ColoredBox(color: Color(0x33000000)),
                       ),
                     ),
