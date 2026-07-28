@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'models/model_catalog.dart';
+import 'models/model_detail.dart';
 
 /// A failed Model Catalog call. [message] is the friendly line for the UI;
 /// [statusCode]/[body] carry the raw detail for the Debug tab. [sessionExpired]
@@ -136,5 +137,136 @@ class ModelCatalogClient {
       // Non-JSON body — let the caller fall back to a generic message.
     }
     return null;
+  }
+
+  /// `POST /v1/grid/catalog` with `device` absent — the list/filter mode.
+  ///
+  /// [query] is the sidebar's search text, sent as `q` (the API matches it
+  /// against `repo_id`). [sort] is omitted from the body when null or empty, so
+  /// a plain search doesn't pin the results to a ranking the user didn't pick —
+  /// the server then applies its own default.
+  static Future<(List<CatalogListEntry>?, ModelCatalogError?)> list({
+    required String apiUrl,
+    required String sessionToken,
+    String? sort = 'trending',
+    String? query,
+    int pageSize = 50,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final base = apiUrl.endsWith('/') ? apiUrl : '$apiUrl/';
+      final uri = Uri.parse('$base$_path');
+      final request = await client.postUrl(uri);
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      request.add(utf8.encode(jsonEncode({
+        if (sort != null && sort.isNotEmpty) 'sort': sort,
+        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+        'page_size': pageSize,
+      })));
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (
+          null,
+          ModelCatalogError(
+            _errorFor(response.statusCode, body),
+            statusCode: response.statusCode,
+            body: body,
+            sessionExpired: response.statusCode == 401,
+          ),
+        );
+      }
+      final entries = parseCatalogList(body);
+      if (entries == null) {
+        return (
+          null,
+          ModelCatalogError(
+            'The catalog returned an unexpected response.',
+            statusCode: response.statusCode,
+            body: body,
+          ),
+        );
+      }
+      return (entries, null);
+    } on TimeoutException {
+      return (null, const ModelCatalogError("The catalog didn't respond in time."));
+    } on SocketException catch (e) {
+      return (null, ModelCatalogError("Couldn't reach the catalog: ${e.message}"));
+    } on Object catch (e) {
+      return (null, ModelCatalogError("Couldn't load the catalog: $e"));
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// `GET /v1/grid/catalog/{repo_id}?device=<json>` — full model detail with
+  /// per-version status when [device] is non-null. Returns `(detail, null)` on
+  /// success or `(null, error)` on failure — never throws.
+  static Future<(ModelDetail?, ModelCatalogError?)> detail({
+    required String apiUrl,
+    required String sessionToken,
+    required String repoId,
+    Map<String, dynamic>? device,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final base = apiUrl.endsWith('/') ? apiUrl : '$apiUrl/';
+      final path = 'v1/grid/catalog/${Uri.encodeComponent(repoId)}';
+      final query = device == null ? '' : '?device=${Uri.encodeQueryComponent(jsonEncode(device))}';
+      final request = await client.getUrl(Uri.parse('$base$path$query'));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (
+          null,
+          ModelCatalogError(
+            _errorFor(response.statusCode, body),
+            statusCode: response.statusCode,
+            body: body,
+            sessionExpired: response.statusCode == 401,
+          ),
+        );
+      }
+      final detail = parseModelDetail(body);
+      if (detail == null) {
+        return (
+          null,
+          ModelCatalogError(
+            'The catalog returned an unexpected response.',
+            statusCode: response.statusCode,
+            body: body,
+          ),
+        );
+      }
+      return (detail, null);
+    } on TimeoutException {
+      return (
+        null,
+        const ModelCatalogError("The catalog didn't respond in time."),
+      );
+    } on SocketException catch (e) {
+      return (
+        null,
+        ModelCatalogError("Couldn't reach the catalog: ${e.message}"),
+      );
+    } on Object catch (e) {
+      return (null, ModelCatalogError("Couldn't load model details: $e"));
+    } finally {
+      client.close(force: true);
+    }
   }
 }
