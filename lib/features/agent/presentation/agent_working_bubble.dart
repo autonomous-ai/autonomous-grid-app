@@ -67,12 +67,7 @@ class AgentActivityFeed extends ConsumerWidget {
     );
     final sections = <Widget>[
       if (plan.isNotEmpty) MessagePlan(entries: plan),
-      if (steps.isNotEmpty)
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [for (final step in steps) _StepRow(step: step)],
-        ),
+      if (steps.isNotEmpty) _StepList(steps: steps),
       if (thinking)
         // Reset the elapsed count each time the step list changes, so it reads
         // as time since the last action, not since the turn began.
@@ -88,6 +83,141 @@ class AgentActivityFeed extends ConsumerWidget {
           sections[i],
         ],
       ],
+    );
+  }
+}
+
+/// How many steps a run shows in full before it folds behind a summary. A short
+/// run reads at a glance; a long one (a dozen tool calls) would otherwise bury
+/// the answer and the "Thinking…" line under a wall of rows.
+const _collapseThreshold = 5;
+
+/// The run's steps: shown in full when there are few, or folded behind a tappable
+/// "N steps" summary when there are many.
+///
+/// Folded, it still shows whatever is running *now*, so a live turn never looks
+/// stalled — only the settled history tucks away. The choice is per run: this
+/// widget lives only while the feed holds steps, so the next turn (which starts
+/// empty) gets a fresh, default view rather than inheriting the last one's.
+class _StepList extends StatefulWidget {
+  const _StepList({required this.steps});
+
+  final List<AgentActivity> steps;
+
+  @override
+  State<_StepList> createState() => _StepListState();
+}
+
+class _StepListState extends State<_StepList> {
+  /// The user's explicit open/closed choice, or null to follow the default
+  /// (folded once the run is long).
+  bool? _expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = widget.steps;
+    if (steps.length <= _collapseThreshold) return _StepColumn(steps: steps);
+
+    final expanded = _expanded ?? false;
+    final shown = expanded
+        ? steps
+        : [
+            for (final step in steps)
+              if (step.status == AgentActivityStatus.running) step,
+          ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _StepsHeader(
+          count: steps.length,
+          status: aggregateActivityStatus(steps),
+          expanded: expanded,
+          onTap: () => setState(() => _expanded = !expanded),
+        ),
+        if (shown.isNotEmpty) _StepColumn(steps: shown),
+      ],
+    );
+  }
+}
+
+/// A plain column of step rows — the shape shared by the short-run view and the
+/// expanded long-run view.
+class _StepColumn extends StatelessWidget {
+  const _StepColumn({required this.steps});
+
+  final List<AgentActivity> steps;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [for (final step in steps) _StepRow(step: step)],
+  );
+}
+
+/// The tappable summary row for a folded run: its overall status, the step count,
+/// and a chevron that flips as it opens.
+class _StepsHeader extends StatelessWidget {
+  const _StepsHeader({
+    required this.count,
+    required this.status,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final int count;
+  final AgentActivityStatus status;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final radius = BorderRadius.circular(8);
+    return Semantics(
+      button: true,
+      label: expanded ? 'Hide steps' : 'Show all $count steps',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          // A menu-style click, not the app's Android ripple spreading across the
+          // row; the hover wash is the whole feedback.
+          splashFactory: NoSplash.splashFactory,
+          hoverColor: AppSurface.hoverFill,
+          child: Padding(
+            // No left inset, so the summary's status dot lines up with the step
+            // rows' dots below it (they start at the column's left edge); a touch
+            // on the right just keeps the hover wash off the chevron.
+            padding: const EdgeInsets.fromLTRB(0, 3, 6, 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StatusDot(status: status),
+                const SizedBox(width: 8),
+                Text(
+                  '$count steps',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: AppFont.medium,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  expanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                  size: 15,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
