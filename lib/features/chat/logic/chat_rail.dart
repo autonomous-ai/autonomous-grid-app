@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// follow it (shown beside the chat when the window is wide enough for both, the
 /// panel stepping aside otherwise).
 ///
-/// Cleared on every chat switch (see the chat pane), so each chat starts from
-/// the default again, while a deliberate toggle still sticks within a chat.
+/// Sticks once set: a deliberate hide or show carries across chats — in this
+/// project and any other — because a preference the user just expressed
+/// shouldn't silently reset the moment they open the next conversation. When
+/// shown, the window width still decides whether it sits alongside the chat or
+/// floats over it as an overlay.
 final chatRailOverrideProvider = NotifierProvider<ChatRailOverride, bool?>(
   ChatRailOverride.new,
 );
@@ -15,8 +18,6 @@ class ChatRailOverride extends Notifier<bool?> {
   bool? build() => null;
 
   void set(bool open) => state = open;
-
-  void clear() => state = null;
 }
 
 /// The rail's resolved visibility, published by the chat pane — which alone
