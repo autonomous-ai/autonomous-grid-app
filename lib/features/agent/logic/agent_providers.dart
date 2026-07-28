@@ -42,6 +42,23 @@ class AgentActivityLog extends Notifier<List<AgentActivity>> {
   }
 }
 
+/// The single status that stands for a whole run of [steps] — for the one-line
+/// summary a long, folded run shows instead of every row.
+///
+/// [AgentActivityStatus.running] wins while any step is still going (the run is
+/// live, so the summary spins); otherwise [AgentActivityStatus.failed] if any
+/// failed (a settled run with a problem to surface); otherwise
+/// [AgentActivityStatus.done]. Empty reads as done.
+AgentActivityStatus aggregateActivityStatus(List<AgentActivity> steps) {
+  if (steps.any((s) => s.status == AgentActivityStatus.running)) {
+    return AgentActivityStatus.running;
+  }
+  if (steps.any((s) => s.status == AgentActivityStatus.failed)) {
+    return AgentActivityStatus.failed;
+  }
+  return AgentActivityStatus.done;
+}
+
 /// The web pages the in-flight agent run has cited so far, deduplicated by url
 /// and kept in the order they were found. The "agent is working" bubble shows
 /// them live; `HermesChatSender` clears it at the start of each send, adds each
