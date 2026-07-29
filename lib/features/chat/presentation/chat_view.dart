@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -262,6 +263,37 @@ class _ChatViewState extends ConsumerState<ChatView> {
     }
   }
 
+  /// Handle a drag-and-drop onto the chat: an image becomes an attachment — a
+  /// thumbnail in the composer, what a vision turn needs — while anything else
+  /// is mentioned by its path, the way to point the agent at a project file.
+  ///
+  /// Dropping an image used to paste its raw `/var/folders/…` path as text: a
+  /// wall of characters no model could see. An image the app can't read (a
+  /// sandbox denial, a promise file with no path) still falls back to the path
+  /// rather than vanishing.
+  Future<void> _addDroppedFiles(List<DropItem> files) async {
+    final paths = <String>[];
+    for (final file in files) {
+      if (!isImageFilename(file.path)) {
+        paths.add(file.path);
+        continue;
+      }
+      if (_attachments.length >= maxChatImages) continue;
+      try {
+        final bytes = await file.readAsBytes();
+        if (!mounted) return;
+        setState(
+          () => _attachments.add(
+            MediaAttachment(filename: file.name, bytes: bytes),
+          ),
+        );
+      } on Object {
+        paths.add(file.path);
+      }
+    }
+    if (paths.isNotEmpty) _insertPaths(paths);
+  }
+
   /// Drop a starter's prompt into the composer, ready to edit or send.
   void _useStarter(String prompt) {
     _message.text = prompt;
@@ -427,7 +459,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       onDragExited: (_) => setState(() => _dragging = false),
       onDragDone: (details) {
         setState(() => _dragging = false);
-        _insertPaths([for (final file in details.files) file.path]);
+        unawaited(_addDroppedFiles(details.files));
       },
       child: Stack(
         children: [
