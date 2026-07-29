@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/liquid_glass.dart';
+import '../../../shared/widgets/send_on_enter.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/attachment_bar.dart';
 
@@ -127,24 +128,27 @@ class ComposerSection extends StatelessWidget {
                 onAdd: onAddAttachment,
                 onRemoveAt: onRemoveAttachment,
               ),
-              TextField(
-                controller: messageController,
-                minLines: 1,
-                maxLines: 6,
-                enabled: !sending,
-                textInputAction: TextInputAction.send,
-                style: const TextStyle(fontSize: 15),
-                onSubmitted: (_) {
-                  if (canSend) onSend();
-                },
-                decoration: InputDecoration(
-                  hintText: _inputHint(modality),
-                  filled: false,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  disabledBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.fromLTRB(18, 17, 18, 20),
+              SendOnEnter(
+                canSend: canSend,
+                onSend: onSend,
+                builder: (context, focusNode) => TextField(
+                  controller: messageController,
+                  focusNode: focusNode,
+                  minLines: 1,
+                  maxLines: 6,
+                  enabled: !sending,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: _inputHint(modality),
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.fromLTRB(18, 17, 18, 20),
+                  ),
                 ),
               ),
               _Actions(

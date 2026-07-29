@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/send_on_enter.dart';
 
 /// The message composer — a multiline field plus a circular send button that
 /// spins while a request is in flight. [canSend] gates both Enter-to-send and
@@ -34,27 +35,30 @@ class ChatInputBar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
-          child: TextField(
-            controller: controller,
-            minLines: 1,
-            maxLines: 5,
-            enabled: !sending,
-            textInputAction: TextInputAction.send,
-            onSubmitted: (_) {
-              if (canSend) onSend();
-            },
-            decoration: InputDecoration(
-              hintText: hint,
-              filled: true,
-              fillColor: AppPalette.cardBg,
-              prefixIcon: prefix,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
+          child: SendOnEnter(
+            canSend: canSend,
+            onSend: onSend,
+            builder: (context, focusNode) => TextField(
+              controller: controller,
+              focusNode: focusNode,
+              minLines: 1,
+              maxLines: 5,
+              enabled: !sending,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              decoration: InputDecoration(
+                hintText: hint,
+                filled: true,
+                fillColor: AppPalette.cardBg,
+                prefixIcon: prefix,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                border: _border(AppPalette.divider),
+                enabledBorder: _border(AppPalette.divider),
+                focusedBorder: _border(AppPalette.accent, width: 1.5),
               ),
-              border: _border(AppPalette.divider),
-              enabledBorder: _border(AppPalette.divider),
-              focusedBorder: _border(AppPalette.accent, width: 1.5),
             ),
           ),
         ),
