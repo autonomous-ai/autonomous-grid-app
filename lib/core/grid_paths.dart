@@ -58,6 +58,13 @@ class GridPaths {
   /// there; this is where *new* ones go so no agent owns the user's work.
   static Directory get skillsDir => Directory('${home.path}/skills');
 
+  /// The agent-neutral connector token store (`~/.grid/connectors`). Same idea
+  /// as [skillsDir]: a connector linked once must work for every agent, so the
+  /// token lands here and each adapter projects it into its own agent's format.
+  /// Unlike skills a projection can't be a symlink — agents disagree about the
+  /// file format — so it's a transforming copy, re-done on every change.
+  static Directory get connectorsDir => Directory('${home.path}/connectors');
+
   static Directory get outputsDir => Directory('${home.path}/outputs');
 
   /// Saved Chat conversations, one JSON file per conversation

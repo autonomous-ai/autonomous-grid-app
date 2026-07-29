@@ -7,8 +7,11 @@ import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../../shared/widgets/extension_list.dart';
 import '../../../../shared/widgets/extension_tile_surface.dart';
+import '../../../../shared/widgets/app_spinner.dart';
 import '../../../agents/logic/mcp_server.dart';
 import '../../logic/connector.dart';
+import '../../logic/connector_link_controller.dart';
+import '../../logic/connector_link_status.dart';
 import '../../logic/connectors_controller.dart';
 import 'add_mcp_dialog.dart';
 
@@ -40,7 +43,7 @@ class ConnectorList extends StatelessWidget {
     }
     final sections = sectionExtensionItems(
       items: connectors,
-      sectionOf: (c) => c.connected ? 'Connected' : 'Available',
+      sectionOf: (c) => c.inConnectedBucket ? 'Connected' : 'Available',
       leading: const ['Connected', 'Available'],
       filtered: filtered,
     );
@@ -57,18 +60,55 @@ class ConnectorList extends StatelessWidget {
   }
 }
 
-/// A catalog service the user hasn't connected. No actions yet — the sign-in
-/// flow is the next batch, and a button that never enables would be a promise
-/// the screen can't keep, so the row says "Coming soon" in plain text instead.
-class _CatalogRow extends StatelessWidget {
+/// A catalog service, with whatever action its current state allows.
+///
+/// Five states, and the one that matters most is `connecting`: the backend has
+/// a token the machine hasn't received yet, so the row shows a disabled pill
+/// rather than claiming Connected. Promising a tool the agent can't call is the
+/// same mistake the backend's `installed` flag invites, one step later in the
+/// flow.
+class _CatalogRow extends ConsumerStatefulWidget {
   const _CatalogRow({required this.connector});
 
   final Connector connector;
 
   @override
+  ConsumerState<_CatalogRow> createState() => _CatalogRowState();
+}
+
+class _CatalogRowState extends ConsumerState<_CatalogRow> {
+  bool _busy = false;
+
+  Future<void> _connect() async {
+    final toast = ToastScope.of(context);
+    setState(() => _busy = true);
+    final error = await ref
+        .read(connectorLinkControllerProvider.notifier)
+        .connect(widget.connector.id);
+    if (mounted) setState(() => _busy = false);
+    // Only a failure to *start* is worth a toast. Everything that happens after
+    // the browser opens — cancelled, timed out, refused — the row says quietly
+    // itself, because none of it is a surprise the user needs interrupting for.
+    if (error != null) {
+      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final theme = Theme.of(context);
+    final connector = widget.connector;
+    final link = ref.watch(connectorLinkControllerProvider);
+    final waiting = link.isPending(connector.id);
+    // A line the row owns: what this connector is waiting for, or how its last
+    // attempt ended.
+    final note = waiting
+        ? link.message
+        : link.failed == connector.id
+        ? link.message
+        : connector.linkError;
+
     return ExtensionTileSurface(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,11 +131,24 @@ class _CatalogRow extends StatelessWidget {
                         style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    const ExtensionTag(label: 'Coming soon', muted: true),
+                    if (connector.linkStatus ==
+                        ConnectorLinkStatus.connecting) ...[
+                      const SizedBox(width: 8),
+                      const ExtensionTag(label: 'Connecting…', muted: true),
+                    ],
                   ],
                 ),
-                if (connector.description.isNotEmpty) ...[
+                if (note.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    note,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textSecondary,
+                    ),
+                  ),
+                ] else if (connector.description.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   // One line, like every other extension row. The backend's
                   // blurb runs to a paragraph — the full text is the tooltip.
@@ -115,9 +168,71 @@ class _CatalogRow extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: 8),
+          _CatalogAction(
+            connector: connector,
+            waiting: waiting,
+            busy: _busy,
+            onConnect: _connect,
+            onCancel: () =>
+                ref.read(connectorLinkControllerProvider.notifier).cancel(),
+          ),
         ],
       ),
     );
+  }
+}
+
+/// The one control a catalog row offers, chosen by state.
+class _CatalogAction extends StatelessWidget {
+  const _CatalogAction({
+    required this.connector,
+    required this.waiting,
+    required this.busy,
+    required this.onConnect,
+    required this.onCancel,
+  });
+
+  final Connector connector;
+
+  /// This row is the one waiting on a browser right now.
+  final bool waiting;
+
+  /// A request is in flight for this row (starting the link).
+  final bool busy;
+
+  final VoidCallback onConnect;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads color tokens; follow theme flips.
+
+    // While the browser is open the way out is Cancel, not a spinner: the user
+    // may have closed the tab, and a control that only spins would strand them.
+    if (waiting) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AppSpinner(),
+          const SizedBox(width: 8),
+          TextButton(onPressed: onCancel, child: const Text('Cancel')),
+        ],
+      );
+    }
+    if (busy) return const AppSpinner();
+
+    return switch (connector.linkStatus) {
+      // The token is at the backend but not here yet, so there is nothing to
+      // press: Disconnect would race the delivery, and Connect would start a
+      // second link for an account already linked.
+      ConnectorLinkStatus.connecting => const SizedBox.shrink(),
+      ConnectorLinkStatus.connectFailed => OutlinedButton(
+        onPressed: onConnect,
+        child: const Text('Retry'),
+      ),
+      _ => FilledButton(onPressed: onConnect, child: const Text('Connect')),
+    };
   }
 }
 

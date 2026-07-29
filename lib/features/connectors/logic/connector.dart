@@ -1,5 +1,7 @@
+import '../../../infrastructure/api/connector_gateway_client.dart';
 import '../../agents/logic/mcp_server.dart';
 import 'connector_catalog.dart';
+import 'connector_link_status.dart';
 
 /// How a connector came to exist.
 enum ConnectorKind {
@@ -26,6 +28,8 @@ class Connector {
     this.imageUrl = '',
     this.server,
     this.catalogEntry,
+    this.linkStatus = ConnectorLinkStatus.notInstalled,
+    this.linkError = '',
   });
 
   /// The catalog `code`, or the MCP server's name — unique either way, because
@@ -48,7 +52,25 @@ class Connector {
   /// The catalog entry behind this row, when there is one.
   final ConnectorCatalogEntry? catalogEntry;
 
+  /// Where the *account link* stands at the backend, which is a different
+  /// question from [status]: this says whether the user has signed in and
+  /// whether the token has reached this machine, while [status] says whether
+  /// the agent has a server it can call. A row is only truly usable when both
+  /// agree, which is why [ConnectorLinkStatus.connecting] renders as a disabled
+  /// pill rather than as connected.
+  final ConnectorLinkStatus linkStatus;
+
+  /// Why the last link attempt failed, shown in the row's tooltip.
+  final String linkError;
+
   bool get connected => status == ConnectorStatus.connected;
+
+  /// True while the backend still owes an answer — the screen keeps polling.
+  bool get isSettling => linkStatus.isSettling;
+
+  /// Which bucket the row belongs in. A connector mid-flight counts as linked
+  /// so it doesn't jump between sections under the user's cursor.
+  bool get inConnectedBucket => connected || linkStatus.isLinked;
 }
 
 /// Join the agent's config (the truth about what's live) with the catalog (the
@@ -63,8 +85,10 @@ class Connector {
 List<Connector> buildConnectors({
   required List<McpServer> servers,
   required List<ConnectorCatalogEntry> catalog,
+  List<DeviceConnector> deviceConnectors = const [],
 }) {
   final byCode = {for (final entry in catalog) entry.code: entry};
+  final linked = {for (final device in deviceConnectors) device.code: device};
   final connected = <Connector>[
     for (final server in servers)
       Connector(
@@ -78,6 +102,9 @@ List<Connector> buildConnectors({
         status: ConnectorStatus.connected,
         server: server,
         catalogEntry: byCode[server.name],
+        linkStatus:
+            linked[server.name]?.status ?? ConnectorLinkStatus.connected,
+        linkError: linked[server.name]?.errorMessage ?? '',
       ),
   ];
   final taken = {for (final server in servers) server.name};
@@ -92,6 +119,9 @@ List<Connector> buildConnectors({
           imageUrl: entry.imageUrl,
           status: ConnectorStatus.notConnected,
           catalogEntry: entry,
+          linkStatus:
+              linked[entry.code]?.status ?? ConnectorLinkStatus.notInstalled,
+          linkError: linked[entry.code]?.errorMessage ?? '',
         ),
   ];
   return [...connected, ...offered];

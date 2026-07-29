@@ -4,6 +4,7 @@ import '../../agent/logic/hermes_extensions.dart';
 import 'agent_catalog.dart';
 import 'agent_plugin.dart';
 import 'agent_skill.dart';
+import 'connector_token.dart';
 import 'mcp_server.dart';
 import 'skill_writer.dart';
 
@@ -71,6 +72,22 @@ abstract interface class AgentMcpPlane {
   /// Replace the server saved under [previousName] with [server] — the rename
   /// path, centralized here so no caller open-codes the two-write dance.
   Future<void> rename(String previousName, McpServer server);
+
+  /// Write [tokens] into whatever this agent reads OAuth credentials from, so a
+  /// connector the user linked once works here too.
+  ///
+  /// The app's master store (`~/.grid/connectors/tokens.json`) is the source;
+  /// this is the projection of it, the same way each agent gets a link to the
+  /// master skills store. It can't be a symlink, because agents disagree about
+  /// the format — so it's a transforming copy, and every change to the master
+  /// re-projects. Idempotent: called again with the same tokens it rewrites the
+  /// same bytes.
+  ///
+  /// Null when the agent has no OAuth-connector concept at all. That is the
+  /// null-plane rule one level down: the screen says "not supported here"
+  /// rather than promising a tool this agent could never call.
+  Future<void> Function(List<ConnectorToken> tokens)?
+  get projectConnectorTokens;
 }
 
 /// A plane operation failed in a way the user can act on. Adapters translate

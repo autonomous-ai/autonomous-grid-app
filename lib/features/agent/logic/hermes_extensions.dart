@@ -8,10 +8,12 @@ import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_plugin.dart';
 import '../../agents/logic/agent_skill.dart';
+import '../../agents/logic/connector_token.dart';
 import '../../agents/logic/mcp_server.dart';
 import '../../agents/logic/skill_writer.dart';
 import '../../skills/logic/skill_author.dart';
 import 'hermes_mcp_config.dart';
+import 'hermes_token_projection.dart';
 import 'agent_skill_installer.dart';
 import 'hermes_skill_scanner.dart';
 import 'hermes_tool.dart';
@@ -27,11 +29,12 @@ class HermesExtensions implements AgentExtensions {
     required SkillAuthor author,
     required AgentSkillInstaller installer,
     required HermesConfigFile configFile,
+    required HermesTokenProjection tokenProjection,
   }) : skills = _HermesSkillsPlane(scanner, author, installer, configFile),
        plugins = pluginService == null
            ? null
            : _HermesPluginsPlane(pluginService),
-       mcp = _HermesMcpPlane(mcpConfig);
+       mcp = _HermesMcpPlane(mcpConfig, tokenProjection);
 
   @override
   AgentTool get tool => AgentTool.hermes;
@@ -134,9 +137,29 @@ class _HermesPluginsPlane implements AgentPluginsPlane {
 }
 
 class _HermesMcpPlane implements AgentMcpPlane {
-  _HermesMcpPlane(this._config);
+  _HermesMcpPlane(this._config, this._tokens);
 
   final HermesMcpConfig _config;
+  final HermesTokenProjection _tokens;
+
+  /// Hermes reads MCP OAuth tokens from its own `mcp-tokens/` directory, so the
+  /// projection is a file write it already understands — no bridge, and no
+  /// credential in `config.yaml`.
+  @override
+  Future<void> Function(List<ConnectorToken>)? get projectConnectorTokens =>
+      (tokens) async {
+        // Every connector we know of is ours to manage, whether or not it still
+        // has a token: that set is what tells the projection which stale files
+        // to clear without touching servers Hermes authorized on its own.
+        final owned = {for (final token in tokens) token.connector};
+        try {
+          await _tokens.project(tokens, owned: owned);
+        } on Object catch (error) {
+          throw AgentExtensionException(
+            "Couldn't hand the connector tokens to Hermes: $error",
+          );
+        }
+      };
 
   @override
   Future<List<McpServer>> read() => _config.read();
@@ -214,5 +237,6 @@ final hermesExtensionsProvider = Provider<AgentExtensions?>((ref) {
     author: ref.watch(skillAuthorProvider),
     installer: ref.watch(agentSkillInstallerProvider),
     configFile: ref.watch(hermesConfigFileProvider),
+    tokenProjection: ref.watch(hermesTokenProjectionProvider),
   );
 });
