@@ -90,6 +90,24 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
         : _url.text.trim().isNotEmpty;
   }
 
+  /// What still has to be filled in before saving, or empty when nothing does.
+  ///
+  /// Names the fields rather than saying "complete the form": the two required
+  /// ones sit among four optional ones, and which is which isn't visible —
+  /// every field renders identically, and a placeholder reads much like a value
+  /// at a glance.
+  String get _missing {
+    if (_saving || _canSave) return '';
+    final wanted = [
+      if (_name.text.trim().isEmpty) 'a name',
+      if (_transport == _Transport.local && _command.text.trim().isEmpty)
+        'a command',
+      if (_transport == _Transport.remote && _url.text.trim().isEmpty) 'a URL',
+    ];
+    if (wanted.isEmpty) return '';
+    return 'Needs ${wanted.join(' and ')}.';
+  }
+
   McpServer _build() {
     final transport = _transport == _Transport.remote
         ? McpHttp(
@@ -196,6 +214,19 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
         ),
       ),
       actions: [
+        // Say what the greyed-out button is waiting for. Without this the
+        // dialog just sits there: the hints are placeholder grey, so a form
+        // that has never been typed into looks much like a filled one, and the
+        // only feedback for pressing Add is that nothing happens.
+        if (_missing.isNotEmpty)
+          Expanded(
+            child: Text(
+              _missing,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppPalette.textSecondary,
+              ),
+            ),
+          ),
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
