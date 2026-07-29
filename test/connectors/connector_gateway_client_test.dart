@@ -80,6 +80,37 @@ void main() {
       });
     });
 
+    group('the -pat twins are dropped', () {
+      test('a -pat row never reaches the screen', () {
+        // The gateway lists gmail, gmail-app and gmail-pat side by side. The
+        // last one has no flow the app can drive, so it would render as a row
+        // that says it is unavailable and offers nothing to press.
+        final entries = parseGatewayConnectors(
+          '{"connectors": [{"code": "gmail-pat"}, {"code": "gmail-app"}, '
+          '{"code": "atlassian-pat"}]}',
+        )!;
+        expect(entries.map((e) => e.code), ['gmail-app']);
+      });
+
+      test('a plain pat connector stays', () {
+        // `gmail` is auth_type pat too, but it is the row a user looks for by
+        // name — so the rule is the code suffix, not the auth type.
+        final entries = parseGatewayConnectors(
+          '{"connectors": [{"code": "gmail", "auth_type": "pat"}]}',
+        )!;
+        expect(entries.single.code, 'gmail');
+      });
+
+      test('only the suffix counts, not the letters anywhere in the code', () {
+        // "patreon" and "pat" would both fall to a `contains` check, and a
+        // bare "pat" has no separator to make it a variant of anything.
+        expect(isPatVariantCode('patreon'), isFalse);
+        expect(isPatVariantCode('pat'), isFalse);
+        expect(isPatVariantCode('gmail-pat'), isTrue);
+        expect(isPatVariantCode('GMAIL-PAT'), isTrue);
+      });
+    });
+
     test('an unreadable body is null so the caller can fall back', () {
       // Null and [] are different answers: one is "we could not find out", the
       // other is "you have no connectors".

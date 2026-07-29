@@ -299,6 +299,20 @@ String? parseDetail(String raw) {
   return detail is String && detail.isNotEmpty ? detail : null;
 }
 
+/// A `-pat` row: the hand-pasted-token twin of a connector the app can sign
+/// into properly.
+///
+/// The gateway lists these beside the real thing (`gmail`, `gmail-app`,
+/// `gmail-pat`), and they are dead weight on this screen: the app can only
+/// drive an OAuth flow, so every one of them renders as a row that says it
+/// isn't available and offers no button. Dropped at the parse boundary, so
+/// nothing downstream has to carry the rule.
+///
+/// Matched on the code suffix rather than on `auth_type`, because those select
+/// different sets — plain `gmail` is also `auth_type: pat` and must stay, since
+/// it is the row a user would look for by name.
+bool isPatVariantCode(String code) => code.toLowerCase().endsWith('-pat');
+
 /// Reads `GET /v1/grid/connectors`.
 ///
 /// Null means "not a catalog response at all", so the caller can fall back to
@@ -320,6 +334,7 @@ List<ConnectorCatalogEntry>? parseGatewayConnectors(String raw) {
     if (entry is! Map<String, dynamic>) continue;
     final code = entry['code'];
     if (code is! String || code.isEmpty) continue;
+    if (isPatVariantCode(code)) continue;
     final label = entry['label'];
     entries.add(
       ConnectorCatalogEntry(
