@@ -6,6 +6,8 @@ import '../../../shared/widgets/extension_toolbar.dart';
 import '../../../shared/widgets/pill_choice.dart';
 import '../../agents/presentation/extension_screen.dart';
 import '../logic/connector.dart';
+import '../logic/connector_catalog.dart';
+import '../logic/connector_link_controller.dart';
 import '../logic/connectors_controller.dart';
 import 'widgets/add_mcp_dialog.dart';
 import 'widgets/connector_list.dart';
@@ -50,7 +52,15 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
       searchHint: 'Search connectors',
       createLabel: 'Add an MCP server',
       onCreate: showAddMcpDialog,
-      onRefresh: () => ref.invalidate(mcpServersProvider),
+      // All three sources, not just the config. The screen joins the agent's
+      // MCP servers, the gateway's catalog and this machine's tokens; a refresh
+      // that re-read one of them would leave the row showing two-thirds stale
+      // data and look like the button did nothing.
+      onRefresh: () {
+        ref.invalidate(mcpServersProvider);
+        ref.invalidate(connectorCatalogProvider);
+        ref.invalidate(connectorTokensProvider);
+      },
       filterBar: Row(
         children: [
           for (final option in _ConnectorFilter.values)

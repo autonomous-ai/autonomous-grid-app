@@ -695,7 +695,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             _commit(
               current.copyWith(
                 updatedAt: DateTime.now(),
-                messages: [...current.messages, kept.copyWith(model: model)],
+                messages: [
+                  ...current.messages,
+                  kept.copyWith(model: model),
+                ],
               ),
               phase: const SendIdle(),
             );

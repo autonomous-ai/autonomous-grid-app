@@ -6,8 +6,10 @@ import '../../../infrastructure/api/connector_gateway_client.dart';
 import '../../../shared/external_launch.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/connector_token.dart';
+import 'connector_catalog.dart';
 import 'connector_refresh_service.dart';
 import 'connector_token_store.dart';
+import 'connectors_controller.dart';
 
 /// A connector the app is waiting on, held in memory only.
 ///
@@ -179,6 +181,7 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     }
 
     final projectionError = await projectTokens();
+    _publishTokens();
     state = const ConnectorLinkState();
 
     // Re-arm the refresh schedule around the token that just arrived. Without
@@ -222,6 +225,11 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     } on Object catch (error) {
       return "Couldn't hand the connector tokens to the agent: $error";
     }
+    // The projection writes `mcp_servers` into the agent's config, and the
+    // screen reads that list separately from the tokens — a connector shows as
+    // a live server row once one exists. Invalidated here rather than at each
+    // caller, because this is the only place that knows the config just moved.
+    ref.invalidate(mcpServersProvider);
     return null;
   }
 
@@ -248,7 +256,12 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     } on Object catch (failure) {
       return "Couldn't save the refreshed connection: $failure";
     }
-    return projectTokens();
+    final projectionError = await projectTokens();
+    // A refreshed token carries a new expiry, and the row shows it. Nothing
+    // else on this path touches the state, so without this the screen keeps
+    // reporting the old one.
+    _publishTokens();
+    return projectionError;
   }
 
   /// Disconnect at the gateway, then locally.
@@ -282,6 +295,29 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
       // agent using it, and that runs regardless.
     }
     await projectTokens();
+    _publishTokens();
+  }
+
+  /// Tell the screen the token store changed.
+  ///
+  /// Every mutation here writes to disk, and a file write is invisible to
+  /// Riverpod — nothing recomputes until something it watches changes. The
+  /// token store is read through a provider, so the read has to be invalidated
+  /// by hand.
+  ///
+  /// This is called even where the state also changes, rather than relying on
+  /// that: `disconnect` used to lean on the state moving and it doesn't move,
+  /// which left a disconnected row still reading as Connected until the screen
+  /// was reopened. Correctness that depends on an unrelated field happening to
+  /// change is correctness by coincidence.
+  ///
+  /// The catalog goes with it. Its rows carry the gateway's own `status` and
+  /// `account_name`, which every one of these mutations has just changed at the
+  /// server — leaving it cached would have the screen agree that the connector
+  /// is gone while still naming the account it was linked to.
+  void _publishTokens() {
+    ref.invalidate(connectorTokensProvider);
+    ref.invalidate(connectorCatalogProvider);
   }
 
   String? _settle(String connector, String message) {
