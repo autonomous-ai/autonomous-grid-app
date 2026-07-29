@@ -47,24 +47,53 @@ class McpServersController extends AsyncNotifier<List<McpServer>> {
     return plane.read();
   }
 
-  /// Write every manually configured server into [plane], skipping the ones it
-  /// already has.
+  /// Reconcile the app's store with the selected agent's config, both ways.
   ///
-  /// Additive on purpose: this never deletes. A server in the agent's config
-  /// that the store doesn't know about was put there by the user or by Hermes
-  /// itself, and removing it would destroy configuration this app never owned.
+  /// **Store → agent** carries manual servers onto an agent that doesn't have
+  /// them yet, which is what makes switching agents keep the user's work.
+  ///
+  /// **Agent → store** adopts servers the config has and the store doesn't.
+  /// Those exist for two ordinary reasons: they were added before this store
+  /// existed, or the user wrote them into `config.yaml` by hand. Either way
+  /// they are manual servers, and leaving them unadopted means the next agent
+  /// switch loses them — the exact problem the store was added to fix.
+  ///
+  /// Adoption skips anything carrying the `_grid` marker: those are projections
+  /// of an OAuth connector, owned by the token store, and copying one here
+  /// would duplicate a credential into a second file and resurrect the entry
+  /// after a disconnect.
+  ///
+  /// Neither direction deletes. A server this app doesn't know about is
+  /// somebody's configuration, not a stale row.
   Future<void> _projectManual(AgentMcpPlane plane) async {
     try {
-      final stored = await ref.read(manualServerStoreProvider).read();
-      if (stored.isEmpty) return;
-      final existing = {for (final server in await plane.read()) server.name};
+      final store = ref.read(manualServerStoreProvider);
+      final stored = await store.read();
+      final configured = await plane.read();
+      final existing = {for (final server in configured) server.name};
+
+      // Awaited, not read from cache: adoption runs during `build`, when the
+      // token provider may not have resolved yet. Treating "not loaded" as "no
+      // tokens" would adopt every OAuth projection as a manual server, and a
+      // disconnect would then be undone on the next screen open.
+      final tokens = await ref.read(connectorTokensProvider.future);
+      final adopted = {
+        for (final server in configured)
+          if (!stored.containsKey(server.name) &&
+              !tokens.containsKey(server.name))
+            server.name: server,
+      };
+      if (adopted.isNotEmpty) {
+        await store.write({...stored, ...adopted});
+      }
+
       for (final server in stored.values) {
         if (existing.contains(server.name)) continue;
         await plane.upsert(server);
       }
     } on Object {
-      // A projection failure leaves the agent as it was; the screen still shows
-      // whatever that agent has, and the store is untouched.
+      // A reconcile failure leaves both sides as they were; the screen still
+      // shows whatever the agent has.
     }
   }
 
