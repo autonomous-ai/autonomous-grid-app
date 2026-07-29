@@ -12,6 +12,7 @@ import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import 'agent_changes.dart';
+import 'agent_loop_guard.dart';
 import 'agent_server_error.dart';
 import 'agent_permissions.dart';
 import 'agent_prompt.dart';
@@ -297,14 +298,37 @@ class HermesChatSender implements ChatSender {
     final run = session.prompt(text);
     final answer = StringBuffer();
     final updates = StreamController<ChatSendUpdate>();
+    final guard = AgentLoopGuard();
     var settled = false;
+    late final StreamSubscription<HermesAcpEvent> events;
 
-    final events = run.events.listen(
+    // End the turn when the assistant is stuck redoing one step — it isn't
+    // making progress, and left alone it spins (one weak model rewrote a single
+    // file nine times across 42 minutes). Mirrors the Stop path (cancel + kill
+    // + log) but lands a plain line in the chat rather than stopping in silence.
+    Future<void> stopForLoop(String label) async {
+      if (settled) return;
+      settled = true;
+      await events.cancel();
+      permissions.clear();
+      run.kill();
+      log.finish(logId, error: 'looping ($label)');
+      updates.add(ChatSendFailure(agentLoopingMessage(label)));
+      await updates.close();
+    }
+
+    events = run.events.listen(
       (event) {
         switch (event) {
           case HermesAcpActivity(:final activity):
             activityLog.upsert(activity);
           case HermesAcpPermission(:final request):
+            // The same file or command coming back yet again is a loop, not
+            // work — stop before asking the user to approve the fourth pass.
+            if (guard.observe(request) case final stuck?) {
+              unawaited(stopForLoop(stuck));
+              return;
+            }
             // The agent has stopped and is waiting on the user; their answer
             // goes straight back down the same session.
             permissions.ask(
@@ -315,6 +339,12 @@ class HermesChatSender implements ChatSender {
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
             _recordEdit(request);
+            // ...and count it: a Full-access loop rewrites the same file with
+            // no prompt to slow it down, so catching the repeat matters more.
+            if (guard.observe(request) case final stuck?) {
+              unawaited(stopForLoop(stuck));
+              return;
+            }
           case HermesAcpSources(:final sources):
             // A web look-up finished — collect its pages to cite under the
             // answer once the turn lands.
