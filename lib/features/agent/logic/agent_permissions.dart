@@ -27,6 +27,23 @@ final agentPermissionTimeoutProvider = Provider<Duration>(
   (ref) => kAgentPermissionTimeout,
 );
 
+/// How long a turn may go silent — no message, no tool step — while the agent
+/// isn't waiting on the user either, before it's treated as hung.
+///
+/// A turn goes quiet for a good reason only while a permission is pending (the
+/// user is deciding) or a tool is mid-run; both re-arm the watch on their next
+/// event. Past this with no sign of life, the agent has stuck — one turn sat
+/// silent for twelve minutes after starting a dev server it then waited on
+/// forever. Generous, to spare a legitimately long command (a big `npm
+/// install`); the cost of stopping one early is a resend, far cheaper than a
+/// chat that spins with no way to tell working from wedged.
+const Duration kAgentTurnIdleTimeout = Duration(minutes: 5);
+
+/// Overridable so tests don't sit through the wait.
+final agentTurnIdleTimeoutProvider = Provider<Duration>(
+  (ref) => kAgentTurnIdleTimeout,
+);
+
 /// The one thing the agent is waiting on the user for, or null when it isn't
 /// waiting on anything. The chat pins it above the composer: the agent has
 /// stopped mid-answer and nothing happens until this is answered.

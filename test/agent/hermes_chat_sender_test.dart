@@ -212,7 +212,11 @@ const _permission = AgentPermission(
   ],
 );
 
-ProviderContainer _container(HermesAcpService? service, Directory tmp) {
+ProviderContainer _container(
+  HermesAcpService? service,
+  Directory tmp, {
+  Duration? idleTimeout,
+}) {
   final container = ProviderContainer(
     overrides: [
       hermesAcpServiceProvider.overrideWithValue(service),
@@ -224,6 +228,9 @@ ProviderContainer _container(HermesAcpService? service, Directory tmp) {
       chatPrefsStoreProvider.overrideWithValue(
         ChatPrefsStore(file: File('${tmp.path}/chat_prefs.json')),
       ),
+      // Shrink the hung-turn watch so the test doesn't wait minutes for it.
+      if (idleTimeout != null)
+        agentTurnIdleTimeoutProvider.overrideWithValue(idleTimeout),
     ],
   );
   addTearDown(container.dispose);
@@ -323,6 +330,77 @@ void main() {
       expect(container.read(agentPermissionProvider), isNull);
     },
   );
+
+  test(
+    'a turn that goes silent — no events, nobody being asked — is stopped as '
+    'stuck, not left spinning (the dev-server-poll hang)',
+    () async {
+      final service = _LiveAcp();
+      final container = _container(
+        service,
+        tmp,
+        idleTimeout: const Duration(milliseconds: 40),
+      );
+
+      final updates = <ChatSendUpdate>[];
+      final finished = container
+          .read(hermesChatSenderProvider)
+          .send(
+            network: _credential(),
+            model: 'm',
+            history: _history('move the files and start the server'),
+          )
+          .listen(updates.add)
+          .asFuture<void>();
+
+      await _untilListening(service);
+      // The agent does one thing, then goes quiet — as it did after the last
+      // edit at 15:10, then sat on a server that never returned.
+      service.session.events.add(
+        HermesAcpActivity(_step('mv', AgentActivityStatus.done)),
+      );
+
+      // Past the idle window with nothing more from the agent and nobody being
+      // asked, the turn ends itself rather than spinning forever.
+      await finished;
+      expect(updates.last, isA<ChatSendFailure>());
+      expect((updates.last as ChatSendFailure).error, kAgentUnresponsive);
+    },
+  );
+
+  test('a pending permission is the user’s time, not a hang — the idle watch '
+      'does not fire while a card is waiting to be answered', () async {
+    final service = _LiveAcp();
+    final container = _container(
+      service,
+      tmp,
+      idleTimeout: const Duration(milliseconds: 40),
+    );
+
+    final updates = <ChatSendUpdate>[];
+    final finished = container
+        .read(hermesChatSenderProvider)
+        .send(network: _credential(), model: 'm', history: _history('go'))
+        .listen(updates.add)
+        .asFuture<void>();
+
+    await _untilListening(service);
+    service.session.events.add(const HermesAcpPermission(_permission));
+    await pumpEventQueue();
+    // Sit on the card well past the idle window — a user reading a prompt is
+    // not the agent hanging, so the turn must still be waiting, not failed.
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(container.read(agentPermissionProvider)?.command, 'rm -rf build');
+    expect(updates.whereType<ChatSendFailure>(), isEmpty);
+
+    // Answering lets it finish normally.
+    container
+        .read(agentPermissionProvider.notifier)
+        .answer(AgentPermissionChoice.allowOnce);
+    service.session.finish('Done.');
+    await finished;
+    expect((updates.last as ChatSendSuccess).reply.text, 'Done.');
+  });
 
   test(
     'a starting turn empties the shared feed up front — before the session even '
