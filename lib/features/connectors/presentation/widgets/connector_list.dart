@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/empty_state.dart';
@@ -606,19 +607,47 @@ class ConnectorMark extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: CachedNetworkImage(
-          imageUrl: imageUrl,
-          fit: BoxFit.contain,
-          // No spinner while it loads: the plate is already the right shape,
-          // and a spinner per row turns a quiet list into a flicker.
-          placeholder: (_, _) => const SizedBox.shrink(),
-          errorWidget: (_, _, _) =>
-              Icon(fallbackIcon, size: 16, color: AppPalette.textSecondary),
-        ),
-      ),
+      child: Padding(padding: const EdgeInsets.all(4), child: _image()),
     );
+  }
+
+  /// The logo, decoded by whatever can read this format.
+  ///
+  /// Flutter's image codecs handle bitmaps and nothing else — an SVG loads
+  /// fine over the network and then fails to decode, which sent Figma's mark to
+  /// the fallback glyph while the request itself was a clean 200. The backend
+  /// picks the format per connector and can change it without telling us, so
+  /// the choice is made from the URL rather than from a list of connectors.
+  Widget _image() {
+    final glyph = Icon(fallbackIcon, size: 16, color: AppPalette.textSecondary);
+
+    if (_isSvg(imageUrl)) {
+      return SvgPicture.network(
+        imageUrl,
+        fit: BoxFit.contain,
+        // Not disk-cached the way `CachedNetworkImage` is — these marks are
+        // under a kilobyte, so a re-fetch per screen visit is cheaper than
+        // hand-rolling a cache for them.
+        placeholderBuilder: (_) => const SizedBox.shrink(),
+        errorBuilder: (_, _, _) => glyph,
+      );
+    }
+
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      fit: BoxFit.contain,
+      // No spinner while it loads: the plate is already the right shape,
+      // and a spinner per row turns a quiet list into a flicker.
+      placeholder: (_, _) => const SizedBox.shrink(),
+      errorWidget: (_, _, _) => glyph,
+    );
+  }
+
+  /// Reads the extension off the path, ignoring any `?v=2` the CDN appends —
+  /// matching on the whole URL would miss every versioned one.
+  static bool _isSvg(String url) {
+    final path = Uri.tryParse(url)?.path ?? url;
+    return path.toLowerCase().endsWith('.svg');
   }
 }
 
