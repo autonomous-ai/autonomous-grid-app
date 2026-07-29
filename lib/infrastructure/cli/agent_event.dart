@@ -118,30 +118,48 @@ class AgentPlanEntry {
   /// Reconstruct a *persisted* entry — its [status] is this enum's own name
   /// (what [toJson] wrote), not the ACP wire vocabulary [parseAgentPlan] reads.
   static AgentPlanEntry? fromJson(Map<String, dynamic> json) {
-    final content = json['content'];
-    if (content is! String || content.trim().isEmpty) return null;
+    final content = cleanPlanContent(json['content']);
+    if (content == null) return null;
     return AgentPlanEntry(
-      content: content.trim(),
+      content: content,
       status: _planStatusByName(json['status']),
     );
   }
 }
 
+/// A plan step's text once cleaned, or null when it's nothing worth showing.
+///
+/// Dropped: a blank step, and Hermes's own `todo`-tool placeholders —
+/// `(no description)` / `(invalid item)`, which it substitutes when the model's
+/// item carried no usable `content`. A weaker model that fills the `todo` tool
+/// with the step text under the wrong key leaves a plan that is all placeholders
+/// (a wall of "(no description)" the user reads as a bug); by the time the app
+/// sees it Hermes has already discarded the real text, so the honest move is to
+/// drop the empty rows rather than render them.
+String? cleanPlanContent(Object? raw) {
+  if (raw is! String) return null;
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return null;
+  const placeholders = {'(no description)', '(invalid item)'};
+  return placeholders.contains(trimmed.toLowerCase()) ? null : trimmed;
+}
+
 /// Parses an ACP `plan` update's `entries` into the agent's to-do list. Each
 /// entry is `{content, status}` where status is ACP's own
-/// `pending`/`in_progress`/`completed`; anything else reads as pending, and a
-/// blank step is dropped. The list replaces the previous plan wholesale — Hermes
-/// sends the full to-do state each time, not a delta.
+/// `pending`/`in_progress`/`completed`; anything else reads as pending. A blank
+/// step, or one Hermes filled with a placeholder ([cleanPlanContent]), is
+/// dropped. The list replaces the previous plan wholesale — Hermes sends the full
+/// to-do state each time, not a delta.
 List<AgentPlanEntry> parseAgentPlan(Object? entries) {
   if (entries is! List) return const [];
   final plan = <AgentPlanEntry>[];
   for (final entry in entries) {
     if (entry is! Map) continue;
-    final content = entry['content'];
-    if (content is! String || content.trim().isEmpty) continue;
+    final content = cleanPlanContent(entry['content']);
+    if (content == null) continue;
     plan.add(
       AgentPlanEntry(
-        content: content.trim(),
+        content: content,
         status: _planStatusFromAcp(entry['status']),
       ),
     );
