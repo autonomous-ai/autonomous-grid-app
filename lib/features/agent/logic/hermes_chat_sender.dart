@@ -300,59 +300,86 @@ class HermesChatSender implements ChatSender {
     final updates = StreamController<ChatSendUpdate>();
     final guard = AgentLoopGuard();
     var settled = false;
+    Timer? idle;
     late final StreamSubscription<HermesAcpEvent> events;
 
-    // End the turn when the assistant is stuck redoing one step — it isn't
-    // making progress, and left alone it spins (one weak model rewrote a single
-    // file nine times across 42 minutes). Mirrors the Stop path (cancel + kill
-    // + log) but lands a plain line in the chat rather than stopping in silence.
-    Future<void> stopForLoop(String label) async {
+    // End a turn that's gone wrong before it drags on. Mirrors the Stop path
+    // (cancel + kill + log) but lands a plain line in the chat rather than
+    // stopping in silence. [logError] is what the command log records; [failure]
+    // is the line the user reads.
+    Future<void> endEarly(String failure, String logError) async {
       if (settled) return;
       settled = true;
+      idle?.cancel();
       await events.cancel();
       permissions.clear();
       run.kill();
-      log.finish(logId, error: 'looping ($label)');
-      updates.add(ChatSendFailure(agentLoopingMessage(label)));
+      log.finish(logId, error: logError);
+      updates.add(ChatSendFailure(failure));
       await updates.close();
+    }
+
+    void stopForLoop(String stuck) =>
+        unawaited(endEarly(agentLoopingMessage(stuck), 'looping ($stuck)'));
+
+    // Catch a hung turn: the agent has sent nothing for too long and isn't
+    // waiting on the user either. Re-armed by every event (below) and by every
+    // answered permission; cancelled while a permission is pending, because the
+    // user's own thinking time isn't the agent hanging. One turn sat silent for
+    // twelve minutes after starting a dev server it then waited on forever —
+    // this is what ends that instead of spinning.
+    final idleTimeout = _ref.read(agentTurnIdleTimeoutProvider);
+    void armIdle() {
+      idle?.cancel();
+      idle = Timer(
+        idleTimeout,
+        () => unawaited(endEarly(kAgentUnresponsive, 'unresponsive')),
+      );
     }
 
     events = run.events.listen(
       (event) {
         switch (event) {
           case HermesAcpActivity(:final activity):
+            armIdle();
             activityLog.upsert(activity);
           case HermesAcpPermission(:final request):
             // The same file or command coming back yet again is a loop, not
             // work — stop before asking the user to approve the fourth pass.
             if (guard.observe(request) case final stuck?) {
-              unawaited(stopForLoop(stuck));
+              stopForLoop(stuck);
               return;
             }
-            // The agent has stopped and is waiting on the user; their answer
-            // goes straight back down the same session.
-            permissions.ask(
-              request,
-              (optionId) => session.answerPermission(request.id, optionId),
-            );
+            // The agent has stopped and is waiting on the user; pause the idle
+            // watch (their time isn't a hang) and re-arm it once they answer.
+            idle?.cancel();
+            idle = null;
+            permissions.ask(request, (optionId) {
+              armIdle();
+              session.answerPermission(request.id, optionId);
+            });
           case HermesAcpEdit(:final request):
+            armIdle();
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
             _recordEdit(request);
             // ...and count it: a Full-access loop rewrites the same file with
             // no prompt to slow it down, so catching the repeat matters more.
             if (guard.observe(request) case final stuck?) {
-              unawaited(stopForLoop(stuck));
+              stopForLoop(stuck);
               return;
             }
           case HermesAcpSources(:final sources):
+            armIdle();
             // A web look-up finished — collect its pages to cite under the
             // answer once the turn lands.
             sourcesLog.addAll(sources);
           case HermesAcpPlan(:final entries):
+            armIdle();
             // The agent revised its to-do list — replace ours with its latest.
             planLog.replace(entries);
           case HermesAcpMessage(:final text):
+            armIdle();
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
         }
@@ -360,6 +387,7 @@ class HermesChatSender implements ChatSender {
       onDone: () async {
         await run.done;
         settled = true;
+        idle?.cancel();
         // Nothing is waiting on an answer once the turn is over — a card left
         // pinned in the chat would be a button that does nothing.
         permissions.clear();
@@ -409,10 +437,15 @@ class HermesChatSender implements ChatSender {
       },
     );
 
+    // Nothing has arrived yet, so start the idle watch now — a turn that never
+    // says a word is as stuck as one that goes quiet mid-way.
+    armIdle();
+
     // The user hit Stop (or left the chat). A clean finish lands here too — via
     // the close above, with [settled] already set — and must *not* tear the
     // session down: the next turn reuses it.
     updates.onCancel = () async {
+      idle?.cancel();
       await events.cancel();
       if (settled) return;
       permissions.clear();

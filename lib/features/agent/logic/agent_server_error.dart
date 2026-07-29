@@ -14,6 +14,16 @@ const String kAgentStalledPlan =
     'The agent planned the work but stopped before finishing it. Try sending '
     'again, or let another agent take this chat.';
 
+/// A turn that went silent — the assistant sent nothing for a long stretch and
+/// wasn't waiting on the user either, so it's stuck. A frequent cause: it
+/// started a command that never returns (a dev server) and waited on it. Ended
+/// so the chat doesn't spin forever; shares the other turn-end lines' shape (§5)
+/// — the raw silence is a gap in the log, nothing to humanize away.
+const String kAgentUnresponsive =
+    'The assistant stopped responding — it may be stuck on a command that '
+    "doesn't finish, like starting a server. It was stopped; send again, or "
+    'switch models.';
+
 /// A turn stopped because the assistant kept redoing the same step — the same
 /// file written, or the same command run, over and over — without finishing.
 /// [target] names what it was stuck on (a file's base name, or a clipped
