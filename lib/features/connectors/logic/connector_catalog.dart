@@ -91,11 +91,15 @@ class ConnectorCatalogEntry {
   /// The provider issues refresh tokens, so `/refresh` is worth calling.
   final bool canRefresh;
 
-  /// The two gates that must both pass before Connect is offered: the app can
-  /// only drive an OAuth flow (`pat` needs a hand-pasted token and has no flow
-  /// at all), and there must be something for the agent to call afterwards.
-  bool get canConnectFromApp =>
-      authMethod == ConnectorAuthMethod.app && mcpReady;
+  /// Whether Connect is offered: the connector signs in through Grid.
+  ///
+  /// `mcpReady` deliberately does **not** gate this. It says the gateway has an
+  /// MCP server wired up, which decides whether the *agent* gains a tool — not
+  /// whether the *account* can be linked. Signing in works either way, the
+  /// credential is real, and the row says "No tools yet" afterwards until the
+  /// backend catches up. Withholding the button instead made connectors the
+  /// gateway plainly advertises as `auth_type: app` look broken.
+  bool get canConnectFromApp => authMethod == ConnectorAuthMethod.app;
 
   /// This entry with borrowed display text, used by [mergeCatalog] to dress a
   /// gateway row in the bundled catalog's label and icon.

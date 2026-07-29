@@ -60,17 +60,17 @@ void main() {
         expect(entries.where((e) => e.code == 'github'), isEmpty);
       });
 
-      test('a connector with no MCP server cannot be connected either', () {
-        // OAuth would genuinely succeed and the agent would still have nothing
-        // to call. Five connectors are in this state today.
+      test('a connector with no MCP server can still be connected', () {
+        // Signing in works and stores a real credential; only the agent's tool
+        // is missing. The row offers Connect and says the tools are coming.
         final drive = parseGatewayConnectors(
           body,
         )!.firstWhere((e) => e.code == 'google_drive');
         expect(drive.mcpReady, isFalse);
-        expect(drive.canConnectFromApp, isFalse);
+        expect(drive.canConnectFromApp, isTrue);
       });
 
-      test('both gates open means Connect is offered', () {
+      test('an app connector is offered', () {
         final notion = parseGatewayConnectors(
           body,
         )!.firstWhere((e) => e.code == 'notion');

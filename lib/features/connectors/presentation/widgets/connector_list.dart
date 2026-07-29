@@ -549,8 +549,11 @@ String _unavailableReason(Connector connector) {
   if (entry.authMethod != ConnectorAuthMethod.app) {
     return 'Needs a personal access token — not available from the app yet.';
   }
+  // Not a reason to withhold Connect — signing in works and the credential is
+  // real. It only means the agent gains no tool from it yet, so the row says so
+  // while still offering the button.
   if (!entry.mcpReady) {
-    return 'No tools available for this connector yet.';
+    return 'Sign-in works; tools for the agent are coming.';
   }
   return '';
 }

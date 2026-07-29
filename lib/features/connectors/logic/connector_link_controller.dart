@@ -181,14 +181,13 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     state = const ConnectorLinkState();
 
     if (projectionError != null) return projectionError;
-    // Signed in, but this connector has no MCP server behind it: the account is
-    // linked and the agent still can't call anything. The row has to say so —
-    // the alternative is a checkmark promising a tool that doesn't exist.
+    // Signed in, and the gateway has no MCP server behind this connector yet:
+    // the account really is linked, the agent just gains no tool from it. Said
+    // plainly, because a bare checkmark would promise a tool that isn't there.
     if (!token.isUsable) {
       return _settle(
         connector,
-        "Signed in, but this connector has no tools yet — the agent can't use "
-        'it.',
+        'Signed in. Tools for the agent are coming — nothing to use yet.',
       );
     }
     return null;
