@@ -175,6 +175,9 @@ class _HermesMcpPlane implements AgentMcpPlane {
       };
 
   @override
+  Future<Set<String>> connectorEntries() => _servers.owned();
+
+  @override
   Future<List<McpServer>> read() => _config.read();
 
   @override

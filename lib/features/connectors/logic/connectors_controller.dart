@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/logging/app_log.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/mcp_server.dart';
 import 'connector.dart';
@@ -72,15 +73,18 @@ class McpServersController extends AsyncNotifier<List<McpServer>> {
       final configured = await plane.read();
       final existing = {for (final server in configured) server.name};
 
-      // Awaited, not read from cache: adoption runs during `build`, when the
-      // token provider may not have resolved yet. Treating "not loaded" as "no
-      // tokens" would adopt every OAuth projection as a manual server, and a
-      // disconnect would then be undone on the next screen open.
-      final tokens = await ref.read(connectorTokensProvider.future);
+      // Asked of the config, not of the token store. Those disagree in a state
+      // that really happens: disconnecting clears the token while a failed or
+      // skipped re-projection can leave the config entry behind. Keyed on the
+      // token store, such an orphan would be adopted as a manual server — the
+      // user's disconnect quietly undone, credential header and all. The
+      // config's own `_grid` marker says who wrote the entry, which is the
+      // question actually being asked.
+      final connectorEntries = await plane.connectorEntries();
       final adopted = {
         for (final server in configured)
           if (!stored.containsKey(server.name) &&
-              !tokens.containsKey(server.name))
+              !connectorEntries.contains(server.name))
             server.name: server,
       };
       if (adopted.isNotEmpty) {
@@ -91,9 +95,19 @@ class McpServersController extends AsyncNotifier<List<McpServer>> {
         if (existing.contains(server.name)) continue;
         await plane.upsert(server);
       }
-    } on Object {
+    } on Object catch (error, stack) {
       // A reconcile failure leaves both sides as they were; the screen still
-      // shows whatever the agent has.
+      // shows whatever the agent has. It is still *logged*: a silent catch here
+      // meant a store that never filled looked identical to one that had
+      // nothing to adopt, and cost an hour of looking in the wrong place.
+      ref
+          .read(appLogProvider)
+          .failure(
+            'connectors',
+            'Reconciling the manual server store failed',
+            error: error,
+            stackTrace: stack,
+          );
     }
   }
 

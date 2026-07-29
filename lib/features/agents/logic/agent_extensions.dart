@@ -73,6 +73,17 @@ abstract interface class AgentMcpPlane {
   /// path, centralized here so no caller open-codes the two-write dance.
   Future<void> rename(String previousName, McpServer server);
 
+  /// The names of entries this app wrote as connector projections.
+  ///
+  /// [read] can't answer this: an [McpServer] carries only what a transport
+  /// needs, so the marker distinguishing "we wrote this from a token" from "the
+  /// user typed this" is dropped in parsing. Callers need the difference —
+  /// adopting a projection as a manual server would copy a credential into a
+  /// second file and resurrect the entry after a disconnect.
+  ///
+  /// Empty for an agent that has no such concept.
+  Future<Set<String>> connectorEntries();
+
   /// Write [tokens] into whatever this agent reads OAuth credentials from, so a
   /// connector the user linked once works here too.
   ///
