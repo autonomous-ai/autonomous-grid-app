@@ -59,9 +59,11 @@ jobs:
           - platform: macos-latest      # Apple Silicon, native arm64 app + sidecar
             arch: arm64
             label: macOS-Apple-Silicon
+            appcast_file: appcast-arm64.xml    # Sparkle feed this arch's app polls
           - platform: macos-latest      # Intel x86_64 sidecar, compiled under Rosetta 2 on
             arch: x64                   # the same arm64 runner — GitHub retired the free
             label: macOS-Intel          # macos-13 Intel image, so this avoids a paid runner.
+            appcast_file: appcast-x86_64.xml   # Sparkle feed this arch's app polls
           - platform: windows-latest    # Windows x64, native build. UNSIGNED zip (SmartScreen
             arch: x64                   # may warn); the `if: runner.os == 'Windows'` steps
             label: Windows-x64          # below build the onefile sidecar + package the zip.
@@ -161,11 +163,15 @@ jobs:
         run: |
           set -euxo pipefail
           flutter config --enable-macos-desktop
-          # Bake the Sparkle appcast feed the app polls at runtime. Stable public
-          # URL on the downloads repo: GitHub always serves the newest *published*
-          # (non-draft) release's appcast.xml here.
+          # Bake the Sparkle appcast feed the app polls at runtime. The app ships
+          # ONE universal binary that runs on either Mac, so both jobs bake the
+          # SAME `{arch}` template — the app resolves it to appcast-arm64.xml or
+          # appcast-x86_64.xml from the live CPU (resolveAppcastArch), keeping an
+          # Intel Mac off the arm64 DMG (whose sidecar can't run there) and vice
+          # versa. Stable public URL on the downloads repo: GitHub always serves
+          # the newest *published* (non-draft) release's asset by this name.
           flutter build macos --release \
-            --dart-define=GRID_APPCAST_URL="https://github.com/${{ env.DOWNLOADS_REPO }}/releases/latest/download/appcast.xml"
+            --dart-define=GRID_APPCAST_URL="https://github.com/${{ env.DOWNLOADS_REPO }}/releases/latest/download/appcast-{arch}.xml"
           APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n1)"
           [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
           # onedir sidecar: inject the whole standalone folder (entry at Resources/grid/grid)
@@ -237,19 +243,20 @@ jobs:
           mkdir -p dist
           scripts/notarize_macos.sh
 
-      # Sign the DMG with the Sparkle EdDSA key and write dist/appcast.xml next to
-      # it (both get uploaded by the publish step). Skipped with a warning until
-      # the SPARKLE_ED_PRIVATE_KEY secret is provisioned, so releases still build.
+      # Sign the DMG with the Sparkle EdDSA key and write this arch's appcast next
+      # to it (both get uploaded by the publish step). Skipped with a warning
+      # until the SPARKLE_ED_PRIVATE_KEY secret is provisioned, so releases still
+      # build.
       #
-      # ONLY the Apple Silicon job emits the appcast: the publish step uploads it under
-      # the fixed name appcast.xml, so running it on both macOS jobs would make them
-      # clobber each other's feed. Auto-update therefore tracks the Apple Silicon DMG.
-      # TODO(release): Intel auto-update is NOT wired yet — one appcast.xml can't point at
-      # both DMGs, and Sparkle full-update enclosures aren't arch-filtered, so a shared feed
-      # would offer Intel users the arm64 sidecar. The Intel DMG ships as a manual download
-      # for now; wire an arch-aware feed before relying on Sparkle to update Intel users.
-      - name: Generate Sparkle appcast (macOS Apple Silicon only)
-        if: matrix.label == 'macOS-Apple-Silicon'
+      # BOTH macOS jobs emit an appcast now, each under its own arch name
+      # (appcast-arm64.xml / appcast-x86_64.xml) pointing at its own DMG — the
+      # universal app resolves the `{arch}` feed URL for the CPU it's on, so Apple
+      # Silicon and Intel each track their matching DMG (an arm64 sidecar can't run
+      # on Intel at all). Distinct names, so the two jobs never clobber each
+      # other's feed. The Intel job also writes a legacy `appcast.xml` alias (next
+      # step) for any pre-`{arch}` build still polling that fixed name.
+      - name: Generate Sparkle appcast (macOS)
+        if: runner.os == 'macOS'
         working-directory: grid-app
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -257,8 +264,21 @@ jobs:
           DOWNLOAD_URL: https://github.com/${{ env.DOWNLOADS_REPO }}/releases/download/${{ github.ref_name }}/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
           SHORT_VERSION: ${{ env.VERSION }}
           BUNDLE_VERSION: ${{ env.BUILD }}
-          APPCAST_OUT: ${{ github.workspace }}/grid-app/dist/appcast.xml
+          APPCAST_OUT: ${{ github.workspace }}/grid-app/dist/${{ matrix.appcast_file }}
         run: bash scripts/ci/generate_appcast_macos.sh
+
+      # Backward-compat bridge: an app built before the `{arch}` template bakes the
+      # fixed URL `.../appcast.xml`. Serve that name from the Intel (x86_64) feed —
+      # the slice that runs on BOTH Macs (native on Intel, Rosetta on Apple
+      # Silicon) — so an older install of either arch still gets a working update
+      # that migrates it onto an arch-aware build. Guarded on the file existing, so
+      # it no-ops when the appcast step was skipped (no Sparkle key yet).
+      - name: Alias legacy appcast.xml (macOS Intel)
+        if: matrix.label == 'macOS-Intel'
+        working-directory: grid-app
+        run: |
+          src="dist/${{ matrix.appcast_file }}"
+          [ -f "$src" ] && cp "$src" dist/appcast.xml || echo "no appcast to alias (key unset)"
 
       # ───────────────────────── Windows ─────────────────────────
       - name: Build grid sidecar (Windows)
