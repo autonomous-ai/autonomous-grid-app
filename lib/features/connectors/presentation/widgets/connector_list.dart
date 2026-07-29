@@ -57,6 +57,7 @@ class ConnectorList extends StatelessWidget {
         final McpServer server => _McpRow(
           server: server,
           imageUrl: connector.imageUrl,
+          connector: connector,
         ),
         null => _CatalogRow(connector: connector),
       },
@@ -298,9 +299,18 @@ class _CatalogAction extends StatelessWidget {
 }
 
 class _McpRow extends ConsumerStatefulWidget {
-  const _McpRow({required this.server, this.imageUrl = ''});
+  const _McpRow({
+    required this.server,
+    required this.connector,
+    this.imageUrl = '',
+  });
 
   final McpServer server;
+
+  /// The row this server belongs to, for the one question the server itself
+  /// can't answer: did the user configure this by hand, or did a sign-in write
+  /// it? The two get different controls.
+  final Connector connector;
 
   /// The catalog's mark when this server matched one; empty for a server the
   /// user configured by hand, and the row falls back to a transport glyph.
@@ -312,6 +322,36 @@ class _McpRow extends ConsumerStatefulWidget {
 
 class _McpRowState extends ConsumerState<_McpRow> {
   bool _busy = false;
+
+  /// This server exists because the app signed into a connector, not because
+  /// the user typed a URL into the Add dialog.
+  ///
+  /// The test is the token, not the catalog match: a hand-configured server can
+  /// share a name with a catalog entry, and only a credential in this machine's
+  /// store proves the app put the entry there.
+  bool get _isLinkedConnector => widget.connector.token != null;
+
+  /// Hand back the credential, which also clears the config entry.
+  ///
+  /// Deliberately the connector's disconnect rather than
+  /// `mcpServersProvider.remove`: the entry is a *projection* of the stored
+  /// token, so deleting the entry alone leaves the token behind and the next
+  /// projection writes the row straight back.
+  Future<void> _disconnect() async {
+    final toast = ToastScope.of(context);
+    final name = widget.connector.name;
+    final confirmed = await _confirmDisconnect(context, name);
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    final error = await ref
+        .read(connectorLinkControllerProvider.notifier)
+        .disconnect(widget.connector.id);
+    if (mounted) setState(() => _busy = false);
+    if (error != null) {
+      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
+    }
+  }
 
   Future<void> _delete() async {
     final server = widget.server;
@@ -349,20 +389,31 @@ class _McpRowState extends ConsumerState<_McpRow> {
           const SizedBox(width: 12),
           Expanded(child: _McpInfo(server: server)),
           const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Edit',
-            iconSize: 18,
-            color: AppPalette.textSecondary,
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: _busy ? null : () => showEditMcpDialog(context, server),
-          ),
-          IconButton(
-            tooltip: 'Remove',
-            iconSize: 18,
-            color: AppPalette.textSecondary,
-            icon: const Icon(Icons.delete_outline_rounded),
-            onPressed: _busy ? null : _delete,
-          ),
+          if (_busy)
+            const AppSpinner(size: SpinnerSize.small)
+          // A connector the app signed into: the only honest control is
+          // Disconnect. Editing its URL or headers would hand-edit a credential
+          // the gateway owns and the next projection would overwrite it, and
+          // "Remove" would delete the config entry while leaving the token in
+          // place — the row would come back on the next sign-in or refresh.
+          else if (_isLinkedConnector)
+            _DisconnectButton(onPressed: _disconnect)
+          else ...[
+            IconButton(
+              tooltip: 'Edit',
+              iconSize: 18,
+              color: AppPalette.textSecondary,
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => showEditMcpDialog(context, server),
+            ),
+            IconButton(
+              tooltip: 'Remove',
+              iconSize: 18,
+              color: AppPalette.textSecondary,
+              icon: const Icon(Icons.delete_outline_rounded),
+              onPressed: _delete,
+            ),
+          ],
         ],
       ),
     );
