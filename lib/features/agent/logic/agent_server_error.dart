@@ -81,6 +81,30 @@ String? friendlyAgentServerError(String reply) {
       'or pick another model.';
 }
 
+/// The model gave the agent's loop nothing it could read — an empty or non-JSON
+/// body (`Expecting value: line 1 column 1 (char 0)` is Python's JSON decoder on
+/// an empty stream), or every retry came back the same way (`API call failed
+/// after 3 retries: …`). Common on `auto`, when the router points at a model
+/// nobody on the grid is serving.
+///
+/// Left alone it lands in the chat as the assistant's own words — the user reads
+/// a raw Python decode error where an answer should be. Returns a plain line with
+/// a next step, or null when [raw] isn't that failure. Anchored on the start of
+/// the reply (and length-capped) like [friendlyAgentServerError], so an answer
+/// that merely *mentions* a JSON error is never mistaken for one. The caller
+/// keeps the raw text for the log (§6).
+String? friendlyAgentEmptyResponse(String raw) {
+  final text = raw.trim();
+  final lower = text.toLowerCase();
+  final isFailure =
+      (lower.startsWith('api call failed after') ||
+          lower.startsWith('expecting value: line 1 column 1')) &&
+      text.length < 300;
+  if (!isFailure) return null;
+  return 'The grid returned an empty response, so there was nothing to show. '
+      'Try sending again, or pick another model.';
+}
+
 /// `HTTP <status>: <body>` and nothing else — the whole reply, so an answer that
 /// merely *discusses* a status code is never mistaken for a failed one.
 final _envelope = RegExp(r'^HTTP (\d{3}):\s*(.*)$', dotAll: true);

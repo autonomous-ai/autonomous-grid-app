@@ -335,10 +335,14 @@ class HermesChatSender implements ChatSender {
         permissions.clear();
 
         final reply = answer.toString().trim();
-        // Hermes answers with the grid's failed HTTP call when the model won't
-        // take the turn. That's an error, not an answer — show it as one, and
-        // keep the raw envelope in the log to diagnose from.
-        final refused = friendlyAgentServerError(reply);
+        // Hermes answers with its own failure when the model won't take the turn
+        // — the grid's failed HTTP call, or its loop giving up on an empty/
+        // unparseable response (`API call failed after 3 retries: Expecting
+        // value…`). Both are errors, not answers — show them as one, and keep the
+        // raw text in the log to diagnose from.
+        final refused =
+            friendlyAgentServerError(reply) ??
+            friendlyAgentEmptyResponse(reply);
         if (refused != null) _ref.read(appLogProvider).failure('agent', reply);
         // A turn that laid out a plan and never finished it stalled — even with
         // a line of text, the work it promised didn't happen, so it must not

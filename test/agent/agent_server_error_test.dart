@@ -74,6 +74,45 @@ void main() {
     });
   });
 
+  group('an empty model response reads as one, not a Python error', () {
+    test('the loop giving up after retries becomes a line with a next step', () {
+      final message = friendlyAgentEmptyResponse(
+        'API call failed after 3 retries: Expecting value: line 1 column 1 '
+        '(char 0)',
+      );
+
+      expect(message, isNotNull);
+      // None of the raw decoder jargon reaches the chat.
+      expect(message!.toLowerCase(), isNot(contains('expecting value')));
+      expect(message.toLowerCase(), isNot(contains('json')));
+      expect(message.toLowerCase(), contains('empty response'));
+      expect(message.toLowerCase(), contains('pick another model'));
+    });
+
+    test('a bare JSON-decode error is the same empty-response failure', () {
+      expect(
+        friendlyAgentEmptyResponse('Expecting value: line 1 column 1 (char 0)'),
+        isNotNull,
+      );
+    });
+
+    test('an answer that merely mentions the decode error is left alone — only '
+        'a reply that starts as the failure counts', () {
+      expect(
+        friendlyAgentEmptyResponse(
+          "The error 'Expecting value: line 1 column 1 (char 0)' means the JSON "
+          'body was empty. Here is how to handle it in your parser: …',
+        ),
+        isNull,
+      );
+    });
+
+    test('an ordinary reply and an empty one are both left for the caller', () {
+      expect(friendlyAgentEmptyResponse('Hello! How can I help?'), isNull);
+      expect(friendlyAgentEmptyResponse('   '), isNull);
+    });
+  });
+
   group('a startup failure reads for a non-technical user', () {
     test('the ACP-dependencies case never shows pip or acp, and reports the '
         'repair the app already attempted', () {

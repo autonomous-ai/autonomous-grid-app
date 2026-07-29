@@ -423,6 +423,11 @@ const String kCodexNoProviderFailure =
 /// is a log line, not something anyone can act on. Everything else keeps Codex's
 /// own last line, which at least says what it was doing.
 String friendlyCodexError(String raw) {
+  // An empty/unparseable model response reads the same whichever agent hit it,
+  // so both route through the one shared line (see [friendlyAgentEmptyResponse]).
+  final empty = friendlyAgentEmptyResponse(raw);
+  if (empty != null) return empty;
+
   final lines = raw
       .split('\n')
       .map((line) => line.trim())
