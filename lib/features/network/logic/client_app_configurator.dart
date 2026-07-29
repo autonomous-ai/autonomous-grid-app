@@ -7,6 +7,7 @@ import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/env_file.dart';
+import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'app_guide_snippets.dart';
 import 'client_app_detector.dart';
@@ -164,6 +165,9 @@ class ClientAppConfigurator {
         );
       }
       ensureAgentToolsets(editor);
+      // The app's chat is the one gate over what the agent runs — so Hermes must
+      // not auto-approve dangerous commands behind it (see [ensureManualApprovals]).
+      ensureManualApprovals(editor);
       await _backupThenWrite(config, editor.toString().trimRight());
 
       // Also drop the pair into `.env` as a fallback for other tools that read
@@ -411,6 +415,24 @@ void ensureAgentToolsets(YamlEditor editor) {
   for (final toolset in kHermesToolsets) {
     if (!toolsets.contains(toolset)) editor.appendToList(['toolsets'], toolset);
   }
+}
+
+/// Hermes's own approval mode, forced to `manual` so this app's chat is the one
+/// gate over dangerous commands.
+const String kHermesApprovalMode = 'manual';
+
+/// Pin `approvals.mode: manual` so every dangerous command reaches the app's
+/// permission prompt, keeping any sibling key (`cron_mode`) intact.
+///
+/// Hermes ships `approvals.mode: smart` (its config default), which lets an
+/// auxiliary LLM auto-approve a command it judges low-risk — an `rm -rf` of a
+/// project folder among them — **without ever raising an ACP permission
+/// request**. That turned the composer's "Ask before acting" into a lie for the
+/// shell: file edits prompted, commands ran silently. `manual` sends every
+/// dangerous command back through the ACP gate (`decideHermesPermission`), where
+/// the mode the user actually picked governs it.
+void ensureManualApprovals(YamlEditor editor) {
+  HermesConfigFile.upsert(editor, ['approvals', 'mode'], kHermesApprovalMode);
 }
 
 /// The app-config writer, so widgets get it via `ref.read`.

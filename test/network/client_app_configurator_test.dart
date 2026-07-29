@@ -135,6 +135,33 @@ void main() {
       expect(editor.parseAt(['toolsets']).value, containsAll(kHermesToolsets));
     });
 
+    test('pins approvals.mode: manual so the app gates dangerous commands, '
+        'without dropping cron_mode', () async {
+      final config = File('${home.path}/.hermes/config.yaml');
+      await config.create(recursive: true);
+      // A real file carries Hermes's default smart mode (which auto-approves an
+      // rm -rf without asking) and a cron_mode we must not clobber.
+      await config.writeAsString(
+        'approvals:\n'
+        '  mode: smart\n'
+        '  cron_mode: approve\n'
+        'model:\n'
+        '  provider: custom\n',
+      );
+
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+
+      final editor = YamlEditor(readConfig());
+      expect(editor.parseAt(['approvals', 'mode']).value, 'manual');
+      expect(editor.parseAt(['approvals', 'cron_mode']).value, 'approve');
+    });
+
+    test('a fresh config is written with manual approvals', () async {
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+      final editor = YamlEditor(readConfig());
+      expect(editor.parseAt(['approvals', 'mode']).value, 'manual');
+    });
+
     test('writes the Responses dialect for a codex model', () async {
       final result = await sut.apply(ClientApp.hermes, _base, _key, const [
         'codex:gpt-5.5',
@@ -558,6 +585,24 @@ void main() {
       final editor = YamlEditor('model:\n  provider: custom\n');
       ensureAgentToolsets(editor);
       expect(editor.parseAt(['toolsets']).value, kHermesToolsets);
+    });
+  });
+
+  group('ensureManualApprovals', () {
+    test('creates the approvals block set to manual when there is none', () {
+      final editor = YamlEditor('model:\n  provider: custom\n');
+      ensureManualApprovals(editor);
+      expect(editor.parseAt(['approvals', 'mode']).value, 'manual');
+    });
+
+    test('overwrites Hermes\'s default smart mode — the one that auto-runs an '
+        'rm -rf — while leaving cron_mode alone', () {
+      final editor = YamlEditor(
+        'approvals:\n  mode: smart\n  cron_mode: approve\n',
+      );
+      ensureManualApprovals(editor);
+      expect(editor.parseAt(['approvals', 'mode']).value, 'manual');
+      expect(editor.parseAt(['approvals', 'cron_mode']).value, 'approve');
     });
   });
 }
