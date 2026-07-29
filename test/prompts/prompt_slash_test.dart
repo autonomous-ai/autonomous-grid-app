@@ -23,6 +23,29 @@ void main() {
     });
   });
 
+  group('promptNameSlug — a name you can actually type back after /', () {
+    test('spaces become dashes, so /tank-1990 stays one command', () {
+      // The whole point: "tank 1990" typed as "/tank 1990" closes the menu at
+      // the space, so the name has to be a single token to be reachable.
+      expect(promptNameSlug('tank 1990'), 'tank-1990');
+      expect(slashQuery('/${promptNameSlug('tank 1990')}'), 'tank-1990');
+    });
+
+    test('runs of whitespace collapse to a single dash and ends are trimmed', () {
+      expect(promptNameSlug('  weekly   report  '), 'weekly-report');
+      expect(promptNameSlug('a\tb'), 'a-b');
+    });
+
+    test('stray dashes around and between words collapse, not stack up', () {
+      expect(promptNameSlug('tank - 1990'), 'tank-1990');
+      expect(promptNameSlug('-lead-'), 'lead');
+    });
+
+    test('an already-clean name is left exactly as it is', () {
+      expect(promptNameSlug('tank-2026'), 'tank-2026');
+    });
+  });
+
   group('matchingPrompts — what the menu lists', () {
     final prompts = [
       const SavedPrompt(id: '1', name: 'Weekly report', body: 'a'),

@@ -1,8 +1,9 @@
 /// A reusable message the user saved to insert into the composer with `/`.
 ///
 /// [name] is what shows in the slash menu (and what they type after `/` to find
-/// it); [body] is the text dropped into the composer. Kept deliberately plain —
-/// a prompt is just named boilerplate, not a skill Hermes reasons about.
+/// it), so it's a single token with no spaces — see `promptNameSlug`; [body] is
+/// the text dropped into the composer. Kept deliberately plain — a prompt is
+/// just named boilerplate, not a skill Hermes reasons about.
 class SavedPrompt {
   const SavedPrompt({required this.id, required this.name, required this.body});
 
@@ -10,7 +11,7 @@ class SavedPrompt {
   /// target the right entry even after a rename.
   final String id;
 
-  /// The short label shown in the `/` menu, e.g. `Weekly report`.
+  /// The short label shown in the `/` menu, e.g. `weekly-report`.
   final String name;
 
   /// The message inserted into the composer when the prompt is picked.

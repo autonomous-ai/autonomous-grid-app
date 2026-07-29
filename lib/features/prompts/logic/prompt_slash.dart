@@ -1,5 +1,19 @@
 import 'saved_prompt.dart';
 
+/// A saved prompt's name as a single slash-typeable token: whitespace collapses
+/// to `-`, so `/weekly-report` stays one command instead of the menu closing at
+/// the first space (see [slashQuery] — a space after `/` ends the command). Runs
+/// of dashes collapse and leading/trailing ones are trimmed, so the name reads
+/// the way the user types it back.
+///
+/// Pure so it's unit-tested and applied in one place — the library controller —
+/// rather than re-derived at every call site.
+String promptNameSlug(String raw) => raw
+    .trim()
+    .replaceAll(RegExp(r'\s+'), '-')
+    .replaceAll(RegExp('-{2,}'), '-')
+    .replaceAll(RegExp(r'^-+|-+$'), '');
+
 /// The command being typed in the composer, or null when [text] isn't one.
 ///
 /// A slash command is a single leading-`/` token with no whitespace: `/rep`

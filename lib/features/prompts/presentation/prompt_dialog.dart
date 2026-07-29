@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../logic/prompt_library_controller.dart';
+import '../logic/prompt_slash.dart';
 import '../logic/saved_prompt.dart';
+
+/// Turn a typed space into `-` as the user types the name, so what they see is
+/// the one-token command they'll type back after `/` (final collapse/trim of
+/// stray dashes happens on save — see `promptNameSlug`). One-for-one, so the
+/// caret never jumps.
+final _slashTokenFormatter = TextInputFormatter.withFunction(
+  (_, next) => next.copyWith(text: next.text.replaceAll(RegExp(r'\s'), '-')),
+);
 
 /// Create a new saved prompt, optionally pre-filled with [initialBody] (used by
 /// "Save this message" from the composer). Returns the created prompt, or null
@@ -56,8 +66,10 @@ class _PromptDialogState extends ConsumerState<_PromptDialog> {
     super.dispose();
   }
 
+  // Guards on the slug, not the raw text: a name of only spaces/dashes slugs to
+  // empty, and a prompt with no typeable name can never be reached from `/`.
   bool get _canSave =>
-      _name.text.trim().isNotEmpty && _body.text.trim().isNotEmpty;
+      promptNameSlug(_name.text).isNotEmpty && _body.text.trim().isNotEmpty;
 
   void _save() {
     final controller = ref.read(promptLibraryProvider.notifier);
@@ -115,8 +127,11 @@ class _PromptDialogState extends ConsumerState<_PromptDialog> {
               LabeledField(
                 label: 'Name',
                 controller: _name,
-                hint: 'Weekly report',
+                hint: 'weekly-report',
                 autofocus: !_isEdit,
+                // A name is what you type after `/`, which stops at a space — so
+                // spaces become dashes as you go.
+                inputFormatters: [_slashTokenFormatter],
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 20),
