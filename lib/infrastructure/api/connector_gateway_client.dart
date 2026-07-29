@@ -300,18 +300,22 @@ String? parseDetail(String raw) {
 }
 
 /// A `-pat` row: the hand-pasted-token twin of a connector the app can sign
-/// into properly.
+/// A connector that can only be set up by pasting a token in by hand.
 ///
-/// The gateway lists these beside the real thing (`gmail`, `gmail-app`,
-/// `gmail-pat`), and they are dead weight on this screen: the app can only
-/// drive an OAuth flow, so every one of them renders as a row that says it
-/// isn't available and offers no button. Dropped at the parse boundary, so
-/// nothing downstream has to carry the rule.
+/// There is no flow here for these: the app drives OAuth and nothing else, so a
+/// `pat` row can only ever render as a line explaining that it isn't available.
+/// The gateway lists several (`github`, `gmail`, `gmail-pat`, `figma-api`), and
+/// on a screen whose whole purpose is a Connect button they are noise.
 ///
-/// Matched on the code suffix rather than on `auth_type`, because those select
-/// different sets — plain `gmail` is also `auth_type: pat` and must stay, since
-/// it is the row a user would look for by name.
-bool isPatVariantCode(String code) => code.toLowerCase().endsWith('-pat');
+/// Dropped at the parse boundary so nothing downstream carries the rule. This
+/// supersedes the earlier code-suffix match (`-pat`), which caught only the
+/// twins and left `gmail` — itself `auth_type: pat` — sitting there unusable.
+///
+/// The cost is worth naming: when a connector gains OAuth support at the
+/// backend, its row appears here on its own, and until then the app looks like
+/// it has never heard of it. That is the intended reading — a connector the app
+/// cannot set up is not on offer.
+bool isManualAuthType(Object? authType) => authType == 'pat';
 
 /// Reads `GET /v1/grid/connectors`.
 ///
@@ -334,7 +338,7 @@ List<ConnectorCatalogEntry>? parseGatewayConnectors(String raw) {
     if (entry is! Map<String, dynamic>) continue;
     final code = entry['code'];
     if (code is! String || code.isEmpty) continue;
-    if (isPatVariantCode(code)) continue;
+    if (isManualAuthType(entry['auth_type'])) continue;
     final label = entry['label'];
     entries.add(
       ConnectorCatalogEntry(

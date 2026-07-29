@@ -43,8 +43,9 @@ void main() {
     });
 
     test('a row with no code is dropped, the rest still show', () {
+      // `github` is absent because it is `auth_type: pat` — the app can only
+      // drive OAuth, so those rows never reach the screen at all.
       expect(parseGatewayConnectors(body)!.map((e) => e.code), [
-        'github',
         'google_drive',
         'linear',
         'notion',
@@ -52,14 +53,11 @@ void main() {
     });
 
     group('the two gates on Connect', () {
-      test('a pat connector cannot be connected from the app', () {
+      test('a pat connector never reaches the screen', () {
         // There is no flow to call — the user has to paste a token by hand — so
-        // the button must never be offered, not merely fail when pressed.
-        final github = parseGatewayConnectors(
-          body,
-        )!.firstWhere((e) => e.code == 'github');
-        expect(github.authMethod, ConnectorAuthMethod.manual);
-        expect(github.canConnectFromApp, isFalse);
+        // the row is dropped rather than shown with a dead button.
+        final entries = parseGatewayConnectors(body)!;
+        expect(entries.where((e) => e.code == 'github'), isEmpty);
       });
 
       test('a connector with no MCP server cannot be connected either', () {

@@ -543,6 +543,9 @@ class ConnectorMark extends StatelessWidget {
 String _unavailableReason(Connector connector) {
   final entry = connector.catalogEntry;
   if (entry == null) return '';
+  // No gateway row reaches this branch — `parseGatewayConnectors` drops every
+  // `pat` connector. It stays for the bundled asset, which carries no auth type
+  // and would otherwise present a row the app can't actually set up.
   if (entry.authMethod != ConnectorAuthMethod.app) {
     return 'Needs a personal access token — not available from the app yet.';
   }
