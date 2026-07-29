@@ -19,6 +19,7 @@ class SidebarItem extends StatefulWidget {
     this.trailing,
     this.trailingWidth = 24,
     this.trailingAlwaysVisible = false,
+    this.badge,
     this.tooltip,
   });
 
@@ -42,6 +43,12 @@ class SidebarItem extends StatefulWidget {
   /// Keep [trailing] visible without hovering — for a live status (a chat's
   /// "typing…" cue) that has to read at a glance, not a hover-only action.
   final bool trailingAlwaysVisible;
+
+  /// A small always-visible mark between the label and the trailing action — an
+  /// unread dot on a chat that has a result waiting. Unlike [trailing] it never
+  /// hides on hover, so "there's something here" survives reaching for the row's
+  /// action; null on a row with nothing to flag.
+  final Widget? badge;
   final String? tooltip;
 
   /// The row's left inset — where its icon starts, measured from the row's own
@@ -172,6 +179,13 @@ class _SidebarItemState extends State<SidebarItem> {
                               ),
                             ),
                           ),
+                          // An unread mark sits just left of the action, always
+                          // shown — a hover that reveals the trailing action must
+                          // not hide the fact there's a result waiting.
+                          if (widget.badge != null) ...[
+                            widget.badge!,
+                            const SizedBox(width: 8),
+                          ],
                           // Keep the action mounted so hovering never changes text
                           // metrics or row height. A persistent trailing (a live
                           // status) shows without hover; a hover action stays

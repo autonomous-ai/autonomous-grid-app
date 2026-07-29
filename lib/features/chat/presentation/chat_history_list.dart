@@ -5,11 +5,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/create_project_dialog.dart';
 import '../../projects/presentation/project_menu.dart';
+import '../../scheduled/logic/task_delivery.dart';
+import '../../scheduled/logic/task_unread_store.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 
@@ -298,6 +301,14 @@ class _ChatRow extends ConsumerWidget {
     final working = ref.watch(
       chatSessionsProvider.select((s) => s.sendingFor(chat.id)),
     );
+    // A scheduled task's chat with a result the user hasn't opened yet — the dot
+    // stays until they read it. Selecting on the bool keeps the row from
+    // rebuilding when some *other* task's badge changes.
+    final unread = ref.watch(
+      taskUnreadProvider.select(
+        (s) => s.contains(jobIdOfTaskConversation(chat.id)),
+      ),
+    );
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
@@ -309,6 +320,11 @@ class _ChatRow extends ConsumerWidget {
       child: SidebarItem(
         label: chat.title,
         selected: selected,
+        // Muted-accent so it reads as "new" without competing with the selected
+        // row's bright rail; hidden the instant the chat is opened (read).
+        badge: unread
+            ? const StatusDot(color: AppPalette.accent, size: 7)
+            : null,
         onTap: () {
           controller.select(chat.id);
           ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
