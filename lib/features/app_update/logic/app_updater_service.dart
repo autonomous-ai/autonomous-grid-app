@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi' show Abi;
 import 'dart:io';
 
 import 'package:auto_updater/auto_updater.dart';
@@ -16,6 +17,27 @@ import '../../../infrastructure/logging/app_log.dart';
 /// then swaps the app in place and relaunches. CI publishes the appcast + the
 /// signed `.dmg` — see `.github/workflows/release.yml`.
 const String kAppcastFeedUrl = String.fromEnvironment('GRID_APPCAST_URL');
+
+/// Placeholder in [kAppcastFeedUrl] swapped at runtime for this Mac's CPU arch.
+const String kAppcastArchToken = '{arch}';
+
+/// [url] with [kAppcastArchToken] resolved for [abi].
+///
+/// The app ships as ONE universal binary (arm64 + x86_64) that launches on either
+/// Mac, but the two DMGs differ in their bundled `grid` sidecar's arch — so the
+/// feed a running app polls has to match the CPU it's on, or Sparkle would hand an
+/// Intel Mac the arm64 DMG (whose sidecar can't run there at all) or an Apple
+/// Silicon Mac the x86_64 one. A universal build can't bake a fixed per-arch URL,
+/// so CI bakes a `{arch}` template and this resolves it from the live architecture.
+/// No token (an older build, or a plain URL) → returned unchanged. Pure so the
+/// substitution is unit-tested rather than trusted.
+String resolveAppcastArch(String url, Abi abi) {
+  if (!url.contains(kAppcastArchToken)) return url;
+  // x86_64 is the safe default: it runs on both Macs (native on Intel, Rosetta on
+  // Apple Silicon), whereas an arm64 slice can't run on Intel at all.
+  final arch = abi == Abi.macosArm64 ? 'arm64' : 'x86_64';
+  return url.replaceAll(kAppcastArchToken, arch);
+}
 
 /// The visible outcome of a "Check for updates" so an explicit tap always
 /// resolves to feedback — Sparkle's own dialog only appears when the check
@@ -119,7 +141,9 @@ class AppUpdaterService with UpdaterListener {
   Future<void> init() async {
     if (!isEnabled) return;
     autoUpdater.addListener(this);
-    await autoUpdater.setFeedURL(kAppcastFeedUrl);
+    await autoUpdater.setFeedURL(
+      resolveAppcastArch(kAppcastFeedUrl, Abi.current()),
+    );
     await autoUpdater.setScheduledCheckInterval(_dailySeconds);
   }
 
