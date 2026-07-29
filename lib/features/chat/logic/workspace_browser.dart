@@ -1,52 +1,80 @@
-/// Pure navigation for the chat's file browser: turning a location inside the
-/// chat's folder into a breadcrumb trail the user can walk back up.
+/// Pure flattening for the chat file browser's tree: turning the folders the
+/// user has opened into the flat, ordered list of rows the tree draws.
 ///
-/// Path-string logic only — no filesystem — so it's unit-tested. Paths follow
-/// the rest of the workspace code and are `/`-separated (see `readWorkspaceEntries`).
+/// List logic only — no filesystem, no widgets — so it's unit-tested. The
+/// browser reads each folder lazily (only an *expanded* folder's children are
+/// fetched), so a row can still be waiting on that read or have failed it; those
+/// states ride along in the list, indented under their parent.
 library;
 
-/// Drops a trailing separator so two spellings of the same folder compare equal.
-String _trimSlash(String path) => path.length > 1 && path.endsWith('/')
-    ? path.substring(0, path.length - 1)
-    : path;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Whether [path] is [root] or sits inside it.
-///
-/// The browser never leaves the chat's own folder, so a location that isn't
-/// within the root is treated as the root — a guard against a stray path walking
-/// the user out into the rest of the disk.
-bool isWithinRoot(String path, String root) {
-  final p = _trimSlash(path);
-  final r = _trimSlash(root);
-  return p == r || p.startsWith('$r/');
+import '../../projects/logic/agent_workspace.dart';
+
+/// One line in the flattened tree, tagged with its [depth] so the view can
+/// indent it without re-walking the hierarchy (0 for a top-level child of the
+/// root, +1 per folder deep).
+sealed class WorkspaceRow {
+  const WorkspaceRow(this.depth);
+
+  final int depth;
 }
 
-/// The breadcrumb from [rootPath] — shown under the friendly [rootLabel] — down
-/// to [currentPath]: one segment per folder, each paired with the path it points
-/// at so tapping it jumps straight back up the tree.
+/// A real file or folder. [isExpanded] is only ever true for a folder the user
+/// has opened.
+class WorkspaceEntryRow extends WorkspaceRow {
+  const WorkspaceEntryRow({
+    required this.entry,
+    required int depth,
+    required this.isExpanded,
+  }) : super(depth);
+
+  final WorkspaceEntry entry;
+  final bool isExpanded;
+}
+
+/// A placeholder under an expanded folder that is still loading its children or
+/// failed to read them — [isError] tells the two apart.
+class WorkspaceStatusRow extends WorkspaceRow {
+  const WorkspaceStatusRow({required int depth, required this.isError})
+    : super(depth);
+
+  final bool isError;
+}
+
+/// Flatten the tree under [rootEntries] into draw order, descending only into
+/// the folders in [expanded].
 ///
-/// The first segment is always the root; deeper segments carry their real folder
-/// names. A [currentPath] outside the root (which the browser never navigates to)
-/// collapses to the root alone, so the trail can't offer a step it can't take.
-List<({String label, String path})> breadcrumbSegments({
-  required String rootPath,
-  required String rootLabel,
-  required String currentPath,
+/// [childrenOf] fetches a folder's listing (the async state of its provider).
+/// Folders precede files at every level because [rootEntries] and each
+/// [childrenOf] result already arrive in that order. A closed — or huge,
+/// unopened — folder is never read, so the tree stays cheap until the user asks
+/// for it.
+List<WorkspaceRow> flattenWorkspaceTree({
+  required List<WorkspaceEntry> rootEntries,
+  required Set<String> expanded,
+  required AsyncValue<List<WorkspaceEntry>> Function(String path) childrenOf,
 }) {
-  final root = (label: rootLabel, path: rootPath);
-  if (!isWithinRoot(currentPath, rootPath)) return [root];
+  final rows = <WorkspaceRow>[];
 
-  final rootTrimmed = _trimSlash(rootPath);
-  final rest = _trimSlash(currentPath)
-      .substring(rootTrimmed.length)
-      .split('/')
-      .where((name) => name.isNotEmpty);
-
-  final segments = <({String label, String path})>[root];
-  var acc = rootTrimmed;
-  for (final name in rest) {
-    acc = '$acc/$name';
-    segments.add((label: name, path: acc));
+  void walk(List<WorkspaceEntry> entries, int depth) {
+    for (final entry in entries) {
+      final isOpen = entry.isDirectory && expanded.contains(entry.path);
+      rows.add(
+        WorkspaceEntryRow(entry: entry, depth: depth, isExpanded: isOpen),
+      );
+      if (!isOpen) continue;
+      switch (childrenOf(entry.path)) {
+        case AsyncData(:final value):
+          walk(value, depth + 1);
+        case AsyncError():
+          rows.add(WorkspaceStatusRow(depth: depth + 1, isError: true));
+        case _:
+          rows.add(WorkspaceStatusRow(depth: depth + 1, isError: false));
+      }
+    }
   }
-  return segments;
+
+  walk(rootEntries, 0);
+  return rows;
 }
