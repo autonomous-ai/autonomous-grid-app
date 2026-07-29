@@ -60,9 +60,16 @@ class ChatSendSuccess extends ChatSendUpdate {
 }
 
 /// The request failed; [error] is a plain-language line safe to show the user.
+///
+/// [partial] is what the assistant had already produced before it failed — a
+/// half-written answer, the plan it laid out — so the caller keeps it beside the
+/// error instead of wiping the turn blank. Null when there was nothing worth
+/// keeping, or when the "reply" *was* the raw failure (a server error we
+/// humanized), which must never be shown as if the assistant had said it.
 class ChatSendFailure extends ChatSendUpdate {
-  const ChatSendFailure(this.error);
+  const ChatSendFailure(this.error, {this.partial});
   final String error;
+  final ChatMessage? partial;
 }
 
 /// Sends one chat/media message and streams its progress + outcome. The single

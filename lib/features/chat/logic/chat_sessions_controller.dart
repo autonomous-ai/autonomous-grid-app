@@ -672,8 +672,36 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             // whatever the user is reading open.
             _commit(answered, phase: const SendIdle(), awaitingPlan: planTurn);
             _adoptAgentName(answered, agentSessionId);
-          case ChatSendFailure(:final error):
-            state = state.withPhase(id, const SendIdle()).withError(id, error);
+          case ChatSendFailure(:final error, :final partial):
+            // Keep what the assistant produced before it failed — its streamed
+            // prose, the plan it laid out — instead of wiping the turn to a bare
+            // error line, which reads as "it did nothing". The error still
+            // shows, with its retry / switch-agent affordance. Mirrors stop();
+            // the streamed text is the fallback for a relay turn that carries no
+            // structured partial of its own.
+            final phase = state.phaseFor(id);
+            final streamed = phase is SendStreaming ? phase.text.trim() : '';
+            final kept =
+                partial ??
+                (streamed.isEmpty
+                    ? null
+                    : ChatMessage(role: ChatRole.assistant, text: streamed));
+            if (kept == null) {
+              state = state
+                  .withPhase(id, const SendIdle())
+                  .withError(id, error);
+              break;
+            }
+            _commit(
+              current.copyWith(
+                updatedAt: DateTime.now(),
+                messages: [...current.messages, kept.copyWith(model: model)],
+              ),
+              phase: const SendIdle(),
+            );
+            // _commit clears the error; set it after so the line still shows
+            // above the kept reply.
+            state = state.withError(id, error);
         }
       },
       onDone: () => _finish(id),

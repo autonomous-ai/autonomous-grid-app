@@ -84,8 +84,24 @@ class ChatController extends Notifier<ChatState> {
                 reply.copyWith(model: model),
               ],
             );
-          case ChatSendFailure(:final error):
-            state = ChatState(messages: history, error: error);
+          case ChatSendFailure(:final error, :final partial):
+            // Keep what the assistant produced before failing rather than
+            // dropping it to show only the error. Mirrors the Chat tab; the
+            // streamed text is the fallback when there's no structured partial.
+            final phase = state.phase;
+            final streamed = phase is SendStreaming ? phase.text.trim() : '';
+            final kept =
+                partial ??
+                (streamed.isEmpty
+                    ? null
+                    : ChatMessage(role: ChatRole.assistant, text: streamed));
+            state = ChatState(
+              messages: [
+                ...history,
+                if (kept != null) kept.copyWith(model: model),
+              ],
+              error: error,
+            );
         }
       },
       onDone: _finish,

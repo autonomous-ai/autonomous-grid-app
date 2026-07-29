@@ -277,6 +277,102 @@ void main() {
     },
   );
 
+  test(
+    'a failed turn keeps the partial reply it built — its prose and plan — and '
+    'still shows the error, instead of wiping the chat blank',
+    () async {
+      final h = _harness(
+        tmp,
+        updates: [
+          const ChatSendStreaming("Here's my plan"),
+          ChatSendFailure(
+            'The agent planned the work but stopped before finishing it.',
+            partial: const ChatMessage(
+              role: ChatRole.assistant,
+              text: "Here's my plan",
+              plan: [
+                AgentPlanEntry(
+                  content: 'Build it',
+                  status: AgentPlanStatus.pending,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'build a game');
+
+      final state = h.container.read(chatSessionsProvider);
+      final conv = state.conversations.single;
+      // The partial assistant turn — its prose and the plan it laid out — is
+      // kept, stamped with the model that produced it.
+      expect(conv.messages.map((m) => m.role).toList(), [
+        ChatRole.user,
+        ChatRole.assistant,
+      ]);
+      expect(conv.messages.last.text, "Here's my plan");
+      expect(conv.messages.last.plan, hasLength(1));
+      expect(conv.messages.last.model, 'qwen');
+      // The error still shows above it, with its retry affordance.
+      expect(
+        state.error,
+        'The agent planned the work but stopped before finishing it.',
+      );
+      // And it is persisted, not only held in memory.
+      expect(
+        ChatStore(directory: tmp).loadAll().single.messages.last.text,
+        "Here's my plan",
+      );
+    },
+  );
+
+  test(
+    'a turn that fails mid-stream with no structured partial keeps the text it '
+    'had already streamed (the relay path)',
+    () async {
+      final h = _harness(
+        tmp,
+        updates: const [
+          ChatSendStreaming('A grid is your private'),
+          ChatSendFailure('The grid stopped answering.'),
+        ],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'what is a grid');
+
+      final state = h.container.read(chatSessionsProvider);
+      final conv = state.conversations.single;
+      expect(conv.messages.last.role, ChatRole.assistant);
+      expect(conv.messages.last.text, 'A grid is your private');
+      expect(state.error, 'The grid stopped answering.');
+    },
+  );
+
+  test(
+    'a turn that fails before saying anything shows only the error — no empty '
+    'assistant bubble',
+    () async {
+      final h = _harness(
+        tmp,
+        updates: const [ChatSendFailure('Could not start the assistant.')],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+
+      final state = h.container.read(chatSessionsProvider);
+      final conv = state.conversations.single;
+      expect(conv.messages.map((m) => m.role).toList(), [ChatRole.user]);
+      expect(state.error, 'Could not start the assistant.');
+    },
+  );
+
   group('concurrent sessions', () {
     test('a second chat can be started and stream while the first is still '
         'generating — neither blocks the other, and each reply folds into its '

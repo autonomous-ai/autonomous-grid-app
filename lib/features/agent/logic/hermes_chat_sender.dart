@@ -303,9 +303,26 @@ class HermesChatSender implements ChatSender {
     Timer? idle;
     late final StreamSubscription<HermesAcpEvent> events;
 
+    // What the assistant had produced by now — its streamed prose and the plan
+    // it was working through — so a turn that fails partway keeps what it built
+    // instead of wiping the chat to a bare error line. Null when there's nothing
+    // to keep.
+    ChatMessage? partialReply() {
+      final text = answer.toString().trim();
+      final plan = _ref.read(agentPlanProvider);
+      if (text.isEmpty && plan.isEmpty) return null;
+      return ChatMessage(
+        role: ChatRole.assistant,
+        text: text,
+        plan: plan,
+        sources: _ref.read(agentSourcesProvider),
+      );
+    }
+
     // End a turn that's gone wrong before it drags on. Mirrors the Stop path
     // (cancel + kill + log) but lands a plain line in the chat rather than
-    // stopping in silence. [logError] is what the command log records; [failure]
+    // stopping in silence — carrying the partial work so a loop/hang cut mid-way
+    // keeps what it built. [logError] is what the command log records; [failure]
     // is the line the user reads.
     Future<void> endEarly(String failure, String logError) async {
       if (settled) return;
@@ -315,7 +332,7 @@ class HermesChatSender implements ChatSender {
       permissions.clear();
       run.kill();
       log.finish(logId, error: logError);
-      updates.add(ChatSendFailure(failure));
+      updates.add(ChatSendFailure(failure, partial: partialReply()));
       await updates.close();
     }
 
@@ -421,9 +438,15 @@ class HermesChatSender implements ChatSender {
         // quoting the agent's own words back at it as "context you missed".
         // Only on success: a failed turn appends nothing.
         if (failure == null) live.seen++;
+        // A failed turn still kept the prose/plan it built, unless the "reply"
+        // was itself the raw failure we humanized (`refused`) — that isn't
+        // content, so there's nothing to keep.
         updates.add(
           failure != null
-              ? ChatSendFailure(failure)
+              ? ChatSendFailure(
+                  failure,
+                  partial: refused != null ? null : partialReply(),
+                )
               : ChatSendSuccess(
                   ChatMessage(
                     role: ChatRole.assistant,
