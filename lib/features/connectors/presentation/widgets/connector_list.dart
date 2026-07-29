@@ -94,6 +94,28 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
     }
   }
 
+  /// Hand the credential back: forgotten at the gateway, then here, then
+  /// removed from the agent's config by the re-projection.
+  ///
+  /// Confirmed first, and the wording has to be honest that this does not
+  /// revoke anything at the provider — only the user can do that, in the
+  /// provider's own settings.
+  Future<void> _disconnect() async {
+    final toast = ToastScope.of(context);
+    final connector = widget.connector;
+    final confirmed = await _confirmDisconnect(context, connector.name);
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    final error = await ref
+        .read(connectorLinkControllerProvider.notifier)
+        .disconnect(connector.id);
+    if (mounted) setState(() => _busy = false);
+    if (error != null) {
+      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
@@ -133,6 +155,13 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
                         style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
+                    // Signed in on this machine. Shown even before the agent
+                    // has an MCP server for it, because the credential is the
+                    // part the user just did and the row has to acknowledge it.
+                    if (connector.token != null) ...[
+                      const SizedBox(width: 8),
+                      const ExtensionTag(label: 'Connected'),
+                    ],
                     if (connector.connectedButUnusable) ...[
                       const SizedBox(width: 8),
                       const ExtensionTag(label: 'No tools yet', muted: true),
@@ -177,6 +206,7 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
             onConnect: _connect,
             onCancel: () =>
                 ref.read(connectorLinkControllerProvider.notifier).cancel(),
+            onDisconnect: _disconnect,
           ),
         ],
       ),
@@ -192,6 +222,7 @@ class _CatalogAction extends StatelessWidget {
     required this.busy,
     required this.onConnect,
     required this.onCancel,
+    required this.onDisconnect,
   });
 
   final Connector connector;
@@ -204,6 +235,7 @@ class _CatalogAction extends StatelessWidget {
 
   final VoidCallback onConnect;
   final VoidCallback onCancel;
+  final VoidCallback onDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -222,6 +254,16 @@ class _CatalogAction extends StatelessWidget {
       );
     }
     if (busy) return const AppSpinner();
+
+    // Already signed in here: the useful action is undoing it. Offering Connect
+    // again would read as the sign-in not having taken, and pressing it would
+    // discard a working credential to fetch the same one.
+    if (connector.token != null) {
+      return TextButton(
+        onPressed: onDisconnect,
+        child: const Text('Disconnect'),
+      );
+    }
 
     // Nothing to press when the gateway can't drive this connector: the row
     // already says why, and a button that only ever fails is a worse answer
@@ -379,6 +421,45 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
           ),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Remove'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Disconnecting hands back the credential this machine holds.
+///
+/// The second sentence is the one that matters: this clears the token here and
+/// at the gateway, and it does **not** revoke the access granted at the
+/// provider. Only the user can do that, in the provider's own settings, and a
+/// dialog that let them believe otherwise would leave access standing that they
+/// think they withdrew.
+Future<bool?> _confirmDisconnect(BuildContext context, String name) {
+  final scheme = Theme.of(context).colorScheme;
+  return showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Disconnect $name?'),
+      content: Text(
+        'The assistant will stop using $name on this computer. Your account '
+        'keeps whatever access you granted — remove it in $name\'s own '
+        'settings to revoke it fully.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: scheme.error,
+            // Named rather than left to `onError`, which this app's scheme
+            // never sets: the Material default lands at 3.83:1 on the dark
+            // error red, under the 4.5:1 floor.
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Disconnect'),
         ),
       ],
     ),

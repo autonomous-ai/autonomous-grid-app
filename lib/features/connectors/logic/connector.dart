@@ -81,10 +81,18 @@ class Connector {
 /// config entry of the same name is an available one. One row per thing — a
 /// connected catalog service shows once, as its live server.
 ///
-/// The agent's config is the only source of "connected". The catalog's own
-/// `installed` flag says the *account* is linked at the backend, which is not
-/// the same claim: an account can be linked while this computer's agent has no
-/// server for it, and the screen must not promise a tool the agent can't call.
+/// "Connected" means **this machine holds the credential** — either as an MCP
+/// server in the agent's config, or as a token in the app's own store. Both are
+/// local facts, and either one alone is enough: a token arrives first and the
+/// projection into the agent follows, so a row that waited for the config entry
+/// would sit under "Available" for the moment right after a successful sign-in,
+/// which reads as the sign-in having failed.
+///
+/// What is deliberately *not* enough is the gateway's own `status: connected`.
+/// That says the account is linked somewhere — quite possibly another computer
+/// — and this agent still has nothing to call. Those rows stay under Available
+/// and say so ([Connector.linkedElsewhere]) rather than showing a state the
+/// machine can't back up (D6).
 List<Connector> buildConnectors({
   required List<McpServer> servers,
   required List<ConnectorCatalogEntry> catalog,
@@ -117,7 +125,14 @@ List<Connector> buildConnectors({
           name: entry.label,
           description: entry.description,
           imageUrl: entry.imageUrl,
-          status: ConnectorStatus.notConnected,
+          // A token here and no server yet is the normal state in the seconds
+          // after a sign-in, and a lasting one for a connector with no MCP
+          // server at all. Either way the credential is on this machine, so the
+          // row belongs under Connected — with "No tools yet" saying what is
+          // still missing.
+          status: tokens.containsKey(entry.code)
+              ? ConnectorStatus.connected
+              : ConnectorStatus.notConnected,
           catalogEntry: entry,
           token: tokens[entry.code],
         ),

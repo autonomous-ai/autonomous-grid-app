@@ -325,10 +325,13 @@ List<ConnectorCatalogEntry>? parseGatewayConnectors(String raw) {
       ConnectorCatalogEntry(
         id: code,
         code: code,
-        // The gateway sends no display name today. The code is a poor label but
-        // an honest one; the bundled catalog supplies nicer text where it has
-        // an entry for the same code.
-        label: label is String && label.isNotEmpty ? label : code,
+        // Left **empty** when the gateway sends no display name — which is the
+        // case for every row today. Defaulting to the code here would look
+        // harmless and quietly defeat `mergeCatalog`: it fills only fields that
+        // are empty, so a label of `gmail-app` would count as already answered
+        // and the bundled "Gmail" would never be applied. The screen never
+        // renders this raw; `mergeCatalog` supplies a real name or derives one.
+        label: label is String ? label : '',
         description: entry['description'] is String
             ? entry['description'] as String
             : '',

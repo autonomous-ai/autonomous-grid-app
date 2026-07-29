@@ -96,6 +96,36 @@ class ConnectorCatalogEntry {
   /// at all), and there must be something for the agent to call afterwards.
   bool get canConnectFromApp =>
       authMethod == ConnectorAuthMethod.app && mcpReady;
+
+  /// This entry with borrowed display text, used by [mergeCatalog] to dress a
+  /// gateway row in the bundled catalog's label and icon.
+  ///
+  /// Only the three presentation fields can be replaced, and only where this
+  /// entry has nothing: whatever the gateway said about state — `mcpReady`,
+  /// `linkedAtServer`, `authMethod` — is carried through untouched. A merge
+  /// that could overwrite those would let a stale bundled asset contradict the
+  /// live backend about whether a connector can be signed into.
+  ConnectorCatalogEntry withPresentation({
+    String label = '',
+    String description = '',
+    String imageUrl = '',
+  }) {
+    return ConnectorCatalogEntry(
+      id: id,
+      code: code,
+      label: this.label.isNotEmpty ? this.label : label,
+      description: this.description.isNotEmpty ? this.description : description,
+      imageUrl: this.imageUrl.isNotEmpty ? this.imageUrl : imageUrl,
+      mcpUrl: mcpUrl,
+      order: order,
+      installed: installed,
+      authMethod: authMethod,
+      mcpReady: mcpReady,
+      linkedAtServer: linkedAtServer,
+      accountName: accountName,
+      canRefresh: canRefresh,
+    );
+  }
 }
 
 /// The catalog format is versioned so a bundled file from a newer world is
@@ -148,6 +178,10 @@ List<ConnectorCatalogEntry> parseConnectorCatalog(String raw) {
   return sortCatalog(catalog);
 }
 
+/// What a row sorts under: its label, or its code while it has no label.
+String _sortKey(ConnectorCatalogEntry entry) =>
+    (entry.label.isNotEmpty ? entry.label : entry.code).toLowerCase();
+
 /// The backend's order first (nulls last), then alphabetically by label — so a
 /// catalog with no ordering at all still lands in a stable, readable sequence
 /// instead of whatever order the payload happened to arrive in.
@@ -161,9 +195,60 @@ List<ConnectorCatalogEntry> sortCatalog(List<ConnectorCatalogEntry> entries) {
         if (bo == null) return -1;
         return ao.compareTo(bo);
       }
-      return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+      // Falls back to the code when a row has no label yet — which is every
+      // gateway row before `mergeCatalog` dresses it. Sorting on an empty
+      // string would leave those in payload order, so a list that looks
+      // alphabetical in one build would arrive shuffled in another.
+      return _sortKey(a).compareTo(_sortKey(b));
     });
   return sorted;
+}
+
+/// A display name for a connector the bundled catalog has never heard of.
+///
+/// The gateway's list is the one that grows — it already carries connectors no
+/// bundled build knows (`amplitude`, `asana`, `hubspot`) — so the fallback has
+/// to be something, and `gmail-app` set in a title is not a name anyone wrote.
+/// Splitting on the separators the codes actually use and capitalizing gets
+/// "Gmail App", "Google Calendar", "Hubspot": not always the brand's own
+/// styling, but always a phrase rather than an identifier.
+String labelFromCode(String code) {
+  final words = code
+      .split(RegExp(r'[_\-\s]+'))
+      .where((word) => word.isNotEmpty)
+      .map((word) => word[0].toUpperCase() + word.substring(1));
+  return words.isEmpty ? code : words.join(' ');
+}
+
+/// Give the gateway's entries the names and marks the bundled catalog holds.
+///
+/// The two lists answer different questions and neither can replace the other.
+/// The gateway knows *state* — which connectors exist, which are ready, which
+/// this account has linked — and sends no display text at all. The bundled
+/// asset knows *presentation* — real labels, blurbs, CDN icons — for the eight
+/// connectors that existed when it was written, and nothing about state.
+///
+/// So this merges rather than choosing: every row comes from [remote] (it is
+/// the authority on what exists), and [bundled] fills in only the fields the
+/// gateway left empty. A gateway that later starts sending `label` wins
+/// automatically, because a non-empty remote value is never overwritten.
+///
+/// Matching is by exact code. `gmail` and `gmail-app` are different rows on the
+/// wire — one `pat`, one `app` — and guessing that they are the same service
+/// would put one connector's icon on another's row.
+List<ConnectorCatalogEntry> mergeCatalog({
+  required List<ConnectorCatalogEntry> remote,
+  required List<ConnectorCatalogEntry> bundled,
+}) {
+  final byCode = {for (final entry in bundled) entry.code: entry};
+  return sortCatalog([
+    for (final entry in remote)
+      entry.withPresentation(
+        label: byCode[entry.code]?.label ?? labelFromCode(entry.code),
+        description: byCode[entry.code]?.description ?? '',
+        imageUrl: byCode[entry.code]?.imageUrl ?? '',
+      ),
+  ]);
 }
 
 /// The catalog, from the gateway when it answers and from the bundled asset
@@ -181,11 +266,12 @@ List<ConnectorCatalogEntry> sortCatalog(List<ConnectorCatalogEntry> entries) {
 final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
   ref,
 ) async {
+  final bundled = await ref.watch(bundledConnectorCatalogProvider.future);
   final (remote, _) = await ref
       .watch(connectorGatewayClientProvider)
       .connectors();
-  if (remote != null && remote.isNotEmpty) return remote;
-  return ref.watch(bundledConnectorCatalogProvider.future);
+  if (remote == null || remote.isEmpty) return bundled;
+  return mergeCatalog(remote: remote, bundled: bundled);
 });
 
 /// The catalog shipped inside the app. A failure to load or parse reads as an
