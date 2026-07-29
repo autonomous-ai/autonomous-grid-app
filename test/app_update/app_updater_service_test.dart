@@ -1,3 +1,5 @@
+import 'dart:ffi' show Abi;
+
 import 'package:auto_updater/auto_updater.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/app_update/logic/app_updater_service.dart';
@@ -88,6 +90,36 @@ void main() {
       await sub.cancel();
 
       expect(seen, isEmpty);
+    });
+  });
+
+  group('picking the appcast feed for this Mac', () {
+    const template =
+        'https://example.com/releases/latest/download/appcast-{arch}.xml';
+
+    test('an Apple Silicon Mac polls the arm64 feed', () {
+      expect(
+        resolveAppcastArch(template, Abi.macosArm64),
+        'https://example.com/releases/latest/download/appcast-arm64.xml',
+      );
+    });
+
+    test('an Intel Mac polls the x86_64 feed — never the arm64 DMG, whose '
+        'sidecar could not run there', () {
+      expect(
+        resolveAppcastArch(template, Abi.macosX64),
+        'https://example.com/releases/latest/download/appcast-x86_64.xml',
+      );
+    });
+
+    test('an unexpected arch falls back to x86_64, the slice that runs on both '
+        'Macs', () {
+      expect(resolveAppcastArch(template, Abi.linuxX64), contains('x86_64'));
+    });
+
+    test('a URL with no token (an older build) is left exactly as baked', () {
+      const plain = 'https://example.com/releases/latest/download/appcast.xml';
+      expect(resolveAppcastArch(plain, Abi.macosArm64), plain);
     });
   });
 }
