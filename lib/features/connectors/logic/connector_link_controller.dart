@@ -6,33 +6,12 @@ import '../../../infrastructure/api/connector_gateway_client.dart';
 import '../../../shared/external_launch.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/connector_token.dart';
-import '../../auth/logic/session_controller.dart';
 import 'connector_token_store.dart';
-import 'oauth_loopback_listener.dart';
 
-/// The `device_type` the gateway knows Grid desktop by.
+/// A connector the app is waiting on, held in memory only.
 ///
-/// The web's table runs `"11"`–`"14"` (Intern, InternCloud, Lamp, InternPro);
-/// Grid desktop is newer than all of them and needs its own. **The value below
-/// is a placeholder until the backend assigns one** — see §11 of the spec. On
-/// the wire it is always a string, which is why it's typed as one here rather
-/// than as an int that gets stringified at three different call sites.
-const String kGridDesktopDeviceType = '15';
-
-/// How long the app waits on the browser before it stops expecting an answer.
-///
-/// Comfortably inside the gateway's ~10 minute session TTL, so giving up here
-/// never races the server: if the user finishes late the backend still records
-/// it, and the next poll picks the connector up as `connecting`.
-const Duration kLinkPendingTimeout = Duration(minutes: 5);
-
-/// How often a settling connector is re-checked while the screen is open.
-/// Matches the web client's cadence — the same backend, the same transition.
-const Duration kConnectorPollInterval = Duration(seconds: 4);
-
-/// A link the app is waiting on. In memory only, and deliberately so: a
-/// half-finished authorization is not state worth surviving a restart, and
-/// persisting it would leave handles on disk that no longer mean anything.
+/// Deliberately not persisted: a half-finished authorization is worth nothing
+/// after a restart, and the `pickup_code` in it would be a dead handle.
 class PendingLink {
   const PendingLink({required this.connector, required this.startedAt});
 
@@ -40,167 +19,193 @@ class PendingLink {
   final DateTime startedAt;
 }
 
-/// What the screen shows about a link the user is in the middle of.
+/// What the screen shows about a link in progress.
 class ConnectorLinkState {
-  const ConnectorLinkState({this.pending, this.message = '', this.failed = ''});
+  const ConnectorLinkState({
+    this.pending,
+    this.message = '',
+    this.subject = '',
+  });
 
-  /// The connector currently waiting on a browser, if any. At most one — a
-  /// second Connect closes the first, because two live `state` values invite
-  /// matching the wrong one.
+  /// The connector waiting on a browser, if any. At most one at a time.
   final PendingLink? pending;
 
-  /// A quiet line for the row: "Waiting for your browser…", or what happened
-  /// when a link ended without connecting. Not a toast — cancelling is not an
-  /// event worth interrupting anyone over.
+  /// A quiet line for the row — what it's waiting for, or how the last attempt
+  /// ended. Not a toast: cancelling a sign-in is not an event worth
+  /// interrupting anyone over.
   final String message;
 
-  /// The connector the [message] belongs to, empty when it's about [pending].
-  final String failed;
+  /// Which connector [message] belongs to.
+  final String subject;
 
   bool isPending(String connector) => pending?.connector == connector;
+
+  String messageFor(String connector) => subject == connector ? message : '';
 }
 
 /// Drives one connector from "Connect" to a token the agent can use.
 ///
-/// The whole OAuth exchange belongs to the gateway: it mints `state`, holds
-/// every `client_id` and `client_secret`, and swaps the provider's code for a
-/// token server-side. This controller only opens a browser, catches the
-/// callback on a loopback port, asks the gateway to finalize, and then does the
-/// part that is genuinely ours — bringing the token down to this machine and
-/// handing it to the agent.
+/// The gateway owns the OAuth exchange entirely: it mints `state`, holds every
+/// `client_id`/`client_secret`, swaps the provider's code for a token
+/// server-side, and renders the MCP entry. Nothing comes back to this app from
+/// the browser — no deep link, no callback — so the flow is: start, open the
+/// browser, then **poll** until the answer appears.
 ///
-/// That last step is what keeps Grid local. The gateway brokers the handshake
-/// once; every tool call afterwards goes straight from this computer to the
-/// provider, with no server of ours in the path.
+/// What is genuinely ours is the last two steps: getting the token onto this
+/// machine and into the agent's own config. That is what keeps Grid local — the
+/// gateway brokers the handshake once, and every tool call afterwards goes
+/// straight from this computer to the provider.
 class ConnectorLinkController extends Notifier<ConnectorLinkState> {
-  OAuthLoopbackListener? _listener;
+  /// Set while a poll loop is running, so a cancel (or a second Connect) can
+  /// stop it without waiting out the interval.
+  bool _cancelled = false;
 
   @override
-  ConnectorLinkState build() {
-    ref.onDispose(() => _listener?.close());
-    return const ConnectorLinkState();
-  }
+  ConnectorLinkState build() => const ConnectorLinkState();
 
-  /// Start linking [connector]. Returns null when the flow ended in a state the
-  /// row can explain itself, or a line for the caller to show.
+  /// Link [connector]: start, open the browser, poll, store, project.
   ///
-  /// The order matters: the listener binds *first*, because its port is part of
-  /// the `redirect_uri` the gateway has to be told about. Asking the gateway
-  /// first would mean guessing a port, and a guess that collides is a link that
-  /// silently never completes.
+  /// Returns null when the outcome is something the row explains itself, or a
+  /// line for the caller to show — reserved for failures to *start*, since
+  /// everything after the browser opens is the row's own business.
   Future<String?> connect(String connector) async {
-    final device = ref.read(selectedNetworkProvider);
-    if (device == null || device.deviceId.isEmpty) {
-      return 'Sign in to a grid first — a connector is linked to your account.';
-    }
-
-    await _cancelPending();
-
-    final OAuthLoopbackListener listener;
-    try {
-      listener = await OAuthLoopbackListener.bind();
-    } on Object catch (error) {
-      return "Couldn't open a local port to finish the sign-in: $error";
-    }
-    _listener = listener;
-
+    _cancelled = false;
     final client = ref.read(connectorGatewayClientProvider);
-    final (grant, error) = await client.authorize(
-      connector: connector,
-      deviceId: device.deviceId,
-      deviceType: kGridDesktopDeviceType,
-      redirectUri: listener.redirectUri,
-    );
-    if (grant == null) {
-      await _clearListener();
-      return error?.message ?? "Couldn't start the sign-in.";
+
+    // Start first, clear second. Clearing a working connector before knowing
+    // the new attempt can even begin would break something that worked, over a
+    // dropped network or a mistyped connector code.
+    final (authorization, startError) = await client.start(connector);
+    if (authorization == null) {
+      return startError?.message ?? "Couldn't start the sign-in.";
     }
+
+    // Now the old credential must stop working: the user is deliberately
+    // replacing it, and a stale token left in an agent's config would go on
+    // being used until it expired.
+    await _forgetLocally(connector);
 
     state = ConnectorLinkState(
       pending: PendingLink(connector: connector, startedAt: DateTime.now()),
-      message: 'Waiting for your browser…',
+      message: 'Finish in your browser, then come back here.',
+      subject: connector,
     );
-    await openExternalUrl(grant.authorizeUrl);
+    await openExternalUrl(authorization.authorizeUrl);
 
-    final result = await listener.waitForCallback(timeout: kLinkPendingTimeout);
-    _listener = null;
-
-    return switch (result) {
-      LoopbackSuccess(:final code, :final state) => await _finalize(
-        connector,
-        code: code,
-        state: state,
-      ),
-      // Deny is not a failure. The row goes back to where it was with one quiet
-      // line — wiring this into the same red toast as a network error would
-      // teach the user that changing their mind broke something.
-      LoopbackDenied(isCancel: true) => _settle(
-        connector,
-        'Sign-in cancelled.',
-      ),
-      LoopbackDenied(:final description, :final error) => _settle(
-        connector,
-        description.isNotEmpty ? description : "Sign-in failed: $error.",
-      ),
-      LoopbackTimeout() => _settle(
-        connector,
-        'The sign-in timed out. If you finished in the browser, this will '
-        'catch up on its own.',
-      ),
-    };
+    return _awaitPickup(authorization);
   }
 
-  /// Finish a link the gateway accepted: pull the token down, store it, hand it
-  /// to the agent.
-  Future<String?> _finalize(
-    String connector, {
-    required String code,
-    required String state,
-  }) async {
+  /// Poll until the gateway has an answer, the clock runs out, or the user
+  /// cancels.
+  Future<String?> _awaitPickup(ConnectorAuthorization authorization) async {
     final client = ref.read(connectorGatewayClientProvider);
-    // `state` is checked here, on the server. The app never saw it before the
-    // callback — the gateway minted it — so whatever arrived at the listener is
-    // only a candidate until this call accepts it. Nothing sensitive rides in
-    // that URL, so a spoofed callback costs one rejected request and nothing
-    // else.
-    final (ok, error) = await client.finalizeCallback(code: code, state: state);
-    if (!ok) {
+    final connector = authorization.connector;
+    final deadline = DateTime.now().add(authorization.expiresIn);
+
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(authorization.pollInterval);
+      if (_cancelled) return null;
+
+      final (result, error) = await client.poll(
+        authorization.pickupCode,
+        connector: connector,
+      );
+      if (_cancelled) return null;
+
+      if (result == null) {
+        // One failed poll is not the end — networks hiccup, and the
+        // authorization is still live at the server. Only a dead session is
+        // worth giving up over.
+        if (error != null && error.isUnauthorized) {
+          return _settle(connector, error.message);
+        }
+        continue;
+      }
+
+      switch (result.status) {
+        case ConnectorPollStatus.pending:
+          continue;
+
+        case ConnectorPollStatus.ready:
+          return _adopt(result);
+
+        case ConnectorPollStatus.failed:
+          return _settle(
+            connector,
+            result.error.isEmpty
+                ? "That didn't work. Try connecting again."
+                : "That didn't work: ${result.error}",
+          );
+
+        case ConnectorPollStatus.expired:
+          return _settle(connector, 'The sign-in expired. Try again.');
+
+        case ConnectorPollStatus.consumed:
+          // Only reachable if we polled after already collecting a ready — a
+          // bug on this side, and nothing the user can act on.
+          return _settle(connector, 'That sign-in was already completed.');
+      }
+    }
+
+    return _settle(connector, 'The sign-in timed out. Try again.');
+  }
+
+  /// Take delivery of the one and only `ready`.
+  ///
+  /// Order matters more here than anywhere else in this flow: the token arrives
+  /// exactly once, and polling again returns `consumed` with nothing in it. So
+  /// the write to disk happens before the state changes, before any toast, and
+  /// before anything else that could throw.
+  Future<String?> _adopt(ConnectorPollResult result) async {
+    final token = result.token;
+    final connector = result.connector;
+    if (token == null) {
       return _settle(
         connector,
-        error?.message ?? "Couldn't finish the sign-in.",
+        'The sign-in finished but no credential came back. Try again.',
       );
     }
 
-    this.state = const ConnectorLinkState();
-    return null;
-  }
-
-  /// Write [token] into the master store and project it into the agent.
-  ///
-  /// Two writes, in this order, and both are needed: the master is what makes a
-  /// connector work for *every* agent, and the projection is what makes it work
-  /// for the one running right now.
-  Future<String?> adoptToken(ConnectorToken token) async {
     try {
       await ref.read(connectorTokenStoreProvider).save(token);
     } on Object catch (error) {
-      return "Couldn't save the connector token: $error";
+      // The token is gone now — it was a one-shot delivery and the write
+      // failed. Say so plainly rather than leaving a row that looks connected.
+      return _settle(
+        connector,
+        "Couldn't save the connection ($error). Try connecting again.",
+      );
     }
-    return projectTokens();
+
+    final projectionError = await projectTokens();
+    state = const ConnectorLinkState();
+
+    if (projectionError != null) return projectionError;
+    // Signed in, but this connector has no MCP server behind it: the account is
+    // linked and the agent still can't call anything. The row has to say so —
+    // the alternative is a checkmark promising a tool that doesn't exist.
+    if (!token.isUsable) {
+      return _settle(
+        connector,
+        "Signed in, but this connector has no tools yet — the agent can't use "
+        'it.',
+      );
+    }
+    return null;
   }
 
-  /// Re-project every stored token into the selected agent.
+  /// Write every stored token into the selected agent's own format.
   ///
-  /// Called after any change to the master store, and cheap enough to call when
-  /// in doubt: projecting is idempotent by contract.
+  /// Called after any change to the master store. Idempotent by contract, so
+  /// calling it when in doubt is cheap.
   Future<String?> projectTokens() async {
     final tool = ref.read(extensionAgentProvider);
     final project = ref
         .read(agentExtensionsProvider(tool))
         ?.mcp
         ?.projectConnectorTokens;
-    // A null projection is not an error: it means this agent has no concept of
-    // OAuth connectors. The screen says so; it doesn't fail a save over it.
+    // A null projection is not an error: this agent has no concept of OAuth
+    // connectors. The screen says so; it does not fail a save over it.
     if (project == null) return null;
 
     try {
@@ -214,39 +219,68 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     return null;
   }
 
-  /// Forget a connector locally: drop its token and re-project so the agent
-  /// stops offering a tool that no longer works.
-  Future<String?> forget(String connector) async {
+  /// Renew a token that is close to expiring, then re-project it.
+  ///
+  /// A refreshed token that never reaches the agent's config is worse than
+  /// useless: the agent goes on using the dead one.
+  Future<String?> refresh(String connector) async {
+    final (token, error) = await ref
+        .read(connectorGatewayClientProvider)
+        .refresh(connector);
+    if (token == null) {
+      // 401 means the provider revoked it and the server has already dropped
+      // the credential — no retry helps, the user must reconnect.
+      if (error != null && error.isUnauthorized) {
+        await _forgetLocally(connector);
+        return 'That connection expired. Connect it again to keep using it.';
+      }
+      return error?.message ?? "Couldn't refresh the connection.";
+    }
+
     try {
-      await ref.read(connectorTokenStoreProvider).remove(connector);
-    } on Object catch (error) {
-      return "Couldn't remove the connector token: $error";
+      await ref.read(connectorTokenStoreProvider).save(token);
+    } on Object catch (failure) {
+      return "Couldn't save the refreshed connection: $failure";
     }
     return projectTokens();
   }
 
-  /// Stop waiting, at the user's request. The provider may still complete in
-  /// the browser — that late callback finds no listener, and the backend's poll
-  /// picks up the result on its own.
-  Future<void> cancel() async {
-    await _cancelPending();
-    state = const ConnectorLinkState();
-  }
+  /// Disconnect at the gateway, then locally.
+  ///
+  /// Server first: if that fails, the machine still holds a working token
+  /// rather than a broken half-state. This does **not** revoke access at the
+  /// provider — only the user can, in the provider's own settings — and the
+  /// confirmation dialog has to say so.
+  Future<String?> disconnect(String connector) async {
+    final (ok, error) = await ref
+        .read(connectorGatewayClientProvider)
+        .disconnect(connector);
+    if (!ok) return error?.message ?? "Couldn't disconnect.";
 
-  String? _settle(String connector, String message) {
-    state = ConnectorLinkState(message: message, failed: connector);
+    await _forgetLocally(connector);
     return null;
   }
 
-  Future<void> _cancelPending() async {
-    await _clearListener();
-    if (state.pending != null) state = const ConnectorLinkState();
+  /// Stop waiting. The user may still finish in the browser; that result simply
+  /// goes uncollected, and the next Connect starts a fresh authorization.
+  void cancel() {
+    _cancelled = true;
+    state = const ConnectorLinkState();
   }
 
-  Future<void> _clearListener() async {
-    final listener = _listener;
-    _listener = null;
-    await listener?.close();
+  Future<void> _forgetLocally(String connector) async {
+    try {
+      await ref.read(connectorTokenStoreProvider).remove(connector);
+    } on Object {
+      // Nothing to do here: the re-projection below is what actually stops the
+      // agent using it, and that runs regardless.
+    }
+    await projectTokens();
+  }
+
+  String? _settle(String connector, String message) {
+    state = ConnectorLinkState(message: message, subject: connector);
+    return null;
   }
 }
 
@@ -255,30 +289,16 @@ final connectorLinkControllerProvider =
       ConnectorLinkController.new,
     );
 
-/// Every connector's state on this device, refreshed while the screen is open.
+/// The connector tokens this machine holds, keyed by connector code.
 ///
-/// Polls only while something is actually settling. A list where every row has
-/// come to rest has nothing to learn from another request, and hammering the
-/// gateway for an answer that can't change would be rude to a backend shared
-/// with every other Grid on the network.
-final deviceConnectorsProvider = StreamProvider<List<DeviceConnector>>((
+/// This — not the gateway's `status` field — is what makes a row read as
+/// connected: the gateway knows the *account* is linked, possibly from another
+/// computer, while this says the credential is actually here (D6).
+final connectorTokensProvider = FutureProvider<Map<String, ConnectorToken>>((
   ref,
-) async* {
-  final device = ref.watch(selectedNetworkProvider);
-  if (device == null || device.deviceId.isEmpty) {
-    yield const [];
-    return;
-  }
-  final client = ref.watch(connectorGatewayClientProvider);
-
-  while (true) {
-    final (connectors, _) = await client.deviceConnectors(device.deviceId);
-    // A failed poll yields nothing rather than an empty list: blanking every
-    // row because one request timed out would be a worse lie than a stale one.
-    if (connectors != null) yield connectors;
-    if (connectors != null && !connectors.any((c) => c.status.isSettling)) {
-      return;
-    }
-    await Future<void>.delayed(kConnectorPollInterval);
-  }
+) {
+  // Re-read whenever a link settles: the controller publishes a fresh state
+  // once the store has been written.
+  ref.watch(connectorLinkControllerProvider);
+  return ref.watch(connectorTokenStoreProvider).read();
 });

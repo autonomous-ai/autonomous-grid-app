@@ -18,12 +18,15 @@ void main() {
       expect(refusal.toLowerCase(), contains('pick a different model'));
     });
 
-    test('an ordinary chat-completions model is served, so it is not refused', () {
-      expect(hermesModelRefusal('qwen3'), isNull);
-      expect(hermesModelRefusal('llama3.1:8b'), isNull);
-      expect(hermesModelRefusal('auto'), isNull);
-      expect(hermesModelRefusal(''), isNull);
-    });
+    test(
+      'an ordinary chat-completions model is served, so it is not refused',
+      () {
+        expect(hermesModelRefusal('qwen3'), isNull);
+        expect(hermesModelRefusal('llama3.1:8b'), isNull);
+        expect(hermesModelRefusal('auto'), isNull);
+        expect(hermesModelRefusal(''), isNull);
+      },
+    );
 
     test('a union that includes a Codex model is refused — Hermes still could '
         'not serve the Codex part', () {

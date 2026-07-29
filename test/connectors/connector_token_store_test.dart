@@ -22,7 +22,11 @@ void main() {
       refreshToken: 'refresh-$connector',
       expiresAt: expiresAt,
       scope: 'read write',
-      mcpUrl: 'https://mcp.example/$connector',
+      mcpEntry: McpEntry(
+        url: 'https://mcp.example/$connector',
+        headers: {'Authorization': 'Bearer access-$connector'},
+        canRefresh: true,
+      ),
     );
   }
 
@@ -68,7 +72,11 @@ void main() {
       expect(read.accessToken, 'access-gmail');
       expect(read.refreshToken, 'refresh-gmail');
       expect(read.scope, 'read write');
-      expect(read.mcpUrl, 'https://mcp.example/gmail');
+      expect(read.mcpEntry!.url, 'https://mcp.example/gmail');
+      expect(read.mcpEntry!.canRefresh, isTrue);
+      // The rendered entry survives the round trip: it is the only record of
+      // how this provider expects to be addressed.
+      expect(read.mcpEntry!.bearerToken, 'access-gmail');
       expect(read.tokenType, 'Bearer');
       // Stored as whole seconds, so compare at that resolution.
       expect(read.expiresAt, expiry);

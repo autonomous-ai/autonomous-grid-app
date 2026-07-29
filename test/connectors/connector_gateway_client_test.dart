@@ -1,190 +1,277 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/connectors/logic/connector_link_status.dart';
+import 'package:grid_app/features/connectors/logic/connector_catalog.dart';
 import 'package:grid_app/infrastructure/api/connector_gateway_client.dart';
 
 void main() {
-  group('parseAuthorizeGrant', () {
-    test('reads the URL the browser should be sent to', () {
-      final grant = parseAuthorizeGrant('''
-{"status": 1, "data": {"authorize_url": "https://accounts.google.com/o/oauth2/v2/auth?x=1",
- "auth_type": "oauth"}}
-''')!;
-      expect(grant.authorizeUrl, startsWith('https://accounts.google.com/'));
-      expect(grant.authType, 'oauth');
-    });
-
-    test('no usable URL reads as null, so no browser opens at nothing', () {
-      expect(parseAuthorizeGrant('{"status": 1, "data": {}}'), isNull);
-      expect(
-        parseAuthorizeGrant('{"status": 1, "data": {"authorize_url": ""}}'),
-        isNull,
-      );
-      expect(parseAuthorizeGrant('not json'), isNull);
-      expect(parseAuthorizeGrant('{"status": 1}'), isNull);
-    });
-  });
-
-  group('parseEnvelopeError', () {
-    test('a 200 that says status != 1 is still a failure', () {
-      // The gateway reports business failures inside the envelope. Trusting the
-      // HTTP code alone would report "signed in" for a body saying otherwise.
-      expect(
-        parseEnvelopeError(
-          '{"status": 0, "error_message": "state not found or expired"}',
-        ),
-        'state not found or expired',
-      );
-    });
-
-    test('prefers error_message over the generic message', () {
-      expect(
-        parseEnvelopeError(
-          '{"status": 0, "message": "Bad Request", '
-          '"error_message": "connector already linked"}',
-        ),
-        'connector already linked',
-      );
-    });
-
-    test('finds the message nested under data', () {
-      expect(
-        parseEnvelopeError(
-          '{"status": 0, "data": {"error_message": "device not registered"}}',
-        ),
-        'device not registered',
-      );
-    });
-
-    test('a failure with no text still says something actionable', () {
-      expect(parseEnvelopeError('{"status": 0}'), isNotNull);
-    });
-
-    test('a healthy envelope claims nothing', () {
-      expect(parseEnvelopeError('{"status": 1, "data": {}}'), isNull);
-    });
-
-    test('a body that is not JSON is not an error claim', () {
-      // The caller still has the HTTP status to fall back on; inventing an
-      // error here would mask it.
-      expect(parseEnvelopeError('<html>502</html>'), isNull);
-      expect(parseEnvelopeError(''), isNull);
-    });
-  });
-
-  group('parseDeviceConnectors', () {
+  group('parseGatewayConnectors', () {
     const body = '''
-{"status": 1, "data": {"connectors": [
-  {"code": "gmail", "status": "connected"},
-  {"code": "slack", "status": "connecting"},
-  {"code": "notion", "status": "connect_failed", "error_message": "scope refused"},
-  {"code": "drive", "status": "not_installed"},
-  {"status": "connected"},
+{"connectors": [
+  {"code": "linear", "auth_type": "app", "scopes": ["read", "write"],
+   "refresh": true, "mcp_url": "https://mcp.linear.app/mcp", "mcp_ready": true,
+   "status": "connected", "account_name": "Khanh Cao",
+   "expires_at": 1785312000, "connected_at": 1785308400},
+  {"code": "notion", "auth_type": "app", "refresh": true,
+   "mcp_url": "https://mcp.notion.com/mcp", "mcp_ready": true,
+   "status": "not_connected", "account_name": "", "expires_at": 0},
+  {"code": "google_drive", "auth_type": "app", "mcp_ready": false,
+   "status": "not_connected"},
+  {"code": "github", "auth_type": "pat", "mcp_ready": true,
+   "status": "not_connected"},
+  {"auth_type": "app"},
   "not even an object"
-]}}
+]}
 ''';
 
-    test('reads each row into a state the screen can render', () {
-      final connectors = parseDeviceConnectors(body)!;
-      expect(connectors.map((c) => c.code), [
-        'gmail',
-        'slack',
-        'notion',
-        'drive',
-      ]);
-      expect(connectors[0].status, ConnectorLinkStatus.connected);
-      expect(connectors[1].status, ConnectorLinkStatus.connecting);
-      expect(connectors[2].status, ConnectorLinkStatus.connectFailed);
-      expect(connectors[3].status, ConnectorLinkStatus.notInstalled);
-    });
-
-    test('carries the failure reason so the row can explain itself', () {
-      final notion = parseDeviceConnectors(
+    test('reads every field the row needs', () {
+      final linear = parseGatewayConnectors(
         body,
-      )!.firstWhere((c) => c.code == 'notion');
-      expect(notion.errorMessage, 'scope refused');
+      )!.firstWhere((e) => e.code == 'linear');
+      expect(linear.authMethod, ConnectorAuthMethod.app);
+      expect(linear.mcpReady, isTrue);
+      expect(linear.mcpUrl, 'https://mcp.linear.app/mcp');
+      expect(linear.linkedAtServer, isTrue);
+      expect(linear.accountName, 'Khanh Cao');
+      expect(linear.canRefresh, isTrue);
     });
 
-    test('a row with no code is dropped and the rest still show', () {
-      expect(parseDeviceConnectors(body)!.length, 4);
-    });
-
-    test('nothing linked is [] but an unreadable body is null', () {
-      // Two different things to a screen: one is "you have no connectors", the
-      // other is "we could not find out".
+    test('only the literal "connected" counts as linked at the server', () {
+      final entries = parseGatewayConnectors(body)!;
       expect(
-        parseDeviceConnectors('{"status": 1, "data": {"connectors": []}}'),
-        isEmpty,
+        entries.firstWhere((e) => e.code == 'notion').linkedAtServer,
+        isFalse,
       );
-      expect(parseDeviceConnectors('not json'), isNull);
-      expect(parseDeviceConnectors('{"status": 1}'), isNull);
     });
 
-    test('accepts a bare list under data as well as the wrapped shape', () {
-      // The exact envelope for this endpoint is unconfirmed (spec §11) — read
-      // both rather than blanking the screen on the shape we guessed wrong.
-      final connectors = parseDeviceConnectors(
-        '{"status": 1, "data": [{"code": "gmail", "status": "connected"}]}',
+    test('a row with no code is dropped, the rest still show', () {
+      expect(parseGatewayConnectors(body)!.map((e) => e.code), [
+        'github',
+        'google_drive',
+        'linear',
+        'notion',
+      ]);
+    });
+
+    group('the two gates on Connect', () {
+      test('a pat connector cannot be connected from the app', () {
+        // There is no flow to call — the user has to paste a token by hand — so
+        // the button must never be offered, not merely fail when pressed.
+        final github = parseGatewayConnectors(
+          body,
+        )!.firstWhere((e) => e.code == 'github');
+        expect(github.authMethod, ConnectorAuthMethod.manual);
+        expect(github.canConnectFromApp, isFalse);
+      });
+
+      test('a connector with no MCP server cannot be connected either', () {
+        // OAuth would genuinely succeed and the agent would still have nothing
+        // to call. Five connectors are in this state today.
+        final drive = parseGatewayConnectors(
+          body,
+        )!.firstWhere((e) => e.code == 'google_drive');
+        expect(drive.mcpReady, isFalse);
+        expect(drive.canConnectFromApp, isFalse);
+      });
+
+      test('both gates open means Connect is offered', () {
+        final notion = parseGatewayConnectors(
+          body,
+        )!.firstWhere((e) => e.code == 'notion');
+        expect(notion.canConnectFromApp, isTrue);
+      });
+    });
+
+    test('an unreadable body is null so the caller can fall back', () {
+      // Null and [] are different answers: one is "we could not find out", the
+      // other is "you have no connectors".
+      expect(parseGatewayConnectors('not json'), isNull);
+      expect(parseGatewayConnectors('{}'), isNull);
+      expect(parseGatewayConnectors('{"connectors": []}'), isEmpty);
+    });
+  });
+
+  group('parseAuthorization', () {
+    const body = '''
+{"connector": "linear",
+ "authorize_url": "https://linear.app/oauth/authorize?client_id=3fb060cc",
+ "pickup_code": "F7QH-2M4T", "poll_interval": 2, "expires_in": 600}
+''';
+
+    test('carries the URL and the pickup ticket', () {
+      final auth = parseAuthorization(body, fallbackConnector: 'linear')!;
+      expect(auth.authorizeUrl, startsWith('https://linear.app/oauth/'));
+      expect(auth.pickupCode, 'F7QH-2M4T');
+      expect(auth.pollInterval, const Duration(seconds: 2));
+      expect(auth.expiresIn, const Duration(minutes: 10));
+    });
+
+    test('missing either handle reads as null', () {
+      // No URL means nothing to open; no pickup code means no way to collect
+      // the result once the user finishes.
+      expect(
+        parseAuthorization('{"pickup_code": "X"}', fallbackConnector: 'linear'),
+        isNull,
+      );
+      expect(
+        parseAuthorization(
+          '{"authorize_url": "https://x"}',
+          fallbackConnector: 'linear',
+        ),
+        isNull,
+      );
+      expect(parseAuthorization('not json', fallbackConnector: 'l'), isNull);
+    });
+
+    test('an absurd poll interval is clamped, never obeyed literally', () {
+      // Zero would spin the loop; an hour would look broken.
+      final fast = parseAuthorization(
+        '{"authorize_url": "https://x", "pickup_code": "p", "poll_interval": 0}',
+        fallbackConnector: 'linear',
       )!;
-      expect(connectors.single.code, 'gmail');
+      expect(fast.pollInterval, const Duration(seconds: 1));
+    });
+  });
+
+  group('parsePollResult', () {
+    test('pending carries no token', () {
+      final result = parsePollResult(
+        '{"status": "pending", "connector": "linear", "error": ""}',
+        fallbackConnector: 'linear',
+      )!;
+      expect(result.status, ConnectorPollStatus.pending);
+      expect(result.token, isNull);
+    });
+
+    test('ready carries the token and the rendered MCP entry', () {
+      final result = parsePollResult('''
+{"status": "ready", "connector": "linear",
+ "access_token": "lin_oauth_8f3d", "refresh_token": "lin_ref_2b91",
+ "token_type": "Bearer", "expires_at": 1785312000, "scope": "read write",
+ "account_name": "Khanh Cao",
+ "mcp_entry": {"url": "https://mcp.linear.app/mcp",
+   "headers": {"Authorization": "Bearer lin_oauth_8f3d"},
+   "_grid": {"connector": "linear", "expires_at": 1785312000, "refresh": true}}}
+''', fallbackConnector: 'linear')!;
+
+      final token = result.token!;
+      expect(token.accessToken, 'lin_oauth_8f3d');
+      expect(token.refreshToken, 'lin_ref_2b91');
+      expect(token.accountName, 'Khanh Cao');
+      expect(
+        token.expiresAt,
+        DateTime.fromMillisecondsSinceEpoch(1785312000000),
+      );
+      expect(token.mcpEntry!.url, 'https://mcp.linear.app/mcp');
+      expect(token.mcpEntry!.canRefresh, isTrue);
+      expect(token.isUsable, isTrue);
+    });
+
+    test('ready with a null mcp_entry is still a real sign-in', () {
+      // Five connectors are OAuth-capable with no MCP server. The account links
+      // for real; the agent just has nothing to call.
+      final result = parsePollResult('''
+{"status": "ready", "connector": "google_drive",
+ "access_token": "ya29.a0Af", "expires_at": 1785312000, "mcp_entry": null}
+''', fallbackConnector: 'google_drive')!;
+
+      expect(result.token, isNotNull);
+      expect(result.token!.accessToken, 'ya29.a0Af');
+      expect(result.token!.isUsable, isFalse);
+    });
+
+    test('every failure is also HTTP 200 — status is the only signal', () {
+      for (final (raw, expected) in [
+        ('failed', ConnectorPollStatus.failed),
+        ('expired', ConnectorPollStatus.expired),
+        ('consumed', ConnectorPollStatus.consumed),
+      ]) {
+        final result = parsePollResult(
+          '{"status": "$raw", "connector": "linear", "error": "boom"}',
+          fallbackConnector: 'linear',
+        )!;
+        expect(result.status, expected);
+        expect(result.token, isNull);
+      }
+    });
+
+    test('an unknown status reads as null, never as success', () {
+      // Guessing "pending" would poll forever; guessing "ready" would claim a
+      // token that isn't there.
+      expect(
+        parsePollResult(
+          '{"status": "quantum", "connector": "linear"}',
+          fallbackConnector: 'linear',
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('parseTokenPayload (refresh)', () {
+    test('reads the renewed token and its new entry', () {
+      final token = parseTokenPayload('''
+{"status": "ok", "connector": "linear", "access_token": "lin_oauth_NEW",
+ "token_type": "Bearer", "expires_at": 1785315600,
+ "mcp_entry": {"url": "https://mcp.linear.app/mcp",
+   "headers": {"Authorization": "Bearer lin_oauth_NEW"},
+   "_grid": {"connector": "linear", "expires_at": 1785315600, "refresh": true}}}
+''', fallbackConnector: 'linear')!;
+
+      expect(token.accessToken, 'lin_oauth_NEW');
+      expect(token.mcpEntry!.bearerToken, 'lin_oauth_NEW');
+    });
+  });
+
+  group('parseDetail', () {
+    test("shows the gateway's own sentence, which is written for a person", () {
+      expect(
+        parseDetail('{"detail": "Unsupported connector \'xyz\'"}'),
+        "Unsupported connector 'xyz'",
+      );
+    });
+
+    test('a body with no detail falls back to the status code', () {
+      expect(parseDetail('{"other": "thing"}'), isNull);
+      expect(parseDetail('<html>404</html>'), isNull);
     });
   });
 
   group('ConnectorGatewayClient', () {
-    test('builds endpoints with or without a trailing slash', () {
+    test('every path sits under /v1/grid', () {
       expect(
         ConnectorGatewayClient.endpoint(
-          'https://api.example.com',
-          'v1/connectors/authorize',
+          'https://api-grid.autonomous.ai',
+          'connectors/start',
         ).toString(),
-        'https://api.example.com/v1/connectors/authorize',
+        'https://api-grid.autonomous.ai/v1/grid/connectors/start',
       );
       expect(
         ConnectorGatewayClient.endpoint(
-          'https://api.example.com/',
-          'v1/connectors/authorize',
+          'https://api-grid.autonomous.ai/',
+          'connectors',
         ).toString(),
-        'https://api.example.com/v1/connectors/authorize',
+        'https://api-grid.autonomous.ai/v1/grid/connectors',
       );
     });
 
-    test('an HTTP failure always names its status code', () async {
-      // A 404 returns an HTML page, so parseEnvelopeError rightly reads no
-      // error claim in it — and without the code the user gets a bare
-      // "Couldn't start the sign-in." with the one useful fact discarded.
-      // This cost a real debugging session: the app was pointed at
-      // api-grid.autonomous.ai, where the gateway does not live.
+    test('signed out never reaches the network', () async {
+      const client = ConnectorGatewayClient(
+        apiUrl: 'https://api.example.com',
+        sessionToken: null,
+      );
+      final (auth, error) = await client.start('linear');
+      expect(auth, isNull);
+      expect(error?.message, 'Not signed in.');
+    });
+
+    test('an unreachable grid says so, rather than failing silently', () async {
       const client = ConnectorGatewayClient(
         apiUrl: 'http://127.0.0.1:1/',
         sessionToken: 'token',
         timeout: Duration(milliseconds: 300),
       );
-      final (grant, error) = await client.authorize(
-        connector: 'gmail',
-        deviceId: 'device-1',
-        deviceType: '15',
-        redirectUri: 'http://127.0.0.1:1234/callback',
-      );
-      expect(grant, isNull);
-      // Unreachable rather than 404 here, but the rule is the same: the
-      // message has to carry enough to act on, never just "it failed".
+      final (auth, error) = await client.start('linear');
+      expect(auth, isNull);
       expect(error!.message, contains("Couldn't reach the grid"));
-    });
-
-    test('signed out never reaches the network', () async {
-      // A connector links to an account, so there is nothing to ask for without
-      // a session — and asking anyway would spend a timeout to learn it.
-      const client = ConnectorGatewayClient(
-        apiUrl: 'https://api.example.com',
-        sessionToken: null,
-      );
-      final (grant, error) = await client.authorize(
-        connector: 'gmail',
-        deviceId: 'device-1',
-        deviceType: '15',
-        redirectUri: 'http://127.0.0.1:1234/callback',
-      );
-      expect(grant, isNull);
-      expect(error?.message, 'Not signed in.');
     });
   });
 }

@@ -55,19 +55,22 @@ void main() {
     expect(c.read(promptLibraryProvider).single.name, 'tank-attack-game');
   });
 
-  test('a library saved with spaced names before this rule reads as slugs '
-      'right away — the user\'s "tank 1990" is typeable without re-saving it', () {
-    // Seed the file the way an older build left it.
-    PromptLibraryStore(file: file).save(const [
-      SavedPrompt(id: 'p1', name: 'tank 1990', body: 'a'),
-      SavedPrompt(id: 'p2', name: 'tank 2026', body: 'b'),
-    ]);
+  test(
+    'a library saved with spaced names before this rule reads as slugs '
+    'right away — the user\'s "tank 1990" is typeable without re-saving it',
+    () {
+      // Seed the file the way an older build left it.
+      PromptLibraryStore(file: file).save(const [
+        SavedPrompt(id: 'p1', name: 'tank 1990', body: 'a'),
+        SavedPrompt(id: 'p2', name: 'tank 2026', body: 'b'),
+      ]);
 
-    expect(container().read(promptLibraryProvider).map((p) => p.name), [
-      'tank-1990',
-      'tank-2026',
-    ]);
-  });
+      expect(container().read(promptLibraryProvider).map((p) => p.name), [
+        'tank-1990',
+        'tank-2026',
+      ]);
+    },
+  );
 
   test('a saved prompt survives a reload — it was written to disk', () {
     container()

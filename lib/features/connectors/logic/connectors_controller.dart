@@ -4,6 +4,7 @@ import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/mcp_server.dart';
 import 'connector.dart';
 import 'connector_catalog.dart';
+import '../../agents/logic/connector_token.dart';
 import 'connector_link_controller.dart';
 
 /// The MCP servers configured for the selected agent, read straight from its
@@ -22,16 +23,13 @@ final mcpServersProvider =
 final connectorsProvider = FutureProvider<List<Connector>>((ref) async {
   final servers = await ref.watch(mcpServersProvider.future);
   final catalog = await ref.watch(connectorCatalogProvider.future);
-  // The gateway's per-device list is the third source, and the only optional
-  // one: it says whether the *account* is linked. A poll that fails or a user
-  // who is signed out leaves the rows reading from config and catalog alone,
+  // The third source: the credentials this machine actually holds. Optional —
+  // an unreadable store leaves the rows reading from config and catalog alone,
   // which is the same screen this was before the gateway existed.
-  final linked = ref.watch(deviceConnectorsProvider).asData?.value ?? const [];
-  return buildConnectors(
-    servers: servers,
-    catalog: catalog,
-    deviceConnectors: linked,
-  );
+  final tokens =
+      ref.watch(connectorTokensProvider).asData?.value ??
+      const <String, ConnectorToken>{};
+  return buildConnectors(servers: servers, catalog: catalog, tokens: tokens);
 });
 
 class McpServersController extends AsyncNotifier<List<McpServer>> {

@@ -10,8 +10,8 @@ import '../../../../shared/widgets/extension_tile_surface.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../agents/logic/mcp_server.dart';
 import '../../logic/connector.dart';
+import '../../logic/connector_catalog.dart';
 import '../../logic/connector_link_controller.dart';
-import '../../logic/connector_link_status.dart';
 import '../../logic/connectors_controller.dart';
 import 'add_mcp_dialog.dart';
 
@@ -43,7 +43,7 @@ class ConnectorList extends StatelessWidget {
     }
     final sections = sectionExtensionItems(
       items: connectors,
-      sectionOf: (c) => c.inConnectedBucket ? 'Connected' : 'Available',
+      sectionOf: (c) => c.connected ? 'Connected' : 'Available',
       leading: const ['Connected', 'Available'],
       filtered: filtered,
     );
@@ -62,11 +62,11 @@ class ConnectorList extends StatelessWidget {
 
 /// A catalog service, with whatever action its current state allows.
 ///
-/// Five states, and the one that matters most is `connecting`: the backend has
-/// a token the machine hasn't received yet, so the row shows a disabled pill
-/// rather than claiming Connected. Promising a tool the agent can't call is the
-/// same mistake the backend's `installed` flag invites, one step later in the
-/// flow.
+/// Connect is offered only when the gateway can actually drive a sign-in *and*
+/// there is an MCP server behind it. A `pat` connector has no flow to call, and
+/// a connector with no MCP server links an account that the agent still cannot
+/// use — walking a whole OAuth round trip to arrive at nothing is worse than a
+/// button that visibly isn't ready.
 class _CatalogRow extends ConsumerStatefulWidget {
   const _CatalogRow({required this.connector});
 
@@ -103,11 +103,13 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
     final waiting = link.isPending(connector.id);
     // A line the row owns: what this connector is waiting for, or how its last
     // attempt ended.
-    final note = waiting
-        ? link.message
-        : link.failed == connector.id
-        ? link.message
-        : connector.linkError;
+    final note = link.messageFor(connector.id).isNotEmpty
+        ? link.messageFor(connector.id)
+        : connector.linkedElsewhere
+        ? 'Connected on another computer — sign in here to use it.'
+        : !connector.canConnect && connector.catalogEntry != null
+        ? _unavailableReason(connector)
+        : '';
 
     return ExtensionTileSurface(
       child: Row(
@@ -131,10 +133,9 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
                         style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
-                    if (connector.linkStatus ==
-                        ConnectorLinkStatus.connecting) ...[
+                    if (connector.connectedButUnusable) ...[
                       const SizedBox(width: 8),
-                      const ExtensionTag(label: 'Connecting…', muted: true),
+                      const ExtensionTag(label: 'No tools yet', muted: true),
                     ],
                   ],
                 ),
@@ -222,17 +223,12 @@ class _CatalogAction extends StatelessWidget {
     }
     if (busy) return const AppSpinner();
 
-    return switch (connector.linkStatus) {
-      // The token is at the backend but not here yet, so there is nothing to
-      // press: Disconnect would race the delivery, and Connect would start a
-      // second link for an account already linked.
-      ConnectorLinkStatus.connecting => const SizedBox.shrink(),
-      ConnectorLinkStatus.connectFailed => OutlinedButton(
-        onPressed: onConnect,
-        child: const Text('Retry'),
-      ),
-      _ => FilledButton(onPressed: onConnect, child: const Text('Connect')),
-    };
+    // Nothing to press when the gateway can't drive this connector: the row
+    // already says why, and a button that only ever fails is a worse answer
+    // than no button.
+    if (!connector.canConnect) return const SizedBox.shrink();
+
+    return FilledButton(onPressed: onConnect, child: const Text('Connect'));
   }
 }
 
@@ -457,4 +453,20 @@ class ConnectorMark extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Why a catalog row can't be connected from here.
+///
+/// Both cases are real and neither is the user's doing, so the row explains
+/// itself rather than leaving a dead button to be discovered by pressing it.
+String _unavailableReason(Connector connector) {
+  final entry = connector.catalogEntry;
+  if (entry == null) return '';
+  if (entry.authMethod != ConnectorAuthMethod.app) {
+    return 'Needs a personal access token — not available from the app yet.';
+  }
+  if (!entry.mcpReady) {
+    return 'No tools available for this connector yet.';
+  }
+  return '';
 }

@@ -31,10 +31,13 @@ void main() {
       expect(slashQuery('/${promptNameSlug('tank 1990')}'), 'tank-1990');
     });
 
-    test('runs of whitespace collapse to a single dash and ends are trimmed', () {
-      expect(promptNameSlug('  weekly   report  '), 'weekly-report');
-      expect(promptNameSlug('a\tb'), 'a-b');
-    });
+    test(
+      'runs of whitespace collapse to a single dash and ends are trimmed',
+      () {
+        expect(promptNameSlug('  weekly   report  '), 'weekly-report');
+        expect(promptNameSlug('a\tb'), 'a-b');
+      },
+    );
 
     test('stray dashes around and between words collapse, not stack up', () {
       expect(promptNameSlug('tank - 1990'), 'tank-1990');

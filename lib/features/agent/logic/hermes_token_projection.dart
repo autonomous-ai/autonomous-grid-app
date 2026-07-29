@@ -94,7 +94,10 @@ class HermesTokenProjection {
   Map<String, dynamic> _toHermesJson(ConnectorToken token) {
     final expiry = token.expiresAt;
     return {
-      'access_token': token.accessToken,
+      // Prefer the credential the gateway put in the rendered entry: for a
+      // provider with a non-standard header (X-Figma-Token) that header value
+      // *is* the credential, and it is the one the server vouched for.
+      'access_token': token.mcpEntry?.bearerToken ?? token.accessToken,
       'token_type': token.tokenType,
       if (expiry != null)
         'expires_in': expiry

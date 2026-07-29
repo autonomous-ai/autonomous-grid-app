@@ -32,6 +32,10 @@ class ConnectorCatalogEntry {
     this.order,
     this.installed = false,
     this.authMethod = ConnectorAuthMethod.app,
+    this.mcpReady = false,
+    this.linkedAtServer = false,
+    this.accountName = '',
+    this.canRefresh = false,
   });
 
   /// The backend's own id. Opaque to the app.
@@ -64,6 +68,34 @@ class ConnectorCatalogEntry {
   final bool installed;
 
   final ConnectorAuthMethod authMethod;
+
+  /// The gateway has an MCP server for this connector.
+  ///
+  /// When false, signing in genuinely works — the credential is stored
+  /// server-side — and the agent still cannot call anything, because there is
+  /// no server to add. Five connectors are in exactly this state today
+  /// (`atlassian`, `discord`, `gmail-app`, `google_calendar`, `google_drive`),
+  /// so this is a real case rather than a defensive one. The row must not offer
+  /// Connect: walking a whole OAuth round trip to receive nothing usable is
+  /// worse than a button that visibly isn't ready.
+  final bool mcpReady;
+
+  /// The user has authorized this connector *somewhere* — possibly on another
+  /// computer. Not the same as "this machine can use it", which only the
+  /// agent's own config can answer (D6).
+  final bool linkedAtServer;
+
+  /// The account name at the provider, when they return one.
+  final String accountName;
+
+  /// The provider issues refresh tokens, so `/refresh` is worth calling.
+  final bool canRefresh;
+
+  /// The two gates that must both pass before Connect is offered: the app can
+  /// only drive an OAuth flow (`pat` needs a hand-pasted token and has no flow
+  /// at all), and there must be something for the agent to call afterwards.
+  bool get canConnectFromApp =>
+      authMethod == ConnectorAuthMethod.app && mcpReady;
 }
 
 /// The catalog format is versioned so a bundled file from a newer world is

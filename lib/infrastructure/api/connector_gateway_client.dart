@@ -3,11 +3,17 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/agents/logic/connector_token.dart';
 import '../../features/auth/logic/session_controller.dart';
-import '../../features/connectors/logic/connector_link_status.dart';
+import '../../features/connectors/logic/connector_catalog.dart';
 import '../providers.dart';
 
-/// A gateway call that didn't work. [message] is the line a button can show.
+/// A gateway call that didn't work.
+///
+/// The gateway reports every failure as an HTTP status plus
+/// `{"detail": "a readable English sentence"}`, so [message] is usually that
+/// sentence verbatim — it is written for a person, and rewording it here would
+/// only lose detail.
 class ConnectorGatewayError {
   const ConnectorGatewayError(this.message, {this.statusCode, this.body});
 
@@ -15,55 +21,102 @@ class ConnectorGatewayError {
   final int? statusCode;
   final String? body;
 
+  /// The session is gone; the user has to sign in again. Worth distinguishing
+  /// because it's the one failure a retry can't fix.
+  bool get isUnauthorized => statusCode == 401;
+
+  /// The server is misconfigured or down. Not the user's fault and not theirs
+  /// to fix — offer a retry, never instructions.
+  bool get isServerFault => statusCode != null && statusCode! >= 500;
+
   @override
   String toString() => message;
 }
 
-/// Where the browser should be sent, plus the handle the gateway will hand
-/// back through the loopback callback.
-class AuthorizeGrant {
-  const AuthorizeGrant({required this.authorizeUrl, this.authType = ''});
-
-  final String authorizeUrl;
-
-  /// The gateway's own word for the flow it started (`oauth`, `pat`, …).
-  /// Carried but not interpreted: the app opens a browser either way, and
-  /// guessing at values we haven't seen would be inventing a contract.
-  final String authType;
-}
-
-/// One connector's state on this device, from the gateway's per-device list.
-class DeviceConnector {
-  const DeviceConnector({
-    required this.code,
-    required this.status,
-    this.errorMessage = '',
+/// The ticket for collecting an authorization the app was never handed.
+///
+/// Nothing comes back from the browser — no deep link, no loopback listener —
+/// so [pickupCode] is the only way to ask for a result that arrived somewhere
+/// else entirely.
+class ConnectorAuthorization {
+  const ConnectorAuthorization({
+    required this.connector,
+    required this.authorizeUrl,
+    required this.pickupCode,
+    this.pollInterval = const Duration(seconds: 2),
+    this.expiresIn = const Duration(minutes: 10),
   });
 
-  /// The catalog `code` — the join key against the catalog and the config.
-  final String code;
+  final String connector;
 
-  final ConnectorLinkStatus status;
+  /// Open in the *system* browser, never a webview. Single-use: pressing
+  /// Connect again means calling `/start` again, never reusing this.
+  final String authorizeUrl;
 
-  /// Why the last attempt failed, when [status] is
-  /// [ConnectorLinkStatus.connectFailed]. The row shows it in a tooltip rather
-  /// than a toast: it's a property of the row, not an event.
-  final String errorMessage;
+  final String pickupCode;
+
+  /// How long to wait between polls — the server's number, because it knows its
+  /// own load better than a constant here would.
+  final Duration pollInterval;
+
+  /// How long the authorization stays alive before the server forgets it.
+  final Duration expiresIn;
 }
 
-/// The OAuth gateway the web's Connectors tab already uses, seen from the
-/// desktop app.
+/// Where one poll landed.
+enum ConnectorPollStatus {
+  /// The user hasn't finished in the browser yet.
+  pending,
+
+  /// Done, and this response carries the token. **Only ever returned once.**
+  ready,
+
+  /// The token exchange failed at the provider.
+  failed,
+
+  /// The user took longer than `expires_in`; the server forgot the request.
+  expired,
+
+  /// A `ready` was already collected. Reaching this means the app polled after
+  /// it had its answer — a client bug, not a state worth explaining to a user.
+  consumed,
+}
+
+/// One `/poll` answer.
+class ConnectorPollResult {
+  const ConnectorPollResult({
+    required this.status,
+    required this.connector,
+    this.error = '',
+    this.token,
+  });
+
+  final ConnectorPollStatus status;
+  final String connector;
+
+  /// The provider's own words, when [status] is [ConnectorPollStatus.failed].
+  /// Raw and unpolished, so the screen pairs it with a sentence of its own
+  /// rather than showing it alone.
+  final String error;
+
+  /// Present only on [ConnectorPollStatus.ready].
+  ///
+  /// ⚠️ **This is the one and only delivery.** Write it to disk before doing
+  /// anything else with it — polling again returns `consumed` with no token,
+  /// and there is no other way to get it back.
+  final ConnectorToken? token;
+}
+
+/// The Grid connectors gateway: catalog, authorization, refresh, disconnect.
 ///
-/// The gateway is a **smart** server and this is a deliberately **dumb**
-/// client: the backend mints `state`, holds every provider's `client_id` and
-/// `client_secret`, performs the code-for-token exchange, and stores the result
-/// encrypted. What comes back to us through the loopback callback is a gateway
-/// session handle, never a provider credential. Adding a provider is a row in
-/// the backend's config table and *no* app change at all — which is the whole
-/// reason to adopt this rather than build a second gateway.
+/// A deliberately dumb client. The gateway mints `state`, holds every
+/// provider's `client_id` and `client_secret`, performs the code-for-token
+/// exchange server-side, and renders the MCP entry per that provider's own
+/// header convention. Adding a provider — even one with an unusual header like
+/// `X-Figma-Token` — is a config row on their side and no app change at all.
 ///
-/// Every method returns `(value, error)` and never throws: each one is behind a
-/// button, and a button needs a line to show rather than an exception to
+/// Every method returns `(value, error)` and never throws: each one sits behind
+/// a button, and a button needs a line to show rather than an exception to
 /// swallow.
 class ConnectorGatewayClient {
   const ConnectorGatewayClient({
@@ -72,91 +125,85 @@ class ConnectorGatewayClient {
     this.timeout = const Duration(seconds: 20),
   });
 
+  /// The app's own control plane — same host, same session Bearer the catalog
+  /// already uses. No second backend and no second sign-in.
   final String apiUrl;
 
-  /// Null or empty when signed out. Every gateway call needs a user session —
-  /// the connector is being linked to an account, not to a machine.
   final String? sessionToken;
 
   final Duration timeout;
 
+  /// Everything connector-related lives under this prefix.
+  static const String pathPrefix = 'v1/grid';
+
   static Uri endpoint(String apiUrl, String path) {
     final base = apiUrl.endsWith('/') ? apiUrl : '$apiUrl/';
-    return Uri.parse('$base$path');
+    return Uri.parse('$base$pathPrefix/$path');
   }
 
-  /// Ask the gateway to start a link. [redirectUri] is this app's loopback
-  /// listener, already bound — the port is known before this call, so nothing
-  /// here has to guess it.
-  Future<(AuthorizeGrant?, ConnectorGatewayError?)> authorize({
-    required String connector,
-    required String deviceId,
-    required String deviceType,
-    required String redirectUri,
-  }) async {
+  /// The catalog with this user's connection status. Never carries a token —
+  /// those come only from [poll] and [refresh].
+  Future<(List<ConnectorCatalogEntry>?, ConnectorGatewayError?)> connectors() {
+    return _send(
+      'GET',
+      'connectors',
+      parse: parseGatewayConnectors,
+      failure: "Couldn't load the connectors.",
+    );
+  }
+
+  /// Begin an authorization. The returned URL is single-use.
+  Future<(ConnectorAuthorization?, ConnectorGatewayError?)> start(
+    String connector,
+  ) {
     return _send(
       'POST',
-      'v1/connectors/authorize',
-      body: {
-        'connector': connector,
-        'device_id': deviceId,
-        'device_type': deviceType,
-        'redirect_uri': redirectUri,
-      },
-      parse: parseAuthorizeGrant,
+      'connectors/start',
+      body: {'connector': connector},
+      parse: (raw) => parseAuthorization(raw, fallbackConnector: connector),
       failure: "Couldn't start the sign-in.",
     );
   }
 
-  /// Finalize a link with the handles the loopback callback received.
-  ///
-  /// This is where `state` is actually checked. The app can't validate it
-  /// itself — the gateway minted it and never showed it to us — so whatever
-  /// arrived at the listener is a *candidate* until this call accepts it. That
-  /// makes the server's verdict the security boundary, which is the right place
-  /// for it: single-use, bound to the device and user, and expiring on its own.
-  Future<(bool, ConnectorGatewayError?)> finalizeCallback({
-    required String code,
-    required String state,
-  }) async {
-    final (ok, error) = await _send<bool>(
-      'POST',
-      'v1/connectors/oauth/callback',
-      body: {'code': code, 'state': state},
-      parse: (_) => true,
-      failure: "Couldn't finish the sign-in.",
-    );
-    return (ok ?? false, error);
-  }
-
-  /// Every connector's state on this device — the poll that moves a row from
-  /// "Connecting…" to "Connected".
-  Future<(List<DeviceConnector>?, ConnectorGatewayError?)> deviceConnectors(
-    String deviceId,
-  ) {
-    return _send(
-      'GET',
-      'device/$deviceId/connectors',
-      parse: parseDeviceConnectors,
-      failure: "Couldn't read the connectors for this computer.",
-    );
-  }
-
-  /// Unlink at the backend. The app still has to clear its own token and
-  /// re-project afterwards — this only ends the account link.
-  Future<(bool, ConnectorGatewayError?)> disconnect({
+  /// Ask whether the authorization finished. A `ready` here is the only
+  /// delivery of the token — see [ConnectorPollResult.token].
+  Future<(ConnectorPollResult?, ConnectorGatewayError?)> poll(
+    String pickupCode, {
     required String connector,
-    required String deviceId,
-    required String deviceType,
-  }) async {
+  }) {
+    return _send(
+      'POST',
+      'connectors/poll',
+      body: {'pickup_code': pickupCode},
+      parse: (raw) => parsePollResult(raw, fallbackConnector: connector),
+      failure: "Couldn't check the sign-in.",
+    );
+  }
+
+  /// Renew a token before it expires. Only worth calling when the stored entry
+  /// says the provider issues refresh tokens.
+  Future<(ConnectorToken?, ConnectorGatewayError?)> refresh(String connector) {
+    return _send(
+      'POST',
+      'connectors/refresh',
+      body: {'connector': connector},
+      parse: (raw) => parseTokenPayload(raw, fallbackConnector: connector),
+      failure: "Couldn't refresh the connection.",
+    );
+  }
+
+  /// Forget the credential server-side.
+  ///
+  /// This does **not** revoke access at the provider — only the user can do
+  /// that, in the provider's own settings. Whatever the app says about
+  /// disconnecting has to be honest about that.
+  Future<(bool, ConnectorGatewayError?)> disconnect(String connector) async {
     final (ok, error) = await _send<bool>(
       'POST',
-      'v1/connectors/disconnect',
-      body: {
-        'connector': connector,
-        'device_id': deviceId,
-        'device_type': deviceType,
-      },
+      'connectors/disconnect',
+      body: {'connector': connector},
+      // `disconnected: false` only means there was nothing stored to forget,
+      // which is the end state we wanted either way.
       parse: (_) => true,
       failure: "Couldn't disconnect.",
     );
@@ -190,26 +237,12 @@ class ConnectorGatewayClient {
       final response = await request.close().timeout(timeout);
       final raw = await response.transform(utf8.decoder).join();
 
-      // The envelope carries its own verdict, so a 200 with `status != 1` is
-      // still a failure — and its `error_message` is the only text worth
-      // showing. Checking the HTTP code alone would report "signed in" for a
-      // body that says the state expired.
-      final message = parseEnvelopeError(raw);
-      if (message != null) {
-        return (
-          null,
-          ConnectorGatewayError(
-            message,
-            statusCode: response.statusCode,
-            body: raw,
-          ),
-        );
-      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return (
           null,
           ConnectorGatewayError(
-            '$failure ${_httpHint(response.statusCode, uri)}',
+            // The server's own sentence beats ours whenever there is one.
+            parseDetail(raw) ?? '$failure ${_httpHint(response.statusCode)}',
             statusCode: response.statusCode,
             body: raw,
           ),
@@ -236,36 +269,25 @@ class ConnectorGatewayClient {
   }
 }
 
-/// What an HTTP failure with no readable body most likely means.
+/// What an HTTP failure means when the body carried no `detail`.
 ///
-/// This exists because of a real hour lost: pointing the app at the wrong host
-/// returned a 404 HTML page, [parseEnvelopeError] correctly declined to read a
-/// non-JSON body as an error claim, and the user got a bare "Couldn't start the
-/// sign-in." — with the status code, the one piece of evidence that would have
-/// named the problem, dropped on the floor.
-///
-/// So the code is always shown, and the two that have a specific cause say it.
-/// A 404 from a gateway endpoint is nearly always the base URL rather than a
-/// missing connector, and a 401 is the session rather than the request.
-String _httpHint(int statusCode, Uri uri) {
+/// The status code is always named. A 404 once came back as an HTML page from
+/// the wrong host, and without the code the user saw only "Couldn't start the
+/// sign-in." — the one piece of evidence discarded (§10).
+String _httpHint(int statusCode) {
   return switch (statusCode) {
-    404 => 'The grid has no such endpoint (404) — check the gateway URL: $uri',
+    404 => 'The grid has no such endpoint (404).',
     401 || 403 => 'The grid refused this session ($statusCode).',
+    >= 500 => 'The grid had a problem ($statusCode) — try again shortly.',
     _ => 'The grid answered $statusCode.',
   };
 }
 
-/// The business-error line inside the envelope, or null when the body doesn't
-/// claim a failure.
+/// The gateway's error line: `{"detail": "…"}`.
 ///
-/// The gateway reports business failures as HTTP 200 with `status != 1` and an
-/// `error_message` — an expired `state`, a connector already linked. The
-/// message is the useful part and the status code isn't, so it's read first and
-/// preferred over any generic line the caller would otherwise show.
-///
-/// A body that isn't JSON reads as "no claim" rather than as an error: the
-/// caller still has the HTTP status to fall back on.
-String? parseEnvelopeError(String raw) {
+/// Written for a person to read, so it is shown as-is. Null when the body is
+/// not JSON or has no detail, and the caller falls back to the status code.
+String? parseDetail(String raw) {
   final Object? decoded;
   try {
     decoded = jsonDecode(raw);
@@ -273,68 +295,69 @@ String? parseEnvelopeError(String raw) {
     return null;
   }
   if (decoded is! Map<String, dynamic>) return null;
-  final status = decoded['status'];
-  if (status is! int || status == 1) return null;
-
-  for (final key in ['error_message', 'message', 'system_message']) {
-    final value = decoded[key];
-    if (value is String && value.isNotEmpty) return value;
-  }
-  final data = decoded['data'];
-  if (data is Map<String, dynamic> && data['error_message'] is String) {
-    final value = data['error_message'] as String;
-    if (value.isNotEmpty) return value;
-  }
-  return 'The grid refused the request.';
+  final detail = decoded['detail'];
+  return detail is String && detail.isNotEmpty ? detail : null;
 }
 
-/// Reads `{"status": 1, "data": {"authorize_url": "…", "auth_type": "oauth"}}`.
+/// Reads `GET /v1/grid/connectors`.
 ///
-/// Null when there's no usable URL — the caller shows "couldn't start" rather
-/// than opening a browser at nothing.
-AuthorizeGrant? parseAuthorizeGrant(String raw) {
-  final data = _envelopeData(raw);
-  if (data is! Map<String, dynamic>) return null;
-  final url = data['authorize_url'];
-  if (url is! String || url.isEmpty) return null;
-  return AuthorizeGrant(
-    authorizeUrl: url,
-    authType: data['auth_type'] is String ? data['auth_type'] as String : '',
-  );
-}
-
-/// Reads the per-device connector list.
-///
-/// Lenient per row, like every other list parser here: an entry missing its
-/// `code` is dropped and the rest still show. Null only when the response isn't
-/// a list at all, so the caller can tell "nothing linked" (`[]`) from "couldn't
-/// read that" — the two mean different things to a screen.
-List<DeviceConnector>? parseDeviceConnectors(String raw) {
-  final data = _envelopeData(raw);
-  final list = data is Map<String, dynamic> ? data['connectors'] : data;
+/// Null means "not a catalog response at all", so the caller can fall back to
+/// the bundled asset rather than blanking the screen. An empty list is a valid
+/// answer and comes back as `[]`.
+List<ConnectorCatalogEntry>? parseGatewayConnectors(String raw) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map<String, dynamic>) return null;
+  final list = decoded['connectors'];
   if (list is! List) return null;
 
-  final connectors = <DeviceConnector>[];
+  final entries = <ConnectorCatalogEntry>[];
   for (final entry in list) {
     if (entry is! Map<String, dynamic>) continue;
-    final code = entry['code'] ?? entry['connector'];
+    final code = entry['code'];
     if (code is! String || code.isEmpty) continue;
-    connectors.add(
-      DeviceConnector(
+    final label = entry['label'];
+    entries.add(
+      ConnectorCatalogEntry(
+        id: code,
         code: code,
-        status: parseConnectorLinkStatus(entry['status']),
-        errorMessage: entry['error'] is String
-            ? entry['error'] as String
-            : entry['error_message'] is String
-            ? entry['error_message'] as String
+        // The gateway sends no display name today. The code is a poor label but
+        // an honest one; the bundled catalog supplies nicer text where it has
+        // an entry for the same code.
+        label: label is String && label.isNotEmpty ? label : code,
+        description: entry['description'] is String
+            ? entry['description'] as String
             : '',
+        imageUrl: entry['image_url'] is String
+            ? entry['image_url'] as String
+            : '',
+        mcpUrl: entry['mcp_url'] is String ? entry['mcp_url'] as String : '',
+        // Only the literal "app" can be driven from here. "pat" means the user
+        // must paste a token by hand and there is no flow to call at all.
+        authMethod: entry['auth_type'] == 'app'
+            ? ConnectorAuthMethod.app
+            : ConnectorAuthMethod.manual,
+        mcpReady: entry['mcp_ready'] == true,
+        linkedAtServer: entry['status'] == 'connected',
+        accountName: entry['account_name'] is String
+            ? entry['account_name'] as String
+            : '',
+        canRefresh: entry['refresh'] == true,
       ),
     );
   }
-  return connectors;
+  return sortCatalog(entries);
 }
 
-Object? _envelopeData(String raw) {
+/// Reads `POST /v1/grid/connectors/start`.
+ConnectorAuthorization? parseAuthorization(
+  String raw, {
+  required String fallbackConnector,
+}) {
   final Object? decoded;
   try {
     decoded = jsonDecode(raw);
@@ -342,7 +365,125 @@ Object? _envelopeData(String raw) {
     return null;
   }
   if (decoded is! Map<String, dynamic>) return null;
-  return decoded['data'];
+
+  final url = decoded['authorize_url'];
+  final pickup = decoded['pickup_code'];
+  // Missing either one leaves nothing to do: no page to open, or no way to
+  // collect the result once the user finishes.
+  if (url is! String || url.isEmpty) return null;
+  if (pickup is! String || pickup.isEmpty) return null;
+
+  return ConnectorAuthorization(
+    connector: decoded['connector'] is String
+        ? decoded['connector'] as String
+        : fallbackConnector,
+    authorizeUrl: url,
+    pickupCode: pickup,
+    // Clamped: a server that says "poll every 0 seconds" would spin, and one
+    // that says "every hour" would look broken.
+    pollInterval: Duration(
+      seconds: decoded['poll_interval'] is int
+          ? (decoded['poll_interval'] as int).clamp(1, 60)
+          : 2,
+    ),
+    expiresIn: Duration(
+      seconds: decoded['expires_in'] is int
+          ? (decoded['expires_in'] as int).clamp(30, 3600)
+          : 600,
+    ),
+  );
+}
+
+/// Reads `POST /v1/grid/connectors/poll`.
+///
+/// Every outcome is HTTP 200 — the failures included — so `status` is the only
+/// thing that says what happened.
+ConnectorPollResult? parsePollResult(
+  String raw, {
+  required String fallbackConnector,
+}) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map<String, dynamic>) return null;
+
+  final status = switch (decoded['status']) {
+    'pending' => ConnectorPollStatus.pending,
+    'ready' => ConnectorPollStatus.ready,
+    'failed' => ConnectorPollStatus.failed,
+    'expired' => ConnectorPollStatus.expired,
+    'consumed' => ConnectorPollStatus.consumed,
+    // An unknown status is no reason to keep polling forever, and it is
+    // certainly not success.
+    _ => null,
+  };
+  if (status == null) return null;
+
+  final connector = decoded['connector'] is String
+      ? decoded['connector'] as String
+      : fallbackConnector;
+  return ConnectorPollResult(
+    status: status,
+    connector: connector,
+    error: decoded['error'] is String ? decoded['error'] as String : '',
+    token: status == ConnectorPollStatus.ready
+        ? tokenFromPayload(decoded, connector)
+        : null,
+  );
+}
+
+/// Reads `POST /v1/grid/connectors/refresh`.
+ConnectorToken? parseTokenPayload(
+  String raw, {
+  required String fallbackConnector,
+}) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map<String, dynamic>) return null;
+  final connector = decoded['connector'] is String
+      ? decoded['connector'] as String
+      : fallbackConnector;
+  return tokenFromPayload(decoded, connector);
+}
+
+/// Builds the stored token from a `ready` or `refresh` payload.
+///
+/// `mcp_entry` may legitimately be null — five connectors are OAuth-capable
+/// with no MCP server behind them. The token is real and the account is linked;
+/// there is simply nothing to hand the agent.
+ConnectorToken? tokenFromPayload(
+  Map<String, dynamic> payload,
+  String connector,
+) {
+  final access = payload['access_token'];
+  if (access is! String || access.isEmpty) return null;
+
+  final expiresAt = payload['expires_at'];
+  return ConnectorToken(
+    connector: connector,
+    accessToken: access,
+    refreshToken: payload['refresh_token'] is String
+        ? payload['refresh_token'] as String
+        : null,
+    expiresAt: expiresAt is int && expiresAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000)
+        : null,
+    scope: payload['scope'] is String ? payload['scope'] as String : '',
+    tokenType: payload['token_type'] is String
+        ? payload['token_type'] as String
+        : 'Bearer',
+    accountName: payload['account_name'] is String
+        ? payload['account_name'] as String
+        : '',
+    mcpEntry: McpEntry.fromJson(payload['mcp_entry']),
+  );
 }
 
 /// The gateway client for the signed-in session. Overridable in tests so no
