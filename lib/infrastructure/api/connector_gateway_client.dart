@@ -209,7 +209,7 @@ class ConnectorGatewayClient {
         return (
           null,
           ConnectorGatewayError(
-            failure,
+            '$failure ${_httpHint(response.statusCode, uri)}',
             statusCode: response.statusCode,
             body: raw,
           ),
@@ -234,6 +234,25 @@ class ConnectorGatewayClient {
       client.close(force: true);
     }
   }
+}
+
+/// What an HTTP failure with no readable body most likely means.
+///
+/// This exists because of a real hour lost: pointing the app at the wrong host
+/// returned a 404 HTML page, [parseEnvelopeError] correctly declined to read a
+/// non-JSON body as an error claim, and the user got a bare "Couldn't start the
+/// sign-in." — with the status code, the one piece of evidence that would have
+/// named the problem, dropped on the floor.
+///
+/// So the code is always shown, and the two that have a specific cause say it.
+/// A 404 from a gateway endpoint is nearly always the base URL rather than a
+/// missing connector, and a 401 is the session rather than the request.
+String _httpHint(int statusCode, Uri uri) {
+  return switch (statusCode) {
+    404 => 'The grid has no such endpoint (404) — check the gateway URL: $uri',
+    401 || 403 => 'The grid refused this session ($statusCode).',
+    _ => 'The grid answered $statusCode.',
+  };
 }
 
 /// The business-error line inside the envelope, or null when the body doesn't

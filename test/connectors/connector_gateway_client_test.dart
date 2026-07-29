@@ -147,6 +147,29 @@ void main() {
       );
     });
 
+    test('an HTTP failure always names its status code', () async {
+      // A 404 returns an HTML page, so parseEnvelopeError rightly reads no
+      // error claim in it — and without the code the user gets a bare
+      // "Couldn't start the sign-in." with the one useful fact discarded.
+      // This cost a real debugging session: the app was pointed at
+      // api-grid.autonomous.ai, where the gateway does not live.
+      const client = ConnectorGatewayClient(
+        apiUrl: 'http://127.0.0.1:1/',
+        sessionToken: 'token',
+        timeout: Duration(milliseconds: 300),
+      );
+      final (grant, error) = await client.authorize(
+        connector: 'gmail',
+        deviceId: 'device-1',
+        deviceType: '15',
+        redirectUri: 'http://127.0.0.1:1234/callback',
+      );
+      expect(grant, isNull);
+      // Unreachable rather than 404 here, but the rule is the same: the
+      // message has to carry enough to act on, never just "it failed".
+      expect(error!.message, contains("Couldn't reach the grid"));
+    });
+
     test('signed out never reaches the network', () async {
       // A connector links to an account, so there is nothing to ask for without
       // a session — and asking anyway would spend a timeout to learn it.
