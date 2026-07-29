@@ -5,9 +5,10 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../logic/hermes_plugin.dart';
+import '../../../agents/logic/agent_plugin.dart';
 import '../../logic/plugins_controller.dart';
-import 'extension_tile_surface.dart';
+import '../../../../shared/widgets/extension_list.dart';
+import '../../../../shared/widgets/extension_tile_surface.dart';
 
 /// The plugins Hermes knows about: what each one is, and a switch that turns it
 /// on for the assistant. A plugin pulled from Git can also be removed; a bundled
@@ -15,7 +16,7 @@ import 'extension_tile_surface.dart';
 class PluginList extends StatelessWidget {
   const PluginList({super.key, required this.plugins, this.filtered = false});
 
-  final List<HermesPlugin> plugins;
+  final List<AgentPlugin> plugins;
 
   /// A search is narrowing the list, so an empty [plugins] means "nothing
   /// matched". Empty with no search means Hermes reported no plugins at all —
@@ -35,78 +36,28 @@ class PluginList extends StatelessWidget {
                   'from a Git repository to give it a new tool.',
             );
     }
-    final items = _sectioned(plugins);
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: items.length,
-      // Extra air before a header, so a new block reads as a break rather than
-      // as one more row. Separators only ever fall between two items, so the
-      // lookahead is in range and the first header keeps its flush top edge.
-      separatorBuilder: (context, i) =>
-          SizedBox(height: items[i + 1] is _Header ? 18 : 8),
-      itemBuilder: (context, i) => switch (items[i]) {
-        _Header(:final label, :final count) => ExtensionSectionHeader(
-          label: label,
-          count: count,
-        ),
-        _Row(:final plugin) => _PluginRow(plugin: plugin),
-      },
+    // Enabled plugins first, under their own headers. Hermes ships ~60 of
+    // these and all but a few are off, so an alphabetical wall buries the
+    // handful that are actually loaded among rows that do nothing. "What is my
+    // assistant running?" is the question this screen exists to answer, and it
+    // should be answerable without reading sixty switches.
+    final sections = sectionExtensionItems(
+      items: plugins,
+      sectionOf: (p) => p.enabled ? 'On' : 'Available',
+      leading: const ['On', 'Available'],
+      filtered: filtered,
+    );
+    return ExtensionList(
+      sections: sections,
+      rowBuilder: (context, plugin) => _PluginRow(plugin: plugin),
     );
   }
-
-  /// Enabled plugins first, under their own headers.
-  ///
-  /// Hermes ships ~60 of these and all but a few are off, so an alphabetical
-  /// wall buries the handful that are actually loaded among rows that do
-  /// nothing. "What is my assistant running?" is the question this screen exists
-  /// to answer, and it should be answerable without reading sixty switches.
-  ///
-  /// While a search is running there are no sections: the user is answering a
-  /// different question, and a two-hit list doesn't need chapters.
-  List<_Item> _sectioned(List<HermesPlugin> plugins) {
-    if (filtered) return [for (final p in plugins) _Row(p)];
-
-    final on = [
-      for (final p in plugins)
-        if (p.enabled) p,
-    ];
-    final off = [
-      for (final p in plugins)
-        if (!p.enabled) p,
-    ];
-    if (on.isEmpty || off.isEmpty) return [for (final p in plugins) _Row(p)];
-
-    return [
-      _Header('On', on.length),
-      for (final p in on) _Row(p),
-      _Header('Available', off.length),
-      for (final p in off) _Row(p),
-    ];
-  }
-}
-
-/// One entry in the built list — a section header or a plugin row.
-sealed class _Item {
-  const _Item();
-}
-
-class _Header extends _Item {
-  const _Header(this.label, this.count);
-
-  final String label;
-  final int count;
-}
-
-class _Row extends _Item {
-  const _Row(this.plugin);
-
-  final HermesPlugin plugin;
 }
 
 class _PluginRow extends ConsumerStatefulWidget {
   const _PluginRow({required this.plugin});
 
-  final HermesPlugin plugin;
+  final AgentPlugin plugin;
 
   @override
   ConsumerState<_PluginRow> createState() => _PluginRowState();

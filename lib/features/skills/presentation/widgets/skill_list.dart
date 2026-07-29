@@ -5,10 +5,10 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../../agent/logic/hermes_skill_installer.dart';
-import '../../logic/agent_skill.dart';
-import '../../logic/skill_author.dart';
-import 'extension_tile_surface.dart';
+import '../../../agents/logic/agent_skill.dart';
+import '../../logic/skills_controller.dart';
+import '../../../../shared/widgets/extension_list.dart';
+import '../../../../shared/widgets/extension_tile_surface.dart';
 import 'new_skill_dialog.dart';
 
 /// The skills installed for the assistant — instructions it follows for one job
@@ -31,84 +31,33 @@ class SkillList extends StatelessWidget {
           ? const EmptyState.noMatches(message: 'No skills match that search.')
           : const _Empty();
     }
-    final items = _sectioned(skills);
-    // Read the answer off the built list rather than re-deriving it: _sectioned
-    // also falls back to flat when every skill shares one category, and a row in
-    // that list still has to name its own — otherwise the category disappears
-    // from the screen entirely.
-    final headed = items.any((item) => item is _Header);
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: items.length,
-      // See PluginList: extra air before a header; the lookahead is in range
-      // because separators only fall between two items.
-      separatorBuilder: (context, i) =>
-          SizedBox(height: items[i + 1] is _Header ? 18 : 8),
-      itemBuilder: (context, i) => switch (items[i]) {
-        _Header(:final label, :final count) => ExtensionSectionHeader(
-          label: label,
-          count: count,
-        ),
-        _Row(:final skill) => _SkillRow(skill: skill, showCategory: !headed),
+    // Grouped by the folder Hermes files each skill under, the user's own
+    // first — they're the ones they came here to find. Hermes ships ~70
+    // skills, so a flat alphabetical list mixes the two the user wrote in
+    // among seventy they didn't. A skill sitting loose at the top of the
+    // folder has no category; 'Other' gives it a heading of its own rather
+    // than hiding it under someone else's.
+    final sections = sectionExtensionItems(
+      items: skills,
+      sectionOf: (s) => switch (s.category) {
+        '' => 'Other',
+        kMySkillsCategory => 'My skills',
+        final category => category,
       },
+      leading: const ['My skills'],
+      filtered: filtered,
+    );
+    // Read the answer off the built sections rather than re-deriving it: the
+    // grouping also falls back to flat when every skill shares one category,
+    // and a row in that list still has to name its own — otherwise the
+    // category disappears from the screen entirely.
+    final headed = sectionsShowHeaders(sections);
+    return ExtensionList(
+      sections: sections,
+      rowBuilder: (context, skill) =>
+          _SkillRow(skill: skill, showCategory: !headed),
     );
   }
-
-  /// Grouped by the folder Hermes files each skill under, the user's own first.
-  ///
-  /// Hermes ships ~70 skills, so a flat alphabetical list mixes the two the user
-  /// wrote in among seventy they didn't — and the category was already computed
-  /// for exactly this, then thrown away by rendering flat.
-  ///
-  /// No sections while searching: chapters over a three-hit list are noise.
-  List<_Item> _sectioned(List<AgentSkill> skills) {
-    if (filtered) return [for (final s in skills) _Row(s)];
-
-    final groups = <String, List<AgentSkill>>{};
-    for (final skill in skills) {
-      // A skill sitting loose at the top of the folder has no category; give it
-      // a heading of its own rather than hiding it under someone else's.
-      final key = skill.category.isEmpty ? 'Other' : skill.category;
-      groups.putIfAbsent(key, () => []).add(skill);
-    }
-    if (groups.length < 2) return [for (final s in skills) _Row(s)];
-
-    final names = groups.keys.toList()
-      ..sort((a, b) {
-        // The user's own skills lead — they're the ones they came here to find.
-        if (a == kMySkillsCategory) return -1;
-        if (b == kMySkillsCategory) return 1;
-        return a.compareTo(b);
-      });
-
-    return [
-      for (final name in names) ...[
-        _Header(
-          name == kMySkillsCategory ? 'My skills' : name,
-          groups[name]!.length,
-        ),
-        for (final skill in groups[name]!) _Row(skill),
-      ],
-    ];
-  }
-}
-
-/// One entry in the built list — a section header or a skill row.
-sealed class _Item {
-  const _Item();
-}
-
-class _Header extends _Item {
-  const _Header(this.label, this.count);
-
-  final String label;
-  final int count;
-}
-
-class _Row extends _Item {
-  const _Row(this.skill);
-
-  final AgentSkill skill;
 }
 
 class _SkillRow extends ConsumerStatefulWidget {
@@ -134,13 +83,7 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
 
     final toast = ToastScope.of(context);
     setState(() => _busy = true);
-    String? failure;
-    try {
-      await ref.read(skillAuthorProvider).delete(skill.path);
-    } on Object catch (error) {
-      failure = "Couldn't delete the skill: $error";
-    }
-    ref.invalidate(agentSkillsProvider);
+    final failure = await ref.read(skillsProvider.notifier).delete(skill);
     if (mounted) setState(() => _busy = false);
     toast?.show(
       failure != null
@@ -354,13 +297,9 @@ class _ReinstallGridSkillsButtonState
 
   Future<void> _reinstall() async {
     setState(() => _busy = true);
-    String? failure;
-    try {
-      await ref.read(hermesSkillInstallerProvider).install();
-      ref.invalidate(agentSkillsProvider);
-    } on Object catch (error) {
-      failure = "Couldn't install Grid's skills: $error";
-    }
+    final failure = await ref
+        .read(skillsProvider.notifier)
+        .reinstallGridSkills();
     if (!mounted) return;
     setState(() => _busy = false);
     ToastScope.showResult(

@@ -89,10 +89,12 @@ void main() {
     );
 
     test('ranked models → ready, best-first', () async {
-      final suggestion = CatalogSuggestion(models: [
-        _pick('Qwen/Qwen2.5-3B-Instruct-GGUF'),
-        _pick('meta-llama/Llama-3.2-3B-Instruct-GGUF'),
-      ]);
+      final suggestion = CatalogSuggestion(
+        models: [
+          _pick('Qwen/Qwen2.5-3B-Instruct-GGUF'),
+          _pick('meta-llama/Llama-3.2-3B-Instruct-GGUF'),
+        ],
+      );
       final container = _container(fn: _fnReturning((suggestion, null)));
 
       final outcome = await container.read(suggestedCatalogProvider.future);

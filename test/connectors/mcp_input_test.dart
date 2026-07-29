@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/plugins/logic/mcp_input.dart';
+import 'package:grid_app/features/connectors/logic/mcp_input.dart';
 
 void main() {
   group('parseArgLines', () {

@@ -82,18 +82,21 @@ typedef CatalogListArgs = ({String sort, String query});
 /// (the CLI `grid catalog` fallback has no such fields). Returns null when the
 /// user isn't signed in or the call fails.
 final catalogListProvider =
-    FutureProvider.family<List<CatalogListEntry>?, CatalogListArgs>((ref, args) async {
-  final token = ref.watch(sessionProvider).sessionToken;
-  if (token == null || token.isEmpty) return null;
-  final apiUrl = ref.watch(gridApiUrlProvider);
-  final (entries, _) = await ModelCatalogClient.list(
-    apiUrl: apiUrl,
-    sessionToken: token,
-    sort: args.sort.isEmpty ? null : args.sort,
-    query: args.query.isEmpty ? null : args.query,
-  );
-  return entries;
-});
+    FutureProvider.family<List<CatalogListEntry>?, CatalogListArgs>((
+      ref,
+      args,
+    ) async {
+      final token = ref.watch(sessionProvider).sessionToken;
+      if (token == null || token.isEmpty) return null;
+      final apiUrl = ref.watch(gridApiUrlProvider);
+      final (entries, _) = await ModelCatalogClient.list(
+        apiUrl: apiUrl,
+        sessionToken: token,
+        sort: args.sort.isEmpty ? null : args.sort,
+        query: args.query.isEmpty ? null : args.query,
+      );
+      return entries;
+    });
 
 /// Device-aware model suggestions for the model manager: read the session token,
 /// probe the hardware, and ask `POST /v1/grid/catalog` for the ranked picks.

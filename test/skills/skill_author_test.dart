@@ -1,8 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/plugins/logic/agent_skill.dart';
-import 'package:grid_app/features/plugins/logic/skill_author.dart';
+import 'package:grid_app/features/agent/logic/hermes_skill_scanner.dart';
+import 'package:grid_app/features/agents/logic/agent_skill.dart';
+import 'package:grid_app/features/skills/logic/skill_author.dart';
 
 void main() {
   group('skillSlug', () {
@@ -62,7 +63,7 @@ void main() {
 
       expect(
         dir.path,
-        '${home.path}/.hermes/skills/$kMySkillsCategory/weekly-report',
+        '${home.path}/.grid/skills/$kMySkillsCategory/weekly-report',
       );
       final markdown = File('${dir.path}/SKILL.md').readAsStringSync();
       expect(markdown, contains('name: weekly-report'));
@@ -171,6 +172,52 @@ void main() {
         expect(await AgentSkillScanner(home: home.path).scan(), isEmpty);
       },
     );
+
+    test(
+      'editing a legacy skill keeps it in the agent\'s own folder',
+      () async {
+        final author = SkillAuthor(home: home.path);
+        // A skill written before the shared store existed.
+        final legacy = Directory(
+          '${home.path}/.hermes/skills/$kMySkillsCategory/old-notes',
+        );
+        await legacy.create(recursive: true);
+        await File('${legacy.path}/SKILL.md').writeAsString(
+          skillMarkdown(name: 'Old notes', description: 'd', instructions: 'i'),
+        );
+
+        final dir = await author.edit(
+          previousSlug: 'old-notes',
+          name: 'New notes',
+          description: 'd',
+          instructions: 'i',
+        );
+
+        // Edited in place — never silently moved between stores.
+        expect(
+          dir.path,
+          '${home.path}/.hermes/skills/$kMySkillsCategory/new-notes',
+        );
+        expect(legacy.existsSync(), isFalse);
+        expect(
+          Directory(
+            '${home.path}/.grid/skills/$kMySkillsCategory/new-notes',
+          ).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test('exists sees a legacy skill, so a new one can\'t shadow it', () async {
+      final author = SkillAuthor(home: home.path);
+      final legacy = Directory(
+        '${home.path}/.hermes/skills/$kMySkillsCategory/taken',
+      );
+      await legacy.create(recursive: true);
+      await File('${legacy.path}/SKILL.md').writeAsString('body');
+
+      expect(author.exists('Taken'), isTrue);
+    });
 
     test('refuses to delete anything outside the skills folder', () async {
       final author = SkillAuthor(home: home.path);

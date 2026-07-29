@@ -6,7 +6,7 @@ import '../../../shared/widgets/app_icon_button.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../plugins/presentation/widgets/extension_tile_surface.dart';
+import '../../../shared/widgets/extension_tile_surface.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
 import '../logic/model_group.dart';

@@ -49,6 +49,10 @@ flutter:
   assets:
     - assets/tray/tray_icon.png
     - assets/brand/grid_logo_bg.png
+    # The connectors catalog ships with the app so the screen makes no network
+    # calls; the schema is versioned so a remote copy can replace it later
+    # without an app release.
+    - assets/connectors/catalog.json
     # Agent marks, bundled rather than fetched from the CDN they came from: the
     # Agents screen makes no network calls at all, and an icon that arrives late
     # would pop into a row that has already been laid out.

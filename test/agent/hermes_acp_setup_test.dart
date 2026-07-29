@@ -102,7 +102,9 @@ void main() {
   group('ensuring a keyless web-search backend', () {
     test('installs the free ddgs package into the very interpreter Hermes runs '
         'on, so its native web_search has a provider', () {
-      final args = hermesWebSearchInstallArgs('/g/tools/hermes-agent/bin/python');
+      final args = hermesWebSearchInstallArgs(
+        '/g/tools/hermes-agent/bin/python',
+      );
       expect(kHermesWebSearchPackage, 'ddgs');
       expect(args, containsAllInOrder(['pip', 'install']));
       // Pinned to Hermes's own interpreter — a backend in any other environment

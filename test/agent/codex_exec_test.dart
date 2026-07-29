@@ -188,22 +188,25 @@ void main() {
       expect(change.kind, CodexFileChangeKind.add);
     });
 
-    test('an in-flight apply has written nothing yet, so it surfaces nothing', () {
-      expect(
-        parseCodexEvent({
-          'type': 'item.started',
-          'item': {
-            'id': 'f1',
-            'type': 'file_change',
-            'status': 'in_progress',
-            'changes': [
-              {'path': '/tmp/a.txt', 'kind': 'add'},
-            ],
-          },
-        }, {}),
-        isNull,
-      );
-    });
+    test(
+      'an in-flight apply has written nothing yet, so it surfaces nothing',
+      () {
+        expect(
+          parseCodexEvent({
+            'type': 'item.started',
+            'item': {
+              'id': 'f1',
+              'type': 'file_change',
+              'status': 'in_progress',
+              'changes': [
+                {'path': '/tmp/a.txt', 'kind': 'add'},
+              ],
+            },
+          }, {}),
+          isNull,
+        );
+      },
+    );
 
     test('a file_change carrying no usable path surfaces nothing', () {
       expect(
@@ -402,8 +405,11 @@ void main() {
       );
     });
 
-    test('no plan is not an unfinished one — a plain answer never made one', () {
-      expect(agentPlanUnfinished(const []), isFalse);
-    });
+    test(
+      'no plan is not an unfinished one — a plain answer never made one',
+      () {
+        expect(agentPlanUnfinished(const []), isFalse);
+      },
+    );
   });
 }

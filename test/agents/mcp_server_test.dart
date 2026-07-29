@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/plugins/logic/mcp_server.dart';
+import 'package:grid_app/features/agents/logic/mcp_server.dart';
 
 void main() {
   group('parseMcpServers — reading Hermes\'s config leniently', () {

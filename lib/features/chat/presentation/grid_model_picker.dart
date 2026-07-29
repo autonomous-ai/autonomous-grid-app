@@ -228,7 +228,6 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
   }
 }
 
-
 /// The dropdown body: the scrollable list of what this grid serves. Stateful for
 /// its own scroll controller; the models come from [gridModelCatalogProvider].
 class _ModelMenu extends ConsumerStatefulWidget {

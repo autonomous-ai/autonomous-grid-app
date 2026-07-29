@@ -16,11 +16,11 @@ enum _SortMode { recommended, trending, mostLiked, newest }
 
 extension on _SortMode {
   String get label => switch (this) {
-        _SortMode.recommended => 'Recommended',
-        _SortMode.trending => 'Trending',
-        _SortMode.mostLiked => 'Most liked',
-        _SortMode.newest => 'Newest',
-      };
+    _SortMode.recommended => 'Recommended',
+    _SortMode.trending => 'Trending',
+    _SortMode.mostLiked => 'Most liked',
+    _SortMode.newest => 'Newest',
+  };
 
   /// Value sent as `sort` on `POST /v1/grid/catalog`. Empty for the local-only
   /// "Recommended" mode (the suggest endpoint has its own ranking), which means
@@ -30,11 +30,11 @@ extension on _SortMode {
   /// created` and silently falls back to `trending` for anything else, so
   /// "Newest" has to send `created`, not the word in its label.
   String get apiValue => switch (this) {
-        _SortMode.recommended => '',
-        _SortMode.trending => 'trending',
-        _SortMode.mostLiked => 'likes',
-        _SortMode.newest => 'created',
-      };
+    _SortMode.recommended => '',
+    _SortMode.trending => 'trending',
+    _SortMode.mostLiked => 'likes',
+    _SortMode.newest => 'created',
+  };
 }
 
 /// Whether the column shows everything, only what's already on this computer,
@@ -48,24 +48,25 @@ enum _InstallFilter { all, installed, notInstalled }
 
 extension on _InstallFilter {
   String get label => switch (this) {
-        _InstallFilter.all => 'All models',
-        _InstallFilter.installed => 'Installed',
-        _InstallFilter.notInstalled => 'Not installed',
-      };
+    _InstallFilter.all => 'All models',
+    _InstallFilter.installed => 'Installed',
+    _InstallFilter.notInstalled => 'Not installed',
+  };
 
   /// Whether a row in [state] survives this filter.
   bool admits({required bool installed}) => switch (this) {
-        _InstallFilter.all => true,
-        _InstallFilter.installed => installed,
-        _InstallFilter.notInstalled => !installed,
-      };
+    _InstallFilter.all => true,
+    _InstallFilter.installed => installed,
+    _InstallFilter.notInstalled => !installed,
+  };
 }
 
 class ModelManagerSplitView extends ConsumerStatefulWidget {
   const ModelManagerSplitView({super.key});
 
   @override
-  ConsumerState<ModelManagerSplitView> createState() => _ModelManagerSplitViewState();
+  ConsumerState<ModelManagerSplitView> createState() =>
+      _ModelManagerSplitViewState();
 }
 
 /// How long the search box waits after the last keystroke before it asks the
@@ -151,7 +152,10 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
 
     // Also auto-select when the suggestion transitions from loading → ready
     // (initState's read might race with the first frame).
-    ref.listen<AsyncValue<SuggestOutcome>>(suggestedCatalogProvider, (prev, next) {
+    ref.listen<AsyncValue<SuggestOutcome>>(suggestedCatalogProvider, (
+      prev,
+      next,
+    ) {
       if (_selectedRepoId != null) return;
       final value = next.asData?.value;
       if (value is SuggestReady && value.ranked.isNotEmpty) {
@@ -168,9 +172,9 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-         SizedBox(
-           width: 340,
-           child: _Sidebar(
+        SizedBox(
+          width: 340,
+          child: _Sidebar(
             suggestion: asyncSuggestion,
             selectedRepoId: _selectedRepoId,
             query: _query,
@@ -220,10 +224,11 @@ class _Sidebar extends ConsumerWidget {
   /// column falls back to the plain catalog list instead of an empty panel.
   /// Signed-out isn't one of these — that case has its own message.
   bool get _suggestionFellThrough => switch (suggestion) {
-        AsyncData(:final value) => value is SuggestNoMatch || value is SuggestUnavailable,
-        AsyncError() => true,
-        _ => false,
-      };
+    AsyncData(:final value) =>
+      value is SuggestNoMatch || value is SuggestUnavailable,
+    AsyncError() => true,
+    _ => false,
+  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -298,33 +303,41 @@ class _Sidebar extends ConsumerWidget {
     );
   }
 
-  Widget _suggestionBody(WidgetRef ref, AsyncValue<List<CatalogListEntry>?> listAsync) {
+  Widget _suggestionBody(
+    WidgetRef ref,
+    AsyncValue<List<CatalogListEntry>?> listAsync,
+  ) {
     return switch (suggestion) {
       AsyncData(:final value) => switch (value) {
-          SuggestReady(:final ranked) => _rankedListOrEmpty(_keepPicks(ranked, ref)),
-          SuggestNoMatch() || SuggestUnavailable() => _listBody(ref, listAsync),
-          SuggestSignInRequired() => const _SidebarMessage(
-              icon: Icons.lock_outline,
-              text: 'Sign in to see suggestions.',
-            ),
-        },
+        SuggestReady(:final ranked) => _rankedListOrEmpty(
+          _keepPicks(ranked, ref),
+        ),
+        SuggestNoMatch() || SuggestUnavailable() => _listBody(ref, listAsync),
+        SuggestSignInRequired() => const _SidebarMessage(
+          icon: Icons.lock_outline,
+          text: 'Sign in to see suggestions.',
+        ),
+      },
       AsyncError() => _listBody(ref, listAsync),
       _ => const Center(child: CircularProgressIndicator()),
     };
   }
 
-  Widget _listBody(WidgetRef ref, AsyncValue<List<CatalogListEntry>?> listAsync) {
+  Widget _listBody(
+    WidgetRef ref,
+    AsyncValue<List<CatalogListEntry>?> listAsync,
+  ) {
     return switch (listAsync) {
       AsyncData(:final value) when value != null && value.isNotEmpty =>
         _entryListOrEmpty(_keepEntries(value, ref)),
       AsyncData() => const _SidebarMessage(
-          icon: Icons.search_off_outlined,
-          text: 'No models found.',
-        ),
+        icon: Icons.search_off_outlined,
+        text: 'No models found.',
+      ),
       AsyncError() => const _SidebarMessage(
-          icon: Icons.error_outline,
-          text: "Couldn't load the catalog.",
-        ),
+        icon: Icons.error_outline,
+        text: "Couldn't load the catalog.",
+      ),
       _ => const Center(child: CircularProgressIndicator()),
     };
   }
@@ -349,18 +362,22 @@ class _Sidebar extends ConsumerWidget {
   /// filter is what emptied the column — so the message names the filter rather
   /// than sending the user off to fix a search that isn't wrong.
   Widget get _emptyForFilter => _SidebarMessage(
-        icon: Icons.filter_alt_off_outlined,
-        text: install == _InstallFilter.installed
-            ? "None of these are on this computer yet."
-            : 'Every model here is already installed.',
-      );
+    icon: Icons.filter_alt_off_outlined,
+    text: install == _InstallFilter.installed
+        ? "None of these are on this computer yet."
+        : 'Every model here is already installed.',
+  );
 
   /// The names on disk, as the install test wants them. Read through the widget
   /// ref so the column re-filters the moment a download lands.
-  List<String> _localNames(WidgetRef ref) =>
-      [for (final model in ref.watch(localModelsProvider)) model.name];
+  List<String> _localNames(WidgetRef ref) => [
+    for (final model in ref.watch(localModelsProvider)) model.name,
+  ];
 
-  List<CatalogListEntry> _keepEntries(List<CatalogListEntry> entries, WidgetRef ref) {
+  List<CatalogListEntry> _keepEntries(
+    List<CatalogListEntry> entries,
+    WidgetRef ref,
+  ) {
     if (install == _InstallFilter.all) return entries;
     final local = _localNames(ref);
     return [
@@ -375,7 +392,10 @@ class _Sidebar extends ConsumerWidget {
     ];
   }
 
-  List<CatalogModelPick> _keepPicks(List<CatalogModelPick> picks, WidgetRef ref) {
+  List<CatalogModelPick> _keepPicks(
+    List<CatalogModelPick> picks,
+    WidgetRef ref,
+  ) {
     if (install == _InstallFilter.all) return picks;
     final local = _localNames(ref);
     return [
@@ -506,8 +526,8 @@ class _SidebarTileState extends State<_SidebarTile> {
     final bg = selected
         ? AppSurface.selectedFill
         : (_hovered && widget.onTap != null
-            ? AppSurface.hoverFill
-            : Colors.transparent);
+              ? AppSurface.hoverFill
+              : Colors.transparent);
     final radius = BorderRadius.circular(AppCard.insetRadius);
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -549,8 +569,9 @@ class _SidebarTileState extends State<_SidebarTile> {
                                 errorWidget: (_, __, ___) => Container(
                                   color: Colors.white,
                                   decoration: BoxDecoration(
-                                    color: AppPalette.textSecondary
-                                        .withValues(alpha: 0.15),
+                                    color: AppPalette.textSecondary.withValues(
+                                      alpha: 0.15,
+                                    ),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Icon(
@@ -585,32 +606,44 @@ class _SidebarTileState extends State<_SidebarTile> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   if (widget.likes > 0) ...[
-                                    Icon(Icons.favorite_border,
-                                        size: 14, color: AppPalette.textSecondary),
+                                    Icon(
+                                      Icons.favorite_border,
+                                      size: 14,
+                                      color: AppPalette.textSecondary,
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
                                       _formatCount(widget.likes),
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                          color: AppPalette.textSecondary),
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: AppPalette.textSecondary,
+                                          ),
                                     ),
                                     const SizedBox(width: 12),
                                   ],
                                   if (widget.downloads > 0) ...[
-                                    Icon(Icons.download_outlined,
-                                        size: 14, color: AppPalette.textSecondary),
+                                    Icon(
+                                      Icons.download_outlined,
+                                      size: 14,
+                                      color: AppPalette.textSecondary,
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
                                       _formatCount(widget.downloads),
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                          color: AppPalette.textSecondary),
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: AppPalette.textSecondary,
+                                          ),
                                     ),
                                   ],
                                   if (widget.createdAt case final created?) ...[
                                     const Spacer(),
                                     Text(
                                       _formatDate(created),
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                          color: AppPalette.textSecondary),
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: AppPalette.textSecondary,
+                                          ),
                                     ),
                                   ],
                                 ],
@@ -683,7 +716,11 @@ class _EmptyDetail extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.touch_app_outlined, size: 36, color: AppPalette.textSecondary),
+            Icon(
+              Icons.touch_app_outlined,
+              size: 36,
+              color: AppPalette.textSecondary,
+            ),
             const SizedBox(height: 12),
             Text(
               'Pick a model on the left to see its versions.',
@@ -711,7 +748,10 @@ class _SidebarMessage extends StatelessWidget {
           Icon(icon, size: 18, color: AppPalette.textSecondary),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: TextStyle(color: AppPalette.textSecondary)),
+            child: Text(
+              text,
+              style: TextStyle(color: AppPalette.textSecondary),
+            ),
           ),
         ],
       ),
@@ -808,7 +848,10 @@ class _PillDropdownState<T> extends State<_PillDropdown<T>> {
                   const SizedBox(width: 6),
                   Text(
                     widget.labelOf(widget.value),
-                    style: TextStyle(fontSize: 12, color: AppPalette.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppPalette.textSecondary,
+                    ),
                   ),
                   const SizedBox(width: 2),
                   Icon(
@@ -858,7 +901,10 @@ class _PillOptionRow extends StatelessWidget {
     AppTheme.watch(context);
     final radius = BorderRadius.circular(AppControl.radius);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: _sortRowGutter, vertical: 1),
+      padding: const EdgeInsets.symmetric(
+        horizontal: _sortRowGutter,
+        vertical: 1,
+      ),
       child: Material(
         color: Colors.transparent,
         borderRadius: radius,
@@ -872,7 +918,10 @@ class _PillOptionRow extends StatelessWidget {
               color: selected ? AppSurface.accentWash : Colors.transparent,
               borderRadius: radius,
             ),
-            padding: const EdgeInsets.symmetric(horizontal: _sortRowInnerPad, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: _sortRowInnerPad,
+              vertical: 8,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

@@ -456,10 +456,7 @@ void main() {
           .toList();
 
       expect(updates.last, isA<ChatSendSuccess>());
-      expect(
-        (updates.last as ChatSendSuccess).reply.text,
-        'Here is my plan…',
-      );
+      expect((updates.last as ChatSendSuccess).reply.text, 'Here is my plan…');
     },
   );
 
@@ -704,57 +701,54 @@ void main() {
     expect(service.startCount, 0);
   });
 
-  test(
-    'every turn is sent under the mode showing in the composer — changing it '
-    'lands on the next message, not the next session',
-    () async {
-      final service = _FakeAcp([
-        [const HermesAcpMessage('a')],
-        [const HermesAcpMessage('b')],
-      ]);
-      final container = _container(service, tmp);
-      final sender = container.read(hermesChatSenderProvider);
+  test('every turn is sent under the mode showing in the composer — changing it '
+      'lands on the next message, not the next session', () async {
+    final service = _FakeAcp([
+      [const HermesAcpMessage('a')],
+      [const HermesAcpMessage('b')],
+    ]);
+    final container = _container(service, tmp);
+    final sender = container.read(hermesChatSenderProvider);
 
-      // Start on Ask so the switch below is the only thing that can move the
-      // second turn's mode — the point of the test, whatever the shipped default.
-      container
-          .read(chatPrefsProvider.notifier)
-          .setApproval(AgentApprovalMode.ask);
+    // Start on Ask so the switch below is the only thing that can move the
+    // second turn's mode — the point of the test, whatever the shipped default.
+    container
+        .read(chatPrefsProvider.notifier)
+        .setApproval(AgentApprovalMode.ask);
 
-      await sender
-          .send(
-            network: _credential(),
-            model: 'm',
-            conversationId: 'c1',
-            history: _history('hi'),
-          )
-          .toList();
+    await sender
+        .send(
+          network: _credential(),
+          model: 'm',
+          conversationId: 'c1',
+          history: _history('hi'),
+        )
+        .toList();
 
-      container
-          .read(chatPrefsProvider.notifier)
-          .setApproval(AgentApprovalMode.full);
+    container
+        .read(chatPrefsProvider.notifier)
+        .setApproval(AgentApprovalMode.full);
 
-      await sender
-          .send(
-            network: _credential(),
-            model: 'm',
-            conversationId: 'c1',
-            history: const [
-              ChatMessage(role: ChatRole.user, text: 'hi'),
-              ChatMessage(role: ChatRole.assistant, text: 'a'),
-              ChatMessage(role: ChatRole.user, text: 'now do it'),
-            ],
-          )
-          .toList();
+    await sender
+        .send(
+          network: _credential(),
+          model: 'm',
+          conversationId: 'c1',
+          history: const [
+            ChatMessage(role: ChatRole.user, text: 'hi'),
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+            ChatMessage(role: ChatRole.user, text: 'now do it'),
+          ],
+        )
+        .toList();
 
-      // Same (reused) session, but the second turn ran under the new mode.
-      expect(service.startCount, 1);
-      expect(service.sessions.single.modes, [
-        AgentApprovalMode.ask,
-        AgentApprovalMode.full,
-      ]);
-    },
-  );
+    // Same (reused) session, but the second turn ran under the new mode.
+    expect(service.startCount, 1);
+    expect(service.sessions.single.modes, [
+      AgentApprovalMode.ask,
+      AgentApprovalMode.full,
+    ]);
+  });
 
   test('the agent asking to run a command stalls the turn and puts it to the '
       'user; their answer goes back down the same session', () async {

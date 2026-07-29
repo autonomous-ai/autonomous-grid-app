@@ -5,9 +5,9 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/pill_choice.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../logic/mcp_controller.dart';
+import '../../logic/connectors_controller.dart';
 import '../../logic/mcp_input.dart';
-import '../../logic/mcp_server.dart';
+import '../../../agents/logic/mcp_server.dart';
 
 /// Add a new MCP server to Hermes's config.
 Future<void> showAddMcpDialog(BuildContext context) =>
@@ -111,12 +111,12 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     final server = _build();
     setState(() => _saving = true);
 
-    // A rename writes a new key, so drop the old one first, or both would linger.
+    // A rename writes a new key, so the controller drops the old one first —
+    // one call, so this dialog can't get the two-write dance wrong.
     final previous = widget.existing;
-    if (previous != null && previous.name != server.name) {
-      await controller.remove(previous.name);
-    }
-    final error = await controller.save(server);
+    final error = previous != null && previous.name != server.name
+        ? await controller.rename(previous.name, server)
+        : await controller.save(server);
 
     if (!mounted) return;
     setState(() => _saving = false);
@@ -139,7 +139,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     AppTheme.watch(context);
     final theme = Theme.of(context);
     return AlertDialog(
-      backgroundColor: AppPalette.windowBg,
+      backgroundColor: AppGlass.surfaceFill,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       titlePadding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
@@ -173,6 +173,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
             children: [
               const SizedBox(height: 10),
               LabeledField(
+                fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
                 label: 'Name',
                 controller: _name,
                 hint: 'notion',
@@ -210,6 +211,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
   List<Widget> _localFields() => [
     LabeledField(
+      fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
       label: 'Command',
       controller: _command,
       hint: 'npx',
@@ -217,6 +219,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     ),
     const SizedBox(height: 18),
     LabeledField(
+      fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
       label: 'Arguments (one per line)',
       controller: _args,
       hint: '-y\n@modelcontextprotocol/server-notion',
@@ -225,6 +228,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     ),
     const SizedBox(height: 18),
     LabeledField(
+      fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
       label: 'Environment (KEY=value, one per line)',
       controller: _env,
       hint: 'NOTION_TOKEN=secret_…',
@@ -235,6 +239,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
   List<Widget> _remoteFields() => [
     LabeledField(
+      fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
       label: 'URL',
       controller: _url,
       hint: 'https://mcp.notion.com/mcp',
@@ -242,6 +247,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     ),
     const SizedBox(height: 18),
     LabeledField(
+      fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
       label: 'Headers (Name: value, one per line)',
       controller: _headers,
       hint: 'Authorization: Bearer …',

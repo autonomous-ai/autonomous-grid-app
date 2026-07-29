@@ -34,14 +34,15 @@ class ModelVersion {
   final int? maxCtx;
 
   factory ModelVersion.fromJson(Map<String, dynamic> json) => ModelVersion(
-        version: json['version'] as String?,
-        sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
-        pullSpec: json['pull_spec'] as String?,
-        urls: _stringList(json['urls']),
-        status: VersionStatus.fromJson(json['status'] as String?),
-        maxCtx: (json['max_ctx'] as num?)?.toInt() ??
-            (json['max_context'] as num?)?.toInt(),
-      );
+    version: json['version'] as String?,
+    sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+    pullSpec: json['pull_spec'] as String?,
+    urls: _stringList(json['urls']),
+    status: VersionStatus.fromJson(json['status'] as String?),
+    maxCtx:
+        (json['max_ctx'] as num?)?.toInt() ??
+        (json['max_context'] as num?)?.toInt(),
+  );
 }
 
 /// Per-version runnability verdict (`runnable` | `partial` | `too_large`).
@@ -63,10 +64,10 @@ enum VersionStatus {
   }
 
   String get label => switch (this) {
-        VersionStatus.runnable => 'Runs on this Mac',
-        VersionStatus.partial => 'Partial — slow',
-        VersionStatus.tooLarge => 'Too large for memory',
-      };
+    VersionStatus.runnable => 'Runs on this Mac',
+    VersionStatus.partial => 'Partial — slow',
+    VersionStatus.tooLarge => 'Too large for memory',
+  };
 }
 
 /// Full model record from `GET /v1/grid/catalog/{repo_id}`. [versions] is empty
@@ -113,21 +114,20 @@ class ModelDetail {
   final String? task;
 
   factory ModelDetail.fromJson(Map<String, dynamic> json) => ModelDetail(
-        repoId: json['repo_id'] as String? ?? '',
-        name: json['name'] as String?,
-        versions: [
-          for (final v in (json['versions'] as List?) ?? const [])
-            if (v is Map)
-              ModelVersion.fromJson(v.cast<String, dynamic>()),
-        ],
-        format: json['format'] as String?,
-        architecture: _archLabel(json['arch']),
-        author: _extractAuthor(json['repo_id'] as String?),
-        paramsB: (json['params_b'] as num?)?.toDouble(),
-        likes: (json['likes'] as num?)?.toInt() ?? 0,
-        downloads: (json['downloads'] as num?)?.toInt() ?? 0,
-        task: json['task'] as String?,
-      );
+    repoId: json['repo_id'] as String? ?? '',
+    name: json['name'] as String?,
+    versions: [
+      for (final v in (json['versions'] as List?) ?? const [])
+        if (v is Map) ModelVersion.fromJson(v.cast<String, dynamic>()),
+    ],
+    format: json['format'] as String?,
+    architecture: _archLabel(json['arch']),
+    author: _extractAuthor(json['repo_id'] as String?),
+    paramsB: (json['params_b'] as num?)?.toDouble(),
+    likes: (json['likes'] as num?)?.toInt() ?? 0,
+    downloads: (json['downloads'] as num?)?.toInt() ?? 0,
+    task: json['task'] as String?,
+  );
 
   static String? _archLabel(Object? raw) {
     if (raw is Map) {

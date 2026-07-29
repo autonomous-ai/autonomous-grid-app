@@ -190,7 +190,11 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
   /// safe to install into.
   String? _venvPython() {
     final bin = File(_hermes).parent.path;
-    for (final candidate in ['$bin/python', '$bin/python3', '$bin/python.exe']) {
+    for (final candidate in [
+      '$bin/python',
+      '$bin/python3',
+      '$bin/python.exe',
+    ]) {
       if (File(candidate).existsSync()) return candidate;
     }
     return null;

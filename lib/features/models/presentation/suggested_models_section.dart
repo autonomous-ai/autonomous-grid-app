@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/model_catalog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
-import '../../plugins/presentation/widgets/extension_tile_surface.dart';
+import '../../../shared/widgets/extension_tile_surface.dart';
 import '../logic/context_length.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/model_shelf.dart';
@@ -110,9 +110,8 @@ class _ApiSuggestions extends ConsumerWidget {
         _SuggestedTile(
           model: model,
           recommended: i == 0,
-          downloaded: model.file != null && onDisk.contains(
-            model.file!.toLowerCase(),
-          ),
+          downloaded:
+              model.file != null && onDisk.contains(model.file!.toLowerCase()),
         ),
       );
     }
@@ -135,7 +134,10 @@ class _SectionBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 10),
-        ExtensionSectionHeader(label: 'Suggested for your device', count: count),
+        ExtensionSectionHeader(
+          label: 'Suggested for your device',
+          count: count,
+        ),
         for (final child in children) ...[child, const SizedBox(height: 8)],
       ],
     );
@@ -178,7 +180,10 @@ class _SuggestedTile extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _TitleRow(name: _displayName(model), recommended: recommended),
+                  _TitleRow(
+                    name: _displayName(model),
+                    recommended: recommended,
+                  ),
                   const SizedBox(height: 4),
                   _MetaLine(model: model),
                 ],
@@ -439,7 +444,10 @@ class _SignInHint extends ConsumerWidget {
 String _displayName(CatalogModelPick model) {
   final repo = model.repoId ?? model.file ?? 'Model';
   final tail = repo.contains('/') ? repo.split('/').last : repo;
-  final stripped = tail.replaceAll(RegExp(r'[-_]GGUF$', caseSensitive: false), '');
+  final stripped = tail.replaceAll(
+    RegExp(r'[-_]GGUF$', caseSensitive: false),
+    '',
+  );
   return stripped
       .split(RegExp(r'[-_]'))
       .where((w) => w.isNotEmpty)

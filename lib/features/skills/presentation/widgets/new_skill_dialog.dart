@@ -5,7 +5,8 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../logic/agent_skill.dart';
+import '../../../agents/logic/agent_skill.dart';
+import '../../logic/skills_controller.dart';
 import '../../logic/skill_author.dart';
 import '../../logic/skill_generator.dart';
 
@@ -64,9 +65,9 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
   Future<void> _prefillInstructions(AgentSkill skill) async {
     try {
       final text = await ref
-          .read(skillAuthorProvider)
-          .readInstructions(skill.path);
-      if (!mounted) return;
+          .read(skillWriterProvider)
+          ?.readInstructions(skill.path);
+      if (!mounted || text == null) return;
       _instructions.text = text;
     } on Object {
       // Leave it blank — the user can still rewrite the steps from scratch.
@@ -121,54 +122,53 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
   }
 
   Future<void> _create() {
-    final author = ref.read(skillAuthorProvider);
     final name = _name.text.trim();
-    if (author.exists(name)) {
+    if (ref.read(skillWriterProvider)?.exists(name) ?? false) {
       _say('You already have a skill called "$name".');
       return Future<void>.value();
     }
     return _write(
-      () => author.create(
-        name: name,
-        description: _description.text.trim(),
-        instructions: _instructions.text,
-      ),
+      () => ref
+          .read(skillsProvider.notifier)
+          .create(
+            name: name,
+            description: _description.text.trim(),
+            instructions: _instructions.text,
+          ),
       '"$name" is ready — the assistant can use it.',
     );
   }
 
   Future<void> _update(AgentSkill existing) {
-    final author = ref.read(skillAuthorProvider);
     final name = _name.text.trim();
     final previousSlug = existing.path.split('/').last;
     final renamed = skillSlug(name) != previousSlug;
-    if (renamed && author.exists(name)) {
+    if (renamed && (ref.read(skillWriterProvider)?.exists(name) ?? false)) {
       _say('You already have a skill called "$name".');
       return Future<void>.value();
     }
     return _write(
-      () => author.edit(
-        previousSlug: previousSlug,
-        name: name,
-        description: _description.text.trim(),
-        instructions: _instructions.text,
-      ),
+      () => ref
+          .read(skillsProvider.notifier)
+          .edit(
+            previousSlug: previousSlug,
+            name: name,
+            description: _description.text.trim(),
+            instructions: _instructions.text,
+          ),
       '"$name" saved.',
     );
   }
 
-  Future<void> _write(Future<void> Function() action, String done) async {
+  Future<void> _write(Future<String?> Function() action, String done) async {
     setState(() => _saving = true);
-    try {
-      await action();
-    } on Object catch (error) {
-      if (!mounted) return;
+    final failure = await action();
+    if (!mounted) return;
+    if (failure != null) {
       setState(() => _saving = false);
-      _say("Couldn't save the skill: $error");
+      _say(failure);
       return;
     }
-    ref.invalidate(agentSkillsProvider);
-    if (!mounted) return;
     Navigator.of(context).pop();
     _say(done, severity: ToastSeverity.success);
   }
@@ -184,7 +184,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
     AppTheme.watch(context);
     final theme = Theme.of(context);
     return AlertDialog(
-      backgroundColor: AppPalette.windowBg,
+      backgroundColor: AppGlass.surfaceFill,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       titlePadding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
@@ -219,6 +219,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
             children: [
               const SizedBox(height: 10),
               LabeledField(
+                fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
                 label: 'Name',
                 controller: _name,
                 hint: 'Weekly report',
@@ -230,6 +231,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
               _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
               const SizedBox(height: 20),
               LabeledField(
+                fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
                 label: 'When should the assistant use it?',
                 controller: _description,
                 hint:
@@ -240,6 +242,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
               ),
               const SizedBox(height: 20),
               LabeledField(
+                fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
                 label: 'What should it do?',
                 controller: _instructions,
                 hint: _loading

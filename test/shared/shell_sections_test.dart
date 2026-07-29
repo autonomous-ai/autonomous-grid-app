@@ -6,9 +6,12 @@ void main() {
     test('the developer-only tabs are gated', () {
       expect(ShellSection.grids.devOnly, isTrue);
       expect(ShellSection.debug.devOnly, isTrue);
-      // Messages and Plugins are the Integrations group, gated together — the
-      // whole run vanishes from a shipped build, heading included.
+      // Messages (Integrations) is gated; so is the whole Customize group —
+      // Skills, Connectors and Plugins ship together or not at all, so a
+      // build never shows one extension screen without its siblings.
       expect(ShellSection.messages.devOnly, isTrue);
+      expect(ShellSection.skills.devOnly, isTrue);
+      expect(ShellSection.connectors.devOnly, isTrue);
       expect(ShellSection.plugins.devOnly, isTrue);
       // Everything an end user needs stays visible in every build.
       expect(ShellSection.engines.devOnly, isFalse);

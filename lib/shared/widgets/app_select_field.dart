@@ -226,8 +226,12 @@ class _FieldSurface extends StatelessWidget {
                       summary,
                       overflow: TextOverflow.ellipsis,
                       style: muted
-                          ? kFieldTextStyle.copyWith(color: AppPalette.textFaint)
-                          : kFieldTextStyle.copyWith(fontWeight: FontWeight.w600),
+                          ? kFieldTextStyle.copyWith(
+                              color: AppPalette.textFaint,
+                            )
+                          : kFieldTextStyle.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                     ),
                   ),
                   if (badges.isNotEmpty) ...[

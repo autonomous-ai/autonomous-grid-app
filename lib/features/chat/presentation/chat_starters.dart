@@ -145,7 +145,10 @@ class _Heading extends StatelessWidget {
       TextSpan(
         children: [
           TextSpan(text: '${greeting.substring(0, greeting.length - 1)} in '),
-          TextSpan(text: name, style: TextStyle(color: AppPalette.accent)),
+          TextSpan(
+            text: name,
+            style: TextStyle(color: AppPalette.accent),
+          ),
           const TextSpan(text: '?'),
         ],
       ),

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
-import '../../plugins/presentation/widgets/extension_tile_surface.dart';
+import '../../../shared/widgets/extension_tile_surface.dart';
 import '../logic/auto_router_controller.dart';
 import '../logic/auto_router_models.dart';
 

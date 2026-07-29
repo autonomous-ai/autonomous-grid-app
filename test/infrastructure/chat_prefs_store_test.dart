@@ -60,13 +60,19 @@ void main() {
       expect(ChatPrefs.empty.approval, AgentApprovalMode.full);
     });
 
-    test('a hand-edited or corrupt approval reads as "ask" — a broken file must '
-        'never hand the agent more than the user granted', () {
-      file.parent.createSync(recursive: true);
-      file.writeAsStringSync('{"approval": "sudo-everything"}');
+    test(
+      'a hand-edited or corrupt approval reads as "ask" — a broken file must '
+      'never hand the agent more than the user granted',
+      () {
+        file.parent.createSync(recursive: true);
+        file.writeAsStringSync('{"approval": "sudo-everything"}');
 
-      expect(ChatPrefsStore(file: file).load().approval, AgentApprovalMode.ask);
-    });
+        expect(
+          ChatPrefsStore(file: file).load().approval,
+          AgentApprovalMode.ask,
+        );
+      },
+    );
 
     test('the chosen theme survives a restart', () {
       ChatPrefsStore(

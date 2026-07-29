@@ -16,9 +16,12 @@ void main() {
     expect(modelShortLabel('  maker/m1  '), 'm1');
   });
 
-  test('a trailing slash is not a name — the id comes back whole, not empty', () {
-    expect(modelShortLabel('qwen/'), 'qwen/');
-  });
+  test(
+    'a trailing slash is not a name — the id comes back whole, not empty',
+    () {
+      expect(modelShortLabel('qwen/'), 'qwen/');
+    },
+  );
 
   test('keeps only the last segment when the id is deeply pathed', () {
     expect(modelShortLabel('org/team/model-x'), 'model-x');

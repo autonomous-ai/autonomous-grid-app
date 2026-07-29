@@ -14,7 +14,8 @@ import '../logic/model_delete_controller.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
 import '../logic/suggested_catalog.dart';
-import '../../../infrastructure/cli/parsers/download_progress.dart' as cli_progress;
+import '../../../infrastructure/cli/parsers/download_progress.dart'
+    as cli_progress;
 
 /// The right pane of the model manager dialog: one model's full version list
 /// with a runnability verdict per row. Reads `GET /v1/grid/catalog/{repo_id}`
@@ -89,13 +90,12 @@ class ModelDetailClient {
     required String sessionToken,
     required String repoId,
     Map<String, dynamic>? device,
-  }) =>
-      ModelCatalogClient.detail(
-        apiUrl: apiUrl,
-        sessionToken: sessionToken,
-        repoId: repoId,
-        device: device,
-      );
+  }) => ModelCatalogClient.detail(
+    apiUrl: apiUrl,
+    sessionToken: sessionToken,
+    repoId: repoId,
+    device: device,
+  );
 }
 
 class _VersionPicker extends ConsumerStatefulWidget {
@@ -155,7 +155,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
 
   void _startDownload() {
     if (_selected.pullSpec == null || _selected.pullSpec!.isEmpty) return;
-    
+
     setState(() => _isDownloading = true);
 
     final pullController = ref.read(modelPullControllerProvider.notifier);
@@ -202,7 +202,9 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
 
   String _sizeLabel(int bytes) {
     final gb = bytes / 1e9;
-    return gb >= 10 ? '${gb.toStringAsFixed(0)} GB' : '${gb.toStringAsFixed(1)} GB';
+    return gb >= 10
+        ? '${gb.toStringAsFixed(0)} GB'
+        : '${gb.toStringAsFixed(1)} GB';
   }
 
   /// The pills for one version. Quantisation and size are facts, so they stay
@@ -210,20 +212,20 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   /// already on disk — take the colour, which is what makes them findable when
   /// the menu lists a dozen versions.
   List<AppSelectBadge> _versionBadges(ModelVersion v) => [
-        AppSelectBadge(v.version ?? '—'),
-        AppSelectBadge(_sizeLabel(v.sizeBytes)),
-        if (v.status case final status?)
-          AppSelectBadge(
-            status.label,
-            tone: switch (status) {
-              VersionStatus.runnable => AppBadgeTone.positive,
-              VersionStatus.partial => AppBadgeTone.warning,
-              VersionStatus.tooLarge => AppBadgeTone.danger,
-            },
-          ),
-        if (_isVersionDownloaded(v))
-          const AppSelectBadge('Downloaded', tone: AppBadgeTone.positive),
-      ];
+    AppSelectBadge(v.version ?? '—'),
+    AppSelectBadge(_sizeLabel(v.sizeBytes)),
+    if (v.status case final status?)
+      AppSelectBadge(
+        status.label,
+        tone: switch (status) {
+          VersionStatus.runnable => AppBadgeTone.positive,
+          VersionStatus.partial => AppBadgeTone.warning,
+          VersionStatus.tooLarge => AppBadgeTone.danger,
+        },
+      ),
+    if (_isVersionDownloaded(v))
+      const AppSelectBadge('Downloaded', tone: AppBadgeTone.positive),
+  ];
 
   List<Widget> _buildProgressSection(
     cli_progress.DownloadProgress progress,
@@ -232,8 +234,12 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   ) {
     final doneMb = progress.doneMb ?? 0;
     final totalMb = progress.totalMb ?? 0;
-    final doneStr = doneMb >= 1000 ? '${(doneMb / 1000).toStringAsFixed(1)} GB' : '${doneMb.toStringAsFixed(0)} MB';
-    final totalStr = totalMb >= 1000 ? '${(totalMb / 1000).toStringAsFixed(1)} GB' : '${totalMb.toStringAsFixed(0)} MB';
+    final doneStr = doneMb >= 1000
+        ? '${(doneMb / 1000).toStringAsFixed(1)} GB'
+        : '${doneMb.toStringAsFixed(0)} MB';
+    final totalStr = totalMb >= 1000
+        ? '${(totalMb / 1000).toStringAsFixed(1)} GB'
+        : '${totalMb.toStringAsFixed(0)} MB';
     return [
       Text(
         '$doneStr/$totalStr',
@@ -298,12 +304,16 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                     children: [
                       Text(
                         _displayName(widget.detail.repoId),
-                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         widget.detail.repoId,
-                        style: theme.textTheme.bodySmall?.copyWith(color: AppPalette.textSecondary),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -317,7 +327,9 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
             // Version dropdown label
             Text(
               'Version',
-              style: theme.textTheme.labelLarge?.copyWith(color: AppPalette.textSecondary),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: AppPalette.textSecondary,
+              ),
             ),
             const SizedBox(height: 6),
             // Version selector using app's standard select field
@@ -346,10 +358,15 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
             children: [
               if (_isDownloaded) ...[
                 TextButton(
-                  onPressed: _isDeleting ? null : () => _confirmAndDelete(context),
+                  onPressed: _isDeleting
+                      ? null
+                      : () => _confirmAndDelete(context),
                   style: TextButton.styleFrom(
                     foregroundColor: AppPalette.textSecondary,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -373,21 +390,25 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
               AnimatedBuilder(
                 animation: listenable,
                 builder: (context, _) {
-                  final pulling = ref.watch(modelPullControllerProvider) is ModelPulling;
+                  final pulling =
+                      ref.watch(modelPullControllerProvider) is ModelPulling;
                   final pullState = ref.watch(modelPullControllerProvider);
                   final progress = pulling
                       ? (pullState as ModelPulling).progress
                       : null;
-                  final fraction = (progress != null && !progress.isIndeterminate)
+                  final fraction =
+                      (progress != null && !progress.isIndeterminate)
                       ? progress.pct! / 100
                       : null;
 
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (pulling && fraction != null) ..._buildProgressSection(progress!, fraction, theme),
+                      if (pulling && fraction != null)
+                        ..._buildProgressSection(progress!, fraction, theme),
                       ElevatedButton.icon(
-                        onPressed: (_selected.status == VersionStatus.runnable &&
+                        onPressed:
+                            (_selected.status == VersionStatus.runnable &&
                                 !_isDownloading &&
                                 !_isDownloaded)
                             ? _startDownload
@@ -396,27 +417,38 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : Icon(
-                                _isDownloaded ? Icons.check_circle : LucideIcons.download,
+                                _isDownloaded
+                                    ? Icons.check_circle
+                                    : LucideIcons.download,
                                 size: 16,
                               ),
-                        label: Text(pulling
-                            ? 'Downloading'
-                            : _isDownloaded
-                                ? 'Downloaded'
-                                : 'Download'),
+                        label: Text(
+                          pulling
+                              ? 'Downloading'
+                              : _isDownloaded
+                              ? 'Downloaded'
+                              : 'Download',
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: pulling
                               ? AppPalette.accent
                               : _isDownloaded
-                                  ? AppPalette.online
-                                  : AppPalette.accent,
+                              ? AppPalette.online
+                              : AppPalette.accent,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppCard.insetRadius),
+                            borderRadius: BorderRadius.circular(
+                              AppCard.insetRadius,
+                            ),
                           ),
                         ),
                       ),
@@ -446,15 +478,24 @@ class _DetailBadgeGrid extends StatelessWidget {
       if (detail.likes > 0)
         _BadgeItemData(label: 'Likes', value: _formatCount(detail.likes)),
       if (detail.downloads > 0)
-        _BadgeItemData(label: 'Downloads', value: _formatCount(detail.downloads)),
+        _BadgeItemData(
+          label: 'Downloads',
+          value: _formatCount(detail.downloads),
+        ),
     ];
     // What the model *is* — the specs you compare between models — collected
     // into one block so they read as a set rather than as six loose chips.
     final specs = <_BadgeItemData>[
       if (detail.paramsB != null)
-        _BadgeItemData(label: 'Parameters', value: '${detail.paramsB!.toStringAsFixed(1)}B'),
+        _BadgeItemData(
+          label: 'Parameters',
+          value: '${detail.paramsB!.toStringAsFixed(1)}B',
+        ),
       if (detail.architecture != null && detail.architecture!.isNotEmpty)
-        _BadgeItemData(label: 'Architecture', value: _formatValue(detail.architecture!)),
+        _BadgeItemData(
+          label: 'Architecture',
+          value: _formatValue(detail.architecture!),
+        ),
       if (detail.format != null)
         _BadgeItemData(label: 'Format', value: _formatValue(detail.format!)),
     ];

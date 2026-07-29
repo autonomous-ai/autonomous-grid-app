@@ -2,9 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/plugins/logic/hermes_mcp_config.dart';
-import 'package:grid_app/features/plugins/logic/mcp_controller.dart';
-import 'package:grid_app/features/plugins/logic/mcp_server.dart';
+import 'package:grid_app/features/agent/logic/hermes_extensions.dart';
+import 'package:grid_app/features/agent/logic/hermes_mcp_config.dart';
+import 'package:grid_app/features/connectors/logic/connectors_controller.dart';
+import 'package:grid_app/features/agents/logic/mcp_server.dart';
 
 void main() {
   late Directory home;

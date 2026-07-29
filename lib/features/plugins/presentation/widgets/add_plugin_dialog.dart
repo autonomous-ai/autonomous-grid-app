@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../logic/plugins_controller.dart';
 
@@ -64,15 +65,21 @@ class _AddPluginDialogState extends ConsumerState<_AddPluginDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            // LabeledField, not a bare TextField with `labelText`: floating
+            // labels are off-system (label sits above the field, rule 2).
+            LabeledField(
+              fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
+              label: 'Git repository',
+              hint: 'owner/repo, or a full https://… link',
               controller: _identifier,
               autofocus: true,
               enabled: !_installing,
               onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Git repository',
-                hintText: 'owner/repo, or a full https://… link',
-              ),
+              onSubmitted: (_) {
+                if (_identifier.text.trim().isNotEmpty && !_installing) {
+                  _install();
+                }
+              },
             ),
             const SizedBox(height: 14),
             Text(

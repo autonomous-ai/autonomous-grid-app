@@ -17,8 +17,7 @@ class CodexSkillInstaller {
 
   final String _home;
 
-  Directory _skillDir(String name) =>
-      Directory('$_home/.codex/skills/$name');
+  Directory _skillDir(String name) => Directory('$_home/.codex/skills/$name');
 
   /// Write (or refresh) the grid skills. Idempotent — safe to call every time the
   /// app points Codex at a grid.

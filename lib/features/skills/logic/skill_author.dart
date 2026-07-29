@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
-import 'agent_skill.dart';
+import '../../agents/logic/agent_skill.dart';
+import '../../agents/logic/skill_writer.dart';
 
 /// A folder name for [title] — lowercase, dashes, nothing a filesystem will
 /// argue with. Empty when the title has no usable characters (the dialog blocks
@@ -38,29 +39,52 @@ String skillMarkdown({
       '${instructions.trim()}\n';
 }
 
-/// Writes skills the user authors in the app into Hermes's skills folder, where
-/// the agent picks them up on its next run.
-class SkillAuthor {
+/// Writes skills the user authors in the app.
+///
+/// New skills go into the agent-neutral store (`~/.grid/skills/my-skills/`),
+/// so the user's work belongs to no one agent; skills written before the store
+/// existed live on in `~/.hermes/skills/my-skills/` and are edited in place —
+/// a migration that moved folders under a running agent would be a way to lose
+/// one.
+class SkillAuthor implements SkillWriter {
   SkillAuthor({String? home}) : _home = home ?? GridPaths.userHome;
 
   final String _home;
 
-  String get _skillsRoot => '$_home/.hermes/skills';
+  String get _sharedRoot => '$_home/.grid/skills';
+  String get _legacyRoot => '$_home/.hermes/skills';
 
+  /// Where a *new* skill of this slug goes — always the shared store.
   Directory dirFor(String slug) =>
-      Directory('$_skillsRoot/$kMySkillsCategory/$slug');
+      Directory('$_sharedRoot/$kMySkillsCategory/$slug');
 
-  /// True when a skill of this name is already there — the dialog checks first
-  /// rather than silently overwriting someone's work.
-  bool exists(String name) => dirFor(skillSlug(name)).existsSync();
+  Directory _legacyDirFor(String slug) =>
+      Directory('$_legacyRoot/$kMySkillsCategory/$slug');
 
-  /// Create the skill and return its folder.
+  /// True when a skill of this name is already there — in either root. The
+  /// dialog checks first rather than silently overwriting someone's work, and
+  /// a shared-store skill shadowing a legacy one would leave the agent reading
+  /// two skills with one name.
+  @override
+  bool exists(String name) {
+    final slug = skillSlug(name);
+    return dirFor(slug).existsSync() || _legacyDirFor(slug).existsSync();
+  }
+
+  /// Create the skill in the shared store and return its folder.
+  @override
   Future<Directory> create({
     required String name,
     required String description,
     required String instructions,
-  }) async {
-    final dir = dirFor(skillSlug(name));
+  }) => _write(dirFor(skillSlug(name)), name, description, instructions);
+
+  Future<Directory> _write(
+    Directory dir,
+    String name,
+    String description,
+    String instructions,
+  ) async {
     await dir.create(recursive: true);
     await File('${dir.path}/SKILL.md').writeAsString(
       skillMarkdown(
@@ -74,38 +98,44 @@ class SkillAuthor {
 
   /// The instructions currently in a skill, read back from its `SKILL.md` so the
   /// editor can pre-fill them instead of starting blank.
+  @override
   Future<String> readInstructions(String path) async {
     final markdown = await File('$path/SKILL.md').readAsString();
     return parseSkillInstructions(markdown);
   }
 
-  /// Rewrite one of the user's own skills. When the name changes the folder
-  /// moves with it, so the old one is removed — otherwise a rename would leave a
-  /// stale duplicate the agent would still read.
+  /// Rewrite one of the user's own skills, in the root it already lives in —
+  /// editing must never silently move a skill between stores. When the name
+  /// changes the folder moves with it, so the old one is removed — otherwise a
+  /// rename would leave a stale duplicate the agent would still read.
+  @override
   Future<Directory> edit({
     required String previousSlug,
     required String name,
     required String description,
     required String instructions,
   }) async {
-    final dir = await create(
-      name: name,
-      description: description,
-      instructions: instructions,
-    );
+    final legacy = _legacyDirFor(previousSlug).existsSync();
+    final target = legacy
+        ? _legacyDirFor(skillSlug(name))
+        : dirFor(skillSlug(name));
+    final dir = await _write(target, name, description, instructions);
     if (skillSlug(name) != previousSlug) {
-      final old = dirFor(previousSlug);
+      final old = legacy ? _legacyDirFor(previousSlug) : dirFor(previousSlug);
       if (old.existsSync()) await old.delete(recursive: true);
     }
     return dir;
   }
 
-  /// Delete a skill's folder. Guards against a path outside the skills tree, so
-  /// a bad `path` can never take out something it shouldn't.
+  /// Delete a skill's folder. Guards against a path outside both skills trees,
+  /// so a bad `path` can never take out something it shouldn't.
+  @override
   Future<void> delete(String path) async {
-    if (!path.startsWith('$_skillsRoot/')) {
+    final inside =
+        path.startsWith('$_sharedRoot/') || path.startsWith('$_legacyRoot/');
+    if (!inside) {
       throw ArgumentError(
-        'Refusing to delete outside the skills folder: $path',
+        'Refusing to delete outside the skills folders: $path',
       );
     }
     final dir = Directory(path);

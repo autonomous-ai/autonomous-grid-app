@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/plugins/logic/agent_skill.dart';
+import 'package:grid_app/features/agent/logic/hermes_skill_scanner.dart';
+import 'package:grid_app/features/agents/logic/agent_skill.dart';
 
 void main() {
   group('parseSkillCard', () {
@@ -130,6 +131,29 @@ Write ten lines.''';
         expect(skills.first.fromGrid, isTrue);
         expect(skills.first.description, 'Make a picture.');
         expect(skills.last.fromGrid, isFalse);
+      },
+    );
+
+    test(
+      'reads the shared store and the agent\'s own folder as one list',
+      () async {
+        await writeSkill(
+          '.grid/skills/my-skills/shared-skill',
+          '---\nname: shared-skill\ndescription: Lives in the store.\n---\n',
+        );
+        await writeSkill(
+          '.hermes/skills/my-skills/legacy-skill',
+          '---\nname: legacy-skill\ndescription: Written before the store.\n---\n',
+        );
+
+        final skills = await AgentSkillScanner(home: home.path).scan();
+
+        expect(skills.map((s) => s.name).toList(), [
+          'legacy-skill',
+          'shared-skill',
+        ]);
+        // Both count as the user's own, whichever root they live in.
+        expect(skills.every((s) => s.isMine), isTrue);
       },
     );
   });

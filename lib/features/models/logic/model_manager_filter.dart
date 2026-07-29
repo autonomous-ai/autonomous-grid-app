@@ -111,7 +111,9 @@ bool isCatalogModelInstalled({
     return true;
   }
   final tail = repoId.contains('/') ? repoId.split('/').last : repoId;
-  final stem = _installKey(tail.replaceAll(RegExp(r'[-_]?gguf$', caseSensitive: false), ''));
+  final stem = _installKey(
+    tail.replaceAll(RegExp(r'[-_]?gguf$', caseSensitive: false), ''),
+  );
   if (stem.length < 6) return false;
   return local.any((name) => _installKey(name).contains(stem));
 }

@@ -2,7 +2,8 @@ import 'dart:io';
 
 import 'package:yaml_edit/yaml_edit.dart';
 
-import 'mcp_server.dart';
+import '../../../core/grid_paths.dart';
+import '../../agents/logic/mcp_server.dart';
 
 /// Reads and writes the MCP servers in `~/.hermes/config.yaml`.
 ///
@@ -15,8 +16,10 @@ import 'mcp_server.dart';
 /// half-written server is skipped, see [parseMcpServers]) and writes are
 /// surgical (only the one server's key changes).
 class HermesMcpConfig {
-  HermesMcpConfig({String? home})
-    : _home = home ?? Platform.environment['HOME'] ?? '';
+  // GridPaths.userHome, not a raw $HOME read: the skills scanner and author
+  // already resolve home that way, and two resolutions of "home" in one
+  // feature eventually disagree.
+  HermesMcpConfig({String? home}) : _home = home ?? GridPaths.userHome;
 
   final String _home;
 

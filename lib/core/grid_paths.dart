@@ -51,6 +51,13 @@ class GridPaths {
 
   static Directory get modelsDir => Directory('${home.path}/models');
 
+  /// The agent-neutral skills store (`~/.grid/skills`). Skills the user writes
+  /// in the app land here — outside any one agent's home — and each agent is
+  /// pointed at it by its adapter (Hermes via `skills.external_dirs`; Codex
+  /// later by sync). Skills that already live in an agent's own folder stay
+  /// there; this is where *new* ones go so no agent owns the user's work.
+  static Directory get skillsDir => Directory('${home.path}/skills');
+
   static Directory get outputsDir => Directory('${home.path}/outputs');
 
   /// Saved Chat conversations, one JSON file per conversation

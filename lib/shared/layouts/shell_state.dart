@@ -26,6 +26,18 @@ enum ShellSection {
     thinIcon: LucideIcons.calendarClock300,
   ),
   agents(LucideIcons.bot, 'Agents', thinIcon: LucideIcons.bot300),
+  skills(
+    LucideIcons.sparkles,
+    'Skills',
+    thinIcon: LucideIcons.sparkles300,
+    devOnly: true,
+  ),
+  connectors(
+    LucideIcons.cable,
+    'Connectors',
+    thinIcon: LucideIcons.cable300,
+    devOnly: true,
+  ),
   plugins(
     LucideIcons.puzzle,
     'Plugins',
@@ -137,10 +149,17 @@ const kSettingsGroups = [
     ShellSection.appearance,
     ShellSection.guide,
   ]),
+  // What the assistant can do — mirrors the mental model of other agent apps'
+  // settings. Every row is dev-only for now, so the whole group is invisible
+  // in a shipped build until the extension screens are ready to ship at once.
+  SettingsGroup('Customize', [
+    ShellSection.skills,
+    ShellSection.connectors,
+    ShellSection.plugins,
+  ]),
   SettingsGroup('Integrations', [
     // dev only for now, so this whole group is invisible in a shipped build.
     ShellSection.messages,
-    ShellSection.plugins,
   ]),
   SettingsGroup('Developer', [ShellSection.grids, ShellSection.debug]),
   // Where a chat goes when it leaves the sidebar. Its own run at the bottom:

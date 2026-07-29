@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/plugins/logic/hermes_plugin.dart';
+import 'package:grid_app/features/agent/logic/hermes_extensions.dart';
 import 'package:grid_app/features/plugins/logic/plugins_controller.dart';
 import 'package:grid_app/infrastructure/cli/hermes_plugin_service.dart';
 

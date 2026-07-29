@@ -93,8 +93,14 @@ class CatalogModelPick {
     }
     if (repoId == null || repoId!.isEmpty) return '';
     final tail = repoId!.contains('/') ? repoId!.split('/').last : repoId!;
-    final stripped = tail.replaceAll(RegExp(r'[-_]GGUF$', caseSensitive: false), '');
-    final parts = stripped.split(RegExp(r'[-_]')).where((w) => w.isNotEmpty).toList();
+    final stripped = tail.replaceAll(
+      RegExp(r'[-_]GGUF$', caseSensitive: false),
+      '',
+    );
+    final parts = stripped
+        .split(RegExp(r'[-_]'))
+        .where((w) => w.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return '';
     final first = parts.first.toLowerCase();
     return RegExp(r'^[a-z]+\d').firstMatch(first)?.group(0) ?? first;
@@ -144,8 +150,7 @@ class CatalogSuggestion {
       CatalogSuggestion(
         models: [
           for (final m in (json['models'] as List?) ?? const [])
-            if (m is Map)
-              CatalogModelPick.fromJson(m.cast<String, dynamic>()),
+            if (m is Map) CatalogModelPick.fromJson(m.cast<String, dynamic>()),
         ],
       );
 }
@@ -197,8 +202,14 @@ class CatalogListEntry {
     }
     if (repoId.isEmpty) return '';
     final tail = repoId.contains('/') ? repoId.split('/').last : repoId;
-    final stripped = tail.replaceAll(RegExp(r'[-_]GGUF$', caseSensitive: false), '');
-    final parts = stripped.split(RegExp(r'[-_]')).where((w) => w.isNotEmpty).toList();
+    final stripped = tail.replaceAll(
+      RegExp(r'[-_]GGUF$', caseSensitive: false),
+      '',
+    );
+    final parts = stripped
+        .split(RegExp(r'[-_]'))
+        .where((w) => w.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return '';
     final first = parts.first.toLowerCase();
     return RegExp(r'^[a-z]+\d').firstMatch(first)?.group(0) ?? first;
@@ -207,7 +218,8 @@ class CatalogListEntry {
   /// LobeHub CDN URL for this model's provider icon, or null when unknown.
   String? get iconUrl => urlForModel(repoId);
 
-  factory CatalogListEntry.fromJson(Map<String, dynamic> json) => CatalogListEntry(
+  factory CatalogListEntry.fromJson(Map<String, dynamic> json) =>
+      CatalogListEntry(
         repoId: json['repo_id'] as String? ?? '',
         downloads: (json['downloads'] as num?)?.toInt() ?? 0,
         likes: (json['likes'] as num?)?.toInt() ?? 0,

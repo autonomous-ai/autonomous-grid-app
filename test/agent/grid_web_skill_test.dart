@@ -13,11 +13,11 @@ void main() {
   tearDown(() => tmp.delete(recursive: true));
 
   String card() => gridWebSkillMd(
-        uvPath: '/grid/bin/uv',
-        searchScriptPath: '/skills/grid-web/scripts/search.py',
-        readScriptPath: '/skills/grid-web/scripts/read.py',
-        browseScriptPath: '/skills/grid-web/scripts/browse.py',
-      );
+    uvPath: '/grid/bin/uv',
+    searchScriptPath: '/skills/grid-web/scripts/search.py',
+    readScriptPath: '/skills/grid-web/scripts/read.py',
+    browseScriptPath: '/skills/grid-web/scripts/browse.py',
+  );
 
   group('the grid-web skill card is what makes the agent reach for it', () {
     test('frontmatter names it and says when to use it — the only part the '
@@ -112,23 +112,27 @@ void main() {
     });
   });
 
-  test('CodexSkillInstaller drops grid-web where Codex auto-discovers skills',
-      () async {
-    await CodexSkillInstaller(home: tmp.path).install();
+  test(
+    'CodexSkillInstaller drops grid-web where Codex auto-discovers skills',
+    () async {
+      await CodexSkillInstaller(home: tmp.path).install();
 
-    final skill = Directory('${tmp.path}/.codex/skills/grid-web');
-    expect(File('${skill.path}/SKILL.md').existsSync(), isTrue);
-    expect(File('${skill.path}/scripts/search.py').existsSync(), isTrue);
-    expect(File('${skill.path}/scripts/read.py').existsSync(), isTrue);
-  });
+      final skill = Directory('${tmp.path}/.codex/skills/grid-web');
+      expect(File('${skill.path}/SKILL.md').existsSync(), isTrue);
+      expect(File('${skill.path}/scripts/search.py').existsSync(), isTrue);
+      expect(File('${skill.path}/scripts/read.py').existsSync(), isTrue);
+    },
+  );
 
-  test('HermesSkillInstaller installs grid-web alongside the media skills',
-      () async {
-    await HermesSkillInstaller(home: tmp.path).install();
+  test(
+    'HermesSkillInstaller installs grid-web alongside the media skills',
+    () async {
+      await HermesSkillInstaller(home: tmp.path).install();
 
-    final base = '${tmp.path}/.hermes/skills/grid';
-    expect(File('$base/grid-web/SKILL.md').existsSync(), isTrue);
-    // The existing media skills are untouched.
-    expect(File('$base/grid-image-gen/SKILL.md').existsSync(), isTrue);
-  });
+      final base = '${tmp.path}/.hermes/skills/grid';
+      expect(File('$base/grid-web/SKILL.md').existsSync(), isTrue);
+      // The existing media skills are untouched.
+      expect(File('$base/grid-image-gen/SKILL.md').existsSync(), isTrue);
+    },
+  );
 }

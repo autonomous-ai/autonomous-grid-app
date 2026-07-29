@@ -37,10 +37,9 @@ String _iconSlugFromRepoId(String repoId) {
   if (repoId.isEmpty) return '';
   final slashIdx = repoId.indexOf('/');
   final tail = slashIdx >= 0 ? repoId.substring(slashIdx + 1) : repoId;
-  final firstSegment = tail.split(RegExp(r'[-_]')).firstWhere(
-    (w) => w.isNotEmpty,
-    orElse: () => '',
-  );
+  final firstSegment = tail
+      .split(RegExp(r'[-_]'))
+      .firstWhere((w) => w.isNotEmpty, orElse: () => '');
   final m = RegExp(r'^([a-zA-Z]+)').firstMatch(firstSegment);
   return m?.group(1)?.toLowerCase() ?? '';
 }

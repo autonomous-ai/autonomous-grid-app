@@ -163,11 +163,15 @@ class ModelCatalogClient {
         HttpHeaders.authorizationHeader,
         'Bearer $sessionToken',
       );
-      request.add(utf8.encode(jsonEncode({
-        if (sort != null && sort.isNotEmpty) 'sort': sort,
-        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
-        'page_size': pageSize,
-      })));
+      request.add(
+        utf8.encode(
+          jsonEncode({
+            if (sort != null && sort.isNotEmpty) 'sort': sort,
+            if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+            'page_size': pageSize,
+          }),
+        ),
+      );
       final response = await request.close().timeout(
         const Duration(seconds: 30),
       );
@@ -196,9 +200,15 @@ class ModelCatalogClient {
       }
       return (entries, null);
     } on TimeoutException {
-      return (null, const ModelCatalogError("The catalog didn't respond in time."));
+      return (
+        null,
+        const ModelCatalogError("The catalog didn't respond in time."),
+      );
     } on SocketException catch (e) {
-      return (null, ModelCatalogError("Couldn't reach the catalog: ${e.message}"));
+      return (
+        null,
+        ModelCatalogError("Couldn't reach the catalog: ${e.message}"),
+      );
     } on Object catch (e) {
       return (null, ModelCatalogError("Couldn't load the catalog: $e"));
     } finally {
@@ -220,7 +230,9 @@ class ModelCatalogClient {
     try {
       final base = apiUrl.endsWith('/') ? apiUrl : '$apiUrl/';
       final path = 'v1/grid/catalog/${Uri.encodeComponent(repoId)}';
-      final query = device == null ? '' : '?device=${Uri.encodeQueryComponent(jsonEncode(device))}';
+      final query = device == null
+          ? ''
+          : '?device=${Uri.encodeQueryComponent(jsonEncode(device))}';
       final request = await client.getUrl(Uri.parse('$base$path$query'));
       request.headers.set(
         HttpHeaders.authorizationHeader,

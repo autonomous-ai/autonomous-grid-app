@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/playground/logic/chat_transport.dart';
 import 'package:grid_app/features/playground/logic/playground_models.dart';
-import 'package:grid_app/features/plugins/logic/skill_generator.dart';
+import 'package:grid_app/features/skills/logic/skill_generator.dart';
 import 'package:grid_app/features/provider_node/logic/provider_run_controller.dart';
 
 /// A chat transport that answers with whatever the test scripts, and records

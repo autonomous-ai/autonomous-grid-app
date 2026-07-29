@@ -4,6 +4,7 @@ import '../../../features/agents/presentation/agents_view.dart';
 import '../../../features/appearance/presentation/appearance_view.dart';
 import '../../../features/chat/presentation/archived_chats_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
+import '../../../features/connectors/presentation/connectors_view.dart';
 import '../../../features/debug/presentation/debug_view.dart';
 import '../../../features/messaging/presentation/messages_view.dart';
 import '../../../features/network/presentation/how_to_use_view.dart';
@@ -12,6 +13,7 @@ import '../../../features/plugins/presentation/plugins_view.dart';
 import '../../../features/projects/presentation/projects_view.dart';
 import '../../../features/provider_node/presentation/provider_view.dart';
 import '../../../features/scheduled/presentation/scheduled_view.dart';
+import '../../../features/skills/presentation/skills_view.dart';
 import '../shell_state.dart';
 
 /// The screen behind a [ShellSection].
@@ -34,6 +36,8 @@ class SectionView extends StatelessWidget {
       ShellSection.chat => const ChatPane(),
       ShellSection.scheduled => const ScheduledView(),
       ShellSection.agents => const AgentsView(),
+      ShellSection.skills => const SkillsView(),
+      ShellSection.connectors => const ConnectorsView(),
       ShellSection.plugins => const PluginsView(),
       ShellSection.projects => const ProjectsView(),
       ShellSection.messages => const MessagesView(),
