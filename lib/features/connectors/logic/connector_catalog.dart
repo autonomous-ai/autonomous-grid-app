@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/api/connector_catalog_client.dart';
+import '../../../infrastructure/api/connector_gateway_client.dart';
 
 /// How a catalog service is signed into.
 enum ConnectorAuthMethod {
@@ -166,16 +166,24 @@ List<ConnectorCatalogEntry> sortCatalog(List<ConnectorCatalogEntry> entries) {
   return sorted;
 }
 
-/// The catalog, from the backend when it answers and from the bundled asset
+/// The catalog, from the gateway when it answers and from the bundled asset
 /// when it doesn't.
 ///
-/// The fallback is not a nicety: the backend for this list doesn't exist yet,
-/// and the screen has to work meanwhile. It also covers a user offline or on a
-/// stale build, so it stays after the API ships.
+/// It reads through [ConnectorGatewayClient] — the same client that runs the
+/// sign-in — rather than a catalog-only client, because the two must agree on
+/// what a connector *is*. A parser that skips `mcp_ready` leaves every row
+/// looking unavailable while the gateway is plainly saying otherwise, and the
+/// screen has no way to tell that apart from a backend with nothing ready.
+///
+/// The bundled fallback stays for the offline case, but it is a weaker answer
+/// now: it carries labels and icons, never `mcp_ready` or `status`, so a row
+/// sourced from it can be shown but not signed into.
 final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
   ref,
 ) async {
-  final (remote, _) = await ref.watch(connectorCatalogClientProvider).fetch();
+  final (remote, _) = await ref
+      .watch(connectorGatewayClientProvider)
+      .connectors();
   if (remote != null && remote.isNotEmpty) return remote;
   return ref.watch(bundledConnectorCatalogProvider.future);
 });

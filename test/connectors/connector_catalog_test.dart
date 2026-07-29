@@ -4,97 +4,46 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/mcp_server.dart';
 import 'package:grid_app/features/connectors/logic/connector.dart';
 import 'package:grid_app/features/connectors/logic/connector_catalog.dart';
-import 'package:grid_app/infrastructure/api/connector_catalog_client.dart';
+import 'package:grid_app/infrastructure/api/connector_gateway_client.dart';
 
-/// Trimmed from a real `GET /v1/connectors` body, keeping the shapes that
-/// matter: an entry with no `order`, one with `mcp_url`, one that's already
-/// linked, and two rows the parser must drop.
-const _apiResponse = '''
-{
-  "status": 1,
-  "data": {
-    "connectors": [
-      {
-        "id": "6a213b5fe438b1a9f0629a86",
-        "code": "google_drive",
-        "label": "Google Drive",
-        "image_url": "https://cdn.autonomous.ai/assets/icons/google_drive_icon.png",
-        "description": "Connect Google Drive to find your files.",
-        "status": "not_installed",
-        "supported_auth_method": "app"
-      },
-      {
-        "id": "6a213b5fe438b1a9f0629a6e",
-        "code": "linear",
-        "label": "Linear",
-        "image_url": "https://cdn.autonomous.ai/assets/icons/linear_icon.png",
-        "mcp_url": "https://mcp.linear.app/mcp",
-        "description": "Manage issues and projects.",
-        "order": 7,
-        "status": "installed",
-        "supported_auth_method": "app"
-      },
-      {
-        "id": "6a213b5fe438b1a9f0629a73",
-        "code": "gmail",
-        "label": "Gmail",
-        "description": "Search your messages.",
-        "order": 1,
-        "status": "not_installed",
-        "supported_auth_method": "app"
-      },
-      { "id": "no-code", "label": "Missing its code" },
-      "not even an object"
-    ],
-    "total": 27
-  }
-}
+/// Verbatim from `GET /v1/grid/connectors` on staging, 2026-07-29.
+///
+/// The envelope is what this pins: the body is a flat `{"connectors": [...]}`,
+/// **not** `{"data": {"connectors": [...]}}`. A parser expecting the wrapped
+/// form reads this as "not a catalog at all", falls back to the bundled asset,
+/// and the screen quietly shows eight hardcoded rows while the gateway is
+/// offering sixteen. That is exactly what shipped, and it looked like a backend
+/// with nothing ready rather than like a parsing bug.
+const _gatewayResponse = '''
+{"connectors": [
+  {"code": "amplitude", "auth_type": "app", "scopes": ["a", "b", "c"],
+   "refresh": true, "mcp_url": "https://mcp.amplitude.com/mcp",
+   "mcp_ready": true, "status": "not_connected", "account_name": "",
+   "expires_at": 0, "connected_at": 0},
+  {"code": "asana", "auth_type": "app", "scopes": [],
+   "refresh": true, "mcp_url": "https://mcp.asana.com/v2/mcp",
+   "mcp_ready": true, "status": "not_connected", "account_name": "",
+   "expires_at": 0, "connected_at": 0}
+]}
 ''';
 
 void main() {
-  group('parseConnectorCatalogResponse', () {
-    test('reads the API envelope and drops unreadable rows', () {
-      final entries = parseConnectorCatalogResponse(_apiResponse)!;
-      expect(entries.map((e) => e.code), ['gmail', 'linear', 'google_drive']);
+  group('the gateway catalog feeds the two Connect gates', () {
+    test('mcp_ready survives the parse', () {
+      // The whole screen hangs off this one flag: without it every row reads
+      // "No tools available for this connector yet" and Connect never appears.
+      final entries = parseGatewayConnectors(_gatewayResponse)!;
+      expect(entries.map((e) => e.code), ['amplitude', 'asana']);
+      expect(entries.every((e) => e.mcpReady), isTrue);
+      expect(entries.every((e) => e.canConnectFromApp), isTrue);
     });
 
-    test('carries every field the row needs', () {
-      final entries = parseConnectorCatalogResponse(_apiResponse)!;
-      final linear = entries.firstWhere((e) => e.code == 'linear');
-      expect(linear.id, '6a213b5fe438b1a9f0629a6e');
-      expect(linear.label, 'Linear');
-      expect(linear.description, 'Manage issues and projects.');
-      expect(linear.imageUrl, endsWith('linear_icon.png'));
-      expect(linear.mcpUrl, 'https://mcp.linear.app/mcp');
-      expect(linear.order, 7);
-      expect(linear.authMethod, ConnectorAuthMethod.app);
-    });
-
-    test('only the literal "not_installed" reads as not linked', () {
-      final entries = parseConnectorCatalogResponse(_apiResponse)!;
-      expect(entries.firstWhere((e) => e.code == 'linear').installed, isTrue);
-      expect(entries.firstWhere((e) => e.code == 'gmail').installed, isFalse);
-    });
-
-    test('an entry with no order sorts after the ones that have it', () {
-      final entries = parseConnectorCatalogResponse(_apiResponse)!;
-      expect(entries.last.code, 'google_drive');
-    });
-
-    test('a body that is not a catalog reads as null, so the caller can fall '
-        'back rather than blank the screen', () {
-      expect(parseConnectorCatalogResponse('not json'), isNull);
-      expect(parseConnectorCatalogResponse('{"status": 1}'), isNull);
-      expect(parseConnectorCatalogResponse('{"data": {}}'), isNull);
-      expect(parseConnectorCatalogResponse('[]'), isNull);
-    });
-
-    test('an empty catalog is a valid answer, not a failure', () {
-      final entries = parseConnectorCatalogResponse(
-        '{"status": 1, "data": {"connectors": [], "total": 0}}',
+    test('the envelope is flat, and the wrapped form is not a catalog', () {
+      expect(
+        parseGatewayConnectors('{"data": {"connectors": []}}'),
+        isNull,
+        reason: 'the wrapped shape must not read as an empty catalog',
       );
-      expect(entries, isNotNull);
-      expect(entries, isEmpty);
     });
   });
 
@@ -120,29 +69,6 @@ void main() {
         description: '',
       );
       expect(sortCatalog([b, c, a]).map((e) => e.code), ['a', 'b', 'c']);
-    });
-  });
-
-  group('ConnectorCatalogClient', () {
-    test('builds the endpoint with or without a trailing slash', () {
-      expect(
-        ConnectorCatalogClient.endpoint('https://api.example.com').toString(),
-        'https://api.example.com/v1/connectors',
-      );
-      expect(
-        ConnectorCatalogClient.endpoint('https://api.example.com/').toString(),
-        'https://api.example.com/v1/connectors',
-      );
-    });
-
-    test('signed out never reaches the network', () async {
-      const client = ConnectorCatalogClient(
-        apiUrl: 'https://api.example.com',
-        sessionToken: null,
-      );
-      final (entries, error) = await client.fetch();
-      expect(entries, isNull);
-      expect(error?.message, 'Not signed in.');
     });
   });
 
