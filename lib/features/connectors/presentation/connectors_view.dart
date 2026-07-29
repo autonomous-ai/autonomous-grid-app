@@ -50,7 +50,10 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           'Connect the assistant to tools outside this computer — a database, '
           'a design tool, a web service.',
       searchHint: 'Search connectors',
-      createLabel: 'Add an MCP server',
+      // "Connect manually", not "Add an MCP server": the rest of this screen
+      // speaks in Connect/Disconnect, and a user who doesn't know what MCP is
+      // can't tell how this button differs from the Connect on every row.
+      createLabel: 'Connect manually',
       onCreate: showAddMcpDialog,
       // All three sources, not just the config. The screen joins the agent's
       // MCP servers, the gateway's catalog and this machine's tokens; a refresh

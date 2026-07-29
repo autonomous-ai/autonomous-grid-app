@@ -615,14 +615,17 @@ class _Empty extends StatelessWidget {
   Widget build(BuildContext context) {
     return EmptyState(
       icon: Icons.hub_outlined,
-      title: 'No MCP servers yet',
+      // Reached only when the catalog is empty too — the gateway is unreachable
+      // or has nothing on offer — so this can't promise a list to pick from.
+      // The manual path is the one thing that still works offline.
+      title: 'No connectors yet',
       message:
-          'Add one to give the assistant tools from outside — a database, a '
-          'design tool, a web service.',
+          'Connect one to give the assistant tools from outside — a database, '
+          'a design tool, a web service.',
       action: FilledButton.icon(
         onPressed: () => showAddMcpDialog(context),
         icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
-        label: const Text('Add an MCP server'),
+        label: const Text('Connect manually'),
       ),
     );
   }

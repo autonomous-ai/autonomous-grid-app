@@ -149,7 +149,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _isEdit ? 'Edit MCP server' : 'Add an MCP server',
+            _isEdit ? 'Edit connection' : 'Connect manually',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w600,
             ),
