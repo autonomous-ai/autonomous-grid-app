@@ -339,8 +339,12 @@ final connectorLinkControllerProvider =
 final connectorTokensProvider = FutureProvider<Map<String, ConnectorToken>>((
   ref,
 ) {
-  // Re-read whenever a link settles: the controller publishes a fresh state
-  // once the store has been written.
-  ref.watch(connectorLinkControllerProvider);
+  // Deliberately does **not** watch the link controller. It used to, as a way
+  // of re-reading after a sign-in — but that made the controller a dependency
+  // of this provider, so the controller invalidating it was a provider
+  // depending on itself, and Riverpod threw `CircularDependencyError` on the
+  // first Connect. The controller now invalidates this explicitly after every
+  // write, which is both the fix and the clearer contract: the store changed
+  // because somebody changed it, not because an unrelated state object moved.
   return ref.watch(connectorTokenStoreProvider).read();
 });
