@@ -1,36 +1,44 @@
 import '../../../infrastructure/cli/agent_event.dart';
 
-/// How many times the assistant may ask to redo the very same thing — write one
-/// file, or run one command — in a single turn before it's treated as stuck.
+/// How many times **in a row** the assistant may redo the very same thing —
+/// write one file, or run one command — before it's treated as stuck.
 ///
-/// A capable model writes a file once, twice if it corrects itself; a fourth go
-/// at the identical target is a loop, not progress. Seen live: a weak `auto`
-/// model rewrote one `schema.prisma` nine times across 42 minutes, asking the
-/// user to approve each one, and never finishing. Stopping at the fourth turns
-/// that spin into a clear "it's stuck" instead of an open-ended wait.
+/// Consecutive, not cumulative: a run of four identical steps with no other work
+/// between them is a loop; touching one file four times *across* a productive
+/// turn is not. Seen live both ways — a weak model rewrote one `schema.prisma`
+/// six times back-to-back (a real loop, caught here), while a capable one edited
+/// `app.js` four times spread over a 23-step swagger integration (progress, not
+/// a loop — every other file between them resets the count).
 const int kMaxRepeatsPerTarget = 4;
 
-/// A per-turn tally of what the assistant has asked to do, so a run that keeps
-/// redoing the same step is caught and stopped instead of spinning.
+/// Watches for the assistant getting stuck redoing one step over and over, so a
+/// run that spins on a single target is caught and stopped instead of dragging
+/// on.
 ///
 /// Pure and turn-scoped — one per turn, fed every edit/command as it arrives. It
-/// counts by target (an edit's path, or a command's text, case- and
-/// whitespace-folded) and reports the first target to reach
-/// [kMaxRepeatsPerTarget]. Requests with no target to name — an unrecognised
-/// kind, or an edit/command missing its path/line — are never counted: there's
-/// nothing there to be stuck on.
+/// tracks the current run of the **same** target (an edit's path, or a command's
+/// text, case- and whitespace-folded) and reports it once that run reaches
+/// [kMaxRepeatsPerTarget]; any different target resets the run, because real
+/// progress broke the loop. Requests with no target to name — an unrecognised
+/// kind, or an edit/command missing its path/line — pass through untouched:
+/// there's nothing there to be stuck on, and they neither count nor reset.
 class AgentLoopGuard {
-  final Map<String, int> _seen = {};
+  String? _lastKey;
+  int _run = 0;
 
-  /// Record [request]; return a short label for what it's stuck on when this is
-  /// the request that reaches [kMaxRepeatsPerTarget], else null.
+  /// Record [request]; return a short label for what it's stuck on when this
+  /// makes a run of [kMaxRepeatsPerTarget] identical steps, else null.
   String? observe(AgentPermission request) {
     final target = _targetOf(request);
     if (target.isEmpty) return null;
     final key = target.toLowerCase();
-    final count = (_seen[key] ?? 0) + 1;
-    _seen[key] = count;
-    return count >= kMaxRepeatsPerTarget ? _labelOf(request) : null;
+    if (key == _lastKey) {
+      _run++;
+    } else {
+      _lastKey = key;
+      _run = 1;
+    }
+    return _run >= kMaxRepeatsPerTarget ? _labelOf(request) : null;
   }
 }
 
