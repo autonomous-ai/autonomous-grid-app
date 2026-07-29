@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agent/logic/agent_loop_guard.dart';
 import 'package:grid_app/features/agent/logic/agent_permissions.dart';
 import 'package:grid_app/features/agent/logic/agent_providers.dart';
 import 'package:grid_app/features/agent/logic/agent_server_error.dart';
@@ -277,6 +278,51 @@ void main() {
     // Pointed Hermes at the grid.
     expect(File('${tmp.path}/.hermes/config.yaml').existsSync(), isTrue);
   });
+
+  test(
+    'a turn stuck rewriting one file is stopped before the fourth pass — the '
+    '42-minute nine-rewrite spin cut short with a plain line',
+    () async {
+      AgentPermission editSchema(int id) => AgentPermission(
+        id: id,
+        kind: AgentPermissionKind.edit,
+        summary: 'Change this file',
+        path: '/repo/prisma/schema.prisma',
+        options: const [
+          (optionId: 'allow_once', kind: 'allow_once'),
+          (optionId: 'deny', kind: 'reject_once'),
+        ],
+      );
+      final service = _FakeAcp.single([
+        for (var i = 0; i < kMaxRepeatsPerTarget; i++)
+          HermesAcpPermission(editSchema(i)),
+        // Anything scripted after the loop trips must never be reached — the
+        // turn is already over when the fourth pass lands.
+        const HermesAcpMessage('should never be shown'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(
+            network: _credential(),
+            model: 'auto',
+            history: _history('build a CRUD app'),
+          )
+          .toList();
+
+      // The turn ends on the loop, named by the file's base name — not on the
+      // trailing message, and never as a success.
+      expect(updates.last, isA<ChatSendFailure>());
+      expect(
+        (updates.last as ChatSendFailure).error,
+        agentLoopingMessage('schema.prisma'),
+      );
+      expect(updates.whereType<ChatSendSuccess>(), isEmpty);
+      // Nothing left pinned waiting for an answer nobody will give.
+      expect(container.read(agentPermissionProvider), isNull);
+    },
+  );
 
   test(
     'a starting turn empties the shared feed up front — before the session even '

@@ -14,6 +14,16 @@ const String kAgentStalledPlan =
     'The agent planned the work but stopped before finishing it. Try sending '
     'again, or let another agent take this chat.';
 
+/// A turn stopped because the assistant kept redoing the same step — the same
+/// file written, or the same command run, over and over — without finishing.
+/// [target] names what it was stuck on (a file's base name, or a clipped
+/// command) so the line says what happened, and points at the lever that helps:
+/// a stronger model. The raw repeats stay in the log to diagnose from (§6).
+String agentLoopingMessage(String target) =>
+    'The assistant kept redoing the same step ($target) without finishing, so '
+    'it was stopped. A stronger model handles this better — switch models, or '
+    'send again.';
+
 /// The fact behind an assistant that installed but can't run: Grid tried to
 /// complete the install and couldn't. Shared by the chat and the Agents screen
 /// so the same problem doesn't read as two (§5); each adds its own next step,
