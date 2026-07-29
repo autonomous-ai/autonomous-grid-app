@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/prompts/logic/prompt_library_controller.dart';
 import 'package:grid_app/features/prompts/logic/prompt_library_store.dart';
+import 'package:grid_app/features/prompts/logic/saved_prompt.dart';
 
 void main() {
   late Directory dir;
@@ -31,7 +32,7 @@ void main() {
     expect(container().read(promptLibraryProvider), isEmpty);
   });
 
-  test('add saves the prompt and trims its name and body', () {
+  test('add slugs the name so it stays one /-command, and trims the body', () {
     final c = container();
     c
         .read(promptLibraryProvider.notifier)
@@ -39,8 +40,33 @@ void main() {
 
     final prompts = c.read(promptLibraryProvider);
     expect(prompts, hasLength(1));
-    expect(prompts.single.name, 'Weekly report');
+    // Spaces would close the slash menu at the first one — the name is a token.
+    expect(prompts.single.name, 'Weekly-report');
     expect(prompts.single.body, 'Do the thing');
+  });
+
+  test('edit slugs the new name too', () {
+    final c = container();
+    final notifier = c.read(promptLibraryProvider.notifier);
+    final a = notifier.add(name: 'draft', body: 'x');
+
+    notifier.edit(id: a.id, name: 'tank attack game', body: 'x');
+
+    expect(c.read(promptLibraryProvider).single.name, 'tank-attack-game');
+  });
+
+  test('a library saved with spaced names before this rule reads as slugs '
+      'right away — the user\'s "tank 1990" is typeable without re-saving it', () {
+    // Seed the file the way an older build left it.
+    PromptLibraryStore(file: file).save(const [
+      SavedPrompt(id: 'p1', name: 'tank 1990', body: 'a'),
+      SavedPrompt(id: 'p2', name: 'tank 2026', body: 'b'),
+    ]);
+
+    expect(container().read(promptLibraryProvider).map((p) => p.name), [
+      'tank-1990',
+      'tank-2026',
+    ]);
   });
 
   test('a saved prompt survives a reload — it was written to disk', () {

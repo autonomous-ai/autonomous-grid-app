@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 
@@ -51,6 +52,7 @@ class LabeledField extends StatelessWidget {
     this.maxLines = 1,
     this.onChanged,
     this.onSubmitted,
+    this.inputFormatters,
     this.fill,
   });
 
@@ -62,6 +64,10 @@ class LabeledField extends StatelessWidget {
   final int minLines;
   final int maxLines;
   final ValueChanged<String>? onChanged;
+
+  /// Live input rules — e.g. turning a typed space into `-` so a prompt name
+  /// stays one slash-command as the user types it.
+  final List<TextInputFormatter>? inputFormatters;
 
   /// Enter confirms. Only meaningful on a single-line field — in a multiline
   /// box Enter inserts a newline and this never fires.
@@ -89,6 +95,7 @@ class LabeledField extends StatelessWidget {
           maxLines: maxLines,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
+          inputFormatters: inputFormatters,
           style: const TextStyle(fontSize: 14, height: 1.4),
           decoration: labeledFieldDecoration(hint, fill: fill),
         ),

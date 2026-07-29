@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'prompt_library_store.dart';
+import 'prompt_slash.dart';
 import 'saved_prompt.dart';
 
 /// The prompt-library store, overridden in tests with a temp-file-backed one.
@@ -20,16 +21,22 @@ final promptLibraryProvider =
 
 class PromptLibraryController extends Notifier<List<SavedPrompt>> {
   @override
-  List<SavedPrompt> build() =>
-      List.unmodifiable(ref.read(promptLibraryStoreProvider).load());
+  List<SavedPrompt> build() => List.unmodifiable([
+    // Slug the names on the way in, so a library saved before this rule — the
+    // user's `tank 1990` — reads as the typeable `tank-1990` right away, not
+    // only after they reopen and re-save it.
+    for (final prompt in ref.read(promptLibraryStoreProvider).load())
+      prompt.copyWith(name: promptNameSlug(prompt.name)),
+  ]);
 
   /// Save a new prompt and return it, so callers can act on the created entry.
-  /// Name and body are trimmed; a blank name is rejected by the dialog before it
-  /// gets here.
+  /// The name is slugged so it stays one `/`-command (see [promptNameSlug]) and
+  /// the body trimmed; a blank name is rejected by the dialog before it gets
+  /// here.
   SavedPrompt add({required String name, required String body}) {
     final prompt = SavedPrompt(
       id: _newId(),
-      name: name.trim(),
+      name: promptNameSlug(name),
       body: body.trim(),
     );
     _commit([...state, prompt]);
@@ -41,7 +48,7 @@ class PromptLibraryController extends Notifier<List<SavedPrompt>> {
     _commit([
       for (final prompt in state)
         if (prompt.id == id)
-          prompt.copyWith(name: name.trim(), body: body.trim())
+          prompt.copyWith(name: promptNameSlug(name), body: body.trim())
         else
           prompt,
     ]);
