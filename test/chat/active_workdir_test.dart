@@ -73,13 +73,16 @@ void main() {
     expect(container.read(activeChatWorkdirProvider), project.path);
   });
 
-  test('a new chat still being drafted in a project browses that project folder '
-      'before the first message saves it', () {
-    final container = harness(
-      const ChatSessionsState(draftProjectId: 'grid-apis'),
-    );
-    expect(container.read(activeChatWorkdirProvider), project.path);
-  });
+  test(
+    'a new chat still being drafted in a project browses that project folder '
+    'before the first message saves it',
+    () {
+      final container = harness(
+        const ChatSessionsState(draftProjectId: 'grid-apis'),
+      );
+      expect(container.read(activeChatWorkdirProvider), project.path);
+    },
+  );
 
   test('a plain new chat, drafted in no project, browses the workspace', () {
     final container = harness(const ChatSessionsState());

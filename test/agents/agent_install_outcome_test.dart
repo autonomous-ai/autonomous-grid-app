@@ -6,16 +6,13 @@ import 'package:grid_app/features/agents/logic/agent_install_controller.dart';
 /// can't know a newer build exists until it has pulled one, the wording turns on
 /// the before/after comparison, and must never claim an up-to-date it can't back.
 void main() {
-  String outcome({
-    bool upgrade = true,
-    String? before,
-    String? after,
-  }) => agentInstallOutcome(
-    AgentTool.hermes,
-    upgrade: upgrade,
-    before: before,
-    after: after,
-  );
+  String outcome({bool upgrade = true, String? before, String? after}) =>
+      agentInstallOutcome(
+        AgentTool.hermes,
+        upgrade: upgrade,
+        before: before,
+        after: after,
+      );
 
   test('an update that changed nothing reads as already up to date, not as an '
       'update that did nothing', () {
@@ -26,7 +23,10 @@ void main() {
   });
 
   test('an update to a newer build names the version it moved to', () {
-    expect(outcome(before: '0.19.0', after: '0.20.0'), 'Updated Hermes to v0.20.0');
+    expect(
+      outcome(before: '0.19.0', after: '0.20.0'),
+      'Updated Hermes to v0.20.0',
+    );
   });
 
   test('an update whose build reports no version is only a reinstall — never '
