@@ -63,7 +63,7 @@ class _ScriptedProcessCli implements GridCliService {
       GridProcess(lines: lines.stream, exitCode: exit.future, kill: () {});
 
   @override
-  Future<CliResult> run(List<String> args) async =>
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async =>
       const CliResult(exitCode: 0, stdout: '', stderr: '');
 
   @override

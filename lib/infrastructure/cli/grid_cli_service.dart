@@ -75,7 +75,13 @@ class GridProcess {
 /// a real CLI, network, or model download.
 abstract interface class GridCliService {
   /// Run a lifecycle command to completion and capture its output.
-  Future<CliResult> run(List<String> args);
+  ///
+  /// [timeout] overrides the default one-shot ceiling for the rare command that
+  /// legitimately runs long — `grid agent install` downloads a private CPython
+  /// and the agent's dependencies (minutes, not seconds, and slower still on an
+  /// Intel Mac that builds wheels from source). Left null it keeps the short
+  /// default, which suits the quick lifecycle calls (login/logout/sync/catalog).
+  Future<CliResult> run(List<String> args, {Duration? timeout});
 
   /// Start a long-running command and return a handle to its output + lifetime.
   ///

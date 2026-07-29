@@ -53,7 +53,7 @@ class FakeGridCliService implements GridCliService {
   final List<List<String>> runCalls = [];
 
   @override
-  Future<CliResult> run(List<String> args) async {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     runCalls.add(List.unmodifiable(args));
     return _results[keyOf(args)] ??
         const CliResult(exitCode: 0, stdout: '', stderr: '');

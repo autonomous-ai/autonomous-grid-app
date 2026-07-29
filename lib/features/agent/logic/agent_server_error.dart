@@ -63,8 +63,8 @@ String friendlyAgentStartupError(String raw) {
     // Update — a repair can fail for a reason that has since changed (no
     // network) — but never promises it will work, the trap that shipped "Hermes
     // works here" while Hermes was failing (§5).
-    return '$kAgentSetupUnfinished Check your internet connection, then use '
-        'Update on the Agents screen.';
+    return '$kAgentSetupUnfinished Use Update on the Agents screen to finish it '
+        '— it needs a connection to download the rest.';
   }
   return "The assistant on this computer wouldn't start. Update it on the "
       'Agents screen, then try again.';

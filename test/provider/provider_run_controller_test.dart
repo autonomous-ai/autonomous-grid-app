@@ -64,7 +64,7 @@ class _RecordingCli extends FakeGridCliService {
   final List<List<String>> runs = [];
 
   @override
-  Future<CliResult> run(List<String> args) {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) {
     runs.add(args);
     return super.run(args);
   }
@@ -79,7 +79,7 @@ class _LeavingCli extends FakeGridCliService {
   final _StubHomeStore store;
 
   @override
-  Future<CliResult> run(List<String> args) {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) {
     if (args.isNotEmpty && args.first == 'leave') store.record = null;
     return super.run(args);
   }
@@ -89,7 +89,7 @@ class _LeavingCli extends FakeGridCliService {
 /// paths still settle the UI via their timeout.
 class _HangingLeaveCli extends FakeGridCliService {
   @override
-  Future<CliResult> run(List<String> args) {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) {
     if (args.isNotEmpty && args.first == 'leave') {
       return Completer<CliResult>().future; // never completes
     }

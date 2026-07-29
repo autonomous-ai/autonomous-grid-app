@@ -35,7 +35,7 @@ class _RecordingCli extends FakeGridCliService {
   final List<List<String>> runs = [];
 
   @override
-  Future<CliResult> run(List<String> args) {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) {
     runs.add(args);
     return super.run(args);
   }

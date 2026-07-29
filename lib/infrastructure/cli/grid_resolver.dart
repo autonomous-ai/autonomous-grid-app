@@ -1,4 +1,7 @@
+import 'dart:ffi' show Abi;
 import 'dart:io';
+
+import 'macho_arch.dart';
 
 /// Locates the `grid` executable. Resolution order:
 ///   1. an explicit user-configured path (settings),
@@ -25,13 +28,54 @@ class GridResolver {
 
   /// Absolute path to a usable `grid`, or null if none is found.
   String? resolve() {
-    for (final candidate in _explicitCandidates()) {
-      if (candidate == null || candidate.isEmpty) continue;
-      final file = File(candidate);
-      if (!_isExecutableFile(file) || _isSelf(file)) continue;
-      return file.absolute.path;
+    // A pinned path (settings / GRID_BIN) is the user's explicit choice — take it
+    // as given, don't second-guess its architecture.
+    for (final candidate in _pinnedCandidates()) {
+      final path = _usablePath(candidate);
+      if (path != null) return path;
+    }
+    // The bundled sidecar is ours to vouch for: skip one this CPU can't execute
+    // (an arm64 build shipped to an Intel Mac) so resolution falls through to a
+    // working system install instead of shadowing it with a binary that spawns
+    // as "Bad CPU type in executable".
+    for (final candidate in _bundledCandidates()) {
+      final path = _usablePath(candidate);
+      if (path != null && _runnableHere(path)) return path;
     }
     return _pathLookup();
+  }
+
+  /// The absolute path of [candidate] when it's a real, executable, non-self
+  /// file — else null (skip it).
+  String? _usablePath(String? candidate) {
+    if (candidate == null || candidate.isEmpty) return null;
+    final file = File(candidate);
+    if (!_isExecutableFile(file) || _isSelf(file)) return null;
+    return file.absolute.path;
+  }
+
+  /// Whether the binary at [path] can run on this CPU. Only ever answers "no"
+  /// for a macOS Intel host holding an arm64-only sidecar; every other case
+  /// (Apple Silicon runs both via Rosetta, an unreadable/foreign header) falls
+  /// open so we never reject a binary that would have worked.
+  static bool _runnableHere(String path) {
+    if (!Platform.isMacOS) return true;
+    if (Abi.current() != Abi.macosX64) return true;
+    return machoRunsOnIntel(_readHeader(File(path))) ?? true;
+  }
+
+  /// The leading bytes of [file] — enough to cover a fat header with a handful of
+  /// slices — or empty when it can't be read (then [_runnableHere] falls open).
+  static List<int> _readHeader(File file) {
+    RandomAccessFile? raf;
+    try {
+      raf = file.openSync();
+      return raf.readSync(4096);
+    } on FileSystemException {
+      return const [];
+    } finally {
+      raf?.closeSync();
+    }
   }
 
   /// True when [file] is the running app's own executable. Guards against
@@ -47,10 +91,11 @@ class GridResolver {
     }
   }
 
-  Iterable<String?> _explicitCandidates() sync* {
+  /// Explicitly-pinned paths, tried before the bundled sidecar: a settings
+  /// override, then the `GRID_BIN` dev/CI escape hatch.
+  Iterable<String?> _pinnedCandidates() sync* {
     yield configuredPath;
     yield Platform.environment['GRID_BIN'];
-    yield* _bundledCandidates();
   }
 
   /// Where a bundled sidecar lands per platform, relative to the app binary.

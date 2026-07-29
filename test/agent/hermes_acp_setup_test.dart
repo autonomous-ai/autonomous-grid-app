@@ -97,6 +97,47 @@ void main() {
       expect(env['UV_TOOL_DIR'], '/tmp/grid-home/tools');
       expect(env['UV_PYTHON_INSTALL_DIR'], '/tmp/grid-home/python');
     });
+
+    test('forces the ~/.grid tool tree only for a Hermes that lives there — an '
+        'install elsewhere gets uv\'s defaults so the repair lands on it, not a '
+        'second copy', () {
+      expect(
+        hermesAcpRepairEnvFor(
+          hermesPath: '/home/u/.grid/bin/hermes',
+          gridHome: '/home/u/.grid',
+        ),
+        hermesAcpRepairEnv(gridHome: '/home/u/.grid'),
+      );
+      expect(
+        hermesAcpRepairEnvFor(
+          hermesPath: '/home/u/.local/bin/hermes',
+          gridHome: '/home/u/.grid',
+        ),
+        isEmpty,
+      );
+    });
+  });
+
+  group('finding a uv to repair with', () {
+    test('prefers the CLI\'s own ~/.grid copy but also knows the uv-tool and '
+        'Homebrew locations — a legacy install\'s uv is rarely in ~/.grid', () {
+      final paths = uvCandidatePaths(
+        gridHome: '/home/u/.grid',
+        home: '/home/u',
+      );
+
+      expect(paths.first, '/home/u/.grid/bin/uv');
+      expect(
+        paths,
+        containsAll(<String>[
+          '/home/u/.local/bin/uv',
+          // The Intel-Mac Homebrew prefix — the machine the broadened search is
+          // for.
+          '/usr/local/bin/uv',
+          '/opt/homebrew/bin/uv',
+        ]),
+      );
+    });
   });
 
   group('ensuring a keyless web-search backend', () {
