@@ -26,11 +26,14 @@ void main() {
       }
     });
 
-    test('keys off the last dot, so a double extension is judged by its tail', () {
-      // A dotted folder with an image at the end is still an image...
-      expect(isImageFilename('my.photos/v2.final.PNG'), isTrue);
-      // ...but a real image renamed to a backup is not one to attach.
-      expect(isImageFilename('image.png.bak'), isFalse);
-    });
+    test(
+      'keys off the last dot, so a double extension is judged by its tail',
+      () {
+        // A dotted folder with an image at the end is still an image...
+        expect(isImageFilename('my.photos/v2.final.PNG'), isTrue);
+        // ...but a real image renamed to a backup is not one to attach.
+        expect(isImageFilename('image.png.bak'), isFalse);
+      },
+    );
   });
 }

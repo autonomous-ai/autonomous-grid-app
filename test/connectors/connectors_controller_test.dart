@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/hermes_extensions.dart';
 import 'package:grid_app/features/agent/logic/hermes_mcp_config.dart';
 import 'package:grid_app/features/connectors/logic/connectors_controller.dart';
+import 'package:grid_app/features/connectors/logic/manual_server_store.dart';
 import 'package:grid_app/features/agents/logic/mcp_server.dart';
 
 void main() {
@@ -20,6 +21,13 @@ void main() {
       overrides: [
         hermesMcpConfigProvider.overrideWithValue(
           HermesMcpConfig(home: home.path),
+        ),
+        // Not optional. Without it the controller reaches the real
+        // `~/.grid/connectors/manual.json`, and a `remove` in any test rewrites
+        // the developer's own store to `{}` — which is exactly what happened
+        // the first time this ran.
+        manualServerStoreProvider.overrideWithValue(
+          ManualServerStore(home: home),
         ),
       ],
     );

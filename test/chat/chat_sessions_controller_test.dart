@@ -343,7 +343,11 @@ void main() {
 
       await h.container
           .read(chatSessionsProvider.notifier)
-          .send(network: _credential(), model: 'qwen', message: 'what is a grid');
+          .send(
+            network: _credential(),
+            model: 'qwen',
+            message: 'what is a grid',
+          );
 
       final state = h.container.read(chatSessionsProvider);
       final conv = state.conversations.single;
