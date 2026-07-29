@@ -58,14 +58,14 @@ class GridCliServiceImpl implements GridCliService {
   static const _runTimeout = Duration(seconds: 60);
 
   @override
-  Future<CliResult> run(List<String> args) async {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     try {
       final result = await Process.run(
         executable,
         args,
         runInShell: false,
         environment: _env,
-      ).timeout(_runTimeout);
+      ).timeout(timeout ?? _runTimeout);
       return CliResult(
         exitCode: result.exitCode,
         stdout: result.stdout as String,

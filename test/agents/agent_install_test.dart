@@ -21,7 +21,7 @@ class _FakeCli implements GridCliService {
   final calls = <List<String>>[];
 
   @override
-  Future<CliResult> run(List<String> args) async {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     calls.add(args);
     return CliResult(exitCode: exitCode, stdout: stdout, stderr: stderr);
   }
@@ -87,7 +87,8 @@ void main() {
 
         await controller.install(AgentTool.hermes);
         expect(cli.calls.single, ['agent', 'install', 'hermes']);
-        expect(container.read(agentInstallProvider), isA<AgentInstallIdle>());
+        // Ends on the outcome the button shows, not back at idle.
+        expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
 
         await controller.install(AgentTool.hermes, upgrade: true);
         expect(cli.calls.last, ['agent', 'install', 'hermes', '--force']);
@@ -156,7 +157,7 @@ void main() {
 
       expect(setup.repairs, 1);
       expect(setup.ready, isTrue);
-      expect(container.read(agentInstallProvider), isA<AgentInstallIdle>());
+      expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
     });
 
     test(

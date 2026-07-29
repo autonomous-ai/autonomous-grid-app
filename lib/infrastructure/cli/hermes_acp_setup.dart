@@ -45,6 +45,36 @@ Map<String, String> hermesAcpRepairEnv({required String gridHome}) => {
   'UV_PYTHON_INSTALL_DIR': '$gridHome/python',
 };
 
+/// The uv tool-tree environment for repairing the Hermes at [hermesPath].
+///
+/// The `~/.grid` overrides are right only when *that* is where the Hermes we're
+/// fixing lives ([hermesAcpRepairEnv] explains why). A Hermes installed by an
+/// older uv-tool layout sits under the user's home instead; forcing ~/.grid then
+/// builds a **second** Hermes there and leaves the one on `PATH` just as broken.
+/// So off-`~/.grid`, hand uv no overrides and let its own defaults land on the
+/// install that's actually failing.
+Map<String, String> hermesAcpRepairEnvFor({
+  required String hermesPath,
+  required String gridHome,
+}) => hermesPath.startsWith('$gridHome/')
+    ? hermesAcpRepairEnv(gridHome: gridHome)
+    : const {};
+
+/// Where an installed `uv` might live, most-preferred first: the copy the CLI
+/// drops in `~/.grid`, then the uv-tool default and the two Homebrew prefixes
+/// (`/usr/local` is Intel's). A legacy Hermes was often set up by a `uv` that
+/// never landed in `~/.grid/bin` — looking only there is why the self-repair
+/// gave up on exactly the machines it exists to fix.
+List<String> uvCandidatePaths({
+  required String gridHome,
+  required String home,
+}) => [
+  '$gridHome/bin/uv',
+  if (home.isNotEmpty) '$home/.local/bin/uv',
+  '/opt/homebrew/bin/uv',
+  '/usr/local/bin/uv',
+];
+
 /// The free, keyless search backend Hermes's native `web_search` needs. Hermes
 /// picks a backend from `tavily/exa/…/ddgs`, all of which want a key or account
 /// except `ddgs` (just this package) — a stock install ships none, so the tool
@@ -110,8 +140,22 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
     String? uv,
     String? gridHome,
   }) : _log = log,
-       _uv = uv ?? '${GridPaths.binDir.path}/uv',
-       _gridHome = gridHome ?? GridPaths.home.path;
+       _gridHome = gridHome ?? GridPaths.home.path,
+       _uv = uv ?? _resolveUv(gridHome ?? GridPaths.home.path);
+
+  /// The first `uv` that actually exists among [uvCandidatePaths], or the
+  /// `~/.grid` copy when none do — so a machine with no uv still gets the honest
+  /// "installer (uv) is not on this computer" message rather than a random path.
+  static String _resolveUv(String gridHome) {
+    final candidates = uvCandidatePaths(
+      gridHome: gridHome,
+      home: Platform.environment['HOME'] ?? '',
+    );
+    return candidates.firstWhere(
+      (path) => File(path).existsSync(),
+      orElse: () => candidates.first,
+    );
+  }
 
   final String _hermes;
   final String _uv;
@@ -143,7 +187,7 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
       _uv,
       hermesAcpRepairArgs(),
       _repairTimeout,
-      env: hermesAcpRepairEnv(gridHome: _gridHome),
+      env: hermesAcpRepairEnvFor(hermesPath: _hermes, gridHome: _gridHome),
     );
     if (ran.code != 0) {
       _log.failure(
@@ -174,7 +218,7 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
       _uv,
       hermesWebSearchInstallArgs(venvPython),
       _repairTimeout,
-      env: hermesAcpRepairEnv(gridHome: _gridHome),
+      env: hermesAcpRepairEnvFor(hermesPath: _hermes, gridHome: _gridHome),
     );
     if (ran.code != 0) {
       _log.warn(

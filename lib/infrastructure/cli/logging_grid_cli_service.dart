@@ -15,10 +15,10 @@ class LoggingGridCliService implements GridCliService {
   final CommandLogNotifier _log;
 
   @override
-  Future<CliResult> run(List<String> args) async {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     final id = _log.begin(CliCallKind.run, 'grid ${args.join(' ')}');
     try {
-      final result = await _inner.run(args);
+      final result = await _inner.run(args, timeout: timeout);
       _log.finish(
         id,
         exitCode: result.exitCode,

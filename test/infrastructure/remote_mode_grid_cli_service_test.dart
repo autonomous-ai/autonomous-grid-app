@@ -12,7 +12,7 @@ class _RecordingCliService implements GridCliService {
   Map<String, String>? lastStartEnvironment;
 
   @override
-  Future<CliResult> run(List<String> args) async {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     runArgs.add(args);
     return const CliResult(exitCode: 0, stdout: '', stderr: '');
   }

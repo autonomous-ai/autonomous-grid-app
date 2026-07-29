@@ -40,7 +40,8 @@ class RemoteModeGridCliService implements GridCliService {
   }
 
   @override
-  Future<CliResult> run(List<String> args) => _inner.run(_remote(args));
+  Future<CliResult> run(List<String> args, {Duration? timeout}) =>
+      _inner.run(_remote(args), timeout: timeout);
 
   @override
   Future<GridProcess> start(

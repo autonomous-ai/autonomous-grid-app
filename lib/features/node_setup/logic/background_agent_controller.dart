@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/providers.dart';
+import '../../agents/logic/agent_install_controller.dart';
 import '../../agents/logic/agent_status.dart';
 import 'node_capabilities.dart';
 import 'node_setup_plan.dart';
@@ -49,7 +50,7 @@ class BackgroundAgentInstaller {
     final log = _ref.read(appLogProvider);
     for (final step in missing) {
       log.info('agents', 'Installing ${step.args.last} in the background');
-      final result = await cli.run(step.args);
+      final result = await cli.run(step.args, timeout: kAgentInstallTimeout);
       if (result.ok) continue;
       log.warn(
         'agents',

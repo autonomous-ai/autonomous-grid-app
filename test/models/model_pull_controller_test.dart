@@ -36,7 +36,7 @@ class _HangingPullCli implements GridCliService {
   }
 
   @override
-  Future<CliResult> run(List<String> args) async =>
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async =>
       const CliResult(exitCode: 0, stdout: '', stderr: '');
 
   @override

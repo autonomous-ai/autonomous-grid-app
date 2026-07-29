@@ -7,6 +7,15 @@ import '../../agent/logic/hermes_tool.dart';
 import 'agent_catalog.dart';
 import 'agent_status.dart';
 
+/// Ceiling for `grid agent install`, well past the default one-shot timeout:
+/// it downloads a private CPython plus the agent's dependencies, which takes
+/// minutes — and longer on an Intel Mac that has no prebuilt wheels and builds
+/// from source. The old 60s default killed the install mid-download every time,
+/// so both the silent top-up and the Agents-screen "Update" always failed. This
+/// stays a ceiling, not a promise it finishes — a genuinely wedged install still
+/// gives up rather than hanging the screen forever.
+const Duration kAgentInstallTimeout = Duration(minutes: 10);
+
 sealed class AgentInstallState {
   const AgentInstallState();
 }
@@ -75,7 +84,7 @@ class AgentInstallController extends Notifier<AgentInstallState> {
       'install',
       tool.id,
       if (upgrade) '--force',
-    ]);
+    ], timeout: kAgentInstallTimeout);
     if (!result.ok) {
       state = AgentInstallFailed(tool, _friendlyError(result, tool));
       return;
@@ -118,8 +127,8 @@ class AgentInstallController extends Notifier<AgentInstallState> {
     // user reads.
     return await setup.repair() == null
         ? null
-        : '$kAgentSetupUnfinished Check your internet connection, then try '
-              'again.';
+        : '$kAgentSetupUnfinished It needs a connection to download the rest — '
+              'check yours and try again.';
   }
 
   void clearError() {

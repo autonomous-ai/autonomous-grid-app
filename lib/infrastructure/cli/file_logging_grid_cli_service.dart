@@ -21,10 +21,10 @@ class FileLoggingGridCliService implements GridCliService {
   static String _display(List<String> args) => 'grid ${args.join(' ')}';
 
   @override
-  Future<CliResult> run(List<String> args) async {
+  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     final entry = _log.begin(_display(args));
     try {
-      final result = await _inner.run(args);
+      final result = await _inner.run(args, timeout: timeout);
       _writeBlock(entry, result.stdout, isError: false);
       _writeBlock(entry, result.stderr, isError: true);
       entry.end(exitCode: result.exitCode);
