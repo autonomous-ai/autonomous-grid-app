@@ -1,6 +1,3 @@
-import 'dart:convert';
-
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/connector_gateway_client.dart';
@@ -101,8 +98,8 @@ class ConnectorCatalogEntry {
   /// gateway plainly advertises as `auth_type: app` look broken.
   bool get canConnectFromApp => authMethod == ConnectorAuthMethod.app;
 
-  /// This entry with borrowed display text, used by [mergeCatalog] to dress a
-  /// gateway row in the bundled catalog's label and icon.
+  /// This entry with display text filled in, for the fields the gateway left
+  /// empty — today only the derived label.
   ///
   /// Only the three presentation fields can be replaced, and only where this
   /// entry has nothing: whatever the gateway said about state — `mcpReady`,
@@ -132,63 +129,13 @@ class ConnectorCatalogEntry {
   }
 }
 
-/// The catalog format is versioned so a bundled file from a newer world is
-/// refused rather than misread. Only the bundled asset carries it — the API
-/// speaks its own envelope.
-const int kConnectorCatalogVersion = 1;
-
-/// Parse the bundled `assets/connectors/catalog.json`.
-///
-/// Lenient the same way every shared-file reader here is: an entry that can't
-/// be read is dropped and the rest still show. A catalog from a newer world
-/// (version > ours) reads as empty rather than as half-understood rows.
-List<ConnectorCatalogEntry> parseConnectorCatalog(String raw) {
-  final Object? decoded;
-  try {
-    decoded = jsonDecode(raw);
-  } on FormatException {
-    return const [];
-  }
-  if (decoded is! Map<String, dynamic>) return const [];
-  final version = decoded['version'];
-  if (version is! int || version > kConnectorCatalogVersion) return const [];
-  final entries = decoded['connectors'];
-  if (entries is! List) return const [];
-
-  final catalog = <ConnectorCatalogEntry>[];
-  for (final raw in entries) {
-    if (raw is! Map<String, dynamic>) continue;
-    final code = raw['code'] ?? raw['id'];
-    final label = raw['label'] ?? raw['name'];
-    if (code is! String || code.isEmpty || label is! String || label.isEmpty) {
-      continue;
-    }
-    final mcp = raw['mcp'];
-    catalog.add(
-      ConnectorCatalogEntry(
-        id: raw['id'] is String ? raw['id'] as String : code,
-        code: code,
-        label: label,
-        description: raw['description'] is String
-            ? raw['description'] as String
-            : '',
-        imageUrl: raw['image_url'] is String ? raw['image_url'] as String : '',
-        mcpUrl: mcp is Map<String, dynamic> && mcp['url'] is String
-            ? mcp['url'] as String
-            : '',
-      ),
-    );
-  }
-  return sortCatalog(catalog);
-}
-
+/// The backend's order first (nulls last), then alphabetically by label — so a
+/// catalog with no ordering at all still lands in a stable, readable sequence
+/// instead of whatever order the payload happened to arrive in.
 /// What a row sorts under: its label, or its code while it has no label.
 String _sortKey(ConnectorCatalogEntry entry) =>
     (entry.label.isNotEmpty ? entry.label : entry.code).toLowerCase();
 
-/// The backend's order first (nulls last), then alphabetically by label — so a
-/// catalog with no ordering at all still lands in a stable, readable sequence
-/// instead of whatever order the payload happened to arrive in.
 List<ConnectorCatalogEntry> sortCatalog(List<ConnectorCatalogEntry> entries) {
   final sorted = [...entries]
     ..sort((a, b) {
@@ -199,8 +146,7 @@ List<ConnectorCatalogEntry> sortCatalog(List<ConnectorCatalogEntry> entries) {
         if (bo == null) return -1;
         return ao.compareTo(bo);
       }
-      // Falls back to the code when a row has no label yet — which is every
-      // gateway row before `mergeCatalog` dresses it. Sorting on an empty
+      // Falls back to the code when a row has no label. Sorting on an empty
       // string would leave those in payload order, so a list that looks
       // alphabetical in one build would arrive shuffled in another.
       return _sortKey(a).compareTo(_sortKey(b));
@@ -208,14 +154,12 @@ List<ConnectorCatalogEntry> sortCatalog(List<ConnectorCatalogEntry> entries) {
   return sorted;
 }
 
-/// A display name for a connector the bundled catalog has never heard of.
+/// A display name derived from a connector's code.
 ///
-/// The gateway's list is the one that grows — it already carries connectors no
-/// bundled build knows (`amplitude`, `asana`, `hubspot`) — so the fallback has
-/// to be something, and `gmail-app` set in a title is not a name anyone wrote.
-/// Splitting on the separators the codes actually use and capitalizing gets
-/// "Gmail App", "Google Calendar", "Hubspot": not always the brand's own
-/// styling, but always a phrase rather than an identifier.
+/// Only reached when the gateway sends no `label`. Splitting on the separators
+/// the codes actually use and capitalizing gets "Gmail App", "Google Calendar",
+/// "Hubspot": not always the brand's own styling, but always a phrase rather
+/// than an identifier.
 String labelFromCode(String code) {
   final words = code
       .split(RegExp(r'[_\-\s]+'))
@@ -224,70 +168,30 @@ String labelFromCode(String code) {
   return words.isEmpty ? code : words.join(' ');
 }
 
-/// Give the gateway's entries the names and marks the bundled catalog holds.
+/// The connectors catalog: the gateway's list, and nothing else.
 ///
-/// The two lists answer different questions and neither can replace the other.
-/// The gateway knows *state* — which connectors exist, which are ready, which
-/// this account has linked — and sends no display text at all. The bundled
-/// asset knows *presentation* — real labels, blurbs, CDN icons — for the eight
-/// connectors that existed when it was written, and nothing about state.
+/// There is no bundled fallback. One used to ship in the app, and it was a
+/// liability rather than a safety net — it knew eight connectors while the
+/// gateway serves sixteen, carried no `mcp_ready` or `status`, and so produced
+/// rows that looked real and could not be signed into. A catalog the backend
+/// hasn't confirmed is worse than an empty screen, which at least says the
+/// truth: we could not reach the grid.
 ///
-/// So this merges rather than choosing: every row comes from [remote] (it is
-/// the authority on what exists), and [bundled] fills in only the fields the
-/// gateway left empty. A gateway that later starts sending `label` wins
-/// automatically, because a non-empty remote value is never overwritten.
-///
-/// Matching is by exact code. `gmail` and `gmail-app` are different rows on the
-/// wire — one `pat`, one `app` — and guessing that they are the same service
-/// would put one connector's icon on another's row.
-List<ConnectorCatalogEntry> mergeCatalog({
-  required List<ConnectorCatalogEntry> remote,
-  required List<ConnectorCatalogEntry> bundled,
-}) {
-  final byCode = {for (final entry in bundled) entry.code: entry};
-  return sortCatalog([
-    for (final entry in remote)
-      entry.withPresentation(
-        label: byCode[entry.code]?.label ?? labelFromCode(entry.code),
-        description: byCode[entry.code]?.description ?? '',
-        imageUrl: byCode[entry.code]?.imageUrl ?? '',
-      ),
-  ]);
-}
-
-/// The catalog, from the gateway when it answers and from the bundled asset
-/// when it doesn't.
-///
-/// It reads through [ConnectorGatewayClient] — the same client that runs the
-/// sign-in — rather than a catalog-only client, because the two must agree on
-/// what a connector *is*. A parser that skips `mcp_ready` leaves every row
-/// looking unavailable while the gateway is plainly saying otherwise, and the
-/// screen has no way to tell that apart from a backend with nothing ready.
-///
-/// The bundled fallback stays for the offline case, but it is a weaker answer
-/// now: it carries labels and icons, never `mcp_ready` or `status`, so a row
-/// sourced from it can be shown but not signed into.
+/// Presentation is the backend's too. Rows arrive with `label`, `description`
+/// and `image_url` filled in; when one is missing the row degrades on its own —
+/// a name derived from the code, a glyph instead of a logo, no description line
+/// at all.
 final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
   ref,
 ) async {
-  final bundled = await ref.watch(bundledConnectorCatalogProvider.future);
   final (remote, _) = await ref
       .watch(connectorGatewayClientProvider)
       .connectors();
-  if (remote == null || remote.isEmpty) return bundled;
-  return mergeCatalog(remote: remote, bundled: bundled);
+  if (remote == null) return const [];
+  return sortCatalog([
+    for (final entry in remote)
+      entry.label.isEmpty
+          ? entry.withPresentation(label: labelFromCode(entry.code))
+          : entry,
+  ]);
 });
-
-/// The catalog shipped inside the app. A failure to load or parse reads as an
-/// empty catalog — the Connectors screen still works as a plain MCP manager.
-final bundledConnectorCatalogProvider =
-    FutureProvider<List<ConnectorCatalogEntry>>((ref) async {
-      try {
-        final raw = await rootBundle.loadString(
-          'assets/connectors/catalog.json',
-        );
-        return parseConnectorCatalog(raw);
-      } on Object {
-        return const [];
-      }
-    });

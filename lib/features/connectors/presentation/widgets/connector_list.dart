@@ -142,9 +142,14 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // A link, not a cloud. Every row here is a connector whether or not
+          // the backend published a logo, and a cloud reads as "somewhere
+          // remote" — which is the one thing already obvious. The badge draws
+          // it on the app's own plate, so a row without a logo still lines up
+          // with the rows that have one.
           ConnectorMark(
             imageUrl: connector.imageUrl,
-            fallbackIcon: Icons.cloud_outlined,
+            fallbackIcon: Icons.link_rounded,
           ),
           const SizedBox(width: 12),
           Expanded(

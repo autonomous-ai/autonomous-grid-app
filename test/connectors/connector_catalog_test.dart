@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/mcp_server.dart';
 import 'package:grid_app/features/connectors/logic/connector.dart';
@@ -28,60 +26,6 @@ void main() {
         description: '',
       );
       expect(sortCatalog([b, c, a]).map((e) => e.code), ['a', 'b', 'c']);
-    });
-  });
-
-  group('parseConnectorCatalog (bundled asset)', () {
-    test('reads well-formed entries and drops unreadable ones', () {
-      final catalog = parseConnectorCatalog('''
-{
-  "version": 1,
-  "connectors": [
-    {
-      "id": "notion", "code": "notion", "label": "Notion",
-      "description": "Pages and databases.",
-      "image_url": "https://cdn.example/notion.png",
-      "mcp": { "type": "http", "url": "https://mcp.notion.com/mcp" }
-    },
-    { "code": "broken" },
-    "not even an object"
-  ]
-}
-''');
-      expect(catalog, hasLength(1));
-      expect(catalog.single.code, 'notion');
-      expect(catalog.single.label, 'Notion');
-      expect(catalog.single.mcpUrl, 'https://mcp.notion.com/mcp');
-      expect(catalog.single.imageUrl, 'https://cdn.example/notion.png');
-    });
-
-    test(
-      'a catalog from a newer world reads as empty, not half-understood',
-      () {
-        expect(
-          parseConnectorCatalog('{"version": 99, "connectors": []}'),
-          isEmpty,
-        );
-      },
-    );
-
-    test('garbage reads as empty rather than throwing', () {
-      expect(parseConnectorCatalog('not json'), isEmpty);
-      expect(parseConnectorCatalog('[]'), isEmpty);
-      expect(parseConnectorCatalog('{"version": "one"}'), isEmpty);
-    });
-
-    test('the bundled asset parses and is non-empty', () async {
-      // Read the real file the app ships (tests run at the package root), so a
-      // malformed edit to catalog.json fails here instead of silently emptying
-      // the fallback — the provider swallows parse failures by design.
-      final raw = await File('assets/connectors/catalog.json').readAsString();
-      final catalog = parseConnectorCatalog(raw);
-      expect(catalog, isNotEmpty);
-      expect(catalog.map((e) => e.code), contains('notion'));
-      // Every bundled entry carries a mark, so the fallback list looks like
-      // the API list rather than a column of grey glyphs.
-      expect(catalog.every((e) => e.imageUrl.isNotEmpty), isTrue);
     });
   });
 
