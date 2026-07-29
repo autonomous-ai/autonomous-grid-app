@@ -75,19 +75,22 @@ void main() {
   });
 
   group('an empty model response reads as one, not a Python error', () {
-    test('the loop giving up after retries becomes a line with a next step', () {
-      final message = friendlyAgentEmptyResponse(
-        'API call failed after 3 retries: Expecting value: line 1 column 1 '
-        '(char 0)',
-      );
+    test(
+      'the loop giving up after retries becomes a line with a next step',
+      () {
+        final message = friendlyAgentEmptyResponse(
+          'API call failed after 3 retries: Expecting value: line 1 column 1 '
+          '(char 0)',
+        );
 
-      expect(message, isNotNull);
-      // None of the raw decoder jargon reaches the chat.
-      expect(message!.toLowerCase(), isNot(contains('expecting value')));
-      expect(message.toLowerCase(), isNot(contains('json')));
-      expect(message.toLowerCase(), contains('empty response'));
-      expect(message.toLowerCase(), contains('pick another model'));
-    });
+        expect(message, isNotNull);
+        // None of the raw decoder jargon reaches the chat.
+        expect(message!.toLowerCase(), isNot(contains('expecting value')));
+        expect(message.toLowerCase(), isNot(contains('json')));
+        expect(message.toLowerCase(), contains('empty response'));
+        expect(message.toLowerCase(), contains('pick another model'));
+      },
+    );
 
     test('a bare JSON-decode error is the same empty-response failure', () {
       expect(

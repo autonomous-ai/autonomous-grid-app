@@ -352,25 +352,30 @@ void main() {
   });
 
   group('a task chat lands in its project', () {
-    test('a project-scoped task delivers its result into that project', () async {
-      final h = harness(
-        FakeCron(
-          jobsJson: _jobsJson(),
-          outputs: {
-            'job-1': [(at: DateTime(2026, 7, 14, 8), text: 'Digest')],
-          },
-        ),
-      );
-      h.container.read(projectTasksProvider.notifier).assign('job-1', 'proj-1');
+    test(
+      'a project-scoped task delivers its result into that project',
+      () async {
+        final h = harness(
+          FakeCron(
+            jobsJson: _jobsJson(),
+            outputs: {
+              'job-1': [(at: DateTime(2026, 7, 14, 8), text: 'Digest')],
+            },
+          ),
+        );
+        h.container
+            .read(projectTasksProvider.notifier)
+            .assign('job-1', 'proj-1');
 
-      await h.container.read(taskDeliveryProvider.notifier).sweep();
+        await h.container.read(taskDeliveryProvider.notifier).sweep();
 
-      final chat = h.container
-          .read(chatSessionsProvider)
-          .conversations
-          .singleWhere((c) => c.id == taskConversationId('job-1'));
-      expect(chat.projectId, 'proj-1');
-    });
+        final chat = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .singleWhere((c) => c.id == taskConversationId('job-1'));
+        expect(chat.projectId, 'proj-1');
+      },
+    );
 
     test('a task chat created before the link is reconciled, without waiting '
         'on a new run', () async {
@@ -409,8 +414,10 @@ void main() {
 
     test('a corrupt or missing file reads as nothing unread — a stray write '
         'never leaves a badge stuck on', () {
-      expect(TaskUnreadStore(file: File('${tmp.path}/nope.json')).load(),
-          isEmpty);
+      expect(
+        TaskUnreadStore(file: File('${tmp.path}/nope.json')).load(),
+        isEmpty,
+      );
 
       final broken = File('${tmp.path}/broken-unread.json')
         ..writeAsStringSync('{ not a list');

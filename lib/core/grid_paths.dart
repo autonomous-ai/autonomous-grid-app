@@ -107,8 +107,7 @@ class GridPaths {
   /// The scheduled tasks whose latest result the user hasn't opened yet (a plain
   /// list of job ids) — what the sidebar and the Scheduled list badge, so an
   /// overnight run isn't something to remember to go look for. App-owned.
-  static File get taskUnreadFile =>
-      File('${home.path}/app/task_unread.json');
+  static File get taskUnreadFile => File('${home.path}/app/task_unread.json');
 
   /// Working directory for the agent that answers chat. It runs read-only here
   /// so its file tools have a stable, app-owned root instead of pointing at the
