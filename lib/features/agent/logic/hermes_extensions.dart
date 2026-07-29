@@ -12,6 +12,7 @@ import '../../agents/logic/connector_token.dart';
 import '../../agents/logic/mcp_server.dart';
 import '../../agents/logic/skill_writer.dart';
 import '../../skills/logic/skill_author.dart';
+import 'hermes_connector_servers.dart';
 import 'hermes_mcp_config.dart';
 import 'hermes_token_projection.dart';
 import 'agent_skill_installer.dart';
@@ -30,11 +31,12 @@ class HermesExtensions implements AgentExtensions {
     required AgentSkillInstaller installer,
     required HermesConfigFile configFile,
     required HermesTokenProjection tokenProjection,
+    required HermesConnectorServers connectorServers,
   }) : skills = _HermesSkillsPlane(scanner, author, installer, configFile),
        plugins = pluginService == null
            ? null
            : _HermesPluginsPlane(pluginService),
-       mcp = _HermesMcpPlane(mcpConfig, tokenProjection);
+       mcp = _HermesMcpPlane(mcpConfig, tokenProjection, connectorServers);
 
   @override
   AgentTool get tool => AgentTool.hermes;
@@ -137,23 +139,34 @@ class _HermesPluginsPlane implements AgentPluginsPlane {
 }
 
 class _HermesMcpPlane implements AgentMcpPlane {
-  _HermesMcpPlane(this._config, this._tokens);
+  _HermesMcpPlane(this._config, this._tokens, this._servers);
 
   final HermesMcpConfig _config;
   final HermesTokenProjection _tokens;
+  final HermesConnectorServers _servers;
 
-  /// Hermes reads MCP OAuth tokens from its own `mcp-tokens/` directory, so the
-  /// projection is a file write it already understands — no bridge, and no
-  /// credential in `config.yaml`.
+  /// Give Hermes both halves of a connector: the credential in its own
+  /// `mcp-tokens/` directory, and the `mcp_servers` entry that tells it the
+  /// connector exists at all.
+  ///
+  /// Neither half works alone. A token file with no config entry is an orphan
+  /// Hermes never opens; a config entry with no token is a server it can't
+  /// authenticate against. The order below is deliberate — credential first, so
+  /// there is no moment where the agent knows about a server it cannot reach.
   @override
   Future<void> Function(List<ConnectorToken>)? get projectConnectorTokens =>
       (tokens) async {
-        // Every connector we know of is ours to manage, whether or not it still
-        // has a token: that set is what tells the projection which stale files
-        // to clear without touching servers Hermes authorized on its own.
-        final owned = {for (final token in tokens) token.connector};
         try {
-          await _tokens.project(tokens, owned: owned);
+          // Ask the config which connectors we already own *before* writing, so
+          // deletions are driven by what is really on disk rather than by the
+          // list being written — which can only ever say "everything here is
+          // wanted" and would leave a disconnected connector's file behind.
+          final owned = await _servers.owned();
+          await _tokens.project(
+            tokens,
+            owned: {...owned, for (final token in tokens) token.connector},
+          );
+          await _servers.project(tokens);
         } on Object catch (error) {
           throw AgentExtensionException(
             "Couldn't hand the connector tokens to Hermes: $error",
@@ -225,6 +238,11 @@ final hermesConfigFileProvider = Provider<HermesConfigFile>(
   (ref) => HermesConfigFile(),
 );
 
+/// The `mcp_servers` half of the connector projection.
+final hermesConnectorServersProvider = Provider<HermesConnectorServers>(
+  (ref) => HermesConnectorServers(),
+);
+
 /// Hermes's extension adapter. Always present — the skills and MCP planes are
 /// file-based and outlive the binary — with the plugins plane going null when
 /// the binary is missing. The screens' whole-page gate stays
@@ -238,5 +256,6 @@ final hermesExtensionsProvider = Provider<AgentExtensions?>((ref) {
     installer: ref.watch(agentSkillInstallerProvider),
     configFile: ref.watch(hermesConfigFileProvider),
     tokenProjection: ref.watch(hermesTokenProjectionProvider),
+    connectorServers: ref.watch(hermesConnectorServersProvider),
   );
 });

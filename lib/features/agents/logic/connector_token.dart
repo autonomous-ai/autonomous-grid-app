@@ -144,10 +144,18 @@ class ConnectorToken {
     return (now ?? DateTime.now()).isAfter(expiry.subtract(skew));
   }
 
-  /// Worth calling `/refresh` for: it will expire soon and the provider issues
+  /// The gateway can mint a replacement for this token.
+  ///
+  /// Named separately from [needsRefresh] because the refresh scheduler needs
+  /// the question without the clock: "is this worth setting an alarm for" is
+  /// asked long before "is it due". Answering it with the entry alone would
+  /// skip every connector that has no MCP server yet — those credentials expire
+  /// exactly like the rest.
+  bool get canBeRefreshed => mcpEntry?.canRefresh ?? refreshToken != null;
+
+  /// Worth calling `/refresh` for now: it expires soon and the provider issues
   /// refresh tokens. Without the second half the call only spends a request.
-  bool needsRefresh({DateTime? now}) =>
-      isExpired(now: now) && (mcpEntry?.canRefresh ?? refreshToken != null);
+  bool needsRefresh({DateTime? now}) => isExpired(now: now) && canBeRefreshed;
 
   ConnectorToken copyWith({
     String? accessToken,

@@ -6,6 +6,7 @@ import '../../../infrastructure/api/connector_gateway_client.dart';
 import '../../../shared/external_launch.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/connector_token.dart';
+import 'connector_refresh_service.dart';
 import 'connector_token_store.dart';
 
 /// A connector the app is waiting on, held in memory only.
@@ -179,6 +180,12 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
 
     final projectionError = await projectTokens();
     state = const ConnectorLinkState();
+
+    // Re-arm the refresh schedule around the token that just arrived. Without
+    // this the service is still asleep on the old deadline — or on no deadline
+    // at all, if this is the first connector — and the new credential would
+    // lapse with nothing watching it.
+    unawaited(ref.read(connectorRefreshServiceProvider).start());
 
     if (projectionError != null) return projectionError;
     // Signed in, and the gateway has no MCP server behind this connector yet:

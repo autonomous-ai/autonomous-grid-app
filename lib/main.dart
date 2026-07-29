@@ -9,6 +9,7 @@ import 'app/grid_app.dart';
 import 'app/single_instance.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
+import 'features/connectors/presentation/connector_refresh_scope.dart';
 import 'infrastructure/logging/app_log.dart';
 import 'infrastructure/logging/http_log.dart';
 import 'infrastructure/logging/log_file.dart';
@@ -87,7 +88,10 @@ Future<void> main() async {
         httpLogProvider.overrideWithValue(buildFileHttpLog()),
         appUpdaterServiceProvider.overrideWithValue(updater),
       ],
-      child: const GridApp(),
+      // Wraps the app rather than sitting inside it: connector tokens are
+      // refreshed for the agent's sake, and the agent answers chats whether or
+      // not the Connectors screen was ever opened.
+      child: const ConnectorRefreshScope(child: GridApp()),
     ),
   );
 }
