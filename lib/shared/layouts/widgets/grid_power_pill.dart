@@ -240,7 +240,9 @@ class _PowerPanel extends ConsumerWidget {
   final VoidCallback onEnter;
   final VoidCallback onExit;
 
-  static const double _width = 272;
+  // Wide enough that a node's memory figure ("191.9 GB VRAM") fits its column
+  // without eating the machine name beside it.
+  static const double _width = 312;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -435,7 +437,7 @@ class _LegendRow extends StatelessWidget {
         // width, but "48 GB VRAM" and "32 GB RAM" are different lengths, so
         // without a column the values step raggedly down the panel.
         SizedBox(
-          width: 84,
+          width: 100,
           child: Text(
             '${formatVram(slice.gb)} $memoryKind',
             textAlign: TextAlign.right,
