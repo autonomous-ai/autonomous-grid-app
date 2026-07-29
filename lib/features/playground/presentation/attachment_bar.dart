@@ -4,14 +4,30 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/playground_request.dart';
 
+/// The image file types the app accepts as attachments. The picker's filter and
+/// the composer's drag-and-drop sorter share this list so the two never drift.
+const List<String> kImageExtensions = [
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+  'bmp',
+];
+
+/// Whether [name] — a filename or a path — ends in one of [kImageExtensions], so
+/// a dropped image is attached as a picture rather than mentioned by path.
+bool isImageFilename(String name) {
+  final dot = name.lastIndexOf('.');
+  return dot >= 0 &&
+      kImageExtensions.contains(name.substring(dot + 1).toLowerCase());
+}
+
 /// Opens the system image picker and returns the chosen file as a
 /// [MediaAttachment], or null if the user cancelled. Shared by the media
 /// [AttachmentBar] and the Chat composer's inline attach button.
 Future<MediaAttachment?> pickImageAttachment() async {
-  const group = XTypeGroup(
-    label: 'Images',
-    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'],
-  );
+  const group = XTypeGroup(label: 'Images', extensions: kImageExtensions);
   final file = await openFile(acceptedTypeGroups: const [group]);
   if (file == null) return null;
   final bytes = await file.readAsBytes();
