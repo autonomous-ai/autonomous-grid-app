@@ -128,6 +128,12 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
         ? link.messageFor(connector.id)
         : connector.linkedElsewhere
         ? 'Connected on another computer — sign in here to use it.'
+        // Connected, and the gateway has no tools behind it yet. This has to be
+        // said here or nowhere: the tag now reports only whether the connector
+        // is connected, and the description would otherwise take the line and
+        // leave the row looking exactly like one the agent can already use.
+        : connector.connectedButUnusable
+        ? "Connected. The agent can't use it yet — tools are coming."
         : !connector.canConnect && connector.catalogEntry != null
         ? _unavailableReason(connector)
         : '';
@@ -154,19 +160,17 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
                         style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
-                    // One tag, not two. "Connected" beside "No tools yet" made
-                    // the row argue with itself at a glance — and the line
-                    // underneath was already saying the same thing a third
-                    // time. The state gets one name; the detail lives in the
-                    // note below it.
+                    // One tag, and it answers one question: is this connector
+                    // connected? Yes or no — a connector with a token is
+                    // connected whether or not the gateway has wired up tools
+                    // for it yet. Naming that second thing here ("Signed in"
+                    // vs "Connected") made two accounts in the identical state
+                    // wear different badges, which reads as one of them having
+                    // half-worked. Tools are a separate sentence, and the note
+                    // underneath is where it belongs.
                     if (connector.token != null) ...[
                       const SizedBox(width: 8),
-                      ExtensionTag(
-                        label: connector.connectedButUnusable
-                            ? 'Signed in'
-                            : 'Connected',
-                        muted: connector.connectedButUnusable,
-                      ),
+                      const ExtensionTag(label: 'Connected'),
                     ],
                   ],
                 ),
@@ -626,11 +630,8 @@ String _unavailableReason(Connector connector) {
   if (entry.authMethod != ConnectorAuthMethod.app) {
     return 'Needs a personal access token — not available from the app yet.';
   }
-  // Not a reason to withhold Connect — signing in works and the credential is
-  // real. It only means the agent gains no tool from it yet, so the row says so
-  // while still offering the button.
-  if (!entry.mcpReady) {
-    return 'Sign-in works; tools for the agent are coming.';
-  }
+  // `mcpReady` is deliberately not tested here. It no longer gates Connect, so
+  // this helper is never called for it; a connector with no tools yet is
+  // connectable, and the row says so once it *is* connected.
   return '';
 }

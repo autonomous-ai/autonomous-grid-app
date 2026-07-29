@@ -187,7 +187,7 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     if (!token.isUsable) {
       return _settle(
         connector,
-        'Signed in. Tools for the agent are coming — nothing to use yet.',
+        "Connected. The agent can't use it yet — tools are coming.",
       );
     }
     return null;
