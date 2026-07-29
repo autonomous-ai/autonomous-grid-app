@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
+import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
+import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 
 void main() {
   late Directory home;
@@ -15,8 +16,11 @@ void main() {
   File skillMd(String skill) =>
       File('${home.path}/.hermes/skills/grid/$skill/SKILL.md');
 
+  Future<void> installHermes() =>
+      AgentSkillInstaller(home: home.path).install(AgentTool.hermes);
+
   test('installs both the image and video skill files', () async {
-    await HermesSkillInstaller(home: home.path).install();
+    await installHermes();
 
     for (final skill in const ['grid-image-gen', 'grid-video-gen']) {
       expect(skillMd(skill).existsSync(), isTrue, reason: '$skill SKILL.md');
@@ -27,7 +31,7 @@ void main() {
 
   test('neither script bakes credentials or a grid — both read them at run '
       'time from the same OPENAI_* pair', () async {
-    await HermesSkillInstaller(home: home.path).install();
+    await installHermes();
 
     for (final skill in const ['grid-image-gen', 'grid-video-gen']) {
       final source = script(skill).readAsStringSync();
@@ -48,7 +52,7 @@ void main() {
 
   test('the video skill does not read GRID_API_KEY and targets the i2v '
       'endpoint — the exact bug the prototype had', () async {
-    await HermesSkillInstaller(home: home.path).install();
+    await installHermes();
     final source = script('grid-video-gen').readAsStringSync();
 
     expect(
@@ -77,7 +81,7 @@ void main() {
         'BASE_URL = "https://grid.autonomous.ai/grid-1ffe6152a2e547fa/relay/v1"',
       );
 
-      await HermesSkillInstaller(home: home.path).install();
+      await installHermes();
 
       // The clean script replaced it — no hardcoded grid left anywhere.
       expect(
@@ -107,7 +111,7 @@ void main() {
         ).writeAsString('API_KEY = "eyJleak"');
       }
 
-      await HermesSkillInstaller(home: home.path).install();
+      await installHermes();
 
       for (final leaked in const [
         '.hermes/skills/creative/grid-image-gen',
@@ -124,11 +128,31 @@ void main() {
   );
 
   test('is idempotent — a second install keeps both skills', () async {
-    final installer = HermesSkillInstaller(home: home.path);
-    await installer.install();
-    await installer.install();
+    await installHermes();
+    await installHermes();
 
     expect(script('grid-image-gen').existsSync(), isTrue);
     expect(script('grid-video-gen').existsSync(), isTrue);
+  });
+
+  test('Codex gets web search but not the Hermes-only media skills — the '
+      'registry gates each skill by agent', () async {
+    await AgentSkillInstaller(home: home.path).install(AgentTool.codex);
+
+    final codexSkills = Directory('${home.path}/.codex/skills');
+    expect(
+      File('${codexSkills.path}/grid-web/SKILL.md').existsSync(),
+      isTrue,
+      reason: 'Codex has no other way to reach the web on a grid',
+    );
+    expect(
+      Directory('${codexSkills.path}/grid-image-gen').existsSync(),
+      isFalse,
+      reason: 'the media skills are Hermes-only today',
+    );
+    expect(
+      Directory('${codexSkills.path}/grid-video-gen').existsSync(),
+      isFalse,
+    );
   });
 }

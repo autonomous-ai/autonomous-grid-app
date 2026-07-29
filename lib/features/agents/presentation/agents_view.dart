@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
+import '../../../shared/widgets/toast.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
 import '../logic/agent_grid_support.dart';
@@ -75,6 +76,18 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
     // talk to. One that can't is shown as unavailable *here* rather than hidden
     // — the row is how the user learns the grid is the reason.
     final runsHere = ref.watch(agentRunsOnGridProvider(tool));
+
+    // When this agent's install or update finishes, say so — a success toast, so
+    // the button never looks like it did nothing. Filtered by tool: one provider
+    // drives both rows, so each reports only its own outcome.
+    ref.listen(agentInstallProvider, (_, next) {
+      if (next is AgentInstallDone && next.tool == tool) {
+        ToastScope.show(
+          context,
+          ToastSpec(message: next.message, severity: ToastSeverity.success),
+        );
+      }
+    });
 
     // The agent answering chats right now wears the brand: a gold rim and a faint
     // gold wash lift it out of the quiet list so it's obvious which one is live.

@@ -1,9 +1,9 @@
-/// The category folder user-written skills live under, kept apart from the
-/// agent's bundled skills and Grid's so an update can never overwrite them.
-///
-/// Skills here are the only ones the app authored, so the only ones it offers to
-/// edit — see [AgentSkill.isMine].
-const String kMySkillsCategory = 'my-skills';
+// [kMySkillsCategory] lives with the other skill-home vocabulary in
+// shared/skills, since the installer, author and every scanner need it —
+// re-exported so callers that reach it through this file keep working.
+import '../../../shared/skills/agent_skill_home.dart';
+
+export '../../../shared/skills/agent_skill_home.dart' show kMySkillsCategory;
 
 /// One thing the assistant knows how to do beyond talking — the agents call
 /// these "skills"; on disk a skill is a folder with a `SKILL.md`: a little

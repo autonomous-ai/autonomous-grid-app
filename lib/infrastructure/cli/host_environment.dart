@@ -45,15 +45,72 @@ class HostEnvironment {
   /// locations can never drift again.
   static String get hermesHome => '${GridPaths.userHome}/.hermes';
 
-  /// The spawn environment for a Hermes process: the augmented [path] and
-  /// [hermesHome], merged over the inherited environment. Used by every service
-  /// that launches `hermes`, so none can forget `HERMES_HOME` and read the wrong
-  /// config directory.
-  static Map<String, String> hermesEnvironment() => {
-    ...Platform.environment,
-    'PATH': path(),
-    'HERMES_HOME': hermesHome,
-  };
+  /// The spawn environment for a Hermes process: the augmented [path],
+  /// [hermesHome] and — on Windows — [gitBash], merged over the inherited
+  /// environment. Used by every service that launches `hermes`, so none can
+  /// forget `HERMES_HOME` and read the wrong config directory.
+  static Map<String, String> hermesEnvironment() {
+    final env = {
+      ...Platform.environment,
+      'PATH': path(),
+      'HERMES_HOME': hermesHome,
+    };
+    // Fill it in, never override: a user who set this chose their own bash, and
+    // Hermes probes ours anyway before trusting it.
+    if (Platform.isWindows && (env[_gitBashVar] ?? '').isEmpty) {
+      final bash = gitBash();
+      if (bash != null) env[_gitBashVar] = bash;
+    }
+    return env;
+  }
+
+  /// Hermes's own escape hatch for "use this bash".
+  static const _gitBashVar = 'HERMES_GIT_BASH_PATH';
+
+  /// The Git Bash Hermes should run terminal commands through on Windows, or
+  /// null off Windows and when Git isn't installed.
+  ///
+  /// Hermes shells every command through bash. To find one it checks a fixed
+  /// list of Git-for-Windows install dirs (`%ProgramFiles%\Git`,
+  /// `%LOCALAPPDATA%\Programs\Git`, its own portable copy) and then falls back
+  /// to `where bash` — which on any machine with the WSL feature enabled
+  /// answers `C:\Windows\System32\bash.exe`, the WSL launcher. With no distro
+  /// installed that stub fails *every* command ("WSL … execvpe /bin/bash
+  /// failed"), and Hermes hands it back as a last resort rather than reporting
+  /// that it found no usable shell. The agent then looks broken — each terminal
+  /// step going red — when Git is in fact installed, just not where Hermes
+  /// looked (a `D:\Tools\Git`, a scoop or winget prefix).
+  ///
+  /// We already resolve tools off the augmented [path], so point Hermes at the
+  /// bash sitting beside the `git` the user actually has. It still probes the
+  /// path we give it and keeps its own fallbacks if that one can't start.
+  static String? gitBash() =>
+      _gitBashProbed ? _cachedGitBash : (_cachedGitBash = _findGitBash());
+
+  static String? _cachedGitBash;
+  static bool _gitBashProbed = false;
+
+  static String? _findGitBash() {
+    _gitBashProbed = true;
+    if (!Platform.isWindows) return null;
+    final git = findExecutable('git');
+    return git == null ? null : gitBashBeside(git);
+  }
+
+  /// The bash belonging to the Git install that owns [gitPath], or null when
+  /// there isn't one. Git for Windows lays out `<root>\cmd\git.exe` and
+  /// `<root>\bin\git.exe` beside `<root>\bin\bash.exe`, so both spellings of the
+  /// launcher lead to the same shell.
+  ///
+  /// A `git` that resolves to something without that layout — a shim, a stub —
+  /// gets no answer rather than a guessed one: a wrong bash fails exactly like
+  /// the WSL stub this exists to avoid.
+  static String? gitBashBeside(String gitPath) {
+    final root = File(gitPath).parent.parent.path;
+    final sep = Platform.pathSeparator;
+    final bash = File('$root${sep}bin${sep}bash.exe');
+    return bash.existsSync() ? bash.path : null;
+  }
 
   /// Absolute path to executable [name] on the augmented [path], or null when it
   /// isn't installed. Rebuilding `PATH` first means a packaged GUI app finds
@@ -83,10 +140,10 @@ class HostEnvironment {
     // are found without Homebrew and without the user's shell.
     add(GridPaths.binDir.path);
 
-    final home = Platform.environment['HOME'] ?? '';
-    if (home.isNotEmpty) {
-      add('$home/.local/bin'); // uv tool / pipx (where `grid` lives)
-    }
+    // `GridPaths.userHome`, not `$HOME`: a Windows GUI process has no `HOME` at
+    // all, so reading it directly dropped `.local/bin` — where `grid` itself
+    // lives — off the PATH the app hands its children.
+    add('${GridPaths.userHome}/.local/bin'); // uv tool / pipx
 
     if (!Platform.isWindows) {
       // Both Homebrew prefixes plus the standard system dirs — the set a GUI

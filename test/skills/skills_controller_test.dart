@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/hermes_extensions.dart';
-import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
+import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agent/logic/hermes_skill_scanner.dart';
 import 'package:grid_app/features/agents/logic/agent_skill.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
@@ -25,8 +25,8 @@ void main() {
           AgentSkillScanner(home: home.path),
         ),
         skillAuthorProvider.overrideWithValue(SkillAuthor(home: home.path)),
-        hermesSkillInstallerProvider.overrideWithValue(
-          HermesSkillInstaller(home: home.path),
+        agentSkillInstallerProvider.overrideWithValue(
+          AgentSkillInstaller(home: home.path),
         ),
         // The controller projects the shared store into config.yaml before
         // every authoring write — this must land in the temp home, never in

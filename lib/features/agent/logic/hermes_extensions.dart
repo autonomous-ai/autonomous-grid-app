@@ -12,7 +12,7 @@ import '../../agents/logic/mcp_server.dart';
 import '../../agents/logic/skill_writer.dart';
 import '../../skills/logic/skill_author.dart';
 import 'hermes_mcp_config.dart';
-import 'hermes_skill_installer.dart';
+import 'agent_skill_installer.dart';
 import 'hermes_skill_scanner.dart';
 import 'hermes_tool.dart';
 
@@ -25,7 +25,7 @@ class HermesExtensions implements AgentExtensions {
     required HermesMcpConfig mcpConfig,
     required AgentSkillScanner scanner,
     required SkillAuthor author,
-    required HermesSkillInstaller installer,
+    required AgentSkillInstaller installer,
     required HermesConfigFile configFile,
   }) : skills = _HermesSkillsPlane(scanner, author, installer, configFile),
        plugins = pluginService == null
@@ -65,7 +65,7 @@ class _HermesSkillsPlane implements AgentSkillsPlane {
 
   final AgentSkillScanner _scanner;
   final SkillAuthor _author;
-  final HermesSkillInstaller _installer;
+  final AgentSkillInstaller _installer;
   final HermesConfigFile _configFile;
 
   @override
@@ -75,7 +75,7 @@ class _HermesSkillsPlane implements AgentSkillsPlane {
   SkillWriter? get writer => _author;
 
   @override
-  Future<void> installGridSkills() => _installer.install();
+  Future<void> installGridSkills() => _installer.install(AgentTool.hermes);
 
   /// Merge the shared store into `skills.external_dirs` — append-if-absent,
   /// never clobbering entries the user set by hand. Hermes tolerates a bare
@@ -212,7 +212,7 @@ final hermesExtensionsProvider = Provider<AgentExtensions?>((ref) {
     mcpConfig: ref.watch(hermesMcpConfigProvider),
     scanner: ref.watch(agentSkillScannerProvider),
     author: ref.watch(skillAuthorProvider),
-    installer: ref.watch(hermesSkillInstallerProvider),
+    installer: ref.watch(agentSkillInstallerProvider),
     configFile: ref.watch(hermesConfigFileProvider),
   );
 });

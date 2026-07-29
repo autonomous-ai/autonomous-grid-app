@@ -28,6 +28,16 @@ class AgentInstallFailed extends AgentInstallState {
   final String message;
 }
 
+/// [tool] finished installing or updating. [message] is the outcome in the
+/// user's terms — whether it was already the latest build or just moved to a
+/// newer one — so the button gives a plain answer instead of appearing to do
+/// nothing (the app can't know a newer build exists until it has pulled one).
+class AgentInstallDone extends AgentInstallState {
+  const AgentInstallDone(this.tool, this.message);
+  final AgentTool tool;
+  final String message;
+}
+
 final agentInstallProvider =
     NotifierProvider<AgentInstallController, AgentInstallState>(
       AgentInstallController.new,
@@ -55,6 +65,11 @@ class AgentInstallController extends Notifier<AgentInstallState> {
     }
 
     state = AgentInstallRunning(tool);
+    // The build that's there now, read before the reinstall replaces it — so the
+    // outcome can say whether anything actually changed. Only meaningful on an
+    // upgrade; a fresh install has nothing before it.
+    final before = upgrade ? await _installedVersion(tool) : null;
+
     final result = await cli.run([
       'agent',
       'install',
@@ -75,8 +90,18 @@ class AgentInstallController extends Notifier<AgentInstallState> {
       state = AgentInstallFailed(tool, unfinished);
       return;
     }
-    state = const AgentInstallIdle();
+    // Re-read after the re-probe: the build now on the machine, to compare
+    // against [before] and report the honest outcome.
+    final after = await _installedVersion(tool);
+    state = AgentInstallDone(
+      tool,
+      agentInstallOutcome(tool, upgrade: upgrade, before: before, after: after),
+    );
   }
+
+  /// The installed build of [tool], or null when it doesn't report one.
+  Future<String?> _installedVersion(AgentTool tool) =>
+      ref.read(agentVersionProvider(tool).future);
 
   /// Make sure Hermes can actually serve ACP — the mode chat drives it in.
   ///
@@ -100,6 +125,28 @@ class AgentInstallController extends Notifier<AgentInstallState> {
   void clearError() {
     if (state is AgentInstallFailed) state = const AgentInstallIdle();
   }
+}
+
+/// The outcome line shown after an install or update finishes.
+///
+/// The app can't know a newer build exists until it has pulled one, so an
+/// "update" always reinstalls the latest and then compares the build [before] it
+/// ran against the one [after]: unchanged reads as already-current, a new number
+/// as an update. A build that reports no version can only be said to have been
+/// reinstalled — never claimed up to date on evidence it doesn't have.
+String agentInstallOutcome(
+  AgentTool tool, {
+  required bool upgrade,
+  required String? before,
+  required String? after,
+}) {
+  final name = tool.name;
+  if (!upgrade) {
+    return after == null ? 'Installed $name.' : 'Installed $name · v$after';
+  }
+  if (after == null) return 'Reinstalled $name.';
+  if (before == after) return '$name is already up to date · v$after';
+  return 'Updated $name to v$after';
 }
 
 /// The CLI's last words, or a plain sentence when it said nothing useful — never

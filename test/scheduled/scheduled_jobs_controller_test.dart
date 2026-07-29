@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_providers.dart';
 import 'package:grid_app/features/agent/logic/hermes_grid_link.dart';
-import 'package:grid_app/features/agent/logic/hermes_skill_installer.dart';
+import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
@@ -187,8 +187,8 @@ void main() {
         clientAppConfiguratorProvider.overrideWithValue(
           ClientAppConfigurator(home: workspace.path),
         ),
-        hermesSkillInstallerProvider.overrideWithValue(
-          HermesSkillInstaller(home: workspace.path),
+        agentSkillInstallerProvider.overrideWithValue(
+          AgentSkillInstaller(home: workspace.path),
         ),
         chatPrefsStoreProvider.overrideWithValue(
           ChatPrefsStore(file: File('${workspace.path}/app/chat_prefs.json')),

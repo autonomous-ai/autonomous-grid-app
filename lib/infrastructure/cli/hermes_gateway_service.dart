@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/grid_paths.dart';
 import 'env_file.dart';
 import 'host_environment.dart';
 
@@ -71,7 +72,7 @@ abstract interface class HermesGatewayService {
 /// Real implementation: writes `~/.hermes/.env` and drives the `hermes` binary.
 class HermesGatewayServiceImpl implements HermesGatewayService {
   HermesGatewayServiceImpl(this.binPath, {String? home})
-    : _home = home ?? Platform.environment['HOME'] ?? '';
+    : _home = home ?? GridPaths.userHome;
 
   /// Absolute path to the hermes binary (it isn't on a GUI app's default PATH).
   final String binPath;

@@ -30,11 +30,31 @@ class HostShellServiceImpl implements HostShellService {
     };
     try {
       final result = await Process.run(command, [path]);
-      return result.exitCode == 0;
+      return launchSucceeded(
+        exitCode: result.exitCode,
+        folderExists: Directory(path).existsSync(),
+        onWindows: Platform.isWindows,
+      );
     } on ProcessException {
       return false;
     }
   }
+
+  /// Whether the file manager actually revealed the folder.
+  ///
+  /// `explorer.exe` exits **1 whether or not it opened anything** — the window
+  /// is on screen and the code still reads as failure. Believing it put
+  /// "Couldn't open …" over every successful reveal on Windows. The code
+  /// carries no information there, so the answer is the check we *can* make:
+  /// the folder exists and explorer started without throwing. Every other file
+  /// manager reports honestly and keeps being believed.
+  ///
+  /// Split out from the spawn so the rule is testable on any platform.
+  static bool launchSucceeded({
+    required int exitCode,
+    required bool folderExists,
+    required bool onWindows,
+  }) => onWindows ? folderExists : exitCode == 0;
 }
 
 /// The host shell used across the app. Overridden with a fake in tests.
