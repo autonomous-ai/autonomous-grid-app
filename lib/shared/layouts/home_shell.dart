@@ -6,11 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/auth/logic/session_controller.dart';
+import '../../features/chat/logic/chat_sessions_controller.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/node_setup/logic/auto_host_controller.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
 import '../../features/node_setup/logic/background_model_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
+import '../../features/scheduled/logic/task_unread_store.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
 import 'shell_state.dart';
@@ -53,6 +55,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // leaves the result in a file. Start looking for those results, so they
       // land in Chat instead of sitting somewhere the user never looks.
       ref.read(taskDeliveryProvider.notifier).start();
+      // If the app opened straight onto a task's chat, it's already being read —
+      // clear its "new results" badge (the listen below only fires on a change,
+      // not on this first value).
+      _markTaskChatRead(ref.read(chatSessionsProvider).activeId);
       // The launch update check lives here, not at startup: the shell is only
       // reached once first-run setup is done or skipped, so Sparkle's "restart
       // to update" prompt can't land on top of a model download.
@@ -72,6 +78,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void _resumeSharing() =>
       ref.read(autoHostControllerProvider.notifier).startIfReady();
 
+  /// Opening a scheduled task's chat is reading its result — clear that task's
+  /// "new results" badge. A no-op for any other chat (or none open).
+  void _markTaskChatRead(String? conversationId) {
+    final jobId = jobIdOfTaskConversation(conversationId);
+    if (jobId == null) return;
+    ref.read(taskUnreadProvider.notifier).markRead(jobId);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Re-colour the whole shell the instant the theme flips. The shell and its
@@ -86,6 +100,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref.listen(selectedNetworkProvider, (_, next) {
       if (next != null) _resumeSharing();
     });
+
+    // Opening a task's chat clears its "new results" badge — the sidebar's dot
+    // and the Scheduled list's pill both go quiet the moment it's read.
+    ref.listen(
+      chatSessionsProvider.select((s) => s.activeId),
+      (_, id) => _markTaskChatRead(id),
+    );
 
     final section = ref.watch(shellSectionProvider);
 

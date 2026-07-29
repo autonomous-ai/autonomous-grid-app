@@ -67,6 +67,10 @@ class Conversation {
     String? model,
     DateTime? updatedAt,
     List<ChatMessage>? messages,
+    // Only ever *set* a project here (null keeps the current one): a chat leaves
+    // its project by being deleted, not re-homed, so there's no clear path to
+    // express and the plain `?? this` idiom is exactly right.
+    String? projectId,
     bool? titleLocked,
     DateTime? archivedAt,
     bool clearArchivedAt = false,
@@ -77,7 +81,7 @@ class Conversation {
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     messages: messages ?? this.messages,
-    projectId: projectId,
+    projectId: projectId ?? this.projectId,
     titleLocked: titleLocked ?? this.titleLocked,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
   );

@@ -28,9 +28,10 @@ class _JobRowState extends ConsumerState<_JobRow> {
     // while the new row's faded in — two rows lit at once, the "double flash".
     // A selected row is a hard state change, so it should not animate at all.
     final status = jobStatusOf(widget.job);
-    // A task whose result landed since the app opened gets a "new results" pill,
-    // so the list itself says something arrived — you don't have to open it.
-    final hasNew = ref.watch(taskDeliveryProvider).contains(widget.job.id);
+    // A task with a result the user hasn't opened yet gets a "new results" pill,
+    // so the list itself says something arrived — you don't have to open it. The
+    // flag is persisted and clears when the chat is read, not on app restart.
+    final hasNew = ref.watch(taskUnreadProvider).contains(widget.job.id);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),

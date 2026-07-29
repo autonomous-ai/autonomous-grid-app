@@ -7,14 +7,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/hermes_cron_service.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import '../../projects/logic/project_tasks_store.dart';
 import 'cron_output.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'scheduled_jobs_controller.dart';
+import 'task_unread_store.dart';
+
+/// Prefix on a task chat's id, the seam between it and the job id it carries.
+const String _kTaskChatPrefix = 'task-';
 
 /// The conversation a task's results land in. One per task, so a daily digest
 /// reads as a thread rather than a pile of unrelated chats.
-String taskConversationId(String jobId) => 'task-$jobId';
+String taskConversationId(String jobId) => '$_kTaskChatPrefix$jobId';
+
+/// The job id behind a task chat's [conversationId], or null when it isn't one
+/// — the inverse of [taskConversationId], so opening a chat can find the task to
+/// mark read without the chat feature having to know the id scheme.
+String? jobIdOfTaskConversation(String? conversationId) {
+  if (conversationId == null || !conversationId.startsWith(_kTaskChatPrefix)) {
+    return null;
+  }
+  final jobId = conversationId.substring(_kTaskChatPrefix.length);
+  return jobId.isEmpty ? null : jobId;
+}
 
 /// A result as it reads in the chat: when the task ran, then what it found.
 ///
@@ -124,10 +140,19 @@ class TaskDeliveryController extends Notifier<List<String>> {
     try {
       final jobs = await ref.read(scheduledJobsProvider.future);
       final delivered = {...ref.read(taskDeliveryStoreProvider).load()};
+      final links = ref.read(projectTasksProvider);
+      final chat = ref.read(chatSessionsProvider.notifier);
       final arrived = <String>[];
 
       for (final job in jobs) {
-        final last = await _deliver(job, cron, delivered[job.id]);
+        final projectId = links[job.id];
+        // Keep the task's chat under its project even when there's no new run to
+        // deliver — a chat created before the app tracked the link would sit
+        // loose forever otherwise.
+        if (projectId != null) {
+          chat.linkToProject(taskConversationId(job.id), projectId);
+        }
+        final last = await _deliver(job, cron, delivered[job.id], projectId);
         if (last == null) continue;
         delivered[job.id] = last;
         arrived.add(job.id);
@@ -135,6 +160,9 @@ class TaskDeliveryController extends Notifier<List<String>> {
 
       if (arrived.isEmpty) return;
       ref.read(taskDeliveryStoreProvider).save(delivered);
+      // Badge each task that just delivered, so the sidebar and the Scheduled
+      // list say a result is waiting until the user opens it.
+      ref.read(taskUnreadProvider.notifier).markUnread(arrived);
       state = [...state, ...arrived];
     } on Object {
       // A scheduler that can't be read is the Scheduled screen's problem to
@@ -145,12 +173,14 @@ class TaskDeliveryController extends Notifier<List<String>> {
     }
   }
 
-  /// Deliver [job]'s results newer than [since] into its chat. Returns the time
-  /// of the newest one delivered, or null when there was nothing new.
+  /// Deliver [job]'s results newer than [since] into its chat, homing it under
+  /// [projectId] when the task belongs to a project. Returns the time of the
+  /// newest one delivered, or null when there was nothing new.
   Future<DateTime?> _deliver(
     ScheduledJob job,
     HermesCronService cron,
     DateTime? since,
+    String? projectId,
   ) async {
     final runs = await cron.readOutputs(job.id);
     final fresh = [
@@ -166,6 +196,7 @@ class TaskDeliveryController extends Notifier<List<String>> {
         title: job.name,
         text: taskResultMessage(run),
         at: run.at,
+        projectId: projectId,
       );
     }
     return fresh.last.at;

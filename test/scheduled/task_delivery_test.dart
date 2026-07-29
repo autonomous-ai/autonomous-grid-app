@@ -8,8 +8,10 @@ import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
+import 'package:grid_app/features/projects/logic/project_tasks_store.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_jobs_controller.dart';
 import 'package:grid_app/features/scheduled/logic/task_delivery.dart';
+import 'package:grid_app/features/scheduled/logic/task_unread_store.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
@@ -84,6 +86,14 @@ void main() {
         chatSenderProvider.overrideWithValue(_NeverSender()),
         taskDeliveryStoreProvider.overrideWithValue(
           TaskDeliveryStore(file: File('${tmp.path}/task_delivery.json')),
+        ),
+        // The unread badge and the project links persist too — point them at the
+        // temp dir so a sweep never reads or writes the real `~/.grid`.
+        taskUnreadStoreProvider.overrideWithValue(
+          TaskUnreadStore(file: File('${tmp.path}/task_unread.json')),
+        ),
+        projectTasksStoreProvider.overrideWithValue(
+          ProjectTasksStore(file: File('${tmp.path}/project_tasks.json')),
         ),
       ],
     );
@@ -266,6 +276,145 @@ void main() {
       expect(TaskDeliveryStore(file: file).load(), {
         'job-1': DateTime(2026, 7, 14, 8),
       });
+    });
+  });
+
+  group('jobIdOfTaskConversation', () {
+    test('is the inverse of taskConversationId', () {
+      expect(jobIdOfTaskConversation(taskConversationId('abc')), 'abc');
+      expect(jobIdOfTaskConversation('task-job-1'), 'job-1');
+    });
+
+    test('a chat that is not a task\'s reads as no job — nothing to mark '
+        'read', () {
+      expect(jobIdOfTaskConversation('mine'), isNull);
+      expect(jobIdOfTaskConversation(null), isNull);
+      expect(jobIdOfTaskConversation('task-'), isNull);
+    });
+  });
+
+  group('the "new results" badge', () {
+    test('a delivered run marks its task unread, and reading its chat clears '
+        'it', () async {
+      final h = harness(
+        FakeCron(
+          jobsJson: _jobsJson(),
+          outputs: {
+            'job-1': [(at: DateTime(2026, 7, 14, 8), text: 'Digest')],
+          },
+        ),
+      );
+
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+      expect(h.container.read(taskUnreadProvider), contains('job-1'));
+
+      // Opening the chat is what clears it — the shell calls markRead.
+      h.container.read(taskUnreadProvider.notifier).markRead('job-1');
+      expect(h.container.read(taskUnreadProvider), isNot(contains('job-1')));
+    });
+
+    test('a result that lands while its chat is open is not badged — you are '
+        'already reading it', () async {
+      final h = harness(
+        FakeCron(
+          jobsJson: _jobsJson(),
+          outputs: {
+            'job-1': [(at: DateTime(2026, 7, 14, 8), text: 'Digest')],
+          },
+        ),
+      );
+      // The task's chat is the one on screen when the run arrives.
+      h.container
+          .read(chatSessionsProvider.notifier)
+          .select(taskConversationId('job-1'));
+
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      expect(h.container.read(taskUnreadProvider), isNot(contains('job-1')));
+    });
+
+    test('the badge outlives a restart — a run missed overnight is still '
+        'waiting in the morning', () async {
+      final h = harness(
+        FakeCron(
+          jobsJson: _jobsJson(),
+          outputs: {
+            'job-1': [(at: DateTime(2026, 7, 14, 8), text: 'Digest')],
+          },
+        ),
+      );
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      // A fresh app (new container, same stores) loads the badge back.
+      final next = harness(h.cron);
+      expect(next.container.read(taskUnreadProvider), contains('job-1'));
+    });
+  });
+
+  group('a task chat lands in its project', () {
+    test('a project-scoped task delivers its result into that project', () async {
+      final h = harness(
+        FakeCron(
+          jobsJson: _jobsJson(),
+          outputs: {
+            'job-1': [(at: DateTime(2026, 7, 14, 8), text: 'Digest')],
+          },
+        ),
+      );
+      h.container.read(projectTasksProvider.notifier).assign('job-1', 'proj-1');
+
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      final chat = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .singleWhere((c) => c.id == taskConversationId('job-1'));
+      expect(chat.projectId, 'proj-1');
+    });
+
+    test('a task chat created before the link is reconciled, without waiting '
+        'on a new run', () async {
+      final h = harness(FakeCron(jobsJson: _jobsJson()));
+      // An old chat, saved loose before the app tracked the project link.
+      h.chats.save(
+        Conversation(
+          id: taskConversationId('job-1'),
+          title: 'review code',
+          model: '',
+          createdAt: DateTime(2026, 7, 13),
+          updatedAt: DateTime(2026, 7, 13),
+        ),
+      );
+      h.container.read(projectTasksProvider.notifier).assign('job-1', 'proj-1');
+
+      // No new output to deliver — the reconcile still has to run.
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      final chat = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .singleWhere((c) => c.id == taskConversationId('job-1'));
+      expect(chat.projectId, 'proj-1');
+      // Re-homing isn't talking in it — the sidebar order (updatedAt) is left be.
+      expect(chat.updatedAt, DateTime(2026, 7, 13));
+    });
+  });
+
+  group('TaskUnreadStore', () {
+    test('round-trips a set of job ids through disk', () {
+      final file = File('${tmp.path}/u.json');
+      TaskUnreadStore(file: file).save({'job-1', 'job-2'});
+      expect(TaskUnreadStore(file: file).load(), {'job-1', 'job-2'});
+    });
+
+    test('a corrupt or missing file reads as nothing unread — a stray write '
+        'never leaves a badge stuck on', () {
+      expect(TaskUnreadStore(file: File('${tmp.path}/nope.json')).load(),
+          isEmpty);
+
+      final broken = File('${tmp.path}/broken-unread.json')
+        ..writeAsStringSync('{ not a list');
+      expect(TaskUnreadStore(file: broken).load(), isEmpty);
     });
   });
 }

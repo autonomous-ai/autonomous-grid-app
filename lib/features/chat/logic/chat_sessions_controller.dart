@@ -449,6 +449,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     required String title,
     required String text,
     required DateTime at,
+    String? projectId,
   }) {
     if (text.trim().isEmpty) return;
 
@@ -462,10 +463,17 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
                   model: '',
                   createdAt: at,
                   updatedAt: at,
+                  // A scheduled task's chat is born inside its project (when it
+                  // has one), so it appears under that project's rail from the
+                  // first result rather than sitting loose until reconciled.
+                  projectId: projectId,
                 ))
             .copyWith(
               updatedAt: at,
               messages: [...?existing?.messages, message],
+              // Backfills the project on a chat created before the link existed;
+              // a null projectId keeps whatever it already had.
+              projectId: projectId,
             );
 
     _store.save(conversation);
@@ -475,6 +483,26 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         for (final c in state.conversations)
           if (c.id == id) conversation else c,
       ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
+    );
+  }
+
+  /// Put an already-saved chat under [projectId] when it isn't there yet — used
+  /// to reconcile a scheduled task's chat that was created before the app linked
+  /// the task to a project, without waiting on the next run to deliver.
+  ///
+  /// A no-op when the chat is missing or already carries that project, so it's
+  /// cheap to call on every sweep. Leaves `updatedAt` untouched: re-homing a
+  /// chat isn't talking in it, and must not jump it to the top of the sidebar.
+  void linkToProject(String id, String projectId) {
+    final existing = _find(id);
+    if (existing == null || existing.projectId == projectId) return;
+    final linked = existing.copyWith(projectId: projectId);
+    _store.save(linked);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == id) linked else c,
+      ],
     );
   }
 
