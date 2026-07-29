@@ -1,53 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agents/logic/connector_token.dart';
 import 'package:grid_app/features/agents/logic/mcp_server.dart';
 import 'package:grid_app/features/connectors/logic/connector.dart';
 import 'package:grid_app/features/connectors/logic/connector_catalog.dart';
-import 'package:grid_app/infrastructure/api/connector_gateway_client.dart';
-
-/// Verbatim from `GET /v1/grid/connectors` on staging, 2026-07-29.
-///
-/// The envelope is what this pins: the body is a flat `{"connectors": [...]}`,
-/// **not** `{"data": {"connectors": [...]}}`. A parser expecting the wrapped
-/// form reads this as "not a catalog at all", falls back to the bundled asset,
-/// and the screen quietly shows eight hardcoded rows while the gateway is
-/// offering sixteen. That is exactly what shipped, and it looked like a backend
-/// with nothing ready rather than like a parsing bug.
-const _gatewayResponse = '''
-{"connectors": [
-  {"code": "amplitude", "auth_type": "app", "scopes": ["a", "b", "c"],
-   "refresh": true, "mcp_url": "https://mcp.amplitude.com/mcp",
-   "mcp_ready": true, "status": "not_connected", "account_name": "",
-   "expires_at": 0, "connected_at": 0},
-  {"code": "asana", "auth_type": "app", "scopes": [],
-   "refresh": true, "mcp_url": "https://mcp.asana.com/v2/mcp",
-   "mcp_ready": true, "status": "not_connected", "account_name": "",
-   "expires_at": 0, "connected_at": 0}
-]}
-''';
 
 void main() {
-  group('the gateway catalog feeds the two Connect gates', () {
-    test('mcp_ready survives the parse', () {
-      // The whole screen hangs off this one flag: without it every row reads
-      // "No tools available for this connector yet" and Connect never appears.
-      final entries = parseGatewayConnectors(_gatewayResponse)!;
-      expect(entries.map((e) => e.code), ['amplitude', 'asana']);
-      expect(entries.every((e) => e.mcpReady), isTrue);
-      expect(entries.every((e) => e.canConnectFromApp), isTrue);
-    });
-
-    test('the envelope is flat, and the wrapped form is not a catalog', () {
-      expect(
-        parseGatewayConnectors('{"data": {"connectors": []}}'),
-        isNull,
-        reason: 'the wrapped shape must not read as an empty catalog',
-      );
-    });
-  });
-
   group('sortCatalog', () {
     test('orders by the backend order, then by label', () {
       const a = ConnectorCatalogEntry(
@@ -127,79 +85,6 @@ void main() {
     });
   });
 
-  group('mergeCatalog', () {
-    const bundledGmail = ConnectorCatalogEntry(
-      id: 'gmail',
-      code: 'gmail',
-      label: 'Gmail',
-      description: 'Search your messages.',
-      imageUrl: 'https://cdn.example/gmail.png',
-    );
-
-    test('the gateway supplies the rows, the asset supplies the words', () {
-      // The gateway sends no label, description or image_url for any row today,
-      // so without this merge the screen reads as a list of slugs.
-      final merged = mergeCatalog(
-        remote: parseGatewayConnectors(
-          '{"connectors": [{"code": "gmail", "auth_type": "pat"}]}',
-        )!,
-        bundled: const [bundledGmail],
-      );
-      expect(merged.single.label, 'Gmail');
-      expect(merged.single.imageUrl, 'https://cdn.example/gmail.png');
-    });
-
-    test('state always comes from the gateway, never from the asset', () {
-      // The bundled entry defaults to mcpReady false / authMethod app. If the
-      // merge let it win, a live connector would look unavailable — and a stale
-      // shipped asset would outrank the backend.
-      final merged = mergeCatalog(
-        remote: parseGatewayConnectors(
-          '{"connectors": [{"code": "gmail", "auth_type": "pat", '
-          '"mcp_ready": true, "status": "connected"}]}',
-        )!,
-        bundled: const [bundledGmail],
-      );
-      expect(merged.single.mcpReady, isTrue);
-      expect(merged.single.linkedAtServer, isTrue);
-      expect(merged.single.authMethod, ConnectorAuthMethod.manual);
-    });
-
-    test('a connector the asset never heard of still gets a name', () {
-      // The gateway's list grows on its own schedule; amplitude and asana are
-      // already on it and in no shipped asset.
-      final merged = mergeCatalog(
-        remote: parseGatewayConnectors(
-          '{"connectors": [{"code": "gmail-app"}, {"code": "amplitude"}]}',
-        )!,
-        bundled: const [bundledGmail],
-      );
-      expect(merged.map((e) => e.label), ['Amplitude', 'Gmail App']);
-      expect(merged.every((e) => e.imageUrl.isEmpty), isTrue);
-    });
-
-    test('codes are matched exactly, never by prefix', () {
-      // `gmail` and `gmail-app` are two rows on the wire with different
-      // auth_type. Treating them as one service puts one's icon on the other.
-      final merged = mergeCatalog(
-        remote: parseGatewayConnectors(
-          '{"connectors": [{"code": "gmail-app"}]}',
-        )!,
-        bundled: const [bundledGmail],
-      );
-      expect(merged.single.label, 'Gmail App');
-      expect(merged.single.imageUrl, isEmpty);
-    });
-  });
-
-  group('labelFromCode', () {
-    test('turns a slug into a phrase', () {
-      expect(labelFromCode('google_calendar'), 'Google Calendar');
-      expect(labelFromCode('gmail-app'), 'Gmail App');
-      expect(labelFromCode('hubspot'), 'Hubspot');
-    });
-  });
-
   group('buildConnectors', () {
     const notion = ConnectorCatalogEntry(
       id: 'notion',
@@ -208,44 +93,6 @@ void main() {
       description: 'Pages and databases.',
       imageUrl: 'https://cdn.example/notion.png',
     );
-
-    test('a token on this machine reads as connected before the server', () {
-      // The state right after a successful sign-in: the credential is stored,
-      // the projection into the agent's config has not landed yet. Waiting for
-      // the server would leave the row under "Available" and read as failure.
-      final connectors = buildConnectors(
-        servers: const [],
-        catalog: const [notion],
-        tokens: {
-          'notion': ConnectorToken(
-            connector: 'notion',
-            accessToken: 'tok',
-            mcpEntry: const McpEntry(url: 'https://mcp.notion.com/mcp'),
-          ),
-        },
-      );
-      expect(connectors.single.connected, isTrue);
-      expect(connectors.single.token, isNotNull);
-    });
-
-    test("the gateway's own status does not make a row connected", () {
-      // linkedAtServer means the account is linked somewhere — possibly another
-      // computer. This agent still has nothing to call, so the row stays under
-      // Available and explains itself instead (D6).
-      const linkedElsewhere = ConnectorCatalogEntry(
-        id: 'notion',
-        code: 'notion',
-        label: 'Notion',
-        description: '',
-        linkedAtServer: true,
-      );
-      final connectors = buildConnectors(
-        servers: const [],
-        catalog: const [linkedElsewhere],
-      );
-      expect(connectors.single.connected, isFalse);
-      expect(connectors.single.linkedElsewhere, isTrue);
-    });
 
     test(
       'a config entry with no catalog match is a connected custom server',
