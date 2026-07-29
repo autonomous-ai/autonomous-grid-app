@@ -62,11 +62,10 @@ class ConnectorList extends StatelessWidget {
 
 /// A catalog service, with whatever action its current state allows.
 ///
-/// Connect is offered only when the gateway can actually drive a sign-in *and*
-/// there is an MCP server behind it. A `pat` connector has no flow to call, and
-/// a connector with no MCP server links an account that the agent still cannot
-/// use — walking a whole OAuth round trip to arrive at nothing is worse than a
-/// button that visibly isn't ready.
+/// Connect is offered whenever the gateway can drive a sign-in. Whether an MCP
+/// server exists behind it is a separate question — it decides what the *agent*
+/// gains, not whether the *account* can be linked — so a connector without one
+/// still connects, and says the tools are coming.
 class _CatalogRow extends ConsumerStatefulWidget {
   const _CatalogRow({required this.connector});
 
@@ -155,16 +154,19 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
                         style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
-                    // Signed in on this machine. Shown even before the agent
-                    // has an MCP server for it, because the credential is the
-                    // part the user just did and the row has to acknowledge it.
+                    // One tag, not two. "Connected" beside "No tools yet" made
+                    // the row argue with itself at a glance — and the line
+                    // underneath was already saying the same thing a third
+                    // time. The state gets one name; the detail lives in the
+                    // note below it.
                     if (connector.token != null) ...[
                       const SizedBox(width: 8),
-                      const ExtensionTag(label: 'Connected'),
-                    ],
-                    if (connector.connectedButUnusable) ...[
-                      const SizedBox(width: 8),
-                      const ExtensionTag(label: 'No tools yet', muted: true),
+                      ExtensionTag(
+                        label: connector.connectedButUnusable
+                            ? 'Signed in'
+                            : 'Connected',
+                        muted: connector.connectedButUnusable,
+                      ),
                     ],
                   ],
                 ),
@@ -243,26 +245,34 @@ class _CatalogAction extends StatelessWidget {
 
     // While the browser is open the way out is Cancel, not a spinner: the user
     // may have closed the tab, and a control that only spins would strand them.
+    //
+    // The spinner is small and muted so Cancel is the one thing drawing the eye.
+    // At the default size in accent both read as controls, and the row offers
+    // two things to look at when only one of them can be pressed.
     if (waiting) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const AppSpinner(),
-          const SizedBox(width: 8),
+          // textSecondary, not textFaint: faint measures 2.90:1 on the row in
+          // both themes, under the 3:1 floor a non-text element needs to be
+          // seen at all. Secondary clears it and still sits below Cancel.
+          AppSpinner(size: SpinnerSize.small, color: AppPalette.textSecondary),
+          const SizedBox(width: 10),
           TextButton(onPressed: onCancel, child: const Text('Cancel')),
         ],
       );
     }
-    if (busy) return const AppSpinner();
+    if (busy) return const AppSpinner(size: SpinnerSize.small);
 
     // Already signed in here: the useful action is undoing it. Offering Connect
     // again would read as the sign-in not having taken, and pressing it would
     // discard a working credential to fetch the same one.
+    //
+    // Quiet at rest, red on hover. In accent it competed with the Connect
+    // buttons on every row around it, which put the loudest control on the one
+    // row where nothing needs doing.
     if (connector.token != null) {
-      return TextButton(
-        onPressed: onDisconnect,
-        child: const Text('Disconnect'),
-      );
+      return _DisconnectButton(onPressed: onDisconnect);
     }
 
     // Nothing to press when the gateway can't drive this connector: the row
@@ -425,6 +435,73 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
       ],
     ),
   );
+}
+
+/// The row's undo: quiet at rest, red under the pointer.
+///
+/// The text twin of `AppIconButton(destructive: true)` — same neutral resting
+/// ink, same hover fill, same danger red, and the same reason for each. A word
+/// rather than a glyph because "Disconnect" is not a ✕: it stops the agent
+/// using a service, and a bare icon would leave the user guessing which.
+///
+/// It owns its own hover. The row underneath already lightens on hover and
+/// says nothing to its children about where the pointer is, so a button
+/// without its own [MouseRegion] would sit at rest the whole time it's
+/// hovered — a bug this app has shipped twice.
+class _DisconnectButton extends StatefulWidget {
+  const _DisconnectButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_DisconnectButton> createState() => _DisconnectButtonState();
+}
+
+class _DisconnectButtonState extends State<_DisconnectButton> {
+  bool _hovered = false;
+
+  /// Lifted from `AppIconButton`, where it was measured: `colorScheme.error` is
+  /// 3.33:1 on the dark hover fill, under the 4.5 floor, so dark gets a lighter
+  /// tint of the same hue. Light's own error token already clears it.
+  static const Color _dangerDark = Color(0xFFFF8A80);
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette/AppSurface tokens.
+    final danger = AppTheme.pick(
+      Theme.of(context).colorScheme.error,
+      _dangerDark,
+    );
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onPressed,
+        child: AnimatedContainer(
+          duration: AppMotion.hover,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            // Its own fill, so "on the button" is distinguishable from "on the
+            // row" — the row lifts too, and colour alone wouldn't separate them.
+            color: _hovered ? AppSurface.hoverFill : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Text(
+            'Disconnect',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              // Neutral at rest: a column of red buttons doing nothing reads as
+              // an error state rather than a list of connected services.
+              color: _hovered ? danger : AppPalette.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Disconnecting hands back the credential this machine holds.

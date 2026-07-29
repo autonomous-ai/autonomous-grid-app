@@ -188,6 +188,22 @@ class ExtensionTag extends StatelessWidget {
   final String label;
   final bool muted;
 
+  /// The accent ink for a tag in dark, rather than [AppCard.accentStrong].
+  ///
+  /// Measured on the tag's own composited fill — `tint18` over the row over the
+  /// page, which lands at `#272E45`:
+  ///
+  /// ```
+  /// dark   accentStrong #5C7CFF = 3.70 : 1   ← under 4.5
+  /// dark   this         #7B93FF = 4.77 : 1
+  /// light  accentStrong #1E40AF = 6.81 : 1   ← fine as-is
+  /// ```
+  ///
+  /// `accentStrong` is tuned to sit on the *page*, and a tag puts a tinted fill
+  /// underneath it — the same trap as a colour picked as a fill being reused as
+  /// ink. Only the tag's ink moves; the token keeps its own callers.
+  static const Color _accentOnTagDark = Color(0xFF7B93FF);
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // follow theme flips — reads AppCard tokens.
@@ -202,7 +218,9 @@ class ExtensionTag extends StatelessWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: muted ? AppPalette.textSecondary : AppCard.accentStrong,
+          color: muted
+              ? AppPalette.textSecondary
+              : AppTheme.pick(AppCard.accentStrong, _accentOnTagDark),
         ),
       ),
     );
