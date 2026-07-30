@@ -128,15 +128,6 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
     configDir: '.claude',
     configPath: kClaudeSettingsPath,
     executable: 'claude',
-    // Said before the steps, not after a failed connection: Claude Code doesn't
-    // speak the OpenAI dialect every other client here uses, so the setup below
-    // only starts working once the grid answers Anthropic's own API.
-    caveat:
-        'Claude Code talks to Anthropic\'s Messages API (/v1/messages) and asks '
-        'for Claude model names. This grid answers the OpenAI-style API, so '
-        "Claude Code can't connect to it yet — set it up now and it works the "
-        'day the grid serves that API; until then Claude Code reports a '
-        'connection error.',
   ),
   ClientApp.buzz: ClientAppInfo(
     app: ClientApp.buzz,

@@ -16,6 +16,12 @@ import '../../provider_node/logic/provider_run_controller.dart';
 /// left a computer that was ready to host but wasn't hosting, and a user staring
 /// at a grid with no models on it. This finishes the job: grant the provider
 /// role if it's missing, then `grid join --serve`.
+///
+/// **Setup only — never on launch.** Opening the app doesn't put the machine
+/// back to work: serving spends the user's own GPU, so restarting an engine they
+/// stopped (or that died with the machine) is their call, made on the Engines
+/// tab. The single caller is the first-run model download finishing; a launch
+/// hook here is a regression, not a convenience.
 sealed class AutoHostState {
   const AutoHostState();
 }
@@ -62,9 +68,9 @@ class AutoHostController extends Notifier<AutoHostState> {
   AutoHostState build() => const AutoHostIdle();
 
   /// Share this computer's engine on the active grid, if everything it needs is
-  /// in place. Safe to call as often as the app likes: it no-ops until the
-  /// preconditions hold (the callers fire it whenever one of them might have
-  /// just become true), and it runs at most once per session.
+  /// in place. Safe to call more than once: it no-ops until the preconditions
+  /// hold, and it runs at most once per session. Called when the first-run model
+  /// download finishes — and nowhere else, by design (see the note above).
   Future<void> startIfReady() async {
     if (_attempted || !ref.read(supportsBuiltInEngineProvider)) return;
 
