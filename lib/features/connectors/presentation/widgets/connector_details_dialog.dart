@@ -169,8 +169,17 @@ class _StatusLine extends StatelessWidget {
       (true, true) => (Icons.check_circle, 'Ready to use', AppPalette.online),
       (true, false) => (
         Icons.schedule_rounded,
-        "Signed in — no tools to use yet",
+        'Signed in — no tools to use yet',
         AppPalette.warn,
+      ),
+      // Distinct from plain "Not connected", and worth the extra state: the
+      // account really has authorized this, so telling someone it is not
+      // connected reads as their earlier sign-in having been lost. What is true
+      // is narrower — the credential is not *here*.
+      _ when connector.needsSignInHere => (
+        Icons.login_rounded,
+        'Connected to your account — sign in on this computer',
+        AppPalette.textSecondary,
       ),
       _ => (
         Icons.remove_circle_outline,

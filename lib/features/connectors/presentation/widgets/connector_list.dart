@@ -86,8 +86,13 @@ class _CatalogRow extends ConsumerWidget {
     // attempt ended.
     final note = link.messageFor(connector.id).isNotEmpty
         ? link.messageFor(connector.id)
-        : connector.linkedElsewhere
-        ? 'Connected on another computer — sign in here to use it.'
+        : connector.needsSignInHere
+        // Says the two facts it has — the account authorized this, this
+        // computer has no credential — and nothing about why. The old line
+        // claimed "on another computer", which is a guess, and a wrong one
+        // whenever the gateway has renamed the connector out from under a
+        // stored token (see Connector.needsSignInHere).
+        ? 'Connected to your account, but not on this computer.'
         // Signed in, and the gateway has no tools behind it yet. Said here or
         // nowhere: the tag reports only whether a credential is held.
         : connector.connectedButUnusable
