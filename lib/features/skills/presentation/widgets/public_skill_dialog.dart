@@ -485,7 +485,8 @@ class _SkillCardState extends ConsumerState<_SkillCard> {
     ToastScope.showResult(
       context,
       error: failure,
-      success: '${widget.skill.name} installed, and given to '
+      success:
+          '${widget.skill.name} installed, and given to '
           '${ref.read(skillTargetProvider).label}.',
     );
   }

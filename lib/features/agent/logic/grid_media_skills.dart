@@ -40,7 +40,8 @@ GridSkillFiles gridVideoSkillFiles(Directory skillDir) => GridSkillFiles(
   files: const {'scripts/generate.py': _gridVideoSkillScript},
 );
 
-String _gridImageSkillMd(String scriptPath) => '''
+String _gridImageSkillMd(String scriptPath) =>
+    '''
 ---
 name: grid-image-gen
 description: Generate an image through the user's Grid (its media API). Use whenever the user asks to draw, create, or generate a picture.
@@ -220,7 +221,8 @@ if __name__ == "__main__":
     main()
 ''';
 
-String _gridVideoSkillMd(String scriptPath) => '''
+String _gridVideoSkillMd(String scriptPath) =>
+    '''
 ---
 name: grid-video-gen
 description: Animate an image into a video through the user's Grid (its media API, ComfyUI i2v). Use whenever the user asks to animate a picture, make a video from a photo, or turn a still into motion.

@@ -107,7 +107,10 @@ class _ColumnHeader extends StatelessWidget {
             width: _kUpdatedColumn,
             child: Text('LAST UPDATED', style: style),
           ),
-          SizedBox(width: _kAuthorColumn, child: Text('AUTHOR', style: style)),
+          SizedBox(
+            width: _kAuthorColumn,
+            child: Text('AUTHOR', style: style),
+          ),
           const SizedBox(width: _kActionsColumn),
         ],
       ),
@@ -190,7 +193,9 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
                 active: skill.isMine,
               ),
               const SizedBox(width: 12),
-              Expanded(child: _SkillInfo(skill: skill, source: widget.source)),
+              Expanded(
+                child: _SkillInfo(skill: skill, source: widget.source),
+              ),
               SizedBox(
                 width: _kUpdatedColumn,
                 child: Text(formatSkillDate(skill.updatedAt), style: column),

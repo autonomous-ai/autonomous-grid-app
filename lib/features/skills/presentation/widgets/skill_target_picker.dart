@@ -51,13 +51,15 @@ class SkillTargetPicker extends ConsumerWidget {
     ];
 
     if (inline) {
-      return Row(
-        children: [caption, const SizedBox(width: 12), ...pills],
-      );
+      return Row(children: [caption, const SizedBox(width: 12), ...pills]);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [caption, const SizedBox(height: 8), Row(children: pills)],
+      children: [
+        caption,
+        const SizedBox(height: 8),
+        Row(children: pills),
+      ],
     );
   }
 }

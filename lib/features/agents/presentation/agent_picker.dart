@@ -172,4 +172,3 @@ class _AgentItem extends StatelessWidget {
     );
   }
 }
-

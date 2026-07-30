@@ -179,9 +179,7 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
       ref.read(skillSourceProvider.notifier).select(landedOn);
     }
     try {
-      await ref
-          .read(skillSharerProvider)
-          .shareFolder(dir.path, target.agents);
+      await ref.read(skillSharerProvider).shareFolder(dir.path, target.agents);
     } on Object catch (error) {
       return 'Saved, but couldn\'t give it to ${target.label}: $error';
     } finally {
