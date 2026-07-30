@@ -198,30 +198,61 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
 
   Future<void> _connect() async {
     final toast = ToastScope.of(context);
+    final name = widget.connector.name;
     setState(() => _busy = true);
-    final error = await ref
+    final (outcome, problem) = await ref
         .read(connectorLinkControllerProvider.notifier)
         .connect(widget.connector.id);
-    if (mounted) setState(() => _busy = false);
-    // Only a failure to *start* is worth a toast. Everything after the browser
-    // opens — cancelled, timed out, refused — the row says quietly itself.
-    if (error != null) {
-      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
-      return;
-    }
-    await _settleIfLinked();
-  }
-
-  /// Tell [ConnectorAction.onSettled] whether a credential is now held.
-  ///
-  /// Asked of the store rather than of `connect`'s return value, because that
-  /// value cannot answer it: a cancelled browser, a timeout and a completed
-  /// sign-in all come back null — the row is meant to explain those itself, so
-  /// none of them is an "error". What separates them is whether a token landed.
-  Future<void> _settleIfLinked() async {
-    final tokens = await ref.read(connectorTokensProvider.future);
     if (!mounted) return;
-    if (tokens.containsKey(widget.connector.id)) widget.onSettled?.call();
+    setState(() => _busy = false);
+
+    switch (outcome) {
+      case ConnectorLinkOutcome.connected:
+        // The controller may have left a note — the usual one being that the
+        // gateway has no tools behind this connector yet. Shown here instead of
+        // a plain success, because "connected" alone would be a promise the row
+        // then quietly walks back.
+        final note = ref
+            .read(connectorLinkControllerProvider)
+            .messageFor(widget.connector.id);
+        toast?.show(
+          note.isEmpty
+              ? ToastSpec(
+                  message: '$name is connected.',
+                  severity: ToastSeverity.success,
+                )
+              : ToastSpec(message: note, severity: ToastSeverity.warning),
+        );
+        widget.onSettled?.call();
+
+      case ConnectorLinkOutcome.cancelled:
+        // Said out loud because the browser tab is where the user's attention
+        // was: they come back to the app not knowing whether closing it undid
+        // anything. It didn't, and that is the reassuring half of the sentence.
+        toast?.show(
+          ToastSpec(
+            message: 'Sign-in cancelled — $name is unchanged.',
+            severity: ToastSeverity.info,
+          ),
+        );
+
+      case ConnectorLinkOutcome.notStarted:
+        toast?.show(
+          ToastSpec(
+            message: problem ?? "Couldn't start the sign-in.",
+            severity: ToastSeverity.error,
+          ),
+        );
+
+      case ConnectorLinkOutcome.failed:
+        // Already on the row, in the controller's own words. A toast repeating
+        // it would say the same thing twice in two places.
+        if (problem != null) {
+          toast?.show(
+            ToastSpec(message: problem, severity: ToastSeverity.error),
+          );
+        }
+    }
   }
 
   /// Hand the credential back: forgotten at the gateway, then here, then removed
