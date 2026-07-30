@@ -594,6 +594,15 @@ IconData _transportIcon(McpTransport transport) => switch (transport) {
 /// Removing a hand-added connector stops the assistant using its tools —
 /// reversible (add it back), but worth a beat so a stray click doesn't drop one.
 ///
+/// How wide a confirm dialog is, and the reason it is stated at all.
+///
+/// `AlertDialog` sizes itself to its content, and a paragraph is content with no
+/// natural width — so it took the whole window, one line of prose running the
+/// full span of the screen. 420 is the app's existing narrow-dialog width (the
+/// chat rename, the archived-chat prompts); the 460 elsewhere is for dialogs with
+/// form fields in them, which these are not.
+const double _confirmWidth = 420;
+
 /// Both confirm dialogs are deliberately the same shape, because the button that
 /// opens them is now the same word: same "Remove NAME?" title, same red Remove.
 /// The middle paragraph is the only part that differs, and it is the only place
@@ -604,10 +613,13 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Remove $name?'),
-      content: Text(
-        'The assistant will stop using $name on this computer. Nothing was '
-        'signed in for it, so there is no account to disconnect — you can add '
-        'it back any time.',
+      content: SizedBox(
+        width: _confirmWidth,
+        child: Text(
+          'The assistant will stop using $name on this computer. Nothing was '
+          'signed in for it, so there is no account to disconnect — you can add '
+          'it back any time.',
+        ),
       ),
       actions: [
         TextButton(
@@ -722,10 +734,13 @@ Future<bool?> _confirmDisconnect(BuildContext context, String name) {
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Remove $name?'),
-      content: Text(
-        'The assistant will stop using $name on this computer and this Mac will '
-        'forget the sign-in. Your $name account keeps whatever access you '
-        'granted — revoke that in $name\'s own settings.',
+      content: SizedBox(
+        width: _confirmWidth,
+        child: Text(
+          'The assistant will stop using $name on this computer and this Mac '
+          'will forget the sign-in. Your $name account keeps whatever access '
+          'you granted — revoke that in $name\'s own settings.',
+        ),
       ),
       actions: [
         TextButton(
