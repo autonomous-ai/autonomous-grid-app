@@ -58,17 +58,22 @@ class HermesTokenProjection {
   File tokenFile(String serverName) =>
       File('${tokenDir.path}/${safeFileName(serverName)}.json');
 
-  /// Write every token in [tokens], and delete the files of connectors that are
-  /// no longer in it.
+  /// Write every token in [tokens], and delete the files named in [removing].
   ///
   /// The deletion half is what makes this a *projection* rather than an append:
   /// disconnecting a connector has to stop the agent using it, and a token file
-  /// left behind would keep working until it expired. Only files we could have
-  /// written are removed — a token Hermes obtained through its own OAuth flow
-  /// for some server we know nothing about is left alone.
+  /// left behind would keep working until it expired.
+  ///
+  /// **By name, never by subtraction.** [removing] used to be `owned` — every
+  /// connector the config mentioned — and anything not in [tokens] was deleted.
+  /// That makes an empty `tokens` mean "delete all of them", which is exactly
+  /// what an unreadable store, or one connector's failed refresh, looks like from
+  /// in here. It cost two working connectors on 2026-07-30. Only a caller that
+  /// deliberately removed something can tell that apart, so only a caller may ask
+  /// for a deletion.
   Future<void> project(
     List<ConnectorToken> tokens, {
-    Set<String>? owned,
+    Set<String> removing = const {},
   }) async {
     if (tokens.isNotEmpty) await tokenDir.create(recursive: true);
 
@@ -81,9 +86,8 @@ class HermesTokenProjection {
     }
 
     final keep = {for (final token in tokens) safeFileName(token.connector)};
-    for (final connector in owned ?? const <String>{}) {
-      final name = safeFileName(connector);
-      if (keep.contains(name)) continue;
+    for (final connector in removing) {
+      if (keep.contains(safeFileName(connector))) continue;
       final file = tokenFile(connector);
       if (await file.exists()) await file.delete();
     }

@@ -5,6 +5,11 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../projects/logic/agent_workspace.dart';
 
+/// The longest shortlist the `@` menu shows before it asks the user to keep
+/// typing. Comfortably more than the 280px box can hold at once, so scrolling
+/// still reaches past what's visible.
+const int _maxMatches = 60;
+
 /// The `@` menu that floats above the composer: the files in the chat's folder,
 /// filtered by what's typed after the `@`.
 ///
@@ -59,10 +64,20 @@ class FileMentionMenu extends ConsumerWidget {
 
   List<WorkspaceEntry> _match(List<WorkspaceEntry> all, String query) {
     final needle = query.trim().toLowerCase();
-    if (needle.isEmpty) return all;
-    return all
-        .where((entry) => entry.name.toLowerCase().contains(needle))
-        .toList();
+    final matches = needle.isEmpty
+        ? all
+        : [
+            for (final entry in all)
+              if (entry.name.toLowerCase().contains(needle)) entry,
+          ];
+    // The menu is a shortlist you keep typing to narrow, not a file browser
+    // (that's the header's), and it scrolls in a 280px box — so past a couple of
+    // screenfuls the rows are only there to be laid out. The list shrink-wraps
+    // to size itself, which means every match is measured on every keystroke; a
+    // folder of a few hundred files made each one cost.
+    return matches.length > _maxMatches
+        ? matches.sublist(0, _maxMatches)
+        : matches;
   }
 }
 

@@ -160,9 +160,26 @@ class _SettingRow extends StatelessWidget {
   /// picker is likely to hold ("Source Code Pro") without truncating.
   static const double controlWidth = 188;
 
+  /// Below this the control moves under the text instead of beside it.
+  ///
+  /// [controlWidth] + the gap + enough left for the description to still be a
+  /// sentence rather than one word per line. A narrowed window used to push the
+  /// control straight off the row, which is a yellow-and-black overflow bar in
+  /// debug and a clipped control in release.
+  static const double _stackBelow = controlWidth + 20 + 130;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title, style: _rowTitle()),
+        const SizedBox(height: 3),
+        Text(description, style: _rowDescription()),
+      ],
+    );
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppGlass.surfaceFill,
@@ -171,22 +188,26 @@ class _SettingRow extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(title, style: _rowTitle()),
-                  const SizedBox(height: 3),
-                  Text(description, style: _rowDescription()),
-                ],
-              ),
-            ),
-            const SizedBox(width: 20),
-            SizedBox(width: controlWidth, child: control),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth < _stackBelow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    text,
+                    const SizedBox(height: 10),
+                    // Full width once stacked: a 188px control floating in a
+                    // narrow row would read as misaligned rather than compact.
+                    SizedBox(width: double.infinity, child: control),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: text),
+                    const SizedBox(width: 20),
+                    SizedBox(width: controlWidth, child: control),
+                  ],
+                ),
         ),
       ),
     );

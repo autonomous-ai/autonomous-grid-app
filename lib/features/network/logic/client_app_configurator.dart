@@ -61,10 +61,48 @@ class ClientAppConfigurator {
       case ClientApp.codex:
         // Codex names a single model in its config; the key goes to its dotenv.
         return _applyCodex(base, key, ids.first);
+      case ClientApp.claudeCode:
+        // Claude Code asks for a model *tier* by name, so it needs the whole
+        // list to map each one onto something the grid serves.
+        return _applyClaudeCode(base, key, ids);
       case ClientApp.buzz:
         // Buzz sets one default provider/model for every agent in its global
         // config; the key lives in that file's `env_vars`.
         return _applyBuzz(base, key, ids.first);
+    }
+  }
+
+  /// Points Claude Code at the grid by merging [claudeCodeEnv] into the `env`
+  /// block of `~/.claude/settings.json` — the user-scope file, so the connection
+  /// reaches background sessions too, not just the terminal a shell export was
+  /// typed in.
+  ///
+  /// Merges: any other variable the user keeps in `env` survives, and only the
+  /// grid's own keys are rewritten. The note names the restart because Claude
+  /// Code reads this file at startup.
+  Future<ApplyResult> _applyClaudeCode(
+    String base,
+    String key,
+    List<String> models,
+  ) async {
+    final file = File('$_home/.claude/settings.json');
+    try {
+      final root = await _readJsonObject(file);
+      _childMap(root, 'env').addAll(claudeCodeEnv(base, key, models));
+
+      await _backupThenWrite(
+        file,
+        const JsonEncoder.withIndent('  ').convert(root),
+      );
+      return ApplyOk(
+        'Pointed Claude Code at this grid (${_display(file)}).',
+        note:
+            'Restart any open Claude Code session — say yes if it asks about '
+            'the API key it found — then run /status to see the grid as its '
+            'base URL.',
+      );
+    } on Object catch (e) {
+      return ApplyError('Couldn\'t update Claude Code config: ${_reason(e)}');
     }
   }
 

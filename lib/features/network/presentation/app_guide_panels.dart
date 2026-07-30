@@ -45,6 +45,7 @@ class ClientAppPanel extends StatelessWidget {
     super.key,
     required this.info,
     required this.installed,
+    required this.runsHere,
     required this.baseUrl,
     required this.apiKey,
     required this.models,
@@ -57,6 +58,11 @@ class ClientAppPanel extends StatelessWidget {
 
   final ClientAppInfo info;
   final bool installed;
+
+  /// Whether this grid serves a model that speaks the app's API at all — see
+  /// [clientRunsOnGrid]. False replaces the setup with the reason, since the
+  /// steps would end in a connection error.
+  final bool runsHere;
   final String baseUrl;
   final String apiKey;
 
@@ -88,12 +94,19 @@ class ClientAppPanel extends StatelessWidget {
     // Show chat setup for a chat grid, or while the overview still loads (media
     // resolves to none first) — so a chat grid never flashes without its steps.
     final showChat = hasChat || !media.any;
+    // Only worth saying the grid can't answer this app once the grid has a model
+    // at all: a brand-new grid reports every dialect false because nothing is
+    // shared on it yet, and "no model here speaks its API" would blame the app
+    // for an empty grid.
+    final unsupported = !runsHere && hasChat;
     // One-click config write shows wherever the manual chat setup does — a chat
     // grid, or an as-yet-unknown one (overview/models still loading or the relay
     // unreachable, so `hasChat` reads false transiently). Only a positively
     // media-only grid hides it. Mirrors `showChat` so the button and the manual
     // steps never disagree, and the app must actually be installed to write into.
-    final canApply = installed && showChat;
+    // A grid that can't answer this app hides it too: the button promises the
+    // grid becomes the app's model, which would be a promise it can't keep.
+    final canApply = installed && showChat && !unsupported;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -101,7 +114,15 @@ class ClientAppPanel extends StatelessWidget {
           MissingAppNote(name: info.name, onDownload: onOpenSite),
           const SizedBox(height: 16),
         ],
-        ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
+        if (unsupported) ...[
+          UnsupportedOnGridNote(name: info.name),
+          const SizedBox(height: 16),
+        ],
+        // The URL this app wants, not the relay's raw one — see [appBaseUrl].
+        ConnectionFields(
+          baseUrl: appBaseUrl(info.app, baseUrl),
+          apiKey: apiKey,
+        ),
         const SizedBox(height: 16),
         if (canApply) ...[
           _ApplyBlock(name: info.name, phase: phase, onApply: onApply),

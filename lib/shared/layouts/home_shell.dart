@@ -5,10 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
-import '../../features/auth/logic/session_controller.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
-import '../../features/node_setup/logic/auto_host_controller.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
 import '../../features/node_setup/logic/background_model_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
@@ -40,7 +38,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // Post-frame so we never mutate state during the first build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _resumeSharing();
+      // Opening the app does NOT put this computer back to work. Serving costs
+      // the user's own GPU and battery, so it stays their decision, made on the
+      // Engines tab — an app that quietly starts an engine on every launch is
+      // spending their machine without asking. An engine that outlived the app
+      // is still adopted, just not started: ProviderView reconciles when the
+      // Engines tab opens, so what the screen says stays true either way.
       // The heavy model download isn't part of first-run setup any more: kick it
       // off in the background so the user can chat while it lands, with its
       // progress in the top bar. No-ops when there's nothing to download.
@@ -66,18 +69,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
-  /// Put this computer back on its grid when it isn't serving — after a reboot,
-  /// say, where the engine died with the machine.
-  ///
-  /// Without this, an already-set-up computer would sail past the installer
-  /// (nothing left to install) into an app whose grid has no model on it, and
-  /// chat would answer nothing. It only ever *resumes*: the controller adopts a
-  /// still-running engine rather than starting a second one, and it runs once per
-  /// session — so a user who deliberately stopped their engine doesn't get it
-  /// restarted behind their back.
-  void _resumeSharing() =>
-      ref.read(autoHostControllerProvider.notifier).startIfReady();
-
   /// Opening a scheduled task's chat is reading its result — clear that task's
   /// "new results" badge. A no-op for any other chat (or none open).
   void _markTaskChatRead(String? conversationId) {
@@ -94,12 +85,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // only repaint when some other change rebuilds them — the "click a row and
     // then it changes" symptom. Subscribing here rebuilds sidebar + pane together.
     AppTheme.watch(context);
-
-    // The user's grid is synced from the server after sign-in, so it can land
-    // after the frame above — resume sharing once one does.
-    ref.listen(selectedNetworkProvider, (_, next) {
-      if (next != null) _resumeSharing();
-    });
 
     // Opening a task's chat clears its "new results" badge — the sidebar's dot
     // and the Scheduled list's pill both go quiet the moment it's read.

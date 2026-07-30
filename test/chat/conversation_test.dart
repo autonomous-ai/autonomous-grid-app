@@ -10,6 +10,8 @@ Conversation _conversation({
   String model = 'qwen',
   DateTime? updatedAt,
   List<ChatMessage> messages = const [],
+  String? projectId,
+  DateTime? archivedAt,
 }) {
   final at = updatedAt ?? DateTime(2026, 1, 1, 12);
   return Conversation(
@@ -19,6 +21,8 @@ Conversation _conversation({
     createdAt: DateTime(2026, 1, 1),
     updatedAt: at,
     messages: messages,
+    projectId: projectId,
+    archivedAt: archivedAt,
   );
 }
 
@@ -208,6 +212,41 @@ void main() {
         groupConversationsByRecency(const [], DateTime(2026, 7, 8)),
         isEmpty,
       );
+    });
+  });
+
+  group('liveConversations', () {
+    test('hides the archived chats and keeps the order it was given', () {
+      final live = liveConversations([
+        _conversation(id: 'a'),
+        _conversation(id: 'filed', archivedAt: DateTime(2026, 2, 1)),
+        _conversation(id: 'b'),
+      ]);
+
+      expect(live.map((c) => c.id), ['a', 'b']);
+    });
+  });
+
+  group('liveChatCountIn', () {
+    test("counts only the project's own chats that are still in the rail", () {
+      final all = [
+        _conversation(id: 'in-1', projectId: 'p1'),
+        _conversation(id: 'in-2', projectId: 'p1'),
+        _conversation(id: 'elsewhere', projectId: 'p2'),
+        _conversation(id: 'loose'),
+        _conversation(
+          id: 'filed',
+          projectId: 'p1',
+          archivedAt: DateTime(2026, 2, 1),
+        ),
+      ];
+
+      // The number on the card has to match the rows the sidebar shows, so an
+      // archived chat must not be counted even though it still holds the
+      // project.
+      expect(liveChatCountIn(all, 'p1'), 2);
+      expect(liveChatCountIn(all, 'p2'), 1);
+      expect(liveChatCountIn(all, 'unknown'), 0);
     });
   });
 }

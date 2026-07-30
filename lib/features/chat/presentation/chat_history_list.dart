@@ -45,11 +45,17 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
 
   @override
   Widget build(BuildContext context) {
-    final sessions = ref.watch(chatSessionsProvider);
+    // The conversation list itself, not the whole state: the rail's contents
+    // depend on nothing else, and watching the state rebuilt every row on each
+    // streamed token and each chat switch. The field is only ever replaced, so
+    // its identity is the change signal.
+    final conversations = ref.watch(
+      chatSessionsProvider.select((s) => s.conversations),
+    );
     final projects = ref.watch(sortedProjectsProvider);
     // Live only: an archived chat is hidden from the rail until the user brings
     // it back from Settings › Archived.
-    final matches = sessions.live;
+    final matches = liveConversations(conversations);
 
     final loose = [
       for (final c in matches)
@@ -291,9 +297,15 @@ class _ChatRow extends ConsumerWidget {
     // Scheduled the open screen is the one to mark, and two lit rows in one rail
     // would leave you guessing which page you're looking at. The chat stays the
     // one you come back to — it just doesn't claim to be on screen.
-    final selected =
-        ref.watch(chatSessionsProvider).activeId == chat.id &&
-        ref.watch(shellSectionProvider) == ShellSection.chat;
+    //
+    // Both watched unconditionally and selected down to a bool: `&&` would
+    // short-circuit the second subscription away on an unselected row, and
+    // watching the whole state rebuilt every row on every streamed token.
+    final isOpen = ref.watch(
+      chatSessionsProvider.select((s) => s.activeId == chat.id),
+    );
+    final inChat = ref.watch(shellSectionProvider) == ShellSection.chat;
+    final selected = isOpen && inChat;
     // A reply is coming into this chat — shown on whichever chat is working,
     // open or in the background, now that several can be in flight at once.
     // Selecting on the bool (not the raw phase) keeps the row from rebuilding on
@@ -487,19 +499,29 @@ class _RevealItem extends StatefulWidget {
   State<_RevealItem> createState() => _RevealItemState();
 }
 
+/// The stagger curve per row position, built once.
+///
+/// A total window a touch longer than one row's animation, so staggering the
+/// start by index still lands every row inside it. Capped so a long list never
+/// feels slow — past the eighth row there's no extra delay, which is why nine
+/// curves cover any length of list.
+///
+/// Held rather than built per row per build: [Interval] has no value equality,
+/// so a fresh one reads as a changed curve and makes every row in the rail throw
+/// away and rebuild its animation on each rebuild.
+final List<Curve> _revealCurves = List.unmodifiable([
+  for (var i = 0; i <= 8; i++)
+    Interval(i * 0.12, 1, curve: Curves.easeOutCubic),
+]);
+
 class _RevealItemState extends State<_RevealItem> {
   @override
   Widget build(BuildContext context) {
-    // A total window a touch longer than one row's animation, so staggering the
-    // start by index still lands every row inside it. Capped so a long list
-    // never feels slow — past the eighth row there's no extra delay.
-    const step = 0.12;
-    final begin = (widget.index.clamp(0, 8) * step).toDouble();
     return TweenAnimationBuilder<double>(
       key: ValueKey(widget.index),
       tween: Tween(begin: 0, end: 1),
       duration: const Duration(milliseconds: 460),
-      curve: Interval(begin, 1, curve: Curves.easeOutCubic),
+      curve: _revealCurves[widget.index.clamp(0, _revealCurves.length - 1)],
       builder: (context, t, child) {
         return Opacity(
           opacity: t,

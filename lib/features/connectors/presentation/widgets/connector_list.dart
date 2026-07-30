@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../../shared/widgets/extension_list.dart';
@@ -18,6 +19,7 @@ import '../../logic/connector_catalog.dart';
 import '../../logic/connector_link_controller.dart';
 import '../../logic/connectors_controller.dart';
 import 'add_mcp_dialog.dart';
+import 'connector_details_dialog.dart';
 
 /// Everything that links the assistant to the outside: the MCP servers live in
 /// the agent's config (each adds a set of tools — a database, a design tool, a
@@ -170,17 +172,20 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
                         style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
-                    // One tag, and it answers one question: is this connector
-                    // connected? Yes or no — a connector with a token is
-                    // connected whether or not the gateway has wired up tools
-                    // for it yet. Naming that second thing here ("Signed in"
-                    // vs "Connected") made two accounts in the identical state
-                    // wear different badges, which reads as one of them having
-                    // half-worked. Tools are a separate sentence, and the note
-                    // underneath is where it belongs.
+                    // One tag, and it answers one question: does the app hold a
+                    // credential for this? Whether the gateway has wired up
+                    // tools yet is a *different* question, and the note
+                    // underneath is where that belongs — a tag naming both made
+                    // two accounts in the identical state wear different badges,
+                    // which read as one of them having half-worked.
+                    //
+                    // "Signed in" rather than "Connected", to match the
+                    // configured rows: every row in this list now says the same
+                    // thing the same way, whether its connector came from the
+                    // catalog or from a URL the user typed.
                     if (connector.token != null) ...[
                       const SizedBox(width: 8),
-                      const ExtensionTag(label: 'Connected'),
+                      const ExtensionTag(label: 'Signed in'),
                     ],
                   ],
                 ),
@@ -286,7 +291,24 @@ class _CatalogAction extends StatelessWidget {
     // buttons on every row around it, which put the loudest control on the one
     // row where nothing needs doing.
     if (connector.token != null) {
-      return _DisconnectButton(onPressed: onDisconnect);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ⓘ, not a pencil. It sits where the configured rows put their Edit,
+          // so every signed-in row has two controls in the same places — but
+          // there is nothing here to edit: the address and credential come from
+          // the sign-in and are rewritten each time it renews. A pencil would
+          // open a form whose every edit is silently discarded.
+          AppIconButton(
+            icon: Icons.info_outline_rounded,
+            size: 18,
+            tooltip: 'Details',
+            onPressed: () => showConnectorDetailsDialog(context, connector),
+          ),
+          const SizedBox(width: 2),
+          _DisconnectButton(onPressed: onDisconnect),
+        ],
+      );
     }
 
     // Nothing to press when the gateway can't drive this connector: the row
@@ -387,32 +409,44 @@ class _McpRowState extends ConsumerState<_McpRow> {
             fallbackIcon: _transportIcon(server.transport),
           ),
           const SizedBox(width: 12),
-          Expanded(child: _McpInfo(server: server)),
+          Expanded(
+            child: _McpInfo(server: server, signedIn: _isLinkedConnector),
+          ),
           const SizedBox(width: 8),
           if (_busy)
             const AppSpinner(size: SpinnerSize.small)
-          // A connector the app signed into: the only honest control is
-          // Disconnect. Editing its URL or headers would hand-edit a credential
-          // the gateway owns and the next projection would overwrite it, and
-          // "Remove" would delete the config entry while leaving the token in
-          // place — the row would come back on the next sign-in or refresh.
-          else if (_isLinkedConnector)
-            _DisconnectButton(onPressed: _disconnect)
           else ...[
-            IconButton(
+            // Edit is on every row, so the controls stop looking arbitrary. What
+            // it *opens* still differs, and has to: on a signed-in row the
+            // dialog shows the name and hides the credential fields, because the
+            // token belongs to the flow that fetched it and the next projection
+            // would overwrite anything typed over it.
+            AppIconButton(
+              icon: Icons.edit_outlined,
+              size: 18,
               tooltip: 'Edit',
-              iconSize: 18,
-              color: AppPalette.textSecondary,
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => showEditMcpDialog(context, server),
+              onPressed: () => showEditMcpDialog(
+                context,
+                server,
+                signedIn: _isLinkedConnector,
+              ),
             ),
-            IconButton(
-              tooltip: 'Remove',
-              iconSize: 18,
-              color: AppPalette.textSecondary,
-              icon: const Icon(Icons.delete_outline_rounded),
-              onPressed: _delete,
-            ),
+            const SizedBox(width: 2),
+            // The destructive half is where the two kinds genuinely part.
+            // Disconnect tells the provider; Remove only forgets a line the user
+            // typed. Offering "Remove" on a signed-in row would drop the config
+            // entry and leave the token behind, and the row would reappear at
+            // the next refresh.
+            if (_isLinkedConnector)
+              _DisconnectButton(onPressed: _disconnect)
+            else
+              AppIconButton(
+                icon: Icons.delete_outline_rounded,
+                size: 18,
+                tooltip: 'Remove',
+                destructive: true,
+                onPressed: _delete,
+              ),
           ],
         ],
       ),
@@ -423,9 +457,18 @@ class _McpRowState extends ConsumerState<_McpRow> {
 /// The server's name, a tag for how it's reached, and the command or URL under
 /// it so the user can tell two servers apart at a glance.
 class _McpInfo extends StatelessWidget {
-  const _McpInfo({required this.server});
+  const _McpInfo({required this.server, this.signedIn = false});
 
   final McpServer server;
+
+  /// Whether the app holds an OAuth credential for this server.
+  ///
+  /// Drives the tag, and the tag exists because the row's *controls* differ on
+  /// exactly this: a signed-in row offers Disconnect (which calls the provider),
+  /// a hand-configured one offers Remove (which does not). Without a word for
+  /// the difference, three identical-looking rows wearing two different button
+  /// sets read as arbitrary.
+  final bool signedIn;
 
   @override
   Widget build(BuildContext context) {
@@ -444,7 +487,17 @@ class _McpInfo extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            ExtensionTag(label: server.transport is McpHttp ? 'HTTP' : 'Local'),
+            // Answers "did this need an account?", not "how is it reached?".
+            // `HTTP` vs `Local` was the transport — true, and never the thing
+            // anyone wanted to know while looking at a list of connectors.
+            // A server needing no sign-in is not lesser: it is simply open, and
+            // the tag says so plainly rather than implying something is missing.
+            ExtensionTag(
+              label: switch (server.transport) {
+                McpStdio() => 'Local',
+                McpHttp() => signedIn ? 'Signed in' : 'No sign-in',
+              },
+            ),
           ],
         ),
         const SizedBox(height: 4),
@@ -625,7 +678,7 @@ class _Empty extends StatelessWidget {
       action: FilledButton.icon(
         onPressed: () => showAddMcpDialog(context),
         icon: const Icon(Icons.add_rounded, size: AppControl.iconSize),
-        label: const Text('Connect manually'),
+        label: const Text('Add custom connector'),
       ),
     );
   }
@@ -683,6 +736,14 @@ class ConnectorMark extends StatelessWidget {
     return CachedNetworkImage(
       imageUrl: imageUrl,
       fit: BoxFit.contain,
+      // Favicons come in whatever size the host publishes — measured
+      // 2026-07-30: 128px from notion.com, 48 from linear.app, 32 from
+      // github.com, and 16 from supabase.com no matter what is asked for.
+      // `medium` is bilinear: it keeps a 128px mark crisp when it comes *down*
+      // to 22, and blurs a 16px one less badly than `high` when it goes up.
+      // Neither can make a 16px source sharp — nothing can — but this stops it
+      // looking smeared as well as small.
+      filterQuality: FilterQuality.medium,
       // No spinner while it loads: the plate is already the right shape,
       // and a spinner per row turns a quiet list into a flicker.
       placeholder: (_, _) => const SizedBox.shrink(),

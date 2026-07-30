@@ -7,7 +7,7 @@ import '../../../infrastructure/cli/host_environment.dart';
 
 /// A local AI client the user can point at a grid. Each one has a config file we
 /// know how to write ("Apply for me") and a download page for when it's absent.
-enum ClientApp { openClaw, hermes, codex, buzz }
+enum ClientApp { openClaw, hermes, codex, claudeCode, buzz }
 
 extension ClientAppX on ClientApp {
   /// Whether the guide offers this client at all — one switch, so a hidden app
@@ -16,22 +16,22 @@ extension ClientAppX on ClientApp {
   /// **Codex** ships to everyone. It only talks to the Responses API (codex ≥
   /// 0.141 rejects `wire_api = "chat"`), which not every relay serves yet — so
   /// the tab is always offered and the *grid* decides whether it works, per
-  /// grid. Hiding it outside debug was the blunt version of the same honesty:
-  /// it also hid Codex from the grids that can already answer it.
-  /// TODO(BE): the panel still walks the setup on a relay with no
-  /// `/v1/responses`. Wire [agentRunsOnGridProvider] into it so such a grid
-  /// says so, instead of handing out steps that end in a 404.
+  /// grid (`clientRunsOnGrid` reads the relay's own flag and the panel says so
+  /// rather than walking a setup that ends in a 404). Hiding it outside debug
+  /// was the blunt version of the same honesty: it also hid Codex from the
+  /// grids that can already answer it.
   ///
-  /// **OpenClaw** is off the list entirely — it isn't an app we point people at
-  /// any more. The config writer and its snippet stay behind this switch so
-  /// flipping it back is one line, not a rewrite.
+  /// **Claude Code** ships to everyone on the same terms — it speaks the
+  /// Anthropic Messages API, which a relay has to serve before the steps can
+  /// work, and again that is the grid's call rather than the build's.
   ///
-  /// **Buzz** ships to everyone. Its agents pick a provider/model per agent, so
-  /// pointing it at a grid means writing the grid as the *default* provider in
-  /// [kBuzzConfigRelPath] — one file, every agent, no builtin disturbed.
+  /// **OpenClaw** and **Buzz** are off the list. OpenClaw isn't an app we point
+  /// people at any more; Buzz was dropped from the guide on request. Both
+  /// writers and snippets stay behind this switch so putting either back is one
+  /// line, not a rewrite.
   bool get isSelectable => switch (this) {
-    ClientApp.openClaw => false,
-    ClientApp.codex || ClientApp.hermes || ClientApp.buzz => true,
+    ClientApp.openClaw || ClientApp.buzz => false,
+    ClientApp.codex || ClientApp.hermes || ClientApp.claudeCode => true,
   };
 }
 
@@ -112,6 +112,14 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
     configPath: '~/.codex/config.toml',
     executable: 'codex',
   ),
+  ClientApp.claudeCode: ClientAppInfo(
+    app: ClientApp.claudeCode,
+    name: 'Claude Code',
+    downloadUrl: 'https://code.claude.com/docs/en/setup',
+    configDir: '.claude',
+    configPath: kClaudeSettingsPath,
+    executable: 'claude',
+  ),
   ClientApp.buzz: ClientAppInfo(
     app: ClientApp.buzz,
     name: 'Buzz',
@@ -129,6 +137,11 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
 /// provider names an environment variable ([gridApiKeyEnv]) and Codex loads it
 /// from this dotenv file — which is why the Codex setup writes two files.
 const String kCodexEnvPath = '~/.codex/.env';
+
+/// Claude Code's user-scope settings file — the one place a connection reaches
+/// every way it runs (CLI, background sessions), unlike a shell export, which
+/// only reaches the terminal it was typed in.
+const String kClaudeSettingsPath = '~/.claude/settings.json';
 
 /// A short, plain-language walkthrough to wire [info]'s app to a grid: a [title]
 /// and numbered [steps]. Hermes has a friendly in-app flow (Settings → Model →
@@ -157,6 +170,22 @@ const String kCodexEnvPath = '~/.codex/.env';
       'Paste the Base URL above into the endpoint field',
       'Paste the API key into the "API key" field',
       'Click Connect',
+    ],
+  ),
+  // Claude Code reads the connection from its settings file rather than a
+  // provider block, so the steps name the file and the one command that proves
+  // it landed (`/status` shows the base URL it is actually using). It also asks
+  // once about the API key it finds — a step, because a "no" there leaves it on
+  // Anthropic and the grid looking broken.
+  ClientApp.claudeCode => (
+    title: 'Add it to ${info.name}',
+    steps: [
+      'Quit any open ${info.name} session — it reads this file at startup',
+      'Open ${info.configPath} (create it if it isn\'t there)',
+      'Paste the block below — it points ${info.name} at this grid and '
+          'picks which model answers',
+      'Run claude again; if it asks about the API key it found, say yes',
+      'Type /status: the "Anthropic base URL" line should show this grid',
     ],
   ),
   ClientApp.openClaw => (

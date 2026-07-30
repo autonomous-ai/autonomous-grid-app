@@ -102,11 +102,11 @@ class FontChoice {
 /// Satoshi) plus the two macOS has had forever — and each is offered only if
 /// this Mac has it.
 const List<FontChoice> kCuratedUiFonts = [
-  FontChoice(
-    label: 'System',
-    family: null,
-    detail: 'SF Pro — what the app is designed in',
-  ),
+  // The detail is a pill in a control-width field, so it says the *fact* — which
+  // face "System" resolves to — and nothing more. The sentence it used to carry
+  // ("SF Pro — what the app is designed in") had nowhere to fit: it overflowed
+  // the picker, and ellipsized it reads as a cut-off thought.
+  FontChoice(label: 'System', family: null, detail: 'SF Pro'),
   FontChoice(label: 'Helvetica Neue', family: 'Helvetica Neue'),
   FontChoice(label: 'Inter', family: 'Inter'),
   FontChoice(label: 'Geist', family: 'Geist'),
@@ -122,11 +122,9 @@ const List<FontChoice> kCuratedUiFonts = [
 /// model id or a token. See [AppFont] for why the app's own default is SF Mono
 /// with Menlo behind it.
 const List<FontChoice> kCuratedCodeFonts = [
-  FontChoice(
-    label: 'System Mono',
-    family: null,
-    detail: 'SF Mono — slashed zero, tailed l',
-  ),
+  // Same reason as the UI list: the pill names the face, and the preview below
+  // the settings is where a slashed zero is actually judged.
+  FontChoice(label: 'System Mono', family: null, detail: 'SF Mono'),
   FontChoice(label: 'Menlo', family: 'Menlo'),
   FontChoice(label: 'JetBrains Mono', family: 'JetBrains Mono'),
   FontChoice(label: 'Fira Code', family: 'Fira Code'),

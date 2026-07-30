@@ -82,6 +82,24 @@ class McpEntry {
   }
 }
 
+/// Who obtained a token, and therefore who can renew it.
+///
+/// Not cosmetic: the two paths have different renewal and revocation endpoints,
+/// and calling the wrong one fails in a confusing way. Asking the gateway to
+/// `/refresh` a [dcr] connector asks it about a credential it has never seen;
+/// refreshing a [gateway] connector locally is impossible, because the
+/// `client_secret` it would need lives on the server by design.
+enum ConnectorTokenSource {
+  /// The Grid gateway brokered it (path B) — `/poll` delivered it, `/refresh`
+  /// renews it, `/disconnect` forgets it.
+  gateway,
+
+  /// The app registered itself with the provider and ran OAuth directly
+  /// (path A, RFC 7591 + 7636). Renewed locally by `DcrOAuthClient`; the Grid
+  /// backend knows nothing about it.
+  dcr,
+}
+
 /// One connector's OAuth token, as the app holds it.
 ///
 /// Shaped after RFC 6749 §5.1 (the same shape Hermes's MCP token files use),
@@ -89,6 +107,11 @@ class McpEntry {
 /// relative `expires_in`. A relative lifetime is meaningless once written to
 /// disk: after a restart there is nothing to measure it from. Hermes learned
 /// this the same way and stores its own `expires_at` for the same reason.
+///
+/// Deliberately identical for both OAuth paths. A gateway-brokered token and a
+/// self-registered one differ only in [source] and [issuer]; everything
+/// downstream — the master store, each agent's projection, the refresh sweep —
+/// reads the same fields and cannot tell them apart.
 class ConnectorToken {
   const ConnectorToken({
     required this.connector,
@@ -99,6 +122,8 @@ class ConnectorToken {
     this.tokenType = 'Bearer',
     this.accountName = '',
     this.mcpEntry,
+    this.source = ConnectorTokenSource.gateway,
+    this.issuer = '',
   });
 
   /// The catalog `code` this token belongs to (`linear`, `notion`). Also the
@@ -132,6 +157,16 @@ class ConnectorToken {
   /// before it gets here.
   final McpEntry? mcpEntry;
 
+  /// Which path obtained this, and so which one can renew it.
+  final ConnectorTokenSource source;
+
+  /// The authorization server's issuer — set only for [ConnectorTokenSource.dcr].
+  ///
+  /// The key into `clients.json`: renewing a self-registered token needs the
+  /// `client_id` that was registered, and this is how it's found again. Empty for
+  /// gateway tokens, which carry no local registration.
+  final String issuer;
+
   /// True when this connector can actually be used by an agent.
   bool get isUsable => mcpEntry != null;
 
@@ -144,17 +179,24 @@ class ConnectorToken {
     return (now ?? DateTime.now()).isAfter(expiry.subtract(skew));
   }
 
-  /// The gateway can mint a replacement for this token.
+  /// A replacement can be minted for this token — by the gateway for a
+  /// [ConnectorTokenSource.gateway] token, or by the app itself for a
+  /// [ConnectorTokenSource.dcr] one.
   ///
   /// Named separately from [needsRefresh] because the refresh scheduler needs
   /// the question without the clock: "is this worth setting an alarm for" is
   /// asked long before "is it due". Answering it with the entry alone would
   /// skip every connector that has no MCP server yet — those credentials expire
   /// exactly like the rest.
+  ///
+  /// Deliberately source-agnostic. Path A sets `mcpEntry.canRefresh` from
+  /// whether the provider actually issued a `refresh_token`, so one predicate
+  /// serves both paths and the scheduler never has to branch on [source] — only
+  /// the controller does, when it picks *which* endpoint to call.
   bool get canBeRefreshed => mcpEntry?.canRefresh ?? refreshToken != null;
 
-  /// Worth calling `/refresh` for now: it expires soon and the provider issues
-  /// refresh tokens. Without the second half the call only spends a request.
+  /// Worth refreshing now: it expires soon and a replacement can be obtained.
+  /// Without the second half the call only spends a request.
   bool needsRefresh({DateTime? now}) => isExpired(now: now) && canBeRefreshed;
 
   ConnectorToken copyWith({
@@ -165,6 +207,8 @@ class ConnectorToken {
     String? tokenType,
     String? accountName,
     McpEntry? mcpEntry,
+    ConnectorTokenSource? source,
+    String? issuer,
   }) {
     return ConnectorToken(
       connector: connector,
@@ -175,6 +219,8 @@ class ConnectorToken {
       tokenType: tokenType ?? this.tokenType,
       accountName: accountName ?? this.accountName,
       mcpEntry: mcpEntry ?? this.mcpEntry,
+      source: source ?? this.source,
+      issuer: issuer ?? this.issuer,
     );
   }
 
@@ -187,6 +233,10 @@ class ConnectorToken {
     if (scope.isNotEmpty) 'scope': scope,
     if (accountName.isNotEmpty) 'account_name': accountName,
     if (mcpEntry != null) 'mcp_entry': mcpEntry!.toJson(),
+    // Only written for the non-default path, so every token already on disk
+    // stays byte-identical and reads back as `gateway` — see [fromJson].
+    if (source != ConnectorTokenSource.gateway) 'source': source.name,
+    if (issuer.isNotEmpty) 'issuer': issuer,
   };
 
   /// Read one entry. Returns null when there's no usable token, so a single
@@ -213,6 +263,13 @@ class ConnectorToken {
           ? raw['account_name'] as String
           : '',
       mcpEntry: McpEntry.fromJson(raw['mcp_entry']),
+      // Absent means gateway: every token written before path A existed came
+      // from there, and reading a missing field as `dcr` would send the refresh
+      // sweep looking for a `clients.json` registration that never existed.
+      source: raw['source'] == 'dcr'
+          ? ConnectorTokenSource.dcr
+          : ConnectorTokenSource.gateway,
+      issuer: raw['issuer'] is String ? raw['issuer'] as String : '',
     );
   }
 }

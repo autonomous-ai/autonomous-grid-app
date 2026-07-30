@@ -44,35 +44,38 @@ void main() {
         '$_home/.openclaw',
         '$_home/.hermes',
         '$_home/.codex',
+        '$_home/.claude',
         '$_home/${kClientApps[ClientApp.buzz]!.configDir}',
       },
     );
-    // An installed-but-hidden app (OpenClaw) must not come back as installed —
-    // it would light up a chip the picker doesn't render.
+    // An installed-but-hidden app (OpenClaw, Buzz) must not come back as
+    // installed — it would light up a chip the picker doesn't render.
     expect(d.detect().toList(), kSelectableClientApps);
   });
 
-  test('the guide offers Hermes, Codex and Buzz, never OpenClaw', () {
-    // Codex and Buzz ship to everyone: whether a grid can answer is the grid's
-    // call, per grid, not something the build decides for all of them. OpenClaw
-    // is off the list outright.
+  test('the guide offers Hermes, Codex and Claude Code — never OpenClaw or '
+      'Buzz', () {
+    // Codex and Claude Code ship to everyone: whether a grid can answer is the
+    // grid's call, per grid, not something the build decides for all of them.
+    // OpenClaw and Buzz are off the list outright.
     expect(ClientApp.hermes.isSelectable, isTrue);
     expect(ClientApp.codex.isSelectable, isTrue);
-    expect(ClientApp.buzz.isSelectable, isTrue);
+    expect(ClientApp.claudeCode.isSelectable, isTrue);
     expect(ClientApp.openClaw.isSelectable, isFalse);
+    expect(ClientApp.buzz.isSelectable, isFalse);
     expect(kSelectableClientApps, [
       ClientApp.hermes,
       ClientApp.codex,
-      ClientApp.buzz,
+      ClientApp.claudeCode,
     ]);
   });
 
-  test('Buzz is detected by its app-support dir under home', () {
-    final d = _detector(
-      dirs: {'$_home/${kClientApps[ClientApp.buzz]!.configDir}'},
-    );
-    expect(d.isInstalled(ClientApp.buzz), isTrue);
-    expect(d.detect(), {ClientApp.buzz});
+  test('Claude Code is detected by its own ~/.claude', () {
+    final info = kClientApps[ClientApp.claudeCode]!;
+    final d = _detector(dirs: {'$_home/${info.configDir}'});
+
+    expect(d.isInstalled(ClientApp.claudeCode), isTrue);
+    expect(d.detect(), {ClientApp.claudeCode});
   });
 
   test('the picker always has something to fall back on', () {
@@ -110,6 +113,19 @@ void main() {
       final joined = guide.steps.join(' | ');
       expect(joined, contains(info.configPath)); // ~/.codex/config.toml
       expect(joined, contains(kCodexEnvPath)); // …and where the key goes
+    });
+
+    test('Claude Code names its settings file and how to check it landed', () {
+      final info = kClientApps[ClientApp.claudeCode]!;
+      final guide = appSetupGuide(info);
+      final joined = guide.steps.join(' | ');
+
+      expect(joined, contains(kClaudeSettingsPath));
+      // It reads the file at startup, so a session left open keeps the old
+      // connection and the user would call the setup broken.
+      expect(guide.steps.first, contains('Quit'));
+      // A step the user can act on to see whether it worked.
+      expect(joined, contains('/status'));
     });
 
     test('Buzz names its config file and leads with quitting the app', () {

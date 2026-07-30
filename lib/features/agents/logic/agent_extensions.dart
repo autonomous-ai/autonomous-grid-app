@@ -87,7 +87,8 @@ abstract interface class AgentMcpPlane {
   Future<Set<String>> connectorEntries();
 
   /// Write [tokens] into whatever this agent reads OAuth credentials from, so a
-  /// connector the user linked once works here too.
+  /// connector the user linked once works here too, and drop the ones named in
+  /// `removing`.
   ///
   /// The app's master store (`~/.grid/connectors/tokens.json`) is the source;
   /// this is the projection of it, the same way each agent gets a link to the
@@ -96,10 +97,17 @@ abstract interface class AgentMcpPlane {
   /// re-projects. Idempotent: called again with the same tokens it rewrites the
   /// same bytes.
   ///
+  /// **`removing` exists because a projection must not infer deletions.** An
+  /// adapter cannot tell "this connector was disconnected" from "the store was
+  /// empty this time", and treating the second as the first deletes credentials
+  /// nobody asked to remove — it did, on 2026-07-30, when one expired token took
+  /// two working connectors out of Hermes's config. Anything absent from
+  /// [tokens] and absent from `removing` is left exactly as it is.
+  ///
   /// Null when the agent has no OAuth-connector concept at all. That is the
   /// null-plane rule one level down: the screen says "not supported here"
   /// rather than promising a tool this agent could never call.
-  Future<void> Function(List<ConnectorToken> tokens)?
+  Future<void> Function(List<ConnectorToken> tokens, {Set<String> removing})?
   get projectConnectorTokens;
 }
 

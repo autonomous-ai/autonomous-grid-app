@@ -1,6 +1,7 @@
 import '../../agents/logic/connector_token.dart';
 import '../../agents/logic/mcp_server.dart';
 import 'connector_catalog.dart';
+import 'favicon_url.dart';
 
 /// How a connector came to exist.
 enum ConnectorKind {
@@ -108,7 +109,11 @@ List<Connector> buildConnectors({
             : ConnectorKind.customMcp,
         name: byCode[server.name]?.label ?? server.name,
         description: mcpServerSummary(server),
-        imageUrl: byCode[server.name]?.imageUrl ?? '',
+        // The catalog's own mark first — it is the one the gateway chose, and
+        // the only one guaranteed to be the service's real logo. A server the
+        // user typed has no catalog entry at all, so its icon is derived from
+        // the host it points at (and skipped entirely for private hosts).
+        imageUrl: _markFor(byCode[server.name], server),
         status: ConnectorStatus.connected,
         server: server,
         catalogEntry: byCode[server.name],
@@ -138,4 +143,22 @@ List<Connector> buildConnectors({
         ),
   ];
   return [...connected, ...offered];
+}
+
+/// The mark for a configured server: the catalog's, or one derived from its host.
+///
+/// Order matters. A catalog entry's `image_url` is the service's real logo,
+/// chosen by the gateway; a favicon is a guess made from a hostname. Preferring
+/// the guess would replace a correct mark with a worse one for every connector
+/// the gateway does know.
+///
+/// Only HTTP servers get a derived mark. A stdio server is a local command with
+/// no host to ask about — `npx` has no logo — so those keep the transport glyph.
+String _markFor(ConnectorCatalogEntry? entry, McpServer server) {
+  final fromCatalog = entry?.imageUrl ?? '';
+  if (fromCatalog.isNotEmpty) return fromCatalog;
+  return switch (server.transport) {
+    McpHttp(:final url) => faviconUrl(url),
+    McpStdio() => '',
+  };
 }

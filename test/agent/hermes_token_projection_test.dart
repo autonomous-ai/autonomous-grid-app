@@ -110,19 +110,30 @@ void main() {
     });
   });
 
-  group('projection removes what it no longer owns', () {
-    test('a connector dropped from the list has its file deleted', () async {
-      await projection.project(
-        [token('gmail'), token('slack')],
-        owned: {'gmail', 'slack'},
-      );
+  group('projection removes only what it is told to remove', () {
+    test('a connector named in removing has its file deleted', () async {
+      await projection.project([token('gmail'), token('slack')]);
       expect(projection.tokenFile('slack').existsSync(), isTrue);
 
       // Disconnecting has to actually stop the agent using it — a file left
       // behind keeps working until it expires.
-      await projection.project([token('gmail')], owned: {'gmail', 'slack'});
+      await projection.project([token('gmail')], removing: {'slack'});
       expect(projection.tokenFile('gmail').existsSync(), isTrue);
       expect(projection.tokenFile('slack').existsSync(), isFalse);
+    });
+
+    test('a connector merely absent from the list is left alone', () async {
+      // The regression this parameter exists for. `project` used to delete
+      // every file it "owned" that was missing from the list, which makes an
+      // empty list mean "delete everything" — and an empty list is what an
+      // unreadable store, or one connector's failed refresh, produces. On
+      // 2026-07-30 that erased two working connectors nobody had touched.
+      await projection.project([token('gmail'), token('slack')]);
+
+      await projection.project(const []);
+
+      expect(projection.tokenFile('gmail').existsSync(), isTrue);
+      expect(projection.tokenFile('slack').existsSync(), isTrue);
     });
 
     test('a server Hermes authorized on its own is never touched', () async {
@@ -132,7 +143,7 @@ void main() {
         ..createSync(recursive: true);
       File('${dir.path}/notion.json').writeAsStringSync('{"access_token":"x"}');
 
-      await projection.project([token('gmail')], owned: {'gmail'});
+      await projection.project([token('gmail')], removing: {'gmail'});
       expect(File('${dir.path}/notion.json').existsSync(), isTrue);
     });
 

@@ -2,6 +2,26 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
 
+/// How long a row takes to settle into — or out of — being the selected one.
+///
+/// One duration for the whole row. Its fill, ink and rail used to move on
+/// 130/140/160ms with an instant weight change on top, so a row arrived in four
+/// stages within 30ms of each other: the label snapped bold, then the highlight
+/// caught up. Read as sluggish even though nothing was slow.
+const Duration _selectDuration = Duration(milliseconds: 160);
+
+/// How long the hover wash takes. Shorter than the selection: hover follows the
+/// pointer, and a pointer crossing the rail shouldn't leave a trail of rows
+/// still catching up.
+const Duration _hoverDuration = Duration(milliseconds: 130);
+
+/// The accent rail's width, and how far left of its resting place it starts.
+const double _railWidth = 3;
+const double _railTravel = _railWidth * 0.6;
+
+/// How far the icon drifts right under the pointer.
+const double _iconDrift = 2;
+
 /// One row in the sidebar: an icon, a label, and an optional trailing widget.
 ///
 /// The sidebar's single row recipe — nav entries, the New chat action and the
@@ -69,186 +89,51 @@ class _SidebarItemState extends State<SidebarItem> {
     setState(() => _pressed = value);
   }
 
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
   @override
   Widget build(BuildContext context) {
     // The sidebar is mounted as `const AppSidebar()`, so a rebuild from the top
     // never reaches these rows — exactly the case AppTheme.watch exists for.
     // Without it the rail keeps the palette it was first painted with.
     AppTheme.watch(context);
-    const radius = BorderRadius.all(Radius.circular(8));
-    final strong = widget.selected || widget.emphasized;
-    // A row's icon carries the accent whenever the row stands out — the selected
-    // nav item and the emphasized action (New chat) both — so the accent reads
-    // as "this is the one", matching the selected row's rail. Everything else
-    // stays in ink.
-    final ink = strong ? AppPalette.textPrimary : AppPalette.textSecondary;
-    // The on-surface accent, not the fill one: this glyph sits on the row, so in
-    // dark it needs the lighter value to stay legible — see [accentOnSurface].
-    final iconInk = (widget.selected || widget.emphasized) && widget.enabled
-        ? AppPalette.accentOnSurface
-        : ink;
-    // The emphasized row carries a whisper of accent wash so it reads as the
-    // primary action without turning into a loud button; the selected row keeps
-    // its neutral fill and instead earns the accent rail (below).
-    final fill = widget.selected
-        ? AppSurface.selectedFill
-        : widget.emphasized
-        ? (_hovered ? AppSurface.accentWashHover : AppSurface.accentWash)
-        : (_hovered ? AppSurface.hoverFill : Colors.transparent);
 
+    // Two driven values for the whole row, where there were six separate
+    // implicit animations — a container, two slides, two fades and a colour
+    // tween, each with its own controller, its own duration and its own dirty
+    // subtree every frame. A row is one thing arriving; it animates as one.
     final row = MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
       // Press feedback: the row dips slightly under the pointer and springs
       // back on release. A transform, so it never nudges neighbouring rows.
       child: AnimatedScale(
         scale: _pressed ? 0.97 : 1,
         duration: const Duration(milliseconds: 110),
         curve: Curves.easeOut,
-        child: Stack(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 130),
-              curve: Curves.easeOut,
-              margin: const EdgeInsets.symmetric(vertical: 1),
-              decoration: BoxDecoration(
-                // Flat, like Codex — the selected row is a soft rounded fill, no lift.
-                color: fill,
-                borderRadius: radius,
-              ),
-              child: Material(
-                color: Colors.transparent,
-                borderRadius: radius,
-                child: InkWell(
-                  borderRadius: radius,
-                  onTap: widget.enabled ? widget.onTap : null,
-                  onTapDown: (_) => _setPressed(true),
-                  onTapUp: (_) => _setPressed(false),
-                  onTapCancel: () => _setPressed(false),
-                  child: SizedBox(
-                    height: 36,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        SidebarItem.iconGutter,
-                        0,
-                        5,
-                        0,
-                      ),
-                      child: Row(
-                        children: [
-                          if (widget.icon != null) ...[
-                            // A whisper of drift on hover, so the icon feels alive
-                            // as the pointer lands — nudged right, never resized.
-                            AnimatedSlide(
-                              offset: Offset(_hovered ? 0.12 : 0, 0),
-                              duration: const Duration(milliseconds: 130),
-                              curve: Curves.easeOut,
-                              // Tween the colour so selecting a row eases its icon
-                              // into the accent rather than snapping — in step
-                              // with the rail that slides in alongside it.
-                              child: TweenAnimationBuilder<Color?>(
-                                tween: ColorTween(end: iconInk),
-                                duration: const Duration(milliseconds: 160),
-                                curve: Curves.easeOut,
-                                builder: (context, color, _) => Icon(
-                                  widget.icon,
-                                  size: 18,
-                                  color: color ?? iconInk,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                          ],
-                          Expanded(
-                            child: Text(
-                              widget.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              strutStyle: const StrutStyle(
-                                fontSize: 13.5,
-                                height: 1.25,
-                                forceStrutHeight: true,
-                              ),
-                              style: TextStyle(
-                                color: ink,
-                                fontSize: 13.7,
-                                height: 1.25,
-                                fontWeight: strong
-                                    ? AppFont.medium
-                                    : FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                          // An unread mark sits just left of the action, always
-                          // shown — a hover that reveals the trailing action must
-                          // not hide the fact there's a result waiting.
-                          if (widget.badge != null) ...[
-                            widget.badge!,
-                            const SizedBox(width: 8),
-                          ],
-                          // Keep the action mounted so hovering never changes text
-                          // metrics or row height. A persistent trailing (a live
-                          // status) shows without hover; a hover action stays
-                          // hidden until the pointer lands.
-                          SizedBox(
-                            width: widget.trailingWidth,
-                            height: 24,
-                            child: IgnorePointer(
-                              ignoring:
-                                  !_hovered && !widget.trailingAlwaysVisible,
-                              child: AnimatedOpacity(
-                                opacity:
-                                    _hovered || widget.trailingAlwaysVisible
-                                    ? 1
-                                    : 0,
-                                duration: const Duration(milliseconds: 100),
-                                curve: Curves.easeOut,
-                                child: widget.trailing,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+        child: TweenAnimationBuilder<double>(
+          // No `begin`: a row that mounts already selected is settled, not
+          // animating in.
+          tween: Tween(end: widget.selected ? 1.0 : 0.0),
+          duration: _selectDuration,
+          curve: Curves.easeOut,
+          builder: (context, select, _) => TweenAnimationBuilder<double>(
+            tween: Tween(end: _hovered ? 1.0 : 0.0),
+            duration: _hoverDuration,
+            curve: Curves.easeOut,
+            builder: (context, hover, _) => _SidebarRow(
+              item: widget,
+              select: select,
+              hover: hover,
+              hovered: _hovered,
+              onTapDown: (_) => _setPressed(true),
+              onTapUp: (_) => _setPressed(false),
+              onTapCancel: () => _setPressed(false),
             ),
-            // The accent rail: a slim bar hugging the row's left edge while it's
-            // the selected one. It slides in from the left and fades, so moving
-            // the selection glides rather than blinks. Positioned outside the
-            // fill so it never shifts the label — and pinned inside the 1px
-            // vertical margin so it lines up with the rounded fill.
-            Positioned(
-              left: 0,
-              top: 1,
-              bottom: 1,
-              child: Center(
-                child: AnimatedSlide(
-                  offset: Offset(widget.selected ? 0 : -0.6, 0),
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOut,
-                  child: AnimatedOpacity(
-                    opacity: widget.selected ? 1 : 0,
-                    duration: const Duration(milliseconds: 140),
-                    curve: Curves.easeOut,
-                    child: Container(
-                      width: 3,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        // Same reason as the icon above — a mark on the row, so
-                        // it takes the on-surface accent.
-                        color: AppPalette.accentOnSurface,
-                        borderRadius: const BorderRadius.horizontal(
-                          right: Radius.circular(3),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -257,6 +142,238 @@ class _SidebarItemState extends State<SidebarItem> {
     if (tooltip == null) return row;
     return Tooltip(message: tooltip, child: row);
   }
+}
+
+/// The row itself, painted at a given point in its selection and hover
+/// transitions. Everything that used to animate on its own — the fill, the
+/// label's ink, the icon's ink and drift, the rail, the trailing action — is
+/// derived from [select] and [hover] here, so one frame of the transition is one
+/// rebuild and one paint.
+class _SidebarRow extends StatelessWidget {
+  const _SidebarRow({
+    required this.item,
+    required this.select,
+    required this.hover,
+    required this.hovered,
+    required this.onTapDown,
+    required this.onTapUp,
+    required this.onTapCancel,
+  });
+
+  final SidebarItem item;
+
+  /// How far into being the selected row: 0 unselected, 1 selected.
+  final double select;
+
+  /// How far into being hovered: 0 off, 1 under the pointer.
+  final double hover;
+
+  /// Whether the pointer is *meant* to be on the row — which is what decides
+  /// whether the trailing action can be clicked. [hover] is mid-transition for
+  /// a few frames either side of that, so it can't answer this.
+  final bool hovered;
+
+  final ValueChanged<TapDownDetails> onTapDown;
+  final ValueChanged<TapUpDetails> onTapUp;
+  final VoidCallback onTapCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    const radius = BorderRadius.all(Radius.circular(8));
+    // Weight tracks the selection itself, not the transition: it changes the
+    // label's metrics, so it wants to happen once, at the start, rather than
+    // reflowing the text somewhere in the middle of the fade.
+    final strong = item.selected || item.emphasized;
+    // The emphasized row carries a whisper of accent wash so it reads as the
+    // primary action without turning into a loud button; the selected row keeps
+    // its neutral fill and instead earns the accent rail (below).
+    final resting = item.emphasized
+        ? Color.lerp(AppSurface.accentWash, AppSurface.accentWashHover, hover)!
+        : Color.lerp(Colors.transparent, AppSurface.hoverFill, hover)!;
+    final fill = Color.lerp(resting, AppSurface.selectedFill, select)!;
+    // A row's label lifts into the primary ink as it becomes the selected one,
+    // on the same curve as its fill — it used to snap bold and bright a beat
+    // before the highlight caught up.
+    final ink = Color.lerp(
+      item.emphasized ? AppPalette.textPrimary : AppPalette.textSecondary,
+      AppPalette.textPrimary,
+      select,
+    )!;
+
+    return Stack(
+      children: [
+        // The 1px breathing room is outside the fill, so neighbouring rows'
+        // highlights never touch.
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              // Flat, like Codex — the selected row is a soft rounded fill, no
+              // lift.
+              color: fill,
+              borderRadius: radius,
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: radius,
+              child: InkWell(
+                borderRadius: radius,
+                onTap: item.enabled ? item.onTap : null,
+                onTapDown: onTapDown,
+                onTapUp: onTapUp,
+                onTapCancel: onTapCancel,
+                child: SizedBox(
+                  height: 36,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      SidebarItem.iconGutter,
+                      0,
+                      5,
+                      0,
+                    ),
+                    child: Row(
+                      children: [
+                        if (item.icon != null) ...[
+                          _RowIcon(item: item, select: select, hover: hover),
+                          const SizedBox(width: 10),
+                        ],
+                        Expanded(
+                          child: Text(
+                            item.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            strutStyle: const StrutStyle(
+                              fontSize: 13.5,
+                              height: 1.25,
+                              forceStrutHeight: true,
+                            ),
+                            style: TextStyle(
+                              color: ink,
+                              fontSize: 13.7,
+                              height: 1.25,
+                              fontWeight: strong
+                                  ? AppFont.medium
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                        // An unread mark sits just left of the action, always
+                        // shown — a hover that reveals the trailing action must
+                        // not hide the fact there's a result waiting.
+                        if (item.badge != null) ...[
+                          item.badge!,
+                          const SizedBox(width: 8),
+                        ],
+                        // Keep the action mounted so hovering never changes text
+                        // metrics or row height. A persistent trailing (a live
+                        // status) shows without hover; a hover action stays
+                        // hidden until the pointer lands.
+                        SizedBox(
+                          width: item.trailingWidth,
+                          height: 24,
+                          child: IgnorePointer(
+                            ignoring: !hovered && !item.trailingAlwaysVisible,
+                            child: Opacity(
+                              opacity: item.trailingAlwaysVisible ? 1 : hover,
+                              child: item.trailing,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Nothing to draw on the rows that aren't selected, which is all but one
+        // of them — and a rail at zero opacity is still a render object to lay
+        // out and a layer to composite.
+        if (select > 0) _SelectionRail(select: select),
+      ],
+    );
+  }
+}
+
+/// The row's icon: it drifts right under the pointer and eases into the accent
+/// as the row becomes the selected one.
+class _RowIcon extends StatelessWidget {
+  const _RowIcon({
+    required this.item,
+    required this.select,
+    required this.hover,
+  });
+
+  final SidebarItem item;
+  final double select;
+  final double hover;
+
+  @override
+  Widget build(BuildContext context) {
+    // A row's icon carries the accent whenever the row stands out — the selected
+    // nav item and the emphasized action (New chat) both — so the accent reads
+    // as "this is the one", matching the selected row's rail. Everything else
+    // stays in ink. The on-surface accent, not the fill one: this glyph sits on
+    // the row, so in dark it needs the lighter value — see [accentOnSurface].
+    //
+    // The emphasized row sits permanently at the far end of the same ramp the
+    // selected one travels along, so it reads as prominent from the start; a
+    // disabled row stops at the ink and never reaches the accent.
+    final t = item.emphasized ? 1.0 : select;
+    final plain = Color.lerp(
+      AppPalette.textSecondary,
+      AppPalette.textPrimary,
+      t,
+    )!;
+    final ink = item.enabled
+        ? Color.lerp(plain, AppPalette.accentOnSurface, t)!
+        : plain;
+
+    return Transform.translate(
+      // A whisper of drift on hover, so the icon feels alive as the pointer
+      // lands — nudged right, never resized.
+      offset: Offset(hover * _iconDrift, 0),
+      child: Icon(item.icon, size: 18, color: ink),
+    );
+  }
+}
+
+/// The accent rail: a slim bar hugging the selected row's left edge.
+///
+/// It slides in from the left and fades up, so moving the selection glides
+/// rather than blinks. Drawn outside the fill so it never shifts the label, and
+/// pinned inside the row's 1px vertical margin so it lines up with the rounded
+/// fill. The fade rides the colour's alpha rather than an [Opacity] — wrapping
+/// it in one meant an offscreen buffer every frame of the transition.
+class _SelectionRail extends StatelessWidget {
+  const _SelectionRail({required this.select});
+
+  final double select;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    left: 0,
+    top: 1,
+    bottom: 1,
+    child: Center(
+      child: Transform.translate(
+        offset: Offset(-_railTravel * (1 - select), 0),
+        child: Container(
+          width: _railWidth,
+          height: 18,
+          decoration: BoxDecoration(
+            // Same reason as the icon — a mark on the row, so it takes the
+            // on-surface accent.
+            color: AppPalette.accentOnSurface.withValues(alpha: select),
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(3),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// A quiet section label above a group of [SidebarItem]s ("Chats", "Workspace").

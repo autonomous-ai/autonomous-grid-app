@@ -157,4 +157,88 @@ void main() {
       },
     );
   });
+
+  group('which path obtained the token', () {
+    test('a gateway token survives a round trip and stays gateway', () async {
+      await store.save(token('gmail'));
+
+      final read = (await store.read())['gmail']!;
+      expect(read.source, ConnectorTokenSource.gateway);
+      expect(read.issuer, isEmpty);
+    });
+
+    test('a self-registered token keeps its source and issuer', () async {
+      await store.save(
+        ConnectorToken(
+          connector: 'notion',
+          accessToken: 'access-notion',
+          refreshToken: 'refresh-notion',
+          source: ConnectorTokenSource.dcr,
+          issuer: 'https://mcp.notion.com',
+          mcpEntry: const McpEntry(
+            url: 'https://mcp.notion.com/mcp',
+            headers: {'Authorization': 'Bearer access-notion'},
+            canRefresh: true,
+          ),
+        ),
+      );
+
+      final read = (await store.read())['notion']!;
+      expect(read.source, ConnectorTokenSource.dcr);
+      // The key into clients.json. Losing it makes the token unrenewable, since
+      // the refresh call needs the client_id that was registered.
+      expect(read.issuer, 'https://mcp.notion.com');
+    });
+
+    test(
+      'a token written before path A existed reads as gateway, not dcr',
+      () async {
+        // The compatibility case, and the one worth pinning: every token already
+        // on disk predates `source`. Defaulting a missing field to `dcr` would
+        // send the refresh sweep hunting for a registration that never existed,
+        // and the connector would silently stop renewing.
+        await store.file.parent.create(recursive: true);
+        await store.file.writeAsString(
+          jsonEncode({
+            'gmail': {
+              'access_token': 'legacy',
+              'token_type': 'Bearer',
+              'refresh_token': 'legacy-refresh',
+            },
+          }),
+        );
+
+        final read = (await store.read())['gmail']!;
+        expect(read.source, ConnectorTokenSource.gateway);
+        expect(read.issuer, isEmpty);
+      },
+    );
+
+    test('a gateway token writes no source field at all', () async {
+      // Keeps existing files byte-identical: the default path adds nothing, so
+      // saving an untouched store doesn't rewrite every entry.
+      await store.save(token('gmail'));
+
+      final raw =
+          jsonDecode(await store.file.readAsString()) as Map<String, dynamic>;
+      expect(raw['gmail'], isNot(contains('source')));
+      expect(raw['gmail'], isNot(contains('issuer')));
+    });
+
+    test('both paths answer canBeRefreshed the same way', () async {
+      // The refresh scheduler must not branch on source — only the controller
+      // does, when it picks which endpoint to call.
+      final gateway = token('gmail');
+      final dcr = ConnectorToken(
+        connector: 'notion',
+        accessToken: 'a',
+        source: ConnectorTokenSource.dcr,
+        issuer: 'https://mcp.notion.com',
+        mcpEntry: const McpEntry(url: 'https://x/mcp', canRefresh: true),
+      );
+
+      expect(gateway.canBeRefreshed, isTrue);
+      expect(dcr.canBeRefreshed, isTrue);
+    });
+  });
 }

@@ -103,10 +103,7 @@ class ChatSessionsState {
   /// ⌘K all list. [conversations] stays the whole set so the Archived screen
   /// has something to read; anything showing the user their *working* history
   /// wants this instead.
-  List<Conversation> get live => [
-    for (final c in conversations)
-      if (!c.isArchived) c,
-  ];
+  List<Conversation> get live => liveConversations(conversations);
 
   /// The archived chats, most recently archived first — the Archived screen's
   /// source list, before its own search/sort/filter narrow it further.

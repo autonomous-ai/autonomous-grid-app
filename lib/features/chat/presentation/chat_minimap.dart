@@ -81,14 +81,31 @@ String? _replyAfter(List<ChatMessage> messages, int index) {
   return null;
 }
 
+/// How much of a message to look at when building its preview.
+///
+/// Collapsing whitespace only ever shortens a line, so a slice this many times
+/// the preview's own length always has enough left to fill it. The point is not
+/// to normalise the whole message: a reply here runs to twelve kilobytes, and
+/// rewriting all of it to produce a hundred characters was work the transcript
+/// paid for on every rebuild.
+const int _previewScanLength = _maxPreviewLength * 8;
+
+final _whitespaceRun = RegExp(r'\s+');
+
 /// [text] as a single line, clipped to [_maxPreviewLength] with an ellipsis. The
 /// newlines have to go: a reply is markdown, and its blank lines and bullets would
 /// otherwise eat the preview's two lines before any words arrived.
 String _clip(String text) {
-  final line = text.trim().replaceAll(RegExp(r'\s+'), ' ');
-  return line.length > _maxPreviewLength
-      ? '${line.substring(0, _maxPreviewLength).trimRight()}…'
-      : line;
+  final head = text.trimLeft();
+  final long = head.length > _previewScanLength;
+  final scan = long ? head.substring(0, _previewScanLength) : head;
+  final line = scan.trim().replaceAll(_whitespaceRun, ' ');
+  if (line.length > _maxPreviewLength) {
+    return '${line.substring(0, _maxPreviewLength).trimRight()}…';
+  }
+  // There was more text than the slice took, so the line is still a clipping
+  // even though the collapsed result came out short.
+  return long ? '$line…' : line;
 }
 
 /// A slim ruler down the left of the transcript: one tick per question you asked,
