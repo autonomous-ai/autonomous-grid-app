@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_skill.dart';
 import '../../agents/logic/skill_writer.dart';
+import 'public_skill_catalog.dart';
+import 'skill_files.dart';
 import 'skill_sharing.dart';
 
 /// Which folder of skills the screen is showing. The app's own store by
@@ -43,6 +47,22 @@ final skillsProvider =
       SkillsController.new,
       isAutoDispose: true,
     );
+
+/// What's in the app's own store, whichever folder the screen happens to be
+/// showing.
+///
+/// The catalog needs this and [skillsProvider] can't answer it: open the
+/// catalog while reading Hermes's folder and "is this installed?" would be
+/// asked of the wrong list. Re-read whenever the screen's list changes, since
+/// every write goes through that.
+final storedSkillsProvider = FutureProvider.autoDispose<List<AgentSkill>>((
+  ref,
+) async {
+  final tool = ref.watch(extensionAgentProvider);
+  final plane = ref.watch(agentExtensionsProvider(tool))?.skills;
+  ref.watch(skillsProvider);
+  return await plane?.list(SkillSource.shared) ?? const [];
+});
 
 /// The selected agent's authoring surface, or null when it can only display
 /// skills — dialogs read this for pre-checks (does a name exist, what were the
@@ -111,6 +131,58 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
     return failure;
   }
 
+  /// Install one of the skills the app ships with.
+  ///
+  /// Laid down in a temp folder first and then imported like any other folder,
+  /// so a catalog skill goes through the same check and the same writer as one
+  /// the user dropped in — there is one way into the store, not two.
+  Future<String?> installPublic(PublicSkill skill) async {
+    final Directory staging;
+    try {
+      staging = await Directory.systemTemp.createTemp('grid_public_skill');
+      await writePublicSkillTo(
+        ref.read(publicSkillBundleProvider),
+        skill,
+        staging,
+      );
+    } on Object catch (error) {
+      return "Couldn't unpack ${skill.name}: $error";
+    }
+    try {
+      final failure = await _write(
+        // Into `public/`: this is Grid's copy of somebody else's skill, not the
+        // user's work, and the Author column should say so.
+        (writer) => writer.import(staging.path, intoPublic: true),
+      );
+      if (failure == null) {
+        ref.read(skillSourceProvider.notifier).select(SkillSource.shared);
+      }
+      return failure;
+    } finally {
+      if (staging.existsSync()) await staging.delete(recursive: true);
+    }
+  }
+
+  /// Take a catalog skill back out of the store.
+  ///
+  /// Found by folder name in the store rather than in whatever the screen is
+  /// showing — the catalog can be open over Hermes's folder, and deleting from
+  /// *that* list is both refused and not what was asked.
+  Future<String?> uninstallPublic(PublicSkill skill) async {
+    final plane = _plane;
+    if (plane == null) return _noSkills;
+    final stored = await plane.list(SkillSource.shared);
+    final copies = stored
+        .where((installed) => installed.path.split('/').last == skill.slug)
+        .toList();
+    if (copies.isEmpty) return '${skill.name} is not installed.';
+    return _write((writer) async {
+      for (final copy in copies) {
+        await writer.delete(copy.path);
+      }
+    });
+  }
+
   Future<String?> delete(AgentSkill skill) =>
       _write((writer) => writer.delete(skill.path));
 
@@ -157,6 +229,11 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
       await action(writer);
     } on AgentExtensionException catch (error) {
       return error.message;
+    } on ArgumentError catch (error) {
+      // The writer's own refusals — a folder that isn't a skill, a name already
+      // taken — are written for the user. Wrapping them in "Couldn't save" only
+      // buries the sentence that says what to do.
+      return '${error.message}';
     } on Object catch (error) {
       return "Couldn't save the skill: $error";
     }

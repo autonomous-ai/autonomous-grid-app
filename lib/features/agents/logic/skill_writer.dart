@@ -24,7 +24,11 @@ abstract interface class SkillWriter {
   /// Separate from [create] because nothing here is authored: the folder
   /// arrives finished, and what it needs is checking rather than writing. A
   /// folder that isn't a skill is rejected before anything is copied.
-  Future<Directory> import(String sourcePath);
+  ///
+  /// [intoPublic] files it under the store's public folder instead of the
+  /// user's own — for a skill taken from the shipped catalog, which is not the
+  /// user's work and shouldn't claim to be.
+  Future<Directory> import(String sourcePath, {bool intoPublic});
 
   /// The instructions currently in a skill, read back so the editor can
   /// pre-fill them instead of starting blank.

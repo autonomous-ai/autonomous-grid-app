@@ -6,6 +6,7 @@ import '../../../core/grid_paths.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_skill.dart';
 import '../../agents/logic/skill_writer.dart';
+import 'skill_files.dart';
 import 'skill_import.dart';
 
 /// A folder name for [title] — lowercase, dashes, nothing a filesystem will
@@ -54,8 +55,12 @@ class SkillAuthor implements SkillWriter {
 
   String get _root => gridSkillsStore(_home);
 
-  /// Where a *new* skill of this slug goes — always the user's folder.
+  /// Where a *new* skill of this slug goes — the user's own folder.
   Directory dirFor(String slug) => Directory('$_root/$kUserSkillsDir/$slug');
+
+  /// Where a skill taken from the shipped catalog goes.
+  Directory publicDirFor(String slug) =>
+      Directory('$_root/$kPublicSkillsDir/$slug');
 
   /// True when a skill of this name is already there — anywhere in the store,
   /// not just the user's folder. The dialog checks first rather than silently
@@ -98,14 +103,14 @@ class SkillAuthor implements SkillWriter {
     return dir;
   }
 
-  /// Copy a finished skill folder into the user's own folder, under the name
-  /// its card gives — the name the agent will call it by, so the folder and the
-  /// card can't disagree the way an imported folder's name easily could.
+  /// Copy a finished skill folder into the store, under the name its card gives
+  /// — the name the agent will call it by, so the folder and the card can't
+  /// disagree the way an imported folder's name easily could.
   ///
   /// Refuses a folder that isn't a skill, and refuses to shadow a name already
   /// in the store: two skills of one name leaves the agent picking between them.
   @override
-  Future<Directory> import(String sourcePath) async {
+  Future<Directory> import(String sourcePath, {bool intoPublic = false}) async {
     final refusal = skillFolderRefusal(sourcePath);
     if (refusal != null) throw ArgumentError(refusal);
 
@@ -123,7 +128,7 @@ class SkillAuthor implements SkillWriter {
       throw ArgumentError('You already have a skill called "${card.name}".');
     }
 
-    final target = dirFor(slug);
+    final target = intoPublic ? publicDirFor(slug) : dirFor(slug);
     await copySkillFolder(Directory(sourcePath), target);
     return target;
   }

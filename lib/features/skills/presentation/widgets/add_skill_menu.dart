@@ -11,17 +11,20 @@ import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/extension_toolbar.dart';
 import '../../../../shared/widgets/toast.dart';
+import '../../logic/skill_files.dart';
 import '../../logic/skill_import.dart';
 import '../../logic/skills_controller.dart';
 import 'new_skill_dialog.dart';
+import 'public_skill_dialog.dart';
 import 'skill_menu.dart';
 
-/// The screen's one create action, now that there are two ways to get a skill:
-/// write one here, or bring a folder that already is one.
+/// The screen's one create action, now that there are three ways to get a
+/// skill: write one here, bring a folder that already is one, or take one from
+/// the catalog the app ships with.
 ///
-/// A menu rather than two buttons in the toolbar — the second way is the rarer
-/// one, and a toolbar that grows a button per variation stops reading as a
-/// toolbar.
+/// A menu rather than three buttons in the toolbar — writing one is the common
+/// case and the other two are occasional, and a toolbar that grows a button per
+/// variation stops reading as a toolbar.
 class AddSkillButton extends StatelessWidget {
   const AddSkillButton({super.key});
 
@@ -53,6 +56,14 @@ class AddSkillButton extends StatelessWidget {
                     showUploadSkillDialog(context);
                   },
                 ),
+                SkillMenuItem(
+                  icon: Icons.storefront_outlined,
+                  label: 'Public skills',
+                  onPressed: () {
+                    MenuController.maybeOf(menuContext)?.close();
+                    showPublicSkillDialog(context);
+                  },
+                ),
               ],
             ),
           ),
@@ -68,7 +79,7 @@ class AddSkillButton extends StatelessWidget {
           controller.open(
             position: anchoredMenuPosition(
               context,
-              menuSize: skillMenuSize(2),
+              menuSize: skillMenuSize(3),
               margin: 8,
               gap: 6,
               // The button sits at the toolbar's trailing edge, so a menu
@@ -85,10 +96,10 @@ class AddSkillButton extends StatelessWidget {
 /// Brings in a skill somebody else wrote: pick (or drop) its folder, and if it
 /// really is a skill, it's copied into the store as one of yours.
 ///
-/// Copied rather than linked, and always into the user's own folder: a skill
-/// that lived outside the store would vanish from the assistant the day that
-/// folder moved, and one dropped into `public/` would be wiped by the next
-/// install.
+/// Copied rather than linked, and into the user's own folder: a skill that
+/// lived outside the store would vanish from the assistant the day that folder
+/// moved, and a folder the user went and found is their own — `public/` is for
+/// what Grid hands them.
 Future<void> showUploadSkillDialog(BuildContext context) =>
     showDialog<void>(context: context, builder: (_) => const _UploadDialog());
 

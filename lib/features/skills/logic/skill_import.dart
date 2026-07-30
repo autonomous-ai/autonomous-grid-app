@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../agents/logic/agent_skill.dart';
+import 'skill_files.dart';
 
 /// What a folder must be before the app will take it as a skill: a folder with
 /// a `SKILL.md` in it whose front-matter card names the skill and says when to
@@ -43,8 +44,6 @@ String? skillFolderRefusal(String path) {
   }
   return null;
 }
-
-const String kSkillCardFileName = 'SKILL.md';
 
 /// The card's fields exactly as written, with no fallback.
 ///
