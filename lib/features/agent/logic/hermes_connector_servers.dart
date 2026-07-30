@@ -42,13 +42,29 @@ class HermesConnectorServers {
   /// The key that marks an entry as written by this app.
   static const String marker = '_grid';
 
-  /// Make `mcp_servers` match [tokens]: an entry for every connector that has a
-  /// usable MCP entry, and no leftovers from ones that no longer do.
+  /// Write an entry for every connector in [tokens] that has a usable MCP entry,
+  /// and remove the ones named in [removing].
   ///
   /// Idempotent — running it twice with the same tokens rewrites the same
   /// bytes. Callers treat it as the thing to do whenever anything changed, so
   /// it has to be cheap to over-call.
-  Future<void> project(List<ConnectorToken> tokens) async {
+  ///
+  /// **Deletion is by name, never by subtraction.** This method used to drop
+  /// every `_grid` entry absent from [tokens], which reads as "make the config
+  /// match the store" and is wrong in one specific, destructive way: `tokens` is
+  /// the *whole master store*, so an empty store means "delete everything". On
+  /// 2026-07-30 a single expired `asana` token was erased by a failed refresh,
+  /// the store went empty, and this wiped two unrelated working connectors out of
+  /// `config.yaml` — neither of which had anything to do with the failure.
+  ///
+  /// A projection cannot tell "this connector is gone" from "the store could not
+  /// be read" or "nothing has been linked yet", so it must not guess. Only a
+  /// caller that actually removed something knows the difference, and it says so
+  /// through [removing].
+  Future<void> project(
+    List<ConnectorToken> tokens, {
+    Set<String> removing = const {},
+  }) async {
     final wanted = <String, ConnectorToken>{
       for (final token in tokens)
         if (token.mcpEntry != null) token.connector: token,
@@ -59,14 +75,14 @@ class HermesConnectorServers {
         'mcp_servers',
       ], orElse: () => wrapAsYamlNode(null)).value;
 
-      // Drop ours that are no longer wanted — a disconnected connector has to
-      // stop working, and an entry left behind keeps the agent calling it until
-      // the token expires. Anything without the marker is left exactly as-is.
+      // Only the named ones, and only if we wrote them — a disconnected
+      // connector has to stop working, and an entry left behind keeps the agent
+      // calling it until the token expires. Anything without the marker is
+      // somebody's own config and is left exactly as-is.
       if (existing is Map) {
-        for (final key in existing.keys.toList()) {
-          final name = key is String ? key : key.toString();
+        for (final name in removing) {
           if (wanted.containsKey(name)) continue;
-          if (!_isOurs(existing[key])) continue;
+          if (!_isOurs(existing[name])) continue;
           editor.remove(['mcp_servers', name]);
         }
       }
