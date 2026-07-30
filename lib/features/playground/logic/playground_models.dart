@@ -76,11 +76,25 @@ ModelHosting hostingForEngine(String? engine) {
   final name = (engine ?? '').trim().toLowerCase();
   if (name.isEmpty) return ModelHosting.unknown;
   if (_localEngines.contains(name)) return ModelHosting.onGrid;
-  // Every hosted provider the CLI whitelists — `codex`, `openai`, and whatever
-  // joins them — is a node relaying to that vendor's API.
-  if (kApiProviders.any((p) => p.kind == name)) return ModelHosting.cloud;
+  if (_cloudEngines.contains(name)) return ModelHosting.cloud;
   return ModelHosting.unknown;
 }
+
+/// Engine kinds that relay a prompt to a vendor's API rather than answering from
+/// the machine they run on.
+///
+/// Every provider this app can join, **plus the ones it can't**: a grid is a
+/// shared place, so a `codex` seat someone else joined is still on it long after
+/// the app stopped offering that kind (see [kApiProviders]). Deriving the mark
+/// from our own menu alone quietly relabelled those nodes "unknown" — a privacy
+/// answer that got vaguer because a *button* went away.
+///
+/// A CLI seat counts as cloud too: the process runs here, but the prompt still
+/// leaves for Anthropic or OpenAI, which is the only thing this mark is about.
+final Set<String> _cloudEngines = {
+  for (final provider in kApiProviders) provider.kind,
+  ...kResponsesOnlyKinds,
+};
 
 /// Where each model on the grid is served from, by asking the online nodes that
 /// advertise it. A model served from two places at once (one machine, one cloud

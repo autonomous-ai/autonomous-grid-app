@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/widgets/chatgpt_logo.dart';
 import '../../../shared/widgets/choice_row.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../node_setup/logic/auto_host_controller.dart';
@@ -49,7 +48,7 @@ class AddEngineOptions extends ConsumerWidget {
     // (see `_addEngineBlocks`). Every row can act.
     return ChoiceRowGroup(
       children: [
-        ?_subscriptionRow(ref),
+        ?_seatRow(ref),
         if (ref.watch(supportsBuiltInEngineProvider))
           _LocalRow(network: network),
         ?_ApiKeyRow.forCatalog(ref, network),
@@ -58,35 +57,31 @@ class AddEngineOptions extends ConsumerWidget {
     );
   }
 
-  /// Sign in with a ChatGPT subscription — nothing to download, no key to find,
-  /// so it leads. Null when the installed CLI whitelists no sign-in provider, so
-  /// the group never offers a road it can't walk.
+  /// Share a coding CLI that's already signed in on this computer (Claude Code,
+  /// Codex) — nothing to download and no key to find, so it leads. Null when
+  /// this machine has none of them, so the group never offers a road it can't
+  /// walk.
   ///
-  /// The only row that doesn't open anything: it hands the user to the browser
-  /// to approve the account, which is what the outward arrow says. It carries no
-  /// busy state either — it used to spin whenever *any* join was starting, so
-  /// pressing "Run on this computer" claimed a ChatGPT sign-in was under way.
-  /// The starting card above owns that, and these rows leave the page the moment
+  /// Starts the first one found rather than asking which: the Cloud Provider
+  /// block below has the dropdown for picking between them, and a first-run row
+  /// that opens a chooser is one decision too many. It carries no busy state —
+  /// the starting card above owns that, and these rows leave the page the moment
   /// a join begins.
-  ChoiceRow? _subscriptionRow(WidgetRef ref) {
-    final engines = signInEngines(
-      ref.watch(apiEnginesProvider).asData?.value ?? const [],
-    );
+  ChoiceRow? _seatRow(WidgetRef ref) {
+    final available = ref.watch(apiEnginesProvider).asData?.value ?? const [];
+    final engines = seatEngines(available);
     if (engines.isEmpty) return null;
     final provider = engines.first.provider;
     return ChoiceRow(
-      // The vendor's own mark: this hands a ChatGPT account over, so it reads
-      // as their sign-in rather than one of ours.
-      icon: const ChatGptLogo(size: 18),
-      title: 'Continue with ChatGPT',
-      line: 'Fastest setup — sign in with your subscription',
-      action: ChoiceRowAction.leave,
+      icon: const Icon(Icons.terminal_outlined),
+      title: seatCardTitle(available),
+      line: 'Fastest setup — it’s already installed and signed in',
+      action: ChoiceRowAction.act,
       onPressed: () => ref
           .read(providerRunControllerProvider.notifier)
           .startApiEngine(
             network: network.networkId,
-            kind: provider.kind,
-            envVar: provider.envVar,
+            provider: provider,
             apiKey: '',
           ),
     );

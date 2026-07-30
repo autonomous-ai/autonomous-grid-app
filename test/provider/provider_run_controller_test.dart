@@ -3,6 +3,7 @@ import 'dart:io' as io;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/provider_node/logic/api_engine_catalog.dart';
 import 'package:grid_app/features/provider_node/logic/provider_run_controller.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
@@ -22,6 +23,24 @@ const _args = [
   '--name',
   'grid-app',
 ];
+
+/// The two shapes of hosted provider the join has to tell apart: one whose key
+/// travels in the environment, and one that is a CLI on this computer with no
+/// credential for the app to pass at all.
+const _openai = ApiProvider(
+  kind: 'openai',
+  label: 'OpenAI',
+  auth: ApiAuth.key,
+  envVar: 'OPENAI_API_KEY',
+  keyHint: 'sk-…',
+);
+
+const _claudeSeat = ApiProvider(
+  kind: 'claude',
+  label: 'Claude Code',
+  auth: ApiAuth.localCli,
+  binary: 'claude',
+);
 
 /// Stubs the run-state reads so [ProviderRunController.reconcile] and
 /// [ProviderRunController.shutdownServing] can be driven without touching
@@ -928,8 +947,7 @@ void main() {
           .read(providerRunControllerProvider.notifier)
           .startApiEngine(
             network: 'net',
-            kind: 'openai',
-            envVar: 'OPENAI_API_KEY',
+            provider: _openai,
             apiKey: 'sk-secret',
             models: const ['openai:gpt-5.5'],
           );
@@ -944,22 +962,13 @@ void main() {
     },
   );
 
-  test('a codex join asks for room to answer several people at once — the CLI '
-      'would otherwise pin the seat to one worker and queue the whole grid '
-      'behind whoever asked first', () async {
-    const codexArgs = [
-      'join',
-      'net',
-      '--api',
-      'codex',
-      '--max-concurrency',
-      '100',
-      '--name',
-      'grid-app',
-    ];
+  test('a CLI seat join passes no credential at all — the coding CLI on this '
+      'computer signs itself in, so anything the app added would be a second '
+      'answer to a question the grid never asks', () async {
+    const seatArgs = ['join', 'net', '--api', 'claude', '--name', 'grid-app'];
     final fake = FakeGridCliService()
       ..stubStart(
-        codexArgs,
+        seatArgs,
         exitCode: 0,
         exitDelay: const Duration(milliseconds: 15),
         lines: const [CliLine(isStderr: false, text: 'Joining engine…')],
@@ -969,14 +978,10 @@ void main() {
 
     await container
         .read(providerRunControllerProvider.notifier)
-        .startApiEngine(
-          network: 'net',
-          kind: 'codex',
-          envVar: null,
-          apiKey: '',
-        );
+        .startApiEngine(network: 'net', provider: _claudeSeat, apiKey: '');
 
-    expect(fake.lastStartArgs, codexArgs);
+    expect(fake.lastStartArgs, seatArgs);
+    expect(fake.lastStartEnvironment, isNull);
   });
 
   test(
@@ -997,12 +1002,7 @@ void main() {
 
       await container
           .read(providerRunControllerProvider.notifier)
-          .startApiEngine(
-            network: 'net',
-            kind: 'openai',
-            envVar: 'OPENAI_API_KEY',
-            apiKey: '',
-          );
+          .startApiEngine(network: 'net', provider: _openai, apiKey: '');
 
       expect(
         container.read(providerRunControllerProvider),
@@ -1013,32 +1013,23 @@ void main() {
     },
   );
 
-  test('cancelling a sign-in join stays cancelled — a line the CLI flushes on '
+  test('cancelling a slow join stays cancelled — a line the CLI flushes on '
       'its way out must not put the join back on screen', () async {
-    // What the user saw: Cancel during the ChatGPT sign-in put the list back,
-    // then seconds later "Starting on <grid>…" reappeared by itself and went
-    // away again. `kill()` is a request; the CLI keeps writing while it dies,
-    // and every line was re-arming the starting state.
-    const codexArgs = [
-      'join',
-      'net',
-      '--api',
-      'codex',
-      '--max-concurrency',
-      '100',
-      '--name',
-      'grid-app',
-    ];
+    // What the user saw: Cancel during a slow join put the list back, then
+    // seconds later "Starting on <grid>…" reappeared by itself and went away
+    // again. `kill()` is a request; the CLI keeps writing while it dies, and
+    // every line was re-arming the starting state.
+    const seatArgs = ['join', 'net', '--api', 'claude', '--name', 'grid-app'];
     final fake = FakeGridCliService()
       ..stubStart(
-        codexArgs,
+        seatArgs,
         exitCode: 0,
         lineDelay: const Duration(milliseconds: 20),
         exitDelay: const Duration(milliseconds: 120),
         lines: const [
-          CliLine(isStderr: false, text: 'Open https://auth.example/device'),
-          CliLine(isStderr: false, text: 'Waiting for approval…'),
-          CliLine(isStderr: false, text: 'Signed in'),
+          CliLine(isStderr: false, text: 'Starting the seat server…'),
+          CliLine(isStderr: false, text: 'Probing the CLI…'),
+          CliLine(isStderr: false, text: 'Registered'),
         ],
       );
     final container = ProviderContainer(
@@ -1055,8 +1046,7 @@ void main() {
     unawaited(
       notifier.startApiEngine(
         network: 'net',
-        kind: 'codex',
-        envVar: null,
+        provider: _claudeSeat,
         apiKey: '',
       ),
     );

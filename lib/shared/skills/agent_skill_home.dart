@@ -11,7 +11,7 @@ import '../../features/agents/logic/agent_catalog.dart';
 const String kMySkillsCategory = 'my-skills';
 
 /// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
-/// which both agents can already reach.
+/// which every agent can already reach.
 ///
 /// Spelled once here so a skill never depends on a `uv` being on PATH — the GUI's
 /// minimal PATH is exactly what broke other tooling before — and so two skills
@@ -57,24 +57,26 @@ class AgentSkillHome {
   Directory get root => switch (agent) {
     AgentTool.hermes => Directory('$home/.hermes/skills'),
     AgentTool.codex => Directory('$home/.codex/skills'),
+    AgentTool.claude => Directory('$home/.claude/skills'),
   };
 
   /// A Grid-owned skill's folder — the ones the app installs and rewrites.
   ///
   /// Hermes keeps them under a `grid/` category so a reinstall can't clobber a
-  /// bundled or user skill; Codex discovers a flat tree, so they sit at the root.
+  /// bundled or user skill; Codex and Claude Code discover a flat tree, so they
+  /// sit at the root.
   Directory gridDir(String name) => switch (agent) {
     AgentTool.hermes => Directory('${root.path}/grid/$name'),
-    AgentTool.codex => Directory('${root.path}/$name'),
+    AgentTool.codex || AgentTool.claude => Directory('${root.path}/$name'),
   };
 
   /// A user-authored skill's folder, kept apart from Grid + bundled skills so
   /// neither an update nor a reinstall can overwrite the user's own work. Codex
-  /// has no category tree, so a user skill sits flat beside the Grid ones — its
-  /// slug must not collide with a built-in name.
+  /// and Claude Code have no category tree, so a user skill sits flat beside the
+  /// Grid ones — its slug must not collide with a built-in name.
   Directory myDir(String slug) => switch (agent) {
     AgentTool.hermes => Directory('${root.path}/$kMySkillsCategory/$slug'),
-    AgentTool.codex => Directory('${root.path}/$slug'),
+    AgentTool.codex || AgentTool.claude => Directory('${root.path}/$slug'),
   };
 }
 

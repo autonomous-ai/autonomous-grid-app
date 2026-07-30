@@ -27,8 +27,20 @@ void main() {
     });
 
     test('a hosted provider the CLI whitelists is a cloud relay', () {
-      expect(hostingForEngine('codex'), ModelHosting.cloud);
       expect(hostingForEngine('openai'), ModelHosting.cloud);
+      expect(hostingForEngine('OPENAI'), ModelHosting.cloud);
+    });
+
+    test('a CLI seat is a cloud relay too — the process runs here, but the '
+        'prompt still leaves for the vendor', () {
+      expect(hostingForEngine('claude'), ModelHosting.cloud);
+      expect(hostingForEngine('codex-cli'), ModelHosting.cloud);
+    });
+
+    test('a kind this app no longer joins is still read off the grid — a seat '
+        'someone else joined does not become "unknown" because a button here '
+        'went away', () {
+      expect(hostingForEngine('codex'), ModelHosting.cloud);
       expect(hostingForEngine('CODEX'), ModelHosting.cloud);
     });
 

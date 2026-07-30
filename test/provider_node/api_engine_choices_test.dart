@@ -2,10 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/provider_node/logic/api_engine_choices.dart';
 import 'package:grid_app/features/provider_node/logic/api_engine_catalog.dart';
 
-ApiEngine _engine(String kind, String label, {String? envVar}) => ApiEngine(
+ApiEngine _key(String kind, String label, String envVar) => ApiEngine(
   provider: ApiProvider(
     kind: kind,
     label: label,
+    auth: ApiAuth.key,
     envVar: envVar,
     keyHint: 'sk-…',
   ),
@@ -14,44 +15,76 @@ ApiEngine _engine(String kind, String label, {String? envVar}) => ApiEngine(
   hasStoredKey: false,
 );
 
-final _codex = _engine('codex', 'ChatGPT / Codex');
-final _openai = _engine('openai', 'OpenAI', envVar: 'OPENAI_API_KEY');
-final _anthropic = _engine(
-  'anthropic',
-  'Anthropic',
-  envVar: 'ANTHROPIC_API_KEY',
+ApiEngine _seat(String kind, String label, {required bool found}) => ApiEngine(
+  provider: ApiProvider(
+    kind: kind,
+    label: label,
+    auth: ApiAuth.localCli,
+    binary: kind,
+    setupUrl: 'https://example.test/$kind',
+  ),
+  models: const [],
+  lastVerified: '',
+  hasStoredKey: false,
+  seatFound: found,
 );
+
+final _claude = _seat('claude', 'Claude Code', found: true);
+final _codexCli = _seat('codex-cli', 'Codex CLI', found: true);
+final _missingSeat = _seat('codex-cli', 'Codex CLI', found: false);
+final _openai = _key('openai', 'OpenAI', 'OPENAI_API_KEY');
+final _anthropic = _key('anthropic', 'Anthropic', 'ANTHROPIC_API_KEY');
 
 void main() {
   group('the two hosted ways in are different answers, not one dropdown', () {
-    test('a subscription you sign into is separated from a key you paste', () {
-      final available = [_codex, _openai];
-      expect(signInEngines(available).single.provider.kind, 'codex');
-      expect(keyEngines(available).single.provider.kind, 'openai');
+    test(
+      'a CLI already on this computer is separated from a key you paste',
+      () {
+        final available = [_claude, _openai];
+        expect(seatEngines(available).single.provider.kind, 'claude');
+        expect(keyEngines(available).single.provider.kind, 'openai');
+      },
+    );
+
+    test('a machine with no coding CLI offers no seat card', () {
+      expect(seatEngines([_openai]), isEmpty);
     });
 
-    test('a CLI with no subscription provider offers no sign-in card', () {
-      expect(signInEngines([_openai]), isEmpty);
+    test('a whitelisted seat whose CLI is missing is not offered — the card '
+        'would be a road that ends in "install it first"', () {
+      expect(seatEngines([_missingSeat]), isEmpty);
     });
 
-    test('a CLI with only a subscription provider offers no key card', () {
-      expect(keyEngines([_codex]), isEmpty);
+    test('a CLI with only a seat provider offers no key card', () {
+      expect(keyEngines([_claude]), isEmpty);
     });
   });
 
-  group('the key card names the providers this CLI can actually serve', () {
+  group('each card names the providers this computer can actually serve', () {
     test('one provider reads as a line, not a paragraph', () {
-      expect(apiKeyCardLine([_codex, _openai]), 'Bring your own OpenAI key');
+      expect(apiKeyCardLine([_claude, _openai]), 'Bring your own OpenAI key');
+      expect(seatCardTitle([_claude, _openai]), 'Share Claude Code');
     });
 
-    test('several are listed with "or", so the card never over-promises the '
-        'ones the CLI does not whitelist', () {
-      final subtitle = apiKeyCardLine([_openai, _anthropic]);
-      expect(subtitle, contains('OpenAI or Anthropic key'));
+    test('several are listed with "or", so a card never over-promises the ones '
+        'the CLI does not whitelist', () {
+      expect(
+        apiKeyCardLine([_openai, _anthropic]),
+        'Bring your own OpenAI or '
+        'Anthropic key',
+      );
+      expect(
+        seatCardTitle([_claude, _codexCli]),
+        'Share Claude Code or Codex CLI',
+      );
     });
 
-    test('no key provider yields nothing to say — the card is hidden then', () {
-      expect(apiKeyCardLine([_codex]), isEmpty);
-    });
+    test(
+      'nothing to offer yields nothing to say — the card is hidden then',
+      () {
+        expect(apiKeyCardLine([_claude]), isEmpty);
+        expect(seatCardTitle([_openai]), isEmpty);
+      },
+    );
   });
 }

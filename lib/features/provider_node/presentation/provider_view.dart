@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
@@ -57,15 +56,6 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
   }
 }
 
-/// Opens [url] in the user's default browser; best-effort (a failed open just
-/// leaves the tappable fallback link in the running card as the way in). Mirrors
-/// the login screen so a sign-in join opens the browser the same way.
-Future<void> _openInBrowser(String url) async {
-  final uri = Uri.tryParse(url);
-  if (uri == null) return;
-  await launchUrl(uri, mode: LaunchMode.externalApplication);
-}
-
 /// The "This computer" body. A machine serves a *union* of engines on a grid
 /// (ADR 0010), so this is a page, not a single running card: auto-routing at the
 /// top (owner-only), then what's already serving (each engine stoppable on its
@@ -81,15 +71,6 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
   @override
   Widget build(BuildContext context) {
     final network = ref.watch(selectedNetworkProvider);
-
-    // A sign-in join (codex OAuth) streams an authorize URL to approve — open it
-    // the instant it arrives, exactly like the login screen opens the device URL.
-    // The serving card also offers it as a tappable fallback if it didn't open.
-    ref.listen(providerRunControllerProvider, (prev, next) {
-      final was = prev is ProviderRunActive ? prev.signInUrl : null;
-      final now = next is ProviderRunActive ? next.signInUrl : null;
-      if (now != null && now != was) _openInBrowser(now);
-    });
 
     if (network == null) {
       return const Text('Select a grid first from the Grids tab.');

@@ -127,18 +127,22 @@ List<SetupStep> buildSetupPlan(
   return steps;
 }
 
-/// One install step per agent this computer doesn't have yet, in
-/// [_agentInstallOrder].
+/// One install step per **CLI-packaged** agent this computer doesn't have yet,
+/// in [_agentInstallOrder].
 ///
-/// Every agent in the catalog is fetched, not just the default one: an agent
-/// the user can't choose because nobody installed it is a row that answers
-/// nothing, and `grid agent install` needs no Homebrew and no admin rights —
-/// it drops each one in `~/.grid`. Only [kChatAgent] is required, so a machine
-/// always ends up with something that can answer; the rest are [SetupStep
-/// .optional] and a first run survives one of them failing to download.
+/// Every such agent is fetched, not just the default one: an agent the user
+/// can't choose because nobody installed it is a row that answers nothing, and
+/// `grid agent install` needs no Homebrew and no admin rights — it drops each
+/// one in `~/.grid`. Only [kChatAgent] is required, so a machine always ends up
+/// with something that can answer; the rest are [SetupStep.optional] and a first
+/// run survives one of them failing to download.
+///
+/// Claude Code is deliberately absent (see [AgentTool.packagedByCli]): the CLI
+/// has no recipe for it, and pulling a whole vendor CLI onto every machine
+/// unattended is the user's call, taken on the Agents tab — not a silent step.
 List<SetupStep> agentInstallSteps(NodeCapabilities caps) => [
   for (final tool in _agentInstallOrder)
-    if (!caps.installedAgents.contains(tool))
+    if (tool.packagedByCli && !caps.installedAgents.contains(tool))
       SetupStep(
         action: SetupAction.installAgent,
         title: 'Install ${tool.name}',

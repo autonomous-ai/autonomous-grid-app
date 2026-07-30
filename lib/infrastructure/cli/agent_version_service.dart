@@ -2,8 +2,8 @@ import 'dart:io';
 
 /// Which build of an installed agent this computer has.
 ///
-/// One seam behind every agent's `--version` probe: Hermes and Codex differ only
-/// in the banner they print, so the parsing that turns that banner into a plain
+/// One seam behind every agent's `--version` probe: the agents differ only in
+/// the banner they print, so the parsing that turns that banner into a plain
 /// `1.2.3` is the only thing that varies — see [AgentBinaryVersionService].
 abstract interface class AgentVersionService {
   /// The installed version (`0.18.2`), or null when the binary answers with

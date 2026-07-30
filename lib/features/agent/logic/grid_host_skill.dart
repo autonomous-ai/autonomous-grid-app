@@ -23,7 +23,7 @@ GridSkillFiles gridHostSkillFiles(Directory skillDir, {String? uvPath}) =>
 Future<void> writeGridHostSkill(Directory skillDir, {String? uvPath}) =>
     writeSkillFolder(skillDir, gridHostSkillFiles(skillDir, uvPath: uvPath));
 
-/// The card both agents read.
+/// The card every agent reads.
 ///
 /// The frontmatter has to fire *before* the mistake, so it triggers on the intent
 /// ("about to use `timeout`", "about to install something") as well as on the

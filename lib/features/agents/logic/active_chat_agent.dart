@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
+import '../../agent/logic/claude_chat_sender.dart';
 import '../../agent/logic/codex_chat_sender.dart';
 import '../../agent/logic/hermes_chat_sender.dart';
 import '../../playground/logic/chat_sender.dart';
@@ -73,6 +74,7 @@ bool _canAnswer(Ref ref, AgentTool tool) =>
 final chatAgentSenderProvider = Provider<ChatSender>((ref) {
   return switch (ref.watch(activeChatAgentProvider)) {
     AgentTool.codex => ref.watch(codexChatSenderProvider),
+    AgentTool.claude => ref.watch(claudeChatSenderProvider),
     AgentTool.hermes => ref.watch(hermesChatSenderProvider),
   };
 });
