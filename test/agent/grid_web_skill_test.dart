@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agent/logic/grid_web_skill.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/shared/skills/agent_skill_home.dart';
 
 void main() {
   late Directory tmp;
@@ -129,7 +130,7 @@ void main() {
     () async {
       await AgentSkillInstaller(home: tmp.path).install(AgentTool.hermes);
 
-      final base = '${tmp.path}/.hermes/skills/grid';
+      final base = '${tmp.path}/.grid/skills/$kPublicSkillsDir';
       expect(File('$base/grid-web/SKILL.md').existsSync(), isTrue);
       // The existing media skills are untouched.
       expect(File('$base/grid-image-gen/SKILL.md').existsSync(), isTrue);

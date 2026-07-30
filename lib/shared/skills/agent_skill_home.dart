@@ -3,12 +3,22 @@ import 'dart:io';
 import '../../core/grid_paths.dart';
 import '../../features/agents/logic/agent_catalog.dart';
 
-/// The category folder user-written skills live under, kept apart from an agent's
-/// bundled skills and Grid's own so an update can never overwrite them.
+/// The app's agent-neutral skills store under [home] — `~/.grid/skills`.
 ///
-/// Skills here are the only ones the app authored, so the only ones it offers to
-/// edit — see `AgentSkill.isMine`.
-const String kMySkillsCategory = 'my-skills';
+/// The one place the app reads skills from and writes them to. Spelled once
+/// here so the scanner, the author and the installer can't drift apart, and
+/// home-relative so tests point at a temp dir.
+String gridSkillsStore(String home) => '$home/.grid/skills';
+
+/// The two folders the store splits into.
+///
+/// Which of them a skill sits under *is* its authorship: [kUserSkillsDir] holds
+/// what the user wrote in the app, [kPublicSkillsDir] what Grid ships. That's
+/// why the Skills screen can name an author from a path alone, with no manifest
+/// to keep in sync — and why an update can never overwrite the user's work.
+const String kUserSkillsDir = 'user';
+
+const String kPublicSkillsDir = 'public';
 
 /// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
 /// which both agents can already reach.
@@ -35,13 +45,12 @@ class GridSkillFiles {
   final Map<String, String> files;
 }
 
-/// Where one agent auto-discovers skills, and how Grid lays one down there.
+/// Where Grid lays its own skills down for one agent.
 ///
-/// Every agent reads a folder of `<name>/SKILL.md` cards and picks each up by its
-/// front-matter — they differ only in the root and whether Grid's own skills sit
-/// in a `grid/` category. Centralising that here means a skill path is spelled
-/// once, not re-typed in every installer, author and scanner — and swapping which
-/// agent a skill targets becomes a one-argument change.
+/// Every agent reads a folder of `<name>/SKILL.md` cards and picks each up by
+/// its front-matter — they differ only in which folder that is. Centralising
+/// that here means a skill path is spelled once, not re-typed in every
+/// installer and scanner.
 class AgentSkillHome {
   AgentSkillHome(this.agent, {String? home})
     : home = home ?? GridPaths.userHome;
@@ -50,31 +59,20 @@ class AgentSkillHome {
   final AgentTool agent;
 
   /// The user's home directory — overridable so tests point at a temp dir and
-  /// never touch the real `~/.hermes` / `~/.codex`.
+  /// never touch the real `~/.grid` / `~/.codex`.
   final String home;
-
-  /// The folder the agent scans for skills.
-  Directory get root => switch (agent) {
-    AgentTool.hermes => Directory('$home/.hermes/skills'),
-    AgentTool.codex => Directory('$home/.codex/skills'),
-  };
 
   /// A Grid-owned skill's folder — the ones the app installs and rewrites.
   ///
-  /// Hermes keeps them under a `grid/` category so a reinstall can't clobber a
-  /// bundled or user skill; Codex discovers a flat tree, so they sit at the root.
+  /// Hermes reads the shared store through `skills.external_dirs`, so its copies
+  /// live in the store's [kPublicSkillsDir] — the same folder the Skills screen
+  /// lists, which is what lets a Grid skill show up there at all. Codex has no
+  /// such projection yet, so its copies stay in its own flat tree.
   Directory gridDir(String name) => switch (agent) {
-    AgentTool.hermes => Directory('${root.path}/grid/$name'),
-    AgentTool.codex => Directory('${root.path}/$name'),
-  };
-
-  /// A user-authored skill's folder, kept apart from Grid + bundled skills so
-  /// neither an update nor a reinstall can overwrite the user's own work. Codex
-  /// has no category tree, so a user skill sits flat beside the Grid ones — its
-  /// slug must not collide with a built-in name.
-  Directory myDir(String slug) => switch (agent) {
-    AgentTool.hermes => Directory('${root.path}/$kMySkillsCategory/$slug'),
-    AgentTool.codex => Directory('${root.path}/$slug'),
+    AgentTool.hermes => Directory(
+      '${gridSkillsStore(home)}/$kPublicSkillsDir/$name',
+    ),
+    AgentTool.codex => Directory('$home/.codex/skills/$name'),
   };
 }
 

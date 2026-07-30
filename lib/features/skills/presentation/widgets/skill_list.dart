@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
@@ -11,9 +12,22 @@ import '../../../../shared/widgets/extension_list.dart';
 import '../../../../shared/widgets/extension_tile_surface.dart';
 import 'new_skill_dialog.dart';
 
+/// The width of each trailing column, so the header and every row line up.
+///
+/// Fixed rather than flexed: the whole point of a column is that the eye can
+/// run down it, and a width that changed with its contents would put "You"
+/// under a date on the row above.
+const double _kUpdatedColumn = 104;
+const double _kAuthorColumn = 76;
+const double _kActionsColumn = 60;
+
 /// The skills installed for the assistant — instructions it follows for one job
-/// ("make an image on the grid", "write my weekly report"), grouped by the folder
-/// Hermes files them under.
+/// ("make an image on the grid", "write my weekly report").
+///
+/// A table rather than chapters: the store holds only what the app manages, so
+/// the list is short, and the two things worth knowing about a row — when it
+/// last changed and whose it is — are columns you can scan instead of tags
+/// scattered through the names.
 class SkillList extends StatelessWidget {
   const SkillList({super.key, required this.skills, this.filtered = false});
 
@@ -31,43 +45,71 @@ class SkillList extends StatelessWidget {
           ? const EmptyState.noMatches(message: 'No skills match that search.')
           : const _Empty();
     }
-    // Grouped by the folder Hermes files each skill under, the user's own
-    // first — they're the ones they came here to find. Hermes ships ~70
-    // skills, so a flat alphabetical list mixes the two the user wrote in
-    // among seventy they didn't. A skill sitting loose at the top of the
-    // folder has no category; 'Other' gives it a heading of its own rather
-    // than hiding it under someone else's.
-    final sections = sectionExtensionItems(
-      items: skills,
-      sectionOf: (s) => switch (s.category) {
-        '' => 'Other',
-        kMySkillsCategory => 'My skills',
-        final category => category,
-      },
-      leading: const ['My skills'],
-      filtered: filtered,
-    );
-    // Read the answer off the built sections rather than re-deriving it: the
-    // grouping also falls back to flat when every skill shares one category,
-    // and a row in that list still has to name its own — otherwise the
-    // category disappears from the screen entirely.
-    final headed = sectionsShowHeaders(sections);
-    return ExtensionList(
-      sections: sections,
-      rowBuilder: (context, skill) =>
-          _SkillRow(skill: skill, showCategory: !headed),
+    // The scanner already orders them — the user's own first, then by when they
+    // last changed — so the list draws what it's given.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _ColumnHeader(),
+        Expanded(
+          child: ExtensionList(
+            sections: [ExtensionSection(label: '', items: skills)],
+            rowBuilder: (context, skill) => _SkillRow(skill: skill),
+          ),
+        ),
+      ],
     );
   }
 }
 
+/// Names the columns once, over the list.
+///
+/// Indented to where a row's name starts (the icon well plus its gap) so the
+/// label sits over the thing it names rather than over the icons.
+class _ColumnHeader extends StatelessWidget {
+  const _ColumnHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
+    final style = TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.6,
+      color: AppPalette.textSecondary,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(57, 0, 14, 8),
+      child: Row(
+        children: [
+          Expanded(child: Text('SKILL', style: style)),
+          SizedBox(
+            width: _kUpdatedColumn,
+            child: Text('LAST UPDATED', style: style),
+          ),
+          SizedBox(width: _kAuthorColumn, child: Text('AUTHOR', style: style)),
+          const SizedBox(width: _kActionsColumn),
+        ],
+      ),
+    );
+  }
+}
+
+/// `7/28/26` — the short date the Last updated column shows.
+///
+/// Hand-rolled: the app carries no date-formatting package, and a skill's date
+/// only ever needs this one shape. Local time, because "when did I last touch
+/// this" is a question about the user's day, not UTC's.
+String formatSkillDate(DateTime when) {
+  final local = when.toLocal();
+  final year = (local.year % 100).toString().padLeft(2, '0');
+  return '${local.month}/${local.day}/$year';
+}
+
 class _SkillRow extends ConsumerStatefulWidget {
-  const _SkillRow({required this.skill, this.showCategory = false});
+  const _SkillRow({required this.skill});
 
   final AgentSkill skill;
-
-  /// See [_SkillInfo.showCategory] — true only in the flat (searching) list,
-  /// where no header names the category.
-  final bool showCategory;
 
   @override
   ConsumerState<_SkillRow> createState() => _SkillRowState();
@@ -97,10 +139,15 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final skill = widget.skill;
+    final theme = Theme.of(context);
+    final column = theme.textTheme.bodySmall?.copyWith(
+      color: AppPalette.textSecondary,
+    );
     return ExtensionTileSurface(
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           ExtensionIconBadge(
             icon: Icons.auto_awesome_outlined,
@@ -109,28 +156,34 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
             active: skill.isMine,
           ),
           const SizedBox(width: 12),
-          Expanded(
-            child: _SkillInfo(skill: skill, showCategory: widget.showCategory),
+          Expanded(child: _SkillInfo(skill: skill)),
+          SizedBox(
+            width: _kUpdatedColumn,
+            child: Text(formatSkillDate(skill.updatedAt), style: column),
           ),
-          if (!skill.fromGrid) ...[
-            const SizedBox(width: 8),
-            _SkillActions(skill: skill, busy: _busy, onDelete: _delete),
-          ],
+          SizedBox(
+            width: _kAuthorColumn,
+            child: Text(
+              skill.owner.label,
+              overflow: TextOverflow.ellipsis,
+              style: column,
+            ),
+          ),
+          SizedBox(
+            width: _kActionsColumn,
+            child: _SkillActions(skill: skill, busy: _busy, onDelete: _delete),
+          ),
         ],
       ),
     );
   }
 }
 
-/// The skill's name, its Hermes category, and one line of what it does.
+/// The skill's name and one line of what it does.
 class _SkillInfo extends StatelessWidget {
-  const _SkillInfo({required this.skill, required this.showCategory});
+  const _SkillInfo({required this.skill});
 
   final AgentSkill skill;
-
-  /// False when a section header already names the category — repeating it on
-  /// every row under its own heading is just noise beside the name.
-  final bool showCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -139,29 +192,10 @@ class _SkillInfo extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Flexible(
-              child: Text(
-                skill.name,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(),
-              ),
-            ),
-            if (showCategory && skill.category.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Text(
-                skill.category,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppPalette.textFaint,
-                ),
-              ),
-            ],
-            if (skill.fromGrid) ...[
-              const SizedBox(width: 8),
-              const ExtensionTag(label: 'From Grid', muted: true),
-            ],
-          ],
+        Text(
+          skill.name,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleSmall,
         ),
         if (skill.description.isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -186,9 +220,12 @@ class _SkillInfo extends StatelessWidget {
   }
 }
 
-/// Edit (only the user's own skills) and delete (anything Grid doesn't manage).
-/// A Grid skill has neither — this whole row is hidden for it, since "Reinstall
-/// Grid's skills" is how those are managed.
+/// Edit and delete, offered only on the user's own skills.
+///
+/// A public skill has neither: it's rewritten by the next install, so an edit
+/// would be undone and a delete would come back. "Reinstall Grid's skills" is
+/// how those are managed. The column still takes its width on those rows, so
+/// the ones above and below it stay in line.
 class _SkillActions extends StatelessWidget {
   const _SkillActions({
     required this.skill,
@@ -202,23 +239,20 @@ class _SkillActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
+    if (!skill.isMine) return const SizedBox.shrink();
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        if (skill.isMine)
-          IconButton(
-            tooltip: 'Edit',
-            iconSize: 18,
-            color: AppPalette.textSecondary,
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: busy ? null : () => showEditSkillDialog(context, skill),
-          ),
-        IconButton(
+        AppIconButton(
+          tooltip: 'Edit',
+          icon: Icons.edit_outlined,
+          onPressed: busy ? null : () => showEditSkillDialog(context, skill),
+        ),
+        const SizedBox(width: 4),
+        AppIconButton(
           tooltip: 'Delete',
-          iconSize: 18,
-          color: AppPalette.textSecondary,
-          icon: const Icon(Icons.delete_outline_rounded),
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
           onPressed: busy ? null : onDelete,
         ),
       ],

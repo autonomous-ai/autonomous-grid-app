@@ -12,6 +12,8 @@
 /// overwrites it.
 library;
 
+import 'dart:io';
+
 import '../../../shared/skills/agent_skill_home.dart';
 
 /// What `grid agent install` and the skill card call the image skill.
@@ -20,19 +22,25 @@ const String kGridImageSkillName = 'grid-image-gen';
 /// What the video skill is named on disk.
 const String kGridVideoSkillName = 'grid-video-gen';
 
-/// The image-generation skill: its card plus the single script it runs.
-GridSkillFiles gridImageSkillFiles() => const GridSkillFiles(
-  card: _gridImageSkillMd,
-  files: {'scripts/generate.py': _gridImageSkillScript},
+/// The image-generation skill as it lands in [skillDir]: its card plus the
+/// single script it runs.
+///
+/// The card spells the script out by absolute path — the agent runs what the
+/// card says, so the path has to be a function of where the skill was written
+/// rather than a constant that goes stale the day the folder moves.
+GridSkillFiles gridImageSkillFiles(Directory skillDir) => GridSkillFiles(
+  card: _gridImageSkillMd('${skillDir.path}/scripts/generate.py'),
+  files: const {'scripts/generate.py': _gridImageSkillScript},
 );
 
-/// The image-to-video skill: its card plus the single script it runs.
-GridSkillFiles gridVideoSkillFiles() => const GridSkillFiles(
-  card: _gridVideoSkillMd,
-  files: {'scripts/generate.py': _gridVideoSkillScript},
+/// The image-to-video skill as it lands in [skillDir]: its card plus the single
+/// script it runs.
+GridSkillFiles gridVideoSkillFiles(Directory skillDir) => GridSkillFiles(
+  card: _gridVideoSkillMd('${skillDir.path}/scripts/generate.py'),
+  files: const {'scripts/generate.py': _gridVideoSkillScript},
 );
 
-const _gridImageSkillMd = '''
+String _gridImageSkillMd(String scriptPath) => '''
 ---
 name: grid-image-gen
 description: Generate an image through the user's Grid (its media API). Use whenever the user asks to draw, create, or generate a picture.
@@ -49,7 +57,7 @@ endpoint and key from `~/.hermes/.env`, so you never handle credentials.
 
 ## Run it
 ```
-python3 ~/.hermes/skills/grid/grid-image-gen/scripts/generate.py "<prompt>" [-o <dir>]
+python3 $scriptPath "<prompt>" [-o <dir>]
 ```
 Default output dir is `~/Downloads`. The script prints `Saved: <path>` for each
 image and exits non-zero on failure.
@@ -212,7 +220,7 @@ if __name__ == "__main__":
     main()
 ''';
 
-const _gridVideoSkillMd = '''
+String _gridVideoSkillMd(String scriptPath) => '''
 ---
 name: grid-video-gen
 description: Animate an image into a video through the user's Grid (its media API, ComfyUI i2v). Use whenever the user asks to animate a picture, make a video from a photo, or turn a still into motion.
@@ -230,7 +238,7 @@ handle credentials. It targets whatever grid the app is on right now.
 
 ## Run it
 ```
-python3 ~/.hermes/skills/grid/grid-video-gen/scripts/generate.py "<how it should move>" "<image_path>" [-o <dir>]
+python3 $scriptPath "<how it should move>" "<image_path>" [-o <dir>]
 ```
 `<image_path>` is the still to animate — any local image file. You do **not** need
 to open, view or understand it: the script reads its raw bytes. Take the motion

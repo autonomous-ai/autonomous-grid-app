@@ -22,11 +22,17 @@ abstract interface class SkillWriter {
   /// pre-fill them instead of starting blank.
   Future<String> readInstructions(String path);
 
-  /// Rewrite one of the user's own skills. When the name changes the folder
-  /// moves with it, so the old one is removed — otherwise a rename would leave
-  /// a stale duplicate the agent would still read.
+  /// Rewrite the skill whose folder is [previousPath], in place — an edit must
+  /// never silently move a skill between folders. When the name changes the
+  /// folder moves with it *within that folder*, and the old one is removed:
+  /// otherwise a rename would leave a stale duplicate the agent would still
+  /// read.
+  ///
+  /// Keyed by path rather than by name because a name doesn't say where the
+  /// skill is: the store has more than one folder, and the app can't assume it
+  /// wrote the one being edited.
   Future<Directory> edit({
-    required String previousSlug,
+    required String previousPath,
     required String name,
     required String description,
     required String instructions,

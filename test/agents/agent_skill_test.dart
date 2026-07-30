@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/hermes_skill_scanner.dart';
 import 'package:grid_app/features/agents/logic/agent_skill.dart';
+import 'package:grid_app/shared/skills/agent_skill_home.dart';
 
 void main() {
   group('parseSkillCard', () {
@@ -73,27 +74,6 @@ Write ten lines.''';
     });
   });
 
-  group('AgentSkill.isMine', () {
-    test('flags a skill under my-skills as the user\'s own, editable', () {
-      const mine = AgentSkill(
-        name: 'notes',
-        description: '',
-        path: '/h/.hermes/skills/$kMySkillsCategory/notes',
-        fromGrid: false,
-      );
-      const bundled = AgentSkill(
-        name: 'refactor',
-        description: '',
-        path: '/h/.hermes/skills/software-development/refactor',
-        fromGrid: false,
-      );
-
-      expect(mine.isMine, isTrue);
-      expect(mine.category, kMySkillsCategory);
-      expect(bundled.isMine, isFalse);
-    });
-  });
-
   group('AgentSkillScanner', () {
     late Directory home;
 
@@ -102,59 +82,95 @@ Write ten lines.''';
     });
     tearDown(() => home.delete(recursive: true));
 
-    Future<void> writeSkill(String path, String markdown) async {
+    Future<File> writeSkill(String path, String markdown) async {
       final dir = Directory('${home.path}/$path');
       await dir.create(recursive: true);
-      await File('${dir.path}/SKILL.md').writeAsString(markdown);
+      final card = File('${dir.path}/SKILL.md');
+      await card.writeAsString(markdown);
+      return card;
     }
 
-    test('reads nothing (rather than throwing) when the agent has no skills '
-        'folder', () async {
-      expect(await AgentSkillScanner(home: home.path).scan(), isEmpty);
+    test(
+      'reads nothing (rather than throwing) when the store is missing',
+      () async {
+        expect(await AgentSkillScanner(home: home.path).scan(), isEmpty);
+      },
+    );
+
+    test('names the author from the folder a skill sits in', () async {
+      await writeSkill(
+        '.grid/skills/$kPublicSkillsDir/grid-image-gen',
+        '---\nname: grid-image-gen\ndescription: Make a picture.\n---\n',
+      );
+      await writeSkill(
+        '.grid/skills/$kUserSkillsDir/notes',
+        '---\nname: notes\ndescription: Read my notes.\n---\n',
+      );
+
+      final skills = await AgentSkillScanner(home: home.path).scan();
+
+      final byName = {for (final skill in skills) skill.name: skill};
+      expect(byName['grid-image-gen']!.owner, SkillOwner.public);
+      expect(byName['grid-image-gen']!.description, 'Make a picture.');
+      expect(byName['notes']!.owner, SkillOwner.user);
+      expect(byName['notes']!.isMine, isTrue);
     });
 
-    test(
-      'finds every installed skill, sorted, and flags Grid\'s own',
-      () async {
-        await writeSkill(
-          '.hermes/skills/grid/grid-image-gen',
-          '---\nname: grid-image-gen\ndescription: Make a picture.\n---\n',
-        );
-        await writeSkill(
-          '.hermes/skills/mine/notes',
-          '---\nname: notes\ndescription: Read my notes.\n---\n',
-        );
+    test("ignores the agent's own skills folder — the screen lists what the "
+        'app manages, not the ~70 Hermes ships', () async {
+      await writeSkill(
+        '.hermes/skills/apple/apple-notes',
+        '---\nname: apple-notes\ndescription: Bundled with the agent.\n---\n',
+      );
+      await writeSkill(
+        '.grid/skills/$kUserSkillsDir/notes',
+        '---\nname: notes\ndescription: Mine.\n---\n',
+      );
 
-        final skills = await AgentSkillScanner(home: home.path).scan();
+      final skills = await AgentSkillScanner(home: home.path).scan();
 
-        expect(skills.map((s) => s.name).toList(), ['grid-image-gen', 'notes']);
-        expect(skills.first.fromGrid, isTrue);
-        expect(skills.first.description, 'Make a picture.');
-        expect(skills.last.fromGrid, isFalse);
-      },
-    );
+      expect(skills.map((s) => s.name).toList(), ['notes']);
+    });
 
-    test(
-      'reads the shared store and the agent\'s own folder as one list',
-      () async {
-        await writeSkill(
-          '.grid/skills/my-skills/shared-skill',
-          '---\nname: shared-skill\ndescription: Lives in the store.\n---\n',
-        );
-        await writeSkill(
-          '.hermes/skills/my-skills/legacy-skill',
-          '---\nname: legacy-skill\ndescription: Written before the store.\n---\n',
-        );
+    test('anything in the store that is not public counts as the user\'s, so '
+        'a hand-dropped skill keeps its edit button', () async {
+      await writeSkill(
+        '.grid/skills/my-skills/written-by-an-older-build',
+        '---\nname: older\ndescription: d\n---\n',
+      );
 
-        final skills = await AgentSkillScanner(home: home.path).scan();
+      final skills = await AgentSkillScanner(home: home.path).scan();
 
-        expect(skills.map((s) => s.name).toList(), [
-          'legacy-skill',
-          'shared-skill',
-        ]);
-        // Both count as the user's own, whichever root they live in.
-        expect(skills.every((s) => s.isMine), isTrue);
-      },
-    );
+      expect(skills.single.owner, SkillOwner.user);
+    });
+
+    test('the user\'s own come first, then the most recently changed', () async {
+      final old = await writeSkill(
+        '.grid/skills/$kUserSkillsDir/older',
+        '---\nname: older\ndescription: d\n---\n',
+      );
+      await old.setLastModified(DateTime(2026, 7, 1));
+      final fresh = await writeSkill(
+        '.grid/skills/$kUserSkillsDir/newer',
+        '---\nname: newer\ndescription: d\n---\n',
+      );
+      await fresh.setLastModified(DateTime(2026, 7, 28));
+      // Rewritten by the last install, so the newest file on disk by far — it
+      // still must not outrank a skill the user wrote.
+      final installed = await writeSkill(
+        '.grid/skills/$kPublicSkillsDir/grid-web',
+        '---\nname: grid-web\ndescription: d\n---\n',
+      );
+      await installed.setLastModified(DateTime(2026, 7, 30));
+
+      final skills = await AgentSkillScanner(home: home.path).scan();
+
+      expect(skills.map((s) => s.name).toList(), [
+        'newer',
+        'older',
+        'grid-web',
+      ]);
+      expect(skills.first.updatedAt, DateTime(2026, 7, 28));
+    });
   });
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/shared/skills/agent_skill_home.dart';
 
 void main() {
   late Directory home;
@@ -11,10 +12,11 @@ void main() {
   });
   tearDown(() => home.delete(recursive: true));
 
-  File script(String skill) =>
-      File('${home.path}/.hermes/skills/grid/$skill/scripts/generate.py');
+  File script(String skill) => File(
+    '${home.path}/.grid/skills/$kPublicSkillsDir/$skill/scripts/generate.py',
+  );
   File skillMd(String skill) =>
-      File('${home.path}/.hermes/skills/grid/$skill/SKILL.md');
+      File('${home.path}/.grid/skills/$kPublicSkillsDir/$skill/SKILL.md');
 
   Future<void> installHermes() =>
       AgentSkillInstaller(home: home.path).install(AgentTool.hermes);
@@ -63,39 +65,44 @@ void main() {
     expect(source, contains('/media/video/i2v'));
   });
 
-  test(
-    'overwrites a leaked video prototype in place, clearing its stale files',
-    () async {
-      // The hand-made prototype: a hardcoded grid + GRID_API_KEY, plus a
-      // references/ dir the clean skill doesn't have.
-      final proto = Directory(
-        '${home.path}/.hermes/skills/grid/grid-video-gen',
-      );
-      await Directory('${proto.path}/references').create(recursive: true);
-      await File('${proto.path}/references/api-details.md').writeAsString(
-        'Base URL: https://grid.autonomous.ai/grid-1ffe6152a2e547fa/relay/v1\n'
-        'API Key: GRID_API_KEY',
-      );
-      await Directory('${proto.path}/scripts').create(recursive: true);
-      await File('${proto.path}/scripts/generate.py').writeAsString(
-        'BASE_URL = "https://grid.autonomous.ai/grid-1ffe6152a2e547fa/relay/v1"',
-      );
+  test('clears the copy the installer used to write into Hermes\'s own '
+      'folder — two of one skill and the agent reads the stale one', () async {
+    // Where these skills lived before the store: the leaked prototype's
+    // hardcoded grid + GRID_API_KEY, plus a references/ dir the clean one
+    // doesn't have. Nothing rewrites this copy any more.
+    final proto = Directory('${home.path}/.hermes/skills/grid/grid-video-gen');
+    await Directory('${proto.path}/references').create(recursive: true);
+    await File('${proto.path}/references/api-details.md').writeAsString(
+      'Base URL: https://grid.autonomous.ai/grid-1ffe6152a2e547fa/relay/v1\n'
+      'API Key: GRID_API_KEY',
+    );
+    await Directory('${proto.path}/scripts').create(recursive: true);
+    await File('${proto.path}/scripts/generate.py').writeAsString(
+      'BASE_URL = "https://grid.autonomous.ai/grid-1ffe6152a2e547fa/relay/v1"',
+    );
 
-      await installHermes();
+    await installHermes();
 
-      // The clean script replaced it — no hardcoded grid left anywhere.
-      expect(
-        script('grid-video-gen').readAsStringSync(),
-        isNot(contains('grid-1ffe6152a2e547fa')),
-      );
-      // The stale references/ dir is gone (wiped before the fresh write).
-      expect(
-        Directory('${proto.path}/references').existsSync(),
-        isFalse,
-        reason: 'stale prototype files must not linger',
-      );
-    },
-  );
+    expect(
+      Directory('${home.path}/.hermes/skills/grid').existsSync(),
+      isFalse,
+      reason: 'the superseded copy must not shadow the store',
+    );
+    // And the clean one is in the store, with no hardcoded grid in it.
+    expect(
+      script('grid-video-gen').readAsStringSync(),
+      isNot(contains('grid-1ffe6152a2e547fa')),
+    );
+  });
+
+  test('points Hermes at the store before writing into it — skills it '
+      'cannot see are not installed', () async {
+    await installHermes();
+
+    final config = File('${home.path}/.hermes/config.yaml');
+    expect(config.existsSync(), isTrue);
+    expect(config.readAsStringSync(), contains('~/.grid/skills'));
+  });
 
   test(
     'removes leaked prototypes under the creative/ and skills root',

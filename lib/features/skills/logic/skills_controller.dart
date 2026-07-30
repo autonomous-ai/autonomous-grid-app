@@ -51,13 +51,13 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
   );
 
   Future<String?> edit({
-    required String previousSlug,
+    required String previousPath,
     required String name,
     required String description,
     required String instructions,
   }) => _write(
     (writer) => writer.edit(
-      previousSlug: previousSlug,
+      previousPath: previousPath,
       name: name,
       description: description,
       instructions: instructions,

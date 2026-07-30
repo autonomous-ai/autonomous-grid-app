@@ -9,6 +9,7 @@ import 'package:grid_app/features/agents/logic/agent_skill.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/features/skills/logic/skill_author.dart';
 import 'package:grid_app/features/skills/logic/skills_controller.dart';
+import 'package:grid_app/shared/skills/agent_skill_home.dart';
 
 void main() {
   late Directory home;
@@ -76,7 +77,7 @@ void main() {
     );
 
     final error = await notifier.edit(
-      previousSlug: 'old-name',
+      previousPath: '${home.path}/.grid/skills/$kUserSkillsDir/old-name',
       name: 'New name',
       description: 'd',
       instructions: 'i',
@@ -85,7 +86,9 @@ void main() {
     expect(error, isNull);
     expect(c.read(skillsProvider).value!.map((s) => s.name), ['new-name']);
     expect(
-      Directory('${home.path}/.grid/skills/my-skills/old-name').existsSync(),
+      Directory(
+        '${home.path}/.grid/skills/$kUserSkillsDir/old-name',
+      ).existsSync(),
       isFalse,
     );
   });
@@ -117,7 +120,8 @@ void main() {
       name: 'foreign',
       description: '',
       path: '${home.path}/elsewhere/not-a-skill',
-      fromGrid: false,
+      owner: SkillOwner.user,
+      updatedAt: DateTime(2026, 7, 30),
     );
 
     final error = await c.read(skillsProvider.notifier).delete(foreign);
@@ -140,7 +144,9 @@ void main() {
 
     // And the skill itself landed in the shared store, not the agent's own.
     expect(
-      Directory('${home.path}/.grid/skills/my-skills/anything').existsSync(),
+      Directory(
+        '${home.path}/.grid/skills/$kUserSkillsDir/anything',
+      ).existsSync(),
       isTrue,
     );
   });
@@ -156,6 +162,6 @@ void main() {
     final names = skills.map((s) => s.name).toList();
     expect(names, contains('grid-image-gen'));
     expect(names, contains('grid-video-gen'));
-    expect(skills.every((s) => s.fromGrid), isTrue);
+    expect(skills.every((s) => s.owner == SkillOwner.public), isTrue);
   });
 }

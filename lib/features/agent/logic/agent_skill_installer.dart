@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_catalog.dart';
 import 'grid_host_skill.dart';
 import 'grid_media_skills.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
+import 'hermes_shared_skills.dart';
 
 /// One skill the app installs for its agents, and which agents get it.
 ///
@@ -67,17 +69,18 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   BuiltinGridSkill(
     name: kGridImageSkillName,
     agents: const {AgentTool.hermes},
-    build: (_) => gridImageSkillFiles(),
+    build: gridImageSkillFiles,
   ),
   BuiltinGridSkill(
     name: kGridVideoSkillName,
     agents: const {AgentTool.hermes},
-    build: (_) => gridVideoSkillFiles(),
+    build: gridVideoSkillFiles,
   ),
 ];
 
 /// Installs the Grid skills an agent uses in Agent mode into the place that agent
-/// auto-discovers them (`~/.hermes/skills/grid` or `~/.codex/skills`).
+/// discovers them — the app's own store for Hermes (`~/.grid/skills/public`,
+/// reached through `skills.external_dirs`), `~/.codex/skills` for Codex.
 ///
 /// Replaces the old per-agent installer pair: one class, keyed on [AgentTool], so
 /// a new agent or a new skill is a registry entry rather than a new installer.
@@ -90,28 +93,37 @@ class AgentSkillInstaller {
   /// Write (or refresh) every built-in skill that applies to [agent].
   Future<void> install(AgentTool agent) async {
     final skillHome = AgentSkillHome(agent, home: _home);
+    // Hermes only reads the store if it's listed in its config, and these
+    // skills now live nowhere else — so the pointer goes in before the files
+    // do, never after.
+    if (agent == AgentTool.hermes) {
+      await projectSharedSkillsStore(HermesConfigFile(home: _home));
+    }
     for (final skill in kBuiltinGridSkills.where((s) => s.appliesTo(agent))) {
       final dir = skillHome.gridDir(skill.name);
       await writeSkillFolder(dir, skill.build(dir));
     }
     if (agent == AgentTool.hermes) {
-      await _removeLeakedPrototypes(skillHome.home);
+      await _removeSupersededCopies(skillHome.home);
     }
   }
 
-  /// The hand-made Grid prototypes baked a live API key into their scripts (and a
-  /// `config.env`), living under Hermes's own `creative` category or at the
-  /// skills root. Remove them so no credential lingers and the agent never sees
-  /// two same-named skills. The `grid/` copies are owned and rewritten by
-  /// [install], so they're not touched here.
-  Future<void> _removeLeakedPrototypes(String home) async {
-    for (final legacy in const [
+  /// Copies of these skills that must not be left behind in Hermes's own folder.
+  ///
+  /// Two generations of them: the hand-made prototypes, which baked a live API
+  /// key into their scripts and sat under `creative/` or at the skills root; and
+  /// `skills/grid/`, where [install] itself used to write before the store
+  /// existed. Both would leave the agent reading two skills of one name — and
+  /// the older one, at that, since nothing rewrites it any more.
+  Future<void> _removeSupersededCopies(String home) async {
+    for (final superseded in const [
+      '.hermes/skills/grid',
       '.hermes/skills/creative/grid-image-gen',
       '.hermes/skills/creative/grid-video-gen',
       '.hermes/skills/grid-image-gen',
       '.hermes/skills/grid-video-gen',
     ]) {
-      final dir = Directory('$home/$legacy');
+      final dir = Directory('$home/$superseded');
       if (await dir.exists()) await dir.delete(recursive: true);
     }
   }

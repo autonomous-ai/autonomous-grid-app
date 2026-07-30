@@ -14,10 +14,15 @@ import '../../agents/logic/skill_writer.dart';
 import '../../skills/logic/skill_author.dart';
 import 'hermes_connector_servers.dart';
 import 'hermes_mcp_config.dart';
+import 'hermes_shared_skills.dart';
 import 'hermes_token_projection.dart';
 import 'agent_skill_installer.dart';
 import 'hermes_skill_scanner.dart';
 import 'hermes_tool.dart';
+
+// The `external_dirs` entry moved next to the projection that writes it;
+// re-exported so callers that reach it through this file keep working.
+export 'hermes_shared_skills.dart' show kSharedSkillsExternalDir;
 
 /// Hermes's extension surfaces, composed from the services that already speak
 /// to it. Nothing here talks to Hermes directly — this is wiring, so each
@@ -55,11 +60,6 @@ class HermesExtensions implements AgentExtensions {
   final AgentMcpPlane mcp;
 }
 
-/// The literal entry written into `skills.external_dirs` — home-relative on
-/// purpose: Hermes expands `~` itself, so the config stays valid if the home
-/// directory moves with a new username.
-const String kSharedSkillsExternalDir = '~/.grid/skills';
-
 class _HermesSkillsPlane implements AgentSkillsPlane {
   _HermesSkillsPlane(
     this._scanner,
@@ -82,26 +82,8 @@ class _HermesSkillsPlane implements AgentSkillsPlane {
   @override
   Future<void> installGridSkills() => _installer.install(AgentTool.hermes);
 
-  /// Merge the shared store into `skills.external_dirs` — append-if-absent,
-  /// never clobbering entries the user set by hand. Hermes tolerates a bare
-  /// string where a list is expected, so both shapes are read.
   @override
-  Future<void> projectSharedStore() async {
-    final existing = await _configFile.valueAt(['skills', 'external_dirs']);
-    final dirs = switch (existing) {
-      final List list => [for (final entry in list) entry.toString()],
-      final String single => [single],
-      _ => <String>[],
-    };
-    if (dirs.contains(kSharedSkillsExternalDir)) return;
-    await _configFile.edit((editor) {
-      HermesConfigFile.upsert(
-        editor,
-        ['skills', 'external_dirs'],
-        [...dirs, kSharedSkillsExternalDir],
-      );
-    });
-  }
+  Future<void> projectSharedStore() => projectSharedSkillsStore(_configFile);
 }
 
 class _HermesPluginsPlane implements AgentPluginsPlane {

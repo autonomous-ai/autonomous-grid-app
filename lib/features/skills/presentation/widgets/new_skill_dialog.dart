@@ -141,8 +141,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
 
   Future<void> _update(AgentSkill existing) {
     final name = _name.text.trim();
-    final previousSlug = existing.path.split('/').last;
-    final renamed = skillSlug(name) != previousSlug;
+    final renamed = skillSlug(name) != existing.path.split('/').last;
     if (renamed && (ref.read(skillWriterProvider)?.exists(name) ?? false)) {
       _say('You already have a skill called "$name".');
       return Future<void>.value();
@@ -151,7 +150,7 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
       () => ref
           .read(skillsProvider.notifier)
           .edit(
-            previousSlug: previousSlug,
+            previousPath: existing.path,
             name: name,
             description: _description.text.trim(),
             instructions: _instructions.text,

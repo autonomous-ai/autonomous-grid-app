@@ -1,9 +1,18 @@
-// [kMySkillsCategory] lives with the other skill-home vocabulary in
-// shared/skills, since the installer, author and every scanner need it —
-// re-exported so callers that reach it through this file keep working.
-import '../../../shared/skills/agent_skill_home.dart';
+/// Who a skill came from — the store's two folders, as the list understands
+/// them.
+enum SkillOwner {
+  /// Written by the user in the app (`~/.grid/skills/user`).
+  user,
 
-export '../../../shared/skills/agent_skill_home.dart' show kMySkillsCategory;
+  /// Shipped by Grid (`~/.grid/skills/public`) — rewritten by every install, so
+  /// an edit here wouldn't survive.
+  public;
+
+  /// What the Author column says. "You" for your own, the folder's own name for
+  /// the rest — the same word the store uses, so what's on screen and what's on
+  /// disk can't drift.
+  String get label => this == SkillOwner.user ? 'You' : 'public';
+}
 
 /// One thing the assistant knows how to do beyond talking — the agents call
 /// these "skills"; on disk a skill is a folder with a `SKILL.md`: a little
@@ -17,7 +26,8 @@ class AgentSkill {
     required this.name,
     required this.description,
     required this.path,
-    required this.fromGrid,
+    required this.owner,
+    required this.updatedAt,
   });
 
   final String name;
@@ -28,23 +38,18 @@ class AgentSkill {
   /// The skill's folder, shown so a user can find (or delete) it.
   final String path;
 
-  /// Installed by Grid itself (as opposed to something the user added by hand),
-  /// so the UI can say where it came from instead of leaving the user guessing.
-  final bool fromGrid;
+  final SkillOwner owner;
 
-  /// The folder the agent files it under ("productivity", "grid", "my-skills"),
-  /// or empty for a skill sitting loose at the top. Hermes ships ~70 of them, so
-  /// the category is what makes the list readable.
-  String get category {
-    final after = path.split('/skills/').last;
-    final parts = after.split('/');
-    return parts.length > 1 ? parts.first : '';
-  }
+  /// When the card was last written — the `SKILL.md` file's own timestamp, so a
+  /// skill edited by hand outside the app still reports the truth.
+  final DateTime updatedAt;
 
-  /// True when the user wrote this skill in the app (it lives under
-  /// [kMySkillsCategory]). Only these round-trip through the editor safely —
-  /// editing a bundled or Grid skill would be undone by the next update.
-  bool get isMine => category == kMySkillsCategory;
+  /// True when the user wrote this skill in the app. Only these round-trip
+  /// through the editor safely — editing a public skill would be undone by the
+  /// next install.
+  bool get isMine => owner == SkillOwner.user;
+
+  bool get isPublic => owner == SkillOwner.public;
 }
 
 /// Reads the `name` / `description` out of a `SKILL.md` front-matter card.
