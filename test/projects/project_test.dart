@@ -60,15 +60,16 @@ void main() {
     expect(folder.existsSync(), isTrue);
   });
 
-  test('a project whose folder was deleted still lists — but says so, rather '
-      'than vanishing with its chats', () async {
+  test('a project whose folder was deleted still lists, rather than vanishing '
+      'with its chats', () async {
     final folder = await Directory('${tmp.path}/gone').create();
     final c = container();
     c.read(projectsProvider.notifier).add(folder.path);
     await folder.delete();
 
-    final project = c.read(projectsProvider).single;
-    expect(project.exists, isFalse);
+    // That the folder is gone is reported separately, off the UI thread — see
+    // project_folder_status_test. The list's job is to keep the project.
+    expect(c.read(projectsProvider).single.path, folder.path);
   });
 
   test('a corrupt store reads as no projects instead of throwing', () {

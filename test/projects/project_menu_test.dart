@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:grid_app/features/projects/logic/project.dart';
+import 'package:grid_app/features/projects/logic/project_folder_status.dart';
 import 'package:grid_app/features/projects/presentation/project_menu.dart';
 import 'package:grid_app/shared/theme/app_theme.dart';
 
@@ -25,7 +26,6 @@ void main() {
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('grid_project_menu_test');
     file = File('${tmp.path}/projects.json');
-    // A real folder on disk, so `project.exists` is true and the reveal row shows.
     projectDir = await Directory('${tmp.path}/grid').create();
   });
   tearDown(() => tmp.delete(recursive: true));
@@ -46,6 +46,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         projectsStoreProvider.overrideWithValue(ProjectsStore(file: file)),
+        // The reveal row follows the folder check, which is async now — answer it
+        // from [exists] rather than letting it stat a real path.
+        folderProbeProvider.overrideWithValue((path) async => exists),
       ],
     );
     addTearDown(container.dispose);
