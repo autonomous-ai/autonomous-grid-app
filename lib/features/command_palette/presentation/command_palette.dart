@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import '../../chat/logic/conversation.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/create_project_dialog.dart';
 import '../../scheduled/logic/scheduled_jobs_controller.dart';
@@ -64,8 +65,12 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
     final groups = searchCommands(
       query: _query.text,
       // Live only — archiving a chat takes it out of search too, which is most
-      // of the point of filing it away.
-      chats: ref.watch(chatSessionsProvider).live,
+      // of the point of filing it away. Watches the conversation list rather
+      // than the whole state, so a reply streaming behind the palette doesn't
+      // re-run the search on every token.
+      chats: liveConversations(
+        ref.watch(chatSessionsProvider.select((s) => s.conversations)),
+      ),
       projects: ref.watch(projectsProvider),
       tasks: ref.watch(scheduledJobsProvider).value ?? const [],
     );
@@ -111,7 +116,6 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
                     : _Results(
                         groups: groups,
                         highlight: highlight,
-                        indexOf: items.indexOf,
                         onRun: _run,
                       ),
               ),
@@ -189,32 +193,40 @@ class _Results extends StatelessWidget {
   const _Results({
     required this.groups,
     required this.highlight,
-    required this.indexOf,
     required this.onRun,
   });
 
   final List<CommandGroup> groups;
   final int highlight;
-  final int Function(CommandItem) indexOf;
   final ValueChanged<CommandItem> onRun;
 
   @override
   Widget build(BuildContext context) {
+    // A row's flat index is a running count over the same walk
+    // [flattenCommands] does. It used to come from `items.indexOf`, called twice
+    // per row — so drawing the results was quadratic in the number of matches,
+    // on every keystroke.
+    final rows = <Widget>[];
+    var index = 0;
+    for (final group in groups) {
+      rows.add(_GroupLabel(label: group.label));
+      for (final item in group.items) {
+        rows.add(
+          CommandRow(
+            item: item,
+            index: index,
+            selected: index == highlight,
+            onTap: () => onRun(item),
+          ),
+        );
+        index++;
+      }
+    }
+
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 6),
       shrinkWrap: true,
-      children: [
-        for (final group in groups) ...[
-          _GroupLabel(label: group.label),
-          for (final item in group.items)
-            CommandRow(
-              item: item,
-              index: indexOf(item),
-              selected: indexOf(item) == highlight,
-              onTap: () => onRun(item),
-            ),
-        ],
-      ],
+      children: rows,
     );
   }
 }

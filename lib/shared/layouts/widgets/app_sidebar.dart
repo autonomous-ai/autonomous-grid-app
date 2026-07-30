@@ -1,5 +1,4 @@
 import 'dart:io' show Platform;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -51,61 +50,66 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
 
     // Codex keeps the rail flat and quiet: a near-white fill set apart from the
     // content by a single hairline on its right edge — no gradient, no cast
-    // shadow, and only a whisper of backdrop blur so a maximised window still
-    // reads as one clean surface.
+    // shadow.
+    //
+    // No backdrop blur either, and it was never doing anything: the rail is the
+    // first child of a Row over an opaque `Scaffold(backgroundColor: windowBg)`,
+    // so the only thing behind it is one flat colour, and blurring a flat colour
+    // gives back the same flat colour. What it did cost was real — a saveLayer
+    // and a 6-sigma gaussian over the whole rail on every repaint, and, because
+    // a backdrop filter samples what's behind it, the loss of the repaint
+    // boundary that would otherwise keep one row's animation to that one row.
+    // Selecting a chat re-blurred the entire sidebar, every frame.
     return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppGlass.sidebarFill,
-            border: Border(right: BorderSide(color: AppPalette.divider)),
-          ),
-          child: SizedBox(
-            width: AppSidebar.width,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _Brand(onSearch: () => showCommandPalette(context)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppGlass.sidebarFill,
+          border: Border(right: BorderSide(color: AppPalette.divider)),
+        ),
+        child: SizedBox(
+          width: AppSidebar.width,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Brand(onSearch: () => showCommandPalette(context)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SidebarItem(
+                      icon: LucideIcons.squarePen300,
+                      label: 'New chat',
+                      emphasized: true,
+                      onTap: _newChat,
+                    ),
+                    // A hair of air between the one thing you *do* (start a
+                    // chat) and the screens you *go to*, so they read as two
+                    // groups without needing a divider between them.
+                    const SizedBox(height: 4),
+                    for (final target in kSidebarSections)
                       SidebarItem(
-                        icon: LucideIcons.squarePen300,
-                        label: 'New chat',
-                        emphasized: true,
-                        onTap: _newChat,
+                        icon: target.thinIcon,
+                        label: target.label,
+                        selected: section == target,
+                        onTap: () => ref
+                            .read(shellSectionProvider.notifier)
+                            .select(target),
                       ),
-                      // A hair of air between the one thing you *do* (start a
-                      // chat) and the screens you *go to*, so they read as two
-                      // groups without needing a divider between them.
-                      const SizedBox(height: 4),
-                      for (final target in kSidebarSections)
-                        SidebarItem(
-                          icon: target.thinIcon,
-                          label: target.label,
-                          selected: section == target,
-                          onTap: () => ref
-                              .read(shellSectionProvider.notifier)
-                              .select(target),
-                        ),
-                      const SizedBox(height: 6),
-                    ],
-                  ),
+                    const SizedBox(height: 6),
+                  ],
                 ),
-                // No horizontal padding here: the list owns its own insets so
-                // the scrollbar can sit in a gutter at the rail's edge, clear of
-                // the rows, instead of overlapping them (Codex keeps this gap).
-                const Expanded(child: ChatHistoryList()),
-                // A full-width hairline sets the account off as the rail's foot,
-                // the way Codex separates its signed-in user from the list above.
-                const Divider(height: 1, thickness: 1),
-                const SizedBox(height: 4),
-                const SidebarAccount(),
-              ],
-            ),
+              ),
+              // No horizontal padding here: the list owns its own insets so
+              // the scrollbar can sit in a gutter at the rail's edge, clear of
+              // the rows, instead of overlapping them (Codex keeps this gap).
+              const Expanded(child: ChatHistoryList()),
+              // A full-width hairline sets the account off as the rail's foot,
+              // the way Codex separates its signed-in user from the list above.
+              const Divider(height: 1, thickness: 1),
+              const SizedBox(height: 4),
+              const SidebarAccount(),
+            ],
           ),
         ),
       ),

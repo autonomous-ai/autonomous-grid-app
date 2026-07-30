@@ -85,6 +85,24 @@ void main() {
       expect(marks.single.reply, endsWith('…'));
     });
 
+    test('clips a reply far longer than the preview without reading all of '
+        'it — a real answer runs to kilobytes and only 100 chars are shown', () {
+      final marks = minimapMarks([_user('q'), _assistant('z' * 12000)]);
+
+      expect(marks.single.reply!.length, 101);
+      expect(marks.single.reply, endsWith('…'));
+    });
+
+    test('still marks a long message as clipped when collapsing its '
+        'whitespace leaves a short line', () {
+      // Only the head of a message is normalised, so a line that comes out
+      // short must not read as complete when there was more text behind it.
+      final marks = minimapMarks([_user('word${' ' * 4000}tail')]);
+
+      expect(marks.single.text, endsWith('…'));
+      expect(marks.single.text, startsWith('word'));
+    });
+
     test('leaves text shorter than the limit unclipped', () {
       final marks = minimapMarks([_user('short one'), _assistant('brief')]);
 

@@ -777,6 +777,13 @@ class _TranscriptState extends State<_Transcript> {
   /// Identity-keyed for the same reason as [_itemKeys] — a row carries one.
   final _rows = Map<ChatMessage, Widget>.identity();
 
+  /// The rail's ticks, derived once per transcript rather than per build.
+  ///
+  /// [minimapMarks] walks every turn and cuts a preview from each, so it scales
+  /// with the *whole* conversation's text — and this build runs on every
+  /// keystroke in the composer. Null until the first build that needs it.
+  List<MinimapMark>? _marks;
+
   /// The message index the rail marks as "where you are", or null before the
   /// first frame has measured anything.
   int? _currentIndex;
@@ -803,7 +810,7 @@ class _TranscriptState extends State<_Transcript> {
       old.scroll.removeListener(_onScroll);
       widget.scroll.addListener(_onScroll);
     }
-    if (old.messages != widget.messages) _dropStaleTurns();
+    if (old.messages != widget.messages) _onTranscriptChanged();
     // A new turn changes the content's height, which can cross the rail's
     // threshold — and lands a new message to mark. Re-measure once it's laid out.
     if (old.messages.length != widget.messages.length) {
@@ -811,13 +818,15 @@ class _TranscriptState extends State<_Transcript> {
     }
   }
 
-  /// Forget the turns that are no longer in the transcript — a chat switch
-  /// replaces the lot. Appending a turn keeps every earlier one's row and key,
-  /// since the messages themselves are carried over.
-  void _dropStaleTurns() {
+  /// Drop what was derived from the old transcript: the rows and keys of turns
+  /// that are no longer in it — a chat switch replaces the lot — and the rail's
+  /// ticks. Appending a turn keeps every earlier one's row and key, since the
+  /// messages themselves are carried over.
+  void _onTranscriptChanged() {
     final kept = Set<ChatMessage>.identity()..addAll(widget.messages);
     _rows.removeWhere((message, _) => !kept.contains(message));
     _itemKeys.removeWhere((message, _) => !kept.contains(message));
+    _marks = null;
   }
 
   @override
@@ -960,7 +969,7 @@ class _TranscriptState extends State<_Transcript> {
             top: 0,
             bottom: 0,
             child: ChatMinimap(
-              marks: minimapMarks(widget.messages),
+              marks: _marks ??= minimapMarks(widget.messages),
               currentIndex: _currentIndex,
               onJumpTo: _jumpTo,
             ),
