@@ -67,7 +67,7 @@ bool sectionsShowHeaders<T>(List<ExtensionSection<T>> sections) =>
 /// The one list scaffold behind the extension screens: chaptered rows with the
 /// shared rhythm — 8px between rows, 18px of air before a header so a new block
 /// reads as a break rather than one more row.
-class ExtensionList<T> extends StatelessWidget {
+class ExtensionList<T> extends StatefulWidget {
   const ExtensionList({
     super.key,
     required this.sections,
@@ -78,31 +78,62 @@ class ExtensionList<T> extends StatelessWidget {
   final Widget Function(BuildContext context, T item) rowBuilder;
 
   @override
+  State<ExtensionList<T>> createState() => _ExtensionListState<T>();
+}
+
+class _ExtensionListState<T> extends State<ExtensionList<T>> {
+  /// Shared with the [Scrollbar] above the list. Handing each of them its own
+  /// controller gives the position two attached scrollables and asserts — the
+  /// same trap `grid_model_picker` documents.
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final entries = <_Entry<T>>[
-      for (final section in sections) ...[
+      for (final section in widget.sections) ...[
         if (section.label.isNotEmpty)
           _Header(section.label, section.items.length),
         for (final item in section.items) _Row(item),
       ],
     ];
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: entries.length,
-      // Separators only ever fall between two entries, so the lookahead is in
-      // range and the first header keeps its flush top edge.
-      separatorBuilder: (context, i) =>
-          SizedBox(height: entries[i + 1] is _Header<T> ? 18 : 8),
-      itemBuilder: (context, i) => switch (entries[i]) {
-        _Header<T>(:final label, :final count) => ExtensionSectionHeader(
-          label: label,
-          count: count,
-        ),
-        _Row<T>(:final item) => rowBuilder(context, item),
-      },
+    // The thumb rides in a gutter at the pane's edge and the rows stop short of
+    // it, the same way the chat rail does. Left to itself the scrollbar paints
+    // flush against the viewport's right edge — on top of the rows' rounded
+    // corners and, on a row whose trailing control sits at the end, on top of
+    // the control. `EdgeInsets.zero` is what put it there.
+    return Scrollbar(
+      controller: _controller,
+      child: ListView.separated(
+        controller: _controller,
+        padding: const EdgeInsets.only(right: extensionScrollGutter),
+        itemCount: entries.length,
+        // Separators only ever fall between two entries, so the lookahead is in
+        // range and the first header keeps its flush top edge.
+        separatorBuilder: (context, i) =>
+            SizedBox(height: entries[i + 1] is _Header<T> ? 18 : 8),
+        itemBuilder: (context, i) => switch (entries[i]) {
+          _Header<T>(:final label, :final count) => ExtensionSectionHeader(
+            label: label,
+            count: count,
+          ),
+          _Row<T>(:final item) => widget.rowBuilder(context, item),
+        },
+      ),
     );
   }
 }
+
+/// The clear space kept between the rows and the scrollbar thumb.
+///
+/// Also the right inset of the loading skeleton, so the placeholder rows and the
+/// real ones occupy the same width and nothing shifts when the data lands.
+const double extensionScrollGutter = 14;
 
 sealed class _Entry<T> {
   const _Entry();

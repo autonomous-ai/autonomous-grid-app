@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'extension_list.dart';
+import 'extension_tile_surface.dart';
 import 'skeleton.dart';
 
 /// The raised search capsule the extension screens share — same surface and
@@ -134,14 +136,68 @@ class ExtensionCreateButton extends StatelessWidget {
 /// The extension lists all load the same shape — an icon, a name, a line of
 /// description — so they wait as rows rather than as a spinner: nothing jumps
 /// when the real list lands.
+///
+/// "Nothing jumps" is the whole point, and it only holds if the placeholder is
+/// the row's shape rather than a suggestion of it. A bare [SkeletonList] paints
+/// unhoused grey bars on the page, so the raised cards *appear* on arrival —
+/// exactly the shift a skeleton exists to prevent. So each placeholder wears the
+/// real [ExtensionTileSurface] at its real padding, with a 30px mark well and two
+/// lines where the name and the summary go, and the block keeps the list's own
+/// 8px rhythm and right-hand scrollbar gutter.
 class ExtensionLoadingRows extends StatelessWidget {
-  const ExtensionLoadingRows({super.key});
+  const ExtensionLoadingRows({super.key, this.rows = 7});
+
+  final int rows;
 
   @override
   Widget build(BuildContext context) {
-    return const Align(
-      alignment: Alignment.topCenter,
-      child: SkeletonList(rows: 7),
+    AppTheme.watch(context); // reads AppGlass via the tile surface below.
+    return ListView.separated(
+      padding: const EdgeInsets.only(right: extensionScrollGutter),
+      // Not interactive yet, and a placeholder that scrolls under the pointer
+      // reads as content. It still lives in a ListView so it clips at the pane's
+      // bottom edge the way the real list does.
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: rows,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      // Fading down the column says "more below" instead of ending at an
+      // arbitrary row — the same trick `SkeletonList` uses.
+      itemBuilder: (context, i) => Opacity(
+        opacity: 1 - (i / rows) * 0.65,
+        child: const ExtensionTileSurface(child: _LoadingRow()),
+      ),
+    );
+  }
+}
+
+/// One placeholder row, laid out on the same grid as a real one: a 30px mark, a
+/// 12px gap, then the name and summary lines.
+class _LoadingRow extends StatelessWidget {
+  const _LoadingRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Square with radius 10, matching `ExtensionIconBadge` — a circle here
+        // would be the one piece of the row that moves when the data lands.
+        Skeleton(width: 30, height: 30, radius: 10),
+        SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 13px title, 4px gap, 11px summary — the row's real metrics, so
+              // the block is the height the loaded list will be.
+              SkeletonLine(widthFactor: 0.28, height: 13),
+              SizedBox(height: 6),
+              SkeletonLine(widthFactor: 0.62, height: 11),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
