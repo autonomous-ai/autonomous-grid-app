@@ -89,6 +89,18 @@ class McpServersController extends AsyncNotifier<List<McpServer>> {
             server.name: server,
       };
       if (adopted.isNotEmpty) {
+        // Adoption is the one way an entry can enter the manual store without
+        // the user typing it, so it is worth naming: a connector that appears
+        // here after an OAuth sign-in means the `_grid` marker did not do its
+        // job, and a credential is about to be copied into a second file.
+        ref
+            .read(appLogProvider)
+            .info(
+              'connectors',
+              'Adopting ${adopted.length} unmanaged server(s) into the manual '
+                  'store [${adopted.keys.join(', ')}] — connector-owned '
+                  'entries were [${connectorEntries.join(', ')}]',
+            );
         await store.write({...stored, ...adopted});
       }
 

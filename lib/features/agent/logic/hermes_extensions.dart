@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../infrastructure/cli/hermes_plugin_service.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_plugin.dart';
@@ -32,11 +33,12 @@ class HermesExtensions implements AgentExtensions {
     required HermesConfigFile configFile,
     required HermesTokenProjection tokenProjection,
     required HermesConnectorServers connectorServers,
+    AppLog? log,
   }) : skills = _HermesSkillsPlane(scanner, author, installer, configFile),
        plugins = pluginService == null
            ? null
            : _HermesPluginsPlane(pluginService),
-       mcp = _HermesMcpPlane(mcpConfig, tokenProjection, connectorServers);
+       mcp = _HermesMcpPlane(mcpConfig, tokenProjection, connectorServers, log);
 
   @override
   AgentTool get tool => AgentTool.hermes;
@@ -139,11 +141,16 @@ class _HermesPluginsPlane implements AgentPluginsPlane {
 }
 
 class _HermesMcpPlane implements AgentMcpPlane {
-  _HermesMcpPlane(this._config, this._tokens, this._servers);
+  _HermesMcpPlane(this._config, this._tokens, this._servers, this._log);
 
   final HermesMcpConfig _config;
   final HermesTokenProjection _tokens;
   final HermesConnectorServers _servers;
+
+  /// Nullable so the existing tests keep constructing this without a logger, and
+  /// so nothing here can fail for want of one — a projection must not break
+  /// because diagnostics are absent.
+  final AppLog? _log;
 
   /// Give Hermes both halves of a connector: the credential in its own
   /// `mcp-tokens/` directory, and the `mcp_servers` entry that tells it the
@@ -154,25 +161,60 @@ class _HermesMcpPlane implements AgentMcpPlane {
   /// authenticate against. The order below is deliberate — credential first, so
   /// there is no moment where the agent knows about a server it cannot reach.
   @override
-  Future<void> Function(List<ConnectorToken>)? get projectConnectorTokens =>
-      (tokens) async {
-        try {
-          // Ask the config which connectors we already own *before* writing, so
-          // deletions are driven by what is really on disk rather than by the
-          // list being written — which can only ever say "everything here is
-          // wanted" and would leave a disconnected connector's file behind.
-          final owned = await _servers.owned();
-          await _tokens.project(
-            tokens,
-            owned: {...owned, for (final token in tokens) token.connector},
-          );
-          await _servers.project(tokens);
-        } on Object catch (error) {
-          throw AgentExtensionException(
-            "Couldn't hand the connector tokens to Hermes: $error",
-          );
-        }
+  Future<void> Function(List<ConnectorToken>, {Set<String> removing})?
+  get projectConnectorTokens => (tokens, {removing = const {}}) async {
+    try {
+      final owned = await _servers.owned();
+      _log?.info(
+        'connectors',
+        'Hermes projection: ${tokens.length} token(s) in '
+            '[${tokens.map((t) => t.connector).join(', ')}], '
+            'removing [${removing.join(', ')}], '
+            'config already owns [${owned.join(', ')}] → '
+            '${_servers.configFile.path}',
+      );
+      await _tokens.project(tokens, removing: removing);
+      await _servers.project(tokens, removing: removing);
+      // Read the config back, and check the one invariant that still holds now
+      // that deletion is by name: every token with an MCP entry must be present
+      // afterwards. The config may legitimately own *more* than we projected —
+      // entries for connectors this call said nothing about are deliberately
+      // left alone — so a larger count is not a fault.
+      final after = await _servers.owned();
+      final expected = {
+        for (final token in tokens)
+          if (token.mcpEntry != null) token.connector,
       };
+      // Named explicitly rather than left as the arithmetic difference between
+      // two counts. A connector the gateway has no MCP server for is stored,
+      // linked and deliberately *not* written to the config — so "2 tokens in,
+      // 1 entry out" is the correct outcome, and a reader comparing those two
+      // numbers concludes a bug that isn't there. (I did, reading this log.)
+      final toolless = {
+        for (final token in tokens)
+          if (token.mcpEntry == null) token.connector,
+      };
+      final missing = expected.difference(after);
+      _log?.record(
+        missing.isEmpty ? AppLogLevel.info : AppLogLevel.warn,
+        'connectors',
+        'Hermes projection done: config owns ${after.length} '
+            '[${after.join(', ')}]'
+            '${toolless.isEmpty ? '' : ', no MCP server yet for [${toolless.join(', ')}]'}'
+            '${missing.isEmpty ? '' : ' — MISSING [${missing.join(', ')}]'}',
+      );
+    } on Object catch (error, stack) {
+      _log?.failure(
+        'connectors',
+        'Hermes projection failed',
+        error: error,
+        stackTrace: stack,
+      );
+      throw AgentExtensionException(
+        "Couldn't hand the connector tokens to Hermes: $error",
+      );
+    }
+  };
 
   @override
   Future<Set<String>> connectorEntries() => _servers.owned();
@@ -260,5 +302,6 @@ final hermesExtensionsProvider = Provider<AgentExtensions?>((ref) {
     configFile: ref.watch(hermesConfigFileProvider),
     tokenProjection: ref.watch(hermesTokenProjectionProvider),
     connectorServers: ref.watch(hermesConnectorServersProvider),
+    log: ref.watch(appLogProvider),
   );
 });
