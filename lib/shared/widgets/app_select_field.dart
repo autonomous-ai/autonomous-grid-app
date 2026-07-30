@@ -234,19 +234,29 @@ class _FieldSurface extends StatelessWidget {
                             ),
                     ),
                   ),
+                  // Flexible, not a bare child: a badge holds whatever text the
+                  // caller had — "3 parts", but also a sentence like "SF Pro —
+                  // what the app is designed in" — and an unconstrained one
+                  // overflowed the field by 90px in a narrow window instead of
+                  // giving way. It shrinks and ellipsizes now; the menu row
+                  // below has the room to show it whole.
                   if (badges.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     for (final badge in badges)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: _Badge(badge: badge),
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: _Badge(badge: badge),
+                        ),
                       ),
                   ] else if (detail != null && detail!.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     for (final part in detail!.split(' · '))
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: _Badge(badge: AppSelectBadge(part)),
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: _Badge(badge: AppSelectBadge(part)),
+                        ),
                       ),
                   ],
                 ],
@@ -297,6 +307,10 @@ class _Badge extends StatelessWidget {
       ),
       child: Text(
         badge.text,
+        // One line, ellipsized: a pill is a glance, and in a field only as wide
+        // as the control it sits in there may not be room for the whole of it.
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall?.copyWith(
           color: tint ?? AppPalette.textSecondary,
           fontSize: 11,

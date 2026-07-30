@@ -248,7 +248,10 @@ void main() {
       expect(find.text('Berkeley Mono'), findsOneWidget);
       await tester.tap(find.text('Berkeley Mono'));
       await tester.pumpAndSettle();
-      expect(find.text('Not installed on this Mac'), findsOneWidget);
+      // Once, in the closed field's pill — and again in the open menu row it
+      // belongs to. Both are the point: the warning has to be visible while
+      // picking, not only after.
+      expect(find.text('Not installed on this Mac'), findsWidgets);
     });
   });
 
