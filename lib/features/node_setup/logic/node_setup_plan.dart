@@ -23,7 +23,6 @@ class SetupStep {
     required this.detail,
     required this.args,
     required this.isDownload,
-    this.optional = false,
   });
 
   final SetupAction action;
@@ -31,13 +30,6 @@ class SetupStep {
   final String detail;
   final List<String> args;
   final bool isDownload;
-
-  /// Whether the run carries on when this step fails.
-  ///
-  /// The extra assistants are optional: once the one that answers chat is in,
-  /// a first run must not be held at a red screen because a second one couldn't
-  /// be fetched. The failure is still logged — it's skipped, not hidden.
-  final bool optional;
 }
 
 /// Default ComfyUI bundle so the media engine is usable right after install.
@@ -127,38 +119,30 @@ List<SetupStep> buildSetupPlan(
   return steps;
 }
 
-/// One install step per **CLI-packaged** agent this computer doesn't have yet,
-/// in [_agentInstallOrder].
+/// The install step for the one agent a machine must have before anyone can
+/// chat — the default assistant [kChatAgent] — or nothing when it's already
+/// there.
 ///
-/// Every such agent is fetched, not just the default one: an agent the user
-/// can't choose because nobody installed it is a row that answers nothing, and
-/// `grid agent install` needs no Homebrew and no admin rights — it drops each
-/// one in `~/.grid`. Only [kChatAgent] is required, so a machine always ends up
-/// with something that can answer; the rest are [SetupStep.optional] and a first
-/// run survives one of them failing to download.
+/// Only the required one, on purpose. The extras (Codex, and Claude Code)
+/// install quietly in the background once the user is in
+/// ([BackgroundAgentInstaller]), so a first run never blocks on an assistant the
+/// user didn't pick — and never on a whole vendor CLI's download. `grid agent
+/// install` needs no Homebrew and no admin rights, so the one required step
+/// still runs on every OS.
 ///
-/// Claude Code is absent from *this* list (see [AgentTool.packagedByCli]): a
-/// step here is literal `grid agent install` argv, and the CLI has no recipe for
-/// Claude Code. It still auto-installs — through the background installer, which
-/// routes every agent via `AgentInstaller` — just not as a CLI-argv step.
+/// It's [kChatAgent] that lands here because it is the one chat falls back to
+/// (and it is CLI-packaged, so a `grid agent install` argv can fetch it); the
+/// background installer is the single place that knows how to fetch *any* agent,
+/// Claude Code included, so the plan doesn't try to.
 List<SetupStep> agentInstallSteps(NodeCapabilities caps) => [
-  for (final tool in _agentInstallOrder)
-    if (tool.packagedByCli && !caps.installedAgents.contains(tool))
-      SetupStep(
-        action: SetupAction.installAgent,
-        title: 'Install ${tool.name}',
-        detail: tool.tagline,
-        args: ['agent', 'install', tool.id],
-        isDownload: false,
-        optional: tool != kChatAgent,
-      ),
-];
-
-/// The default agent first, then the rest in catalog order — the one that must
-/// succeed is also the one the user waits the least for.
-List<AgentTool> get _agentInstallOrder => [
-  kChatAgent,
-  ...AgentTool.values.where((tool) => tool != kChatAgent),
+  if (!caps.installedAgents.contains(kChatAgent))
+    SetupStep(
+      action: SetupAction.installAgent,
+      title: 'Install ${kChatAgent.name}',
+      detail: kChatAgent.tagline,
+      args: ['agent', 'install', kChatAgent.id],
+      isDownload: false,
+    ),
 ];
 
 /// The model-download step for [caps], or null when a model is already on disk.

@@ -34,15 +34,10 @@ NodeCapabilities _caps({
 /// Every agent the catalog knows — a machine with nothing left to install.
 final _allAgents = AgentTool.values.toSet();
 
-/// The agents an unattended plan can fetch — the CLI-packaged ones. Claude Code
-/// is installed only on request (see [AgentTool.packagedByCli]), so it never
-/// appears in a setup plan.
-final _cliAgents = AgentTool.values.where((t) => t.packagedByCli).toList();
-
-/// What a bare machine owes the agents: one install step per CLI-packaged agent.
-/// Written as a function of the catalog so adding an agent doesn't need every
-/// expectation in this file rewritten.
-final _agentSteps = List.filled(_cliAgents.length, SetupAction.installAgent);
+/// A bare machine owes the agents exactly one install step: the assistant chat
+/// falls back to ([kChatAgent]). The extras (Codex, Claude Code) install in the
+/// background once the user is in, so they're never in the setup plan.
+const _agentSteps = [SetupAction.installAgent];
 
 DetectedBackend _ollama({
   List<String> models = const ['gemma'],
@@ -87,37 +82,22 @@ void main() {
     expect(step.args, ['agent', 'install', 'hermes']);
   });
 
-  test('a first run fetches every CLI-packaged agent, not just the one that '
-      'answers — and never Claude Code, which the CLI cannot install', () {
-    // An agent nobody installed is a row the user can only look at, so setup
-    // brings in every one the CLI can fetch — and the one chat defaults to goes
-    // first. Claude Code is left out: a whole vendor CLI is the user's call.
-    final steps = agentInstallSteps(_caps());
-    expect(
-      steps.map((s) => s.args),
-      _cliAgents.map((t) => ['agent', 'install', t.id]),
-    );
-    expect(steps.first.args.last, kChatAgent.id);
-    expect(steps.every((s) => s.args.last != AgentTool.claude.id), isTrue);
-  });
-
-  test('only the default agent is worth stopping a first run for', () {
-    // A second assistant that won't download must not leave a new user staring
-    // at a red screen when the one that answers chat is already in.
-    final steps = agentInstallSteps(_caps());
-    final required = steps.where((s) => !s.optional).toList();
-    expect(required, hasLength(1));
-    expect(required.single.args.last, kChatAgent.id);
-  });
-
   test(
-    'having the default agent still gets you the other CLI-packaged one',
+    'a first run installs only the assistant chat falls back to — the extras '
+    'come later in the background, so nobody waits on one they did not pick '
+    '(nor on a whole vendor CLI)',
     () {
-      final steps = agentInstallSteps(_caps(agents: {kChatAgent}));
-      expect(steps, hasLength(_cliAgents.length - 1));
-      expect(steps.every((s) => s.args.last != kChatAgent.id), isTrue);
+      final steps = agentInstallSteps(_caps());
+      expect(steps.map((s) => s.args), [
+        ['agent', 'install', kChatAgent.id],
+      ]);
     },
   );
+
+  test('having the default agent leaves nothing for the plan to do — the other '
+      'agents are the background installer\'s job, not a setup step', () {
+    expect(agentInstallSteps(_caps(agents: {kChatAgent})), isEmpty);
+  });
 
   test('with media enabled, a fresh machine installs both engines', () {
     final plan = buildSetupPlan(_caps(), includeMedia: true);
