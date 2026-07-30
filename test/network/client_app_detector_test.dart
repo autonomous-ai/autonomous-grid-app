@@ -70,19 +70,12 @@ void main() {
     ]);
   });
 
-  test('Claude Code is detected by ~/.claude, and says up front what this grid '
-      "can't answer for it", () {
+  test('Claude Code is detected by its own ~/.claude', () {
     final info = kClientApps[ClientApp.claudeCode]!;
     final d = _detector(dirs: {'$_home/${info.configDir}'});
 
     expect(d.isInstalled(ClientApp.claudeCode), isTrue);
-    // The caveat has to name the API and the symptom, or it reads as vague
-    // hedging and the user follows the steps anyway.
-    expect(info.caveat, isNotNull);
-    expect(info.caveat, contains('/v1/messages'));
-    expect(info.caveat, contains('connection error'));
-    // Every other offered app talks the dialect the relay already serves.
-    expect(kClientApps[ClientApp.hermes]!.caveat, isNull);
+    expect(d.detect(), {ClientApp.claudeCode});
   });
 
   test('the picker always has something to fall back on', () {

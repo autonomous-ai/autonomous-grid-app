@@ -22,10 +22,9 @@ extension ClientAppX on ClientApp {
   /// `/v1/responses`. Wire [agentRunsOnGridProvider] into it so such a grid
   /// says so, instead of handing out steps that end in a 404.
   ///
-  /// **Claude Code** ships to everyone on the same terms, and states its
-  /// requirement up front through [ClientAppInfo.caveat] — it speaks the
-  /// Anthropic Messages API, which a relay has to serve before any of the steps
-  /// can work.
+  /// **Claude Code** ships to everyone on the same terms — it speaks the
+  /// Anthropic Messages API, which a relay has to serve before the steps can
+  /// work, and again that is the grid's call rather than the build's.
   ///
   /// **OpenClaw** and **Buzz** are off the list. OpenClaw isn't an app we point
   /// people at any more; Buzz was dropped from the guide on request. Both
@@ -69,7 +68,6 @@ class ClientAppInfo {
     required this.configDir,
     required this.configPath,
     required this.executable,
-    this.caveat,
   });
 
   final ClientApp app;
@@ -87,12 +85,6 @@ class ClientAppInfo {
 
   /// CLI executable name to look for on PATH as a second install signal.
   final String executable;
-
-  /// What this app needs from the grid that the grid may not give it, in plain
-  /// language — shown above the setup so the user reads it *before* following
-  /// steps that could end in a connection error. Null when the app talks the
-  /// OpenAI-compatible dialect every relay already serves.
-  final String? caveat;
 }
 
 /// The known clients, keyed by [ClientApp]. Ordered by [ClientApp.values].

@@ -101,12 +101,6 @@ class ClientAppPanel extends StatelessWidget {
           MissingAppNote(name: info.name, onDownload: onOpenSite),
           const SizedBox(height: 16),
         ],
-        // Above the connection, not below the steps: what the grid can't answer
-        // for this app decides whether the rest is worth following at all.
-        if (info.caveat case final caveat?) ...[
-          AppCaveatNote(text: caveat),
-          const SizedBox(height: 16),
-        ],
         ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
         const SizedBox(height: 16),
         if (canApply) ...[
