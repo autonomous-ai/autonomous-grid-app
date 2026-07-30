@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../network/logic/client_app_grid_support.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import 'agent_catalog.dart';
 
@@ -28,11 +29,10 @@ bool agentRunsOnGrid(AgentTool tool, {required bool? advertisesResponses}) =>
 /// Why [tool] can't answer on the open grid, in the user's terms — no wire
 /// dialects, no endpoint names, just the fact that decides it.
 ///
-/// One sentence shared by the Agents row and the chat's notice: the two screens
-/// state the same fact, and stating it twice in two wordings is how a user ends
-/// up thinking they're two different problems.
-String agentUnsupportedHere(AgentTool tool) =>
-    "This grid doesn't serve a model ${tool.name} can talk to.";
+/// One sentence shared by the Agents row, the chat's notice and the app guide
+/// ([appUnsupportedHere]): those screens state the same fact, and stating it in
+/// three wordings is how a user ends up thinking they're three problems.
+String agentUnsupportedHere(AgentTool tool) => appUnsupportedHere(tool.name);
 
 /// What the selected grid's overview says about the Responses API: true/false
 /// when the relay reports it, null before the first overview lands, when it

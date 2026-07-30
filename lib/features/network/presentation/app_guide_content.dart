@@ -8,6 +8,7 @@ import '../../../shared/widgets/status_dot.dart';
 import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
+import '../logic/client_app_grid_support.dart';
 import '../logic/grid_overview_provider.dart';
 import 'app_guide_panels.dart';
 
@@ -130,6 +131,10 @@ class _AppGuideContentState extends ConsumerState<AppGuideContent> {
           ClientAppPanel(
             info: kClientApps[selected]!,
             installed: installed.contains(selected),
+            // Whether this grid speaks the app's API at all — the relay's own
+            // per-dialect flags, so a grid that can't answer says so instead of
+            // handing out steps that end in a connection error.
+            runsHere: ref.watch(clientRunsOnGridProvider(selected)),
             baseUrl: widget.baseUrl,
             apiKey: widget.apiKey,
             models: models,

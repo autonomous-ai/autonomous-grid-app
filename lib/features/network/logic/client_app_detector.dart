@@ -16,11 +16,10 @@ extension ClientAppX on ClientApp {
   /// **Codex** ships to everyone. It only talks to the Responses API (codex ≥
   /// 0.141 rejects `wire_api = "chat"`), which not every relay serves yet — so
   /// the tab is always offered and the *grid* decides whether it works, per
-  /// grid. Hiding it outside debug was the blunt version of the same honesty:
-  /// it also hid Codex from the grids that can already answer it.
-  /// TODO(BE): the panel still walks the setup on a relay with no
-  /// `/v1/responses`. Wire [agentRunsOnGridProvider] into it so such a grid
-  /// says so, instead of handing out steps that end in a 404.
+  /// grid (`clientRunsOnGrid` reads the relay's own flag and the panel says so
+  /// rather than walking a setup that ends in a 404). Hiding it outside debug
+  /// was the blunt version of the same honesty: it also hid Codex from the
+  /// grids that can already answer it.
   ///
   /// **Claude Code** ships to everyone on the same terms — it speaks the
   /// Anthropic Messages API, which a relay has to serve before the steps can
