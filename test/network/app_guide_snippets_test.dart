@@ -9,6 +9,9 @@ const _base = 'https://grid.example/relay/v1';
 const _key = 'sk-test-123';
 const _model = 'qwen3.5:0.8b';
 
+/// [_base] as Claude Code needs it — it appends `/v1` itself.
+const _claudeBase = 'https://grid.example/relay';
+
 void main() {
   test('OpenClaw snippet is valid JSON wiring Grid as a merged provider', () {
     final decoded = jsonDecode(openClawSnippet(_base, _key, [_model])) as Map;
@@ -132,25 +135,65 @@ void main() {
   });
 
   group('Claude Code', () {
-    test('the settings block carries the pair in the env form Claude Code '
-        'reads, as valid JSON', () {
-      final decoded = jsonDecode(claudeCodeSettingsSnippet(_base, _key)) as Map;
+    // What a grid relaying a Claude subscription advertises, tier per id.
+    const claudeTiers = [
+      'claude:opus',
+      'claude:sonnet',
+      'claude:haiku',
+      'claude:fable',
+    ];
 
-      final env = decoded['env'] as Map;
-      expect(env[kClaudeBaseUrlEnv], _base);
-      // The bearer-token variable, not ANTHROPIC_API_KEY: the key variant needs
-      // a one-time interactive approval a "set it up for me" button can't give.
-      expect(env[kClaudeAuthTokenEnv], _key);
-      expect(env.containsKey('ANTHROPIC_API_KEY'), isFalse);
+    test('the endpoint drops the OpenAI /v1 — Claude Code appends the API '
+        'version itself, and /relay/v1/v1/messages 404s', () {
+      expect(claudeBaseUrl(_base), _claudeBase);
+      // Idempotent: an already-trimmed URL (or one with a stray slash) stands.
+      expect(claudeBaseUrl('https://grid.example/relay'), _claudeBase);
+      expect(claudeBaseUrl('https://grid.example/relay/v1/'), _claudeBase);
     });
 
-    test('no model is named — Claude Code picks its own, and inventing one '
-        'here would put a model the grid never serves in the file', () {
-      final env =
-          (jsonDecode(claudeCodeSettingsSnippet(_base, _key)) as Map)['env']
+    test('the settings block is valid JSON carrying the endpoint and the key '
+        'under both names a client may read', () {
+      final decoded =
+          jsonDecode(claudeCodeSettingsSnippet(_base, _key, claudeTiers))
               as Map;
 
-      expect(env.keys, [kClaudeBaseUrlEnv, kClaudeAuthTokenEnv]);
+      final env = decoded['env'] as Map;
+      expect(env[kClaudeBaseUrlEnv], _claudeBase);
+      // Bearer token *and* x-api-key: a relay may check either, and other
+      // Anthropic tooling on the machine reads the second name.
+      expect(env[kClaudeAuthTokenEnv], _key);
+      expect(env[kClaudeApiKeyEnv], _key);
+    });
+
+    test('each Claude tier is pinned to the grid model that serves it, so a '
+        '/model switch mid-session still lands on this grid', () {
+      final env = claudeCodeEnv(_base, _key, claudeTiers);
+
+      expect(env[kClaudeTierModelEnv['opus']], 'claude:opus');
+      expect(env[kClaudeTierModelEnv['sonnet']], 'claude:sonnet');
+      expect(env[kClaudeTierModelEnv['haiku']], 'claude:haiku');
+      expect(env[kClaudeTierModelEnv['fable']], 'claude:fable');
+      // Opus answers, sonnet takes the side work (small/fast + subagents).
+      expect(env[kClaudeModelEnv], 'claude:opus');
+      expect(env[kClaudeSmallFastModelEnv], 'claude:sonnet');
+      expect(env[kClaudeSubagentModelEnv], 'claude:sonnet');
+    });
+
+    test('a grid with no Claude tiers points every tier at the model it does '
+        'serve, instead of naming one it never had', () {
+      final env = claudeCodeEnv(_base, _key, const [_model]);
+
+      expect(env[kClaudeModelEnv], _model);
+      expect(env[kClaudeSmallFastModelEnv], _model);
+      for (final variable in kClaudeTierModelEnv.values) {
+        expect(env[variable], _model);
+      }
+    });
+
+    test('an empty grid still writes a usable file (the default model)', () {
+      final env = claudeCodeEnv(_base, _key, const []);
+
+      expect(env[kClaudeModelEnv], kGuideDefaultModel);
     });
 
     test('appSnippets gives it one block naming its settings file', () {
@@ -162,7 +205,15 @@ void main() {
       );
 
       expect(blocks.single.caption, contains(kClaudeSettingsPath));
-      expect(blocks.single.code, contains(_base));
+      expect(blocks.single.code, contains(_claudeBase));
+    });
+
+    test('the Base URL shown on the panel is the one its config carries — the '
+        'value people paste by hand has to be the working one', () {
+      expect(appBaseUrl(ClientApp.claudeCode, _base), _claudeBase);
+      // Every OpenAI-compatible client keeps the relay URL as it is.
+      expect(appBaseUrl(ClientApp.codex, _base), _base);
+      expect(appBaseUrl(ClientApp.hermes, _base), _base);
     });
   });
 

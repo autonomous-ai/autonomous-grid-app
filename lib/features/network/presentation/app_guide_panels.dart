@@ -101,7 +101,11 @@ class ClientAppPanel extends StatelessWidget {
           MissingAppNote(name: info.name, onDownload: onOpenSite),
           const SizedBox(height: 16),
         ],
-        ConnectionFields(baseUrl: baseUrl, apiKey: apiKey),
+        // The URL this app wants, not the relay's raw one — see [appBaseUrl].
+        ConnectionFields(
+          baseUrl: appBaseUrl(info.app, baseUrl),
+          apiKey: apiKey,
+        ),
         const SizedBox(height: 16),
         if (canApply) ...[
           _ApplyBlock(name: info.name, phase: phase, onApply: onApply),
