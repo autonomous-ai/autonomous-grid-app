@@ -21,6 +21,7 @@ class GridOverview {
     required this.nodes,
     this.advertisesChatCompletions,
     this.advertisesResponses,
+    this.advertisesMessages,
   });
 
   final String? state;
@@ -29,15 +30,17 @@ class GridOverview {
   final List<OverviewNode> nodes;
 
   /// Whether the grid serves at least one model that answers on
-  /// `/v1/chat/completions`, and one that answers on `/v1/responses` — the two
-  /// wire dialects a client can speak. Which agents can work here is derived
-  /// from these (see `agentRunsOnGrid`).
+  /// `/v1/chat/completions`, one that answers on `/v1/responses`, and one that
+  /// answers on Anthropic's `/v1/messages` — the three wire dialects a client
+  /// can speak. Which clients and agents can work here is derived from these
+  /// (see `agentRunsOnGrid`, `clientRunsOnGrid`).
   ///
   /// **Null means "the relay didn't say"**, never "no": a relay that predates
   /// the flags leaves them out, and reading absence as `false` would strand
   /// every user of an older grid. Only an explicit `false` rules a dialect out.
   final bool? advertisesChatCompletions;
   final bool? advertisesResponses;
+  final bool? advertisesMessages;
 
   factory GridOverview.fromJson(Map<String, dynamic> j) {
     final grid = j['grid'];
@@ -52,6 +55,7 @@ class GridOverview {
       nodes: _list(j['nodes'], OverviewNode.fromJson),
       advertisesChatCompletions: _flag(j['advertises_chat_completions']),
       advertisesResponses: _flag(j['advertises_responses']),
+      advertisesMessages: _flag(j['advertises_messages']),
     );
   }
 
@@ -78,7 +82,8 @@ class GridOverview {
       listEquals(other.models, models) &&
       listEquals(other.nodes, nodes) &&
       other.advertisesChatCompletions == advertisesChatCompletions &&
-      other.advertisesResponses == advertisesResponses;
+      other.advertisesResponses == advertisesResponses &&
+      other.advertisesMessages == advertisesMessages;
 
   @override
   int get hashCode => Object.hash(
@@ -88,6 +93,7 @@ class GridOverview {
     Object.hashAll(nodes),
     advertisesChatCompletions,
     advertisesResponses,
+    advertisesMessages,
   );
 }
 

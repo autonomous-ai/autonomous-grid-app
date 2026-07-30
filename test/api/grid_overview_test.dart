@@ -73,9 +73,12 @@ void main() {
       final o = GridOverview.fromJson(const {
         'advertises_chat_completions': true,
         'advertises_responses': false,
+        'advertises_messages': true,
       });
       expect(o.advertisesChatCompletions, isTrue);
       expect(o.advertisesResponses, isFalse);
+      // Anthropic's Messages API — what Claude Code posts to.
+      expect(o.advertisesMessages, isTrue);
     });
 
     test('a relay that omits the dialect flags reads as unknown, not "no"', () {
@@ -85,6 +88,7 @@ void main() {
       final o = GridOverview.fromJson(jsonDecode(raw) as Map<String, dynamic>);
       expect(o.advertisesChatCompletions, isNull);
       expect(o.advertisesResponses, isNull);
+      expect(o.advertisesMessages, isNull);
     });
 
     test('a non-boolean flag reads as unknown rather than throwing', () {

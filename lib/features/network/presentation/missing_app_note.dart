@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../logic/client_app_grid_support.dart';
 
 /// A one-line note + Download button shown when the client isn't installed yet.
 class MissingAppNote extends StatelessWidget {
@@ -40,6 +41,35 @@ class MissingAppNote extends StatelessWidget {
             label: Text('Download $name'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Shown when the open grid can't answer this app at all — no model here speaks
+/// its API ([clientRunsOnGrid]). Walking someone through five setup steps that
+/// end in a connection error is the failure this replaces, so it names what to
+/// do instead: use a grid that serves one, or bring a model here.
+class UnsupportedOnGridNote extends StatelessWidget {
+  const UnsupportedOnGridNote({super.key, required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return GlassCard(
+      style: GlassCardStyle.inset,
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      child: Text(
+        '${appUnsupportedHere(name)} Pick a grid that does, or add a model here '
+        "that $name can use — the connection below won't answer until then.",
+        style: TextStyle(
+          color: AppPalette.textSecondary,
+          fontSize: 12.5,
+          height: 1.4,
+        ),
       ),
     );
   }
