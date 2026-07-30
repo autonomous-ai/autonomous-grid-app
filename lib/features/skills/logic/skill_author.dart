@@ -171,12 +171,22 @@ class SkillAuthor implements SkillWriter {
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
 
-  /// Every write is scoped to the store. A skill the app doesn't own — one
-  /// still sitting in an agent's own folder, say — is not ours to rewrite or
-  /// remove, and a path that isn't a skill at all must never reach `delete`.
+  /// The folders a write may touch: the library, and each assistant's own.
+  ///
+  /// All three, because all three are on screen — the tabs *are* the agents'
+  /// folders, and a delete button that refuses every row in them is worse than
+  /// no button. What the guard still stops is a path that is none of these: a
+  /// bad `previousPath`, or a `delete` handed something that isn't a skill.
+  List<String> get _writableRoots => [
+    for (final source in SkillSource.values) source.root(_home).path,
+  ];
+
   void _guard(String path, String action) {
-    if (!path.startsWith('$_root/')) {
-      throw ArgumentError('Refusing to $action outside $_root: $path');
+    final inside = _writableRoots.any((root) => path.startsWith('$root/'));
+    if (!inside) {
+      throw ArgumentError(
+        'Refusing to $action outside the skill folders: $path',
+      );
     }
   }
 }

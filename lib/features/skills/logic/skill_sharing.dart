@@ -51,30 +51,11 @@ class SkillSharer {
   final String _home;
 
   /// Where a skill folder named [slug] lands in [agent]'s own folder.
-  ///
-  /// [category] is the folder it sits in on the way out (`user`, `public`) —
-  /// kept for Hermes, which reads a nested tree, and dropped for Codex, which
-  /// doesn't. The skill keeps its own name either way, so the copy and the
-  /// original stay recognisably the same skill.
-  Directory destinationFor(
-    String slug,
-    AgentTool agent, {
-    String category = '',
-  }) => agentSkillCopy(agent, _home, slug, category);
+  Directory destinationFor(String slug, AgentTool agent) =>
+      agentSkillCopy(agent, _home, slug);
 
   Future<void> share(AgentSkill skill, ShareTarget target) =>
       shareFolder(skill.path, target.agents);
-
-  /// The folder a skill sits in, when that folder is one the app writes.
-  ///
-  /// Anything else — an agent's own `apple/`, or the root — is that agent's
-  /// filing, not ours to reproduce in the other one.
-  static String categoryOf(String path) {
-    final parts = path.split('/');
-    if (parts.length < 2) return '';
-    final parent = parts[parts.length - 2];
-    return parent == kUserSkillsDir || parent == kPublicSkillsDir ? parent : '';
-  }
 
   /// Copy the skill folder at [path] to every agent in [agents], overwriting a
   /// copy already there, then record who has it.
@@ -86,12 +67,8 @@ class SkillSharer {
       throw ArgumentError('${path.split('/').last} is no longer on disk.');
     }
     final slug = path.split('/').last;
-    final category = categoryOf(path);
     for (final agent in agents) {
-      await copySkillFolder(
-        from,
-        destinationFor(slug, agent, category: category),
-      );
+      await copySkillFolder(from, destinationFor(slug, agent));
     }
   }
 
@@ -99,13 +76,9 @@ class SkillSharer {
   ///
   /// Deletes whatever is at that path: a copy the agent installed itself under
   /// the same name is the same skill by the only name that matters.
-  Future<void> unshareFolder(
-    String slug,
-    Iterable<AgentTool> agents, {
-    String category = '',
-  }) async {
+  Future<void> unshareFolder(String slug, Iterable<AgentTool> agents) async {
     for (final agent in agents) {
-      final copy = destinationFor(slug, agent, category: category);
+      final copy = destinationFor(slug, agent);
       if (copy.existsSync()) await copy.delete(recursive: true);
     }
   }

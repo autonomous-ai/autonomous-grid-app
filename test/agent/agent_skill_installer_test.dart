@@ -36,9 +36,7 @@ void main() {
     await installHermes();
 
     for (final skill in const ['grid-image-gen', 'grid-web']) {
-      final copy = Directory(
-        '${home.path}/.hermes/skills/$kPublicSkillsDir/$skill',
-      );
+      final copy = Directory('${home.path}/.hermes/skills/$skill');
       expect(
         File('${copy.path}/SKILL.md').existsSync(),
         isTrue,

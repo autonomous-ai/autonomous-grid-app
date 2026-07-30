@@ -141,7 +141,11 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
 
   Future<void> _delete() async {
     final skill = widget.skill;
-    final confirmed = await _confirmDeleteSkill(context, skill.name);
+    final confirmed = await _confirmDeleteSkill(
+      context,
+      skill.name,
+      widget.source,
+    );
     if (confirmed != true || !mounted) return;
 
     final toast = ToastScope.of(context);
@@ -152,7 +156,7 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
       failure != null
           ? ToastSpec(message: failure, severity: ToastSeverity.error)
           : ToastSpec(
-              message: '${skill.name} deleted.',
+              message: '${skill.name} removed from ${widget.source.label}.',
               severity: ToastSeverity.success,
             ),
     );
@@ -304,13 +308,15 @@ class _SkillInfo extends ConsumerWidget {
   }
 }
 
-/// Edit, share and delete — on every row.
+/// Edit, share and delete — on the skills the app put there.
 ///
-/// The tabs are the assistants' own folders now, so a row is a skill that
-/// assistant really has, and all three verbs mean something for all of them.
-/// Editing one the agent shipped is the user's call to make: the next agent
-/// update may write over it, which is a reason to warn, not a reason to
-/// withhold the button.
+/// A row whose author is the assistant itself gets none of them, in any tab.
+/// Those are the agent's own: it installs them, it updates them, and an edit
+/// here would be undone by the next update without anyone being told. Reading
+/// one is still offered — the row opens like any other.
+///
+/// The column keeps its width on those rows so the ones above and below stay
+/// in line.
 class _SkillActions extends StatelessWidget {
   const _SkillActions({
     required this.skill,
@@ -326,6 +332,7 @@ class _SkillActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!skill.isMine && !skill.isPublic) return const SizedBox.shrink();
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
@@ -350,14 +357,23 @@ class _SkillActions extends StatelessWidget {
 
 /// Removing a skill takes its folder with it, and the user may have written it,
 /// so ask before doing something they can't undo.
-Future<bool?> _confirmDeleteSkill(BuildContext context, String name) {
+Future<bool?> _confirmDeleteSkill(
+  BuildContext context,
+  String name,
+  SkillSource source,
+) {
   return showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Delete this skill?'),
+      title: Text('Remove it from ${source.label}?'),
+      // Names the one folder it touches. A row is one assistant's copy, so
+      // deleting it here leaves the other assistant's copy — and the library's
+      // original — exactly where they are, and "removed from this computer"
+      // would have promised otherwise.
       content: Text(
-        '"$name" will be removed from this computer and the assistant will '
-        'stop using it. This cannot be undone.',
+        '"$name" will be deleted from ${source.label}\'s own folder and it '
+        'will stop using the skill. Copies given to other assistants stay. '
+        'This cannot be undone.',
       ),
       actions: [
         TextButton(
