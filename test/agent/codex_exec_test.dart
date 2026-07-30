@@ -156,9 +156,19 @@ void main() {
       );
     });
 
+    test(
+      'turn.completed says the turn ended by itself — the chat reads it to tell '
+      'a finished turn from one cut off mid-plan',
+      () {
+        expect(
+          parseCodexEvent({'type': 'turn.completed'}, {}),
+          isA<CodexTurnCompleted>(),
+        );
+      },
+    );
+
     test('turn lifecycle chatter and unknown items surface nothing', () {
       expect(parseCodexEvent({'type': 'turn.started'}, {}), isNull);
-      expect(parseCodexEvent({'type': 'turn.completed'}, {}), isNull);
       expect(
         parseCodexEvent({
           'type': 'item.completed',
@@ -411,5 +421,108 @@ void main() {
         expect(agentPlanUnfinished(const []), isFalse);
       },
     );
+  });
+
+  group('agentTurnStalled — an unticked box is not a failed turn', () {
+    AgentPlanEntry step(String content, AgentPlanStatus status) =>
+        AgentPlanEntry(content: content, status: status);
+
+    final unfinished = [
+      step('Fetch the thread', AgentPlanStatus.done),
+      step('Extract the comments', AgentPlanStatus.active),
+      step('Summarize the themes', AgentPlanStatus.pending),
+    ];
+
+    test(
+      'a turn that worked on its plan and ended by itself answered, whatever '
+      'the boxes say',
+      () {
+        // The Reddit turn: it browsed, pulled 51 comments, summarized them all,
+        // and never revisited its to-do list. Read off the plan alone, that had
+        // the chat put "stopped before finishing" under a finished answer and
+        // offer to hand the work to another agent.
+        expect(
+          agentTurnStalled(
+            plan: unfinished,
+            endedCleanly: true,
+            workedAfterPlan: true,
+            planFirst: false,
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test('a turn that announced steps and ran none of them stalled', () {
+      // The tank-game turn: a plan, "let me write it for you", nothing built.
+      expect(
+        agentTurnStalled(
+          plan: unfinished,
+          endedCleanly: true,
+          workedAfterPlan: false,
+          planFirst: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a turn cut short leaves its open steps undone, work or no work', () {
+      expect(
+        agentTurnStalled(
+          plan: unfinished,
+          endedCleanly: false,
+          workedAfterPlan: true,
+          planFirst: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a plan with every step ticked off is an answer either way', () {
+      final done = [
+        step('Read the files', AgentPlanStatus.done),
+        step('Write the answer', AgentPlanStatus.done),
+      ];
+      expect(
+        agentTurnStalled(
+          plan: done,
+          endedCleanly: false,
+          workedAfterPlan: false,
+          planFirst: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('in planning mode an unfinished plan is the point, never a stall', () {
+      expect(
+        agentTurnStalled(
+          plan: unfinished,
+          endedCleanly: false,
+          workedAfterPlan: false,
+          planFirst: true,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('isAgentWork — thinking about the step is not doing it', () {
+    AgentActivity activity(AgentActivityKind kind) => AgentActivity(
+      id: 'a1',
+      kind: kind,
+      label: 'x',
+      status: AgentActivityStatus.done,
+    );
+
+    test('a command, a look-up or a tool call is work on the plan', () {
+      expect(isAgentWork(activity(AgentActivityKind.command)), isTrue);
+      expect(isAgentWork(activity(AgentActivityKind.web)), isTrue);
+      expect(isAgentWork(activity(AgentActivityKind.tool)), isTrue);
+    });
+
+    test('the model reasoning about what to do next is not', () {
+      expect(isAgentWork(activity(AgentActivityKind.thinking)), isFalse);
+    });
   });
 }

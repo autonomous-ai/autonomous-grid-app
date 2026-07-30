@@ -248,6 +248,11 @@ class CodexChatSender implements ChatSender {
     final updates = StreamController<ChatSendUpdate>();
     String? failure;
     var settled = false;
+    // The two facts the stall check reads — see [agentTurnStalled]: whether
+    // Codex ended the turn itself, and whether it did any work after the last
+    // revision of its plan.
+    var endedCleanly = false;
+    var workedAfterPlan = false;
 
     final events = run.events.listen(
       (event) {
@@ -255,11 +260,16 @@ class CodexChatSender implements ChatSender {
           case CodexThreadStarted(:final threadId):
             live.threadId = threadId;
           case CodexActivityEvent(:final activity):
+            if (isAgentWork(activity)) workedAfterPlan = true;
             activityLog.upsert(activity);
           case CodexPlanEvent(:final entries):
+            workedAfterPlan = false;
             planLog.replace(entries);
           case CodexFileChangeEvent(:final changes):
+            workedAfterPlan = true;
             _recordAddedFiles(changes);
+          case CodexTurnCompleted():
+            endedCleanly = true;
           case CodexMessageEvent(:final text):
             answer
               ..clear()
@@ -283,11 +293,29 @@ class CodexChatSender implements ChatSender {
         settled = true;
         final reply = answer.toString().trim();
         final plan = _ref.read(agentPlanProvider);
-        // A turn that laid out a plan and never finished it stalled — even with
-        // a line of text, the work it promised didn't happen, so it must not
-        // read as an answer (§5). Planning mode is the exception: there an
-        // unfinished plan is the whole point.
-        final stalled = !planFirst && agentPlanUnfinished(plan);
+        // A turn that announced a plan and stopped before doing it must not read
+        // as an answer (§5) — but an unfinished plan alone doesn't mean that, so
+        // the verdict weighs how the turn ended and what it did (see
+        // [agentTurnStalled]). Shared with Hermes so a stalled turn reads the
+        // same whichever agent ran it.
+        final stalled = agentTurnStalled(
+          plan: plan,
+          endedCleanly: endedCleanly,
+          workedAfterPlan: workedAfterPlan,
+          planFirst: planFirst,
+        );
+        if (stalled) {
+          _ref
+              .read(appLogProvider)
+              .failure(
+                'agent',
+                describeAgentStall(
+                  plan: plan,
+                  endedCleanly: endedCleanly,
+                  workedAfterPlan: workedAfterPlan,
+                ),
+              );
+        }
         final error =
             failure ??
             (stalled

@@ -178,6 +178,59 @@ List<AgentPlanEntry> parseAgentPlan(Object? entries) {
 bool agentPlanUnfinished(List<AgentPlanEntry> plan) =>
     plan.isNotEmpty && plan.any((step) => step.status != AgentPlanStatus.done);
 
+/// Whether a turn that has just ended stalled part-way through its own plan: it
+/// left steps open *and* a fact about the turn says it never got to them.
+///
+/// [agentPlanUnfinished] on its own can't say that — a model routinely does the
+/// work and never ticks the last box. One turn read a 51-comment thread through
+/// the browser, summarized all of it, and left two of three steps open: the plan
+/// was the only thing consulted, so a complete answer landed under "the agent
+/// planned the work but stopped before finishing it", with an offer to hand the
+/// chat to another agent for work already done. Two facts decide it instead:
+///
+/// - [endedCleanly] — the agent's own runtime reported the turn over by itself
+///   (Codex's `turn.completed` or a clean exit, ACP's `end_turn`). A turn cut
+///   short — killed, broken stream, token ceiling — with steps still open didn't
+///   do them, whatever text landed.
+/// - [workedAfterPlan] — it ran a command, called a tool or changed a file
+///   *after* it last revised the plan. Announcing steps and going straight to
+///   "let me write it for you" is the stall this check was written for; five more
+///   tool calls and then a long answer is not.
+///
+/// Planning mode is never a stall — there an unfinished plan is the whole point
+/// — so the caller passes [planFirst].
+bool agentTurnStalled({
+  required List<AgentPlanEntry> plan,
+  required bool endedCleanly,
+  required bool workedAfterPlan,
+  required bool planFirst,
+}) =>
+    !planFirst &&
+    agentPlanUnfinished(plan) &&
+    (!endedCleanly || !workedAfterPlan);
+
+/// Whether an activity row is the agent *doing* something — running a command,
+/// calling a tool, looking something up — rather than thinking about it. The
+/// stall check above counts work, and a model's own reasoning isn't work.
+bool isAgentWork(AgentActivity activity) =>
+    activity.kind != AgentActivityKind.thinking;
+
+/// The evidence behind a stall verdict, for the log.
+///
+/// The line the user reads names none of it, and a log that only repeats that
+/// line diagnoses nothing (§6) — working out why one finished answer was called a
+/// stall meant reconstructing the turn from Codex's own session files. These are
+/// the three inputs [agentTurnStalled] weighed, so the next report is a read of
+/// the log instead.
+String describeAgentStall({
+  required List<AgentPlanEntry> plan,
+  required bool endedCleanly,
+  required bool workedAfterPlan,
+}) =>
+    'turn stalled mid-plan (ended cleanly: $endedCleanly, worked after the '
+    'plan: $workedAfterPlan) — '
+    '${plan.map((step) => '${step.content} [${step.status.name}]').join(' · ')}';
+
 /// A persisted status is this enum's own [AgentPlanStatus] name; unknown reads as
 /// pending — a step we can't place is one not started, never one shown as done.
 AgentPlanStatus _planStatusByName(Object? raw) {

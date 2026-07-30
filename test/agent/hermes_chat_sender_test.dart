@@ -532,8 +532,8 @@ void main() {
   );
 
   test(
-    'a turn that lays out a plan then stops before finishing it is a failure, '
-    'not an answer — even with a line of text',
+    'a turn that lays out a plan and then does nothing about it is a failure, '
+    'not an answer — even with a line of text, and even ending cleanly',
     () async {
       final service = _FakeAcp.single([
         const HermesAcpPlan([
@@ -542,6 +542,7 @@ void main() {
           AgentPlanEntry(content: 'Write', status: AgentPlanStatus.pending),
         ]),
         const HermesAcpMessage('Let me write it for you.'),
+        const HermesAcpTurnEnded('end_turn'),
       ]);
       final container = _container(service, tmp);
 
@@ -550,8 +551,84 @@ void main() {
           .send(network: _credential(), model: 'm', history: _history('go'))
           .toList();
 
-      // A bare "let me write it" over an unfinished plan must not read as done.
+      // A bare "let me write it" with no step run after the plan must not read
+      // as done, however tidily the turn ended.
       expect(updates.last, isA<ChatSendFailure>());
+      expect((updates.last as ChatSendFailure).error, kAgentStalledPlan);
+    },
+  );
+
+  test(
+    'a turn that works through its plan and answers is an answer, even with a '
+    'step left unticked',
+    () async {
+      final service = _FakeAcp.single([
+        const HermesAcpPlan([
+          AgentPlanEntry(
+            content: 'Read the thread',
+            status: AgentPlanStatus.done,
+          ),
+          AgentPlanEntry(
+            content: 'Summarize it',
+            status: AgentPlanStatus.active,
+          ),
+        ]),
+        // The work the plan promised, after the plan — a model that then answers
+        // in full but never ticks the last box has not stalled.
+        const HermesAcpActivity(
+          AgentActivity(
+            id: 't1',
+            kind: AgentActivityKind.command,
+            label: 'read the comments',
+            status: AgentActivityStatus.done,
+          ),
+        ),
+        const HermesAcpMessage('All 51 comments, by theme: …'),
+        const HermesAcpTurnEnded('end_turn'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('go'))
+          .toList();
+
+      expect(updates.last, isA<ChatSendSuccess>());
+      final reply = (updates.last as ChatSendSuccess).reply;
+      expect(reply.text, 'All 51 comments, by theme: …');
+      // The unticked step still rides on the answer, so the gap is visible
+      // without the app calling a finished turn a failure.
+      expect(reply.plan.last.status, AgentPlanStatus.active);
+    },
+  );
+
+  test(
+    'a turn cut short mid-plan is a stall however much work it got through',
+    () async {
+      final service = _FakeAcp.single([
+        const HermesAcpPlan([
+          AgentPlanEntry(content: 'Read', status: AgentPlanStatus.done),
+          AgentPlanEntry(content: 'Write', status: AgentPlanStatus.active),
+        ]),
+        const HermesAcpActivity(
+          AgentActivity(
+            id: 't1',
+            kind: AgentActivityKind.command,
+            label: 'write the file',
+            status: AgentActivityStatus.running,
+          ),
+        ),
+        const HermesAcpMessage('Writing it now…'),
+        // Out of room, not done: the step it was on never landed.
+        const HermesAcpTurnEnded('max_tokens'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('go'))
+          .toList();
+
       expect((updates.last as ChatSendFailure).error, kAgentStalledPlan);
     },
   );
