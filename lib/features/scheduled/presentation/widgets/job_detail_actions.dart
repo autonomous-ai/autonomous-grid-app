@@ -66,6 +66,23 @@ class _ActionsState extends ConsumerState<_Actions> {
           icon: const Icon(Icons.play_arrow_rounded, size: AppControl.iconSize),
           label: const Text('Run now'),
         ),
+        // Only for a task the scheduler is skipping because the model moved on:
+        // it's the one failure the user can clear from here, and offering it on a
+        // healthy task would ask them to fix something that isn't broken.
+        if (job.failed && isModelDriftSkip(job.lastError!))
+          OutlinedButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _do(
+                    (c) => c.useCurrentModel(job.id),
+                    'Back on schedule — it will run with your current AI model.',
+                  ),
+            icon: const Icon(
+              Icons.autorenew_rounded,
+              size: AppControl.iconSize,
+            ),
+            label: const Text('Use the current model'),
+          ),
         OutlinedButton.icon(
           onPressed: _busy
               ? null

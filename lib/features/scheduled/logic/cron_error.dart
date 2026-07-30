@@ -28,8 +28,8 @@ CronRunError describeCronRunError(String raw) {
           'Paused to avoid an unexpected charge — the model your assistant '
           'uses has changed since this task was created, so it was not run.',
       hint:
-          'Delete this task and create it again to run it on the '
-          'current model.',
+          'Choose "Use the current model" above to run it on the model this '
+          'computer uses now.',
     );
   }
   if (isNoModelConfigured(text)) {

@@ -23,8 +23,9 @@ void main() {
       expect(result.summary, isNot(contains('RuntimeError')));
       expect(result.summary, isNot(contains('cronjob')));
       expect(result.summary, isNot(contains('#44585')));
-      expect(result.hint, isNotNull);
-      expect(result.hint, contains('create it again'));
+      // The next step is the action the task's own screen offers, not the old
+      // "delete it and start over" that cost the user the task's results.
+      expect(result.hint, contains('Use the current model'));
     });
 
     test('matches the guard even when only the unpinned/drift wording is '

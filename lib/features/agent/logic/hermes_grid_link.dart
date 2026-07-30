@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
+import '../../../infrastructure/cli/hermes_cron_rearm.dart';
+import '../../../infrastructure/cli/hermes_cron_service.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
@@ -97,18 +100,51 @@ class HermesGridLink {
     // for the next turn, and the `grid-web` skill covers search meanwhile.
     final setup = _ref.read(hermesAcpSetupProvider);
     if (setup != null) unawaited(setup.ensureWebSearch());
+    // The model a scheduled task runs on just changed under it, and Hermes
+    // fail-closes such a task rather than spending on a model nobody chose. The
+    // user chose this one, here — so let the tasks follow it instead of quietly
+    // dying. Fire-and-forget: pointing at a grid is on the way to a chat message
+    // and must not wait on the scheduler.
+    unawaited(_letTasksFollow(model));
     _ref.read(hermesConfiguredProvider.notifier).set(key);
     return null;
   }
 
-  /// Whether Hermes already has a model to answer with — its config names one,
-  /// whether this app wrote it or the user did by hand. Lets a caller tell "not
+  /// Re-arm the saved tasks against [model]. Best-effort by design: a task that
+  /// can't be re-armed still says so on its own screen (with a button to retry),
+  /// so a hiccup here must not fail the thing the user actually asked for — but
+  /// it is logged, because "my tasks stopped running" is otherwise invisible.
+  Future<void> _letTasksFollow(String model) async {
+    final cron = _ref.read(hermesCronServiceProvider);
+    if (cron == null) return;
+    final log = _ref.read(appLogProvider);
+    try {
+      final rearmed = await cron.followModel(model);
+      if (rearmed.isEmpty) return;
+      log.info(
+        'tasks',
+        're-armed ${rearmed.length} scheduled task(s) on $model: '
+            '${rearmed.join(', ')}',
+      );
+    } on CronRearmException catch (error) {
+      log.failure('tasks', "couldn't re-arm scheduled tasks: ${error.message}");
+    }
+  }
+
+  /// The model Hermes answers with, whether this app wrote it or the user did by
+  /// hand — null when its config names none. What an unattended surface has to
+  /// run on, so a scheduled task can be told which model it's about to use.
+  Future<String?> configuredModel() async {
+    final model = await _config.valueAt(['model', 'default']);
+    if (model is! String) return null;
+    final trimmed = model.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// Whether Hermes already has a model to answer with. Lets a caller tell "not
   /// pointed at anything yet" (the bot would be mute) from "configured
   /// elsewhere", instead of blocking someone who set Hermes up themselves.
-  Future<bool> hasModel() async {
-    final model = await _config.valueAt(['model', 'default']);
-    return model is String && model.trim().isNotEmpty;
-  }
+  Future<bool> hasModel() async => await configuredModel() != null;
 
   /// Point Hermes at whatever grid the app has selected, resolving a model for
   /// it, so an unattended surface can actually answer. Returns null when Hermes

@@ -10,10 +10,12 @@ import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/network/logic/network_models_provider.dart';
 import 'package:grid_app/features/scheduled/logic/job_schedule.dart';
+import 'package:grid_app/features/scheduled/logic/job_status.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_job.dart';
 import 'package:grid_app/features/scheduled/logic/scheduled_jobs_controller.dart';
 import 'package:grid_app/features/scheduled/logic/task_power_controller.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
+import 'package:grid_app/infrastructure/cli/hermes_cron_rearm.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_task_policy.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
@@ -56,7 +58,14 @@ class _FakeCron implements HermesCronService {
   String? jobsJson;
   String? failWith;
 
+  /// When set, a re-arm reports it couldn't be applied — the path where Hermes's
+  /// own store refuses the change.
+  String? rearmFailWith;
+
   final calls = <String>[];
+
+  /// Every re-arm asked for: which model, and whether it was for one task.
+  final followed = <({String model, String? onlyJobId})>[];
   ({
     String schedule,
     String prompt,
@@ -122,6 +131,17 @@ class _FakeCron implements HermesCronService {
   }
 
   @override
+  Future<List<String>> followModel(String model, {String? onlyJobId}) async {
+    calls.add('follow:$model');
+    followed.add((model: model, onlyJobId: onlyJobId));
+    final message = rearmFailWith;
+    if (message != null) throw CronRearmException(message);
+    // The re-armed task no longer carries the skip that stranded it.
+    if (onlyJobId != null) jobsJson = _oneJob;
+    return onlyJobId == null ? const [] : [onlyJobId];
+  }
+
+  @override
   Future<bool> schedulerRunning() async => true;
 
   @override
@@ -139,6 +159,22 @@ const _oneJob = '''
   "last_run_at": null,
   "last_status": null,
   "last_error": null
+}]}
+''';
+
+/// The same task after Hermes skipped it: the model moved on since it was
+/// created, so every run fails closed until something re-arms it.
+const _blockedJob = '''
+{"jobs": [{
+  "id": "abc123",
+  "name": "Daily digest",
+  "prompt": "Summarise my folder",
+  "schedule": {"kind": "cron", "expr": "0 8 * * 1-5"},
+  "enabled": true,
+  "model": null,
+  "model_snapshot": "auto",
+  "last_status": "error",
+  "last_error": "RuntimeError: Skipped to prevent unintended spend: global inference config drifted since this job was created (model 'auto' -> 'maker/m1'), and this job is unpinned."
 }]}
 ''';
 
@@ -492,6 +528,101 @@ void main() {
         .read(scheduledJobsProvider.notifier)
         .runNow('abc123');
     expect(error, contains("isn't set up to run tasks"));
+  });
+
+  group('a task stranded by a model change', () {
+    /// Hermes already answers with a model, so the action has one to hand the
+    /// scheduler without going through a grid.
+    Future<void> configureModel() =>
+        HermesConfigFile(home: workspace.path).edit(
+          (editor) =>
+              HermesConfigFile.upsert(editor, ['model', 'default'], 'mine/own'),
+        );
+
+    test('goes back on schedule in one action, on the model this computer '
+        'uses now — its results are not thrown away', () async {
+      await configureModel();
+      final h = harness(jobsJson: _blockedJob);
+      await h.container.read(scheduledJobsProvider.future);
+      expect(
+        jobStatusOf(h.container.read(scheduledJobsProvider).value!.single),
+        JobStatus.blocked,
+      );
+
+      final error = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .useCurrentModel('abc123');
+
+      expect(error, isNull);
+      expect(h.cron.followed.single.model, 'mine/own');
+      expect(
+        h.cron.followed.single.onlyJobId,
+        'abc123',
+        reason: 'only the task the user asked about is touched',
+      );
+      expect(
+        jobStatusOf(h.container.read(scheduledJobsProvider).value!.single),
+        JobStatus.running,
+        reason: 'the screen must stop saying "won\'t run" once it will',
+      );
+    });
+
+    test('with no model set for tasks, the action says what to fix instead of '
+        'pretending it worked', () async {
+      final h = harness(jobsJson: _blockedJob);
+      await h.container.read(scheduledJobsProvider.future);
+
+      final error = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .useCurrentModel('abc123');
+
+      expect(error, contains('no AI model set'));
+      expect(h.cron.followed, isEmpty);
+    });
+
+    test('a scheduler that refuses the change comes back as a line to show, '
+        'not a silent success', () async {
+      await configureModel();
+      final h = harness(jobsJson: _blockedJob);
+      h.cron.rearmFailWith = 'ValueError: no such job';
+      await h.container.read(scheduledJobsProvider.future);
+
+      final error = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .useCurrentModel('abc123');
+
+      expect(error, contains('ValueError: no such job'));
+    });
+  });
+
+  test('switching the model the assistant uses lets the saved tasks follow it '
+      '— otherwise the scheduler skips every one of them from then on', () async {
+    final h = harness(jobsJson: _blockedJob);
+    await h.container.read(scheduledJobsProvider.future);
+
+    // Saving a task points Hermes at the selected grid, which is where the model
+    // changes. The re-arm rides along without holding that up, so let the
+    // microtask it was fired on run before looking.
+    await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: 'Digest',
+          prompt: 'Summarise',
+          schedule: const JobSchedule(
+            cadence: JobCadence.everyDay,
+            hour: 8,
+            minute: 0,
+          ),
+        );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(h.cron.followed, isNotEmpty);
+    expect(h.cron.followed.first.model, 'maker/m1');
+    expect(
+      h.cron.followed.first.onlyJobId,
+      isNull,
+      reason: 'every stranded task follows the new model, not just one',
+    );
   });
 
   test('deleting the open task closes the detail pane with it', () async {
