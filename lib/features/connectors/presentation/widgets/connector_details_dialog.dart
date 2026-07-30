@@ -22,24 +22,31 @@ import 'connector_mark.dart';
 /// "capabilities"; and where something is genuinely missing, the sentence says
 /// what that means for them rather than naming the field that is null.
 ///
-/// [action] is the row's own Connect / Remove control, handed in rather than
-/// rebuilt. Passing the widget keeps the confirm wording, the toasts and the
-/// spinner identical in both places — and keeps this file from importing the
-/// list that opens it.
+/// [actionBuilder] supplies the row's own Connect / Remove control, and is handed
+/// a `close` it can call once the action lands. A builder rather than a plain
+/// widget so the callback can carry *this dialog's* context: popping with the
+/// caller's would work today only because the dialog happens to be the topmost
+/// route on the same navigator, and stop working the day one of these opens
+/// inside a nested one.
+///
+/// Reusing the caller's widget — rather than rebuilding the control here — is
+/// what keeps the confirm wording, the toasts and the spinner identical in both
+/// places, and keeps this file from importing the list that opens it.
 Future<void> showConnectorDetailsDialog(
   BuildContext context,
   Connector connector, {
-  Widget? action,
+  Widget Function(VoidCallback close)? actionBuilder,
 }) => showDialog<void>(
   context: context,
-  builder: (_) => _DetailsDialog(connector: connector, action: action),
+  builder: (_) =>
+      _DetailsDialog(connector: connector, actionBuilder: actionBuilder),
 );
 
 class _DetailsDialog extends StatelessWidget {
-  const _DetailsDialog({required this.connector, this.action});
+  const _DetailsDialog({required this.connector, this.actionBuilder});
 
   final Connector connector;
-  final Widget? action;
+  final Widget Function(VoidCallback close)? actionBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +104,10 @@ class _DetailsDialog extends StatelessWidget {
                   ],
                 ),
               ),
-              if (action != null) ...[const SizedBox(width: 12), action!],
+              if (actionBuilder != null) ...[
+                const SizedBox(width: 12),
+                actionBuilder!(() => Navigator.of(context).pop()),
+              ],
             ],
           ),
         ],

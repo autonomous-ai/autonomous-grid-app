@@ -105,7 +105,8 @@ class _CatalogRow extends ConsumerWidget {
       onTap: () => showConnectorDetailsDialog(
         context,
         connector,
-        action: ConnectorAction(connector: connector),
+        actionBuilder: (close) =>
+            ConnectorAction(connector: connector, onSettled: close),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,9 +172,22 @@ class _CatalogRow extends ConsumerWidget {
 /// in both places — a second copy of this logic would drift the first time only
 /// one of them was edited.
 class ConnectorAction extends ConsumerStatefulWidget {
-  const ConnectorAction({super.key, required this.connector});
+  const ConnectorAction({super.key, required this.connector, this.onSettled});
 
   final Connector connector;
+
+  /// Called once a connect or disconnect has actually landed.
+  ///
+  /// Exists for the detail dialog, which closes itself here. It has to: the
+  /// dialog is handed a [Connector] *value*, a snapshot taken when it opened, so
+  /// after a sign-in it would go on reporting "Not connected" beside a Connect
+  /// button that had already worked. Rebuilding it from a provider instead would
+  /// be the other fix, and a worse one — the row it was opened from can vanish
+  /// into a different section, leaving the dialog watching nothing.
+  ///
+  /// The row passes nothing. A `Navigator.pop` from there would close the
+  /// settings page.
+  final VoidCallback? onSettled;
 
   @override
   ConsumerState<ConnectorAction> createState() => _ConnectorActionState();
@@ -193,7 +207,21 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
     // opens — cancelled, timed out, refused — the row says quietly itself.
     if (error != null) {
       toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
+      return;
     }
+    await _settleIfLinked();
+  }
+
+  /// Tell [ConnectorAction.onSettled] whether a credential is now held.
+  ///
+  /// Asked of the store rather than of `connect`'s return value, because that
+  /// value cannot answer it: a cancelled browser, a timeout and a completed
+  /// sign-in all come back null — the row is meant to explain those itself, so
+  /// none of them is an "error". What separates them is whether a token landed.
+  Future<void> _settleIfLinked() async {
+    final tokens = await ref.read(connectorTokensProvider.future);
+    if (!mounted) return;
+    if (tokens.containsKey(widget.connector.id)) widget.onSettled?.call();
   }
 
   /// Hand the credential back: forgotten at the gateway, then here, then removed
@@ -215,7 +243,15 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
     if (mounted) setState(() => _busy = false);
     if (error != null) {
       toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
+      return;
     }
+    // Same staleness problem in reverse: a dialog left open after a disconnect
+    // would still offer Remove for a credential that is gone.
+    //
+    // Guarded, like the connect path: closing the dialog mid-request disposes
+    // this widget, and calling `close` then would pop whatever route is now on
+    // top — the settings page.
+    if (mounted) widget.onSettled?.call();
   }
 
   @override
@@ -394,7 +430,10 @@ class _McpRowState extends ConsumerState<_McpRow> {
           ? () => showConnectorDetailsDialog(
               context,
               widget.connector,
-              action: ConnectorAction(connector: widget.connector),
+              actionBuilder: (close) => ConnectorAction(
+                connector: widget.connector,
+                onSettled: close,
+              ),
             )
           : () => showEditMcpDialog(context, server, signedIn: false),
       child: Row(
