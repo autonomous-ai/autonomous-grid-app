@@ -1,7 +1,21 @@
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/grid_paths.dart';
+import '../../features/agent/logic/hermes_tool.dart';
+import 'hermes_cron_rearm.dart';
 import 'host_environment.dart';
+
+/// The scheduler seam, or null when the agent isn't installed — there is nothing
+/// to schedule *on* then, and the screen says so instead of failing later.
+///
+/// Lives beside the service rather than in the tasks feature: pointing Hermes at
+/// a grid re-arms the saved tasks, so the agent feature needs this seam too.
+final hermesCronServiceProvider = Provider<HermesCronService?>((ref) {
+  final path = ref.watch(hermesPathProvider);
+  return path == null ? null : HermesCronServiceImpl(path);
+});
 
 /// Raised when a `hermes cron` command fails, carrying the line the CLI printed
 /// so the controller can humanize it instead of inventing a message.
@@ -73,6 +87,19 @@ abstract interface class HermesCronService {
   /// can try a task without waiting for its time to come round.
   Future<void> runNow(String id);
 
+  /// Let the saved tasks run on [model] — the model this computer answers with
+  /// now — and hand back the ids that needed it.
+  ///
+  /// Hermes skips a task whose global model changed since it was created and
+  /// spends nothing, leaving a raw "Skipped to prevent unintended spend"
+  /// (#44585). The app is what changed that model — it points Hermes at the grid
+  /// the user picked — so without this every saved task dies the moment the user
+  /// switches model, and stays dead. Pass [onlyJobId] to re-arm the one task the
+  /// user asked about.
+  ///
+  /// Throws [CronRearmException] when the change couldn't be applied.
+  Future<List<String>> followModel(String model, {String? onlyJobId});
+
   /// Whether the scheduler that fires jobs is alive. Jobs are stored either way;
   /// without it they simply never run — so the UI has to be able to say so.
   Future<bool> schedulerRunning();
@@ -141,6 +168,16 @@ class HermesCronServiceImpl implements HermesCronService {
     }
     runs.sort((a, b) => a.at.compareTo(b.at));
     return runs;
+  }
+
+  @override
+  Future<List<String>> followModel(String model, {String? onlyJobId}) async {
+    final raw = await readJobsJson();
+    if (raw == null) return const [];
+    return HermesCronRearm(
+      binPath: binPath,
+      home: _home,
+    ).apply(raw, model, onlyJobId: onlyJobId);
   }
 
   @override

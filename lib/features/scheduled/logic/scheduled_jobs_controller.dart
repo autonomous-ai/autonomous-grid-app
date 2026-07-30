@@ -1,21 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/hermes_cron_rearm.dart';
 import '../../../infrastructure/cli/hermes_cron_service.dart';
 import '../../agent/logic/agent_providers.dart';
 import '../../agent/logic/hermes_grid_link.dart';
-import '../../agent/logic/hermes_tool.dart';
 import '../../projects/logic/project_tasks_store.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'task_delivery.dart';
 import 'task_power_controller.dart';
-
-/// The scheduler seam, or null when the agent isn't installed — there is nothing
-/// to schedule *on* then, and the screen says so instead of failing later.
-final hermesCronServiceProvider = Provider<HermesCronService?>((ref) {
-  final path = ref.watch(hermesPathProvider);
-  return path == null ? null : HermesCronServiceImpl(path);
-});
 
 /// Whether the thing that actually fires jobs is alive. Jobs are saved either
 /// way, so this is what lets the screen tell the truth: "saved, but nothing will
@@ -161,6 +154,31 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
       await this.runNow(created.id);
     }
     return (error: null, id: created?.id);
+  }
+
+  /// Let a task the scheduler has been skipping run on the model this computer
+  /// uses now, and clear the skip it was showing.
+  ///
+  /// Hermes stops running a task whose model changed after it was created — the
+  /// app changed it, by pointing Hermes at another grid or model. Re-creating the
+  /// task is the only other way out and costs the user its results, so this is
+  /// the one-tap path back for a task that's already stranded.
+  Future<String?> useCurrentModel(String id) async {
+    final service = ref.read(hermesCronServiceProvider);
+    if (service == null) return _noAgent;
+    final model = await ref.read(hermesGridLinkProvider).configuredModel();
+    if (model == null) {
+      return 'This computer has no AI model set for tasks yet. Pick a grid in '
+          'Chat, then try again.';
+    }
+    try {
+      await service.followModel(model, onlyJobId: id);
+    } on CronRearmException catch (error) {
+      return "Couldn't switch this task to your current model: "
+          '${error.message}';
+    }
+    state = AsyncData(await _load());
+    return null;
   }
 
   Future<String?> pause(String id) => _act((s) => s.pause(id));

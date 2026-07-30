@@ -9,7 +9,6 @@ import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/features/projects/logic/project_tasks_store.dart';
-import 'package:grid_app/features/scheduled/logic/scheduled_jobs_controller.dart';
 import 'package:grid_app/features/scheduled/logic/task_delivery.dart';
 import 'package:grid_app/features/scheduled/logic/task_unread_store.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
@@ -52,6 +51,9 @@ class FakeCron implements HermesCronService {
   Future<void> remove(String id) async {}
   @override
   Future<void> runNow(String id) async {}
+  @override
+  Future<List<String>> followModel(String model, {String? onlyJobId}) async =>
+      const [];
   @override
   Future<bool> schedulerRunning() async => true;
   @override
