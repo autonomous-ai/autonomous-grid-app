@@ -9,6 +9,7 @@ import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
 import '../../projects/logic/project.dart';
+import '../../projects/logic/project_folder_status.dart';
 import '../../projects/presentation/create_project_dialog.dart';
 import '../../projects/presentation/project_menu.dart';
 import '../../scheduled/logic/task_delivery.dart';
@@ -186,7 +187,7 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
     // Reads AppPalette.textSecondary — follow theme flips.
     AppTheme.watch(context);
     final open = _open;
-    final missing = !widget.project.exists;
+    final missing = watchProjectMissing(ref, widget.project);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

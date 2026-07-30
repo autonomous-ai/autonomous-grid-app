@@ -8,6 +8,7 @@ import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/project.dart';
+import '../logic/project_folder_status.dart';
 
 const _menuWidth = 208.0;
 
@@ -107,7 +108,7 @@ class _ProjectMenuButtonState extends ConsumerState<ProjectMenuButton> {
     // to the brightness — the menu's *contents* subscribe separately, in
     // _ProjectMenuContent, since they live in an overlay this build can't reach.
     AppTheme.watch(context);
-    final reveal = _project.exists;
+    final reveal = !watchProjectMissing(ref, _project);
     return MenuAnchor(
       controller: _menu,
       // The shared surface, not a hand-rolled one. This menu opens over the
