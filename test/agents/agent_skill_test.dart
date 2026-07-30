@@ -93,7 +93,10 @@ Write ten lines.''';
     test(
       'reads nothing (rather than throwing) when the store is missing',
       () async {
-        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.store), isEmpty);
+        expect(
+          await AgentSkillScanner(home: home.path).scan(SkillSource.store),
+          isEmpty,
+        );
       },
     );
 
@@ -107,7 +110,9 @@ Write ten lines.''';
         '---\nname: notes\ndescription: Read my notes.\n---\n',
       );
 
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
+      final skills = await AgentSkillScanner(
+        home: home.path,
+      ).scan(SkillSource.store);
 
       final byName = {for (final skill in skills) skill.name: skill};
       expect(byName['grid-image-gen']!.owner, SkillOwner.public);
@@ -180,38 +185,45 @@ Write ten lines.''';
         '---\nname: older\ndescription: d\n---\n',
       );
 
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
+      final skills = await AgentSkillScanner(
+        home: home.path,
+      ).scan(SkillSource.store);
 
       expect(skills.single.owner, SkillOwner.user);
     });
 
-    test('the user\'s own come first, then the most recently changed', () async {
-      final old = await writeSkill(
-        '.grid/skills/$kUserSkillsDir/older',
-        '---\nname: older\ndescription: d\n---\n',
-      );
-      await old.setLastModified(DateTime(2026, 7, 1));
-      final fresh = await writeSkill(
-        '.grid/skills/$kUserSkillsDir/newer',
-        '---\nname: newer\ndescription: d\n---\n',
-      );
-      await fresh.setLastModified(DateTime(2026, 7, 28));
-      // Rewritten by the last install, so the newest file on disk by far — it
-      // still must not outrank a skill the user wrote.
-      final installed = await writeSkill(
-        '.grid/skills/$kPublicSkillsDir/grid-web',
-        '---\nname: grid-web\ndescription: d\n---\n',
-      );
-      await installed.setLastModified(DateTime(2026, 7, 30));
+    test(
+      'the user\'s own come first, then the most recently changed',
+      () async {
+        final old = await writeSkill(
+          '.grid/skills/$kUserSkillsDir/older',
+          '---\nname: older\ndescription: d\n---\n',
+        );
+        await old.setLastModified(DateTime(2026, 7, 1));
+        final fresh = await writeSkill(
+          '.grid/skills/$kUserSkillsDir/newer',
+          '---\nname: newer\ndescription: d\n---\n',
+        );
+        await fresh.setLastModified(DateTime(2026, 7, 28));
+        // Rewritten by the last install, so the newest file on disk by far — it
+        // still must not outrank a skill the user wrote.
+        final installed = await writeSkill(
+          '.grid/skills/$kPublicSkillsDir/grid-web',
+          '---\nname: grid-web\ndescription: d\n---\n',
+        );
+        await installed.setLastModified(DateTime(2026, 7, 30));
 
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
+        final skills = await AgentSkillScanner(
+          home: home.path,
+        ).scan(SkillSource.store);
 
-      expect(skills.map((s) => s.name).toList(), [
-        'newer',
-        'older',
-        'grid-web',
-      ]);
-      expect(skills.first.updatedAt, DateTime(2026, 7, 28));
-    });
+        expect(skills.map((s) => s.name).toList(), [
+          'newer',
+          'older',
+          'grid-web',
+        ]);
+        expect(skills.first.updatedAt, DateTime(2026, 7, 28));
+      },
+    );
   });
 }

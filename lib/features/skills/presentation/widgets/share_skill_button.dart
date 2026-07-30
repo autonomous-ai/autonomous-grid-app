@@ -125,5 +125,4 @@ class _ShareSkillButtonState extends ConsumerState<ShareSkillButton> {
       ),
     );
   }
-
 }

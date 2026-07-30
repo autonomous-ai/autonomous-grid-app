@@ -124,31 +124,28 @@ void main() {
       expect(kGridServeScript, contains('export PATH='));
     });
 
-    test(
-      'installing writes it where each agent looks: Codex flat in its own '
-      'folder, Hermes in the store\'s public one',
-      () async {
-        for (final agent in AgentTool.values) {
-          await AgentSkillInstaller(home: tmp.path).install(agent);
-        }
+    test('installing writes it where each agent looks: Codex flat in its own '
+        'folder, Hermes in the store\'s public one', () async {
+      for (final agent in AgentTool.values) {
+        await AgentSkillInstaller(home: tmp.path).install(agent);
+      }
 
-        final codex = File('${tmp.path}/.codex/skills/grid-serve/SKILL.md');
-        final hermes = File(
-          '${tmp.path}/.grid/skills/$kPublicSkillsDir/grid-serve/SKILL.md',
-        );
-        expect(codex.existsSync(), isTrue);
-        expect(hermes.existsSync(), isTrue);
-        expect(
-          File(
-            '${tmp.path}/.codex/skills/grid-serve/scripts/serve.py',
-          ).existsSync(),
-          isTrue,
-        );
-        // Same skill, same words, whichever agent is answering.
-        expect(codex.readAsStringSync(), contains('name: grid-serve'));
-        expect(hermes.readAsStringSync(), contains('name: grid-serve'));
-      },
-    );
+      final codex = File('${tmp.path}/.codex/skills/grid-serve/SKILL.md');
+      final hermes = File(
+        '${tmp.path}/.grid/skills/$kPublicSkillsDir/grid-serve/SKILL.md',
+      );
+      expect(codex.existsSync(), isTrue);
+      expect(hermes.existsSync(), isTrue);
+      expect(
+        File(
+          '${tmp.path}/.codex/skills/grid-serve/scripts/serve.py',
+        ).existsSync(),
+        isTrue,
+      );
+      // Same skill, same words, whichever agent is answering.
+      expect(codex.readAsStringSync(), contains('name: grid-serve'));
+      expect(hermes.readAsStringSync(), contains('name: grid-serve'));
+    });
 
     test('a rewrite drops a stale script instead of leaving two copies the '
         'agent could run', () async {

@@ -72,10 +72,9 @@ class SkillAuthor implements SkillWriter {
     if (slug.isEmpty) return false;
     final root = Directory(_root);
     if (!root.existsSync()) return false;
-    return root
-        .listSync()
-        .whereType<Directory>()
-        .any((folder) => Directory('${folder.path}/$slug').existsSync());
+    return root.listSync().whereType<Directory>().any(
+      (folder) => Directory('${folder.path}/$slug').existsSync(),
+    );
   }
 
   /// Create the skill in the shared store and return its folder.

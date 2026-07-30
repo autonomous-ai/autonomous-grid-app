@@ -81,12 +81,15 @@ final List<AgentTool> kSkillAgents = [
 /// is read back off the library by name, so the folder only has to be somewhere
 /// the agent looks. One shape also means one place a copy can be: install and
 /// a later hand-share write the same path instead of two copies of one skill.
-Directory agentSkillCopy(AgentTool agent, String home, String slug) =>
-    switch (agent) {
-      AgentTool.hermes => Directory('${SkillSource.hermes.root(home).path}/$slug'),
-      AgentTool.codex => Directory('${SkillSource.codex.root(home).path}/$slug'),
-      AgentTool.claude => Directory('${SkillSource.claude.root(home).path}/$slug'),
-    };
+Directory agentSkillCopy(
+  AgentTool agent,
+  String home,
+  String slug,
+) => switch (agent) {
+  AgentTool.hermes => Directory('${SkillSource.hermes.root(home).path}/$slug'),
+  AgentTool.codex => Directory('${SkillSource.codex.root(home).path}/$slug'),
+  AgentTool.claude => Directory('${SkillSource.claude.root(home).path}/$slug'),
+};
 
 /// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
 /// which every agent can already reach.

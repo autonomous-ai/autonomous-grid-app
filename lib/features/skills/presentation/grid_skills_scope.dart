@@ -39,9 +39,7 @@ class _GridSkillsScopeState extends ConsumerState<GridSkillsScope> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       try {
-        await ref
-            .read(agentSkillInstallerProvider)
-            .install(AgentTool.hermes);
+        await ref.read(agentSkillInstallerProvider).install(AgentTool.hermes);
       } on Object {
         // Best-effort, exactly as on the grid-link path: a failed install costs
         // the user Grid's own skills for this session, and must not cost them

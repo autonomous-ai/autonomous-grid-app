@@ -91,8 +91,7 @@ class _SkillMenuItemState extends State<SkillMenuItem> {
               SizedBox(
                 width: 16,
                 child:
-                    widget.leading ??
-                    Icon(widget.icon, size: 15, color: ink),
+                    widget.leading ?? Icon(widget.icon, size: 15, color: ink),
               ),
               const SizedBox(width: 10),
               Expanded(
