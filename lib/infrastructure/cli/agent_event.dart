@@ -192,22 +192,28 @@ bool agentPlanUnfinished(List<AgentPlanEntry> plan) =>
 ///   (Codex's `turn.completed` or a clean exit, ACP's `end_turn`). A turn cut
 ///   short — killed, broken stream, token ceiling — with steps still open didn't
 ///   do them, whatever text landed.
-/// - [workedAfterPlan] — it ran a command, called a tool or changed a file
-///   *after* it last revised the plan. Announcing steps and going straight to
-///   "let me write it for you" is the stall this check was written for; five more
-///   tool calls and then a long answer is not.
+/// - [workedAtAll] — it ran a command, called a tool or changed a file at some
+///   point in the turn. Announcing steps and going straight to "let me write it
+///   for you" is the stall this check was written for; sixty tool calls and then
+///   a long answer is not.
+///
+/// Deliberately *not* "worked since it last revised the plan": that read the
+/// agent's rhythm backwards. A review turn ran 66 commands, ticked five of its
+/// six boxes in one closing `update_plan`, then wrote the review — its own
+/// book-keeping was the last thing to happen, so every command before it counted
+/// for nothing and a finished review was called a stall. The price of the looser
+/// fact is a turn that works, plans more, then only promises the rest: that now
+/// reads as an answer, which is the cheaper mistake.
 ///
 /// Planning mode is never a stall — there an unfinished plan is the whole point
 /// — so the caller passes [planFirst].
 bool agentTurnStalled({
   required List<AgentPlanEntry> plan,
   required bool endedCleanly,
-  required bool workedAfterPlan,
+  required bool workedAtAll,
   required bool planFirst,
 }) =>
-    !planFirst &&
-    agentPlanUnfinished(plan) &&
-    (!endedCleanly || !workedAfterPlan);
+    !planFirst && agentPlanUnfinished(plan) && (!endedCleanly || !workedAtAll);
 
 /// Whether an activity row is the agent *doing* something — running a command,
 /// calling a tool, looking something up — rather than thinking about it. The
@@ -225,10 +231,10 @@ bool isAgentWork(AgentActivity activity) =>
 String describeAgentStall({
   required List<AgentPlanEntry> plan,
   required bool endedCleanly,
-  required bool workedAfterPlan,
+  required bool workedAtAll,
 }) =>
-    'turn stalled mid-plan (ended cleanly: $endedCleanly, worked after the '
-    'plan: $workedAfterPlan) — '
+    'turn stalled mid-plan (ended cleanly: $endedCleanly, worked at all: '
+    '$workedAtAll) — '
     '${plan.map((step) => '${step.content} [${step.status.name}]').join(' · ')}';
 
 /// A persisted status is this enum's own [AgentPlanStatus] name; unknown reads as
