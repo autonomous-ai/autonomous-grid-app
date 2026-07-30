@@ -52,7 +52,7 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
       // "Connect manually", not "Add an MCP server": the rest of this screen
       // speaks in Connect/Disconnect, and a user who doesn't know what MCP is
       // can't tell how this button differs from the Connect on every row.
-      createLabel: 'Connect manually',
+      createLabel: 'Add custom',
       onCreate: showAddMcpDialog,
       // The same definition of "reload" the mutations use, so the button can't
       // drift from them as sources are added.
