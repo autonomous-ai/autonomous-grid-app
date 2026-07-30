@@ -15,10 +15,12 @@ class PlanApproveBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sessions = ref.watch(chatSessionsProvider);
-    if (!sessions.awaitingPlan || sessions.sending) {
-      return const SizedBox.shrink();
-    }
+    // Selected down to the one bool that decides this bar, so a streamed token
+    // doesn't rebuild it — it sits over the composer, on screen throughout.
+    final show = ref.watch(
+      chatSessionsProvider.select((s) => s.awaitingPlan && !s.sending),
+    );
+    if (!show) return const SizedBox.shrink();
     final controller = ref.read(chatSessionsProvider.notifier);
     return ComposerNoticeBar(
       icon: Icons.checklist_rounded,

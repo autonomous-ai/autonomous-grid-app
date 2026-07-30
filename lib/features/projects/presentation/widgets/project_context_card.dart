@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
+import '../../../chat/logic/conversation.dart';
 import '../../logic/project.dart';
 import '../project_actions.dart';
 import 'rail_card.dart';
@@ -19,11 +20,13 @@ class ProjectContextCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final missing = !project.exists;
-    final chats = ref
-        .watch(chatSessionsProvider)
-        .live
-        .where((c) => c.projectId == project.id)
-        .length;
+    // Selected down to the count, so the rail beside a live conversation doesn't
+    // rebuild on every streamed token.
+    final chats = ref.watch(
+      chatSessionsProvider.select(
+        (s) => liveChatCountIn(s.conversations, project.id),
+      ),
+    );
 
     return RailCard(
       icon: Icons.folder_rounded,

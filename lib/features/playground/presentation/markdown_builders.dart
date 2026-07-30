@@ -286,10 +286,7 @@ class CodeBlockBuilder extends MarkdownElementBuilder {
 /// Counts fence markers at the start of a line: an odd number means the last
 /// one never closed, i.e. a code block is still streaming in. Used to withhold
 /// the copy action and defer syntax colouring until the block settles.
-bool markdownFenceIsOpen(String markdown) {
-  final fences = RegExp(
-    r'^[ \t]*```',
-    multiLine: true,
-  ).allMatches(markdown).length;
-  return fences.isOdd;
-}
+bool markdownFenceIsOpen(String markdown) =>
+    _fenceMarker.allMatches(markdown).length.isOdd;
+
+final _fenceMarker = RegExp(r'^[ \t]*```', multiLine: true);

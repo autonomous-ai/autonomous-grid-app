@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -27,6 +28,13 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   static const _maxRecent = 5;
 
   bool _ready = false;
+
+  /// The rows the menu currently holds, so [_rebuildMenu] can tell a change
+  /// worth a native call from the many that aren't. Every chat state change —
+  /// including each streamed token and each chat switch — asks for a rebuild,
+  /// and `setContextMenu` is a platform-channel round trip: doing one per token
+  /// stalled the frame the user was reading.
+  List<({String id, String label})>? _menuChats;
 
   @override
   void initState() {
@@ -58,9 +66,16 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
 
   /// Rebuilds the context menu so its "Recent" list stays in step with the chats
   /// the user has (new ones appear, the agent's renames land).
+  ///
+  /// Only when the rows actually differ: the menu is native, and reinstalling an
+  /// identical one costs a platform-channel round trip on the frame that asked
+  /// for it. Almost every chat state change leaves these five titles alone.
   Future<void> _rebuildMenu() async {
     if (!_ready) return;
-    await trayManager.setContextMenu(Menu(items: _actionItems(_recentChats())));
+    final recent = _recentChats();
+    if (_menuChats != null && listEquals(_menuChats, recent)) return;
+    _menuChats = recent;
+    await trayManager.setContextMenu(Menu(items: _actionItems(recent)));
   }
 
   /// The newest few chats, as (id, label) pairs — the menu only needs a title to
