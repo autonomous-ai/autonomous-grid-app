@@ -477,6 +477,49 @@ void main() {
     });
   });
 
+  group('Claude Code', () {
+    Map<String, dynamic> readSettings() => readJson('.claude/settings.json');
+
+    test('writes the connection into the settings file, where it reaches every '
+        'session — not just the terminal an export was typed in', () async {
+      final result = await sut.apply(ClientApp.claudeCode, _base, _key, const [
+        _model,
+      ]);
+
+      expect(result, isA<ApplyOk>());
+      // It reads the file at startup ⇒ the user is told to restart.
+      expect((result as ApplyOk).note, contains('Restart'));
+      final env = readSettings()['env'] as Map;
+      expect(env[kClaudeBaseUrlEnv], _base);
+      expect(env[kClaudeAuthTokenEnv], _key);
+    });
+
+    test('merges into an existing settings file, keeping the settings the user '
+        'already had, and backs the old one up', () async {
+      final file = File('${home.path}/.claude/settings.json');
+      await file.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode({
+          'permissions': {
+            'allow': ['Bash(git status)'],
+          },
+          'env': {'MY_OWN': 'keep', kClaudeBaseUrlEnv: 'https://old.example'},
+        }),
+      );
+
+      await sut.apply(ClientApp.claudeCode, _base, _key, const [_model]);
+
+      final json = readSettings();
+      // An unrelated setting survives untouched…
+      expect((json['permissions'] as Map)['allow'], ['Bash(git status)']);
+      final env = json['env'] as Map;
+      expect(env['MY_OWN'], 'keep');
+      // …while the stale grid endpoint is repointed at this one.
+      expect(env[kClaudeBaseUrlEnv], _base);
+      expect(File('${file.path}.bak').existsSync(), isTrue);
+    });
+  });
+
   group('Buzz', () {
     Map<String, dynamic> readConfig() =>
         readJson(kBuzzConfigRelPath); // global-agent-config.json under home

@@ -45,6 +45,46 @@ class MissingAppNote extends StatelessWidget {
   }
 }
 
+/// What the selected app needs from the grid that this grid may not give it —
+/// [ClientAppInfo.caveat], shown above the setup rather than left for the user
+/// to discover as a connection error halfway through the steps.
+///
+/// Warn-toned, not error-toned: the steps below it are still worth following
+/// (they keep working the day the grid answers), so this is a heads-up, not a
+/// dead end.
+class AppCaveatNote extends StatelessWidget {
+  const AppCaveatNote({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return GlassCard(
+      style: GlassCardStyle.inset,
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 16, color: AppPalette.warn),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: AppPalette.textSecondary,
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Shown on a media-only grid: the agent needs its own chat model to run and
 /// build the skill, and this grid (images/video) can't be that model. Names the
 /// next step so the user isn't stuck on "No inference provider configured".
