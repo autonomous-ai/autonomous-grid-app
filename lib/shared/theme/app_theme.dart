@@ -202,6 +202,24 @@ abstract final class AppPalette {
   // themes: as a *fill* it reads on either surface.
   static const accent = Color(0xFF2F5BEA);
 
+  /// The fill under a destructive **filled** button — Remove, Delete.
+  ///
+  /// Not `colorScheme.error`, and the reason is what that colour is *for*: dark's
+  /// `#F2544B` is tuned to read as **ink on a dark surface**, which is why
+  /// `AppIconButton` needs one lighter still. As a *fill* it leaves white
+  /// lettering at 3.42:1, under the 4.5:1 floor — and Material's own `onError`
+  /// substitute reaches only 3.83:1, so no foreground rescues it. Darkened until
+  /// white clears the bar with the room the app's own accent button already has:
+  ///
+  /// ```
+  ///                        white on fill   fill vs dialog
+  /// accent   #2F5BEA           5.52             3.02
+  /// this     #C92E26 (dark)    5.38             3.10
+  /// this     #B3261E (light)   6.54             6.54
+  /// ```
+  static Color get dangerFill =>
+      AppTheme.pick(const Color(0xFFB3261E), const Color(0xFFC92E26));
+
   /// The accent as a *mark on a surface* — a selected row's icon, an accent
   /// rail — rather than a fill behind white text.
   ///
@@ -1215,6 +1233,22 @@ RoundedRectangleBorder get _buttonShape => RoundedRectangleBorder(
 );
 
 /// The primary action: a solid accent capsule.
+/// A filled button that destroys something.
+///
+/// Exists so the three that do — the two connector confirms and the skill delete
+/// — cannot each pick their own red and their own label colour. Before this they
+/// had three answers between them, and all three failed in dark: two set white
+/// on [AppPalette.dangerFill]'s predecessor (3.42:1) and one left the label to
+/// Material (3.83:1).
+///
+/// `foregroundColor` is named rather than left to `colorScheme.onError`, which
+/// this app's scheme never sets — so Material fills in its own and lands under
+/// the floor.
+ButtonStyle dangerButtonStyle() => FilledButton.styleFrom(
+  backgroundColor: AppPalette.dangerFill,
+  foregroundColor: Colors.white,
+);
+
 ButtonStyle _filledButtonStyle() => FilledButton.styleFrom(
   minimumSize: Size(0, AppControl.heightScaled),
   padding: AppControl.paddingScaled,

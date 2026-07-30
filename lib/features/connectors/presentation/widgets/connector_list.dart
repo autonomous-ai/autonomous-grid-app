@@ -627,13 +627,7 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
-            // Named rather than left to `onError`, which this app's scheme never
-            // sets: the Material default lands at 3.83:1 on the dark error red,
-            // under the 4.5:1 floor. Same reason as the disconnect dialog below.
-            foregroundColor: Colors.white,
-          ),
+          style: dangerButtonStyle(),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Remove'),
         ),
@@ -729,7 +723,6 @@ class _RemoveButtonState extends State<_RemoveButton> {
 /// user pressed is the word they're asked to confirm. The account is what makes
 /// this different from that one, and the paragraph says so.
 Future<bool?> _confirmDisconnect(BuildContext context, String name) {
-  final scheme = Theme.of(context).colorScheme;
   return showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -748,13 +741,7 @@ Future<bool?> _confirmDisconnect(BuildContext context, String name) {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: scheme.error,
-            // Named rather than left to `onError`, which this app's scheme
-            // never sets: the Material default lands at 3.83:1 on the dark
-            // error red, under the 4.5:1 floor.
-            foregroundColor: Colors.white,
-          ),
+          style: dangerButtonStyle(),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Remove'),
         ),
