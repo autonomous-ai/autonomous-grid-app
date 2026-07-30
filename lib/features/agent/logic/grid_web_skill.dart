@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import '../../../core/grid_paths.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 
 /// The one web-search skill both agents get, so "search the news" works the same
@@ -18,9 +17,9 @@ import '../../../shared/skills/agent_skill_home.dart';
 /// `~/.grid/bin`, which both agents can already reach.
 const String kGridWebSkillName = 'grid-web';
 
-/// The absolute `uv` the skill drives — the grid CLI's pinned copy, the same one
-/// the ACP repair uses, so the skill never depends on a `uv` being on PATH.
-String gridWebUvPath() => '${GridPaths.binDir.path}/uv';
+/// The absolute `uv` the skill drives — [gridSkillUvPath], shared with every other
+/// Grid skill.
+String gridWebUvPath() => gridSkillUvPath();
 
 /// The `grid-web` skill as it lands in [skillDir]: the `SKILL.md` the agent reads
 /// to know when and how to use it, plus the three scripts it runs (search, read

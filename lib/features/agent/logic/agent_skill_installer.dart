@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_catalog.dart';
 import 'grid_media_skills.dart';
+import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
 
 /// One skill the app installs for its agents, and which agents get it.
@@ -44,6 +45,14 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     name: kGridWebSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex},
     build: gridWebSkillFiles,
+  ),
+  // Starting a dev server is the same job for both agents, and both run their
+  // commands in a session the runner tears down at the end of a tool call — so
+  // both need the supervisor route or they report a dead server as running.
+  BuiltinGridSkill(
+    name: kGridServeSkillName,
+    agents: const {AgentTool.hermes, AgentTool.codex},
+    build: gridServeSkillFiles,
   ),
   // Image + video generation through the grid's media API — Hermes-only for now.
   BuiltinGridSkill(
