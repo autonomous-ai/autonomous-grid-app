@@ -68,6 +68,15 @@ class CodexTurnFailed extends CodexExecEvent {
   final String message;
 }
 
+/// Codex ended the turn by itself — it was done, not cut off. The chat needs the
+/// difference: a turn that finished normally with a to-do step left unticked is
+/// the model's own sloppy bookkeeping, not work it abandoned (see
+/// [agentTurnStalled]). Sent on `turn.completed`, and on a clean exit for a build
+/// that spells that event differently.
+class CodexTurnCompleted extends CodexExecEvent {
+  const CodexTurnCompleted();
+}
+
 /// Thrown when a Codex turn can't even start (the binary won't launch).
 class CodexExecException implements Exception {
   const CodexExecException(this.message, {this.retryable = true});
@@ -196,6 +205,11 @@ class _CodexExecTurn {
   /// carries it back instead of leaving the chat with "no answer" and no reason.
   var _spoke = false;
 
+  /// Whether the turn has already reported how it ended, so the exit below adds
+  /// neither a second verdict nor one that contradicts the first.
+  var _failed = false;
+  var _completed = false;
+
   CodexExecRun start() {
     Process.start(
       _path,
@@ -251,15 +265,41 @@ class _CodexExecTurn {
     if (decoded == null) return;
     final event = parseCodexEvent(decoded, _messages);
     if (event == null) return;
-    if (event is CodexMessageEvent || event is CodexTurnFailed) _spoke = true;
+    _note(event);
     _events.add(event);
+  }
+
+  /// Remember what the turn has told us, for the exit path below.
+  void _note(CodexExecEvent event) {
+    switch (event) {
+      case CodexMessageEvent():
+        _spoke = true;
+      case CodexTurnFailed():
+        _spoke = true;
+        _failed = true;
+      case CodexTurnCompleted():
+        _completed = true;
+      // A step, a plan, a written file, the thread id: work in progress, not a
+      // word on how the turn ends.
+      default:
+    }
   }
 
   /// A turn that dies without a word on stdout — a config Codex won't load, a
   /// panic, a killed process — used to reach the chat as "no answer", with the
   /// reason sitting unread in [_stderr]. Hand that reason over instead.
+  ///
+  /// A clean exit is also worth saying out loud ([CodexTurnCompleted]): today
+  /// `turn.completed` reports it, but the exit code reports it too, and the
+  /// chat's stall check must not hang on one build's spelling of an event name.
   void _onExit(int code) {
-    if (!_spoke && !_killed && code != 0 && !_events.isClosed) {
+    if (_killed || _events.isClosed) {
+      _finish();
+      return;
+    }
+    if (code == 0 && !_failed && !_completed) {
+      _events.add(const CodexTurnCompleted());
+    } else if (!_spoke && code != 0) {
       final tail = _stderr.join('\n').trim();
       _events.add(
         CodexTurnFailed(tail.isEmpty ? 'Codex exited with code $code.' : tail),
@@ -301,7 +341,8 @@ Map<String, dynamic>? _tryDecode(String line) {
 /// `turn.started` / `turn.completed` / `turn.failed`, `item.started` /
 /// `item.updated` / `item.completed` (each wrapping an `item` with its own
 /// `type`), and a transient top-level `error`. Only `turn.failed` is fatal — a
-/// bare `error` is a retry notice Codex recovers from on its own.
+/// bare `error` is a retry notice Codex recovers from on its own, and
+/// `turn.completed` is how a turn says it ended by itself.
 CodexExecEvent? parseCodexEvent(
   Map<String, dynamic> event,
   Map<String, String> messages,
@@ -315,6 +356,8 @@ CodexExecEvent? parseCodexEvent(
       return CodexTurnFailed(
         message is Map ? '${message['message'] ?? ''}' : '',
       );
+    case 'turn.completed':
+      return const CodexTurnCompleted();
     case 'item.started':
     case 'item.updated':
     case 'item.completed':
@@ -323,8 +366,8 @@ CodexExecEvent? parseCodexEvent(
           ? _parseItem(item.cast<String, dynamic>(), messages)
           : null;
     default:
-      // turn.started, turn.completed, transient errors: nothing to surface. A
-      // bare `error` here is a reconnect notice, not a turn failure.
+      // turn.started, transient errors: nothing to surface. A bare `error` here
+      // is a reconnect notice, not a turn failure.
       return null;
   }
 }

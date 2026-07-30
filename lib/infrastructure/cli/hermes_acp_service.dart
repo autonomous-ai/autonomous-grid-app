@@ -58,6 +58,35 @@ class HermesAcpPlan extends HermesAcpEvent {
   final List<AgentPlanEntry> entries;
 }
 
+/// The turn is over, with ACP's own reason for stopping. The chat needs the
+/// difference between an agent that finished and one that was cut off: a to-do
+/// step left unticked on a turn the agent ended itself is its own sloppy
+/// bookkeeping, not work it abandoned (see [agentTurnStalled]).
+class HermesAcpTurnEnded extends HermesAcpEvent {
+  const HermesAcpTurnEnded(this.stopReason);
+
+  /// ACP's `stopReason` — `end_turn` when the agent decided it was done, or one
+  /// of the cut-short reasons below.
+  final String stopReason;
+
+  /// Whether the agent ended the turn by itself.
+  ///
+  /// A reason we don't recognise reads as clean: the prompt response arriving at
+  /// all is Hermes reporting the turn over (an aborted one comes back
+  /// `cancelled`), and the safe side of guessing wrong here is an answer that
+  /// stands rather than a finished answer stamped "stopped before finishing".
+  bool get endedCleanly => !_cutShort.contains(stopReason);
+
+  /// The ACP reasons that mean the turn was stopped short of the agent's own
+  /// finish line — the user cancelled, the model ran out of room, it refused.
+  static const _cutShort = {
+    'cancelled',
+    'max_tokens',
+    'max_turn_requests',
+    'refusal',
+  };
+}
+
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
 class HermesAcpRun {
@@ -361,9 +390,19 @@ class _HermesAcpSession implements HermesAcpSession {
         _sessionId = _str(message['result']?['sessionId']);
         if (!_ready.isCompleted) _ready.complete();
       default:
-        // A prompt response ends its turn.
-        if (message['id'] == _turnId) _endTurn();
+        // A prompt response ends its turn, and its `stopReason` says whether
+        // Hermes got to the end of the work or was stopped short of it.
+        if (message['id'] != _turnId) return;
+        _emitTurnEnded(message['result']);
+        _endTurn();
     }
+  }
+
+  void _emitTurnEnded(Object? result) {
+    final events = _events;
+    if (events == null || events.isClosed) return;
+    final reason = result is Map ? _str(result['stopReason']) : '';
+    events.add(HermesAcpTurnEnded(reason));
   }
 
   void _handleUpdate(Object? raw) {

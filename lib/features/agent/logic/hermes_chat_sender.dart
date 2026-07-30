@@ -300,6 +300,11 @@ class HermesChatSender implements ChatSender {
     final updates = StreamController<ChatSendUpdate>();
     final guard = AgentLoopGuard();
     var settled = false;
+    // The two facts the stall check reads — see [agentTurnStalled]: whether
+    // Hermes ended the turn itself, and whether it did any work after the last
+    // revision of its plan.
+    var endedCleanly = false;
+    var workedAfterPlan = false;
     Timer? idle;
     late final StreamSubscription<HermesAcpEvent> events;
 
@@ -359,6 +364,7 @@ class HermesChatSender implements ChatSender {
         switch (event) {
           case HermesAcpActivity(:final activity):
             armIdle();
+            if (isAgentWork(activity)) workedAfterPlan = true;
             activityLog.upsert(activity);
           case HermesAcpPermission(:final request):
             // The same file or command coming back yet again is a loop, not
@@ -377,6 +383,7 @@ class HermesChatSender implements ChatSender {
             });
           case HermesAcpEdit(:final request):
             armIdle();
+            workedAfterPlan = true;
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
             _recordEdit(request);
@@ -393,12 +400,15 @@ class HermesChatSender implements ChatSender {
             sourcesLog.addAll(sources);
           case HermesAcpPlan(:final entries):
             armIdle();
+            workedAfterPlan = false;
             // The agent revised its to-do list — replace ours with its latest.
             planLog.replace(entries);
           case HermesAcpMessage(:final text):
             armIdle();
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
+          case HermesAcpTurnEnded(endedCleanly: final clean):
+            endedCleanly = clean;
         }
       },
       onDone: () async {
@@ -419,13 +429,30 @@ class HermesChatSender implements ChatSender {
             friendlyAgentServerError(reply) ??
             friendlyAgentEmptyResponse(reply);
         if (refused != null) _ref.read(appLogProvider).failure('agent', reply);
-        // A turn that laid out a plan and never finished it stalled — even with
-        // a line of text, the work it promised didn't happen, so it must not
-        // read as an answer (§5). Planning mode is the exception: there an
-        // unfinished plan is the whole point. Shared with Codex so a stalled
-        // turn reads the same whichever agent ran it.
+        // A turn that announced a plan and stopped before doing it must not read
+        // as an answer (§5) — but an unfinished plan alone doesn't mean that, so
+        // the verdict weighs how the turn ended and what it did (see
+        // [agentTurnStalled]). Shared with Codex so a stalled turn reads the same
+        // whichever agent ran it.
         final plan = _ref.read(agentPlanProvider);
-        final stalled = !planFirst && agentPlanUnfinished(plan);
+        final stalled = agentTurnStalled(
+          plan: plan,
+          endedCleanly: endedCleanly,
+          workedAfterPlan: workedAfterPlan,
+          planFirst: planFirst,
+        );
+        if (stalled) {
+          _ref
+              .read(appLogProvider)
+              .failure(
+                'agent',
+                describeAgentStall(
+                  plan: plan,
+                  endedCleanly: endedCleanly,
+                  workedAfterPlan: workedAfterPlan,
+                ),
+              );
+        }
         final failure =
             refused ??
             (stalled
