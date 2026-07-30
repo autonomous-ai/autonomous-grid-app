@@ -137,9 +137,10 @@ List<SetupStep> buildSetupPlan(
 /// with something that can answer; the rest are [SetupStep.optional] and a first
 /// run survives one of them failing to download.
 ///
-/// Claude Code is deliberately absent (see [AgentTool.packagedByCli]): the CLI
-/// has no recipe for it, and pulling a whole vendor CLI onto every machine
-/// unattended is the user's call, taken on the Agents tab — not a silent step.
+/// Claude Code is absent from *this* list (see [AgentTool.packagedByCli]): a
+/// step here is literal `grid agent install` argv, and the CLI has no recipe for
+/// Claude Code. It still auto-installs — through the background installer, which
+/// routes every agent via `AgentInstaller` — just not as a CLI-argv step.
 List<SetupStep> agentInstallSteps(NodeCapabilities caps) => [
   for (final tool in _agentInstallOrder)
     if (tool.packagedByCli && !caps.installedAgents.contains(tool))

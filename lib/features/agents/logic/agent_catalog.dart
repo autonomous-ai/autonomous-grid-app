@@ -49,15 +49,16 @@ enum AgentTool {
   /// only what sets this agent apart from the others.
   final String tagline;
 
-  /// Whether `grid agent install <id>` can fetch this agent — true for the ones
-  /// the CLI packages (Hermes, Codex), false for Claude Code, which comes from
-  /// its vendor's own installer (see [AgentInstallController]).
+  /// Which installer puts this agent on the machine: `grid agent install <id>`
+  /// for the ones the CLI packages (Hermes, Codex), the vendor's own script for
+  /// Claude Code, which the CLI has no recipe for. `AgentInstaller` reads this to
+  /// pick the route; every surface then installs any agent the same way.
   ///
-  /// It gates *unattended* installs: first-run setup and the background top-up
-  /// pull every CLI-packaged agent silently, because `grid agent install` needs
-  /// no admin rights and downloads into `~/.grid`. Claude Code is a whole vendor
-  /// CLI, installed only when the user asks for it on the Agents tab — never in
-  /// the background — so it is left out of those plans and off this flag.
+  /// It is a *route* flag, not a permission one: Claude Code auto-installs in the
+  /// background at startup like the others (its script needs no admin rights —
+  /// `~/.local/bin`, no sudo). What it still gates is the **CLI-argv setup plan**
+  /// ([buildSetupPlan]): those steps are literal `grid …` argv, so an agent with
+  /// no CLI recipe can't be one and rides the background installer instead.
   bool get packagedByCli => this != AgentTool.claude;
 
   /// The agent's own mark, bundled with the app (declared in `pubspec.yaml`).
