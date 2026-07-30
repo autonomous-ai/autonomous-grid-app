@@ -33,10 +33,7 @@ void main() {
         agentRunsOnGrid(AgentTool.codex, _grid(chat: true, responses: false)),
         isFalse,
       );
-      expect(
-        agentRunsOnGrid(AgentTool.codex, _grid(responses: true)),
-        isTrue,
-      );
+      expect(agentRunsOnGrid(AgentTool.codex, _grid(responses: true)), isTrue);
     });
 
     test('Claude Code needs a grid that answers Anthropic messages — a grid '

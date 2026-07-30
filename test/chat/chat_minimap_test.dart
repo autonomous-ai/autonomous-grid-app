@@ -85,13 +85,16 @@ void main() {
       expect(marks.single.reply, endsWith('…'));
     });
 
-    test('clips a reply far longer than the preview without reading all of '
-        'it — a real answer runs to kilobytes and only 100 chars are shown', () {
-      final marks = minimapMarks([_user('q'), _assistant('z' * 12000)]);
+    test(
+      'clips a reply far longer than the preview without reading all of '
+      'it — a real answer runs to kilobytes and only 100 chars are shown',
+      () {
+        final marks = minimapMarks([_user('q'), _assistant('z' * 12000)]);
 
-      expect(marks.single.reply!.length, 101);
-      expect(marks.single.reply, endsWith('…'));
-    });
+        expect(marks.single.reply!.length, 101);
+        expect(marks.single.reply, endsWith('…'));
+      },
+    );
 
     test('still marks a long message as clipped when collapsing its '
         'whitespace leaves a short line', () {

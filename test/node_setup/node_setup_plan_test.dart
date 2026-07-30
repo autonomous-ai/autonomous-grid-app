@@ -110,11 +110,14 @@ void main() {
     expect(required.single.args.last, kChatAgent.id);
   });
 
-  test('having the default agent still gets you the other CLI-packaged one', () {
-    final steps = agentInstallSteps(_caps(agents: {kChatAgent}));
-    expect(steps, hasLength(_cliAgents.length - 1));
-    expect(steps.every((s) => s.args.last != kChatAgent.id), isTrue);
-  });
+  test(
+    'having the default agent still gets you the other CLI-packaged one',
+    () {
+      final steps = agentInstallSteps(_caps(agents: {kChatAgent}));
+      expect(steps, hasLength(_cliAgents.length - 1));
+      expect(steps.every((s) => s.args.last != kChatAgent.id), isTrue);
+    },
+  );
 
   test('with media enabled, a fresh machine installs both engines', () {
     final plan = buildSetupPlan(_caps(), includeMedia: true);

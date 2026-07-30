@@ -57,23 +57,26 @@ void main() {
       expect(second.text, isNot(contains('message 0')));
     });
 
-    test('a turn the agent never answered leaves nothing to resume — its id was '
-        'never learned, so the next one starts over', () {
-      final slots = AgentSessionSlots();
-      slots.planTurn(
-        key: 'grid|model|c1|/work',
-        conversationId: 'c1',
-        history: _history(1),
-      );
-      final next = slots.planTurn(
-        key: 'grid|model|c1|/work',
-        conversationId: 'c1',
-        history: _history(3),
-      );
-      expect(next.resumeSessionId, isNull);
-      expect(next.freshStart, isTrue);
-      expect(next.text, contains('message 0'));
-    });
+    test(
+      'a turn the agent never answered leaves nothing to resume — its id was '
+      'never learned, so the next one starts over',
+      () {
+        final slots = AgentSessionSlots();
+        slots.planTurn(
+          key: 'grid|model|c1|/work',
+          conversationId: 'c1',
+          history: _history(1),
+        );
+        final next = slots.planTurn(
+          key: 'grid|model|c1|/work',
+          conversationId: 'c1',
+          history: _history(3),
+        );
+        expect(next.resumeSessionId, isNull);
+        expect(next.freshStart, isTrue);
+        expect(next.text, contains('message 0'));
+      },
+    );
   });
 
   group('what counts as a different session', () {

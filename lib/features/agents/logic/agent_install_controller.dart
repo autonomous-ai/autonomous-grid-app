@@ -102,7 +102,10 @@ class AgentInstallController extends Notifier<AgentInstallState> {
 
   /// `grid agent install <id>` — the path for the agents the CLI knows how to
   /// fetch (Hermes, Codex). Returns null on success, else the line to show.
-  Future<String?> _installViaCli(AgentTool tool, {required bool upgrade}) async {
+  Future<String?> _installViaCli(
+    AgentTool tool, {
+    required bool upgrade,
+  }) async {
     final cli = ref.read(gridCliServiceProvider);
     if (cli == null) {
       return "The grid tool isn't installed on this computer, so there's "

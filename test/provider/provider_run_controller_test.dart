@@ -1002,11 +1002,7 @@ void main() {
 
       await container
           .read(providerRunControllerProvider.notifier)
-          .startApiEngine(
-            network: 'net',
-            provider: _openai,
-            apiKey: '',
-          );
+          .startApiEngine(network: 'net', provider: _openai, apiKey: '');
 
       expect(
         container.read(providerRunControllerProvider),

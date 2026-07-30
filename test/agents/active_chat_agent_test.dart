@@ -95,11 +95,7 @@ void main() {
     test('gives the chat back on a grid that can run it', () {
       // The hand-over is resolved per grid, never written to prefs: the user
       // picked Codex once and gets it back the moment a grid can serve it.
-      final container = _container(
-        chosen: 'codex',
-        hermes: true,
-        codex: true,
-      );
+      final container = _container(chosen: 'codex', hermes: true, codex: true);
       expect(container.read(activeChatAgentProvider), AgentTool.codex);
       expect(container.read(blockedChatAgentProvider), isNull);
     });

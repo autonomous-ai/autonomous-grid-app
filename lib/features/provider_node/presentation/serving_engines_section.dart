@@ -230,4 +230,3 @@ class _LogExpander extends StatelessWidget {
     );
   }
 }
-

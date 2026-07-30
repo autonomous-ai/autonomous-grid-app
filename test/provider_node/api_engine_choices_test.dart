@@ -37,11 +37,14 @@ final _anthropic = _key('anthropic', 'Anthropic', 'ANTHROPIC_API_KEY');
 
 void main() {
   group('the two hosted ways in are different answers, not one dropdown', () {
-    test('a CLI already on this computer is separated from a key you paste', () {
-      final available = [_claude, _openai];
-      expect(seatEngines(available).single.provider.kind, 'claude');
-      expect(keyEngines(available).single.provider.kind, 'openai');
-    });
+    test(
+      'a CLI already on this computer is separated from a key you paste',
+      () {
+        final available = [_claude, _openai];
+        expect(seatEngines(available).single.provider.kind, 'claude');
+        expect(keyEngines(available).single.provider.kind, 'openai');
+      },
+    );
 
     test('a machine with no coding CLI offers no seat card', () {
       expect(seatEngines([_openai]), isEmpty);
@@ -65,17 +68,23 @@ void main() {
 
     test('several are listed with "or", so a card never over-promises the ones '
         'the CLI does not whitelist', () {
-      expect(apiKeyCardLine([_openai, _anthropic]), 'Bring your own OpenAI or '
-          'Anthropic key');
+      expect(
+        apiKeyCardLine([_openai, _anthropic]),
+        'Bring your own OpenAI or '
+        'Anthropic key',
+      );
       expect(
         seatCardTitle([_claude, _codexCli]),
         'Share Claude Code or Codex CLI',
       );
     });
 
-    test('nothing to offer yields nothing to say — the card is hidden then', () {
-      expect(apiKeyCardLine([_claude]), isEmpty);
-      expect(seatCardTitle([_openai]), isEmpty);
-    });
+    test(
+      'nothing to offer yields nothing to say — the card is hidden then',
+      () {
+        expect(apiKeyCardLine([_claude]), isEmpty);
+        expect(seatCardTitle([_openai]), isEmpty);
+      },
+    );
   });
 }
