@@ -7,6 +7,7 @@ import 'connector.dart';
 import 'connector_catalog.dart';
 import '../../agents/logic/connector_token.dart';
 import 'connector_link_controller.dart';
+import 'connectors_refresh.dart';
 import 'manual_server_store.dart';
 
 /// The MCP servers configured for the selected agent, read straight from its
@@ -145,33 +146,43 @@ class McpServersController extends AsyncNotifier<List<McpServer>> {
   ///
   /// A projection failure is still reported, but the store keeps the change:
   /// the user asked for it, and the next projection will carry it over.
+  ///
+  /// Every exit re-reads the screen through [refreshConnectors] — including the
+  /// failing ones. A write that half-succeeded is exactly when the screen is
+  /// least trustworthy, and leaving it on the pre-write data there means the
+  /// error message and the rows disagree about what happened.
   Future<String?> _act({
     required Future<void> Function(ManualServerStore) store,
     required Future<void> Function(AgentMcpPlane) project,
   }) async {
     try {
-      await store(ref.read(manualServerStoreProvider));
-    } on Object catch (error) {
-      return "Couldn't save the connection: $error";
-    }
+      try {
+        await store(ref.read(manualServerStoreProvider));
+      } on Object catch (error) {
+        return "Couldn't save the connection: $error";
+      }
 
-    final plane = _plane;
-    if (plane == null) {
+      final plane = _plane;
       // Nothing to project onto. Not a failure — the record is safe, and it
       // will reach an agent that understands MCP as soon as one is selected.
-      ref.invalidateSelf();
-      return _noMcp;
-    }
+      if (plane == null) return _noMcp;
 
-    try {
-      await project(plane);
-    } on AgentExtensionException catch (error) {
-      return error.message;
-    } on Object catch (error) {
-      return "Couldn't update the MCP servers: $error";
+      try {
+        await project(plane);
+      } on AgentExtensionException catch (error) {
+        return error.message;
+      } on Object catch (error) {
+        return "Couldn't update the MCP servers: $error";
+      }
+      return null;
+    } finally {
+      refreshConnectors(ref, isServersController: true);
+      // This provider's own re-read. `invalidateSelf` rather than `invalidate`
+      // because Riverpod asserts on the latter — and going through `build`
+      // rather than assigning state is what re-runs the reconcile, so a manual
+      // server reaches the store on the same click that created it.
+      ref.invalidateSelf();
     }
-    state = AsyncData(await plane.read());
-    return null;
   }
 
   static const _noMcp = "This agent doesn't support MCP servers.";

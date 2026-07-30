@@ -53,7 +53,10 @@ void main() {
         );
 
     expect(error, isNull);
-    expect(c.read(mcpServersProvider).value!.single.name, 'notion');
+    // Awaited, not read synchronously: a mutation now invalidates this provider
+    // so the next read re-runs `build` — which is what re-reconciles the store
+    // with the agent's config. The cached value is stale by design.
+    expect((await c.read(mcpServersProvider.future)).single.name, 'notion');
   });
 
   test('remove drops the server from the list', () async {
@@ -69,6 +72,6 @@ void main() {
 
     await notifier.remove('notion');
 
-    expect(c.read(mcpServersProvider).value, isEmpty);
+    expect(await c.read(mcpServersProvider.future), isEmpty);
   });
 }
