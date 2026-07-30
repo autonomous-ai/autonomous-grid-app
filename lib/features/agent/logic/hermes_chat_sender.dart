@@ -301,10 +301,10 @@ class HermesChatSender implements ChatSender {
     final guard = AgentLoopGuard();
     var settled = false;
     // The two facts the stall check reads — see [agentTurnStalled]: whether
-    // Hermes ended the turn itself, and whether it did any work after the last
-    // revision of its plan.
+    // Hermes ended the turn itself, and whether it did any work at all. Neither
+    // is reset by a plan revision: an agent ticks its boxes on the way out.
     var endedCleanly = false;
-    var workedAfterPlan = false;
+    var workedAtAll = false;
     Timer? idle;
     late final StreamSubscription<HermesAcpEvent> events;
 
@@ -364,7 +364,7 @@ class HermesChatSender implements ChatSender {
         switch (event) {
           case HermesAcpActivity(:final activity):
             armIdle();
-            if (isAgentWork(activity)) workedAfterPlan = true;
+            if (isAgentWork(activity)) workedAtAll = true;
             activityLog.upsert(activity);
           case HermesAcpPermission(:final request):
             // The same file or command coming back yet again is a loop, not
@@ -383,7 +383,7 @@ class HermesChatSender implements ChatSender {
             });
           case HermesAcpEdit(:final request):
             armIdle();
-            workedAfterPlan = true;
+            workedAtAll = true;
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
             _recordEdit(request);
@@ -400,7 +400,6 @@ class HermesChatSender implements ChatSender {
             sourcesLog.addAll(sources);
           case HermesAcpPlan(:final entries):
             armIdle();
-            workedAfterPlan = false;
             // The agent revised its to-do list — replace ours with its latest.
             planLog.replace(entries);
           case HermesAcpMessage(:final text):
@@ -438,7 +437,7 @@ class HermesChatSender implements ChatSender {
         final stalled = agentTurnStalled(
           plan: plan,
           endedCleanly: endedCleanly,
-          workedAfterPlan: workedAfterPlan,
+          workedAtAll: workedAtAll,
           planFirst: planFirst,
         );
         if (stalled) {
@@ -449,7 +448,7 @@ class HermesChatSender implements ChatSender {
                 describeAgentStall(
                   plan: plan,
                   endedCleanly: endedCleanly,
-                  workedAfterPlan: workedAfterPlan,
+                  workedAtAll: workedAtAll,
                 ),
               );
         }

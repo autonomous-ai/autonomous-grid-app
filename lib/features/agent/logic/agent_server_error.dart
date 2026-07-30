@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import '../../../infrastructure/cli/hermes_acp_setup.dart';
 
-/// A turn that ended with nothing to show. Shared by both agents so a silent
+/// A turn that ended with nothing to show. Shared by every agent so a silent
 /// Hermes and a silent Codex read the same to the user.
 const String kAgentNoAnswer = "The agent didn't return an answer.";
 

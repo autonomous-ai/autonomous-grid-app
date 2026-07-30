@@ -47,6 +47,12 @@ import 'plan_approve_bar.dart';
 /// messages auto-follow and the jump-to-latest button hides.
 const double _atBottomThreshold = 120;
 
+/// How many frames [_ChatViewState._snapToBottom] gets to converge on the real
+/// end of a transcript it can only estimate. Six is a tenth of a second, and each
+/// one narrows the estimate a lot; the cap is there so a chat that keeps growing
+/// while we chase it ends the chase rather than the frame budget.
+const int _snapFrames = 6;
+
 /// How wide the conversation column gets on a big window. Long lines are hard to
 /// read; the transcript and the composer share this so they line up.
 ///
@@ -128,7 +134,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _scroll.addListener(_onScroll);
     // Reopening the section rebuilds this view; land on the latest turn rather
     // than stranding the user at the top of the transcript.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _snapToBottom());
   }
 
   @override
@@ -376,11 +382,50 @@ class _ChatViewState extends ConsumerState<ChatView> {
       if (_scroll.position.pixels != target) _scroll.jumpTo(target);
       return;
     }
-    _scroll.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-    );
+    _scroll
+        .animateTo(
+          target,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        )
+        // This target is an estimate too, and the jump-to-latest button is only
+        // up when the user is far enough away for it to be a poor one — so close
+        // whatever gap is left once the ride is over, rather than landing them in
+        // the middle of the history they asked to leave.
+        .then((_) => _snapToBottom());
+  }
+
+  /// Land on the newest turn when arriving cold — opening the section, switching
+  /// conversation — and hold there until the list stops revising how tall it is.
+  ///
+  /// A lazy `ListView` doesn't know the height of turns it hasn't built, so
+  /// `maxScrollExtent` measured from the *top* of a long transcript is an
+  /// estimate: the average height of what's laid out, times the turns left. One
+  /// jump lands wherever that guess pointed, and when the revised extent comes
+  /// back larger nothing corrects it — a chat whose answers run long opened
+  /// parked in its own middle, wearing a "jump to latest" button the user hadn't
+  /// scrolled away from. Each jump builds the turns around its target and
+  /// sharpens the estimate, so re-assert until the target stops moving, capped at
+  /// [_snapFrames] so a transcript still streaming can't be chased forever.
+  ///
+  /// [_scrollToBottom] stays the one to call while following a live reply: down
+  /// there the turns below are built, the extent is exact, and one jump is right.
+  void _snapToBottom([int frames = _snapFrames]) {
+    if (!mounted || !_scroll.hasClients) return;
+    final target = _scroll.position.maxScrollExtent;
+    if (_scroll.position.pixels != target) _scroll.jumpTo(target);
+    if (frames <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final pos = _scroll.position;
+      // Moved off our target: either the user grabbed the list — following them
+      // is the point, not fighting them — or the extent shrank and the position
+      // was clamped to the real bottom, which is where we were headed anyway.
+      if (pos.pixels != target) return;
+      // The estimate held: this is the bottom.
+      if (pos.maxScrollExtent <= target) return;
+      _snapToBottom(frames - 1);
+    });
   }
 
   @override
@@ -407,7 +452,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
         );
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (switched || _atBottom) _scrollToBottom();
+        // A switch arrives at the top of a transcript nothing has measured yet,
+        // so its end has to be converged on; following a live reply is already
+        // at the end, where one jump is exact.
+        if (switched) {
+          _snapToBottom();
+          return;
+        }
+        if (_atBottom) _scrollToBottom();
       });
     });
 

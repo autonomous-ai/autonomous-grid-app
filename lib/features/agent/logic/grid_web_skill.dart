@@ -2,7 +2,7 @@ import 'dart:io';
 
 import '../../../shared/skills/agent_skill_home.dart';
 
-/// The one web-search skill both agents get, so "search the news" works the same
+/// The one web-search skill every agent gets, so "search the news" works the same
 /// whichever is answering.
 ///
 /// Codex on a grid has **no** web search of its own — its `web_search` is an
@@ -14,7 +14,7 @@ import '../../../shared/skills/agent_skill_home.dart';
 /// The search runs through `uv run --with ddgs`, so the DuckDuckGo backend is
 /// provisioned on demand and cached — no API key, no account, and nothing for
 /// the app to install up front. `uv` is the pinned one the grid CLI drops in
-/// `~/.grid/bin`, which both agents can already reach.
+/// `~/.grid/bin`, which every agent can already reach.
 const String kGridWebSkillName = 'grid-web';
 
 /// The absolute `uv` the skill drives — [gridSkillUvPath], shared with every other
@@ -49,7 +49,7 @@ GridSkillFiles gridWebSkillFiles(Directory skillDir, {String? uvPath}) {
 Future<void> writeGridWebSkill(Directory skillDir, {String? uvPath}) =>
     writeSkillFolder(skillDir, gridWebSkillFiles(skillDir, uvPath: uvPath));
 
-/// The skill card both agents read. Only the `name`/`description` frontmatter
+/// The skill card every agent reads. Only the `name`/`description` frontmatter
 /// decides *when* it triggers, so those carry the intent; the body is loaded only
 /// once it fires and spells out the two commands — search, and read one page.
 String gridWebSkillMd({

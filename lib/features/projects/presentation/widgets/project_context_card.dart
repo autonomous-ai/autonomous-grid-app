@@ -5,6 +5,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../../chat/logic/conversation.dart';
 import '../../logic/project.dart';
+import '../../logic/project_folder_status.dart';
 import '../project_actions.dart';
 import 'rail_card.dart';
 
@@ -19,7 +20,7 @@ class ProjectContextCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final missing = !project.exists;
+    final missing = watchProjectMissing(ref, project);
     // Selected down to the count, so the rail beside a live conversation doesn't
     // rebuild on every streamed token.
     final chats = ref.watch(
@@ -93,7 +94,7 @@ class _StatusLine extends StatelessWidget {
           const SizedBox(width: 7),
           Expanded(
             child: Text(
-              "This folder isn't there any more.",
+              projectFolderMissingMessage,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
               ),

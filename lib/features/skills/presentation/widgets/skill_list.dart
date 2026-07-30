@@ -297,7 +297,7 @@ class _SkillInfo extends ConsumerWidget {
   List<AgentTool> _alsoOn(WidgetRef ref, SkillSource source) {
     final slug = skill.path.split('/').last;
     return [
-      for (final agent in AgentTool.values)
+      for (final agent in kSkillAgents)
         if (agent != source.agent)
           if (switch (ref.watch(agentSkillNamesProvider(agent))) {
             AsyncData(:final value) => value.contains(slug),
@@ -430,6 +430,7 @@ class _Empty extends StatelessWidget {
     SkillSource.store => '~/.grid/skills',
     SkillSource.hermes => '~/.hermes/skills',
     SkillSource.codex => '~/.codex/skills',
+    SkillSource.claude => '~/.claude/skills',
   };
 }
 

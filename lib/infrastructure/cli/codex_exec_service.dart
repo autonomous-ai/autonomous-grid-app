@@ -7,7 +7,7 @@ import 'host_environment.dart';
 
 /// One thing to show from a running Codex turn — the same shapes the Chat tab
 /// already renders for Hermes ([AgentActivity], [WebSource], [AgentPlanEntry], a
-/// chunk of the answer), so both agents feed the one activity/plan/sources feed.
+/// chunk of the answer), so every agent feeds the one activity/plan/sources feed.
 ///
 /// Codex speaks its own JSONL over `codex exec --json`, not ACP, so it gets its
 /// own thin envelope — but the payloads are the shared, agent-neutral ones, so

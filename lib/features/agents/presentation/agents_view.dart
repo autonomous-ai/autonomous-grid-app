@@ -13,8 +13,7 @@ import '../logic/agent_grid_support.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_status.dart';
 
-/// The assistants this computer can run — Hermes and Codex today, one of which
-/// answers your chats.
+/// The assistants this computer can run, one of which answers your chats.
 ///
 /// This is a status list, not a gallery: quiet rows read once in a while to check
 /// a version, pull an update, or hand the chat to a different agent. So it wears

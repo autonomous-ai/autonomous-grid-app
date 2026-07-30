@@ -11,7 +11,7 @@ import '../../../../shared/widgets/extension_tile_surface.dart';
 import '../../../../shared/widgets/extension_toolbar.dart';
 import '../../../../shared/widgets/pill_choice.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../../agents/logic/agent_catalog.dart';
+import '../../../../shared/skills/agent_skill_home.dart';
 import '../../logic/public_skill_catalog.dart';
 import '../../logic/skill_files.dart';
 import '../../logic/skill_sharing.dart';
@@ -88,7 +88,7 @@ class _PublicSkillDialogState extends ConsumerState<_PublicSkillDialog> {
     // agents' own folders, which is where the question is really asked.
     final target = ref.watch(skillTargetProvider);
     final held = {
-      for (final agent in AgentTool.values)
+      for (final agent in kSkillAgents)
         agent: switch (ref.watch(agentSkillNamesProvider(agent))) {
           AsyncData(:final value) => value,
           _ => const <String>{},

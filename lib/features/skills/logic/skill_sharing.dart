@@ -9,10 +9,13 @@ import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_skill.dart';
 
 /// Who a skill is being handed to.
+/// Only the assistants the Skills screen manages — see [kSkillTabs]. Claude
+/// Code has a skills folder and the installer writes into it, but it is not on
+/// this screen, so nothing here offers to hand it a skill.
 enum ShareTarget {
   hermes('Hermes', [AgentTool.hermes]),
   codex('Codex', [AgentTool.codex]),
-  all('all agents', AgentTool.values);
+  all('all agents', [AgentTool.hermes, AgentTool.codex]);
 
   const ShareTarget(this.label, this.agents);
 
@@ -32,6 +35,7 @@ enum ShareTarget {
 SkillSource skillFolderOf(AgentTool agent) => switch (agent) {
   AgentTool.hermes => SkillSource.hermes,
   AgentTool.codex => SkillSource.codex,
+  AgentTool.claude => SkillSource.claude,
 };
 
 /// Copies a skill from one folder into an agent's own.

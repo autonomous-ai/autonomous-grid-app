@@ -91,11 +91,6 @@ class Project {
     memory: memory ?? this.memory,
     pinned: pinned ?? this.pinned,
   );
-
-  /// Whether the folder is still there. A project whose folder was moved or
-  /// deleted stays in the list but is shown as missing — silently dropping it
-  /// would lose the chats that belong to it.
-  bool get exists => Directory(path).existsSync();
 }
 
 /// The last segment of a path — what a person calls the folder.

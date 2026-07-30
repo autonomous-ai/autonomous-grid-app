@@ -249,6 +249,17 @@ abstract final class AppPalette {
       AppTheme.pick(const Color(0xFF8E8D86), const Color(0xFF6E6E68));
 }
 
+/// The scrollbar thumb, per brightness.
+///
+/// Kept as plain constants rather than only as [AppSurface] getters because
+/// [buildAppTheme] needs the values *before* the global brightness is the one
+/// being built for — see the note at its `scrollbarTheme`. The getters below read
+/// these same four, so there is one set of numbers rather than two that can drift.
+const Color _scrollThumbLight = Color(0xFF8C8C8C);
+const Color _scrollThumbDark = Color(0xFF686868);
+const Color _scrollThumbHoverLight = Color(0xFF6E6E6E);
+const Color _scrollThumbHoverDark = Color(0xFF8A8A8A);
+
 /// Surface tokens for the app's chrome — the sidebar's rows, the composer card,
 /// a recessed list column. Depth comes from a hairline rim and a soft shadow; the
 /// overlays flip from black (on light) to white (on dark) so a hover/selection is
@@ -282,6 +293,25 @@ abstract final class AppSurface {
   /// hoverable surface (the account pill) lifts a touch to say it's clickable.
   static Color get recessHover =>
       AppTheme.pick(const Color(0x12000000), const Color(0x1AFFFFFF));
+
+  /// A scrollbar thumb at rest.
+  ///
+  /// Opaque rather than a wash, and per-brightness rather than one alpha, because
+  /// Material's default is neither and lands under the 3:1 that WCAG 1.4.11 asks
+  /// of a UI element — `onSurface` at 10% is **1.23:1** on the light page, and at
+  /// 30% is **2.46:1** on the dark one. Both were measured; both read as "no
+  /// scrollbar" until you look for it.
+  ///
+  /// One alpha can't fix it either: white lifts a dark page fast while black
+  /// barely dents a white one, so reaching 3:1 needs 0.40 in dark and 0.50 in
+  /// light. These are those two values resolved — 3.55:1 dark, 3.36:1 light —
+  /// stated as colours so a list on the panel measures the same as one on the page.
+  static Color get scrollThumb =>
+      AppTheme.pick(_scrollThumbLight, _scrollThumbDark);
+
+  /// The thumb under the pointer or mid-drag: the same hue, plainly grabbed.
+  static Color get scrollThumbHover =>
+      AppTheme.pick(_scrollThumbHoverLight, _scrollThumbHoverDark);
 
   /// Soft drop shadow that lifts a floating surface (the composer) off the page.
   /// Deeper/darker in dark mode where a light lift would look like a glow.
@@ -568,6 +598,36 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       color: scheme.outline,
       thickness: 1,
       space: 1,
+    ),
+    // Set once here rather than per-Scrollbar: the three call sites that predate
+    // this each accepted Material's default, which measures 1.23:1 on the light
+    // page and 2.46:1 on the dark one — under the 3:1 floor for a UI element.
+    // See `AppSurface.scrollThumb` for the numbers.
+    scrollbarTheme: ScrollbarThemeData(
+      // Resolved from `isDark`, not read off `AppSurface` — this function is
+      // called twice up front, and the dark pass runs while the global
+      // brightness still says light, so a getter-backed token would bake the
+      // light thumb into `darkTheme`. The `AppPalette.accent` reads above never
+      // exposed this: that one is a const with the same value in both themes.
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.hovered) ||
+                states.contains(WidgetState.dragged)
+            ? (isDark ? _scrollThumbHoverDark : _scrollThumbHoverLight)
+            : (isDark ? _scrollThumbDark : _scrollThumbLight),
+      ),
+      // No track: a filled channel down the edge of every pane is a border by
+      // another name, and §2 allows exactly one of those.
+      trackColor: WidgetStateProperty.all(Colors.transparent),
+      trackBorderColor: WidgetStateProperty.all(Colors.transparent),
+      // 6px, radius 3 — a thin capsule rather than the 8px slab, which at this
+      // contrast would read as a chrome element competing with the rows.
+      thickness: WidgetStateProperty.all(6),
+      radius: const Radius.circular(3),
+      // The thumb is only meaningful while there is more list than pane, and
+      // fading it in on scroll keeps a short list from wearing furniture.
+      thumbVisibility: WidgetStateProperty.all(false),
+      interactive: true,
     ),
     splashFactory: InkRipple.splashFactory,
     textTheme: textTheme,

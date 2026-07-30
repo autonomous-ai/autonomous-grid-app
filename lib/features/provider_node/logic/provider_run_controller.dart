@@ -95,24 +95,17 @@ class ProviderRunIdle extends ProviderRunState {
 /// model id for an external one — so the model manager can refuse to delete a
 /// gguf that's in use. Null when unknown (e.g. an engine adopted on restart
 /// whose run record carried no model).
-///
-/// [signInUrl] is set only while a sign-in join (codex OAuth) is still starting
-/// and waiting for the user to approve in the browser — the app opens it (like
-/// `grid login`) and offers it as a fallback link. Null for every other engine
-/// and once serving.
 class ProviderRunActive extends ProviderRunState {
   const ProviderRunActive({
     required this.grid,
     required this.log,
     required this.starting,
     this.model,
-    this.signInUrl,
   });
   final String grid;
   final List<String> log;
   final bool starting;
   final String? model;
-  final String? signInUrl;
 }
 
 /// A stop is under way on [grid] — `grid leave` unregisters the engine with the
@@ -301,15 +294,18 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// always remote-only), via
   /// `grid join <grid> --api <kind> [-m <model> …]`.
   ///
-  /// For a key-based kind, the key travels in [environment] (`<KIND>_API_KEY`),
-  /// not in argv, so it never reaches a log — the CLI reads it there first,
-  /// validates it against the vendor, then stores it for the detached serve loop
-  /// to reuse (ADR 0012). Pass an empty [apiKey] to fall back to that stored key.
-  /// For a sign-in kind (codex, [envVar] null), no key is passed: `grid join
-  /// --api codex` runs the OAuth flow itself — it opens the browser and catches
-  /// the redirect, or reuses a seat this machine already signed in with (ADR
-  /// 0015). The join stays in the starting state while the user approves it (the
-  /// authorize URL streams into the log).
+  /// For a key-based provider, the key travels in [environment]
+  /// (`<KIND>_API_KEY`), not in argv, so it never reaches a log — the CLI reads
+  /// it there first, validates it against the vendor, then stores it for the
+  /// detached serve loop to reuse (ADR 0012). Pass an empty [apiKey] to fall back
+  /// to that stored key.
+  ///
+  /// For a **CLI seat** ([ApiAuth.localCli]) nothing is passed at all: the join
+  /// starts a loopback server that drives the coding CLI on this computer, and
+  /// that CLI's own sign-in is the credential — the grid holds none. The seat's
+  /// pacing (one process per request, its own quota ceilings) is left at the
+  /// CLI's defaults: this is the operator's personal subscription, and the app
+  /// has no business widening it without being asked.
   ///
   /// [models] are advertised whitelist names (`openai:gpt-5.5`); empty serves
   /// the whole set the credential can see (the CLI's zero-config default). No
@@ -317,53 +313,27 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// the vendor owns the context window.
   Future<void> startApiEngine({
     required String network,
-    required String kind,
-    required String? envVar,
+    required ApiProvider provider,
     required String apiKey,
     List<String> models = const [],
   }) {
-    // A sign-in kind (codex, [envVar] null) has no key — `grid join --api codex`
-    // runs the OAuth flow. Drive it like `grid login`: the app opens the browser,
-    // so [_noAutoOpenBrowserEnv] tells the CLI to print the URL without opening a
-    // second tab (a CLI predating the flag just also opens one — harmless).
-    final signIn = envVar == null;
-    final Map<String, String>? environment;
-    if (signIn) {
-      environment = const {_noAutoOpenBrowserEnv: '1'};
-    } else if (apiKey.isNotEmpty) {
-      environment = {envVar: apiKey};
-    } else {
-      environment = null;
-    }
+    final envVar = provider.envVar;
     return _start(
       [
         'join',
         network,
         '--api',
-        kind,
+        provider.kind,
         for (final model in models) ...['-m', model],
-        ..._concurrencyArgs(kind),
         '--name',
         _engineName,
       ],
       grid: network,
-      model: models.isEmpty ? kind : models.join(', '),
-      environment: environment,
-      signIn: signIn,
+      model: models.isEmpty ? provider.kind : models.join(', '),
+      environment: (envVar != null && apiKey.isNotEmpty)
+          ? {envVar: apiKey}
+          : null,
     );
-  }
-
-  /// Env var telling the CLI's codex OAuth flow not to open the browser itself,
-  /// because the app opens it (mirrors how the app drives `grid login`). See
-  /// `codex_signin.py`.
-  static const _noAutoOpenBrowserEnv = 'GRID_OAUTH_NO_OPEN';
-
-  /// The OAuth authorize URL from a sign-in join's output, or null. The CLI
-  /// prints it alone on a line (`  https://…`); keying off the shape keeps this
-  /// robust to reworded prompt text around it.
-  static String? _authorizeUrlIn(String line) {
-    final trimmed = line.trim();
-    return trimmed.startsWith('https://') ? trimmed : null;
   }
 
   List<String> _advertiseArgs(String? advertiseAs) =>
@@ -376,22 +346,6 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   List<String> _ctxArgs(int? ctxSize) =>
       ctxSize != null ? ['--ctx-size', '$ctxSize'] : const [];
 
-  /// How many requests a codex engine serves at once.
-  ///
-  /// The CLI pins a codex seat to **1** worker by default (ADR 0015 D-f) so a
-  /// flat-rate subscription isn't drained eight-wide — but on a shared grid that
-  /// one worker is the whole grid's throughput: every other person's question
-  /// waits behind the current one. Ask for [_codexConcurrency] instead.
-  ///
-  /// TODO(BE): this is the operator's own subscription being opened up — if a
-  /// seat starts hitting vendor rate limits, this number is the first suspect.
-  List<String> _concurrencyArgs(String kind) =>
-      kResponsesOnlyKinds.contains(kind)
-      ? ['--max-concurrency', '$_codexConcurrency']
-      : const [];
-
-  static const _codexConcurrency = 100;
-
   /// [rebuildForPortConflict] (local engine only) rebuilds the join args with a
   /// freshly-picked port, so a "port already in use" abort self-heals on a
   /// second port instead of failing.
@@ -401,7 +355,6 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     String? model,
     bool retried = false,
     Map<String, String>? environment,
-    bool signIn = false,
     Future<List<String>> Function()? rebuildForPortConflict,
   }) async {
     final service = ref.read(gridCliServiceProvider);
@@ -422,9 +375,6 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     _grid = grid;
     _stopping = false;
     final log = <String>[];
-    // For a sign-in join, the OAuth authorize URL the app should open, captured
-    // from the stream as it streams past (null until then, and for other joins).
-    String? signInUrl;
     state = ProviderRunActive(
       grid: grid,
       log: const [],
@@ -444,16 +394,12 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       if (log.length > _maxLogLines) {
         log.removeRange(0, log.length - _maxLogLines);
       }
-      if (signIn && signInUrl == null) {
-        signInUrl = _authorizeUrlIn(line.text);
-      }
       // Still "starting" until `join` exits 0 — the engine serves detached after.
       state = ProviderRunActive(
         grid: grid,
         log: List.unmodifiable(log),
         starting: true,
         model: model,
-        signInUrl: signInUrl,
       );
     });
 
@@ -521,6 +467,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// dead-end is trying to share on a grid you're only a consumer of — the relay
   /// rejects the register with a missing `provider:*` scope. Anything we don't
   /// recognise passes through unchanged (the Debug/command log keeps the raw).
+  ///
+  /// A **CLI seat** that isn't signed in is left alone on purpose: the CLI's own
+  /// line already names the exact command to run (`claude auth login`, and where
+  /// the seat keeps its sign-in), and rewriting it here could only make it vaguer
+  /// while going stale the moment a vendor renames the command.
   static String _humanizeJoinFailure(String raw) {
     final lower = raw.toLowerCase();
     final isProviderScope =

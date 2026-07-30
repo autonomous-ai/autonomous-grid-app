@@ -306,7 +306,7 @@ class _CatalogAction extends StatelessWidget {
             onPressed: () => showConnectorDetailsDialog(context, connector),
           ),
           const SizedBox(width: 2),
-          _DisconnectButton(onPressed: onDisconnect),
+          _RemoveButton(onPressed: onDisconnect),
         ],
       );
     }
@@ -432,21 +432,20 @@ class _McpRowState extends ConsumerState<_McpRow> {
               ),
             ),
             const SizedBox(width: 2),
-            // The destructive half is where the two kinds genuinely part.
-            // Disconnect tells the provider; Remove only forgets a line the user
-            // typed. Offering "Remove" on a signed-in row would drop the config
-            // entry and leave the token behind, and the row would reappear at
-            // the next refresh.
-            if (_isLinkedConnector)
-              _DisconnectButton(onPressed: _disconnect)
-            else
-              AppIconButton(
-                icon: Icons.delete_outline_rounded,
-                size: 18,
-                tooltip: 'Remove',
-                destructive: true,
-                onPressed: _delete,
-              ),
+            // One word, two code paths. The *action* genuinely differs — a
+            // signed-in row hands the credential back through the connector
+            // controller, a hand-added one only drops the config entry — and
+            // they can't be merged: calling `mcpServersProvider.remove` on a
+            // signed-in row would leave the token behind and the entry would
+            // reappear at the next projection.
+            //
+            // But that difference doesn't belong in the button's *label*. The
+            // row already carries it (`Signed in` / `No sign-in`), and the
+            // confirm dialog states the consequence in full. Naming it twice
+            // bought nothing and cost the list its evenness.
+            _RemoveButton(
+              onPressed: _isLinkedConnector ? _disconnect : _delete,
+            ),
           ],
         ],
       ),
@@ -463,11 +462,11 @@ class _McpInfo extends StatelessWidget {
 
   /// Whether the app holds an OAuth credential for this server.
   ///
-  /// Drives the tag, and the tag exists because the row's *controls* differ on
-  /// exactly this: a signed-in row offers Disconnect (which calls the provider),
-  /// a hand-configured one offers Remove (which does not). Without a word for
-  /// the difference, three identical-looking rows wearing two different button
-  /// sets read as arbitrary.
+  /// Drives the tag, and since the rows all wear the same Remove button the tag
+  /// is now the *only* thing that says an account is involved — so it carries
+  /// the fact on its own rather than as a gloss on which control appeared. It
+  /// answers "did this need a login?", which is also what decides whether
+  /// removing it hands a credential back.
   final bool signedIn;
 
   @override
@@ -526,16 +525,23 @@ IconData _transportIcon(McpTransport transport) => switch (transport) {
   McpHttp() => Icons.cloud_outlined,
 };
 
-/// Removing a server stops the assistant using its tools — reversible (add it
-/// back), but worth a beat so a stray click doesn't drop a configured server.
+/// Removing a hand-added connector stops the assistant using its tools —
+/// reversible (add it back), but worth a beat so a stray click doesn't drop one.
+///
+/// Both confirm dialogs are deliberately the same shape, because the button that
+/// opens them is now the same word: same "Remove NAME?" title, same red Remove.
+/// The middle paragraph is the only part that differs, and it is the only place
+/// the difference is stated — so it has to carry it plainly. Here, that there is
+/// no account involved at all.
 Future<bool?> _confirmRemove(BuildContext context, String name) {
   return showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Remove this MCP server?'),
+      title: Text('Remove $name?'),
       content: Text(
-        '"$name" will be removed from Hermes\'s config and the assistant will '
-        'stop using its tools. You can add it again later.',
+        'The assistant will stop using $name on this computer. Nothing was '
+        'signed in for it, so there is no account to disconnect — you can add '
+        'it back any time.',
       ),
       actions: [
         TextButton(
@@ -545,6 +551,10 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
         FilledButton(
           style: FilledButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.error,
+            // Named rather than left to `onError`, which this app's scheme never
+            // sets: the Material default lands at 3.83:1 on the dark error red,
+            // under the 4.5:1 floor. Same reason as the disconnect dialog below.
+            foregroundColor: Colors.white,
           ),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Remove'),
@@ -558,23 +568,31 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
 ///
 /// The text twin of `AppIconButton(destructive: true)` — same neutral resting
 /// ink, same hover fill, same danger red, and the same reason for each. A word
-/// rather than a glyph because "Disconnect" is not a ✕: it stops the agent
-/// using a service, and a bare icon would leave the user guessing which.
+/// rather than a glyph because this is not a ✕: it stops the agent using a
+/// service, and a bare icon would leave the user guessing which.
+///
+/// Every row in the Connected block uses this, and every one of them says
+/// **Remove**. The rows do not all *do* the same thing — a signed-in row hands
+/// back a credential, a hand-added one forgets a URL — but the row already says
+/// which it is (`Signed in` / `No sign-in`), and the confirm dialog spells out
+/// the consequence. What it looked like instead was four rows wearing a word and
+/// one wearing a trash can, which reads as the odd row being a different
+/// *category* of thing rather than the same action on a row without a login.
 ///
 /// It owns its own hover. The row underneath already lightens on hover and
 /// says nothing to its children about where the pointer is, so a button
 /// without its own [MouseRegion] would sit at rest the whole time it's
 /// hovered — a bug this app has shipped twice.
-class _DisconnectButton extends StatefulWidget {
-  const _DisconnectButton({required this.onPressed});
+class _RemoveButton extends StatefulWidget {
+  const _RemoveButton({required this.onPressed});
 
   final VoidCallback onPressed;
 
   @override
-  State<_DisconnectButton> createState() => _DisconnectButtonState();
+  State<_RemoveButton> createState() => _RemoveButtonState();
 }
 
-class _DisconnectButtonState extends State<_DisconnectButton> {
+class _RemoveButtonState extends State<_RemoveButton> {
   bool _hovered = false;
 
   /// Lifted from `AppIconButton`, where it was measured: `colorScheme.error` is
@@ -606,7 +624,7 @@ class _DisconnectButtonState extends State<_DisconnectButton> {
             borderRadius: BorderRadius.circular(7),
           ),
           child: Text(
-            'Disconnect',
+            'Remove',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w500,
@@ -621,23 +639,27 @@ class _DisconnectButtonState extends State<_DisconnectButton> {
   }
 }
 
-/// Disconnecting hands back the credential this machine holds.
+/// Removing a signed-in connector hands back the credential this machine holds.
 ///
 /// The second sentence is the one that matters: this clears the token here and
 /// at the gateway, and it does **not** revoke the access granted at the
 /// provider. Only the user can do that, in the provider's own settings, and a
 /// dialog that let them believe otherwise would leave access standing that they
 /// think they withdrew.
+///
+/// Titled "Remove", like the button and like [_confirmRemove], so the word the
+/// user pressed is the word they're asked to confirm. The account is what makes
+/// this different from that one, and the paragraph says so.
 Future<bool?> _confirmDisconnect(BuildContext context, String name) {
   final scheme = Theme.of(context).colorScheme;
   return showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('Disconnect $name?'),
+      title: Text('Remove $name?'),
       content: Text(
-        'The assistant will stop using $name on this computer. Your account '
-        'keeps whatever access you granted — remove it in $name\'s own '
-        'settings to revoke it fully.',
+        'The assistant will stop using $name on this computer and this Mac will '
+        'forget the sign-in. Your $name account keeps whatever access you '
+        'granted — revoke that in $name\'s own settings.',
       ),
       actions: [
         TextButton(
@@ -653,7 +675,7 @@ Future<bool?> _confirmDisconnect(BuildContext context, String name) {
             foregroundColor: Colors.white,
           ),
           onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Disconnect'),
+          child: const Text('Remove'),
         ),
       ],
     ),

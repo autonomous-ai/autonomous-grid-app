@@ -26,8 +26,9 @@ class BuiltinGridSkill {
   /// The skill's folder name, e.g. `grid-web`.
   final String name;
 
-  /// The agents this skill is installed for. Web search goes to both; the media
-  /// skills are Hermes-only today, so an agent that can't use one never sees it.
+  /// The agents this skill is installed for. Web search, the host notes and the
+  /// server supervisor go to all three; the media skills are Hermes-only today,
+  /// so an agent that can't use one never sees it.
   final Set<AgentTool> agents;
 
   /// Builds the card + scripts for the folder the skill lands in.
@@ -41,28 +42,30 @@ class BuiltinGridSkill {
 /// Adding a skill is one entry here; adding an agent is one branch in
 /// [AgentSkillHome]. Neither touches the installer below.
 final List<BuiltinGridSkill> kBuiltinGridSkills = [
-  // The web-search skill both agents get, so "search the news" works the same
-  // whichever is answering. Codex has no web search of its own on a grid, and
-  // Hermes's native one shares this skill's DuckDuckGo backend.
+  // The web-search skill every agent gets, so "search the news" works the same
+  // whichever is answering. Neither Codex nor Claude Code can reach the web on a
+  // grid — their own search tools are served by their vendor's API, which a
+  // relay is not — and Hermes's native one shares this skill's DuckDuckGo
+  // backend.
   BuiltinGridSkill(
     name: kGridWebSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex},
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridWebSkillFiles,
   ),
   // What this machine has, and what to use instead of the GNU tools it doesn't:
-  // both agents run their commands on the same host, and both were burning calls
+  // every agent runs its commands on the same host, and each was burning calls
   // rediscovering that `timeout`/`gh`/`rg` aren't here.
   BuiltinGridSkill(
     name: kGridHostSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex},
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridHostSkillFiles,
   ),
-  // Starting a dev server is the same job for both agents, and both run their
+  // Starting a dev server is the same job for every agent, and each runs its
   // commands in a session the runner tears down at the end of a tool call — so
-  // both need the supervisor route or they report a dead server as running.
+  // each needs the supervisor route or it reports a dead server as running.
   BuiltinGridSkill(
     name: kGridServeSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex},
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridServeSkillFiles,
   ),
   // Image + video generation through the grid's media API — Hermes-only for now.
@@ -79,7 +82,8 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
 ];
 
 /// Installs the Grid skills an agent uses in Agent mode: into the app's library
-/// first, then into the agent's own folder, which is the only place the agent
+/// first, then into the agent's own folder (`~/.hermes/skills`,
+/// `~/.codex/skills`, `~/.claude/skills`), which is the only place that agent
 /// reads.
 ///
 /// Both, not one: the library copy is what the Skills screen reads authorship

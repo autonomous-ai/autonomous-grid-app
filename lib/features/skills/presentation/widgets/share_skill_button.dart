@@ -6,7 +6,6 @@ import '../../../../shared/widgets/anchored_menu_position.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../../shared/skills/agent_skill_home.dart';
-import '../../../agents/logic/agent_catalog.dart';
 import '../../../agents/logic/agent_skill.dart';
 import '../../../agents/presentation/agent_mark.dart';
 import '../../logic/skill_sharing.dart';
@@ -66,7 +65,7 @@ class _ShareSkillButtonState extends ConsumerState<ShareSkillButton> {
     return [
       for (final target in ShareTarget.values)
         if (target != ShareTarget.all && !target.agents.contains(mine)) target,
-      if (AgentTool.values.length > 2) ShareTarget.all,
+      if (kSkillAgents.length > 2) ShareTarget.all,
     ];
   }
 

@@ -1,9 +1,14 @@
 /// The agents the app can put in charge of a chat.
 ///
-/// Every entry here runs today: installed through the `grid` CLI (`grid agent
-/// install &lt;id&gt;`) and able to answer chats on this computer. An agent the app
-/// can't install doesn't belong on the list — a row the user can only look at
-/// takes up the same space as a working one and answers nothing.
+/// Every entry here runs today: the app can get it onto this computer, and it
+/// can answer chats here. An agent the app can't install doesn't belong on the
+/// list — a row the user can only look at takes up the same space as a working
+/// one and answers nothing.
+///
+/// *How* it gets installed differs, and that difference lives in
+/// `AgentInstallController`, not here: Hermes and Codex come through the `grid`
+/// CLI (`grid agent install <id>`), Claude Code through its vendor's own
+/// installer, because the CLI has no recipe for it.
 enum AgentTool {
   hermes(
     id: 'hermes',
@@ -16,6 +21,12 @@ enum AgentTool {
     name: 'Codex',
     tagline: "OpenAI's coding agent.",
     iconAsset: 'assets/agents/codex_icon.png',
+  ),
+  claude(
+    id: 'claude',
+    name: 'Claude Code',
+    tagline: "Anthropic's coding agent.",
+    iconAsset: 'assets/agents/claude_icon.png',
   );
 
   const AgentTool({
@@ -25,7 +36,8 @@ enum AgentTool {
     required this.iconAsset,
   });
 
-  /// What `grid agent install` calls it.
+  /// The agent's own slug — what `grid agent install` calls it, and the value
+  /// [ChatPrefs.chatAgent] remembers.
   final String id;
 
   final String name;
@@ -36,6 +48,17 @@ enum AgentTool {
   /// the row to two lines, leaving the list unevenly ranked for no reason. Say
   /// only what sets this agent apart from the others.
   final String tagline;
+
+  /// Whether `grid agent install <id>` can fetch this agent — true for the ones
+  /// the CLI packages (Hermes, Codex), false for Claude Code, which comes from
+  /// its vendor's own installer (see [AgentInstallController]).
+  ///
+  /// It gates *unattended* installs: first-run setup and the background top-up
+  /// pull every CLI-packaged agent silently, because `grid agent install` needs
+  /// no admin rights and downloads into `~/.grid`. Claude Code is a whole vendor
+  /// CLI, installed only when the user asks for it on the Agents tab — never in
+  /// the background — so it is left out of those plans and off this flag.
+  bool get packagedByCli => this != AgentTool.claude;
 
   /// The agent's own mark, bundled with the app (declared in `pubspec.yaml`).
   ///

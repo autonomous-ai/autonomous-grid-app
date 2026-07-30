@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_version_service.dart';
+import '../../agent/logic/claude_tool.dart';
 import '../../agent/logic/codex_tool.dart';
 import '../../agent/logic/hermes_tool.dart';
 import 'agent_catalog.dart';
@@ -11,6 +12,7 @@ final agentInstalledProvider = Provider.family<bool, AgentTool>((ref, tool) {
   return switch (tool) {
     AgentTool.hermes => ref.watch(hermesInstalledProvider),
     AgentTool.codex => ref.watch(codexInstalledProvider),
+    AgentTool.claude => ref.watch(claudeInstalledProvider),
   };
 });
 
@@ -33,6 +35,7 @@ final agentVersionProvider = FutureProvider.family<String?, AgentTool>((
   return switch (tool) {
     AgentTool.hermes => ref.watch(hermesVersionProvider.future),
     AgentTool.codex => ref.watch(codexVersionProvider.future),
+    AgentTool.claude => ref.watch(claudeVersionProvider.future),
   };
 });
 
@@ -52,6 +55,9 @@ void reprobeAgent(Ref ref, AgentTool tool) {
     case AgentTool.codex:
       ref.invalidate(codexPathProvider);
       ref.invalidate(codexVersionProvider);
+    case AgentTool.claude:
+      ref.invalidate(claudePathProvider);
+      ref.invalidate(claudeVersionProvider);
   }
 }
 

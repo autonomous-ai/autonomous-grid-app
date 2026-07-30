@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agent/logic/claude_chat_sender.dart';
+import 'package:grid_app/features/agent/logic/claude_tool.dart';
 import 'package:grid_app/features/agent/logic/codex_chat_sender.dart';
 import 'package:grid_app/features/agent/logic/codex_tool.dart';
 import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
@@ -20,14 +22,15 @@ class _FixedPrefs extends ChatPrefsController {
   ChatPrefs build() => _prefs;
 }
 
-/// [responses] is what the open grid's overview says about the Responses API:
-/// true/false when the relay reports it, null when it hasn't (or won't). Always
-/// overridden so no test reaches for a real grid.
+/// [blocked] names the agents the open grid can't run. Which dialect decides
+/// that is `agent_grid_support_test`'s subject; here it is stubbed outright, so
+/// these tests are about *picking* an agent and no test reaches for a real grid.
 ProviderContainer _container({
   required String chosen,
   required bool hermes,
   required bool codex,
-  bool? responses,
+  bool claude = false,
+  Set<AgentTool> blocked = const {},
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -36,7 +39,10 @@ ProviderContainer _container({
       ),
       hermesInstalledProvider.overrideWithValue(hermes),
       codexInstalledProvider.overrideWithValue(codex),
-      gridAdvertisesResponsesProvider.overrideWithValue(responses),
+      claudeInstalledProvider.overrideWithValue(claude),
+      agentRunsOnGridProvider.overrideWith(
+        (ref, tool) => !blocked.contains(tool),
+      ),
     ],
   );
   addTearDown(container.dispose);
@@ -80,7 +86,7 @@ void main() {
         chosen: 'codex',
         hermes: true,
         codex: true,
-        responses: false,
+        blocked: const {AgentTool.codex},
       );
       expect(container.read(activeChatAgentProvider), AgentTool.hermes);
       expect(container.read(blockedChatAgentProvider), AgentTool.codex);
@@ -89,12 +95,7 @@ void main() {
     test('gives the chat back on a grid that can run it', () {
       // The hand-over is resolved per grid, never written to prefs: the user
       // picked Codex once and gets it back the moment a grid can serve it.
-      final container = _container(
-        chosen: 'codex',
-        hermes: true,
-        codex: true,
-        responses: true,
-      );
+      final container = _container(chosen: 'codex', hermes: true, codex: true);
       expect(container.read(activeChatAgentProvider), AgentTool.codex);
       expect(container.read(blockedChatAgentProvider), isNull);
     });
@@ -113,7 +114,7 @@ void main() {
         chosen: 'codex',
         hermes: true,
         codex: false,
-        responses: false,
+        blocked: const {AgentTool.codex},
       );
       expect(container.read(blockedChatAgentProvider), isNull);
     });
@@ -147,6 +148,20 @@ void main() {
       expect(
         container.read(chatAgentSenderProvider),
         same(container.read(hermesChatSenderProvider)),
+      );
+    });
+
+    test('Claude Code active routes chats through its own sender', () {
+      final container = _container(
+        chosen: 'claude',
+        hermes: true,
+        codex: true,
+        claude: true,
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.claude);
+      expect(
+        container.read(chatAgentSenderProvider),
+        same(container.read(claudeChatSenderProvider)),
       );
     });
   });

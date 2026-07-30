@@ -7,6 +7,7 @@ import '../../../shared/widgets/section_scaffold.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../chat/logic/conversation.dart';
 import '../logic/project.dart';
+import '../logic/project_folder_status.dart';
 import '../logic/selected_project.dart';
 import 'create_project_dialog.dart';
 import 'project_actions.dart';
@@ -136,7 +137,7 @@ class _ProjectCard extends ConsumerWidget {
         (s) => liveChatCountIn(s.conversations, project.id),
       ),
     );
-    final missing = !project.exists;
+    final missing = watchProjectMissing(ref, project);
 
     final card = GlassCard(
       style: selected ? GlassCardStyle.hero : GlassCardStyle.card,
@@ -168,9 +169,7 @@ class _ProjectCard extends ConsumerWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  missing
-                      ? "This folder isn't there any more."
-                      : _chatsLabel(chats),
+                  missing ? projectFolderMissingMessage : _chatsLabel(chats),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: missing
                         ? theme.colorScheme.error

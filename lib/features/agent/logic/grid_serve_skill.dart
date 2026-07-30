@@ -46,7 +46,7 @@ Future<void> writeGridServeSkill(
   gridServeSkillFiles(skillDir, uvPath: uvPath, stateDir: stateDir),
 );
 
-/// The skill card both agents read.
+/// The skill card every agent reads.
 ///
 /// The frontmatter is the only part read before it fires, so the description
 /// carries every phrasing that should trigger it — including "why doesn't

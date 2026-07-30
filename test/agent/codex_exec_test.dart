@@ -445,7 +445,7 @@ void main() {
           agentTurnStalled(
             plan: unfinished,
             endedCleanly: true,
-            workedAfterPlan: true,
+            workedAtAll: true,
             planFirst: false,
           ),
           isFalse,
@@ -453,13 +453,35 @@ void main() {
       },
     );
 
+    test('work done before the closing plan revision still counts, since ticking '
+        'the boxes last is the normal rhythm', () {
+      // The review turn: 66 commands, then one update_plan marking five of six
+      // steps done, then the review itself — no tool call after the plan. Read
+      // as "did it work *since* the plan?", every command it had run counted
+      // for nothing and a finished review came back as a stall.
+      final closing = [
+        step('Read the changed files', AgentPlanStatus.done),
+        step('Run analyze and the tests', AgentPlanStatus.done),
+        step('Write the review', AgentPlanStatus.active),
+      ];
+      expect(
+        agentTurnStalled(
+          plan: closing,
+          endedCleanly: true,
+          workedAtAll: true,
+          planFirst: false,
+        ),
+        isFalse,
+      );
+    });
+
     test('a turn that announced steps and ran none of them stalled', () {
       // The tank-game turn: a plan, "let me write it for you", nothing built.
       expect(
         agentTurnStalled(
           plan: unfinished,
           endedCleanly: true,
-          workedAfterPlan: false,
+          workedAtAll: false,
           planFirst: false,
         ),
         isTrue,
@@ -471,7 +493,7 @@ void main() {
         agentTurnStalled(
           plan: unfinished,
           endedCleanly: false,
-          workedAfterPlan: true,
+          workedAtAll: true,
           planFirst: false,
         ),
         isTrue,
@@ -487,7 +509,7 @@ void main() {
         agentTurnStalled(
           plan: done,
           endedCleanly: false,
-          workedAfterPlan: false,
+          workedAtAll: false,
           planFirst: false,
         ),
         isFalse,
@@ -499,7 +521,7 @@ void main() {
         agentTurnStalled(
           plan: unfinished,
           endedCleanly: false,
-          workedAfterPlan: false,
+          workedAtAll: false,
           planFirst: true,
         ),
         isFalse,

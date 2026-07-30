@@ -138,9 +138,9 @@ final agentExtensionsProvider = Provider.family<AgentExtensions?, AgentTool>((
 ) {
   return switch (tool) {
     AgentTool.hermes => ref.watch(hermesExtensionsProvider),
-    // Codex keeps skills in ~/.codex/skills but has no adapter yet — its
-    // extensions land with the codex adapter, not before.
-    AgentTool.codex => null,
+    // Codex and Claude Code keep skills in their own homes but have no adapter
+    // yet — their extensions land with those adapters, not before.
+    AgentTool.codex || AgentTool.claude => null,
   };
 });
 

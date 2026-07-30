@@ -32,7 +32,8 @@ const String kPublicSkillsDir = 'public';
 enum SkillSource {
   store('Library'),
   hermes('Hermes'),
-  codex('Codex');
+  codex('Codex'),
+  claude('Claude Code');
 
   const SkillSource(this.label);
 
@@ -43,6 +44,7 @@ enum SkillSource {
     SkillSource.store => Directory(gridSkillsStore(home)),
     SkillSource.hermes => Directory('$home/.hermes/skills'),
     SkillSource.codex => Directory('$home/.codex/skills'),
+    SkillSource.claude => Directory('$home/.claude/skills'),
   };
 
   /// The agent this folder belongs to, or null for the library.
@@ -50,12 +52,26 @@ enum SkillSource {
     SkillSource.store => null,
     SkillSource.hermes => AgentTool.hermes,
     SkillSource.codex => AgentTool.codex,
+    SkillSource.claude => AgentTool.claude,
   };
 }
 
-/// The folders the Skills screen offers, in tab order — the assistants, and
-/// only the assistants.
+/// The folders the Skills screen offers, in tab order.
+///
+/// Not every agent the app can run: Claude Code arrived as a chat agent and the
+/// installer already writes Grid's skills into its folder, but managing its
+/// skills here is a separate piece of work and this list is the one place that
+/// decision is made. Adding it later is this line, plus a [ShareTarget] for it.
 const List<SkillSource> kSkillTabs = [SkillSource.hermes, SkillSource.codex];
+
+/// The assistants the Skills screen manages — [kSkillTabs] as agents.
+///
+/// Everything in the feature that loops over agents loops over *this*, not
+/// `AgentTool.values`, so an agent the screen doesn't manage never turns up as
+/// a mark on a row or a target in a menu.
+final List<AgentTool> kSkillAgents = [
+  for (final source in kSkillTabs) source.agent!,
+];
 
 /// Where a copy of a skill lands in [agent]'s own folder: flat at its root,
 /// under the skill's own name.
@@ -66,10 +82,14 @@ const List<SkillSource> kSkillTabs = [SkillSource.hermes, SkillSource.codex];
 /// the agent looks. One shape also means one place a copy can be: install and
 /// a later hand-share write the same path instead of two copies of one skill.
 Directory agentSkillCopy(AgentTool agent, String home, String slug) =>
-    Directory('${SkillSource.values.firstWhere((s) => s.agent == agent).root(home).path}/$slug');
+    switch (agent) {
+      AgentTool.hermes => Directory('${SkillSource.hermes.root(home).path}/$slug'),
+      AgentTool.codex => Directory('${SkillSource.codex.root(home).path}/$slug'),
+      AgentTool.claude => Directory('${SkillSource.claude.root(home).path}/$slug'),
+    };
 
 /// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
-/// which both agents can already reach.
+/// which every agent can already reach.
 ///
 /// Spelled once here so a skill never depends on a `uv` being on PATH — the GUI's
 /// minimal PATH is exactly what broke other tooling before — and so two skills

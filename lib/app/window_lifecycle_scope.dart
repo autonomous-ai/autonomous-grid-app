@@ -4,11 +4,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../features/projects/logic/project_folder_status.dart';
 import '../features/provider_node/logic/provider_run_controller.dart';
 
-/// Intercepts every way the app can quit so a running engine is stopped before
-/// the process exits — otherwise the detached `grid join` engine keeps serving on
-/// the relay with no app to manage or stop it.
+/// Watches the window's own life: every way the app can quit, so a running engine
+/// is stopped before the process exits — otherwise the detached `grid join` engine
+/// keeps serving on the relay with no app to manage or stop it — and its coming
+/// back to the front, so what the app believes about the user's folders is asked
+/// again rather than assumed.
 ///
 /// Two exit paths must be covered, and only together do they catch a normal
 /// quit: the window's close button and the tray's "Quit" arrive via
@@ -64,6 +67,18 @@ class _WindowLifecycleScopeState extends ConsumerState<WindowLifecycleScope>
   Future<void> onWindowClose() async {
     await _stopServing();
     await windowManager.destroy();
+  }
+
+  @override
+  void onWindowFocus() => revalidateProjectFolders(ref);
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Both hooks, because only together do they cover the platforms: clicking the
+    // window fires [onWindowFocus], while ⌘-tabbing back to a hidden app arrives
+    // as `resumed`. Re-asking is a handful of async stats, so being told twice
+    // costs nothing and being told never costs a badge that lies all session.
+    if (state == AppLifecycleState.resumed) revalidateProjectFolders(ref);
   }
 
   @override
