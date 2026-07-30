@@ -34,34 +34,22 @@ const _openaiCatalog = '''
 
 const _catalogArgs = ['catalog', '--api', 'openai', '--json'];
 
-// A codex catalog speaks per-subscription-tier `tiers`, not a flat `models`
-// list (ADR 0015). `gpt-5.6-terra` appears in two tiers to exercise the
-// first-wins union.
-const _codexCatalog = '''
+// A CLI-seat catalog: aliases rather than dated ids, and an unknown context
+// window (the seat has no /models endpoint to probe).
+const _claudeCatalog = '''
 {
-  "kind": "codex",
-  "last_verified": "2026-07-15",
-  "endpoints": ["responses"],
-  "minimal_tier": "free",
-  "tiers": {
-    "free": [
-      {"advertised": "codex:gpt-5.6-terra", "vendor_name": "gpt-5.6-terra",
-       "context_window": 272000, "supports_tools": true, "supports_vision": true,
-       "supports_parallel_tool_calls": true, "notes": "Balanced."},
-      {"advertised": "codex:gpt-5.4-mini", "vendor_name": "gpt-5.4-mini",
-       "context_window": 272000, "supports_tools": true, "supports_vision": true,
-       "supports_parallel_tool_calls": true, "notes": "High-volume."}
-    ],
-    "plus": [
-      {"advertised": "codex:gpt-5.6-terra", "vendor_name": "gpt-5.6-terra",
-       "context_window": 272000, "supports_tools": true, "supports_vision": true,
-       "supports_parallel_tool_calls": true, "notes": "Balanced."}
-    ]
-  }
+  "kind": "claude",
+  "last_verified": "2026-07-28",
+  "endpoints": ["chat/completions"],
+  "models": [
+    {"advertised": "claude:opus", "vendor_name": "opus",
+     "context_window": 0, "supports_tools": true, "supports_vision": false,
+     "notes": "Claude Code CLI seat."}
+  ]
 }
 ''';
 
-const _codexArgs = ['catalog', '--api', 'codex', '--json'];
+const _claudeArgs = ['catalog', '--api', 'claude', '--json'];
 
 ProviderContainer _container(
   GridCliService? cli, {
@@ -146,37 +134,44 @@ void main() {
       },
     );
 
-    test(
-      'surfaces codex from its per-tier catalog as a sign-in provider',
-      () async {
-        // Only codex resolves here: openai's catalog is refused so the single
-        // engine is unambiguously the codex one.
-        final fake = FakeGridCliService()
-          ..stubResult(
-            _catalogArgs,
-            const CliResult(exitCode: 1, stdout: '', stderr: 'Unknown'),
-          )
-          ..stubResult(
-            _codexArgs,
-            const CliResult(exitCode: 0, stdout: _codexCatalog, stderr: ''),
-          );
-        final container = _container(fake, stored: const {'codex'});
+    test('surfaces a CLI seat with no credential of its own', () async {
+      // Only the seat resolves here: openai's catalog is refused so the single
+      // engine is unambiguously the claude one.
+      final fake = FakeGridCliService()
+        ..stubResult(
+          _catalogArgs,
+          const CliResult(exitCode: 1, stdout: '', stderr: 'Unknown'),
+        )
+        ..stubResult(
+          _claudeArgs,
+          const CliResult(exitCode: 0, stdout: _claudeCatalog, stderr: ''),
+        );
+      final container = _container(fake);
 
-        final engines = await container.read(apiEnginesProvider.future);
+      final engines = await container.read(apiEnginesProvider.future);
 
-        final codex = engines.singleWhere((e) => e.provider.kind == 'codex');
-        expect(codex.provider.usesSignIn, isTrue);
-        expect(codex.provider.envVar, isNull);
-        expect(codex.hasStoredKey, isTrue); // a stored OAuth seat counts
-        expect(codex.lastVerified, '2026-07-15');
-        // Tiers flattened to a first-wins union — the model shared across tiers
-        // appears once, in first-seen order.
-        expect(codex.models.map((m) => m.advertised), [
-          'codex:gpt-5.6-terra',
-          'codex:gpt-5.4-mini',
-        ]);
-      },
-    );
+      final claude = engines.singleWhere((e) => e.provider.kind == 'claude');
+      expect(claude.provider.isSeat, isTrue);
+      // A seat holds nothing to leak: no env var, no key, no stored credential.
+      expect(claude.provider.envVar, isNull);
+      expect(claude.hasStoredKey, isFalse);
+      expect(claude.provider.binary, 'claude');
+      expect(claude.lastVerified, '2026-07-28');
+      expect(claude.models.map((m) => m.advertised), ['claude:opus']);
+    });
+
+    test('a key provider reports no seat at all, so "missing CLI" can never be '
+        'read into a provider that has none', () async {
+      final fake = FakeGridCliService()
+        ..stubResult(
+          _catalogArgs,
+          const CliResult(exitCode: 0, stdout: _openaiCatalog, stderr: ''),
+        );
+      final container = _container(fake);
+
+      final engines = await container.read(apiEnginesProvider.future);
+      expect(engines.single.seatFound, isNull);
+    });
 
     test('reports no stored key when the store has none', () async {
       final fake = FakeGridCliService()

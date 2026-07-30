@@ -8,6 +8,7 @@ import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../logic/api_engine_catalog.dart';
+import '../logic/api_engine_choices.dart';
 import '../logic/engine_slots.dart';
 import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
@@ -50,9 +51,10 @@ class ApiEngineBlock extends ConsumerWidget {
     final available = engines.asData?.value ?? const <ApiEngine>[];
     if (available.isEmpty) return const SizedBox.shrink();
 
-    // Only claim "or your ChatGPT subscription" when a sign-in provider is
-    // actually available on this CLI — otherwise the subtitle over-promises.
-    final hasSignIn = available.any((e) => e.provider.usesSignIn);
+    // Only claim "or a coding CLI you already use" when one is actually on this
+    // computer — otherwise the subtitle promises a road that ends in "install
+    // it first".
+    final hasSeat = seatEngines(available).isNotEmpty;
     // A hosted model this machine already serves can't be shared again — the
     // grid would be offered the same name twice. The form takes them out of
     // play rather than letting a second join fail or shadow the first.
@@ -66,8 +68,9 @@ class ApiEngineBlock extends ConsumerWidget {
       // Every hosted engine spends the user's own vendor account per request —
       // the one thing about this block worth knowing before filling it in.
       trailing: const EngineCostChip(cost: EngineCost.metered),
-      subtitle: hasSignIn
-          ? 'Your own API key or ChatGPT subscription — no model download.'
+      subtitle: hasSeat
+          ? 'Your own API key, or a coding CLI already on this computer — no '
+                'model download.'
           : 'A hosted provider with your own API key — no model download.',
       child: ApiEngineForm(
         network: network,
@@ -85,9 +88,9 @@ class ApiEngineBlock extends ConsumerWidget {
 /// again without re-pasting.
 ///
 /// Public because onboarding presents the same form under its own cards — one
-/// per way in (a ChatGPT subscription, a pasted key) — instead of the single
-/// "Cloud Provider" block with a provider dropdown that this screen uses. Hand
-/// it the [engines] that card is about; with one, it drops the dropdown.
+/// per way in (a CLI already on this computer, a pasted key) — instead of the
+/// single "Cloud Provider" block with a provider dropdown that this screen uses.
+/// Hand it the [engines] that card is about; with one, it drops the dropdown.
 class ApiEngineForm extends ConsumerStatefulWidget {
   const ApiEngineForm({
     super.key,
@@ -121,13 +124,14 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
   /// an "Advanced" link until asked for.
   bool _showAdvanced = false;
 
-  /// Which provider the block opens on: prefer a subscription (sign-in) provider
-  /// like the ChatGPT/Codex seat, so it's ready to Start without pasting a key.
-  /// Falls back to the first available provider when none use sign-in.
+  /// Which provider the block opens on: prefer a CLI seat that's actually on
+  /// this computer, so it's ready to Start with nothing to paste and nothing to
+  /// install. Falls back to the first available provider otherwise — including
+  /// when the only seats are ones this machine hasn't got, which would open the
+  /// block on a dead end.
   static String _defaultKind(List<ApiEngine> engines) {
-    final subscription = engines.where((e) => e.provider.usesSignIn);
-    final chosen = subscription.isNotEmpty ? subscription.first : engines.first;
-    return chosen.provider.kind;
+    final ready = seatEngines(engines);
+    return (ready.isNotEmpty ? ready.first : engines.first).provider.kind;
   }
 
   /// True once the user chose to replace a key the CLI already had stored — only
@@ -175,20 +179,25 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
     });
   }
 
-  Future<void> _openKeyHelp(String url) =>
+  /// Hand a help link to the browser — where to find a key, or where to get the
+  /// CLI a seat needs.
+  Future<void> _openUrl(String url) =>
       launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
   /// Why Start can't run yet, or null when it can. Surfaced as a tooltip on the
-  /// disabled button so it explains itself instead of sitting greyed out. A
-  /// sign-in provider needs no key — signing in happens on Start.
+  /// disabled button so it explains itself instead of sitting greyed out. A CLI
+  /// seat needs no key — but it does need its CLI to be here.
   String? _startBlockedReason() {
-    if (!_engine.provider.usesSignIn &&
-        !_usingStoredKey &&
-        _key.text.trim().isEmpty) {
+    final provider = _engine.provider;
+    if (provider.isSeat && _engine.seatFound != true) {
+      return '${provider.label} is not on this computer yet, so there is '
+          'nothing for the grid to run.';
+    }
+    if (!provider.isSeat && !_usingStoredKey && _key.text.trim().isEmpty) {
       return 'Enter a valid API key to start sharing cloud models.';
     }
     if (_shareable(_engine).isEmpty) {
-      return "You're already sharing every model ${_engine.provider.label} "
+      return "You're already sharing every model ${provider.label} "
           'offers. Stop one above to change what you share.';
     }
     if (_selected.isEmpty) return 'Pick at least one model to share.';
@@ -196,18 +205,11 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
   }
 
   /// The Start button's label — honest about what pressing it does for this
-  /// provider: paste-key providers start the engine; a sign-in provider signs in
-  /// (or reuses a stored seat) then shares.
-  String get _startLabel {
-    if (!_engine.provider.usesSignIn) return 'Start cloud engine';
-    return _usingStoredKey ? 'Share your subscription' : 'Sign in & share';
-  }
-
-  /// What the busy row says while the join is starting: a sign-in join sends the
-  /// user to the browser, so point them there; other joins are just starting up.
-  String get _busyLabel => _engine.provider.usesSignIn && !_usingStoredKey
-      ? 'Signing in… finish it in your browser'
-      : 'Starting…';
+  /// provider: a key provider starts a cloud engine, a seat shares the CLI
+  /// that's already here.
+  String get _startLabel => _engine.provider.isSeat
+      ? 'Share ${_engine.provider.label}'
+      : 'Start cloud engine';
 
   void _start() {
     final engine = _engine;
@@ -222,8 +224,7 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
         .read(providerRunControllerProvider.notifier)
         .startApiEngine(
           network: widget.network.networkId,
-          kind: engine.provider.kind,
-          envVar: engine.provider.envVar,
+          provider: engine.provider,
           apiKey: _usingStoredKey ? '' : _key.text.trim(),
           models: serveAll ? const [] : chosen,
         );
@@ -232,9 +233,9 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
   @override
   Widget build(BuildContext context) {
     final engine = _engine;
-    // While this grid's join is still starting (a sign-in join is awaiting the
-    // browser approval), swap Start for a busy row — feedback that it's working,
-    // and a guard against a second join from a double-tap.
+    // While this grid's join is still starting, swap Start for a busy row —
+    // feedback that it's working, and a guard against a second join from a
+    // double-tap.
     final run = ref.watch(providerRunControllerProvider);
     final starting =
         run is ProviderRunActive &&
@@ -251,8 +252,12 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
           ),
           const SizedBox(height: 12),
         ],
-        if (engine.provider.usesSignIn)
-          _SignInPanel(label: engine.provider.label, signedIn: _usingStoredKey)
+        if (engine.provider.isSeat)
+          _SeatPanel(
+            provider: engine.provider,
+            found: engine.seatFound == true,
+            onOpenSetup: _openUrl,
+          )
         else
           _KeyField(
             provider: engine.provider,
@@ -261,7 +266,7 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
             usingStoredKey: _usingStoredKey,
             onToggleObscure: () => setState(() => _obscure = !_obscure),
             onReplaceKey: () => setState(() => _replaceKey = true),
-            onOpenHelp: _openKeyHelp,
+            onOpenHelp: _openUrl,
           ),
         const SizedBox(height: 16),
         if (!widget.compact || _showAdvanced)
@@ -293,11 +298,12 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
         const SizedBox(height: 12),
         Text(
           // The "Billed to your own account" chip above already says who pays,
-          // so this keeps only what the chip doesn't carry: for a subscription,
-          // that the seat's allowance is what's spent; for a key, where the key
-          // lives and where prompts go.
-          engine.provider.usesSignIn
-              ? 'Requests use your subscription’s own allowance.'
+          // so this keeps only what the chip doesn't carry: for a seat, that the
+          // allowance being spent is the one on this computer; for a key, where
+          // the key lives and where prompts go.
+          engine.provider.isSeat
+              ? 'Requests run through ${engine.provider.label} here and spend '
+                    'its own allowance.'
               : 'Your key stays on this computer; prompts go to '
                     '${engine.provider.label} for inference.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -308,7 +314,7 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
         Align(
           alignment: Alignment.centerLeft,
           child: starting
-              ? _StartingRow(label: _busyLabel)
+              ? const _StartingRow(label: 'Starting…')
               : ListenableBuilder(
                   listenable: _key,
                   builder: (context, _) => EngineStartButton(
@@ -323,9 +329,8 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
   }
 }
 
-/// Shown in place of Start while the join is starting: a spinner and a line that
-/// tells the user what to do next (finish the browser sign-in, or just wait).
-/// Also stops a double-tap from launching a second join.
+/// Shown in place of Start while the join is starting: a spinner and a line
+/// saying so. Also stops a double-tap from launching a second join.
 class _StartingRow extends StatelessWidget {
   const _StartingRow({required this.label});
 
@@ -351,36 +356,61 @@ class _StartingRow extends StatelessWidget {
   }
 }
 
-/// The credential row for a sign-in provider (a ChatGPT/Codex subscription):
-/// there is no key to paste, so it explains what Start will do — open the
-/// browser to sign in, or reuse a seat this machine already signed in with —
-/// instead of showing a key field.
-class _SignInPanel extends StatelessWidget {
-  const _SignInPanel({required this.label, required this.signedIn});
+/// The credential row for a CLI seat: there is no key to paste and no account to
+/// hand over, so it says what the grid will actually run — and, when that CLI
+/// isn't here, where to get it, rather than leaving a greyed-out Start.
+///
+/// It says "found", never "signed in". Whether the CLI is signed in is the
+/// seat's own check at join time; claiming it here from a file on disk is
+/// exactly the kind of label that reads "Connected" while nothing is (§5).
+class _SeatPanel extends StatelessWidget {
+  const _SeatPanel({
+    required this.provider,
+    required this.found,
+    required this.onOpenSetup,
+  });
 
-  final String label;
-  final bool signedIn;
+  final ApiProvider provider;
+
+  /// Whether [ApiProvider.binary] is on this computer.
+  final bool found;
+  final Future<void> Function(String url) onOpenSetup;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final icon = signedIn ? Icons.check_circle_outline : Icons.open_in_browser;
-    final text = signedIn
-        ? 'Signed in to your $label — Start shares it with the grid.'
-        : 'No key needed — Start signs you in via your browser, then shares '
-              'the seat.';
+    final setupUrl = provider.setupUrl;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
-          icon,
+          found ? Icons.check_circle_outline : Icons.download_outlined,
           size: 18,
-          color: signedIn
+          color: found
               ? theme.colorScheme.primary
               : theme.colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 8),
-        Expanded(child: Text(text)),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                found
+                    ? '${provider.label} is on this computer — the grid runs it '
+                          'with the sign-in it already has.'
+                    : "${provider.label} isn't on this computer yet. Install it "
+                          'and sign in, then come back here.',
+              ),
+              if (!found && setupUrl != null)
+                TextButton.icon(
+                  onPressed: () => onOpenSetup(setupUrl),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: Text('Get ${provider.label}'),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -413,14 +443,20 @@ class _ProviderDropdown extends StatelessWidget {
           AppSelectOption(
             value: engine.provider.kind,
             label: engine.provider.label,
-            // Say how each provider authenticates while the list is open — it's
-            // the difference between pasting a key and a browser sign-in.
-            detail: engine.provider.usesSignIn
-                ? 'Sign in with your subscription'
-                : 'Uses your API key',
+            // Say what each provider needs while the list is open — it's the
+            // difference between pasting a key, sharing a CLI that's already
+            // here, and one that would have to be installed first.
+            detail: _providerDetail(engine),
           ),
       ],
     );
+  }
+
+  static String _providerDetail(ApiEngine engine) {
+    if (!engine.provider.isSeat) return 'Uses your API key';
+    return engine.seatFound == true
+        ? 'Already on this computer'
+        : 'Not installed here yet';
   }
 }
 

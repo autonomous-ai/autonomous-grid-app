@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/claude_installer.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
 import '../../agent/logic/agent_server_error.dart';
@@ -52,9 +53,13 @@ final agentInstallProvider =
       AgentInstallController.new,
     );
 
-/// Installs (or upgrades) an agent through the `grid` CLI — no Homebrew, no
-/// admin rights: `grid agent install <id>`, with `--force` to replace a build
-/// that's already there.
+/// Installs (or upgrades) an agent — no Homebrew, no admin rights.
+///
+/// Two routes, because the agents come from two places: `grid agent install`
+/// for the ones the CLI packages (Hermes, Codex), and the vendor's own
+/// installer for Claude Code, which the CLI has no recipe for. Which route an
+/// agent takes is this class's business alone — every screen just presses
+/// Install.
 class AgentInstallController extends Notifier<AgentInstallState> {
   @override
   AgentInstallState build() => const AgentInstallIdle();
@@ -63,30 +68,17 @@ class AgentInstallController extends Notifier<AgentInstallState> {
   Future<void> install(AgentTool tool, {bool upgrade = false}) async {
     if (state is AgentInstallRunning) return;
 
-    final cli = ref.read(gridCliServiceProvider);
-    if (cli == null) {
-      state = AgentInstallFailed(
-        tool,
-        "The grid tool isn't installed on this computer, so there's nothing to "
-        'install ${tool.name} with.',
-      );
-      return;
-    }
-
     state = AgentInstallRunning(tool);
     // The build that's there now, read before the reinstall replaces it — so the
     // outcome can say whether anything actually changed. Only meaningful on an
     // upgrade; a fresh install has nothing before it.
     final before = upgrade ? await _installedVersion(tool) : null;
 
-    final result = await cli.run([
-      'agent',
-      'install',
-      tool.id,
-      if (upgrade) '--force',
-    ], timeout: kAgentInstallTimeout);
-    if (!result.ok) {
-      state = AgentInstallFailed(tool, _friendlyError(result, tool));
+    final failed = tool == AgentTool.claude
+        ? await _installClaude(upgrade: upgrade)
+        : await _installViaCli(tool, upgrade: upgrade);
+    if (failed != null) {
+      state = AgentInstallFailed(tool, failed);
       return;
     }
 
@@ -106,6 +98,37 @@ class AgentInstallController extends Notifier<AgentInstallState> {
       tool,
       agentInstallOutcome(tool, upgrade: upgrade, before: before, after: after),
     );
+  }
+
+  /// `grid agent install <id>` — the path for the agents the CLI knows how to
+  /// fetch (Hermes, Codex). Returns null on success, else the line to show.
+  Future<String?> _installViaCli(AgentTool tool, {required bool upgrade}) async {
+    final cli = ref.read(gridCliServiceProvider);
+    if (cli == null) {
+      return "The grid tool isn't installed on this computer, so there's "
+          'nothing to install ${tool.name} with.';
+    }
+    final result = await cli.run([
+      'agent',
+      'install',
+      tool.id,
+      if (upgrade) '--force',
+    ], timeout: kAgentInstallTimeout);
+    return result.ok ? null : _friendlyError(result, tool);
+  }
+
+  /// Claude Code comes from its vendor's own installer, because `grid agent
+  /// install` has no recipe for it — it knows Hermes and Codex and rejects
+  /// anything else at argv parsing, so routing Claude through it would fail
+  /// every time with a usage error the user can do nothing about.
+  Future<String?> _installClaude({required bool upgrade}) async {
+    final failure = await ref
+        .read(claudeInstallerProvider)
+        .install(upgrade: upgrade);
+    if (failure == null) return null;
+    // The raw line is kept, not swallowed: an installer that failed on a proxy
+    // says so, and a sentence of ours would only hide it (§6).
+    return "Couldn't install ${AgentTool.claude.name}: $failure";
   }
 
   /// The installed build of [tool], or null when it doesn't report one.

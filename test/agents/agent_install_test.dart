@@ -4,6 +4,7 @@ import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agent/logic/agent_server_error.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_install_controller.dart';
+import 'package:grid_app/infrastructure/cli/claude_installer.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_acp_setup.dart';
 import 'package:grid_app/infrastructure/cli/hermes_version_service.dart';
@@ -64,12 +65,35 @@ class _FakeSetup implements HermesAcpSetup {
   Future<void> ensureWebSearch() async {}
 }
 
-ProviderContainer _container(GridCliService? cli, {HermesAcpSetup? setup}) {
+/// Claude Code's vendor installer, recorded rather than run — no download, and
+/// nothing written to the machine running the tests.
+class _FakeClaudeInstaller implements ClaudeInstaller {
+  _FakeClaudeInstaller({this.failure});
+
+  /// What the installer reports back, or null when it worked.
+  final String? failure;
+  final upgrades = <bool>[];
+
+  @override
+  Future<String?> install({required bool upgrade}) async {
+    upgrades.add(upgrade);
+    return failure;
+  }
+}
+
+ProviderContainer _container(
+  GridCliService? cli, {
+  HermesAcpSetup? setup,
+  ClaudeInstaller? claude,
+}) {
   final container = ProviderContainer(
     overrides: [
       gridCliServiceProvider.overrideWithValue(cli),
       // Never probe the real Hermes on the machine running the tests.
       hermesAcpSetupProvider.overrideWithValue(setup ?? _FakeSetup()),
+      claudeInstallerProvider.overrideWithValue(
+        claude ?? _FakeClaudeInstaller(),
+      ),
     ],
   );
   addTearDown(container.dispose);
@@ -94,6 +118,50 @@ void main() {
         expect(cli.calls.last, ['agent', 'install', 'hermes', '--force']);
       },
     );
+
+    test('Claude Code goes to its vendor installer, never to `grid agent '
+        'install` — the CLI knows only hermes and codex and would reject it at '
+        'argv parsing', () async {
+      final cli = _FakeCli();
+      final claude = _FakeClaudeInstaller();
+      final container = _container(cli, claude: claude);
+      final controller = container.read(agentInstallProvider.notifier);
+
+      await controller.install(AgentTool.claude);
+      expect(claude.upgrades, [false]);
+      expect(cli.calls, isEmpty);
+      expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
+
+      await controller.install(AgentTool.claude, upgrade: true);
+      expect(claude.upgrades, [false, true]);
+    });
+
+    test('Claude Code installs on a machine with no grid CLI at all — its '
+        'installer needs nothing from us', () async {
+      final container = _container(null, claude: _FakeClaudeInstaller());
+
+      await container
+          .read(agentInstallProvider.notifier)
+          .install(AgentTool.claude);
+
+      expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
+    });
+
+    test('a failed Claude install keeps the installer own reason, so a proxy '
+        'or a missing curl is diagnosable', () async {
+      final container = _container(
+        _FakeCli(),
+        claude: _FakeClaudeInstaller(failure: 'curl: (6) Could not resolve'),
+      );
+
+      await container
+          .read(agentInstallProvider.notifier)
+          .install(AgentTool.claude);
+
+      final state = container.read(agentInstallProvider) as AgentInstallFailed;
+      expect(state.tool, AgentTool.claude);
+      expect(state.message, contains('Could not resolve'));
+    });
 
     test(
       'a failure comes back as the CLI\'s own last words, not an exit code',
@@ -210,11 +278,16 @@ void main() {
   group('the catalog', () {
     test('lists only agents the app can install, so no row on the screen is '
         'there to be looked at rather than used', () {
-      expect(AgentTool.values, [AgentTool.hermes, AgentTool.codex]);
+      expect(AgentTool.values, [
+        AgentTool.hermes,
+        AgentTool.codex,
+        AgentTool.claude,
+      ]);
       expect(kChatAgent, AgentTool.hermes);
     });
 
-    test('the id is what `grid agent install` takes', () {
+    test('the id of a CLI-packaged agent is what `grid agent install` takes '
+        '— the CLI rejects anything else at argv parsing', () {
       expect(AgentTool.hermes.id, 'hermes');
       expect(AgentTool.codex.id, 'codex');
     });

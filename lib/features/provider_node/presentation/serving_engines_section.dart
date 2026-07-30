@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/app_environment.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -32,7 +31,6 @@ class ServingEnginesSection extends ConsumerWidget {
         ? run
         : null;
     final starting = active?.starting ?? false;
-    final signInUrl = active?.signInUrl;
     final log = active?.log ?? const <String>[];
     final stopping =
         run is ProviderRunStopping && run.grid == network.networkId;
@@ -69,10 +67,6 @@ class ServingEnginesSection extends ConsumerWidget {
               // duplicate. Per-engine Stop returns the moment a second joins.
               showStop: engines.length > 1,
             ),
-          if (signInUrl != null) ...[
-            const SizedBox(height: 12),
-            _SignInPrompt(url: signInUrl),
-          ],
           if (canPlayground) ...[
             const SizedBox(height: 12),
             _PlaygroundHint(onOpen: () => openPlaygroundDialog(context, ref)),
@@ -237,62 +231,3 @@ class _LogExpander extends StatelessWidget {
   }
 }
 
-/// Shown while a sign-in join (codex OAuth) waits for browser approval. The app
-/// already opened the browser; this confirms what to do and offers a fallback
-/// link in case it didn't open.
-class _SignInPrompt extends StatelessWidget {
-  const _SignInPrompt({required this.url});
-
-  final String url;
-
-  Future<void> _open() async {
-    final uri = Uri.tryParse(url);
-    if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return GlassCard(
-      style: GlassCardStyle.inset,
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.open_in_browser,
-            color: theme.colorScheme.primary,
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Approve the sign-in in your browser',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Once you approve, sharing starts automatically. Didn’t open?',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: _open,
-                  icon: const Icon(Icons.open_in_new, size: 16),
-                  label: const Text('Open sign-in page'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

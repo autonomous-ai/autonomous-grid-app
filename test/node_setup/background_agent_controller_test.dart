@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/features/agent/logic/claude_tool.dart';
 import 'package:grid_app/features/agent/logic/codex_tool.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
@@ -31,6 +32,7 @@ ProviderContainer _container(
       // The re-probe at the end must not walk the real PATH.
       hermesPathProvider.overrideWith((_) => null),
       codexPathProvider.overrideWith((_) => null),
+      claudePathProvider.overrideWith((_) => null),
     ],
   );
   addTearDown(container.dispose);
@@ -49,16 +51,25 @@ void main() {
 
       await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
+      // Only the CLI-packaged agents are topped up silently. Claude Code isn't
+      // one of them — the CLI can't fetch it, and a whole vendor CLI is the
+      // user's call on the Agents tab — so it is never in a background round.
       expect(cli.runCalls, [
         for (final tool in AgentTool.values)
-          if (tool != AgentTool.hermes) ['agent', 'install', tool.id],
+          if (tool != AgentTool.hermes && tool.packagedByCli)
+            ['agent', 'install', tool.id],
       ]);
+      expect(
+        cli.runCalls,
+        isNot(contains(['agent', 'install', AgentTool.claude.id])),
+      );
     },
   );
 
-  test('a computer with every agent installs nothing', () async {
+  test('a computer with every CLI-packaged agent installs nothing', () async {
     final cli = FakeGridCliService();
-    final container = _container(cli, installed: AgentTool.values.toSet());
+    final installed = AgentTool.values.where((t) => t.packagedByCli).toSet();
+    final container = _container(cli, installed: installed);
 
     await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
@@ -75,7 +86,8 @@ void main() {
       await installer.startIfNeeded();
       await installer.startIfNeeded();
 
-      expect(cli.runCalls, hasLength(AgentTool.values.length - 1));
+      final cliPackaged = AgentTool.values.where((t) => t.packagedByCli).length;
+      expect(cli.runCalls, hasLength(cliPackaged - 1));
     },
   );
 
