@@ -95,15 +95,6 @@ const _agentStep = SetupStep(
   isDownload: false,
 );
 
-const _optionalAgentStep = SetupStep(
-  action: SetupAction.installAgent,
-  title: 'Install Codex',
-  detail: '',
-  args: ['agent', 'install', 'codex'],
-  isDownload: false,
-  optional: true,
-);
-
 /// [onDisk] stands in for the PATH probe, so a test can put the binary "there"
 /// mid-run the way an install does and see whether the app notices.
 ProviderContainer _container(
@@ -155,42 +146,8 @@ void main() {
     },
   );
 
-  test(
-    'an extra assistant that fails to download is skipped, not fatal',
-    () async {
-      // A first run installs every agent; only the one that answers chat is
-      // required. A second one that won't download must leave the user in the
-      // app, not at a red screen — and must not be reported as installed.
-      final log = _RecordingLog();
-      final fake = FakeGridCliService()
-        ..stubStart(
-          ['agent', 'install', 'hermes'],
-          exitCode: 0,
-          lines: const [],
-        )
-        ..stubStart(
-          ['agent', 'install', 'codex'],
-          exitCode: 1,
-          lines: const [CliLine(isStderr: true, text: 'network unreachable')],
-        );
-      final container = _container(fake, log: log);
-
-      await container.read(nodeSetupControllerProvider.notifier).run([
-        _agentStep,
-        _optionalAgentStep,
-      ]);
-
-      final state = container.read(nodeSetupControllerProvider);
-      expect(state, isA<NodeSetupDone>());
-      // Only the step that worked is claimed — the card ticks what it ran.
-      expect((state as NodeSetupDone).completed, [_agentStep]);
-      // Skipped, but on the record: a failure nobody can read diagnoses nothing.
-      expect(log.stepResults.last, contains('skipped'));
-      expect(log.stepResults.last, contains('network unreachable'));
-    },
-  );
-
-  test('a required step that fails still stops the run', () async {
+  test('a step that fails stops the run at that step — the plan is only what '
+      'must be in place, so there is nothing safe to carry on past', () async {
     final fake = FakeGridCliService()
       ..stubStart(
         ['agent', 'install', 'hermes'],
@@ -201,10 +158,11 @@ void main() {
 
     await container.read(nodeSetupControllerProvider.notifier).run([
       _agentStep,
-      _optionalAgentStep,
     ]);
 
-    expect(container.read(nodeSetupControllerProvider), isA<NodeSetupFailed>());
+    final state = container.read(nodeSetupControllerProvider);
+    expect(state, isA<NodeSetupFailed>());
+    expect((state as NodeSetupFailed).message, contains('network unreachable'));
   });
 
   test('runs an install then a download to completion', () async {
