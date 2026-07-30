@@ -499,19 +499,29 @@ class _RevealItem extends StatefulWidget {
   State<_RevealItem> createState() => _RevealItemState();
 }
 
+/// The stagger curve per row position, built once.
+///
+/// A total window a touch longer than one row's animation, so staggering the
+/// start by index still lands every row inside it. Capped so a long list never
+/// feels slow — past the eighth row there's no extra delay, which is why nine
+/// curves cover any length of list.
+///
+/// Held rather than built per row per build: [Interval] has no value equality,
+/// so a fresh one reads as a changed curve and makes every row in the rail throw
+/// away and rebuild its animation on each rebuild.
+final List<Curve> _revealCurves = List.unmodifiable([
+  for (var i = 0; i <= 8; i++)
+    Interval(i * 0.12, 1, curve: Curves.easeOutCubic),
+]);
+
 class _RevealItemState extends State<_RevealItem> {
   @override
   Widget build(BuildContext context) {
-    // A total window a touch longer than one row's animation, so staggering the
-    // start by index still lands every row inside it. Capped so a long list
-    // never feels slow — past the eighth row there's no extra delay.
-    const step = 0.12;
-    final begin = (widget.index.clamp(0, 8) * step).toDouble();
     return TweenAnimationBuilder<double>(
       key: ValueKey(widget.index),
       tween: Tween(begin: 0, end: 1),
       duration: const Duration(milliseconds: 460),
-      curve: Interval(begin, 1, curve: Curves.easeOutCubic),
+      curve: _revealCurves[widget.index.clamp(0, _revealCurves.length - 1)],
       builder: (context, t, child) {
         return Opacity(
           opacity: t,
