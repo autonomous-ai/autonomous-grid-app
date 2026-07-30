@@ -5,6 +5,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import '../../chat/logic/conversation.dart';
 import '../logic/project.dart';
 import '../logic/selected_project.dart';
 import 'create_project_dialog.dart';
@@ -127,12 +128,14 @@ class _ProjectCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     // Counts live chats only, so the number here matches the rows the sidebar
-    // actually shows under this project.
-    final chats = ref
-        .watch(chatSessionsProvider)
-        .live
-        .where((c) => c.projectId == project.id)
-        .length;
+    // actually shows under this project. Selected down to the count itself, so
+    // the card only rebuilds when the number moves — not on every streamed
+    // token of a chat running behind this screen.
+    final chats = ref.watch(
+      chatSessionsProvider.select(
+        (s) => liveChatCountIn(s.conversations, project.id),
+      ),
+    );
     final missing = !project.exists;
 
     final card = GlassCard(

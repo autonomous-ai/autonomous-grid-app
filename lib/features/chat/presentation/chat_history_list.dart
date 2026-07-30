@@ -45,11 +45,17 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
 
   @override
   Widget build(BuildContext context) {
-    final sessions = ref.watch(chatSessionsProvider);
+    // The conversation list itself, not the whole state: the rail's contents
+    // depend on nothing else, and watching the state rebuilt every row on each
+    // streamed token and each chat switch. The field is only ever replaced, so
+    // its identity is the change signal.
+    final conversations = ref.watch(
+      chatSessionsProvider.select((s) => s.conversations),
+    );
     final projects = ref.watch(sortedProjectsProvider);
     // Live only: an archived chat is hidden from the rail until the user brings
     // it back from Settings › Archived.
-    final matches = sessions.live;
+    final matches = liveConversations(conversations);
 
     final loose = [
       for (final c in matches)
@@ -291,9 +297,15 @@ class _ChatRow extends ConsumerWidget {
     // Scheduled the open screen is the one to mark, and two lit rows in one rail
     // would leave you guessing which page you're looking at. The chat stays the
     // one you come back to — it just doesn't claim to be on screen.
-    final selected =
-        ref.watch(chatSessionsProvider).activeId == chat.id &&
-        ref.watch(shellSectionProvider) == ShellSection.chat;
+    //
+    // Both watched unconditionally and selected down to a bool: `&&` would
+    // short-circuit the second subscription away on an unselected row, and
+    // watching the whole state rebuilt every row on every streamed token.
+    final isOpen = ref.watch(
+      chatSessionsProvider.select((s) => s.activeId == chat.id),
+    );
+    final inChat = ref.watch(shellSectionProvider) == ShellSection.chat;
+    final selected = isOpen && inChat;
     // A reply is coming into this chat — shown on whichever chat is working,
     // open or in the background, now that several can be in flight at once.
     // Selecting on the bool (not the raw phase) keeps the row from rebuilding on

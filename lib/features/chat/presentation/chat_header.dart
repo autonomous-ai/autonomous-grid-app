@@ -55,7 +55,9 @@ class ChatHeader extends ConsumerWidget {
     // The strip tints from a global the element tree can't track, so subscribe
     // to the brightness directly.
     AppTheme.watch(context);
-    final active = ref.watch(chatSessionsProvider).active;
+    // The open conversation alone: watching the whole state rebuilt the header
+    // on every streamed token, and a token doesn't change the chat it lands in.
+    final active = ref.watch(chatSessionsProvider.select((s) => s.active));
     if (active == null) return const SizedBox.shrink();
 
     return Row(
@@ -108,7 +110,9 @@ class _ChatFilesButton extends ConsumerWidget {
     final workdir = ref.watch(activeChatWorkdirProvider);
     final isWorkspace = workdir == ref.watch(agentWorkspaceDirProvider).path;
     final project = ref.watch(
-      projectByIdProvider(ref.watch(chatSessionsProvider).openProjectId),
+      projectByIdProvider(
+        ref.watch(chatSessionsProvider.select((s) => s.openProjectId)),
+      ),
     );
     // "Workspace" for a loose chat's app folder; the project's name when the
     // chat belongs to one — the label the breadcrumb roots itself under.

@@ -141,6 +141,28 @@ class Conversation {
 /// The placeholder title before a conversation has any user text.
 const String kNewConversationTitle = 'New chat';
 
+/// The chats in [all] that haven't been archived, in the order given — what any
+/// screen showing the user their *working* history lists.
+///
+/// A plain function rather than only a getter on the sessions state, so the
+/// sidebar can derive it from the conversation list alone and subscribe to just
+/// that slice instead of the whole state.
+List<Conversation> liveConversations(List<Conversation> all) => [
+  for (final c in all)
+    if (!c.isArchived) c,
+];
+
+/// How many of [all] are live chats inside the project [projectId] — the count
+/// the Projects screen and the project rail show, matching the rows the sidebar
+/// actually lists under it.
+int liveChatCountIn(List<Conversation> all, String projectId) {
+  var count = 0;
+  for (final c in all) {
+    if (!c.isArchived && c.projectId == projectId) count++;
+  }
+  return count;
+}
+
 /// The longest a derived title runs before it's clipped with an ellipsis.
 const int _maxTitleLength = 40;
 

@@ -30,13 +30,14 @@ const double proseWidth = 760;
 ///
 /// A table is found by its delimiter row (`|---|:--:|`) — that, not the pipe, is
 /// what makes a table a table; pipes show up in ordinary prose and in code.
+final _tableDelimiter = RegExp(r'^\s*\|?[\s:-]*-{3,}[\s:|-]*\|');
+
 List<({String text, bool isTable})> _splitByTable(String markdown) {
-  final delimiter = RegExp(r'^\s*\|?[\s:-]*-{3,}[\s:|-]*\|');
   final lines = markdown.split('\n');
   final tableLine = List<bool>.filled(lines.length, false);
 
   for (var i = 1; i < lines.length; i++) {
-    if (!delimiter.hasMatch(lines[i])) continue;
+    if (!_tableDelimiter.hasMatch(lines[i])) continue;
     // The delimiter row and the header above it start the table; the body runs
     // on until a line that isn't part of one.
     tableLine[i - 1] = true;

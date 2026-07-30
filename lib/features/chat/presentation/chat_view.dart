@@ -106,6 +106,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// Whether a file is being dragged over the chat, so it can show a drop hint.
   bool _dragging = false;
 
+  /// True while [_setModelText] is *restoring* the field rather than carrying a
+  /// pick the user made, so the change listener doesn't persist it.
+  ///
+  /// Without this, opening a chat looked exactly like choosing its model: every
+  /// switch re-saved that conversation and rewrote the app's default model —
+  /// two synchronous JSON writes on the UI thread, plus the rebuild each one
+  /// sets off, for a selection nobody made.
+  bool _restoring = false;
+
   @override
   void initState() {
     super.initState();
@@ -149,6 +158,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _onModelChanged() {
     if (!mounted) return;
     setState(() {});
+    if (_restoring) return;
     _rememberModel();
   }
 
@@ -156,6 +166,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// onto the open chat, so leaving and returning restores *its* model rather
   /// than a default; and into the shared prefs, so a new chat and the next
   /// launch default to it too.
+  ///
+  /// Only ever reached for a model the user picked — restoring a chat's own
+  /// model on switch is not a choice, and treating it as one wrote both files on
+  /// every switch (and quietly rewrote a chat whose model had gone offline).
   void _rememberModel() {
     final id = _model.text.trim();
     if (id.isEmpty || !_options.any((o) => o.id == id)) return;
@@ -181,7 +195,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _pendingPick = null;
       _synced = true;
       _syncedKey = key;
-      _setModelText(pending);
+      _setModelText(pending, fromUser: true);
       return;
     }
     if (!_synced || key != _syncedKey) {
@@ -210,9 +224,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return options.isEmpty ? '' : options.first.id;
   }
 
-  void _setModelText(String value) {
+  /// Write [value] into the model field. [fromUser] marks a pick they actually
+  /// made, which is persisted; a restore (a chat switch, a grid swap) leaves it
+  /// false so [_rememberModel] stays out of it — see [_restoring].
+  void _setModelText(String value, {bool fromUser = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _model.text != value) _model.text = value;
+      if (!mounted || _model.text == value) return;
+      _restoring = !fromUser;
+      _model.text = value;
+      _restoring = false;
     });
   }
 
@@ -222,7 +242,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _pickGridModel(NetworkCredential grid, PlaygroundModelOption option) {
     final currentId = ref.read(selectedNetworkProvider)?.networkId;
     if (currentId == grid.networkId) {
-      _setModelText(option.id);
+      _setModelText(option.id, fromUser: true);
       return;
     }
     _pendingPick = option.id;
@@ -350,7 +370,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (!_scroll.hasClients) return;
     final target = _scroll.position.maxScrollExtent;
     if (!animated) {
-      _scroll.jumpTo(target);
+      // Already there: a jump would still fire the whole notification cascade
+      // (both scroll listeners, a re-measure of the rail), and this runs after
+      // every streamed token.
+      if (_scroll.position.pixels != target) _scroll.jumpTo(target);
       return;
     }
     _scroll.animateTo(
@@ -433,12 +456,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // screen and the no-model nudge are stand-ins for a conversation that
     // isn't there yet, and a header over either would name nothing — so
     // publish the answer rather than have the shell re-derive it. Deferred:
-    // writing a provider during build would throw.
+    // writing a provider during build would throw — and deferred only when the
+    // answer actually moved, since this build runs on every keystroke and every
+    // streamed token, and a callback per frame to rewrite an unchanged value is
+    // work the frame doesn't owe.
     final wantsHeader = !noModel && !isNewChat;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!context.mounted) return;
-      ref.read(chatHeaderVisibleProvider.notifier).set(wantsHeader);
-    });
+    if (ref.read(chatHeaderVisibleProvider) != wantsHeader) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ref.read(chatHeaderVisibleProvider.notifier).set(wantsHeader);
+      });
+    }
 
     // The agent has stopped and is asking before it touches this computer. Only
     // the chat whose turn is running owns that request — on any other chat the
@@ -726,11 +754,28 @@ class _Transcript extends StatefulWidget {
 }
 
 class _TranscriptState extends State<_Transcript> {
-  /// One key per message index, so the minimap can scroll a turn into view by
-  /// its own rendered position — the turns are wildly uneven in height (a
-  /// one-line question against a long reply), so there's no arithmetic that maps
-  /// an index to an offset.
-  final _itemKeys = <int, GlobalKey>{};
+  /// One key per message, so the minimap can scroll a turn into view by its own
+  /// rendered position — the turns are wildly uneven in height (a one-line
+  /// question against a long reply), so there's no arithmetic that maps an index
+  /// to an offset.
+  ///
+  /// Keyed by the message rather than by its index: an index-keyed global key
+  /// would be handed to a *different* turn the moment the user switches chats,
+  /// which is exactly when both the old and new widget are briefly in flight.
+  ///
+  /// Identity, not equality: two turns holding the same text are still two
+  /// turns, and sharing one global key between them would put a duplicate in
+  /// the tree.
+  final _itemKeys = Map<ChatMessage, GlobalKey>.identity();
+
+  /// The built row for each turn, so a rebuild of the view above — a keystroke
+  /// in the composer, a streamed token, a chat switch — doesn't re-derive every
+  /// visible turn. Rebuilding one means re-splitting its text into segments and
+  /// tables and rebuilding its markdown stylesheet; returning the identical
+  /// widget instead lets Flutter skip the subtree outright.
+  ///
+  /// Identity-keyed for the same reason as [_itemKeys] — a row carries one.
+  final _rows = Map<ChatMessage, Widget>.identity();
 
   /// The message index the rail marks as "where you are", or null before the
   /// first frame has measured anything.
@@ -739,7 +784,8 @@ class _TranscriptState extends State<_Transcript> {
   /// Whether the transcript is long enough to be worth a rail.
   bool _railVisible = false;
 
-  GlobalKey _keyFor(int index) => _itemKeys.putIfAbsent(index, GlobalKey.new);
+  GlobalKey _keyFor(ChatMessage message) =>
+      _itemKeys.putIfAbsent(message, GlobalKey.new);
 
   @override
   void initState() {
@@ -757,11 +803,21 @@ class _TranscriptState extends State<_Transcript> {
       old.scroll.removeListener(_onScroll);
       widget.scroll.addListener(_onScroll);
     }
+    if (old.messages != widget.messages) _dropStaleTurns();
     // A new turn changes the content's height, which can cross the rail's
     // threshold — and lands a new message to mark. Re-measure once it's laid out.
     if (old.messages.length != widget.messages.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
     }
+  }
+
+  /// Forget the turns that are no longer in the transcript — a chat switch
+  /// replaces the lot. Appending a turn keeps every earlier one's row and key,
+  /// since the messages themselves are carried over.
+  void _dropStaleTurns() {
+    final kept = Set<ChatMessage>.identity()..addAll(widget.messages);
+    _rows.removeWhere((message, _) => !kept.contains(message));
+    _itemKeys.removeWhere((message, _) => !kept.contains(message));
   }
 
   @override
@@ -792,7 +848,13 @@ class _TranscriptState extends State<_Transcript> {
     // A null reading means nothing measurable has passed the line *this frame* —
     // mid-fling, say, with the turns around the line not yet built. Keep the last
     // answer rather than dropping the mark back to the top of the rail.
-    final current = atEnd
+    //
+    // Only worth measuring while the rail is up: the mark is the one thing that
+    // reads it, and walking every built turn on each scroll tick of a chat with
+    // no rail bought nothing.
+    final current = !visible
+        ? _currentIndex
+        : atEnd
         ? widget.messages.length - 1
         : (_currentMessage() ?? _currentIndex);
     if (visible != _railVisible || current != _currentIndex) {
@@ -821,7 +883,7 @@ class _TranscriptState extends State<_Transcript> {
     final line = box.size.height * 0.2;
     int? found;
     for (var i = 0; i < widget.messages.length; i++) {
-      final itemContext = _itemKeys[i]?.currentContext;
+      final itemContext = _itemKeys[widget.messages[i]]?.currentContext;
       if (itemContext == null) continue;
       final item = itemContext.findRenderObject() as RenderBox?;
       if (item == null || !item.hasSize || !item.attached) continue;
@@ -833,11 +895,23 @@ class _TranscriptState extends State<_Transcript> {
     return found;
   }
 
+  /// The transcript row for [message] — built once and handed back unchanged on
+  /// every later rebuild, so Flutter skips the whole subtree instead of
+  /// re-deriving markdown the user is already looking at.
+  Widget _turn(ChatMessage message) => _rows[message] ??= _TurnColumn(
+    key: _keyFor(message),
+    child: ChatBubble(message: message),
+  );
+
   /// Bring message [index] to the top of the viewport. Built turns scroll via
   /// their key; one that's been recycled out of the lazy list has no context, so
   /// it falls back to an estimate from its position in the transcript.
   void _jumpTo(int index) {
-    final context = _itemKeys[index]?.currentContext;
+    // The rail is painted from the previous build's marks, so a tap that lands
+    // just after the transcript shrank (a chat switch) can name a turn that's
+    // gone — and the lookup below indexes the list to find its key.
+    if (index < 0 || index >= widget.messages.length) return;
+    final context = _itemKeys[widget.messages[index]]?.currentContext;
     if (context != null) {
       Scrollable.ensureVisible(
         context,
@@ -871,24 +945,12 @@ class _TranscriptState extends State<_Transcript> {
           // on the window edge. The column below insets its own content.
           padding: const EdgeInsets.symmetric(vertical: 18),
           itemCount: count,
-          itemBuilder: (context, i) => Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _columnWidth),
-              child: Padding(
-                // The rail's width on the left, mirrored on the right, so the
-                // column stays optically centred instead of nudged off-axis.
-                padding: const EdgeInsets.symmetric(
-                  horizontal: chatMinimapWidth,
-                ),
-                child: i < widget.messages.length
-                    ? KeyedSubtree(
-                        key: _keyFor(i),
-                        child: ChatBubble(message: widget.messages[i]),
-                      )
-                    : widget.trailing ?? const SizedBox.shrink(),
-              ),
-            ),
-          ),
+          itemBuilder: (context, i) => i < widget.messages.length
+              ? _turn(widget.messages[i])
+              // Not cached: the in-flight bubble is what changes on every
+              // streamed token, which is the whole reason the turns above it
+              // must not.
+              : _TurnColumn(child: widget.trailing ?? const SizedBox.shrink()),
         ),
         // The rail hugs the pane's left edge, clear of the centred column. It
         // shows only once the conversation is long enough to be worth navigating.
@@ -912,6 +974,30 @@ class _TranscriptState extends State<_Transcript> {
       ],
     );
   }
+}
+
+/// One row of the transcript: a turn (or the in-flight bubble) held to the
+/// conversation column and optically centred in the pane.
+///
+/// The list spans the whole pane so its scrollbar rides the window edge, so the
+/// measure has to be applied per row rather than by boxing the list.
+class _TurnColumn extends StatelessWidget {
+  const _TurnColumn({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: _columnWidth),
+      child: Padding(
+        // The rail's width on the left, mirrored on the right, so the column
+        // stays optically centred instead of nudged off-axis.
+        padding: const EdgeInsets.symmetric(horizontal: chatMinimapWidth),
+        child: child,
+      ),
+    ),
+  );
 }
 
 /// A round "jump to latest" button shown while the user has scrolled up. Tapping
