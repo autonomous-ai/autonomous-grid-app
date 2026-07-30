@@ -15,7 +15,7 @@ import '../../logic/favicon_url.dart';
 import '../../logic/mcp_auth_probe.dart';
 import '../../logic/mcp_input.dart';
 import '../../../agents/logic/mcp_server.dart';
-import 'connector_list.dart' show ConnectorMark;
+import 'connector_mark.dart';
 
 /// Add a new MCP server to Hermes's config.
 Future<void> showAddMcpDialog(BuildContext context) =>
