@@ -129,7 +129,9 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
 ///
 /// Selectable either way — the transcript is something you copy out of, and a
 /// coloured block that can't be selected trades a real capability for a
-/// cosmetic one.
+/// cosmetic one. That comes from the message's enclosing `SelectionArea` now
+/// rather than from a `SelectableText` per block: a block is a paragraph, not a
+/// text editor, and a reply full of them was building a text editor for each.
 class _CodeText extends StatelessWidget {
   const _CodeText({
     required this.code,
@@ -155,8 +157,8 @@ class _CodeText extends StatelessWidget {
           )
         : null;
 
-    if (spans == null) return SelectableText(code, style: base);
-    return SelectableText.rich(spans, style: base);
+    if (spans == null) return Text(code, style: base);
+    return Text.rich(spans, style: base);
   }
 }
 

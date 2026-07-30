@@ -78,19 +78,35 @@ class MessageContent extends StatelessWidget {
     final segments = text.isEmpty
         ? const <MessageSegment>[]
         : parseMessageSegments(text);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < segments.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          _segment(context, segments[i]),
+    // One selection region for the whole message, instead of making each block
+    // of it separately selectable.
+    //
+    // `MarkdownBody(selectable: true)` builds a `SelectableText` — an
+    // `EditableText`, one of the heaviest widgets in the framework — for *every*
+    // rich-text node it emits: every paragraph, every list item, every table
+    // cell. A long reply in this app runs to well over a hundred of those, so
+    // one bubble scrolling into view built a hundred-odd text editors, each with
+    // its own focus node, controllers and cursor ticker. Switching between two
+    // chats tore down and rebuilt the lot.
+    //
+    // A SelectionArea over plain text gets the same capability from ordinary
+    // paragraphs — and gets it *better*: a drag now takes the whole message
+    // rather than stopping at the end of one paragraph.
+    return SelectionArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < segments.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _segment(context, segments[i]),
+          ],
+          for (var i = 0; i < media.length; i++) ...[
+            if (i > 0 || segments.isNotEmpty) const SizedBox(height: 8),
+            LocalMediaView(media: media[i]),
+          ],
         ],
-        for (var i = 0; i < media.length; i++) ...[
-          if (i > 0 || segments.isNotEmpty) const SizedBox(height: 8),
-          LocalMediaView(media: media[i]),
-        ],
-      ],
+      ),
     );
   }
 
@@ -140,7 +156,9 @@ class MessageContent extends StatelessWidget {
       // that way — they use one newline as a line break, and without this a
       // verse or an address collapses into a paragraph.
       softLineBreak: true,
-      selectable: true,
+      // Plain paragraphs — the enclosing SelectionArea is what makes them
+      // selectable. See the note in [build] for what `selectable: true` costs.
+      selectable: false,
       styleSheet: buildMarkdownStyleSheet(context, textColor: color),
       onTapLink: (_, href, _) {
         if (href != null) openExternalUrl(href);
