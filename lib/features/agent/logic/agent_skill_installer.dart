@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_catalog.dart';
+import 'grid_host_skill.dart';
 import 'grid_media_skills.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
@@ -45,6 +46,14 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     name: kGridWebSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex},
     build: gridWebSkillFiles,
+  ),
+  // What this machine has, and what to use instead of the GNU tools it doesn't:
+  // both agents run their commands on the same host, and both were burning calls
+  // rediscovering that `timeout`/`gh`/`rg` aren't here.
+  BuiltinGridSkill(
+    name: kGridHostSkillName,
+    agents: const {AgentTool.hermes, AgentTool.codex},
+    build: gridHostSkillFiles,
   ),
   // Starting a dev server is the same job for both agents, and both run their
   // commands in a session the runner tears down at the end of a tool call — so

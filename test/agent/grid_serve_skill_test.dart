@@ -61,7 +61,23 @@ void main() {
       expect(md, contains('$prefix status [<name>]'));
       expect(md, contains('$prefix logs <name> [-n 80]'));
       expect(md, contains('$prefix stop <name>'));
+      expect(md, contains('$prefix port <port> [--release]'));
+      expect(md, contains('$prefix run <name>'));
       expect(md, contains('/home/.grid/app/services'));
+    });
+
+    test('it points EADDRINUSE at the port command and names `run` as the '
+        'substitute for the `timeout` macOS lacks', () {
+      final flat = card().replaceAll(RegExp(r'\s+'), ' ');
+
+      expect(flat, contains('EADDRINUSE'));
+      expect(
+        flat,
+        contains('substitute for `timeout`'),
+        reason: 'the agents reached for GNU timeout 30 times in 83 turns',
+      );
+      // Releasing a port must never mean killing a stranger's program.
+      expect(flat, contains('only** if this skill started it'));
     });
 
     test('it forbids announcing a URL the port never answered on — the exact '
@@ -84,7 +100,14 @@ void main() {
     test('the script is a runnable python program with the four commands the '
         'card promises', () {
       expect(kGridServeScript, startsWith('#!/usr/bin/env python3'));
-      for (final command in ['"start"', '"status"', '"logs"', '"stop"']) {
+      for (final command in [
+        '"start"',
+        '"status"',
+        '"logs"',
+        '"stop"',
+        '"port"',
+        '"run"',
+      ]) {
         expect(
           kGridServeScript,
           contains('add_parser($command'),

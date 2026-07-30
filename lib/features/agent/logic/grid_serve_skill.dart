@@ -108,6 +108,27 @@ first lines of the log. **Read that output before you reply.**
 "$uvPath" run --no-project python3 "$serveScriptPath" stop <name>
 ```
 
+## "Port already in use" — find out who, don't guess
+```
+"$uvPath" run --no-project python3 "$serveScriptPath" port <port> [--release]
+```
+Names the process holding the port and whether it is one of yours. `--release`
+stops it **only** if this skill started it; anything else is the user's program,
+so it says whose it is and leaves it alone. Reach for this the moment you see
+`EADDRINUSE` — it is a question with an answer, not a mystery about IPv6 or
+TIME_WAIT.
+
+## A long one-shot command (install, build, test suite)
+```
+"$uvPath" run --no-project python3 "$serveScriptPath" run <name> \\
+  --cmd "<command>" [--dir <dir>] [--timeout <seconds>]
+```
+Runs it to completion under a time limit and prints the exit code, how long it
+took, and the tail of its output. This is the substitute for `timeout` (which
+macOS does not have): use it for `npm install`, a build, a test run — anything
+that might outlast a normal call. On the limit it kills the whole process group
+and says so, rather than leaving something half-running behind.
+
 Logs and records live in `$stateDir` (`<name>.log`, `<name>.json`).
 
 ## Rules
@@ -117,8 +138,8 @@ Logs and records live in `$stateDir` (`<name>.log`, `<name>.json`).
 - Crashed or exited on its own? `logs` first, fix the cause, then `start` again.
 - The user asked to "stop the server": use `stop <name>`, not `kill` on a pid you
   found in `ps` — the supervisor would restart it or leave a stale record behind.
-- Anything short-lived (a build, a test run, a script that finishes) is a normal
-  command. This is only for something meant to keep running.
+- A short command that finishes on its own is a normal command — don't wrap it.
+  `run` is for the long ones; `start` is only for something meant to keep running.
 
 ## If it fails
 - Exit 2 = no supervisor available (no `launchctl`, no `screen`, no `tmux`); it
@@ -154,6 +175,8 @@ Usage:
     serve.py status [<name>]
     serve.py logs <name> [-n 80]
     serve.py stop <name>
+    serve.py port <port> [--release]
+    serve.py run <name> --cmd "<command>" [--dir <dir>] [--timeout S]
 
 Exit codes: 0 ok, 1 the service isn't running (or died), 2 no supervisor found.
 """
@@ -254,13 +277,15 @@ def run_capture(argv):
 def shell_line(directory, command, log=None):
     """The line a supervisor runs: our PATH, the project dir, then the command.
 
-    `exec` so the shell is replaced by the service — one less process between the
-    supervisor and the thing it is supervising.
+    Deliberately no `exec`: the command is whatever the agent typed, and
+    `exec npm install && npm test` would exec the first segment and silently drop
+    the rest. One extra shell in the tree is cheaper than losing half a command —
+    and stopping kills the process group, so the wrapper is not in the way.
     """
     path = shlex.quote(os.environ.get("PATH", ""))
     parts = [f"export PATH={path}", f"cd {shlex.quote(str(directory))}"]
     redirect = f" >> {shlex.quote(str(log))} 2>&1" if log else ""
-    parts.append(f"exec {command}{redirect}")
+    parts.append(f"{{ {command} ; }}{redirect}")
     return "; ".join(parts)
 
 
@@ -445,6 +470,12 @@ def cmd_status(args):
 def cmd_logs(args):
     record = load_record(args.name)
     path = Path(record["log"]) if record else log_path(args.name)
+    # No service under that name — it may have been a one-shot `run` instead, so
+    # look there before telling the agent there is nothing.
+    if not path.exists():
+        run_log = STATE_DIR / f"{args.name}.run.log"
+        if run_log.exists():
+            path = run_log
     text = tail(path, max(1, args.lines))
     if not text:
         print(f"no log for {args.name} yet")
@@ -497,6 +528,131 @@ def cmd_stop(args):
     return 0
 
 
+def port_holders(port):
+    """(pid, command) for every process listening on `port`, via lsof."""
+    out = run_capture(
+        ["lsof", "-nP", f"-iTCP:{int(port)}", "-sTCP:LISTEN"]
+    )
+    holders = []
+    for line in (out or "").splitlines()[1:]:
+        fields = line.split()
+        if len(fields) >= 2 and fields[1].isdigit():
+            holders.append((int(fields[1]), fields[0]))
+    return holders
+
+
+def process_group(pid):
+    try:
+        return os.getpgid(int(pid))
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def service_for_pid(pid):
+    """The service record that owns `pid`, or None when it isn't one of ours.
+
+    Matched by process *group*, not by pid: the command runs under a wrapper
+    shell, so the process actually listening on the port is usually that shell's
+    child. Comparing pids alone would call our own service a stranger's program
+    and refuse to release the port.
+    """
+    group = process_group(pid)
+    if group is None or not STATE_DIR.is_dir():
+        return None
+    for path in STATE_DIR.glob("*.json"):
+        record = load_record(path.stem)
+        if not record:
+            continue
+        ours = running_pid(record)
+        if ours and (int(ours) == int(pid) or process_group(ours) == group):
+            return record
+    return None
+
+
+def cmd_port(args):
+    holders = port_holders(args.port)
+    if not holders:
+        print(f"port {args.port} is free")
+        return 0
+
+    released = []
+    for pid, command in holders:
+        record = service_for_pid(pid)
+        owner = f"service '{record['name']}'" if record else "not started by this skill"
+        print(f"port {args.port}: pid {pid} ({command}) — {owner}")
+        if not args.release:
+            continue
+        if not record:
+            # Someone else's program. Naming it is help; killing it is not ours
+            # to do.
+            print(
+                f"  left alone — ask the user before touching {command}",
+                file=sys.stderr,
+            )
+            continue
+        stop_record(record)
+        released.append(record["name"])
+
+    if released:
+        time.sleep(0.6)
+        still = port_holders(args.port)
+        print(f"stopped {', '.join(released)}; port {args.port} "
+              f"{'free' if not still else 'still held'}")
+        return 0 if not still else 1
+    return 1
+
+
+def cmd_run(args):
+    """A long one-shot command under a time limit — the `timeout` macOS lacks."""
+    directory = Path(args.dir or os.getcwd()).expanduser()
+    if not directory.is_dir():
+        print(f"no such directory: {directory}", file=sys.stderr)
+        return 1
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    log = STATE_DIR / f"{args.name}.run.log"
+    log.write_text("")
+
+    started = time.time()
+    with open(log, "ab", buffering=0) as handle:
+        process = subprocess.Popen(
+            ["/bin/sh", "-c", shell_line(directory, args.cmd)],
+            stdout=handle,
+            stderr=handle,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=str(directory),
+        )
+        try:
+            code = process.wait(timeout=max(1.0, args.timeout))
+            timed_out = False
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            code = None
+            # The whole group: a build spawns children, and leaving them behind
+            # is how the next run meets "port already in use".
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                time.sleep(0.5)
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except OSError:
+                process.kill()
+
+    elapsed = round(time.time() - started, 1)
+    verdict = (
+        f"timed out after {elapsed}s (killed)"
+        if timed_out
+        else f"exit {code} in {elapsed}s"
+    )
+    print(f"{args.name}: {verdict}")
+    print(f"  cmd: {args.cmd}")
+    print(f"  log: {log}")
+    text = tail(log, max(1, args.lines))
+    if text:
+        print("--- output ---")
+        print(text)
+    return 0 if code == 0 else 1
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run a service that outlives a tool call.")
     subs = parser.add_subparsers(dest="command", required=True)
@@ -521,6 +677,23 @@ def main():
     stop = subs.add_parser("stop", help="stop a service")
     stop.add_argument("name")
     stop.set_defaults(func=cmd_stop)
+
+    port = subs.add_parser("port", help="who is holding a port")
+    port.add_argument("port", type=int)
+    port.add_argument(
+        "--release",
+        action="store_true",
+        help="stop the holder, but only if this skill started it",
+    )
+    port.set_defaults(func=cmd_port)
+
+    run = subs.add_parser("run", help="a long one-shot command, time-limited")
+    run.add_argument("name")
+    run.add_argument("--cmd", required=True, help='one shell string, e.g. "npm install"')
+    run.add_argument("--dir", help="absolute dir to run in (default: cwd)")
+    run.add_argument("--timeout", type=float, default=300.0, help="seconds")
+    run.add_argument("-n", "--lines", type=int, default=40)
+    run.set_defaults(func=cmd_run)
 
     args = parser.parse_args()
     return args.func(args)
