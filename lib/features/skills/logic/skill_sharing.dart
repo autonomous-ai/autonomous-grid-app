@@ -4,24 +4,37 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../shared/skills/agent_skill_home.dart';
+import '../../agent/logic/hermes_skill_scanner.dart';
+import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_skill.dart';
 
 /// Who a skill is being handed to.
 enum ShareTarget {
-  hermes('Hermes', [SkillSource.hermes]),
-  codex('Codex', [SkillSource.codex]),
-  all('all agents', [SkillSource.hermes, SkillSource.codex]);
+  hermes('Hermes', [AgentTool.hermes]),
+  codex('Codex', [AgentTool.codex]),
+  all('all agents', AgentTool.values);
 
-  const ShareTarget(this.label, this.sources);
+  const ShareTarget(this.label, this.agents);
 
-  /// What the menu row and the toast call it.
+  /// What the menu row and the toast call it — "Share to Hermes", "copied to
+  /// all agents".
   final String label;
 
-  /// The folders a copy lands in.
-  final List<SkillSource> sources;
+  /// The agents a copy lands with.
+  final List<AgentTool> agents;
+
+  /// The same choice as a pill, where it stands alone rather than following the
+  /// word "to".
+  String get chip => this == ShareTarget.all ? 'All agents' : label;
 }
 
-/// Copies a skill out of the app's store into an agent's own folder.
+/// The folder an agent reads its own skills from.
+SkillSource skillFolderOf(AgentTool agent) => switch (agent) {
+  AgentTool.hermes => SkillSource.hermes,
+  AgentTool.codex => SkillSource.codex,
+};
+
+/// Copies a skill from one folder into an agent's own.
 ///
 /// A copy, not a link: the two agents read different roots and neither can be
 /// asked to follow one. Which means the copy goes stale the moment the original
@@ -37,25 +50,79 @@ class SkillSharer {
 
   final String _home;
 
-  /// Where [skill] lands in [source]'s folder — flat at its root, under the
-  /// same folder name it has in the store, so the two stay recognisably the
-  /// same skill.
-  Directory destinationFor(AgentSkill skill, SkillSource source) => Directory(
-    '${source.root(_home).path}/${skill.path.split('/').last}',
-  );
+  /// Where a skill folder named [slug] lands in [agent]'s own folder.
+  ///
+  /// [category] is the folder it sits in on the way out (`user`, `public`) —
+  /// kept for Hermes, which reads a nested tree, and dropped for Codex, which
+  /// doesn't. The skill keeps its own name either way, so the copy and the
+  /// original stay recognisably the same skill.
+  Directory destinationFor(
+    String slug,
+    AgentTool agent, {
+    String category = '',
+  }) => agentSkillCopy(agent, _home, slug, category);
 
-  /// Copy [skill] to every folder [target] names. Overwrites a copy already
-  /// there.
-  Future<void> share(AgentSkill skill, ShareTarget target) async {
-    final from = Directory(skill.path);
+  Future<void> share(AgentSkill skill, ShareTarget target) =>
+      shareFolder(skill.path, target.agents);
+
+  /// The folder a skill sits in, when that folder is one the app writes.
+  ///
+  /// Anything else — an agent's own `apple/`, or the root — is that agent's
+  /// filing, not ours to reproduce in the other one.
+  static String categoryOf(String path) {
+    final parts = path.split('/');
+    if (parts.length < 2) return '';
+    final parent = parts[parts.length - 2];
+    return parent == kUserSkillsDir || parent == kPublicSkillsDir ? parent : '';
+  }
+
+  /// Copy the skill folder at [path] to every agent in [agents], overwriting a
+  /// copy already there, then record who has it.
+  ///
+  Future<void> shareFolder(String path, Iterable<AgentTool> agents) async {
+    if (agents.isEmpty) return;
+    final from = Directory(path);
     if (!from.existsSync()) {
-      throw ArgumentError('"${skill.name}" is no longer on disk.');
+      throw ArgumentError('${path.split('/').last} is no longer on disk.');
     }
-    for (final source in target.sources) {
-      await copySkillFolder(from, destinationFor(skill, source));
+    final slug = path.split('/').last;
+    final category = categoryOf(path);
+    for (final agent in agents) {
+      await copySkillFolder(
+        from,
+        destinationFor(slug, agent, category: category),
+      );
+    }
+  }
+
+  /// Take the copy named [slug] back out of every agent in [agents].
+  ///
+  /// Deletes whatever is at that path: a copy the agent installed itself under
+  /// the same name is the same skill by the only name that matters.
+  Future<void> unshareFolder(
+    String slug,
+    Iterable<AgentTool> agents, {
+    String category = '',
+  }) async {
+    for (final agent in agents) {
+      final copy = destinationFor(slug, agent, category: category);
+      if (copy.existsSync()) await copy.delete(recursive: true);
     }
   }
 }
+
+/// The folder names an agent already has, whoever put them there.
+///
+/// Read off the agent's own folder rather than the app's record, because the
+/// question the catalog asks — "does Hermes have this?" — is about the agent,
+/// not about what we remember doing.
+final agentSkillNamesProvider = FutureProvider.autoDispose
+    .family<Set<String>, AgentTool>((ref, agent) async {
+      final skills = await ref
+          .watch(agentSkillScannerProvider)
+          .scan(skillFolderOf(agent));
+      return {for (final skill in skills) skill.path.split('/').last};
+    });
 
 /// Overridable so tests copy into a temp home, never the real agent folders.
 final skillSharerProvider = Provider<SkillSharer>((ref) => SkillSharer());

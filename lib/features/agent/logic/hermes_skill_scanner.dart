@@ -28,6 +28,11 @@ class AgentSkillScanner {
   Future<List<AgentSkill>> scan(SkillSource source) async {
     final skills = <AgentSkill>[];
     final root = rootOf(source);
+    // Read once per scan, not once per skill: an agent's folder holds seventy
+    // of them and the answer is the same for all.
+    final library = source == SkillSource.store
+        ? const <String, SkillOwner>{}
+        : await _libraryAuthors();
     if (root.existsSync()) {
       await for (final entity in root.list(
         recursive: true,
@@ -44,7 +49,7 @@ class AgentSkillScanner {
             name: card.name,
             description: card.description,
             path: dir.path,
-            owner: _ownerOf(source, root, dir.path),
+            owner: _ownerOf(source, root, dir.path, library),
             updatedAt: (await entity.stat()).modified,
           ),
         );
@@ -64,18 +69,44 @@ class AgentSkillScanner {
   /// user's, including a skill they dropped in by hand or one written by an
   /// older version of the app — calling those public would quietly deny them
   /// the edit button.
-  SkillOwner _ownerOf(SkillSource source, Directory root, String path) {
-    switch (source) {
-      case SkillSource.hermes:
-        return SkillOwner.hermes;
-      case SkillSource.codex:
-        return SkillOwner.codex;
-      case SkillSource.shared:
-        final prefix = '${root.path}/';
-        if (!path.startsWith(prefix)) return SkillOwner.user;
-        final folder = path.substring(prefix.length).split('/').first;
-        return folder == kPublicSkillsDir ? SkillOwner.public : SkillOwner.user;
+  SkillOwner _ownerOf(
+    SkillSource source,
+    Directory root,
+    String path,
+    Map<String, SkillOwner> library,
+  ) {
+    if (source == SkillSource.store) {
+      final prefix = '${root.path}/';
+      if (!path.startsWith(prefix)) return SkillOwner.user;
+      final folder = path.substring(prefix.length).split('/').first;
+      return folder == kPublicSkillsDir ? SkillOwner.public : SkillOwner.user;
     }
+    // In an agent's folder, authorship is a question the folder can't answer —
+    // Codex's tree is flat, so a skill the user wrote and one the agent shipped
+    // sit side by side under the same kind of name. The library knows, because
+    // everything the app writes goes through it first; anything it has never
+    // heard of belongs to the agent.
+    return library[path.split('/').last] ??
+        (source == SkillSource.hermes ? SkillOwner.hermes : SkillOwner.codex);
+  }
+
+  /// Who wrote each skill the app knows about, by folder name.
+  ///
+  /// Only the two folders the app writes: everything else in the library is
+  /// somebody's stray directory, not an authorship claim.
+  Future<Map<String, SkillOwner>> _libraryAuthors() async {
+    final store = SkillSource.store.root(_home);
+    final authors = <String, SkillOwner>{};
+    for (final folder in const [kUserSkillsDir, kPublicSkillsDir]) {
+      final dir = Directory('${store.path}/$folder');
+      if (!dir.existsSync()) continue;
+      for (final entry in dir.listSync().whereType<Directory>()) {
+        authors[entry.path.split('/').last] = folder == kPublicSkillsDir
+            ? SkillOwner.public
+            : SkillOwner.user;
+      }
+    }
+    return authors;
   }
 }
 

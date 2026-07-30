@@ -93,7 +93,7 @@ Write ten lines.''';
     test(
       'reads nothing (rather than throwing) when the store is missing',
       () async {
-        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.shared), isEmpty);
+        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.store), isEmpty);
       },
     );
 
@@ -107,7 +107,7 @@ Write ten lines.''';
         '---\nname: notes\ndescription: Read my notes.\n---\n',
       );
 
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
 
       final byName = {for (final skill in skills) skill.name: skill};
       expect(byName['grid-image-gen']!.owner, SkillOwner.public);
@@ -132,7 +132,7 @@ Write ten lines.''';
       );
       final scanner = AgentSkillScanner(home: home.path);
 
-      expect((await scanner.scan(SkillSource.shared)).map((s) => s.name), [
+      expect((await scanner.scan(SkillSource.store)).map((s) => s.name), [
         'notes',
       ]);
       expect((await scanner.scan(SkillSource.hermes)).map((s) => s.name), [
@@ -143,8 +143,8 @@ Write ten lines.''';
       ]);
     });
 
-    test("an agent's folder is that agent's, all of it — nothing in there is "
-        'the app\'s to edit', () async {
+    test("a skill the library has never heard of belongs to the agent whose "
+        'folder it sits in', () async {
       await writeSkill(
         '.hermes/skills/my-skills/hand-written',
         '---\nname: hand-written\ndescription: d\n---\n',
@@ -180,7 +180,7 @@ Write ten lines.''';
         '---\nname: older\ndescription: d\n---\n',
       );
 
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
 
       expect(skills.single.owner, SkillOwner.user);
     });
@@ -204,7 +204,7 @@ Write ten lines.''';
       );
       await installed.setLastModified(DateTime(2026, 7, 30));
 
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
 
       expect(skills.map((s) => s.name).toList(), [
         'newer',

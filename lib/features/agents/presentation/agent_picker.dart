@@ -6,6 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/composer_trigger.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
+import 'agent_mark.dart';
 import '../logic/agent_grid_support.dart';
 import '../logic/agent_status.dart';
 
@@ -75,7 +76,7 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
       builder: (context, controller, _) => ComposerTrigger(
         label: active.name,
         tooltip: 'Which agent answers · ${active.name}',
-        leading: _AgentMark(tool: active, size: 14),
+        leading: AgentMark(tool: active, size: 14),
         onTap: () => controller.isOpen ? controller.close() : controller.open(),
       ),
     );
@@ -125,7 +126,7 @@ class _AgentItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _AgentMark(tool: tool, size: 20),
+              AgentMark(tool: tool, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -172,32 +173,3 @@ class _AgentItem extends StatelessWidget {
   }
 }
 
-/// An agent's bundled mark, drawn as its own image (not a tinted glyph) since
-/// each is a real logo with its own colour — the same treatment the Agents list
-/// gives it.
-class _AgentMark extends StatelessWidget {
-  const _AgentMark({required this.tool, required this.size});
-
-  final AgentTool tool;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.28),
-      child: Image.asset(
-        tool.iconAsset,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        // A missing/undeclared asset must not crash the composer — fall back to a
-        // neutral glyph (agent_catalog_test guards the real assets in CI).
-        errorBuilder: (_, _, _) => Icon(
-          Icons.smart_toy_outlined,
-          size: size,
-          color: AppPalette.textSecondary,
-        ),
-      ),
-    );
-  }
-}

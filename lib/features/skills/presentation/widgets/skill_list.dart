@@ -7,7 +7,10 @@ import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
+import '../../../agents/logic/agent_catalog.dart';
 import '../../../agents/logic/agent_skill.dart';
+import '../../../agents/presentation/agent_mark.dart';
+import '../../logic/skill_sharing.dart';
 import '../../logic/skills_controller.dart';
 import 'share_skill_button.dart';
 import 'skill_detail_dialog.dart';
@@ -70,7 +73,8 @@ class SkillList extends StatelessWidget {
         Expanded(
           child: ExtensionList(
             sections: [ExtensionSection(label: '', items: skills)],
-            rowBuilder: (context, skill) => _SkillRow(skill: skill),
+            rowBuilder: (context, skill) =>
+                _SkillRow(skill: skill, source: source),
           ),
         ),
       ],
@@ -123,9 +127,10 @@ String formatSkillDate(DateTime when) {
 }
 
 class _SkillRow extends ConsumerStatefulWidget {
-  const _SkillRow({required this.skill});
+  const _SkillRow({required this.skill, required this.source});
 
   final AgentSkill skill;
+  final SkillSource source;
 
   @override
   ConsumerState<_SkillRow> createState() => _SkillRowState();
@@ -181,7 +186,7 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
                 active: skill.isMine,
               ),
               const SizedBox(width: 12),
-              Expanded(child: _SkillInfo(skill: skill)),
+              Expanded(child: _SkillInfo(skill: skill, source: widget.source)),
               SizedBox(
                 width: _kUpdatedColumn,
                 child: Text(formatSkillDate(skill.updatedAt), style: column),
@@ -198,6 +203,7 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
                 width: _kActionsColumn,
                 child: _SkillActions(
                   skill: skill,
+                  source: widget.source,
                   busy: _busy,
                   onDelete: _delete,
                 ),
@@ -210,23 +216,46 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
   }
 }
 
-/// The skill's name and one line of what it does.
-class _SkillInfo extends StatelessWidget {
-  const _SkillInfo({required this.skill});
+/// The skill's name, which other assistant also has it, and one line of what
+/// it does.
+class _SkillInfo extends ConsumerWidget {
+  const _SkillInfo({required this.skill, required this.source});
 
   final AgentSkill skill;
 
+  /// The tab this row is in — the assistant that has it — so the marks beside
+  /// the name can name the *others*.
+  final SkillSource source;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          skill.name,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleSmall,
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                skill.name,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            // The other assistants that also have it, by their own marks — a
+            // logo is read at a glance where a word-tag would compete with the
+            // name beside it. The tab's own agent is never marked: every row
+            // here is theirs, so saying so on all of them says nothing.
+            for (final agent in _alsoOn(ref, source))
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Tooltip(
+                  message: '${agent.name} has it too',
+                  child: AgentMark(tool: agent, size: 15),
+                ),
+              ),
+          ],
         ),
         if (skill.description.isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -255,28 +284,48 @@ class _SkillInfo extends StatelessWidget {
       ],
     );
   }
+
+  /// The *other* assistants that also have this skill, by folder name.
+  ///
+  /// Read off their folders rather than a record of what the app copied: a
+  /// skill can be in both places without the app having put it there, and the
+  /// row should say what is true.
+  List<AgentTool> _alsoOn(WidgetRef ref, SkillSource source) {
+    final slug = skill.path.split('/').last;
+    return [
+      for (final agent in AgentTool.values)
+        if (agent != source.agent)
+          if (switch (ref.watch(agentSkillNamesProvider(agent))) {
+            AsyncData(:final value) => value.contains(slug),
+            _ => false,
+          })
+            agent,
+    ];
+  }
 }
 
-/// Edit, share and delete — on the skills in the app's own store.
+/// Edit, share and delete — on every row.
 ///
-/// An agent's own folder gets none of them: those skills are the agent's, it
-/// rewrites them on its own schedule, and the app has no business editing what
-/// it doesn't install. The column still takes its width on those rows, so the
-/// ones above and below stay in line.
+/// The tabs are the assistants' own folders now, so a row is a skill that
+/// assistant really has, and all three verbs mean something for all of them.
+/// Editing one the agent shipped is the user's call to make: the next agent
+/// update may write over it, which is a reason to warn, not a reason to
+/// withhold the button.
 class _SkillActions extends StatelessWidget {
   const _SkillActions({
     required this.skill,
+    required this.source,
     required this.busy,
     required this.onDelete,
   });
 
   final AgentSkill skill;
+  final SkillSource source;
   final bool busy;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    if (!skill.isMine && !skill.isPublic) return const SizedBox.shrink();
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
@@ -286,7 +335,7 @@ class _SkillActions extends StatelessWidget {
           onPressed: busy ? null : () => showEditSkillDialog(context, skill),
         ),
         const SizedBox(width: 2),
-        ShareSkillButton(skill: skill, busy: busy),
+        ShareSkillButton(skill: skill, from: source, busy: busy),
         const SizedBox(width: 2),
         AppIconButton(
           tooltip: 'Delete',
@@ -329,10 +378,9 @@ Future<bool?> _confirmDeleteSkill(BuildContext context, String name) {
 
 /// No skills in this folder.
 ///
-/// What to say depends on whose folder it is. The store is the user's, so it
-/// offers the two things that fill it; an agent's folder is not ours to write
-/// into, and offering "Write a skill" there would promise a skill that lands
-/// somewhere else.
+/// Both tabs are an assistant's own folder now, so the offer is the same in
+/// each: write one, or put Grid's own back. What changes is the name of the
+/// folder that is empty, which is the part the user can go and check.
 class _Empty extends StatelessWidget {
   const _Empty({required this.source});
 
@@ -340,22 +388,13 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (source != SkillSource.shared) {
-      return EmptyState(
-        icon: Icons.auto_awesome_outlined,
-        title: 'Nothing in ${source.label}\'s own folder',
-        message:
-            '${source.label} keeps its skills in ${_folder(source)}. Either '
-            'it hasn\'t installed any yet, or it isn\'t on this computer — the '
-            'skills you write are in Shared, and it can read those.',
-      );
-    }
     return EmptyState(
       icon: Icons.auto_awesome_outlined,
-      title: 'No skills installed yet',
+      title: '${source.label} has no skills yet',
       message:
-          'A skill teaches the assistant one job, in your own words — write '
-          "one, or put Grid's own skills back.",
+          'A skill teaches an assistant one job, in your own words. '
+          '${source.label} reads them from ${_folder(source)} — write one and '
+          "give it to ${source.label}, or put Grid's own skills back.",
       action: Wrap(
         spacing: 10,
         children: [
@@ -372,7 +411,7 @@ class _Empty extends StatelessWidget {
 
   /// Named home-relative, the way the user would type it.
   static String _folder(SkillSource source) => switch (source) {
-    SkillSource.shared => '~/.grid/skills',
+    SkillSource.store => '~/.grid/skills',
     SkillSource.hermes => '~/.hermes/skills',
     SkillSource.codex => '~/.codex/skills',
   };

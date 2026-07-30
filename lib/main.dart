@@ -10,6 +10,7 @@ import 'app/single_instance.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
 import 'features/connectors/presentation/connector_refresh_scope.dart';
+import 'features/skills/presentation/grid_skills_scope.dart';
 import 'infrastructure/logging/app_log.dart';
 import 'infrastructure/logging/http_log.dart';
 import 'infrastructure/logging/log_file.dart';
@@ -91,7 +92,12 @@ Future<void> main() async {
       // Wraps the app rather than sitting inside it: connector tokens are
       // refreshed for the agent's sake, and the agent answers chats whether or
       // not the Connectors screen was ever opened.
-      child: const ConnectorRefreshScope(child: GridApp()),
+      // Both wrap the app rather than sitting inside it, and for the same
+      // reason: tokens and skills are the agent's, and the agent answers chats
+      // whether or not the screen that manages them was ever opened.
+      child: const ConnectorRefreshScope(
+        child: GridSkillsScope(child: GridApp()),
+      ),
     ),
   );
 }

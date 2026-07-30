@@ -8,6 +8,7 @@ import 'package:grid_app/features/agent/logic/hermes_extensions.dart';
 import 'package:grid_app/features/agent/logic/hermes_skill_scanner.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/skills/logic/skill_author.dart';
+import 'package:grid_app/features/skills/logic/skill_sharing.dart';
 import 'package:grid_app/features/skills/logic/skills_controller.dart';
 import 'package:grid_app/features/skills/presentation/skills_view.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
@@ -52,6 +53,9 @@ void main() {
         hermesConfigFileProvider.overrideWithValue(
           HermesConfigFile(home: home.path),
         ),
+        // Adding a skill hands a copy to an agent — into the temp home, never
+        // the developer's own ~/.hermes/skills.
+        skillSharerProvider.overrideWithValue(SkillSharer(home: home.path)),
       ],
     );
     addTearDown(container.dispose);
@@ -73,7 +77,7 @@ void main() {
 
     final container = await pumpSkills(tester);
 
-    expect(container.read(skillSourceProvider), SkillSource.shared);
+    expect(container.read(skillSourceProvider), SkillSource.store);
     expect(find.text('Shared'), findsOneWidget);
     expect(find.text('Hermes'), findsOneWidget);
     expect(find.text('Codex'), findsOneWidget);
@@ -171,6 +175,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(container.read(skillSourceProvider), SkillSource.shared);
+    expect(container.read(skillSourceProvider), SkillSource.store);
   });
 }

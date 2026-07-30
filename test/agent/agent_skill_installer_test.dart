@@ -31,6 +31,29 @@ void main() {
     }
   });
 
+  test('the agent gets its own copy, not a pointer at the library — and the '
+      'copy names its own scripts, not the library\'s', () async {
+    await installHermes();
+
+    for (final skill in const ['grid-image-gen', 'grid-web']) {
+      final copy = Directory(
+        '${home.path}/.hermes/skills/$kPublicSkillsDir/$skill',
+      );
+      expect(
+        File('${copy.path}/SKILL.md').existsSync(),
+        isTrue,
+        reason: '$skill must be in the folder Hermes actually reads',
+      );
+      // Same folder Share writes to, so installing and then sharing by hand
+      // rewrites one skill instead of leaving two.
+      expect(
+        File('${copy.path}/SKILL.md').readAsStringSync(),
+        isNot(contains('.grid/skills')),
+        reason: "the agent's copy must not run the library's scripts",
+      );
+    }
+  });
+
   test('neither script bakes credentials or a grid — both read them at run '
       'time from the same OPENAI_* pair', () async {
     await installHermes();

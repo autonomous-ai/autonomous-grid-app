@@ -109,7 +109,7 @@ void main() {
       await c
           .read(agentExtensionsProvider(AgentTool.hermes))!
           .skills!
-          .projectSharedStore();
+          .detachLibrary();
     }
 
     File config() => File('${home.path}/.hermes/config.yaml');

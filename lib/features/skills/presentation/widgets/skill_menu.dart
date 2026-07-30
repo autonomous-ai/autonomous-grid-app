@@ -38,13 +38,20 @@ MenuStyle skillMenuStyle() => appMenuStyle().copyWith(
 class SkillMenuItem extends StatefulWidget {
   const SkillMenuItem({
     super.key,
-    required this.icon,
+    this.icon,
+    this.leading,
     required this.label,
     required this.onPressed,
     this.detail,
-  });
+  }) : assert(icon != null || leading != null, 'a row needs a leading mark');
 
-  final IconData icon;
+  /// A glyph, tinted with the row's ink like every other menu here.
+  final IconData? icon;
+
+  /// Something that isn't a glyph — an agent's own logo, which has its own
+  /// colour and must not be tinted. Wins over [icon] when both are given.
+  final Widget? leading;
+
   final String label;
   final VoidCallback onPressed;
 
@@ -83,7 +90,9 @@ class _SkillMenuItemState extends State<SkillMenuItem> {
             children: [
               SizedBox(
                 width: 16,
-                child: Icon(widget.icon, size: 15, color: ink),
+                child:
+                    widget.leading ??
+                    Icon(widget.icon, size: 15, color: ink),
               ),
               const SizedBox(width: 10),
               Expanded(

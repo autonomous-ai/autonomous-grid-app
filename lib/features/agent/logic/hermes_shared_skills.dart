@@ -1,31 +1,38 @@
 import '../../../infrastructure/cli/hermes_config_file.dart';
 
-/// The literal entry written into `skills.external_dirs` — home-relative on
-/// purpose: Hermes expands `~` itself, so the config stays valid if the home
-/// directory moves with a new username.
+/// The entry the app used to add to Hermes's `skills.external_dirs`, pointing
+/// it at `~/.grid/skills`.
+///
+/// Kept only so it can be taken out again. It is not written any more.
 const String kSharedSkillsExternalDir = '~/.grid/skills';
 
-/// Merge the app's skills store into Hermes's `skills.external_dirs` —
-/// append-if-absent, never clobbering entries the user set by hand. Hermes
-/// tolerates a bare string where a list is expected, so both shapes are read.
+/// Take the app's library back out of Hermes's `skills.external_dirs`.
 ///
-/// Every skill the app manages now lives outside `~/.hermes`, so this is no
-/// longer a nicety: without the entry, Hermes reads none of them. Both writers
-/// call it — the authoring path before a skill lands, the installer before the
-/// public ones do — so neither can leave a skill in a folder the agent doesn't
-/// read. Idempotent.
-Future<void> projectSharedSkillsStore(HermesConfigFile config) async {
+/// The library is the app's own, not an agent's: a skill reaches an assistant
+/// as a copy in that assistant's folder, chosen deliberately, and nowhere else.
+/// While that entry was in the config Hermes read the whole library as well —
+/// so every skill in it was live for Hermes whether or not anyone had given it
+/// to Hermes, and the copies the app *did* make sat beside the originals as
+/// duplicate skills of the same name.
+///
+/// Removing the entry is not enough to do once at release: an older build may
+/// have written it, and this build must undo that on whatever machine it lands
+/// on. So it runs from the same two places the projection used to, and does
+/// nothing when the entry is already gone. Entries the user added by hand are
+/// left exactly where they are.
+Future<void> unprojectSharedSkillsStore(HermesConfigFile config) async {
   final existing = await config.valueAt(['skills', 'external_dirs']);
   final dirs = switch (existing) {
     final List list => [for (final entry in list) entry.toString()],
     final String single => [single],
     _ => <String>[],
   };
-  if (dirs.contains(kSharedSkillsExternalDir)) return;
+  if (!dirs.contains(kSharedSkillsExternalDir)) return;
+  final kept = [
+    for (final dir in dirs)
+      if (dir != kSharedSkillsExternalDir) dir,
+  ];
   await config.edit((editor) {
-    HermesConfigFile.upsert(editor, ['skills', 'external_dirs'], [
-      ...dirs,
-      kSharedSkillsExternalDir,
-    ]);
+    HermesConfigFile.upsert(editor, ['skills', 'external_dirs'], kept);
   });
 }

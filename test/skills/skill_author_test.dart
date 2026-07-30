@@ -70,7 +70,7 @@ void main() {
       expect(markdown, contains('name: weekly-report'));
 
       // And the scanner — what the Skills screen lists — picks it straight up.
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
       expect(skills.single.name, 'weekly-report');
       expect(skills.single.owner, SkillOwner.user);
     });
@@ -131,7 +131,7 @@ void main() {
         expect(markdown, contains('description: new'));
         expect(markdown, contains('new steps'));
         // Still exactly one skill — no stray duplicate left behind.
-        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.shared), hasLength(1));
+        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.store), hasLength(1));
       },
     );
 
@@ -152,7 +152,7 @@ void main() {
 
       expect(author.dirFor('old-name').existsSync(), isFalse);
       expect(author.dirFor('new-name').existsSync(), isTrue);
-      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.store);
       expect(skills.single.name, 'new-name');
     });
 
@@ -169,7 +169,7 @@ void main() {
         await author.delete(dir.path);
 
         expect(Directory(dir.path).existsSync(), isFalse);
-        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.shared), isEmpty);
+        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.store), isEmpty);
       },
     );
 

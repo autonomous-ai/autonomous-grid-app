@@ -9,6 +9,7 @@ import '../../../agents/logic/agent_skill.dart';
 import '../../logic/skills_controller.dart';
 import '../../logic/skill_author.dart';
 import '../../logic/skill_generator.dart';
+import 'skill_target_picker.dart';
 
 /// Writes a new skill: a name, one line saying *when* to use it, and the
 /// instructions themselves.
@@ -254,6 +255,13 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 20),
+              // Only on the way in. Editing rewrites the store copy and does
+              // not re-copy it to an agent, so asking here would promise
+              // something the Save button doesn't do.
+              if (!_isEdit) ...[
+                const SkillTargetPicker(),
+                const SizedBox(height: 20),
+              ],
               const _SavedNote(),
               const SizedBox(height: 4),
             ],

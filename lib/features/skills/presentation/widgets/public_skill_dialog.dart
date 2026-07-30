@@ -11,11 +11,13 @@ import '../../../../shared/widgets/extension_tile_surface.dart';
 import '../../../../shared/widgets/extension_toolbar.dart';
 import '../../../../shared/widgets/pill_choice.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../../agents/logic/agent_skill.dart';
+import '../../../agents/logic/agent_catalog.dart';
 import '../../logic/public_skill_catalog.dart';
 import '../../logic/skill_files.dart';
+import '../../logic/skill_sharing.dart';
 import '../../logic/skills_controller.dart';
 import 'skill_folder_view.dart';
+import 'skill_target_picker.dart';
 
 /// The catalog of skills the app ships with: browse them, read one, install it.
 ///
@@ -81,12 +83,19 @@ class _PublicSkillDialogState extends ConsumerState<_PublicSkillDialog> {
     // Dialog/overlay content: watch brightness so tokens re-color on theme flip.
     AppTheme.watch(context);
     final catalog = ref.watch(publicSkillsProvider);
-    // What's in the store already, so a card can say "installed" instead of
-    // offering a name the writer would refuse a second later.
-    final installed = switch (ref.watch(storedSkillsProvider)) {
-      AsyncData(:final value) => value,
-      _ => const <AgentSkill>[],
+    // A tick means "the assistant you picked already has this" — so it moves
+    // when the picker does, and under All agents only both count. Read off the
+    // agents' own folders, which is where the question is really asked.
+    final target = ref.watch(skillTargetProvider);
+    final held = {
+      for (final agent in AgentTool.values)
+        agent: switch (ref.watch(agentSkillNamesProvider(agent))) {
+          AsyncData(:final value) => value,
+          _ => const <String>{},
+        },
     };
+    bool hasIt(PublicSkill skill) =>
+        target.agents.every((agent) => held[agent]!.contains(skill.slug));
     final size = MediaQuery.sizeOf(context);
     final open = _open;
 
@@ -101,7 +110,8 @@ class _PublicSkillDialogState extends ConsumerState<_PublicSkillDialog> {
           ? _BrowseHeader(onClose: () => Navigator.of(context).pop())
           : _SkillHeader(
               skill: open,
-              installed: open.isInstalled(installed),
+              installed: hasIt(open),
+              target: target,
               onBack: () => setState(() => _open = null),
             ),
       content: SizedBox(
@@ -135,17 +145,18 @@ class _PublicSkillDialogState extends ConsumerState<_PublicSkillDialog> {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
+                  const SkillTargetPicker(inline: true),
+                  const SizedBox(height: 12),
                   Expanded(
                     child: switch (catalog) {
                       AsyncData(:final value) => _Gallery(
                         skills: [
                           for (final skill in value)
-                            if (_matches(skill) &&
-                                _status.keeps(skill.isInstalled(installed)))
+                            if (_matches(skill) && _status.keeps(hasIt(skill)))
                               skill,
                         ],
-                        installed: installed,
+                        hasIt: hasIt,
                         onOpen: (skill) => setState(() => _open = skill),
                         filtered:
                             _query.trim().isNotEmpty || _status != _Status.all,
@@ -174,9 +185,9 @@ class _PublicSkillDialogState extends ConsumerState<_PublicSkillDialog> {
           // before the button that puts it there is pressed.
           Expanded(
             child: Text(
-              open.isInstalled(installed)
-                  ? 'Installed in ~/.grid/skills/public/${open.slug}'
-                  : 'Installs into ~/.grid/skills/public/${open.slug}',
+              hasIt(open)
+                  ? '${target.label} already has it'
+                  : 'Installs it for ${target.label}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
@@ -185,7 +196,7 @@ class _PublicSkillDialogState extends ConsumerState<_PublicSkillDialog> {
             ),
           ),
           const SizedBox(width: 12),
-          _InstallButton(skill: open, installed: open.isInstalled(installed)),
+          _InstallButton(skill: open, installed: hasIt(open)),
         ],
       ],
     );
@@ -238,11 +249,13 @@ class _SkillHeader extends StatelessWidget {
   const _SkillHeader({
     required this.skill,
     required this.installed,
+    required this.target,
     required this.onBack,
   });
 
   final PublicSkill skill;
   final bool installed;
+  final ShareTarget target;
   final VoidCallback onBack;
 
   @override
@@ -281,9 +294,9 @@ class _SkillHeader extends StatelessWidget {
               ),
             ),
             if (installed)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: ExtensionTag(label: 'Installed'),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: ExtensionTag(label: 'On ${target.label}'),
               ),
           ],
         ),
@@ -296,6 +309,10 @@ class _SkillHeader extends StatelessWidget {
               height: 1.45,
             ),
           ),
+        ],
+        if (!installed) ...[
+          const SizedBox(height: 12),
+          const SkillTargetPicker(inline: true),
         ],
       ],
     );
@@ -371,8 +388,9 @@ class _InstallButtonState extends ConsumerState<_InstallButton> {
       context,
       error: failure,
       success: widget.installed
-          ? '${skill.name} removed.'
-          : '${skill.name} installed.',
+          ? '${skill.name} taken off ${ref.read(skillTargetProvider).label}.'
+          : '${skill.name} installed, and given to '
+                '${ref.read(skillTargetProvider).label}.',
     );
   }
 
@@ -394,13 +412,13 @@ class _InstallButtonState extends ConsumerState<_InstallButton> {
 class _Gallery extends StatelessWidget {
   const _Gallery({
     required this.skills,
-    required this.installed,
+    required this.hasIt,
     required this.filtered,
     required this.onOpen,
   });
 
   final List<PublicSkill> skills;
-  final List<AgentSkill> installed;
+  final bool Function(PublicSkill) hasIt;
   final bool filtered;
   final ValueChanged<PublicSkill> onOpen;
 
@@ -429,7 +447,7 @@ class _Gallery extends StatelessWidget {
           itemCount: skills.length,
           itemBuilder: (context, index) => _SkillCard(
             skill: skills[index],
-            installed: skills[index].isInstalled(installed),
+            installed: hasIt(skills[index]),
             onOpen: () => onOpen(skills[index]),
           ),
         );
@@ -467,7 +485,8 @@ class _SkillCardState extends ConsumerState<_SkillCard> {
     ToastScope.showResult(
       context,
       error: failure,
-      success: '${widget.skill.name} installed.',
+      success: '${widget.skill.name} installed, and given to '
+          '${ref.read(skillTargetProvider).label}.',
     );
   }
 
@@ -510,6 +529,7 @@ class _SkillCardState extends ConsumerState<_SkillCard> {
                   const SizedBox(width: 6),
                   _InstallControl(
                     installed: widget.installed,
+                    target: ref.watch(skillTargetProvider),
                     busy: _busy,
                     onInstall: _install,
                   ),
@@ -549,18 +569,21 @@ class _SkillCardState extends ConsumerState<_SkillCard> {
   }
 }
 
-/// The one control on a card: add it, or say it's already here.
+/// The one control on a card: give it to the chosen assistant, or say they
+/// already have it.
 ///
-/// Installed is a statement, not a button — removing one is done from the
+/// A tick is a statement, not a button — taking a skill back is done from the
 /// skill's own page, where the user can see what they're removing.
 class _InstallControl extends StatelessWidget {
   const _InstallControl({
     required this.installed,
+    required this.target,
     required this.busy,
     required this.onInstall,
   });
 
   final bool installed;
+  final ShareTarget target;
   final bool busy;
   final VoidCallback onInstall;
 
@@ -576,7 +599,9 @@ class _InstallControl extends StatelessWidget {
     }
     if (installed) {
       return Tooltip(
-        message: 'Already in your skills',
+        message: target == ShareTarget.all
+            ? 'Both assistants have it'
+            : '${target.label} has it',
         child: SizedBox(
           width: 24,
           height: 24,
@@ -589,7 +614,7 @@ class _InstallControl extends StatelessWidget {
       );
     }
     return AppIconButton(
-      tooltip: 'Add to my skills',
+      tooltip: 'Add it for ${target.label}',
       icon: Icons.add_rounded,
       onPressed: onInstall,
     );

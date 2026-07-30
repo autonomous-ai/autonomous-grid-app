@@ -14,12 +14,12 @@ import 'widgets/skill_list.dart';
 /// image on the grid", "write my weekly report"), yours first, read from
 /// what's really on disk rather than a list the app keeps.
 ///
-/// Three folders hold them and the pills switch between: the app's own store,
-/// then each agent's private one. Only the store is the app's to change, so the
-/// other two read as a window onto what the agent already knows.
+/// One tab per assistant, because that is the unit that matters: a skill is
+/// only live for an assistant whose own folder holds a copy. The app keeps its
+/// own library behind the scenes to copy from, but nothing reads it, so it
+/// isn't a tab.
 ///
-/// Opening the screen always starts on Shared — the folder the user's own work
-/// is in, and the only one they can do anything about. That falls out of
+/// Opening the screen always starts on Hermes. That falls out of
 /// [skillSourceProvider] being auto-disposed with this screen rather than being
 /// reset here: a write from a widget life-cycle is exactly what Riverpod
 /// forbids.
@@ -41,7 +41,7 @@ class SkillsView extends ConsumerWidget {
       onRefresh: () => ref.invalidate(skillsProvider),
       filterBar: Row(
         children: [
-          for (final option in SkillSource.values)
+          for (final option in kSkillTabs)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: PillChoice(

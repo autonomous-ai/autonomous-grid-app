@@ -10,11 +10,10 @@ import 'public_skill_catalog.dart';
 import 'skill_files.dart';
 import 'skill_sharing.dart';
 
-/// Which folder of skills the screen is showing. The app's own store by
-/// default — the one place the user's work lives, and the only one they can
-/// change from here.
+/// Which assistant's skills the screen is showing. Hermes by default — the
+/// agent the app installs, points at a grid and chats through.
 ///
-/// Auto-disposed, which is what makes "opening Skills starts on Shared" true:
+/// Auto-disposed, which is what makes "opening Skills starts on Hermes" true:
 /// the pill is the screen's state and dies with it. Resetting it by hand on the
 /// way in isn't an option — Riverpod refuses a write from `initState`, and
 /// rightly: two widgets would read different values for one frame.
@@ -25,9 +24,27 @@ final skillSourceProvider = NotifierProvider<SkillSourceNotifier, SkillSource>(
 
 class SkillSourceNotifier extends Notifier<SkillSource> {
   @override
-  SkillSource build() => SkillSource.shared;
+  SkillSource build() => SkillSource.hermes;
 
   void select(SkillSource source) => state = source;
+}
+
+/// Who gets a copy of the next skill added — asked by every add flow, answered
+/// once.
+///
+/// Hermes by default: it's the agent the app installs, points at a grid and
+/// chats through, so it's the one a skill is nearly always meant for. Kept for
+/// the session rather than auto-disposed, so the answer follows the user from
+/// the write dialog to the catalog.
+final skillTargetProvider = NotifierProvider<SkillTargetNotifier, ShareTarget>(
+  SkillTargetNotifier.new,
+);
+
+class SkillTargetNotifier extends Notifier<ShareTarget> {
+  @override
+  ShareTarget build() => ShareTarget.hermes;
+
+  void select(ShareTarget target) => state = target;
 }
 
 /// The skills in the selected source, read straight from the agent's skills
@@ -47,22 +64,6 @@ final skillsProvider =
       SkillsController.new,
       isAutoDispose: true,
     );
-
-/// What's in the app's own store, whichever folder the screen happens to be
-/// showing.
-///
-/// The catalog needs this and [skillsProvider] can't answer it: open the
-/// catalog while reading Hermes's folder and "is this installed?" would be
-/// asked of the wrong list. Re-read whenever the screen's list changes, since
-/// every write goes through that.
-final storedSkillsProvider = FutureProvider.autoDispose<List<AgentSkill>>((
-  ref,
-) async {
-  final tool = ref.watch(extensionAgentProvider);
-  final plane = ref.watch(agentExtensionsProvider(tool))?.skills;
-  ref.watch(skillsProvider);
-  return await plane?.list(SkillSource.shared) ?? const [];
-});
 
 /// The selected agent's authoring surface, or null when it can only display
 /// skills — dialogs read this for pre-checks (does a name exist, what were the
@@ -94,17 +95,15 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
     required String description,
     required String instructions,
   }) async {
-    final failure = await _write(
-      (writer) => writer.create(
+    Directory? landed;
+    final failure = await _write((writer) async {
+      landed = await writer.create(
         name: name,
         description: description,
         instructions: instructions,
-      ),
-    );
-    if (failure == null) {
-      ref.read(skillSourceProvider.notifier).select(SkillSource.shared);
-    }
-    return failure;
+      );
+    });
+    return _landed(failure, landed);
   }
 
   Future<String?> edit({
@@ -124,11 +123,11 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
   /// Take a folder the user picked and copy it in as a skill, then show it —
   /// same landing as [create], for the same reason.
   Future<String?> importFolder(String sourcePath) async {
-    final failure = await _write((writer) => writer.import(sourcePath));
-    if (failure == null) {
-      ref.read(skillSourceProvider.notifier).select(SkillSource.shared);
-    }
-    return failure;
+    Directory? landed;
+    final failure = await _write((writer) async {
+      landed = await writer.import(sourcePath);
+    });
+    return _landed(failure, landed);
   }
 
   /// Install one of the skills the app ships with.
@@ -149,47 +148,91 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
       return "Couldn't unpack ${skill.name}: $error";
     }
     try {
-      final failure = await _write(
+      Directory? landed;
+      final failure = await _write((writer) async {
         // Into `public/`: this is Grid's copy of somebody else's skill, not the
         // user's work, and the Author column should say so.
-        (writer) => writer.import(staging.path, intoPublic: true),
-      );
-      if (failure == null) {
-        ref.read(skillSourceProvider.notifier).select(SkillSource.shared);
-      }
-      return failure;
+        landed = await writer.import(staging.path, intoPublic: true);
+      });
+      return _landed(failure, landed);
     } finally {
       if (staging.existsSync()) await staging.delete(recursive: true);
     }
   }
 
-  /// Take a catalog skill back out of the store.
+  /// What every way of adding a skill does once the store has it: show the
+  /// folder it went into, and hand a copy to the agent the user picked.
   ///
-  /// Found by folder name in the store rather than in whatever the screen is
-  /// showing — the catalog can be open over Hermes's folder, and deleting from
-  /// *that* list is both refused and not what was asked.
+  /// The hand-off failing is reported without pretending the whole thing
+  /// failed — the skill *is* saved, and a message that says only "couldn't"
+  /// would send the user looking for something that's already there.
+  Future<String?> _landed(String? failure, Directory? dir) async {
+    if (failure != null) return failure;
+    if (dir == null) return null;
+    final target = ref.read(skillTargetProvider);
+    // Show the assistant that just got it. "All agents" has no one tab, so it
+    // leaves the screen where it was.
+    final landedOn = target.agents.length == 1
+        ? skillFolderOf(target.agents.single)
+        : null;
+    if (landedOn != null) {
+      ref.read(skillSourceProvider.notifier).select(landedOn);
+    }
+    try {
+      await ref
+          .read(skillSharerProvider)
+          .shareFolder(dir.path, target.agents);
+    } on Object catch (error) {
+      return 'Saved, but couldn\'t give it to ${target.label}: $error';
+    } finally {
+      _changed();
+    }
+    return null;
+  }
+
+  /// Undo an install: take the skill away from the assistants currently
+  /// selected, and remove the store copy that fed them.
+  ///
+  /// The mirror of [installPublic], which puts it in both places. The store
+  /// copy is found by folder name in the store itself rather than in whatever
+  /// list the screen is showing — the catalog can be open over Hermes's folder,
+  /// and deleting from *that* is neither allowed nor what was asked.
   Future<String?> uninstallPublic(PublicSkill skill) async {
     final plane = _plane;
     if (plane == null) return _noSkills;
-    final stored = await plane.list(SkillSource.shared);
-    final copies = stored
+    final target = ref.read(skillTargetProvider);
+    try {
+      await ref
+          .read(skillSharerProvider)
+          .unshareFolder(skill.slug, target.agents);
+    } on Object catch (error) {
+      return "Couldn't take ${skill.name} off ${target.label}: $error";
+    }
+
+    final copies = (await plane.list(SkillSource.store))
         .where((installed) => installed.path.split('/').last == skill.slug)
         .toList();
-    if (copies.isEmpty) return '${skill.name} is not installed.';
-    return _write((writer) async {
-      for (final copy in copies) {
-        await writer.delete(copy.path);
-      }
-    });
+    final failure = copies.isEmpty
+        ? null
+        : await _write((writer) async {
+            for (final copy in copies) {
+              await writer.delete(copy.path);
+            }
+          });
+    _changed();
+    return failure;
   }
 
-  Future<String?> delete(AgentSkill skill) =>
-      _write((writer) => writer.delete(skill.path));
+  Future<String?> delete(AgentSkill skill) async {
+    final failure = await _write((writer) => writer.delete(skill.path));
+    if (failure == null) _changed();
+    return failure;
+  }
 
   /// Hand a copy of [skill] to an agent's own folder.
   ///
-  /// Doesn't touch the store, so nothing on screen changes — the list is not
-  /// re-read, and the toast is the whole feedback.
+  /// Doesn't touch the store, so the list itself doesn't change — only the
+  /// record of who has what, which the rows draw their tags from.
   Future<String?> share(AgentSkill skill, ShareTarget target) async {
     try {
       await ref.read(skillSharerProvider).share(skill, target);
@@ -198,8 +241,13 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
     } on Object catch (error) {
       return "Couldn't share ${skill.name}: $error";
     }
+    _changed();
     return null;
   }
+
+  /// Re-read which assistant holds what. There is no record to keep in step —
+  /// the folders are the record — so this is the whole of it.
+  void _changed() => ref.invalidate(agentSkillNamesProvider);
 
   /// Rewrite the skills Grid ships for this agent and re-read the folder.
   /// Idempotent — also the fix for a skill deleted by mistake.
@@ -223,9 +271,9 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
     final writer = plane?.writer;
     if (plane == null || writer == null) return _noSkills;
     try {
-      // Point the agent at the shared store before anything lands in it — a
-      // skill written into a folder the agent doesn't read isn't a skill.
-      await plane.projectSharedStore();
+      // Close the old shortcut first: an agent still reading the library would
+      // pick this skill up without anyone giving it to them.
+      await plane.detachLibrary();
       await action(writer);
     } on AgentExtensionException catch (error) {
       return error.message;

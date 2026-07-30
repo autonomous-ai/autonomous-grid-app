@@ -16,6 +16,7 @@ import '../../logic/skill_import.dart';
 import '../../logic/skills_controller.dart';
 import 'new_skill_dialog.dart';
 import 'public_skill_dialog.dart';
+import 'skill_target_picker.dart';
 import 'skill_menu.dart';
 
 /// The screen's one create action, now that there are three ways to get a
@@ -222,6 +223,8 @@ class _UploadDialogState extends ConsumerState<_UploadDialog> {
                 ),
               ),
             ],
+            const SizedBox(height: 18),
+            const SkillTargetPicker(),
             const SizedBox(height: 18),
             Text(
               'File requirements',

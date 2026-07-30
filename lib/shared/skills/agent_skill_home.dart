@@ -20,15 +20,17 @@ const String kUserSkillsDir = 'user';
 
 const String kPublicSkillsDir = 'public';
 
-/// A folder of skills the Skills screen can be pointed at.
+/// A folder of skills, wherever it is.
 ///
-/// Three, because a skill the assistant can reach lives in one of three places
-/// and the user has no other way to see the other two: the app's own store, and
-/// each agent's private folder — Hermes ships ~70 of its own, Codex its own set.
-/// Only [shared] is the app's to write to; the agents' are read-only, since an
-/// agent update rewrites them and would silently undo an edit made here.
+/// [store] is the app's own library. No agent reads it — a skill only reaches
+/// an assistant as a copy in that assistant's folder — so it is not a tab on
+/// the Skills screen; it is where a new skill is kept so the app has an
+/// original to copy from, and the record of who authored what.
+///
+/// The two agent folders are what the screen actually shows, and what an
+/// assistant actually reads.
 enum SkillSource {
-  shared('Shared'),
+  store('Library'),
   hermes('Hermes'),
   codex('Codex');
 
@@ -38,11 +40,39 @@ enum SkillSource {
   final String label;
 
   Directory root(String home) => switch (this) {
-    SkillSource.shared => Directory(gridSkillsStore(home)),
+    SkillSource.store => Directory(gridSkillsStore(home)),
     SkillSource.hermes => Directory('$home/.hermes/skills'),
     SkillSource.codex => Directory('$home/.codex/skills'),
   };
+
+  /// The agent this folder belongs to, or null for the library.
+  AgentTool? get agent => switch (this) {
+    SkillSource.store => null,
+    SkillSource.hermes => AgentTool.hermes,
+    SkillSource.codex => AgentTool.codex,
+  };
 }
+
+/// The folders the Skills screen offers, in tab order — the assistants, and
+/// only the assistants.
+const List<SkillSource> kSkillTabs = [SkillSource.hermes, SkillSource.codex];
+
+/// Where a copy of a skill lands in [agent]'s own folder.
+///
+/// Hermes keeps its skills in category folders and reads them nested, so a copy
+/// keeps the library's own [kUserSkillsDir] / [kPublicSkillsDir] split and the
+/// screen can still say who wrote it. Codex discovers a flat tree, so a copy
+/// sits at its root under the skill's own name; authorship for those is read
+/// back off the library instead.
+Directory agentSkillCopy(AgentTool agent, String home, String slug, String category) =>
+    switch (agent) {
+      AgentTool.hermes => Directory(
+        category.isEmpty
+            ? '$home/.hermes/skills/$slug'
+            : '$home/.hermes/skills/$category/$slug',
+      ),
+      AgentTool.codex => Directory('$home/.codex/skills/$slug'),
+    };
 
 /// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
 /// which both agents can already reach.
@@ -86,20 +116,21 @@ class AgentSkillHome {
   /// never touch the real `~/.grid` / `~/.codex`.
   final String home;
 
-  /// A Grid-owned skill's folder — the ones the app installs and rewrites.
+  /// The library's copy of a Grid-owned skill.
   ///
-  /// Hermes reads the shared store through `skills.external_dirs`, so its copies
-  /// live in the store's [kPublicSkillsDir] — the same folder the Skills screen
-  /// lists, which is what lets a Grid skill show up there at all. Codex has no
-  /// such projection yet, so its copies stay in its own flat tree.
-  Directory gridDir(String name) => switch (agent) {
-    AgentTool.hermes => Directory(
-      '${gridSkillsStore(home)}/$kPublicSkillsDir/$name',
-    ),
-    AgentTool.codex => Directory(
-      '${SkillSource.codex.root(home).path}/$name',
-    ),
-  };
+  /// Written first and kept, even though no agent reads the library: it is what
+  /// makes the screen call these skills `public` rather than the agent's own,
+  /// and it is the original every later copy is made from.
+  Directory libraryGridDir(String name) =>
+      Directory('${gridSkillsStore(home)}/$kPublicSkillsDir/$name');
+
+  /// The agent's own copy — the one it actually reads.
+  ///
+  /// Exactly where Share would put it, so installing and then sharing the same
+  /// skill by hand writes the same folder twice instead of leaving two copies
+  /// of one skill under different names.
+  Directory gridDir(String name) =>
+      agentSkillCopy(agent, home, name, kPublicSkillsDir);
 }
 
 /// Write (or refresh) a skill into [dir]: wipe it first so a stale file from an

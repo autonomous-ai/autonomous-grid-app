@@ -86,7 +86,7 @@ class _HermesSkillsPlane implements AgentSkillsPlane {
   Future<void> installGridSkills() => _installer.install(AgentTool.hermes);
 
   @override
-  Future<void> projectSharedStore() => projectSharedSkillsStore(_configFile);
+  Future<void> detachLibrary() => unprojectSharedSkillsStore(_configFile);
 }
 
 class _HermesPluginsPlane implements AgentPluginsPlane {

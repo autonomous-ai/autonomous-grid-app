@@ -42,11 +42,16 @@ abstract interface class AgentSkillsPlane {
   /// also the fix for a skill deleted by mistake.
   Future<void> installGridSkills();
 
-  /// Make the agent-neutral store (`~/.grid/skills`) visible to this agent —
-  /// Hermes by merging it into `skills.external_dirs`; Codex later by sync.
-  /// Idempotent, and called before every authoring write so a skill can never
-  /// land in a folder the agent doesn't read.
-  Future<void> projectSharedStore();
+  /// Make sure this agent is *not* reading the app's library behind the user's
+  /// back.
+  ///
+  /// An older build pointed Hermes at `~/.grid/skills` through
+  /// `skills.external_dirs`, which made every skill in the library live for
+  /// Hermes whether or not it had been given to Hermes. A skill reaches an
+  /// assistant as a copy in that assistant's own folder and no other way, so
+  /// this undoes that wherever it is still set. Idempotent, and called before
+  /// every write so no skill lands while the shortcut is still open.
+  Future<void> detachLibrary();
 }
 
 /// The agent's plugin manager: whole tool backends with an on/off state.

@@ -8,6 +8,7 @@ import 'package:grid_app/features/agent/logic/hermes_skill_scanner.dart';
 import 'package:grid_app/features/agents/logic/agent_skill.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/features/skills/logic/skill_author.dart';
+import 'package:grid_app/features/skills/logic/skill_sharing.dart';
 import 'package:grid_app/features/skills/logic/skills_controller.dart';
 import 'package:grid_app/shared/skills/agent_skill_home.dart';
 
@@ -35,6 +36,9 @@ void main() {
         hermesConfigFileProvider.overrideWithValue(
           HermesConfigFile(home: home.path),
         ),
+        // Adding a skill hands a copy to an agent — into the temp home, never
+        // the developer's own ~/.hermes/skills.
+        skillSharerProvider.overrideWithValue(SkillSharer(home: home.path)),
       ],
     );
     addTearDown(c.dispose);
@@ -208,7 +212,7 @@ void main() {
           .create(name: 'Weekly report', description: 'd', instructions: 'i');
 
       expect(error, isNull);
-      expect(c.read(skillSourceProvider), SkillSource.shared);
+      expect(c.read(skillSourceProvider), SkillSource.store);
       expect((await c.read(skillsProvider.future)).map((s) => s.name), [
         'weekly-report',
       ]);
