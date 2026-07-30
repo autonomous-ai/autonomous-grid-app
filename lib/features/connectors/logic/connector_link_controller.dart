@@ -25,6 +25,28 @@ class PendingLink {
   final DateTime startedAt;
 }
 
+/// How a sign-in ended.
+///
+/// Exists because `connect` had no way to say. It returned a `String?` where
+/// null meant "the row explains this itself" — which lumped a finished sign-in,
+/// a browser the user closed, and a timeout into one value, and left the caller
+/// re-reading the token store to guess which had happened. Three outcomes the
+/// user should hear about differently cannot share one null.
+enum ConnectorLinkOutcome {
+  /// A credential landed on this machine.
+  connected,
+
+  /// The user stopped waiting. Nothing on disk changed.
+  cancelled,
+
+  /// It didn't work. The row is already showing why.
+  failed,
+
+  /// It never got off the ground — the gateway refused the start. Worth saying
+  /// out loud, because there is no row state for something that never began.
+  notStarted,
+}
+
 /// What the screen shows about a link in progress.
 class ConnectorLinkState {
   const ConnectorLinkState({
@@ -71,10 +93,11 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
 
   /// Link [connector]: start, open the browser, poll, store, project.
   ///
-  /// Returns null when the outcome is something the row explains itself, or a
-  /// line for the caller to show — reserved for failures to *start*, since
-  /// everything after the browser opens is the row's own business.
-  Future<String?> connect(String connector) async {
+  /// Returns how it ended, plus a line worth showing when there is one. The
+  /// outcome is decided here rather than threaded back through the poll loop, so
+  /// the two paths that share [_store] — this one and path A — keep their
+  /// existing contract untouched.
+  Future<(ConnectorLinkOutcome, String?)> connect(String connector) async {
     _cancelled = false;
     final client = ref.read(connectorGatewayClientProvider);
 
@@ -83,7 +106,10 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     // dropped network or a mistyped connector code.
     final (authorization, startError) = await client.start(connector);
     if (authorization == null) {
-      return startError?.message ?? "Couldn't start the sign-in.";
+      return (
+        ConnectorLinkOutcome.notStarted,
+        startError?.message ?? "Couldn't start the sign-in.",
+      );
     }
 
     // Now the old credential must stop working: the user is deliberately
@@ -98,7 +124,21 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     );
     await openExternalUrl(authorization.authorizeUrl);
 
-    return _awaitPickup(authorization);
+    final problem = await _awaitPickup(authorization);
+    // Cancel first: the user's own choice outranks whatever the loop was in the
+    // middle of when they made it.
+    if (_cancelled) return (ConnectorLinkOutcome.cancelled, null);
+
+    // The honest test for success, and the reason it is a *read*: the poll loop
+    // reports failures through the row's message and returns null for all of
+    // them, so the only thing that separates a finished sign-in from a timeout
+    // is whether a credential is now on disk.
+    final store = ref.read(connectorTokenStoreProvider);
+    final linked = (await store.read()).containsKey(connector);
+    return (
+      linked ? ConnectorLinkOutcome.connected : ConnectorLinkOutcome.failed,
+      problem,
+    );
   }
 
   /// Link a server the user typed a URL for, with no gateway involved (path A).

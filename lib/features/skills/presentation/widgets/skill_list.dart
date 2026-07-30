@@ -381,9 +381,7 @@ Future<bool?> _confirmDeleteSkill(
           child: const Text('Cancel'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+          style: dangerButtonStyle(),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Delete'),
         ),

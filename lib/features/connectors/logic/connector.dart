@@ -60,12 +60,26 @@ class Connector {
 
   bool get connected => status == ConnectorStatus.connected;
 
-  /// Linked at the gateway but with no credential on this machine.
+  /// The account has authorized this connector, and this machine holds no
+  /// credential for it.
   ///
-  /// A real and confusing state without a name: the user connected this from
-  /// their laptop, and here the agent has nothing. The row offers Connect and
-  /// says why rather than showing a checkmark it can't back up.
-  bool get linkedElsewhere =>
+  /// Named for what is *known* rather than for a cause. It used to be
+  /// `linkedElsewhere`, and both the name and the line it drove asserted a
+  /// second computer — which is only one of three ways to arrive here, and was
+  /// wrong the first time it was read in anger:
+  ///
+  ///   1. It really was another computer. The case the state was added for.
+  ///   2. **The gateway renamed the connector.** Measured 2026-07-30: the
+  ///      catalog went from `gmail` / `gmail-app` / `gmail-pat` to a single
+  ///      `gmail`, so a token stored under the old code stops matching the row
+  ///      and the account looks linked from nowhere.
+  ///   3. The credential went missing here without the gateway hearing about
+  ///      it — a store rewritten, a disconnect that failed after the server
+  ///      call.
+  ///
+  /// The app cannot tell these apart: all it sees is a `status` and an absence.
+  /// So it states the absence and offers the fix, and guesses at nothing.
+  bool get needsSignInHere =>
       token == null && (catalogEntry?.linkedAtServer ?? false);
 
   /// Signed in, but the connector has no MCP server, so the agent still can't
@@ -92,7 +106,7 @@ class Connector {
 /// What is deliberately *not* enough is the gateway's own `status: connected`.
 /// That says the account is linked somewhere — quite possibly another computer
 /// — and this agent still has nothing to call. Those rows stay under Available
-/// and say so ([Connector.linkedElsewhere]) rather than showing a state the
+/// and say so ([Connector.needsSignInHere]) rather than showing a state the
 /// machine can't back up (D6).
 List<Connector> buildConnectors({
   required List<McpServer> servers,

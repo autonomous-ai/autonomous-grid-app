@@ -1,10 +1,5 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
@@ -20,6 +15,7 @@ import '../../logic/connector_link_controller.dart';
 import '../../logic/connectors_controller.dart';
 import 'add_mcp_dialog.dart';
 import 'connector_details_dialog.dart';
+import 'connector_mark.dart';
 
 /// Everything that links the assistant to the outside: the MCP servers live in
 /// the agent's config (each adds a set of tools — a database, a design tool, a
@@ -67,93 +63,57 @@ class ConnectorList extends StatelessWidget {
   }
 }
 
-/// A catalog service, with whatever action its current state allows.
+/// A catalog service: its mark, its name, and whatever action its state allows.
 ///
-/// Connect is offered whenever the gateway can drive a sign-in. Whether an MCP
-/// server exists behind it is a separate question — it decides what the *agent*
-/// gains, not whether the *account* can be linked — so a connector without one
-/// still connects, and says the tools are coming.
-class _CatalogRow extends ConsumerStatefulWidget {
+/// The row is deliberately one line of text. The gateway's blurb runs to a
+/// paragraph and, truncated to a row, ten of them stacked read as a wall rather
+/// than a list — so the description moved to the detail dialog, which has room
+/// for all of it. What stays on the row is the *state* note, because that is the
+/// one line a user scanning the list needs.
+///
+/// Tapping anywhere but the button opens that detail.
+class _CatalogRow extends ConsumerWidget {
   const _CatalogRow({required this.connector});
 
   final Connector connector;
 
   @override
-  ConsumerState<_CatalogRow> createState() => _CatalogRowState();
-}
-
-class _CatalogRowState extends ConsumerState<_CatalogRow> {
-  bool _busy = false;
-
-  Future<void> _connect() async {
-    final toast = ToastScope.of(context);
-    setState(() => _busy = true);
-    final error = await ref
-        .read(connectorLinkControllerProvider.notifier)
-        .connect(widget.connector.id);
-    if (mounted) setState(() => _busy = false);
-    // Only a failure to *start* is worth a toast. Everything that happens after
-    // the browser opens — cancelled, timed out, refused — the row says quietly
-    // itself, because none of it is a surprise the user needs interrupting for.
-    if (error != null) {
-      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
-    }
-  }
-
-  /// Hand the credential back: forgotten at the gateway, then here, then
-  /// removed from the agent's config by the re-projection.
-  ///
-  /// Confirmed first, and the wording has to be honest that this does not
-  /// revoke anything at the provider — only the user can do that, in the
-  /// provider's own settings.
-  Future<void> _disconnect() async {
-    final toast = ToastScope.of(context);
-    final connector = widget.connector;
-    final confirmed = await _confirmDisconnect(context, connector.name);
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _busy = true);
-    final error = await ref
-        .read(connectorLinkControllerProvider.notifier)
-        .disconnect(connector.id);
-    if (mounted) setState(() => _busy = false);
-    if (error != null) {
-      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final theme = Theme.of(context);
-    final connector = widget.connector;
     final link = ref.watch(connectorLinkControllerProvider);
-    final waiting = link.isPending(connector.id);
     // A line the row owns: what this connector is waiting for, or how its last
     // attempt ended.
     final note = link.messageFor(connector.id).isNotEmpty
         ? link.messageFor(connector.id)
-        : connector.linkedElsewhere
-        ? 'Connected on another computer — sign in here to use it.'
-        // Connected, and the gateway has no tools behind it yet. This has to be
-        // said here or nowhere: the tag now reports only whether the connector
-        // is connected, and the description would otherwise take the line and
-        // leave the row looking exactly like one the agent can already use.
+        : connector.needsSignInHere
+        // Says the two facts it has — the account authorized this, this
+        // computer has no credential — and nothing about why. The old line
+        // claimed "on another computer", which is a guess, and a wrong one
+        // whenever the gateway has renamed the connector out from under a
+        // stored token (see Connector.needsSignInHere).
+        ? 'Connected to your account, but not on this computer.'
+        // Signed in, and the gateway has no tools behind it yet. Said here or
+        // nowhere: the tag reports only whether a credential is held.
         : connector.connectedButUnusable
-        ? "Connected. The agent can't use it yet — tools are coming."
+        ? "Signed in. The agent can't use it yet — tools are coming."
         : !connector.canConnect && connector.catalogEntry != null
         ? _unavailableReason(connector)
         : '';
 
     return ExtensionTileSurface(
+      onTap: () => showConnectorDetailsDialog(
+        context,
+        connector,
+        actionBuilder: (close) =>
+            ConnectorAction(connector: connector, onSettled: close),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // A link, not a cloud. Every row here is a connector whether or not
           // the backend published a logo, and a cloud reads as "somewhere
-          // remote" — which is the one thing already obvious. The badge draws
-          // it on the app's own plate, so a row without a logo still lines up
-          // with the rows that have one.
+          // remote" — the one thing already obvious.
           ConnectorMark(
             imageUrl: connector.imageUrl,
             fallbackIcon: Icons.link_rounded,
@@ -172,17 +132,10 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
                         style: theme.textTheme.titleSmall?.copyWith(),
                       ),
                     ),
-                    // One tag, and it answers one question: does the app hold a
+                    // One tag, answering one question: does the app hold a
                     // credential for this? Whether the gateway has wired up
-                    // tools yet is a *different* question, and the note
-                    // underneath is where that belongs — a tag naming both made
-                    // two accounts in the identical state wear different badges,
-                    // which read as one of them having half-worked.
-                    //
-                    // "Signed in" rather than "Connected", to match the
-                    // configured rows: every row in this list now says the same
-                    // thing the same way, whether its connector came from the
-                    // catalog or from a URL the user typed.
+                    // tools yet is a different question, and the note below is
+                    // where that belongs.
                     if (connector.token != null) ...[
                       const SizedBox(width: 8),
                       const ExtensionTag(label: 'Signed in'),
@@ -199,38 +152,150 @@ class _CatalogRowState extends ConsumerState<_CatalogRow> {
                       color: AppPalette.textSecondary,
                     ),
                   ),
-                ] else if (connector.description.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  // One line, like every other extension row. The backend's
-                  // blurb runs to a paragraph — the full text is the tooltip.
-                  Tooltip(
-                    message: connector.description,
-                    waitDuration: const Duration(milliseconds: 600),
-                    child: Text(
-                      connector.description,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textSecondary,
-                      ),
-                    ),
-                  ),
                 ],
               ],
             ),
           ),
           const SizedBox(width: 8),
-          _CatalogAction(
-            connector: connector,
-            waiting: waiting,
-            busy: _busy,
-            onConnect: _connect,
-            onCancel: () =>
-                ref.read(connectorLinkControllerProvider.notifier).cancel(),
-            onDisconnect: _disconnect,
-          ),
+          ConnectorAction(connector: connector),
         ],
       ),
+    );
+  }
+}
+
+/// The Connect / Cancel / Remove control, and the work behind it.
+///
+/// Owns its own busy flag and both handlers so the row and the detail dialog can
+/// each just place one of these. Reusing the widget rather than the two callbacks
+/// is what keeps the confirm wording, the toast rules and the spinner identical
+/// in both places — a second copy of this logic would drift the first time only
+/// one of them was edited.
+class ConnectorAction extends ConsumerStatefulWidget {
+  const ConnectorAction({super.key, required this.connector, this.onSettled});
+
+  final Connector connector;
+
+  /// Called once a connect or disconnect has actually landed.
+  ///
+  /// Exists for the detail dialog, which closes itself here. It has to: the
+  /// dialog is handed a [Connector] *value*, a snapshot taken when it opened, so
+  /// after a sign-in it would go on reporting "Not connected" beside a Connect
+  /// button that had already worked. Rebuilding it from a provider instead would
+  /// be the other fix, and a worse one — the row it was opened from can vanish
+  /// into a different section, leaving the dialog watching nothing.
+  ///
+  /// The row passes nothing. A `Navigator.pop` from there would close the
+  /// settings page.
+  final VoidCallback? onSettled;
+
+  @override
+  ConsumerState<ConnectorAction> createState() => _ConnectorActionState();
+}
+
+class _ConnectorActionState extends ConsumerState<ConnectorAction> {
+  bool _busy = false;
+
+  Future<void> _connect() async {
+    final toast = ToastScope.of(context);
+    final name = widget.connector.name;
+    setState(() => _busy = true);
+    final (outcome, problem) = await ref
+        .read(connectorLinkControllerProvider.notifier)
+        .connect(widget.connector.id);
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    switch (outcome) {
+      case ConnectorLinkOutcome.connected:
+        // The controller may have left a note — the usual one being that the
+        // gateway has no tools behind this connector yet. Shown here instead of
+        // a plain success, because "connected" alone would be a promise the row
+        // then quietly walks back.
+        final note = ref
+            .read(connectorLinkControllerProvider)
+            .messageFor(widget.connector.id);
+        toast?.show(
+          note.isEmpty
+              ? ToastSpec(
+                  message: '$name is connected.',
+                  severity: ToastSeverity.success,
+                )
+              : ToastSpec(message: note, severity: ToastSeverity.warning),
+        );
+        widget.onSettled?.call();
+
+      case ConnectorLinkOutcome.cancelled:
+        // Said out loud because the browser tab is where the user's attention
+        // was: they come back to the app not knowing whether closing it undid
+        // anything. It didn't, and that is the reassuring half of the sentence.
+        toast?.show(
+          ToastSpec(
+            message: 'Sign-in cancelled — $name is unchanged.',
+            severity: ToastSeverity.info,
+          ),
+        );
+
+      case ConnectorLinkOutcome.notStarted:
+        toast?.show(
+          ToastSpec(
+            message: problem ?? "Couldn't start the sign-in.",
+            severity: ToastSeverity.error,
+          ),
+        );
+
+      case ConnectorLinkOutcome.failed:
+        // Already on the row, in the controller's own words. A toast repeating
+        // it would say the same thing twice in two places.
+        if (problem != null) {
+          toast?.show(
+            ToastSpec(message: problem, severity: ToastSeverity.error),
+          );
+        }
+    }
+  }
+
+  /// Hand the credential back: forgotten at the gateway, then here, then removed
+  /// from the agent's config by the re-projection.
+  ///
+  /// Confirmed first, and the wording has to be honest that this does not revoke
+  /// anything at the provider — only the user can do that, in the provider's own
+  /// settings.
+  Future<void> _disconnect() async {
+    final toast = ToastScope.of(context);
+    final connector = widget.connector;
+    final confirmed = await _confirmDisconnect(context, connector.name);
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    final error = await ref
+        .read(connectorLinkControllerProvider.notifier)
+        .disconnect(connector.id);
+    if (mounted) setState(() => _busy = false);
+    if (error != null) {
+      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
+      return;
+    }
+    // Same staleness problem in reverse: a dialog left open after a disconnect
+    // would still offer Remove for a credential that is gone.
+    //
+    // Guarded, like the connect path: closing the dialog mid-request disposes
+    // this widget, and calling `close` then would pop whatever route is now on
+    // top — the settings page.
+    if (mounted) widget.onSettled?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final link = ref.watch(connectorLinkControllerProvider);
+    return _CatalogAction(
+      connector: widget.connector,
+      waiting: link.isPending(widget.connector.id),
+      busy: _busy,
+      onConnect: _connect,
+      onCancel: () =>
+          ref.read(connectorLinkControllerProvider.notifier).cancel(),
+      onDisconnect: _disconnect,
     );
   }
 }
@@ -291,24 +356,10 @@ class _CatalogAction extends StatelessWidget {
     // buttons on every row around it, which put the loudest control on the one
     // row where nothing needs doing.
     if (connector.token != null) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // ⓘ, not a pencil. It sits where the configured rows put their Edit,
-          // so every signed-in row has two controls in the same places — but
-          // there is nothing here to edit: the address and credential come from
-          // the sign-in and are rewritten each time it renews. A pencil would
-          // open a form whose every edit is silently discarded.
-          AppIconButton(
-            icon: Icons.info_outline_rounded,
-            size: 18,
-            tooltip: 'Details',
-            onPressed: () => showConnectorDetailsDialog(context, connector),
-          ),
-          const SizedBox(width: 2),
-          _RemoveButton(onPressed: onDisconnect),
-        ],
-      );
+      // One control, not two. The ⓘ that used to sit here opened the detail —
+      // which the whole row now does, so keeping it would put two affordances
+      // for the same thing on every signed-in row.
+      return _RemoveButton(onPressed: onDisconnect);
     }
 
     // Nothing to press when the gateway can't drive this connector: the row
@@ -401,6 +452,21 @@ class _McpRowState extends ConsumerState<_McpRow> {
     AppTheme.watch(context); // rebuild on theme flip: reads AppPalette tokens
     final server = widget.server;
     return ExtensionTileSurface(
+      // Tapping a row opens whatever *is* its detail, which differs by kind. A
+      // signed-in connector has a description and an account to show; a server
+      // the user typed has neither, and its detail is the form they typed it
+      // into — so that row opens Edit rather than a dialog with two empty
+      // fields under its name.
+      onTap: _isLinkedConnector
+          ? () => showConnectorDetailsDialog(
+              context,
+              widget.connector,
+              actionBuilder: (close) => ConnectorAction(
+                connector: widget.connector,
+                onSettled: close,
+              ),
+            )
+          : () => showEditMcpDialog(context, server, signedIn: false),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -528,6 +594,15 @@ IconData _transportIcon(McpTransport transport) => switch (transport) {
 /// Removing a hand-added connector stops the assistant using its tools —
 /// reversible (add it back), but worth a beat so a stray click doesn't drop one.
 ///
+/// How wide a confirm dialog is, and the reason it is stated at all.
+///
+/// `AlertDialog` sizes itself to its content, and a paragraph is content with no
+/// natural width — so it took the whole window, one line of prose running the
+/// full span of the screen. 420 is the app's existing narrow-dialog width (the
+/// chat rename, the archived-chat prompts); the 460 elsewhere is for dialogs with
+/// form fields in them, which these are not.
+const double _confirmWidth = 420;
+
 /// Both confirm dialogs are deliberately the same shape, because the button that
 /// opens them is now the same word: same "Remove NAME?" title, same red Remove.
 /// The middle paragraph is the only part that differs, and it is the only place
@@ -538,10 +613,13 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Remove $name?'),
-      content: Text(
-        'The assistant will stop using $name on this computer. Nothing was '
-        'signed in for it, so there is no account to disconnect — you can add '
-        'it back any time.',
+      content: SizedBox(
+        width: _confirmWidth,
+        child: Text(
+          'The assistant will stop using $name on this computer. Nothing was '
+          'signed in for it, so there is no account to disconnect — you can add '
+          'it back any time.',
+        ),
       ),
       actions: [
         TextButton(
@@ -549,13 +627,7 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
-            // Named rather than left to `onError`, which this app's scheme never
-            // sets: the Material default lands at 3.83:1 on the dark error red,
-            // under the 4.5:1 floor. Same reason as the disconnect dialog below.
-            foregroundColor: Colors.white,
-          ),
+          style: dangerButtonStyle(),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Remove'),
         ),
@@ -651,15 +723,17 @@ class _RemoveButtonState extends State<_RemoveButton> {
 /// user pressed is the word they're asked to confirm. The account is what makes
 /// this different from that one, and the paragraph says so.
 Future<bool?> _confirmDisconnect(BuildContext context, String name) {
-  final scheme = Theme.of(context).colorScheme;
   return showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Remove $name?'),
-      content: Text(
-        'The assistant will stop using $name on this computer and this Mac will '
-        'forget the sign-in. Your $name account keeps whatever access you '
-        'granted — revoke that in $name\'s own settings.',
+      content: SizedBox(
+        width: _confirmWidth,
+        child: Text(
+          'The assistant will stop using $name on this computer and this Mac '
+          'will forget the sign-in. Your $name account keeps whatever access '
+          'you granted — revoke that in $name\'s own settings.',
+        ),
       ),
       actions: [
         TextButton(
@@ -667,13 +741,7 @@ Future<bool?> _confirmDisconnect(BuildContext context, String name) {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: scheme.error,
-            // Named rather than left to `onError`, which this app's scheme
-            // never sets: the Material default lands at 3.83:1 on the dark
-            // error red, under the 4.5:1 floor.
-            foregroundColor: Colors.white,
-          ),
+          style: dangerButtonStyle(),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Remove'),
         ),
@@ -704,232 +772,6 @@ class _Empty extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The service's own logo, or the glyph badge when there isn't one.
-///
-/// Same 30px well as [ExtensionIconBadge] so the icon column stays a column
-/// whichever kind of row is in it. The image is a fact about the service, not
-/// live state, so it never takes the accent tint.
-///
-/// Every failure path lands on the glyph: no URL, a URL that won't load, a
-/// user offline. A blank square in the icon column reads as a broken row.
-class ConnectorMark extends StatelessWidget {
-  const ConnectorMark({
-    super.key,
-    required this.imageUrl,
-    required this.fallbackIcon,
-  });
-
-  final String imageUrl;
-  final IconData fallbackIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // follow theme flips — reads AppPalette tokens.
-    if (imageUrl.isEmpty) return ExtensionIconBadge(icon: fallbackIcon);
-    return Container(
-      width: 30,
-      height: 30,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        // A white plate under every logo: these are the services' own marks,
-        // each with its own backdrop, and half of them are dark-on-transparent
-        // — on the dark card fill they would disappear.
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(padding: const EdgeInsets.all(4), child: _image()),
-    );
-  }
-
-  /// The logo, decoded by whatever can read this format.
-  ///
-  /// Flutter's image codecs handle bitmaps and nothing else — an SVG loads
-  /// fine over the network and then fails to decode, which sent Figma's mark to
-  /// the fallback glyph while the request itself was a clean 200. The backend
-  /// picks the format per connector and can change it without telling us, so
-  /// the choice is made from the URL rather than from a list of connectors.
-  Widget _image() {
-    final glyph = Icon(fallbackIcon, size: 16, color: AppPalette.textSecondary);
-
-    if (_isSvg(imageUrl)) return _SvgMark(url: imageUrl, fallback: glyph);
-
-    return CachedNetworkImage(
-      imageUrl: imageUrl,
-      fit: BoxFit.contain,
-      // Favicons come in whatever size the host publishes — measured
-      // 2026-07-30: 128px from notion.com, 48 from linear.app, 32 from
-      // github.com, and 16 from supabase.com no matter what is asked for.
-      // `medium` is bilinear: it keeps a 128px mark crisp when it comes *down*
-      // to 22, and blurs a 16px one less badly than `high` when it goes up.
-      // Neither can make a 16px source sharp — nothing can — but this stops it
-      // looking smeared as well as small.
-      filterQuality: FilterQuality.medium,
-      // No spinner while it loads: the plate is already the right shape,
-      // and a spinner per row turns a quiet list into a flicker.
-      placeholder: (_, _) => const SizedBox.shrink(),
-      errorWidget: (_, _, _) => glyph,
-    );
-  }
-
-  /// Reads the extension off the path, ignoring any `?v=2` the CDN appends —
-  /// matching on the whole URL would miss every versioned one.
-  static bool _isSvg(String url) {
-    final path = Uri.tryParse(url)?.path ?? url;
-    return path.toLowerCase().endsWith('.svg');
-  }
-}
-
-/// An SVG logo, fetched and repaired before it is drawn.
-///
-/// `SvgPicture.network` would be the obvious choice and it renders these marks
-/// as a solid black block. The reason is CSS: the CDN's logos put every colour
-/// in a `<style>` sheet and reference it by class —
-///
-/// ```svg
-/// <style>.st0{fill:#0acf83}</style>
-/// <path class="st0" d="…"/>
-/// ```
-///
-/// — and the SVG parser behind `flutter_svg` implements presentation attributes
-/// rather than a CSS cascade. Unmatched classes leave every path at the default
-/// fill, black, so the five pieces of the Figma mark stack into one silhouette.
-/// Nothing errors; it just draws the wrong thing, which is why this needed a
-/// look at the file rather than at the exception.
-///
-/// So the sheet is inlined here — each `class="stN"` rewritten to the `fill` it
-/// stood for — and the result handed to `SvgPicture.string`. Anything the
-/// rewrite can't make sense of is passed through untouched: a logo that already
-/// uses plain `fill` attributes is the common case and must not be disturbed.
-class _SvgMark extends StatefulWidget {
-  const _SvgMark({required this.url, required this.fallback});
-
-  final String url;
-  final Widget fallback;
-
-  @override
-  State<_SvgMark> createState() => _SvgMarkState();
-}
-
-class _SvgMarkState extends State<_SvgMark> {
-  /// Shared across every row and every rebuild: the same handful of logos are
-  /// re-requested each time the screen opens, and `SvgPicture.string` has no
-  /// cache of its own the way `CachedNetworkImage` does.
-  static final Map<String, String?> _cache = {};
-
-  String? _svg;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void didUpdateWidget(_SvgMark old) {
-    super.didUpdateWidget(old);
-    if (old.url != widget.url) _load();
-  }
-
-  Future<void> _load() async {
-    if (_cache.containsKey(widget.url)) {
-      final cached = _cache[widget.url];
-      setState(() {
-        _svg = cached;
-        _failed = cached == null;
-      });
-      return;
-    }
-
-    String? body;
-    try {
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 10);
-      try {
-        final request = await client.getUrl(Uri.parse(widget.url));
-        final response = await request.close().timeout(
-          const Duration(seconds: 15),
-        );
-        if (response.statusCode == 200) {
-          body = inlineSvgStyles(await utf8.decoder.bind(response).join());
-        }
-      } finally {
-        client.close(force: true);
-      }
-    } on Object {
-      // Offline, timed out, malformed — all the same answer to this widget:
-      // draw the glyph. A logo is never worth an error message.
-      body = null;
-    }
-
-    _cache[widget.url] = body;
-    if (!mounted) return;
-    setState(() {
-      _svg = body;
-      _failed = body == null;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_failed) return widget.fallback;
-    final svg = _svg;
-    // Nothing yet: the white plate is already the right shape, so an empty box
-    // is quieter than a spinner in every row of a list.
-    if (svg == null) return const SizedBox.shrink();
-    return SvgPicture.string(
-      svg,
-      fit: BoxFit.contain,
-      errorBuilder: (_, _, _) => widget.fallback,
-    );
-  }
-}
-
-/// Rewrite `<style>` class rules into the `fill` attributes the SVG parser
-/// actually reads.
-///
-/// Handles the shape the CDN ships — single-class selectors carrying one
-/// `fill` — and deliberately nothing more. A real cascade (specificity,
-/// inheritance, media queries) is a rabbit hole for a 30px logo; anything this
-/// doesn't recognise is left exactly as it was, so a file that never needed the
-/// help is returned byte-for-byte.
-///
-/// Visible for the sake of being testable and readable in isolation.
-String inlineSvgStyles(String svg) {
-  final styles = RegExp(
-    r'<style[^>]*>(.*?)</style>',
-    dotAll: true,
-    caseSensitive: false,
-  ).allMatches(svg);
-  if (styles.isEmpty) return svg;
-
-  final fills = <String, String>{};
-  for (final style in styles) {
-    final rules = RegExp(
-      r'\.([\w-]+)\s*\{([^}]*)\}',
-    ).allMatches(style.group(1) ?? '');
-    for (final rule in rules) {
-      final fill = RegExp(
-        r'fill\s*:\s*([^;}]+)',
-      ).firstMatch(rule.group(2) ?? '');
-      if (fill != null) fills[rule.group(1)!] = fill.group(1)!.trim();
-    }
-  }
-  if (fills.isEmpty) return svg;
-
-  return svg.replaceAllMapped(RegExp('class="([^"]*)"'), (match) {
-    final names = match.group(1)!.split(RegExp(r'\s+'));
-    // Last class wins, the way a stylesheet of equal-specificity rules would
-    // resolve it. An element whose classes carry no fill keeps its own
-    // attribute rather than gaining a wrong one.
-    String? fill;
-    for (final name in names) {
-      if (fills.containsKey(name)) fill = fills[name];
-    }
-    return fill == null ? match.group(0)! : 'fill="$fill"';
-  });
 }
 
 /// Why a catalog row can't be connected from here.

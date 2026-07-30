@@ -54,6 +54,8 @@ class LabeledField extends StatelessWidget {
     this.onSubmitted,
     this.inputFormatters,
     this.fill,
+    this.error,
+    this.focusNode,
   });
 
   final String label;
@@ -79,6 +81,18 @@ class LabeledField extends StatelessWidget {
   /// disappears into it.
   final Color? fill;
 
+  /// What's wrong with the current value, shown under the field in the error ink
+  /// with the border to match. Null when there is nothing wrong.
+  ///
+  /// The caller decides *when* to pass it, and that timing matters more than the
+  /// wording: a field that reddens on the first keystroke is a field people
+  /// fight. Validate on blur or on submit, not on every character.
+  final String? error;
+
+  /// Handed in when the caller needs to know about focus — the usual reason
+  /// being to decide when [error] should appear.
+  final FocusNode? focusNode;
+
   @override
   Widget build(BuildContext context) {
     // Reads AppPalette tokens through its decoration — follow theme flips.
@@ -89,6 +103,7 @@ class LabeledField extends StatelessWidget {
         FieldLabel(label),
         TextField(
           controller: controller,
+          focusNode: focusNode,
           enabled: enabled,
           autofocus: autofocus,
           minLines: minLines,
@@ -97,8 +112,13 @@ class LabeledField extends StatelessWidget {
           onSubmitted: onSubmitted,
           inputFormatters: inputFormatters,
           style: const TextStyle(fontSize: 14, height: 1.4),
-          decoration: labeledFieldDecoration(hint, fill: fill),
+          decoration: labeledFieldDecoration(
+            hint,
+            fill: fill,
+            hasError: error != null,
+          ),
         ),
+        if (error != null) _FieldError(error!),
       ],
     );
   }
@@ -113,7 +133,11 @@ class LabeledField extends StatelessWidget {
 /// a dialog or the window; on a raised block (`AppGlass.surfaceFill`, #202020 in
 /// dark) it lands within 1.02:1 of its own container and effectively vanishes.
 /// Such callers pass [AppCard.inset], which recesses properly against it.
-InputDecoration labeledFieldDecoration(String hint, {Color? fill}) {
+InputDecoration labeledFieldDecoration(
+  String hint, {
+  Color? fill,
+  bool hasError = false,
+}) {
   OutlineInputBorder border(Color color, [double width = 1]) =>
       OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -131,11 +155,67 @@ InputDecoration labeledFieldDecoration(String hint, {Color? fill}) {
       color: AppPalette.textFaint,
     ),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    // The error hairline shows whether or not the field has focus — an error the
+    // user has to click back into the field to see is an error they won't see.
     border: border(Colors.transparent, 0),
-    enabledBorder: border(Colors.transparent, 0),
+    enabledBorder: hasError
+        ? border(fieldErrorInk(), 1.5)
+        : border(Colors.transparent, 0),
     disabledBorder: border(Colors.transparent, 0),
-    focusedBorder: border(AppPalette.accent, 1.5),
+    focusedBorder: border(hasError ? fieldErrorInk() : AppPalette.accent, 1.5),
   );
+}
+
+/// The error red for a field's hairline and its message.
+///
+/// `colorScheme.error` itself, unlike `AppIconButton`'s danger ink — and the
+/// difference is the *ground*, not the shade. That button's red sits on its own
+/// hover fill (`#3A3A3A`), where the token reaches only 3.33:1; a field's error
+/// sits on whatever the field sits on, and there the token has room everywhere it
+/// can land (measured 2026-07-30):
+///
+/// ```
+///          windowBg   panelBg    dialog    cardBg
+/// dark      5.79       5.39       4.77      4.88
+/// light     6.20       6.20       6.54      5.89
+/// ```
+///
+/// Worth writing down because the first version of this invented a lighter red
+/// on the assumption the token would fail here. It doesn't, and a second red in
+/// the palette earns nothing.
+Color fieldErrorInk() =>
+    AppTheme.pick(const Color(0xFFB3261E), const Color(0xFFF2544B));
+
+/// The message under a field in error.
+class _FieldError extends StatelessWidget {
+  const _FieldError(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline_rounded, size: 14, color: fieldErrorInk()),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.35,
+                color: fieldErrorInk(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Dress a [DropdownButtonFormField]'s popup like the app's other menus.

@@ -15,7 +15,7 @@ import '../../logic/favicon_url.dart';
 import '../../logic/mcp_auth_probe.dart';
 import '../../logic/mcp_input.dart';
 import '../../../agents/logic/mcp_server.dart';
-import 'connector_list.dart' show ConnectorMark;
+import 'connector_mark.dart';
 
 /// Add a new MCP server to Hermes's config.
 Future<void> showAddMcpDialog(BuildContext context) =>
@@ -104,6 +104,16 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
   bool _saving = false;
 
+  /// Watched so the URL's error waits for the user to leave the field. Reddening
+  /// on the first keystroke — while `h` is not yet `https` — is a field that
+  /// fights whoever is typing in it.
+  final _urlFocus = FocusNode();
+
+  /// Set once a press has been refused for a bad URL. After that the error stays
+  /// visible while they fix it, rather than vanishing the moment focus returns
+  /// and leaving a button that does nothing for no stated reason.
+  bool _urlRejected = false;
+
   /// Which screen is showing. Editing an existing server starts at the details
   /// form and never leaves it — the server is already configured, and re-probing
   /// on the way to a rename would be asking a question nobody posed.
@@ -139,6 +149,25 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
   /// The host the icon is looked up from, for the found screen.
   String get _markUrl => _isRemote ? faviconUrl(_url.text.trim()) : '';
 
+  /// True when the URL can't be used, having just said so on screen.
+  ///
+  /// Called at the top of every action that would send the address somewhere: an
+  /// `http` URL silently rewritten to `https` would point at a different server
+  /// than the one typed, and one saved as-is would carry a credential in the
+  /// clear.
+  bool _refuseBadUrl() {
+    if (!_isRemote || _urlProblem == null) return false;
+    setState(() => _urlRejected = true);
+    return true;
+  }
+
+  /// What's wrong with the typed URL, or null when nothing is.
+  String? get _urlProblem => mcpUrlProblem(_url.text);
+
+  /// The problem, only once it is fair to show it.
+  String? get _shownUrlProblem =>
+      (_urlFocus.hasFocus && !_urlRejected) ? null : _urlProblem;
+
   bool get _isEdit => widget.existing != null;
 
   bool get _isRemote => _transport == _Transport.remote;
@@ -159,6 +188,10 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
   @override
   void initState() {
     super.initState();
+    // The error appears on blur, and blur is not a rebuild on its own.
+    _urlFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
     _prefill(widget.existing);
     _advanced = _hasAdvancedContent;
   }
@@ -189,6 +222,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
   @override
   void dispose() {
+    _urlFocus.dispose();
     _name.dispose();
     _command.dispose();
     _args.dispose();
@@ -201,6 +235,10 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
   bool get _canSave {
     if (_saving || _name.text.trim().isEmpty) return false;
+    // Deliberately *not* gated on the URL being valid. A dead button is the
+    // worst way to report a bad address — it states nothing and leaves the user
+    // hunting. The press is allowed through and refused by [_refuseBadUrl],
+    // which says why.
     return _isRemote
         ? _url.text.trim().isNotEmpty
         : _command.text.trim().isNotEmpty;
@@ -221,6 +259,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
   }
 
   Future<void> _save() async {
+    if (_refuseBadUrl()) return;
     final toast = ToastScope.of(context);
     final navigator = Navigator.of(context);
     final controller = ref.read(mcpServersProvider.notifier);
@@ -278,6 +317,7 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
   /// says what was learned and offers whatever action fits — including "save it
   /// anyway" for a server the app cannot drive.
   Future<void> _check() async {
+    if (_refuseBadUrl()) return;
     final url = _url.text.trim();
     if (!_isRemote || url.isEmpty) return;
 
@@ -478,7 +518,9 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
           fill: _fieldFill,
           label: 'Remote MCP server URL',
           controller: _url,
+          focusNode: _urlFocus,
           hint: 'https://mcp.notion.com/mcp',
+          error: _shownUrlProblem,
           onChanged: (_) => setState(() {}),
           onSubmitted: _submit,
         )

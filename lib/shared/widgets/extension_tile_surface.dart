@@ -14,10 +14,19 @@ class ExtensionTileSurface extends StatefulWidget {
     this.child,
     this.childBuilder,
     this.onDialog = false,
+    this.onTap,
   }) : assert(
          (child == null) != (childBuilder == null),
          'pass exactly one of child / childBuilder',
        );
+
+  /// Opens the row's own detail, when it has one.
+  ///
+  /// A control inside the row still wins the tap: Flutter hands a gesture to the
+  /// innermost recognizer, so a Connect button keeps connecting rather than
+  /// opening a dialog behind it. The cursor only becomes a pointer when this is
+  /// set, so a row without a detail doesn't advertise one.
+  final VoidCallback? onTap;
 
   /// The row's contents, when they don't care whether the row is hovered.
   final Widget? child;
@@ -51,42 +60,52 @@ class ExtensionTileSurface extends StatefulWidget {
 class _ExtensionTileSurfaceState extends State<ExtensionTileSurface> {
   bool _hovered = false;
 
-  /// The original page behaviour, unchanged: two opaque fills that swap on
-  /// hover. Only the dialog variant needed a different treatment.
-  Color get _pageFill =>
-      _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill;
+  /// Two opaque fills that swap on hover. Only the dialog variant needed a
+  /// different treatment.
+  ///
+  /// [AppGlass.rowFill] rather than `surfaceFill`: the latter is pure white in
+  /// light, which is also the page, so rows were invisible until hovered. See
+  /// that token for the measurements.
+  Color get _pageFill => _hovered ? AppGlass.rowHoverFill : AppGlass.rowFill;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // follow theme flips — reads AppGlass tokens.
     return MouseRegion(
+      cursor: widget.onTap == null
+          ? MouseCursor.defer
+          : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        // Matches the job list's hover timing, so a row lifts the same way
-        // everywhere in the app.
-        duration: const Duration(milliseconds: 130),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          color: widget.onDialog ? AppGlass.bubbleFill : _pageFill,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: AppGlass.cardShadow,
-        ),
-        // On a dialog the hover is a translucent overlay rather than a second
-        // opaque fill: surfaceHoverFill is *lighter* than bubbleFill, which in
-        // light theme walks the row back toward the white dialog and erases it.
-        // The overlay darkens in light and lightens in dark, so hover reads as a
-        // lift in both (1.065 / 1.159).
-        foregroundDecoration: widget.onDialog && _hovered
-            ? BoxDecoration(
-                color: AppSurface.hoverFill,
-                borderRadius: BorderRadius.circular(14),
-              )
-            : null,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
-          child: widget.child ?? widget.childBuilder!(context, _hovered),
-        ),
+      child: GestureDetector(onTap: widget.onTap, child: _surface()),
+    );
+  }
+
+  Widget _surface() {
+    return AnimatedContainer(
+      // Matches the job list's hover timing, so a row lifts the same way
+      // everywhere in the app.
+      duration: const Duration(milliseconds: 130),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: widget.onDialog ? AppGlass.bubbleFill : _pageFill,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      // On a dialog the hover is a translucent overlay rather than a second
+      // opaque fill: surfaceHoverFill is *lighter* than bubbleFill, which in
+      // light theme walks the row back toward the white dialog and erases it.
+      // The overlay darkens in light and lightens in dark, so hover reads as a
+      // lift in both (1.065 / 1.159).
+      foregroundDecoration: widget.onDialog && _hovered
+          ? BoxDecoration(
+              color: AppSurface.hoverFill,
+              borderRadius: BorderRadius.circular(14),
+            )
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(15, 12, 14, 12),
+        child: widget.child ?? widget.childBuilder!(context, _hovered),
       ),
     );
   }
@@ -103,25 +122,33 @@ class ExtensionIconBadge extends StatelessWidget {
     super.key,
     required this.icon,
     this.active = false,
+    this.size = 30,
   });
 
   final IconData icon;
   final bool active;
 
+  /// The well's edge. Matches [ConnectorMark] so a row without a logo lines up
+  /// with the rows that have one, at whatever size the caller draws them.
+  final double size;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // follow theme flips — reads AppPalette tokens.
     return Container(
-      width: 30,
-      height: 30,
+      width: size,
+      height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: active ? AppCard.tint18 : AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(10),
+        // Not `cardBg`: in light that is now the row's own fill, so the well
+        // was drawn at 1.000:1 against it — an icon column that existed only in
+        // dark. See [AppSurface.wellFill].
+        color: active ? AppCard.tint18 : AppSurface.wellFill,
+        borderRadius: BorderRadius.circular(size / 3),
       ),
       child: Icon(
         icon,
-        size: 16,
+        size: size * 0.53,
         color: active ? AppCard.accentStrong : AppPalette.textSecondary,
       ),
     );
