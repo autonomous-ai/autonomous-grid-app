@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/host_environment.dart';
 import '../../../infrastructure/providers.dart';
 
 /// One model an API engine can serve, from the CLI's static whitelist

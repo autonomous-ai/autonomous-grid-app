@@ -249,10 +249,10 @@ class CodexChatSender implements ChatSender {
     String? failure;
     var settled = false;
     // The two facts the stall check reads — see [agentTurnStalled]: whether
-    // Codex ended the turn itself, and whether it did any work after the last
-    // revision of its plan.
+    // Codex ended the turn itself, and whether it did any work at all. Neither
+    // is reset by a plan revision: Codex ticks its boxes on the way out.
     var endedCleanly = false;
-    var workedAfterPlan = false;
+    var workedAtAll = false;
 
     final events = run.events.listen(
       (event) {
@@ -260,13 +260,12 @@ class CodexChatSender implements ChatSender {
           case CodexThreadStarted(:final threadId):
             live.threadId = threadId;
           case CodexActivityEvent(:final activity):
-            if (isAgentWork(activity)) workedAfterPlan = true;
+            if (isAgentWork(activity)) workedAtAll = true;
             activityLog.upsert(activity);
           case CodexPlanEvent(:final entries):
-            workedAfterPlan = false;
             planLog.replace(entries);
           case CodexFileChangeEvent(:final changes):
-            workedAfterPlan = true;
+            workedAtAll = true;
             _recordAddedFiles(changes);
           case CodexTurnCompleted():
             endedCleanly = true;
@@ -301,7 +300,7 @@ class CodexChatSender implements ChatSender {
         final stalled = agentTurnStalled(
           plan: plan,
           endedCleanly: endedCleanly,
-          workedAfterPlan: workedAfterPlan,
+          workedAtAll: workedAtAll,
           planFirst: planFirst,
         );
         if (stalled) {
@@ -312,7 +311,7 @@ class CodexChatSender implements ChatSender {
                 describeAgentStall(
                   plan: plan,
                   endedCleanly: endedCleanly,
-                  workedAfterPlan: workedAfterPlan,
+                  workedAtAll: workedAtAll,
                 ),
               );
         }

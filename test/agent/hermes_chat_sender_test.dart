@@ -603,6 +603,51 @@ void main() {
   );
 
   test(
+    'a turn that ticks its boxes on the way out still answered — the work came '
+    'before the closing plan revision',
+    () async {
+      // The order that had a finished review reported as a stall: all the work
+      // first, one closing plan revision, then the answer. Counting only work
+      // *since* the last revision, the agent's own book-keeping erased every
+      // command it had just run.
+      final service = _FakeAcp.single([
+        const HermesAcpActivity(
+          AgentActivity(
+            id: 't1',
+            kind: AgentActivityKind.command,
+            label: 'flutter analyze',
+            status: AgentActivityStatus.done,
+          ),
+        ),
+        const HermesAcpPlan([
+          AgentPlanEntry(
+            content: 'Read the diff',
+            status: AgentPlanStatus.done,
+          ),
+          AgentPlanEntry(
+            content: 'Write the review',
+            status: AgentPlanStatus.active,
+          ),
+        ]),
+        const HermesAcpMessage('The review, in full: …'),
+        const HermesAcpTurnEnded('end_turn'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('review'))
+          .toList();
+
+      expect(updates.last, isA<ChatSendSuccess>());
+      expect(
+        (updates.last as ChatSendSuccess).reply.text,
+        'The review, in full: …',
+      );
+    },
+  );
+
+  test(
     'a turn cut short mid-plan is a stall however much work it got through',
     () async {
       final service = _FakeAcp.single([
