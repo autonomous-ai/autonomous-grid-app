@@ -285,6 +285,25 @@ abstract final class AppSurface {
   static Color get accentWashHover =>
       AppTheme.pick(const Color(0x1F2F5BEA), const Color(0x332F5BEA));
 
+  /// The icon well inside a list row.
+  ///
+  /// Translucent on purpose. An opaque fill would be picked against the row's
+  /// *resting* colour and then near-vanish the moment the row lifted on hover —
+  /// measured at 1.041:1 against the hovered light row. An overlay rides whatever
+  /// it sits on, so the well keeps its edge in both states:
+  ///
+  /// ```
+  ///          rest    hover
+  /// light    1.168   1.173
+  /// dark     1.183   1.200
+  /// ```
+  ///
+  /// The two themes take different alphas because they start from different
+  /// grounds — light needs more to separate from `#F3F3F2` than dark does from
+  /// `#202020`. The glyph inside keeps 4.79:1 (light) and 5.76:1 (dark).
+  static Color get wellFill =>
+      AppTheme.pick(const Color(0x12000000), const Color(0x0FFFFFFF));
+
   /// A recessed well inside a panel (e.g. the grid list column).
   static Color get recess =>
       AppTheme.pick(const Color(0x08000000), const Color(0x0FFFFFFF));
@@ -424,6 +443,39 @@ abstract final class AppGlass {
 
   // A whisper — the soft, tight lift Codex gives its floating pills and menus,
   // not a big ambient drop.
+  /// A list row sitting directly on the page, at rest.
+  ///
+  /// **Not [surfaceFill], and light is the whole reason.** `windowBg` in light is
+  /// pure `#FFFFFF` and so is `surfaceFill`, which put the row and the page it
+  /// sits on at **1.000:1** — the same colour. The list had no rows in light at
+  /// all until the pointer moved over one, because `surfaceHoverFill` (`#F7F7F6`,
+  /// 1.072:1) was the first fill that differed from the page.
+  ///
+  /// A raised block cannot be raised by fill on a pure-white page: lighter than
+  /// white does not exist. So light recesses instead — a grey card on white, the
+  /// ordinary light-UI idiom — while dark keeps lifting. Measured, and shaped to
+  /// match dark's separation rather than guessed at:
+  ///
+  /// ```
+  ///           rest      hover     hover vs rest
+  /// dark      1.215     1.325     1.091
+  /// light     1.110     1.205     1.086
+  /// ```
+  ///
+  /// Light's rest is [AppPalette.cardBg] rather than a new colour; only the hover
+  /// step needed one. Text keeps its room on both: `textSecondary` reads 5.60:1
+  /// at rest and 5.15:1 hovered.
+  static Color get rowFill =>
+      AppTheme.pick(const Color(0xFFF3F3F2), const Color(0xFF202020));
+
+  /// The same row under the pointer.
+  ///
+  /// Moves *away* from the page in both themes — darker in light, lighter in dark
+  /// — because a hover that drifts toward the background erases the row it is
+  /// meant to be highlighting.
+  static Color get rowHoverFill =>
+      AppTheme.pick(const Color(0xFFEAEAE7), const Color(0xFF272727));
+
   static List<BoxShadow> get cardShadow => AppTheme.pick(
     const [
       BoxShadow(

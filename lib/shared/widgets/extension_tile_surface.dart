@@ -60,10 +60,13 @@ class ExtensionTileSurface extends StatefulWidget {
 class _ExtensionTileSurfaceState extends State<ExtensionTileSurface> {
   bool _hovered = false;
 
-  /// The original page behaviour, unchanged: two opaque fills that swap on
-  /// hover. Only the dialog variant needed a different treatment.
-  Color get _pageFill =>
-      _hovered ? AppGlass.surfaceHoverFill : AppGlass.surfaceFill;
+  /// Two opaque fills that swap on hover. Only the dialog variant needed a
+  /// different treatment.
+  ///
+  /// [AppGlass.rowFill] rather than `surfaceFill`: the latter is pure white in
+  /// light, which is also the page, so rows were invisible until hovered. See
+  /// that token for the measurements.
+  Color get _pageFill => _hovered ? AppGlass.rowHoverFill : AppGlass.rowFill;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +140,10 @@ class ExtensionIconBadge extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: active ? AppCard.tint18 : AppPalette.cardBg,
+        // Not `cardBg`: in light that is now the row's own fill, so the well
+        // was drawn at 1.000:1 against it — an icon column that existed only in
+        // dark. See [AppSurface.wellFill].
+        color: active ? AppCard.tint18 : AppSurface.wellFill,
         borderRadius: BorderRadius.circular(size / 3),
       ),
       child: Icon(
