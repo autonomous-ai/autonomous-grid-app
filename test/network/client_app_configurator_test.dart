@@ -490,8 +490,24 @@ void main() {
       // It reads the file at startup ⇒ the user is told to restart.
       expect((result as ApplyOk).note, contains('Restart'));
       final env = readSettings()['env'] as Map;
-      expect(env[kClaudeBaseUrlEnv], _base);
+      // The endpoint without the OpenAI `/v1` — Claude Code appends its own.
+      expect(env[kClaudeBaseUrlEnv], claudeBaseUrl(_base));
       expect(env[kClaudeAuthTokenEnv], _key);
+    });
+
+    test('pins the models too, so a session that asks for a Claude tier gets '
+        'one this grid serves instead of failing on an unknown model', () async {
+      await sut.apply(ClientApp.claudeCode, _base, _key, const [
+        'claude:opus',
+        'claude:sonnet',
+      ]);
+
+      final env = readSettings()['env'] as Map;
+      expect(env[kClaudeModelEnv], 'claude:opus');
+      expect(env[kClaudeSmallFastModelEnv], 'claude:sonnet');
+      expect(env[kClaudeTierModelEnv['sonnet']], 'claude:sonnet');
+      // No sonnet-less tier is left dangling: haiku falls back to what's served.
+      expect(env[kClaudeTierModelEnv['haiku']], 'claude:opus');
     });
 
     test('merges into an existing settings file, keeping the settings the user '
@@ -515,7 +531,7 @@ void main() {
       final env = json['env'] as Map;
       expect(env['MY_OWN'], 'keep');
       // …while the stale grid endpoint is repointed at this one.
-      expect(env[kClaudeBaseUrlEnv], _base);
+      expect(env[kClaudeBaseUrlEnv], claudeBaseUrl(_base));
       expect(File('${file.path}.bak').existsSync(), isTrue);
     });
   });

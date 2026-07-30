@@ -173,17 +173,20 @@ const String kClaudeSettingsPath = '~/.claude/settings.json';
       'Click Connect',
     ],
   ),
-  // Claude Code reads the pair from its settings file rather than a provider
-  // block, so the steps name the file and the one command that proves it landed
-  // (`/status` shows the base URL it is actually using).
+  // Claude Code reads the connection from its settings file rather than a
+  // provider block, so the steps name the file and the one command that proves
+  // it landed (`/status` shows the base URL it is actually using). It also asks
+  // once about the API key it finds — a step, because a "no" there leaves it on
+  // Anthropic and the grid looking broken.
   ClientApp.claudeCode => (
     title: 'Add it to ${info.name}',
     steps: [
       'Quit any open ${info.name} session — it reads this file at startup',
       'Open ${info.configPath} (create it if it isn\'t there)',
-      'Paste the block below — it points ${info.name} at this grid',
-      'Run claude again, then type /status: the "Anthropic base URL" line '
-          'should show this grid',
+      'Paste the block below — it points ${info.name} at this grid and '
+          'picks which model answers',
+      'Run claude again; if it asks about the API key it found, say yes',
+      'Type /status: the "Anthropic base URL" line should show this grid',
     ],
   ),
   ClientApp.openClaw => (

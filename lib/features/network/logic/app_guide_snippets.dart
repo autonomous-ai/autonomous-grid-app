@@ -19,6 +19,11 @@ const String gridApiKeyEnv = 'GRID_API_KEY';
 /// `networkModelsProvider`; this is just so the snippets are never blank.
 const kGuideDefaultModel = 'qwen3-coder';
 
+/// The model a single-model config should name for a grid serving [models]: the
+/// first one it advertises, or [kGuideDefaultModel] while that list is empty.
+String gridDefaultModel(List<String> models) =>
+    models.isEmpty ? kGuideDefaultModel : models.first;
+
 /// Output-token cap written into Hermes's `model.max_tokens` (Hermes reads it
 /// there; `custom_providers` ignores the field). 64K = 64×1024.
 const kHermesMaxTokens = 64000;
@@ -133,35 +138,105 @@ String codexConfigSnippet(String base, String model) =>
 String codexEnvSnippet(String key) => '$gridApiKeyEnv=$key';
 
 /// The variables Claude Code reads a connection from: the endpoint, and the
-/// credential it sends as `Authorization: Bearer`.
-///
-/// `ANTHROPIC_AUTH_TOKEN`, not `ANTHROPIC_API_KEY`: the key variant travels in
-/// `x-api-key` and needs a one-time approval in an interactive session before
-/// Claude Code will use it, which a "set it up for me" button can't give.
+/// credential — under **both** names, because they travel in different headers
+/// (`ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` →
+/// `x-api-key`) and a relay may check either. The bearer token is what
+/// authenticates; the key variant is also what other Anthropic SDKs/tools on the
+/// machine read, at the cost of a one-time "use the API key we found?" prompt on
+/// the next interactive run.
 const String kClaudeBaseUrlEnv = 'ANTHROPIC_BASE_URL';
 const String kClaudeAuthTokenEnv = 'ANTHROPIC_AUTH_TOKEN';
+const String kClaudeApiKeyEnv = 'ANTHROPIC_API_KEY';
 
-/// The `env` block Claude Code reads its connection from, as it lands in
-/// [kClaudeSettingsPath]. One source of truth for both the copy-paste snippet
-/// and the "Set up for me" merge.
+/// The variables that pick *which* model answers. Claude Code asks for a tier by
+/// name (opus/sonnet/haiku/fable) rather than a model id, so each one has to be
+/// pinned to a model this grid actually serves — see [kClaudeTierModelEnv].
+///
+/// [kClaudeModelEnv] is the main model, [kClaudeSmallFastModelEnv] the cheap one
+/// it uses for side work (titles, summaries), and [kClaudeSubagentModelEnv] what
+/// its subagents run on.
+const String kClaudeModelEnv = 'ANTHROPIC_MODEL';
+const String kClaudeSmallFastModelEnv = 'ANTHROPIC_SMALL_FAST_MODEL';
+const String kClaudeSubagentModelEnv = 'CLAUDE_CODE_SUBAGENT_MODEL';
+
+/// The model tier each `ANTHROPIC_DEFAULT_*_MODEL` variable overrides. Claude
+/// Code resolves an alias like `opus` through these, so a grid that serves its
+/// own Claude tiers (`claude:opus`) answers every `/model` switch the user makes
+/// inside the session — not just the one we pinned at startup.
+const Map<String, String> kClaudeTierModelEnv = {
+  'opus': 'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'sonnet': 'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'haiku': 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'fable': 'ANTHROPIC_DEFAULT_FABLE_MODEL',
+};
+
+/// The endpoint Claude Code wants for a grid: the relay **without** the `/v1`
+/// the OpenAI-compatible clients use. Claude Code appends the API version
+/// itself (`POST {base}/v1/messages`), so handing it the OpenAI base URL asks
+/// the relay for `/relay/v1/v1/messages` and every turn 404s.
+String claudeBaseUrl(String relayBase) =>
+    relayBase.replaceFirst(RegExp(r'(/v1)?/*$'), '');
+
+/// The grid model that answers when Claude Code asks for [tier]: the id the grid
+/// advertises for that tier (`claude:opus` on a grid serving Claude), else the
+/// grid's default model — every tier pointing at the one model it does serve
+/// beats naming a Claude model it doesn't.
+String claudeTierModel(String tier, List<String> models) => models.firstWhere(
+  (id) => id.toLowerCase().contains(tier),
+  orElse: () => gridDefaultModel(models),
+);
+
+/// The `env` block Claude Code reads its whole connection from — endpoint,
+/// credential, and which grid model stands in for each Claude tier. One source
+/// of truth for both the copy-paste snippet and the "Set up for me" merge.
 ///
 /// A settings file rather than a shell export because that is the only form that
 /// reaches every way Claude Code runs (a shell export reaches the terminal it
 /// was typed in, and not the background sessions).
 ///
-/// TODO(BE): this only works once the relay serves Anthropic's Messages API
-/// (`POST /v1/messages`, streamed as SSE, forwarding `anthropic-version` /
-/// `anthropic-beta`) and answers to the Claude model ids Claude Code asks for.
-/// Until then the steps end in a connection error — which is what
-/// [ClientAppInfo.caveat] says on the panel.
-Map<String, Object> claudeCodeSettings(String base, String key) => {
-  'env': {kClaudeBaseUrlEnv: base, kClaudeAuthTokenEnv: key},
-};
+/// TODO(BE): the models have to answer on Anthropic's Messages API (`POST
+/// /v1/messages`, streamed as SSE, forwarding `anthropic-version` /
+/// `anthropic-beta`). A grid serving Claude tiers through the relay does; a grid
+/// serving only local models needs the relay to translate, and until it does the
+/// steps end in a connection error.
+Map<String, String> claudeCodeEnv(
+  String base,
+  String key,
+  List<String> models,
+) {
+  // Opus leads and sonnet takes the side work: the same split Claude Code makes
+  // on Anthropic's own API, so a grid serving the tiers behaves as users expect
+  // (and on a grid without them both resolve to its one model anyway).
+  final sonnet = claudeTierModel('sonnet', models);
+  return {
+    kClaudeBaseUrlEnv: claudeBaseUrl(base),
+    kClaudeAuthTokenEnv: key,
+    kClaudeApiKeyEnv: key,
+    kClaudeModelEnv: claudeTierModel('opus', models),
+    kClaudeSmallFastModelEnv: sonnet,
+    kClaudeSubagentModelEnv: sonnet,
+    for (final tier in kClaudeTierModelEnv.entries)
+      tier.value: claudeTierModel(tier.key, models),
+  };
+}
+
+/// Claude Code's settings document holding [claudeCodeEnv] — what lands in
+/// [kClaudeSettingsPath].
+Map<String, Object> claudeCodeSettings(
+  String base,
+  String key,
+  List<String> models,
+) => {'env': claudeCodeEnv(base, key, models)};
 
 /// The paste-ready `settings.json` block for Claude Code — pretty JSON so it
 /// stays valid on a literal paste into an empty file.
-String claudeCodeSettingsSnippet(String base, String key) =>
-    const JsonEncoder.withIndent('  ').convert(claudeCodeSettings(base, key));
+String claudeCodeSettingsSnippet(
+  String base,
+  String key,
+  List<String> models,
+) => const JsonEncoder.withIndent(
+  '  ',
+).convert(claudeCodeSettings(base, key, models));
 
 /// Buzz's `provider` value for an OpenAI-compatible endpoint. The desktop
 /// translates it to `BUZZ_AGENT_PROVIDER=openai` and reads the `OPENAI_COMPAT_*`
@@ -206,6 +281,19 @@ String buzzGlobalConfigSnippet(String base, String key, String model) =>
       '  ',
     ).convert(buzzGlobalConfig(base, key, model));
 
+/// The Base URL to show for [app]: the relay's OpenAI-compatible URL for every
+/// client but Claude Code, which appends the API version itself
+/// ([claudeBaseUrl]). The panel shows this as the value to paste by hand, so it
+/// has to be the same URL the app's config block carries — showing the `/v1`
+/// form on the Claude Code tab handed people an endpoint that 404s.
+String appBaseUrl(ClientApp app, String relayBase) => switch (app) {
+  ClientApp.claudeCode => claudeBaseUrl(relayBase),
+  ClientApp.hermes ||
+  ClientApp.codex ||
+  ClientApp.openClaw ||
+  ClientApp.buzz => relayBase,
+};
+
 /// The paste-ready blocks for [info]'s manual setup — one per file the app needs
 /// (Codex takes two: its config and the dotenv holding the key). Each block
 /// carries the [label] + [caption] shown above it, so the panel just renders
@@ -216,7 +304,7 @@ List<({String label, String caption, String code})> appSnippets(
   String key,
   List<String> models,
 ) {
-  final model = models.isEmpty ? kGuideDefaultModel : models.first;
+  final model = gridDefaultModel(models);
   return switch (info.app) {
     // Hermes leads with its in-app flow, so its file is the "prefer files?"
     // alternative rather than the main event.
@@ -250,7 +338,7 @@ List<({String label, String caption, String code})> appSnippets(
       (
         label: info.name,
         caption: 'Paste into ${info.configPath}',
-        code: claudeCodeSettingsSnippet(base, key),
+        code: claudeCodeSettingsSnippet(base, key, models),
       ),
     ],
     ClientApp.buzz => [
