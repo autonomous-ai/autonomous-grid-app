@@ -131,6 +131,41 @@ void main() {
     });
   });
 
+  group('Claude Code', () {
+    test('the settings block carries the pair in the env form Claude Code '
+        'reads, as valid JSON', () {
+      final decoded = jsonDecode(claudeCodeSettingsSnippet(_base, _key)) as Map;
+
+      final env = decoded['env'] as Map;
+      expect(env[kClaudeBaseUrlEnv], _base);
+      // The bearer-token variable, not ANTHROPIC_API_KEY: the key variant needs
+      // a one-time interactive approval a "set it up for me" button can't give.
+      expect(env[kClaudeAuthTokenEnv], _key);
+      expect(env.containsKey('ANTHROPIC_API_KEY'), isFalse);
+    });
+
+    test('no model is named — Claude Code picks its own, and inventing one '
+        'here would put a model the grid never serves in the file', () {
+      final env =
+          (jsonDecode(claudeCodeSettingsSnippet(_base, _key)) as Map)['env']
+              as Map;
+
+      expect(env.keys, [kClaudeBaseUrlEnv, kClaudeAuthTokenEnv]);
+    });
+
+    test('appSnippets gives it one block naming its settings file', () {
+      final blocks = appSnippets(
+        kClientApps[ClientApp.claudeCode]!,
+        _base,
+        _key,
+        [_model],
+      );
+
+      expect(blocks.single.caption, contains(kClaudeSettingsPath));
+      expect(blocks.single.code, contains(_base));
+    });
+  });
+
   group('Buzz', () {
     test('global config is valid JSON with the openai-compat pair', () {
       final decoded =

@@ -132,6 +132,37 @@ String codexConfigSnippet(String base, String model) =>
 /// itself, so the user never has to export a variable in their shell.
 String codexEnvSnippet(String key) => '$gridApiKeyEnv=$key';
 
+/// The variables Claude Code reads a connection from: the endpoint, and the
+/// credential it sends as `Authorization: Bearer`.
+///
+/// `ANTHROPIC_AUTH_TOKEN`, not `ANTHROPIC_API_KEY`: the key variant travels in
+/// `x-api-key` and needs a one-time approval in an interactive session before
+/// Claude Code will use it, which a "set it up for me" button can't give.
+const String kClaudeBaseUrlEnv = 'ANTHROPIC_BASE_URL';
+const String kClaudeAuthTokenEnv = 'ANTHROPIC_AUTH_TOKEN';
+
+/// The `env` block Claude Code reads its connection from, as it lands in
+/// [kClaudeSettingsPath]. One source of truth for both the copy-paste snippet
+/// and the "Set up for me" merge.
+///
+/// A settings file rather than a shell export because that is the only form that
+/// reaches every way Claude Code runs (a shell export reaches the terminal it
+/// was typed in, and not the background sessions).
+///
+/// TODO(BE): this only works once the relay serves Anthropic's Messages API
+/// (`POST /v1/messages`, streamed as SSE, forwarding `anthropic-version` /
+/// `anthropic-beta`) and answers to the Claude model ids Claude Code asks for.
+/// Until then the steps end in a connection error — which is what
+/// [ClientAppInfo.caveat] says on the panel.
+Map<String, Object> claudeCodeSettings(String base, String key) => {
+  'env': {kClaudeBaseUrlEnv: base, kClaudeAuthTokenEnv: key},
+};
+
+/// The paste-ready `settings.json` block for Claude Code — pretty JSON so it
+/// stays valid on a literal paste into an empty file.
+String claudeCodeSettingsSnippet(String base, String key) =>
+    const JsonEncoder.withIndent('  ').convert(claudeCodeSettings(base, key));
+
 /// Buzz's `provider` value for an OpenAI-compatible endpoint. The desktop
 /// translates it to `BUZZ_AGENT_PROVIDER=openai` and reads the `OPENAI_COMPAT_*`
 /// pair when it launches `buzz-agent`; a free-text value (e.g. `"Grid"`) makes
@@ -213,6 +244,13 @@ List<({String label, String caption, String code})> appSnippets(
         label: 'Your API key',
         caption: 'Paste into $kCodexEnvPath',
         code: codexEnvSnippet(key),
+      ),
+    ],
+    ClientApp.claudeCode => [
+      (
+        label: info.name,
+        caption: 'Paste into ${info.configPath}',
+        code: claudeCodeSettingsSnippet(base, key),
       ),
     ],
     ClientApp.buzz => [

@@ -7,7 +7,7 @@ import '../../../infrastructure/cli/host_environment.dart';
 
 /// A local AI client the user can point at a grid. Each one has a config file we
 /// know how to write ("Apply for me") and a download page for when it's absent.
-enum ClientApp { openClaw, hermes, codex, buzz }
+enum ClientApp { openClaw, hermes, codex, claudeCode, buzz }
 
 extension ClientAppX on ClientApp {
   /// Whether the guide offers this client at all — one switch, so a hidden app
@@ -22,16 +22,18 @@ extension ClientAppX on ClientApp {
   /// `/v1/responses`. Wire [agentRunsOnGridProvider] into it so such a grid
   /// says so, instead of handing out steps that end in a 404.
   ///
-  /// **OpenClaw** is off the list entirely — it isn't an app we point people at
-  /// any more. The config writer and its snippet stay behind this switch so
-  /// flipping it back is one line, not a rewrite.
+  /// **Claude Code** ships to everyone on the same terms, and states its
+  /// requirement up front through [ClientAppInfo.caveat] — it speaks the
+  /// Anthropic Messages API, which a relay has to serve before any of the steps
+  /// can work.
   ///
-  /// **Buzz** ships to everyone. Its agents pick a provider/model per agent, so
-  /// pointing it at a grid means writing the grid as the *default* provider in
-  /// [kBuzzConfigRelPath] — one file, every agent, no builtin disturbed.
+  /// **OpenClaw** and **Buzz** are off the list. OpenClaw isn't an app we point
+  /// people at any more; Buzz was dropped from the guide on request. Both
+  /// writers and snippets stay behind this switch so putting either back is one
+  /// line, not a rewrite.
   bool get isSelectable => switch (this) {
-    ClientApp.openClaw => false,
-    ClientApp.codex || ClientApp.hermes || ClientApp.buzz => true,
+    ClientApp.openClaw || ClientApp.buzz => false,
+    ClientApp.codex || ClientApp.hermes || ClientApp.claudeCode => true,
   };
 }
 
@@ -67,6 +69,7 @@ class ClientAppInfo {
     required this.configDir,
     required this.configPath,
     required this.executable,
+    this.caveat,
   });
 
   final ClientApp app;
@@ -84,6 +87,12 @@ class ClientAppInfo {
 
   /// CLI executable name to look for on PATH as a second install signal.
   final String executable;
+
+  /// What this app needs from the grid that the grid may not give it, in plain
+  /// language — shown above the setup so the user reads it *before* following
+  /// steps that could end in a connection error. Null when the app talks the
+  /// OpenAI-compatible dialect every relay already serves.
+  final String? caveat;
 }
 
 /// The known clients, keyed by [ClientApp]. Ordered by [ClientApp.values].
@@ -112,6 +121,23 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
     configPath: '~/.codex/config.toml',
     executable: 'codex',
   ),
+  ClientApp.claudeCode: ClientAppInfo(
+    app: ClientApp.claudeCode,
+    name: 'Claude Code',
+    downloadUrl: 'https://code.claude.com/docs/en/setup',
+    configDir: '.claude',
+    configPath: kClaudeSettingsPath,
+    executable: 'claude',
+    // Said before the steps, not after a failed connection: Claude Code doesn't
+    // speak the OpenAI dialect every other client here uses, so the setup below
+    // only starts working once the grid answers Anthropic's own API.
+    caveat:
+        'Claude Code talks to Anthropic\'s Messages API (/v1/messages) and asks '
+        'for Claude model names. This grid answers the OpenAI-style API, so '
+        "Claude Code can't connect to it yet — set it up now and it works the "
+        'day the grid serves that API; until then Claude Code reports a '
+        'connection error.',
+  ),
   ClientApp.buzz: ClientAppInfo(
     app: ClientApp.buzz,
     name: 'Buzz',
@@ -129,6 +155,11 @@ const Map<ClientApp, ClientAppInfo> kClientApps = {
 /// provider names an environment variable ([gridApiKeyEnv]) and Codex loads it
 /// from this dotenv file — which is why the Codex setup writes two files.
 const String kCodexEnvPath = '~/.codex/.env';
+
+/// Claude Code's user-scope settings file — the one place a connection reaches
+/// every way it runs (CLI, background sessions), unlike a shell export, which
+/// only reaches the terminal it was typed in.
+const String kClaudeSettingsPath = '~/.claude/settings.json';
 
 /// A short, plain-language walkthrough to wire [info]'s app to a grid: a [title]
 /// and numbered [steps]. Hermes has a friendly in-app flow (Settings → Model →
@@ -157,6 +188,19 @@ const String kCodexEnvPath = '~/.codex/.env';
       'Paste the Base URL above into the endpoint field',
       'Paste the API key into the "API key" field',
       'Click Connect',
+    ],
+  ),
+  // Claude Code reads the pair from its settings file rather than a provider
+  // block, so the steps name the file and the one command that proves it landed
+  // (`/status` shows the base URL it is actually using).
+  ClientApp.claudeCode => (
+    title: 'Add it to ${info.name}',
+    steps: [
+      'Quit any open ${info.name} session — it reads this file at startup',
+      'Open ${info.configPath} (create it if it isn\'t there)',
+      'Paste the block below — it points ${info.name} at this grid',
+      'Run claude again, then type /status: the "Anthropic base URL" line '
+          'should show this grid',
     ],
   ),
   ClientApp.openClaw => (
