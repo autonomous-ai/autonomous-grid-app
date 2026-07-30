@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agent/logic/grid_serve_skill.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/shared/skills/agent_skill_home.dart';
 
 void main() {
   late Directory tmp;
@@ -124,8 +125,8 @@ void main() {
     });
 
     test(
-      'installing writes it where each agent looks: Codex flat, Hermes under '
-      'its grid category',
+      'installing writes it where each agent looks: Codex flat in its own '
+      'folder, Hermes in the store\'s public one',
       () async {
         for (final agent in AgentTool.values) {
           await AgentSkillInstaller(home: tmp.path).install(agent);
@@ -133,7 +134,7 @@ void main() {
 
         final codex = File('${tmp.path}/.codex/skills/grid-serve/SKILL.md');
         final hermes = File(
-          '${tmp.path}/.hermes/skills/grid/grid-serve/SKILL.md',
+          '${tmp.path}/.grid/skills/$kPublicSkillsDir/grid-serve/SKILL.md',
         );
         expect(codex.existsSync(), isTrue);
         expect(hermes.existsSync(), isTrue);

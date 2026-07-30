@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agent/logic/grid_host_skill.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/shared/skills/agent_skill_home.dart';
 
 void main() {
   late Directory tmp;
@@ -78,7 +79,9 @@ void main() {
       isTrue,
     );
     expect(
-      File('${tmp.path}/.hermes/skills/grid/grid-host/SKILL.md').existsSync(),
+      File(
+        '${tmp.path}/.grid/skills/$kPublicSkillsDir/grid-host/SKILL.md',
+      ).existsSync(),
       isTrue,
     );
   });

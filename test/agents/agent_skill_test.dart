@@ -93,7 +93,7 @@ Write ten lines.''';
     test(
       'reads nothing (rather than throwing) when the store is missing',
       () async {
-        expect(await AgentSkillScanner(home: home.path).scan(), isEmpty);
+        expect(await AgentSkillScanner(home: home.path).scan(SkillSource.shared), isEmpty);
       },
     );
 
@@ -107,7 +107,7 @@ Write ten lines.''';
         '---\nname: notes\ndescription: Read my notes.\n---\n',
       );
 
-      final skills = await AgentSkillScanner(home: home.path).scan();
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
 
       final byName = {for (final skill in skills) skill.name: skill};
       expect(byName['grid-image-gen']!.owner, SkillOwner.public);
@@ -116,20 +116,61 @@ Write ten lines.''';
       expect(byName['notes']!.isMine, isTrue);
     });
 
-    test("ignores the agent's own skills folder — the screen lists what the "
-        'app manages, not the ~70 Hermes ships', () async {
+    test('one source at a time — the store never spills the agents\' own '
+        'folders into the list', () async {
       await writeSkill(
         '.hermes/skills/apple/apple-notes',
         '---\nname: apple-notes\ndescription: Bundled with the agent.\n---\n',
       );
       await writeSkill(
+        '.codex/skills/review-pr',
+        '---\nname: review-pr\ndescription: Codex ships it.\n---\n',
+      );
+      await writeSkill(
         '.grid/skills/$kUserSkillsDir/notes',
         '---\nname: notes\ndescription: Mine.\n---\n',
       );
+      final scanner = AgentSkillScanner(home: home.path);
 
-      final skills = await AgentSkillScanner(home: home.path).scan();
+      expect((await scanner.scan(SkillSource.shared)).map((s) => s.name), [
+        'notes',
+      ]);
+      expect((await scanner.scan(SkillSource.hermes)).map((s) => s.name), [
+        'apple-notes',
+      ]);
+      expect((await scanner.scan(SkillSource.codex)).map((s) => s.name), [
+        'review-pr',
+      ]);
+    });
 
-      expect(skills.map((s) => s.name).toList(), ['notes']);
+    test("an agent's folder is that agent's, all of it — nothing in there is "
+        'the app\'s to edit', () async {
+      await writeSkill(
+        '.hermes/skills/my-skills/hand-written',
+        '---\nname: hand-written\ndescription: d\n---\n',
+      );
+      await writeSkill(
+        '.codex/skills/review-pr',
+        '---\nname: review-pr\ndescription: d\n---\n',
+      );
+      final scanner = AgentSkillScanner(home: home.path);
+
+      final hermes = await scanner.scan(SkillSource.hermes);
+      final codex = await scanner.scan(SkillSource.codex);
+
+      expect(hermes.single.owner, SkillOwner.hermes);
+      expect(hermes.single.owner.label, 'hermes');
+      expect(hermes.single.isMine, isFalse);
+      expect(codex.single.owner, SkillOwner.codex);
+      expect(codex.single.owner.label, 'codex');
+      expect(codex.single.isMine, isFalse);
+    });
+
+    test('a source with no folder reads as empty, not as a crash', () async {
+      final scanner = AgentSkillScanner(home: home.path);
+
+      expect(await scanner.scan(SkillSource.hermes), isEmpty);
+      expect(await scanner.scan(SkillSource.codex), isEmpty);
     });
 
     test('anything in the store that is not public counts as the user\'s, so '
@@ -139,7 +180,7 @@ Write ten lines.''';
         '---\nname: older\ndescription: d\n---\n',
       );
 
-      final skills = await AgentSkillScanner(home: home.path).scan();
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
 
       expect(skills.single.owner, SkillOwner.user);
     });
@@ -163,7 +204,7 @@ Write ten lines.''';
       );
       await installed.setLastModified(DateTime(2026, 7, 30));
 
-      final skills = await AgentSkillScanner(home: home.path).scan();
+      final skills = await AgentSkillScanner(home: home.path).scan(SkillSource.shared);
 
       expect(skills.map((s) => s.name).toList(), [
         'newer',

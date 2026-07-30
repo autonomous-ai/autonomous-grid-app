@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/skills/agent_skill_home.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
@@ -8,6 +9,8 @@ import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../agents/logic/agent_skill.dart';
 import '../../logic/skills_controller.dart';
+import 'share_skill_button.dart';
+import 'skill_detail_dialog.dart';
 import '../../../../shared/widgets/extension_list.dart';
 import '../../../../shared/widgets/extension_tile_surface.dart';
 import 'new_skill_dialog.dart';
@@ -19,7 +22,11 @@ import 'new_skill_dialog.dart';
 /// under a date on the row above.
 const double _kUpdatedColumn = 104;
 const double _kAuthorColumn = 76;
-const double _kActionsColumn = 60;
+const double _kActionsColumn = 88;
+
+/// How much of a skill's description a row shows before the ellipsis. Narrower
+/// than the column it sits in, on purpose — see [_SkillInfo].
+const double _kDescriptionWidth = 380;
 
 /// The skills installed for the assistant — instructions it follows for one job
 /// ("make an image on the grid", "write my weekly report").
@@ -29,9 +36,18 @@ const double _kActionsColumn = 60;
 /// last changed and whose it is — are columns you can scan instead of tags
 /// scattered through the names.
 class SkillList extends StatelessWidget {
-  const SkillList({super.key, required this.skills, this.filtered = false});
+  const SkillList({
+    super.key,
+    required this.skills,
+    required this.source,
+    this.filtered = false,
+  });
 
   final List<AgentSkill> skills;
+
+  /// Which folder these came from — only used when there's nothing to show, so
+  /// the page can say which folder is empty and offer what makes sense there.
+  final SkillSource source;
 
   /// A search is narrowing the list, so an empty [skills] means "nothing
   /// matched" — not "nothing installed". Offering "Write a skill" there would
@@ -43,7 +59,7 @@ class SkillList extends StatelessWidget {
     if (skills.isEmpty) {
       return filtered
           ? const EmptyState.noMatches(message: 'No skills match that search.')
-          : const _Empty();
+          : _Empty(source: source);
     }
     // The scanner already orders them — the user's own first, then by when they
     // last changed — so the list draws what it's given.
@@ -145,35 +161,50 @@ class _SkillRowState extends ConsumerState<_SkillRow> {
     final column = theme.textTheme.bodySmall?.copyWith(
       color: AppPalette.textSecondary,
     );
-    return ExtensionTileSurface(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          ExtensionIconBadge(
-            icon: Icons.auto_awesome_outlined,
-            // The user's own skills carry the accent — the same signal the
-            // plugin list gives an enabled plugin: "this one is yours/live".
-            active: skill.isMine,
+    // The whole row opens the skill — a skill is a folder of files, and the
+    // row can only ever show its cover. The buttons on the right keep their own
+    // taps: the innermost detector wins the arena, so Delete never opens the
+    // viewer on its way to the confirmation.
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => showSkillDetail(context, skill),
+        child: ExtensionTileSurface(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              ExtensionIconBadge(
+                icon: Icons.auto_awesome_outlined,
+                // The user's own skills carry the accent — the same signal the
+                // plugin list gives an enabled plugin: "this one is
+                // yours/live".
+                active: skill.isMine,
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: _SkillInfo(skill: skill)),
+              SizedBox(
+                width: _kUpdatedColumn,
+                child: Text(formatSkillDate(skill.updatedAt), style: column),
+              ),
+              SizedBox(
+                width: _kAuthorColumn,
+                child: Text(
+                  skill.owner.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: column,
+                ),
+              ),
+              SizedBox(
+                width: _kActionsColumn,
+                child: _SkillActions(
+                  skill: skill,
+                  busy: _busy,
+                  onDelete: _delete,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(child: _SkillInfo(skill: skill)),
-          SizedBox(
-            width: _kUpdatedColumn,
-            child: Text(formatSkillDate(skill.updatedAt), style: column),
-          ),
-          SizedBox(
-            width: _kAuthorColumn,
-            child: Text(
-              skill.owner.label,
-              overflow: TextOverflow.ellipsis,
-              style: column,
-            ),
-          ),
-          SizedBox(
-            width: _kActionsColumn,
-            child: _SkillActions(skill: skill, busy: _busy, onDelete: _delete),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -199,18 +230,24 @@ class _SkillInfo extends StatelessWidget {
         ),
         if (skill.description.isNotEmpty) ...[
           const SizedBox(height: 4),
-          // One line, like the plugin rows: a skill card's description is
-          // written for the agent to match against, so it often runs to a
-          // paragraph of trigger words. The full text is the tooltip.
-          Tooltip(
-            message: skill.description,
-            waitDuration: const Duration(milliseconds: 600),
-            child: Text(
-              skill.description,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: AppPalette.textSecondary,
+          // One short line. A skill card's description is written for the agent
+          // to match against, so it often runs to a paragraph of trigger words
+          // — left to fill the column it becomes the loudest thing on the row
+          // and the names stop being scannable. Cut it well before the column
+          // ends; the row opens to the whole card, and the tooltip has the
+          // rest meanwhile.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _kDescriptionWidth),
+            child: Tooltip(
+              message: skill.description,
+              waitDuration: const Duration(milliseconds: 600),
+              child: Text(
+                skill.description,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textSecondary,
+                ),
               ),
             ),
           ),
@@ -220,12 +257,12 @@ class _SkillInfo extends StatelessWidget {
   }
 }
 
-/// Edit and delete, offered only on the user's own skills.
+/// Edit, share and delete — on the skills in the app's own store.
 ///
-/// A public skill has neither: it's rewritten by the next install, so an edit
-/// would be undone and a delete would come back. "Reinstall Grid's skills" is
-/// how those are managed. The column still takes its width on those rows, so
-/// the ones above and below it stay in line.
+/// An agent's own folder gets none of them: those skills are the agent's, it
+/// rewrites them on its own schedule, and the app has no business editing what
+/// it doesn't install. The column still takes its width on those rows, so the
+/// ones above and below stay in line.
 class _SkillActions extends StatelessWidget {
   const _SkillActions({
     required this.skill,
@@ -239,7 +276,7 @@ class _SkillActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!skill.isMine) return const SizedBox.shrink();
+    if (!skill.isMine && !skill.isPublic) return const SizedBox.shrink();
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
@@ -248,7 +285,9 @@ class _SkillActions extends StatelessWidget {
           icon: Icons.edit_outlined,
           onPressed: busy ? null : () => showEditSkillDialog(context, skill),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 2),
+        ShareSkillButton(skill: skill, busy: busy),
+        const SizedBox(width: 2),
         AppIconButton(
           tooltip: 'Delete',
           icon: Icons.delete_outline_rounded,
@@ -288,12 +327,29 @@ Future<bool?> _confirmDeleteSkill(BuildContext context, String name) {
   );
 }
 
-/// No skills at all — offer the two things that fix it rather than a blank page.
+/// No skills in this folder.
+///
+/// What to say depends on whose folder it is. The store is the user's, so it
+/// offers the two things that fill it; an agent's folder is not ours to write
+/// into, and offering "Write a skill" there would promise a skill that lands
+/// somewhere else.
 class _Empty extends StatelessWidget {
-  const _Empty();
+  const _Empty({required this.source});
+
+  final SkillSource source;
 
   @override
   Widget build(BuildContext context) {
+    if (source != SkillSource.shared) {
+      return EmptyState(
+        icon: Icons.auto_awesome_outlined,
+        title: 'Nothing in ${source.label}\'s own folder',
+        message:
+            '${source.label} keeps its skills in ${_folder(source)}. Either '
+            'it hasn\'t installed any yet, or it isn\'t on this computer — the '
+            'skills you write are in Shared, and it can read those.',
+      );
+    }
     return EmptyState(
       icon: Icons.auto_awesome_outlined,
       title: 'No skills installed yet',
@@ -313,6 +369,13 @@ class _Empty extends StatelessWidget {
       ),
     );
   }
+
+  /// Named home-relative, the way the user would type it.
+  static String _folder(SkillSource source) => switch (source) {
+    SkillSource.shared => '~/.grid/skills',
+    SkillSource.hermes => '~/.hermes/skills',
+    SkillSource.codex => '~/.codex/skills',
+  };
 }
 
 /// Rewrites the skills Grid ships (image generation on your grid) and re-reads

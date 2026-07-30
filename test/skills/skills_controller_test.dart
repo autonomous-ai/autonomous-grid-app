@@ -164,4 +164,60 @@ void main() {
     expect(names, contains('grid-video-gen'));
     expect(skills.every((s) => s.owner == SkillOwner.public), isTrue);
   });
+
+  group('the folder the screen is on', () {
+    Future<void> writeSkill(String path, String name) async {
+      final dir = Directory('${home.path}/$path');
+      await dir.create(recursive: true);
+      await File(
+        '${dir.path}/SKILL.md',
+      ).writeAsString('---\nname: $name\ndescription: d\n---\n');
+    }
+
+    test('picking an agent reads that agent\'s own folder instead', () async {
+      await writeSkill('.grid/skills/$kUserSkillsDir/mine', 'mine');
+      await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
+      await writeSkill('.codex/skills/review-pr', 'review-pr');
+      final c = container();
+
+      expect((await c.read(skillsProvider.future)).map((s) => s.name), [
+        'mine',
+      ]);
+
+      c.read(skillSourceProvider.notifier).select(SkillSource.hermes);
+      expect((await c.read(skillsProvider.future)).map((s) => s.name), [
+        'apple-notes',
+      ]);
+
+      c.read(skillSourceProvider.notifier).select(SkillSource.codex);
+      expect((await c.read(skillsProvider.future)).map((s) => s.name), [
+        'review-pr',
+      ]);
+    });
+
+    test('writing a skill while reading an agent\'s folder lands in the store '
+        'and takes the screen back there — otherwise it looks like the skill '
+        'vanished', () async {
+      await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
+      final c = container();
+      c.read(skillSourceProvider.notifier).select(SkillSource.hermes);
+      await c.read(skillsProvider.future);
+
+      final error = await c
+          .read(skillsProvider.notifier)
+          .create(name: 'Weekly report', description: 'd', instructions: 'i');
+
+      expect(error, isNull);
+      expect(c.read(skillSourceProvider), SkillSource.shared);
+      expect((await c.read(skillsProvider.future)).map((s) => s.name), [
+        'weekly-report',
+      ]);
+      expect(
+        Directory(
+          '${home.path}/.grid/skills/$kUserSkillsDir/weekly-report',
+        ).existsSync(),
+        isTrue,
+      );
+    });
+  });
 }

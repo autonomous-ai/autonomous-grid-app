@@ -20,18 +20,32 @@ class ExtensionScreen extends ConsumerStatefulWidget {
     required this.title,
     required this.subtitle,
     required this.searchHint,
-    required this.createLabel,
-    required this.onCreate,
+    this.createLabel,
+    this.onCreate,
+    this.createButton,
     required this.onRefresh,
     required this.listBuilder,
     this.filterBar,
-  });
+  }) : assert(
+         createButton != null || (createLabel != null && onCreate != null),
+         'give the screen a create action: a label + handler, or a button',
+       );
 
   final String title;
   final String subtitle;
   final String searchHint;
-  final String createLabel;
-  final void Function(BuildContext context) onCreate;
+
+  /// The standard create button's label and handler. Skipped when the screen
+  /// supplies its own [createButton].
+  final String? createLabel;
+  final void Function(BuildContext context)? onCreate;
+
+  /// A create control of the screen's own.
+  ///
+  /// For a screen whose create action isn't one thing: Skills has two ways to
+  /// get a skill and opens a menu, which has to own the button it anchors to.
+  final Widget? createButton;
+
   final VoidCallback onRefresh;
 
   /// An optional row of filter pills between the toolbar and the list — the
@@ -100,10 +114,11 @@ class _ExtensionScreenState extends ConsumerState<ExtensionScreen> {
                   const SizedBox(width: 8),
                   ExtensionRefreshButton(onPressed: widget.onRefresh),
                   const SizedBox(width: 8),
-                  ExtensionCreateButton(
-                    label: widget.createLabel,
-                    onPressed: () => widget.onCreate(context),
-                  ),
+                  widget.createButton ??
+                      ExtensionCreateButton(
+                        label: widget.createLabel!,
+                        onPressed: () => widget.onCreate!(context),
+                      ),
                 ],
               ),
               if (widget.filterBar != null) ...[

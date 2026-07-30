@@ -18,6 +18,14 @@ abstract interface class SkillWriter {
     required String instructions,
   });
 
+  /// Take a folder that is already a skill and copy it in whole — card,
+  /// scripts, assets and all — returning where it landed.
+  ///
+  /// Separate from [create] because nothing here is authored: the folder
+  /// arrives finished, and what it needs is checking rather than writing. A
+  /// folder that isn't a skill is rejected before anything is copied.
+  Future<Directory> import(String sourcePath);
+
   /// The instructions currently in a skill, read back so the editor can
   /// pre-fill them instead of starting blank.
   Future<String> readInstructions(String path);

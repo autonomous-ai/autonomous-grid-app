@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../infrastructure/cli/hermes_plugin_service.dart';
+import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_plugin.dart';
@@ -74,7 +75,7 @@ class _HermesSkillsPlane implements AgentSkillsPlane {
   final HermesConfigFile _configFile;
 
   @override
-  Future<List<AgentSkill>> list() => _scanner.scan();
+  Future<List<AgentSkill>> list(SkillSource source) => _scanner.scan(source);
 
   @override
   SkillWriter? get writer => _author;

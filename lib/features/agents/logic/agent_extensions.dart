@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/skills/agent_skill_home.dart';
 import '../../agent/logic/hermes_extensions.dart';
 import 'agent_catalog.dart';
 import 'agent_plugin.dart';
@@ -29,8 +30,9 @@ abstract interface class AgentExtensions {
 
 /// The skills an agent reads, and — when safe — the authoring surface over them.
 abstract interface class AgentSkillsPlane {
-  /// Every installed skill, from all the roots this agent reads.
-  Future<List<AgentSkill>> list();
+  /// Every skill in [source] — the app's own store, or an agent's private
+  /// folder, whichever the screen is pointed at.
+  Future<List<AgentSkill>> list(SkillSource source);
 
   /// Null when the agent can only display skills, not author them — the Skills
   /// screen hides Create/Edit/Delete when null.

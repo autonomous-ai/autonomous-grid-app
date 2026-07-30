@@ -6,6 +6,7 @@ import '../../../core/grid_paths.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_skill.dart';
 import '../../agents/logic/skill_writer.dart';
+import 'skill_import.dart';
 
 /// A folder name for [title] — lowercase, dashes, nothing a filesystem will
 /// argue with. Empty when the title has no usable characters (the dialog blocks
@@ -95,6 +96,36 @@ class SkillAuthor implements SkillWriter {
       ),
     );
     return dir;
+  }
+
+  /// Copy a finished skill folder into the user's own folder, under the name
+  /// its card gives — the name the agent will call it by, so the folder and the
+  /// card can't disagree the way an imported folder's name easily could.
+  ///
+  /// Refuses a folder that isn't a skill, and refuses to shadow a name already
+  /// in the store: two skills of one name leaves the agent picking between them.
+  @override
+  Future<Directory> import(String sourcePath) async {
+    final refusal = skillFolderRefusal(sourcePath);
+    if (refusal != null) throw ArgumentError(refusal);
+
+    final card = readSkillCardFields(
+      File('$sourcePath/$kSkillCardFileName').readAsStringSync(),
+    );
+    final slug = skillSlug(card.name);
+    if (slug.isEmpty) {
+      throw ArgumentError(
+        'Its name (${card.name}) has no letters or digits in it, so there is '
+        'no folder name to give it.',
+      );
+    }
+    if (exists(card.name)) {
+      throw ArgumentError('You already have a skill called "${card.name}".');
+    }
+
+    final target = dirFor(slug);
+    await copySkillFolder(Directory(sourcePath), target);
+    return target;
   }
 
   /// The instructions currently in a skill, read back from its `SKILL.md` so the

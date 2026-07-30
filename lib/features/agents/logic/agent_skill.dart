@@ -1,17 +1,25 @@
-/// Who a skill came from — the store's two folders, as the list understands
-/// them.
+/// Who a skill came from — read off the folder it sits in, since that's the
+/// only record of it there is.
 enum SkillOwner {
   /// Written by the user in the app (`~/.grid/skills/user`).
-  user,
+  user('You'),
 
   /// Shipped by Grid (`~/.grid/skills/public`) — rewritten by every install, so
   /// an edit here wouldn't survive.
-  public;
+  public('public'),
 
-  /// What the Author column says. "You" for your own, the folder's own name for
-  /// the rest — the same word the store uses, so what's on screen and what's on
-  /// disk can't drift.
-  String get label => this == SkillOwner.user ? 'You' : 'public';
+  /// Hermes's own (`~/.hermes/skills`), installed and updated by the agent.
+  hermes('hermes'),
+
+  /// Codex's own (`~/.codex/skills`).
+  codex('codex');
+
+  const SkillOwner(this.label);
+
+  /// What the Author column says. "You" for the user's own, otherwise the name
+  /// of whoever maintains the folder — the same word the folder uses, so what's
+  /// on screen and what's on disk can't drift.
+  final String label;
 }
 
 /// One thing the assistant knows how to do beyond talking — the agents call
@@ -44,11 +52,14 @@ class AgentSkill {
   /// skill edited by hand outside the app still reports the truth.
   final DateTime updatedAt;
 
-  /// True when the user wrote this skill in the app. Only these round-trip
-  /// through the editor safely — editing a public skill would be undone by the
-  /// next install.
+  /// True when the user wrote this skill in the app — the only skills the app
+  /// offers to edit or delete. Everything else on the screen belongs to whoever
+  /// installs it, and the next install would undo the change anyway.
   bool get isMine => owner == SkillOwner.user;
 
+  /// Shipped by Grid into the store. Sits beside the user's own — same folder
+  /// tree, same buttons — but the next install rewrites it, so an edit here is
+  /// borrowed time.
   bool get isPublic => owner == SkillOwner.public;
 }
 

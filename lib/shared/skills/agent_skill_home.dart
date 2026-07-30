@@ -20,6 +20,30 @@ const String kUserSkillsDir = 'user';
 
 const String kPublicSkillsDir = 'public';
 
+/// A folder of skills the Skills screen can be pointed at.
+///
+/// Three, because a skill the assistant can reach lives in one of three places
+/// and the user has no other way to see the other two: the app's own store, and
+/// each agent's private folder — Hermes ships ~70 of its own, Codex its own set.
+/// Only [shared] is the app's to write to; the agents' are read-only, since an
+/// agent update rewrites them and would silently undo an edit made here.
+enum SkillSource {
+  shared('Shared'),
+  hermes('Hermes'),
+  codex('Codex');
+
+  const SkillSource(this.label);
+
+  /// What the pill above the list says.
+  final String label;
+
+  Directory root(String home) => switch (this) {
+    SkillSource.shared => Directory(gridSkillsStore(home)),
+    SkillSource.hermes => Directory('$home/.hermes/skills'),
+    SkillSource.codex => Directory('$home/.codex/skills'),
+  };
+}
+
 /// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
 /// which both agents can already reach.
 ///
@@ -72,7 +96,9 @@ class AgentSkillHome {
     AgentTool.hermes => Directory(
       '${gridSkillsStore(home)}/$kPublicSkillsDir/$name',
     ),
-    AgentTool.codex => Directory('$home/.codex/skills/$name'),
+    AgentTool.codex => Directory(
+      '${SkillSource.codex.root(home).path}/$name',
+    ),
   };
 }
 
@@ -82,6 +108,27 @@ class AgentSkillHome {
 ///
 /// The one primitive every Grid-skill installer shares, so "how a skill folder is
 /// written" lives in exactly one place.
+/// Copy a whole skill folder to [to], replacing whatever is there.
+///
+/// Replacing, not merging: a skill is one unit, and a merge would leave a file
+/// the new copy dropped sitting beside the ones it brought — the agent would
+/// read a skill that exists in neither place. Same reasoning as
+/// [writeSkillFolder]'s wipe-first.
+Future<void> copySkillFolder(Directory from, Directory to) async {
+  if (await to.exists()) await to.delete(recursive: true);
+  await to.create(recursive: true);
+  await for (final entity in from.list(recursive: true, followLinks: false)) {
+    final relative = entity.path.substring(from.path.length + 1);
+    if (entity is Directory) {
+      await Directory('${to.path}/$relative').create(recursive: true);
+    } else if (entity is File) {
+      final target = File('${to.path}/$relative');
+      await target.parent.create(recursive: true);
+      await entity.copy(target.path);
+    }
+  }
+}
+
 Future<void> writeSkillFolder(Directory dir, GridSkillFiles skill) async {
   if (await dir.exists()) await dir.delete(recursive: true);
   await dir.create(recursive: true);
