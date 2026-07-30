@@ -10,6 +10,14 @@ import '../../features/agents/logic/agent_catalog.dart';
 /// edit — see `AgentSkill.isMine`.
 const String kMySkillsCategory = 'my-skills';
 
+/// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
+/// which both agents can already reach.
+///
+/// Spelled once here so a skill never depends on a `uv` being on PATH — the GUI's
+/// minimal PATH is exactly what broke other tooling before — and so two skills
+/// can't disagree about which interpreter they run on.
+String gridSkillUvPath() => '${GridPaths.binDir.path}/uv';
+
 /// A skill on disk: the `SKILL.md` card the agent reads to know *when* to reach
 /// for it, plus the files it runs when it does.
 ///

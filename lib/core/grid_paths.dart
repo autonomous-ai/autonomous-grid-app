@@ -74,6 +74,12 @@ class GridPaths {
 
   static File chatFile(String id) => File('${chatsDir.path}/$id.json');
 
+  /// Services an agent started through the `grid-serve` skill: one `<name>.log`
+  /// and one `<name>.json` record each. Written by the skill's own script (which
+  /// mirrors this path), and named here so the skill card can point the agent —
+  /// and later a UI — at one folder rather than a re-typed literal.
+  static Directory get servicesDir => Directory('${home.path}/app/services');
+
   /// The Chat tab's remembered selections (last grid, last model), so reopening
   /// the app restores them. App-owned — the CLI never touches it.
   static File get chatPrefsFile => File('${home.path}/app/chat_prefs.json');
