@@ -6,10 +6,9 @@ import '../../../infrastructure/api/connector_gateway_client.dart';
 import '../../../shared/external_launch.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/connector_token.dart';
-import 'connector_catalog.dart';
 import 'connector_refresh_service.dart';
 import 'connector_token_store.dart';
-import 'connectors_controller.dart';
+import 'connectors_refresh.dart';
 
 /// A connector the app is waiting on, held in memory only.
 ///
@@ -225,11 +224,10 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     } on Object catch (error) {
       return "Couldn't hand the connector tokens to the agent: $error";
     }
-    // The projection writes `mcp_servers` into the agent's config, and the
-    // screen reads that list separately from the tokens — a connector shows as
-    // a live server row once one exists. Invalidated here rather than at each
-    // caller, because this is the only place that knows the config just moved.
-    ref.invalidate(mcpServersProvider);
+    // The projection just rewrote the agent's `mcp_servers`, which the screen
+    // reads separately from the tokens. Refreshed here rather than at each
+    // caller, because this is the only place that knows the config moved.
+    refreshConnectors(ref);
     return null;
   }
 
@@ -298,27 +296,15 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     _publishTokens();
   }
 
-  /// Tell the screen the token store changed.
+  /// Re-read the whole screen after a write.
   ///
-  /// Every mutation here writes to disk, and a file write is invisible to
-  /// Riverpod — nothing recomputes until something it watches changes. The
-  /// token store is read through a provider, so the read has to be invalidated
-  /// by hand.
-  ///
-  /// This is called even where the state also changes, rather than relying on
-  /// that: `disconnect` used to lean on the state moving and it doesn't move,
-  /// which left a disconnected row still reading as Connected until the screen
-  /// was reopened. Correctness that depends on an unrelated field happening to
-  /// change is correctness by coincidence.
-  ///
-  /// The catalog goes with it. Its rows carry the gateway's own `status` and
-  /// `account_name`, which every one of these mutations has just changed at the
-  /// server — leaving it cached would have the screen agree that the connector
-  /// is gone while still naming the account it was linked to.
-  void _publishTokens() {
-    ref.invalidate(connectorTokensProvider);
-    ref.invalidate(connectorCatalogProvider);
-  }
+  /// A file write is invisible to Riverpod — nothing recomputes until something
+  /// it watches changes — so every mutation here has to say so explicitly. It
+  /// says so through the shared [refreshConnectors] rather than naming the
+  /// providers it thinks it touched: this controller changes tokens, the agent's
+  /// config *and* the connector's status at the gateway, and picking a subset is
+  /// how a disconnected row went on reading Connected.
+  void _publishTokens() => refreshConnectors(ref);
 
   String? _settle(String connector, String message) {
     state = ConnectorLinkState(message: message, subject: connector);

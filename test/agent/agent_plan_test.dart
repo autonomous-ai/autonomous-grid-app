@@ -50,20 +50,17 @@ void main() {
       expect(parseAgentPlan(const []), isEmpty);
     });
 
-    test(
-      "Hermes's own placeholders are dropped, not shown as a wall of "
-      '"(no description)" when a weak model fills the plan with no text',
-      () {
-        final plan = parseAgentPlan([
-          {'content': '(no description)', 'status': 'in_progress'},
-          {'content': 'Add helmet', 'status': 'pending'},
-          {'content': '(invalid item)', 'status': 'pending'},
-          // Case-folded so the same placeholder in any casing is caught.
-          {'content': '(No Description)', 'status': 'pending'},
-        ]);
-        expect(plan.map((e) => e.content), ['Add helmet']);
-      },
-    );
+    test("Hermes's own placeholders are dropped, not shown as a wall of "
+        '"(no description)" when a weak model fills the plan with no text', () {
+      final plan = parseAgentPlan([
+        {'content': '(no description)', 'status': 'in_progress'},
+        {'content': 'Add helmet', 'status': 'pending'},
+        {'content': '(invalid item)', 'status': 'pending'},
+        // Case-folded so the same placeholder in any casing is caught.
+        {'content': '(No Description)', 'status': 'pending'},
+      ]);
+      expect(plan.map((e) => e.content), ['Add helmet']);
+    });
 
     test('a persisted placeholder is dropped on reload too', () {
       expect(

@@ -51,28 +51,31 @@ void main() {
       }
     });
 
-    test('a file touched several times across a productive turn is not a loop', () {
-      final guard = AgentLoopGuard();
-      // The swagger integration that a cumulative count wrongly killed: app.js
-      // edited four times over a 23-step turn, but never four in a row — every
-      // other file between the touches resets the run, so genuine progress is
-      // never mistaken for spinning.
-      const seq = [
-        'app.js',
-        'app.js',
-        'routes/root.js',
-        'plugins/swagger.js',
-        'routes/v1/users.js',
-        'app.js',
-        'routes/api/v1.js',
-        'app.js',
-      ];
-      String? tripped;
-      for (final name in seq) {
-        tripped ??= guard.observe(_edit('/repo/$name'));
-      }
-      expect(tripped, isNull);
-    });
+    test(
+      'a file touched several times across a productive turn is not a loop',
+      () {
+        final guard = AgentLoopGuard();
+        // The swagger integration that a cumulative count wrongly killed: app.js
+        // edited four times over a 23-step turn, but never four in a row — every
+        // other file between the touches resets the run, so genuine progress is
+        // never mistaken for spinning.
+        const seq = [
+          'app.js',
+          'app.js',
+          'routes/root.js',
+          'plugins/swagger.js',
+          'routes/v1/users.js',
+          'app.js',
+          'routes/api/v1.js',
+          'app.js',
+        ];
+        String? tripped;
+        for (final name in seq) {
+          tripped ??= guard.observe(_edit('/repo/$name'));
+        }
+        expect(tripped, isNull);
+      },
+    );
 
     test('flags a repeated command by its clipped text', () {
       final guard = AgentLoopGuard();
