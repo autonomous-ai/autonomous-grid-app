@@ -33,8 +33,9 @@ void main() {
 
   /// Every span carrying a tap recogniser, i.e. rendered as a link.
   ///
-  /// Walks [SelectableText] rather than [RichText]: with `selectable: true` the
-  /// markdown widget builds selectable spans, and there is no RichText to find.
+  /// Walks [RichText]: the turn's blocks are plain paragraphs, made selectable
+  /// by the message's enclosing `SelectionArea` rather than by being text
+  /// editors of their own.
   List<String> linkTexts(WidgetTester tester) {
     final found = <String>[];
     void walk(InlineSpan span) {
@@ -49,18 +50,17 @@ void main() {
       }
     }
 
-    for (final element in find.byType(SelectableText).evaluate()) {
-      final span = (element.widget as SelectableText).textSpan;
-      if (span != null) walk(span);
+    for (final element in find.byType(RichText).evaluate()) {
+      walk((element.widget as RichText).text);
     }
     return found;
   }
 
-  /// The full rendered text of the turn, across selectable spans.
+  /// The full rendered text of the turn, across its paragraphs.
   String plainText(WidgetTester tester) => find
-      .byType(SelectableText)
+      .byType(RichText)
       .evaluate()
-      .map((e) => (e.widget as SelectableText).textSpan?.toPlainText() ?? '')
+      .map((e) => (e.widget as RichText).text.toPlainText())
       .join('\n');
 
   testWidgets('a bare url becomes a tappable link', (tester) async {
