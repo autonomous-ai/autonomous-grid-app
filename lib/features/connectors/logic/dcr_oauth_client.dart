@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../agents/logic/connector_token.dart';
@@ -90,20 +91,19 @@ class DcrOAuthClient {
   /// Register this app with the authorization server [probe] found, reusing a
   /// registration when one already fits.
   ///
-  /// **Reuse is decided by issuer alone, not by the redirect URI.** The loopback
-  /// port is whatever the OS handed out this run, so comparing it would never
-  /// match twice and every Connect would register a brand-new client — leaving
-  /// the user a growing list of dead "Grid" entries in their account at the
-  /// provider, one per sign-in. Verified on 2026-07-30: the first real Supabase
-  /// connect stored `http://127.0.0.1:61854/callback`, a port that will not come
-  /// back.
+  /// Reuse requires both the issuer *and* the redirect URI to match, and the
+  /// reason is worth keeping: an earlier version matched on issuer alone and
+  /// carried the new loopback port in, on the strength of RFC 8252 §7.3 asking
+  /// servers to accept any port for a native client. Measured 2026-07-30, they
+  /// need not — Achriom answers `invalid_redirect_uri` for a port it did not see
+  /// at registration, and the sign-in dies in the browser before the user can
+  /// react.
   ///
-  /// The reused registration is returned with **this run's** [redirectUri], so
-  /// the authorize call and the token exchange agree with each other (RFC 6749
-  /// §4.1.3 requires the two to match). Whether the *server* accepts a redirect
-  /// it did not see at registration time is the provider's choice: RFC 8252 §7.3
-  /// asks them to allow any loopback port for native clients, and one that
-  /// refuses returns an OAuth error which the row shows verbatim.
+  /// Hence the stable port in `OAuthLoopbackListener.preferredPorts`, which makes
+  /// this match succeed on every ordinary reconnect. When it fails — every
+  /// preferred port busy, or a registration written before that change —
+  /// re-registering is the only thing that can work, and costs one spare client
+  /// entry at the provider rather than a connector that cannot be signed into.
   Future<(DcrClient?, DcrOAuthError?)> register(
     McpAuthProbeResult probe, {
     required String redirectUri,
@@ -271,7 +271,17 @@ class DcrOAuthClient {
       failure: "Couldn't finish the sign-in.",
     );
     if (payload == null) return (null, error);
-    return _tokenFrom(payload, connector: connector, mcpUrl: mcpUrl);
+    return tokenFrom(
+      payload,
+      connector: connector,
+      mcpUrl: mcpUrl,
+      // Without this the stored token has no issuer, and `refresh` cannot find
+      // the registration it needs — every DCR connector would report "that
+      // connection expired" about an hour after signing in, with a perfectly
+      // good refresh token sitting next to it. Verified against the two entries
+      // this omission had already written on 2026-07-30.
+      issuer: probe.issuer,
+    );
   }
 
   /// Renew a path-A token using its refresh token.
@@ -319,7 +329,7 @@ class DcrOAuthClient {
     if (payload == null) return (null, error);
 
     final url = token.mcpEntry?.url ?? '';
-    final (renewed, parseError) = _tokenFrom(
+    final (renewed, parseError) = tokenFrom(
       payload,
       connector: token.connector,
       mcpUrl: url,
@@ -343,7 +353,8 @@ class DcrOAuthClient {
   /// to render it. It is the same shape the gateway produces, so everything
   /// downstream — the master store, every agent projection, the refresh sweep —
   /// cannot tell the two paths apart.
-  (ConnectorToken?, DcrOAuthError?) _tokenFrom(
+  @visibleForTesting
+  (ConnectorToken?, DcrOAuthError?) tokenFrom(
     Map<String, dynamic> payload, {
     required String connector,
     required String mcpUrl,
