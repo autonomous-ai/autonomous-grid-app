@@ -227,35 +227,37 @@ void main() {
       ]);
     });
 
-    test('a new skill is kept in the store and shown on the folder of the '
-        'assistant it was given to — otherwise it looks like it vanished',
-        () async {
-      await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
-      final c = container();
-      // Reading the store when the write happens, so the landing has somewhere
-      // to move the screen to.
-      c.read(skillSourceProvider.notifier).select(SkillSource.store);
-      await c.read(skillsProvider.future);
+    test(
+      'a new skill is kept in the store and shown on the folder of the '
+      'assistant it was given to — otherwise it looks like it vanished',
+      () async {
+        await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
+        final c = container();
+        // Reading the store when the write happens, so the landing has somewhere
+        // to move the screen to.
+        c.read(skillSourceProvider.notifier).select(SkillSource.store);
+        await c.read(skillsProvider.future);
 
-      final error = await c
-          .read(skillsProvider.notifier)
-          .create(name: 'Weekly report', description: 'd', instructions: 'i');
+        final error = await c
+            .read(skillsProvider.notifier)
+            .create(name: 'Weekly report', description: 'd', instructions: 'i');
 
-      expect(error, isNull);
-      // Hermes is the default recipient, so that is the folder to show.
-      expect(c.read(skillSourceProvider), SkillSource.hermes);
-      expect(
-        (await c.read(skillsProvider.future)).map((s) => s.name),
-        containsAll(['apple-notes', 'weekly-report']),
-      );
-      // The original stays in the app's own store — the copy is what the agent
-      // reads.
-      expect(
-        Directory(
-          '${home.path}/.grid/skills/$kUserSkillsDir/weekly-report',
-        ).existsSync(),
-        isTrue,
-      );
-    });
+        expect(error, isNull);
+        // Hermes is the default recipient, so that is the folder to show.
+        expect(c.read(skillSourceProvider), SkillSource.hermes);
+        expect(
+          (await c.read(skillsProvider.future)).map((s) => s.name),
+          containsAll(['apple-notes', 'weekly-report']),
+        );
+        // The original stays in the app's own store — the copy is what the agent
+        // reads.
+        expect(
+          Directory(
+            '${home.path}/.grid/skills/$kUserSkillsDir/weekly-report',
+          ).existsSync(),
+          isTrue,
+        );
+      },
+    );
   });
 }

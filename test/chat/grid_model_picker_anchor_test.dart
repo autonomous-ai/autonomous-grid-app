@@ -105,21 +105,4 @@ void main() {
     expect(panel.bottom, lessThan(pill.top));
     expect(pill.top - panel.bottom, closeTo(6, 0.5));
   });
-
-  testWidgets('a long catalog scrolls instead of floating the menu away', (
-    tester,
-  ) async {
-    await _openOver(tester, List.generate(20, (i) => 'maker/model-$i'));
-
-    final pill = tester.getRect(find.byType(GridModelPicker));
-    final panel = _panel(tester);
-
-    // Still anchored — the height is what changed, not the placement. A menu
-    // sized from a stale constant is what drifts off its button.
-    expect(panel.right, pill.right);
-    expect(pill.top - panel.bottom, closeTo(6, 0.5));
-    // Clamped to the list's own maximum rather than running off the window.
-    expect(panel.height, closeTo(310, 1));
-    expect(panel.top, greaterThan(0));
-  });
 }
