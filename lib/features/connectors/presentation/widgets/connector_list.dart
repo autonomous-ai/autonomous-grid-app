@@ -510,7 +510,14 @@ class _McpRowState extends ConsumerState<_McpRow> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: _McpInfo(server: server, signedIn: _isLinkedConnector),
+            child: _McpInfo(
+              // The resolved display name, not the config key. `Connector.name`
+              // is already the catalog's label where there is one and the raw
+              // key where there isn't, so a hand-written server is unaffected.
+              name: widget.connector.name,
+              server: server,
+              signedIn: _isLinkedConnector,
+            ),
           ),
           const SizedBox(width: 8),
           if (_busy)
@@ -556,7 +563,23 @@ class _McpRowState extends ConsumerState<_McpRow> {
 /// The server's name, a tag for how it's reached, and the command or URL under
 /// it so the user can tell two servers apart at a glance.
 class _McpInfo extends StatelessWidget {
-  const _McpInfo({required this.server, this.signedIn = false});
+  const _McpInfo({
+    required this.name,
+    required this.server,
+    this.signedIn = false,
+  });
+
+  /// What the user reads.
+  ///
+  /// Passed in rather than taken from [server], because `server.name` is the
+  /// **key in the agent's config file** — for a connector signed into through
+  /// the catalog that is the gateway's slug, so the row rendered `gmail` and
+  /// `github` beside `Google Calendar`. It looked like a backend problem and
+  /// was not: the catalog says `"Gmail"` and `"GitHub"`, and `buildConnectors`
+  /// already resolves it; this widget was the one place that went back to the
+  /// raw key. Hand-written servers are unaffected — for those the resolved name
+  /// *is* the key.
+  final String name;
 
   final McpServer server;
 
@@ -580,7 +603,7 @@ class _McpInfo extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                server.name,
+                name,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleSmall?.copyWith(),
               ),
