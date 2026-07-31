@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/hermes_acp_setup.dart';
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../infrastructure/cli/hermes_plugin_service.dart';
 import '../../../infrastructure/logging/app_log.dart';
@@ -39,12 +41,19 @@ class HermesExtensions implements AgentExtensions {
     required HermesConfigFile configFile,
     required HermesTokenProjection tokenProjection,
     required HermesConnectorServers connectorServers,
+    HermesAcpSetup? setup,
     AppLog? log,
   }) : skills = _HermesSkillsPlane(scanner, author, installer, configFile),
        plugins = pluginService == null
            ? null
            : _HermesPluginsPlane(pluginService),
-       mcp = _HermesMcpPlane(mcpConfig, tokenProjection, connectorServers, log);
+       mcp = _HermesMcpPlane(
+         mcpConfig,
+         tokenProjection,
+         connectorServers,
+         setup,
+         log,
+       );
 
   @override
   AgentTool get tool => AgentTool.hermes;
@@ -124,11 +133,21 @@ class _HermesPluginsPlane implements AgentPluginsPlane {
 }
 
 class _HermesMcpPlane implements AgentMcpPlane {
-  _HermesMcpPlane(this._config, this._tokens, this._servers, this._log);
+  _HermesMcpPlane(
+    this._config,
+    this._tokens,
+    this._servers,
+    this._setup,
+    this._log,
+  );
 
   final HermesMcpConfig _config;
   final HermesTokenProjection _tokens;
   final HermesConnectorServers _servers;
+
+  /// Null when the hermes binary isn't there to top up — the config can still be
+  /// written, it just has nothing to run it yet.
+  final HermesAcpSetup? _setup;
 
   /// Nullable so the existing tests keep constructing this without a logger, and
   /// so nothing here can fail for want of one — a projection must not break
@@ -158,6 +177,7 @@ class _HermesMcpPlane implements AgentMcpPlane {
       );
       await _tokens.project(tokens, removing: removing);
       await _servers.project(tokens, removing: removing);
+      _ensureMcpRuntime();
       // Read the config back, and check the one invariant that still holds now
       // that deletion is by name: every token with an MCP entry must be present
       // afterwards. The config may legitimately own *more* than we projected —
@@ -206,7 +226,10 @@ class _HermesMcpPlane implements AgentMcpPlane {
   Future<List<McpServer>> read() => _config.read();
 
   @override
-  Future<void> upsert(McpServer server) => _config.upsert(server);
+  Future<void> upsert(McpServer server) async {
+    await _config.upsert(server);
+    _ensureMcpRuntime();
+  }
 
   @override
   Future<void> remove(String name) => _config.remove(name);
@@ -216,7 +239,22 @@ class _HermesMcpPlane implements AgentMcpPlane {
     // Remove first: saving under the new name and then failing to remove the
     // old would leave two live servers; the reverse order at worst re-runs.
     if (previousName != server.name) await _config.remove(previousName);
-    await _config.upsert(server);
+    await upsert(server);
+  }
+
+  /// Make sure the MCP SDK is in Hermes's environment, now that its config names
+  /// a server that needs one.
+  ///
+  /// Hermes imports that SDK inside a `try/except`: without it, every server
+  /// written here is dropped on startup with no error, in the app or its logs —
+  /// a connector the user signed into and a screen that shows it connected,
+  /// while the agent never had the tools. Fire-and-forget: saving a server must
+  /// not wait on an install, and Hermes reads the config when it next starts
+  /// anyway.
+  void _ensureMcpRuntime() {
+    final setup = _setup;
+    if (setup == null) return;
+    unawaited(setup.ensureRuntimeSupport());
   }
 }
 
@@ -285,6 +323,7 @@ final hermesExtensionsProvider = Provider<AgentExtensions?>((ref) {
     configFile: ref.watch(hermesConfigFileProvider),
     tokenProjection: ref.watch(hermesTokenProjectionProvider),
     connectorServers: ref.watch(hermesConnectorServersProvider),
+    setup: ref.watch(hermesAcpSetupProvider),
     log: ref.watch(appLogProvider),
   );
 });

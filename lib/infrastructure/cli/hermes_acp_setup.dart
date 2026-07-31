@@ -15,7 +15,20 @@ import 'host_environment.dart';
 /// looks healthy while `hermes acp` dies immediately, so every chat turn fails
 /// on what reads as a successful install. Older `grid` builds installed exactly
 /// that, and those machines are still out there — hence [HermesAcpSetup].
-const String kHermesAcpRequirement = 'hermes-agent[acp]';
+///
+/// `[mcp]` is here for the same reason one level quieter: it pulls the MCP SDK
+/// every `mcp_servers:` entry needs, and Hermes imports that one inside a
+/// `try/except`. Without it the agent starts fine, `acp --check` passes, and
+/// every connector the app wrote into the config — Gmail, GitHub, a hand-added
+/// server — is dropped without a word.
+///
+/// TODO(BE): `grid agent install` still asks for `hermes-agent[acp]` alone
+/// (`autonomous-grid → shared/agent/installer.py`), and it, not this constant,
+/// is what the Install/Update button runs — so every install rebuilds the
+/// environment without the SDK. [HermesAcpSetup.ensureRuntimeSupport] puts it
+/// back afterwards; until the CLI asks for `[acp,mcp]`, a `grid agent install`
+/// run from a terminal leaves the connectors dead until the app next starts.
+const String kHermesAcpRequirement = 'hermes-agent[acp,mcp]';
 
 /// The interpreter Hermes is pinned to (`>=3.11,<3.14`), matching the CLI's own
 /// installer so a repair lands in the same private environment rather than
@@ -75,24 +88,54 @@ List<String> uvCandidatePaths({
   '/usr/local/bin/uv',
 ];
 
-/// The free, keyless search backend Hermes's native `web_search` needs. Hermes
-/// picks a backend from `tavily/exa/…/ddgs`, all of which want a key or account
-/// except `ddgs` (just this package) — a stock install ships none, so the tool
-/// silently drops and "search the news" has nothing to run. See
-/// [hermesWebSearchInstallArgs].
-const String kHermesWebSearchPackage = 'ddgs';
+/// What Hermes imports lazily but its install doesn't bring — Python module name
+/// to the requirement that provides it.
+///
+/// Both are optional imports inside a `try/except`, which is what makes them
+/// worth a constant: the feature behind a missing one doesn't fail, it silently
+/// isn't there.
+/// - `ddgs` is the only keyless backend Hermes's native `web_search` can pick
+///   (`tavily/exa/…` all want a key), so without it "search the news" has
+///   nothing to run.
+/// - `mcp` is the SDK behind every `mcp_servers:` entry. `hermes-agent` pins it
+///   under its own `[mcp]` extra ([kHermesAcpRequirement]); the constraint here
+///   is deliberately looser so topping up an existing environment can never
+///   *downgrade* the SDK a newer Hermes installed for itself.
+const Map<String, String> kHermesRuntimePackages = {
+  'ddgs': 'ddgs',
+  'mcp': 'mcp>=1.26,<2',
+};
 
-/// `uv` argv that adds [kHermesWebSearchPackage] to the environment [venvPython]
-/// belongs to — Hermes's own venv — so its native web search lights up. Installs
-/// in place (not `--force`), so it's a fast no-op once present. Pure and
-/// unit-tested: a wrong arg would fail silently, like a tool that just never ran.
-List<String> hermesWebSearchInstallArgs(String venvPython) => [
-  'pip',
-  'install',
-  '--python',
-  venvPython,
-  kHermesWebSearchPackage,
+/// Python argv that prints the [kHermesRuntimePackages] modules [venvPython]
+/// can't import, one per line — the question "what is actually missing", asked
+/// of the interpreter Hermes runs on rather than guessed from its install
+/// receipt. Import-free (`find_spec`), so probing costs nothing and can run
+/// before every chat.
+List<String> hermesRuntimeProbeArgs(Iterable<String> modules) => [
+  '-c',
+  'import importlib.util as u;'
+      "print('\\n'.join(m for m in ${jsonEncode(modules.toList())} "
+      'if u.find_spec(m) is None))',
 ];
+
+/// The requirements to install for the modules [probeOutput] reported missing.
+///
+/// Anything the probe printed that isn't a module we asked about is ignored —
+/// a stray line from the interpreter must never turn into a package name handed
+/// to `uv`.
+List<String> hermesMissingRequirements(String probeOutput) => [
+  for (final line in const LineSplitter().convert(probeOutput))
+    ?kHermesRuntimePackages[line.trim()],
+];
+
+/// `uv` argv that adds [requirements] to the environment [venvPython] belongs to
+/// — Hermes's own venv. `pip install`, not `tool install`: this tops up the
+/// environment in place, where re-running the tool install would re-resolve
+/// Hermes itself and could move it to a build the user never asked for.
+List<String> hermesRuntimeInstallArgs(
+  String venvPython,
+  List<String> requirements,
+) => ['pip', 'install', '--python', venvPython, ...requirements];
 
 /// Whether [raw] — an agent's dying words — says its install is missing a piece,
 /// rather than that it failed for some other reason.
@@ -123,11 +166,15 @@ abstract interface class HermesAcpSetup {
   /// reason it still doesn't — for the log; callers humanize it (§6).
   Future<String?> repair();
 
-  /// Best-effort: make sure Hermes's native web search has a backend, adding the
-  /// free [kHermesWebSearchPackage] to its env when one isn't there. Never throws
-  /// and returns nothing — a chat must not wait on it, and a failure just leaves
-  /// the agent to fall back on its `grid-web` skill; the reason is logged (§6).
-  Future<void> ensureWebSearch();
+  /// Best-effort: top the environment up with the [kHermesRuntimePackages]
+  /// Hermes can't import here, so its web search has a backend and its MCP
+  /// servers can actually be reached.
+  ///
+  /// Never throws and returns nothing — nothing the user is waiting on may hang
+  /// behind an install, and a failure only leaves the agent as capable as it was
+  /// (web search falls back on the `grid-web` skill). The reason is logged (§6),
+  /// because a tool that silently isn't offered is otherwise invisible.
+  Future<void> ensureRuntimeSupport();
 }
 
 /// Real [HermesAcpSetup], driving the pinned `uv` the CLI installed into
@@ -211,21 +258,47 @@ class HermesAcpSetupImpl implements HermesAcpSetup {
   }
 
   @override
-  Future<void> ensureWebSearch() async {
+  Future<void> ensureRuntimeSupport() async {
     final venvPython = _venvPython();
     if (!File(_uv).existsSync() || venvPython == null) return;
+
+    final missing = await _missingRuntimeRequirements(venvPython);
+    if (missing.isEmpty) return;
+
     final ran = await _run(
       _uv,
-      hermesWebSearchInstallArgs(venvPython),
+      hermesRuntimeInstallArgs(venvPython, missing),
       _repairTimeout,
       env: hermesAcpRepairEnvFor(hermesPath: _hermes, gridHome: _gridHome),
     );
     if (ran.code != 0) {
       _log.warn(
         'agent',
-        'Could not provision Hermes web search (${ran.code})\n${ran.output}',
+        'Could not add ${missing.join(', ')} to Hermes '
+            '(${ran.code})\n${ran.output}',
       );
+      return;
     }
+    _log.info('agent', 'Completed the Hermes install: ${missing.join(', ')}');
+  }
+
+  /// What [kHermesRuntimePackages] Hermes can't import, asked of its own
+  /// interpreter. A probe that couldn't run answers nothing, so it reports
+  /// nothing missing: installing on a guess would re-resolve packages before
+  /// every chat, on machines where there is nothing to fix.
+  Future<List<String>> _missingRuntimeRequirements(String venvPython) async {
+    final probed = await _run(
+      venvPython,
+      hermesRuntimeProbeArgs(kHermesRuntimePackages.keys),
+      _checkTimeout,
+    );
+    if (probed.code == 0) return hermesMissingRequirements(probed.output);
+    _log.warn(
+      'agent',
+      "Couldn't check what Hermes is missing (${probed.code})\n"
+          '${probed.output}',
+    );
+    return const [];
   }
 
   /// The interpreter beside the hermes binary (`.../bin/hermes` → `.../bin/python`

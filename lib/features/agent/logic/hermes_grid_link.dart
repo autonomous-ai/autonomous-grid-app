@@ -96,12 +96,13 @@ class HermesGridLink {
     } on Object {
       // Non-fatal: the agent still chats, just without the image skill.
     }
-    // Give Hermes's native web search a keyless backend, so it isn't offered a
-    // `web_search` tool that silently has no provider. Fire-and-forget: the
-    // install can take a moment and a chat must never wait on it — it lights up
-    // for the next turn, and the `grid-web` skill covers search meanwhile.
+    // Top up the pieces Hermes imports only when it needs them — a keyless
+    // web-search backend, the MCP SDK its connectors run on — so it isn't
+    // offered tools that silently have nothing behind them. Fire-and-forget: the
+    // install can take a moment and a chat must never wait on it; it lights up
+    // for the next session, which is when Hermes is started again anyway.
     final setup = _ref.read(hermesAcpSetupProvider);
-    if (setup != null) unawaited(setup.ensureWebSearch());
+    if (setup != null) unawaited(setup.ensureRuntimeSupport());
     // The model a scheduled task runs on just changed under it, and Hermes
     // fail-closes such a task rather than spending on a model nobody chose. The
     // user chose this one, here — so let the tasks follow it instead of quietly
