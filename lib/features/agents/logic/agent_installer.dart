@@ -48,13 +48,15 @@ class AgentInstaller {
   ) async {
     final log = _ref.read(appLogProvider);
     try {
-      await _ref.read(agentSpecInstallerProvider).run(
-        spec,
-        onLog: (line) {
-          log.info('agents', line);
-          onLog?.call(line);
-        },
-      );
+      await _ref
+          .read(agentSpecInstallerProvider)
+          .run(
+            spec,
+            onLog: (line) {
+              log.info('agents', line);
+              onLog?.call(line);
+            },
+          );
       return null;
     } on AgentInstallException catch (error) {
       log.failure('agents', 'install ${tool.id}: ${error.message}');

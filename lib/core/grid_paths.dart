@@ -155,9 +155,9 @@ class GridPaths {
 
   /// Where `grid llama.cpp install` links the engine (provider_runtime
   /// paths.py: `llama_server_bin()`).
-  /// Where the CLI installs the tools it owns — the built-in engine, and the
-  /// chat agent (`grid agent install hermes`). Grid installs them itself, so
-  /// nothing here depends on Homebrew or on the user's `PATH`.
+  /// Where Grid keeps the tools it owns — the built-in engine (installed by the
+  /// CLI) and the agents (installed by the app). Everything lands here, so
+  /// nothing depends on Homebrew or on the user's `PATH`.
   static Directory get binDir => Directory('${home.path}/bin');
 
   /// Where `uv` keeps the agent tools it installs for Grid — one venv per tool

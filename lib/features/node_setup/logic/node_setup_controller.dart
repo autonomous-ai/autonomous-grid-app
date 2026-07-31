@@ -105,11 +105,15 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     _logFile.startRun(steps.map((s) => s.title).toList());
 
     final service = ref.read(gridCliServiceProvider);
-    if (service == null) {
+    // Only the engine and model steps are `grid` commands; the app installs the
+    // agents itself. A plan made entirely of agent steps must not be refused for
+    // want of a CLI it never calls.
+    final needsCli = steps.any((step) => step.agent == null);
+    if (service == null && needsCli) {
       const message = 'grid executable not found.';
       _logFile.endRun('FAILED — $message');
       state = NodeSetupFailed(
-        step: steps.first,
+        step: steps.firstWhere((step) => step.agent == null),
         message: message,
         log: const [],
       );
@@ -157,7 +161,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
   /// downloads through the progress-streaming path, everything else by
   /// streaming a CLI lifecycle command.
   Future<bool> _runStep(
-    GridCliService service,
+    GridCliService? service,
     List<SetupStep> steps,
     int i,
     List<String> log,
@@ -166,8 +170,10 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     if (step.agent case final agent?) {
       return _runAgentInstall(agent, steps, i, log);
     }
-    if (step.isDownload) return _runDownload(service, steps, i, log);
-    return _runStreaming(service, steps, i, log);
+    // Non-null by construction: [run] refuses a plan with a `grid` step when the
+    // CLI is missing, and only those steps reach here.
+    if (step.isDownload) return _runDownload(service!, steps, i, log);
+    return _runStreaming(service!, steps, i, log);
   }
 
   /// Agent step: the app fetches the agent itself ([AgentInstaller]), streaming
@@ -355,8 +361,8 @@ class NodeSetupController extends Notifier<NodeSetupState> {
 
   /// Re-read everything a completed (or half-completed) plan can have changed.
   ///
-  /// The agents belong here as much as the engine does: a plan's
-  /// `grid agent install hermes` step leaves the binary on PATH, and without
+  /// The agents belong here as much as the engine does: a plan's agent step
+  /// leaves the binary on PATH, and without
   /// this the app went on answering with the probe it took at launch — the
   /// Agents tab said "Not installed" and chat skipped the agent entirely, on a
   /// machine that had just installed one.

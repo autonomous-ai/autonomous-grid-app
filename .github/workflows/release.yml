@@ -38,11 +38,14 @@ on:
 permissions:
   contents: write
 
-# grid CLI release the sidecar is built from. Pinned to a published release (never
-# `main`) so every grid-app release compiles a known-good, reproducible CLI. Bump this
-# one line to ship a newer CLI: https://github.com/autonomous-ai/autonomous-grid/releases
+# grid CLI release the sidecar is built from — always a published release, never `main`.
+#   latest   -> newest published release, resolved at build time (drafts/prereleases skipped)
+#   v0.3.10  -> that exact tag, frozen, for a fully reproducible build
+# Pin whenever a release must ship a known-good CLI; `latest` trades that for not having
+# to bump this line. Releases: https://github.com/autonomous-ai/autonomous-grid/releases
 env:
-  CLI_VERSION: v0.3.10
+  CLI_VERSION: latest
+  CLI_REPO: autonomous-ai/autonomous-grid
   # PUBLIC repo that hosts client-facing release binaries (.dmg) + the Sparkle
   # appcast. Kept separate from this private source repo so the auto-update feed
   # is reachable without auth (a private repo's release assets 404 for anyone
@@ -79,14 +82,33 @@ jobs:
         with:
           path: grid-app
 
-      # Sidecar source, pinned to the CLI_VERSION release (not main) for reproducible
+      # Turn CLI_VERSION into a concrete tag: `latest` asks the CLI repo for its newest
+      # published release, anything else is taken verbatim. Each matrix job resolves on
+      # its own, so a release published mid-build could in theory split the three jobs
+      # across two CLI tags — the summary line below records what each one actually
+      # compiled, and pinning CLI_VERSION removes the window entirely.
+      - name: Resolve grid CLI version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CLI_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          REF="${CLI_VERSION}"
+          if [ "$REF" = "latest" ]; then
+            REF="$(gh api "repos/${CLI_REPO}/releases/latest" --jq .tag_name)"
+            [ -n "$REF" ] || { echo "no published release found in ${CLI_REPO}" >&2; exit 1; }
+          fi
+          echo "CLI_REF=$REF" >> "$GITHUB_ENV"
+          echo "${{ matrix.label }}: grid CLI sidecar built from \`$REF\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Sidecar source, pinned to the resolved CLI release (not main) for reproducible
       # builds. Cloned as a sibling of grid-app so the scripts' default CLI path
       # ("$APP_ROOT/../autonomous-grid") resolves unchanged.
       - name: Checkout grid CLI (sidecar source)
         uses: actions/checkout@v5
         with:
-          repository: autonomous-ai/autonomous-grid
-          ref: ${{ env.CLI_VERSION }}
+          repository: ${{ env.CLI_REPO }}
+          ref: ${{ env.CLI_REF }}
           token: ${{ secrets.CLI_REPO_TOKEN }}
           path: autonomous-grid
 

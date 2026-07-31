@@ -76,10 +76,13 @@ void main() {
     expect(_actions(plan), [SetupAction.installLlama, SetupAction.pullModel]);
   });
 
-  test('the assistant is installed without a package manager', () {
+  test('the assistant step names the agent rather than a `grid` command — the '
+      'app fetches it itself, so an argv here would be run against a CLI that '
+      'has no such subcommand', () {
     final plan = buildSetupPlan(_caps());
     final step = plan.firstWhere((s) => s.action == SetupAction.installAgent);
-    expect(step.args, ['agent', 'install', 'hermes']);
+    expect(step.agent, kChatAgent);
+    expect(step.args, isEmpty);
   });
 
   test(
@@ -88,9 +91,7 @@ void main() {
     '(nor on a whole vendor CLI)',
     () {
       final steps = agentInstallSteps(_caps());
-      expect(steps.map((s) => s.args), [
-        ['agent', 'install', kChatAgent.id],
-      ]);
+      expect(steps.map((s) => s.agent), [kChatAgent]);
     },
   );
 

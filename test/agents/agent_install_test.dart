@@ -170,19 +170,22 @@ void main() {
       expect(state.message, isNotEmpty);
     });
 
-    test('an install that left Hermes unable to serve ACP is finished off, so '
-        'the row never reads "installed" for an agent chat cannot use', () async {
-      final setup = _FakeSetup(ready: false);
-      final container = _container(setup: setup);
+    test(
+      'an install that left Hermes unable to serve ACP is finished off, so '
+      'the row never reads "installed" for an agent chat cannot use',
+      () async {
+        final setup = _FakeSetup(ready: false);
+        final container = _container(setup: setup);
 
-      await container
-          .read(agentInstallProvider.notifier)
-          .install(AgentTool.hermes, upgrade: true);
+        await container
+            .read(agentInstallProvider.notifier)
+            .install(AgentTool.hermes, upgrade: true);
 
-      expect(setup.repairs, 1);
-      expect(setup.ready, isTrue);
-      expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
-    });
+        expect(setup.repairs, 1);
+        expect(setup.ready, isTrue);
+        expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
+      },
+    );
 
     test(
       'an agent that already works is not reinstalled a second time',
@@ -214,7 +217,10 @@ void main() {
     test('a repair that could not run says so, rather than reporting an '
         'install that answers nothing', () async {
       final container = _container(
-        setup: _FakeSetup(ready: false, failure: 'uv: could not reach pypi.org'),
+        setup: _FakeSetup(
+          ready: false,
+          failure: 'uv: could not reach pypi.org',
+        ),
       );
 
       await container

@@ -5,9 +5,9 @@ import '../../../infrastructure/cli/host_environment.dart';
 import '../../../infrastructure/logging/app_log.dart';
 
 /// The agent that answers chat: Hermes, an agent loop the app spawns and streams
-/// into the conversation. The `grid` CLI installs it
-/// (`grid agent install hermes`, part of first-run setup) and it's found on the
-/// augmented PATH — there's no bundled sidecar and nothing for the user to pick.
+/// into the conversation. The app installs it — a `uv` tool on a private
+/// CPython inside `~/.grid`, part of first-run setup — and finds it on the
+/// augmented PATH; there's no bundled sidecar and nothing for the user to pick.
 const String hermesExecutable = 'hermes';
 
 /// Absolute path to the Hermes binary, or null when it isn't installed yet.
