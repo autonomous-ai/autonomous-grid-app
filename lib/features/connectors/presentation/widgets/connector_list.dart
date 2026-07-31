@@ -203,8 +203,22 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
     final (outcome, problem) = await ref
         .read(connectorLinkControllerProvider.notifier)
         .connect(widget.connector.id);
-    if (!mounted) return;
-    setState(() => _busy = false);
+    // Only the *widget's* work is gated on still existing. The toast is not:
+    // it belongs to the screen, [toast] was captured before the await, and
+    // `ToastScope.of` resolves through a static host that outlives any row.
+    //
+    // This row is disposed on the way through, every single time. `connect`
+    // clears the old credential first, which publishes, which invalidates
+    // `connectorCatalogProvider`; `connectorsProvider` awaits that catalog, so
+    // it goes to `AsyncLoading` and `connectors_view.dart:90` swaps the whole
+    // list for `ExtensionLoadingRows`. All of that happens *before* the browser
+    // opens, and the user then spends half a minute signing in. Returning early
+    // on `!mounted` therefore threw away every outcome — success, cancel and
+    // both failures — which is exactly what it looked like from the outside:
+    // no toast ever, for anything.
+    //
+    // `_disconnect` below has always had this right; this method had drifted.
+    if (mounted) setState(() => _busy = false);
 
     switch (outcome) {
       case ConnectorLinkOutcome.connected:
@@ -223,7 +237,9 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
                 )
               : ToastSpec(message: note, severity: ToastSeverity.warning),
         );
-        widget.onSettled?.call();
+        // Guarded, unlike the toast: `close` pops *this dialog's* route, and
+        // calling it once the widget is gone would pop whatever is on top now.
+        if (mounted) widget.onSettled?.call();
 
       case ConnectorLinkOutcome.cancelled:
         // Said out loud because the browser tab is where the user's attention

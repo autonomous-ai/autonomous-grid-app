@@ -283,13 +283,17 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
         ? await controller.rename(previous.name, server)
         : await controller.save(server);
 
-    if (!mounted) return;
-    setState(() => _saving = false);
+    // Same rule as the connect path: the toast belongs to the screen, not to
+    // this dialog, and reporting the outcome of a write that already happened
+    // must not depend on the dialog still being open. Only the two things that
+    // genuinely need this widget are guarded — `setState`, and the pop, which
+    // would otherwise close whatever route replaced this one.
+    if (mounted) setState(() => _saving = false);
     if (error != null) {
       toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
       return;
     }
-    navigator.pop();
+    if (mounted) navigator.pop();
     toast?.show(
       ToastSpec(
         message: '${server.name} is ready.',
