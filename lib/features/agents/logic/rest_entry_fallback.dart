@@ -32,6 +32,7 @@ import 'rest_entry.dart';
 /// | `gmail`           | `gmail.send` + `userinfo.*` + `openid`     | send only — no reading tool exists |
 /// | `google_calendar` | `calendar.events` + `userinfo.*` + `openid`| events read/write — **not** `calendarList`, **not** `freebusy` |
 /// | `google_drive`    | `drive.file` + `userinfo.*` + `openid`     | only files Grid itself created — **not** the user's Drive |
+/// | `figma-api-app`   | `file_content:read` + `current_user:read`  | read a file by key — **no** browsing, **no** comments, **no** image rendering |
 ///
 /// `calendar.events` is "view and edit events on all your calendars". Listing
 /// the user's *calendars* needs `calendar.readonly` or `calendar`, and a
@@ -44,6 +45,16 @@ import 'rest_entry.dart';
 /// after connecting. That is not a bug to work around and the tool descriptions
 /// say so outright, because the failure mode is not an error: it is the model
 /// reporting an empty list as "your Drive is empty".
+///
+/// Figma grants exactly two scopes, described by Figma as "read the contents of
+/// files, such as nodes and the editor type" and "read your name, email, and
+/// profile image". Three things are therefore deliberately absent: **listing or
+/// searching** files (no endpoint exists without the project scopes), **comments**
+/// (`file_comments:read`), and **image rendering** (`GET /v1/images/:key`, whose
+/// scope Figma's docs do not state). The last one was probed on 2026-07-31 and
+/// the probe could not settle it — Figma answers 404 for an unknown file key
+/// *before* checking scope, so a bad key tells you nothing. Unverified means it
+/// stays out.
 const Map<String, Map<String, Object?>> _fallbacks = {
   'gmail': {
     'auth': {
@@ -335,6 +346,92 @@ const Map<String, Map<String, Object?>> _fallbacks = {
         'request': {
           'method': 'DELETE',
           'url': 'https://www.googleapis.com/drive/v3/files/{file_id}',
+        },
+      },
+    ],
+  },
+  'figma-api-app': {
+    'auth': {
+      'in': 'header',
+      'name': 'Authorization',
+      // Bearer, not `X-Figma-Token`. Figma accepts both headers but not
+      // interchangeably: `X-Figma-Token` is for personal access tokens and an
+      // OAuth token sent that way is rejected. Measured 2026-07-31 against
+      // `GET /v1/me` with this account's own token — Bearer 200, X-Figma-Token
+      // 403 "Invalid token".
+      'format': 'Bearer {access_token}',
+    },
+    'tools': [
+      {
+        'name': 'figma_identity',
+        'description':
+            'Get the name, email and handle of the Figma account connected to '
+            'Grid. Use this when the user asks which Figma account they are '
+            'signed in as.',
+        'params': <String, Object?>{},
+        'request': {'method': 'GET', 'url': 'https://api.figma.com/v1/me'},
+      },
+      {
+        'name': 'figma_get_file',
+        'description':
+            'Read the structure of a Figma file — its pages and the frames on '
+            'them. Grid cannot browse or search Figma, so the user has to give '
+            'a file link; the key is the part of the URL after /design/ or '
+            '/file/. Start shallow and go deeper only if needed.',
+        'params': {
+          'file_key': {
+            'type': 'string',
+            'required': true,
+            'description':
+                'From the file URL: figma.com/design/<file_key>/Some-Name.',
+          },
+          'depth': {
+            'type': 'integer',
+            'required': true,
+            'description':
+                'How far down the tree to read. Use 1 for the list of pages, '
+                '2 to also see the top-level frames on each page. A real '
+                'design file is enormous, so never ask for more than you need.',
+          },
+        },
+        'request': {
+          'method': 'GET',
+          'url': 'https://api.figma.com/v1/files/{file_key}',
+          'query': {'depth': '{depth}'},
+        },
+      },
+      {
+        'name': 'figma_get_file_nodes',
+        'description':
+            'Read specific frames or layers from a Figma file, rather than the '
+            'whole document. Prefer this over figma_get_file once you know '
+            'which node you want.',
+        'params': {
+          'file_key': {
+            'type': 'string',
+            'required': true,
+            'description':
+                'From the file URL: figma.com/design/<file_key>/Some-Name.',
+          },
+          'node_ids': {
+            'type': 'string',
+            'required': true,
+            'description':
+                'Comma-separated node ids. A Figma link writes these with a '
+                'hyphen (node-id=12-345) but the API wants a colon — send '
+                '12:345.',
+          },
+          'depth': {
+            'type': 'integer',
+            'description':
+                'How far below each node to read. Omit for the whole subtree, '
+                'which can be very large.',
+          },
+        },
+        'request': {
+          'method': 'GET',
+          'url': 'https://api.figma.com/v1/files/{file_key}/nodes',
+          'query': {'ids': '{node_ids}', 'depth': '{depth}'},
         },
       },
     ],

@@ -139,7 +139,11 @@ class RestInvoker {
       403 =>
         "This account doesn't have permission for that. Reconnect the "
             'connector and grant the extra access$detail',
-      404 => 'The provider has no such endpoint$detail',
+      // Deliberately about the *thing*, not the URL. A 404 here is almost
+      // always an id the model guessed or mistyped — a Figma file key, a Drive
+      // file id — and "the provider has no such endpoint" sent the reader
+      // looking for a bug in Grid instead of at the identifier they passed.
+      404 => 'Not found — check the id or key that was used$detail',
       429 =>
         'The provider is rate-limiting this account. Try again shortly$detail',
       _ when status >= 500 => 'The provider had an error ($status)$detail',
