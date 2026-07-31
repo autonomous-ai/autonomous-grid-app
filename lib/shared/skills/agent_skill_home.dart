@@ -27,8 +27,8 @@ const String kPublicSkillsDir = 'public';
 /// the Skills screen; it is where a new skill is kept so the app has an
 /// original to copy from, and the record of who authored what.
 ///
-/// The two agent folders are what the screen actually shows, and what an
-/// assistant actually reads.
+/// The agent folders are what the screen actually shows, and what an assistant
+/// actually reads.
 enum SkillSource {
   store('Library'),
   hermes('Hermes'),
@@ -56,13 +56,18 @@ enum SkillSource {
   };
 }
 
-/// The folders the Skills screen offers, in tab order.
+/// The folders the Skills screen offers, in tab order — every assistant the app
+/// can run.
 ///
-/// Not every agent the app can run: Claude Code arrived as a chat agent and the
-/// installer already writes Grid's skills into its folder, but managing its
-/// skills here is a separate piece of work and this list is the one place that
-/// decision is made. Adding it later is this line, plus a [ShareTarget] for it.
-const List<SkillSource> kSkillTabs = [SkillSource.hermes, SkillSource.codex];
+/// The one place that decision is made: an agent listed here gets a tab, a
+/// share target, and a mark on the rows of the others that also hold its
+/// skills. One that isn't gets none of those, however much of it exists
+/// elsewhere in the app.
+const List<SkillSource> kSkillTabs = [
+  SkillSource.hermes,
+  SkillSource.codex,
+  SkillSource.claude,
+];
 
 /// The assistants the Skills screen manages — [kSkillTabs] as agents.
 ///

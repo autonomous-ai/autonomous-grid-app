@@ -11,10 +11,9 @@ import '../../agents/logic/agent_skill.dart';
 /// Skills screen can never break a working agent.
 ///
 /// One source at a time, rather than every skill on the machine in one list.
-/// The three folders answer different questions — "what did I write", "what
-/// does Hermes already know", "what does Codex" — and merging them made a
-/// screen where the user couldn't find their own two skills among Hermes's
-/// seventy.
+/// Each folder answers a different question — what does *this* assistant know
+/// — and merging them made a screen where the user couldn't find their own two
+/// skills among Hermes's seventy.
 class AgentSkillScanner {
   AgentSkillScanner({String? home}) : _home = home ?? GridPaths.userHome;
 
@@ -22,9 +21,10 @@ class AgentSkillScanner {
 
   Directory rootOf(SkillSource source) => source.root(_home);
 
-  /// Every skill in [source], the user's own first, then most recently changed
-  /// — the two questions the list is actually asked. Name breaks a tie so a
-  /// refresh can't shuffle rows around under the pointer.
+  /// Every skill in [source], by author first — the user's own, then Grid's,
+  /// then the assistant's own — and within each, most recently changed. Those
+  /// are the two questions the list is actually asked, in that order. Name
+  /// breaks a tie so a refresh can't shuffle rows around under the pointer.
   Future<List<AgentSkill>> scan(SkillSource source) async {
     final skills = <AgentSkill>[];
     final root = rootOf(source);
@@ -56,7 +56,8 @@ class AgentSkillScanner {
       }
     }
     skills.sort((a, b) {
-      if (a.isMine != b.isMine) return a.isMine ? -1 : 1;
+      final byOwner = a.owner.rank.compareTo(b.owner.rank);
+      if (byOwner != 0) return byOwner;
       final byDate = b.updatedAt.compareTo(a.updatedAt);
       if (byDate != 0) return byDate;
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -86,9 +87,17 @@ class AgentSkillScanner {
     // sit side by side under the same kind of name. The library knows, because
     // everything the app writes goes through it first; anything it has never
     // heard of belongs to the agent.
-    return library[path.split('/').last] ??
-        (source == SkillSource.hermes ? SkillOwner.hermes : SkillOwner.codex);
+    return library[path.split('/').last] ?? _agentOwner(source);
   }
+
+  /// The owner an agent's own folder implies.
+  static SkillOwner _agentOwner(SkillSource source) => switch (source) {
+    SkillSource.hermes => SkillOwner.hermes,
+    SkillSource.codex => SkillOwner.codex,
+    SkillSource.claude => SkillOwner.claude,
+    // Unreachable: the library is handled above, before this is asked.
+    SkillSource.store => SkillOwner.user,
+  };
 
   /// Who wrote each skill the app knows about, by folder name.
   ///

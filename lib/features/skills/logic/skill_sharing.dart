@@ -8,14 +8,13 @@ import '../../agent/logic/hermes_skill_scanner.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_skill.dart';
 
-/// Who a skill is being handed to.
-/// Only the assistants the Skills screen manages — see [kSkillTabs]. Claude
-/// Code has a skills folder and the installer writes into it, but it is not on
-/// this screen, so nothing here offers to hand it a skill.
+/// The assistants the Skills screen manages — see [kSkillTabs]. One entry per
+/// agent, plus the one that means all of them.
 enum ShareTarget {
   hermes('Hermes', [AgentTool.hermes]),
   codex('Codex', [AgentTool.codex]),
-  all('all agents', [AgentTool.hermes, AgentTool.codex]);
+  claude('Claude Code', [AgentTool.claude]),
+  all('all agents', [AgentTool.hermes, AgentTool.codex, AgentTool.claude]);
 
   const ShareTarget(this.label, this.agents);
 
@@ -40,15 +39,15 @@ SkillSource skillFolderOf(AgentTool agent) => switch (agent) {
 
 /// Copies a skill from one folder into an agent's own.
 ///
-/// A copy, not a link: the two agents read different roots and neither can be
-/// asked to follow one. Which means the copy goes stale the moment the original
-/// changes — sharing again is how you catch it up, and that's why an existing
-/// copy is overwritten rather than skipped.
+/// A copy, not a link: each agent reads its own root and none of them can be
+/// asked to follow another's. Which means the copy goes stale the moment the
+/// original changes — sharing again is how you catch it up, and that's why an
+/// existing copy is overwritten rather than skipped.
 ///
-/// Hermes already reads the store through `skills.external_dirs`, so it usually
-/// has the skill without this. Sharing to it anyway is deliberate: it's the fix
-/// when that config entry is gone, and it's how a skill survives the store being
-/// moved. Codex has no such projection at all — for Codex this is the only way.
+/// This is the only way a skill reaches an assistant. Hermes could once be
+/// pointed at the app's library through `skills.external_dirs`; that shortcut
+/// is gone, and with it the difference between the agents — every one of them
+/// now gets a skill the same way, because someone chose to give it to them.
 class SkillSharer {
   SkillSharer({String? home}) : _home = home ?? GridPaths.userHome;
 
@@ -62,8 +61,7 @@ class SkillSharer {
       shareFolder(skill.path, target.agents);
 
   /// Copy the skill folder at [path] to every agent in [agents], overwriting a
-  /// copy already there, then record who has it.
-  ///
+  /// copy already there.
   Future<void> shareFolder(String path, Iterable<AgentTool> agents) async {
     if (agents.isEmpty) return;
     final from = Directory(path);
@@ -90,9 +88,9 @@ class SkillSharer {
 
 /// The folder names an agent already has, whoever put them there.
 ///
-/// Read off the agent's own folder rather than the app's record, because the
-/// question the catalog asks — "does Hermes have this?" — is about the agent,
-/// not about what we remember doing.
+/// Read off the agent's own folder rather than any record the app keeps,
+/// because the question — "does this assistant have it?" — is about the agent,
+/// not about what we remember doing. A skill it installed itself counts.
 final agentSkillNamesProvider = FutureProvider.autoDispose
     .family<Set<String>, AgentTool>((ref, agent) async {
       final skills = await ref
