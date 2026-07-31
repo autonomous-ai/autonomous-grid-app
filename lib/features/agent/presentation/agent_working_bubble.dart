@@ -87,18 +87,14 @@ class AgentActivityFeed extends ConsumerWidget {
   }
 }
 
-/// How many steps a run shows in full before it folds behind a summary. A short
-/// run reads at a glance; a long one (a dozen tool calls) would otherwise bury
-/// the answer and the "Thinking…" line under a wall of rows.
-const _collapseThreshold = 5;
-
 /// The run's steps: shown in full when there are few, or folded behind a tappable
 /// "N steps" summary when there are many.
 ///
-/// Folded, it still shows whatever is running *now*, so a live turn never looks
-/// stalled — only the settled history tucks away. The choice is per run: this
-/// widget lives only while the feed holds steps, so the next turn (which starts
-/// empty) gets a fresh, default view rather than inheriting the last one's.
+/// Folded, it still shows the latest handful (see [foldedActivitySteps]), so a
+/// live turn never looks stalled — only the history tucks away. The choice is
+/// per run: this widget lives only while the feed holds steps, so the next turn
+/// (which starts empty) gets a fresh, default view rather than inheriting the
+/// last one's.
 class _StepList extends StatefulWidget {
   const _StepList({required this.steps});
 
@@ -116,15 +112,10 @@ class _StepListState extends State<_StepList> {
   @override
   Widget build(BuildContext context) {
     final steps = widget.steps;
-    if (steps.length <= _collapseThreshold) return _StepColumn(steps: steps);
+    if (steps.length <= kFoldedStepLimit) return _StepColumn(steps: steps);
 
     final expanded = _expanded ?? false;
-    final shown = expanded
-        ? steps
-        : [
-            for (final step in steps)
-              if (step.status == AgentActivityStatus.running) step,
-          ];
+    final shown = expanded ? steps : foldedActivitySteps(steps);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -135,7 +126,7 @@ class _StepListState extends State<_StepList> {
           expanded: expanded,
           onTap: () => setState(() => _expanded = !expanded),
         ),
-        if (shown.isNotEmpty) _StepColumn(steps: shown),
+        _StepColumn(steps: shown),
       ],
     );
   }
