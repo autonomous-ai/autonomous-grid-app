@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// How an MCP server expects to be authenticated, discovered by asking it.
@@ -116,10 +117,15 @@ class McpAuthProbeResult {
 /// | `mcp.notion.com`   | 401 | `mcp.notion.com`   | `/register` | no |
 /// | `mcp.linear.app`   | 401 | `mcp.linear.app`   | `/register` | no |
 /// | `mcp.supabase.com` | 401 | **`api.supabase.com`** | `/platform/oauth/apps/register` | **yes** |
+/// | `mcp.stripe.com`   | 401 | **`access.stripe.com/mcp`** | `/mcp/oauth2/register` | no |
 ///
-/// Supabase is the case that shapes the code: its authorization server is on a
-/// different host from its MCP endpoint, so step 2 cannot be skipped by assuming
-/// the resource is its own issuer.
+/// Two of them shape the code. **Supabase**: its authorization server is on a
+/// different host from its MCP endpoint, so step 2 cannot be skipped by
+/// assuming the resource is its own issuer. **Stripe**: its issuer carries a
+/// *path*, which decides where the well-known segment goes in step 3 — see
+/// [McpAuthProbe.metadataCandidates], and note that Stripe also sends its
+/// `resource_metadata` unquoted and publishes its scopes on the authorization
+/// server rather than the resource. One connector, three assumptions broken.
 class McpAuthProbe {
   const McpAuthProbe({this.timeout = const Duration(seconds: 12)});
 
@@ -214,6 +220,21 @@ class McpAuthProbe {
           in (asMeta['code_challenge_methods_supported'] as List? ?? []))
         if (m is String) m,
     ];
+    // The authorization server's own scope list, used only when the resource
+    // published none.
+    //
+    // RFC 9728 puts `scopes_supported` on the resource, and that stays the
+    // better answer where it exists: it says what *this* resource grants, while
+    // the authorization server speaks for everything behind it. But Stripe's
+    // protected-resource document carries nothing but `resource` and
+    // `authorization_servers`, and declares `["mcp"]` on the authorization
+    // server instead — so reading only the first sends an authorize with no
+    // `scope` at all. Supabase is the standing proof that some servers reject
+    // exactly that.
+    final asScopes = <String>[
+      for (final scope in (asMeta['scopes_supported'] as List? ?? []))
+        if (scope is String) scope,
+    ];
 
     final authorize = field('authorization_endpoint');
     final token = field('token_endpoint');
@@ -239,7 +260,7 @@ class McpAuthProbe {
       authorizationEndpoint: authorize,
       tokenEndpoint: token,
       registrationEndpoint: register,
-      scopesSupported: scopes,
+      scopesSupported: scopes.isNotEmpty ? scopes : asScopes,
       resource: resource,
       supportsS256: challengeMethods.contains('S256'),
       tokenAuthMethods: methods,
@@ -304,27 +325,56 @@ class McpAuthProbe {
     }
   }
 
-  /// Step 3, both spellings.
-  ///
-  /// RFC 8414 puts the document at `/.well-known/oauth-authorization-server`;
-  /// some servers only publish the OpenID one. Linear serves both, Notion and
-  /// Supabase only the first — so try that first and fall back.
+  /// Step 3: ask the authorization server to describe itself.
   Future<Map<String, dynamic>?> _authServerMetadata(Uri base) async {
-    for (final path in const [
-      '.well-known/oauth-authorization-server',
-      '.well-known/openid-configuration',
-    ]) {
-      // Preserve any path on the issuer (`https://host/tenant`) as RFC 8414 §3.1
-      // requires: the well-known segment is inserted, not appended.
-      final candidate = base.replace(
-        path: base.path.isEmpty || base.path == '/'
-            ? '/$path'
-            : '${base.path.replaceAll(RegExp(r'/$'), '')}/$path',
-      );
+    for (final candidate in metadataCandidates(base)) {
       final json = await _json(candidate);
       if (json != null) return json;
     }
     return null;
+  }
+
+  /// Every URL that metadata could be at, in the order worth asking.
+  ///
+  /// Two axes. **Which document**: RFC 8414's `oauth-authorization-server`
+  /// first, then the OpenID one — Linear serves both, Notion and Supabase only
+  /// the first.
+  ///
+  /// **Where the well-known segment goes**, which matters only when the issuer
+  /// carries a path. RFC 8414 §3.1 *inserts* it between host and path. This
+  /// appended it instead while the comment claimed it was inserting, and the
+  /// difference is a whole connector:
+  ///
+  /// ```
+  /// issuer https://access.stripe.com/mcp
+  ///   https://access.stripe.com/.well-known/oauth-authorization-server/mcp  200
+  ///   https://access.stripe.com/mcp/.well-known/oauth-authorization-server  404
+  /// ```
+  ///
+  /// Measured 2026-07-31 across 26 remote servers: Stripe, monday.com and
+  /// GitHub publish only the first form. All three reached the user as "the
+  /// sign-in service did not describe itself — you will need to paste a token",
+  /// about servers that self-register perfectly. Stripe is the sharpest case:
+  /// S256 only, no `plain`, no client secret issued — the cleanest path A of
+  /// the whole set, and it was being sent to the Headers box.
+  ///
+  /// The appended form stays as a fallback. It has never been observed to be
+  /// the only one that answers, but it costs one request on a path already
+  /// making several, and dropping it would be a second guess where the first
+  /// one was already wrong.
+  ///
+  /// An issuer with no path makes the two forms identical, so only one is
+  /// yielded — the common case must not pay for a duplicate request.
+  @visibleForTesting
+  static Iterable<Uri> metadataCandidates(Uri base) sync* {
+    final path = base.path.replaceAll(RegExp(r'/+$'), '');
+    for (final wellKnown in const [
+      '.well-known/oauth-authorization-server',
+      '.well-known/openid-configuration',
+    ]) {
+      yield base.replace(path: '/$wellKnown$path');
+      if (path.isNotEmpty) yield base.replace(path: '$path/$wellKnown');
+    }
   }
 
   Future<Map<String, dynamic>?> _json(Uri url) async {
@@ -396,6 +446,19 @@ class _Challenge {
   /// measured in the wild contain commas inside their quotes ("No access token
   /// was provided in this request" is fine, but Supabase's full header is a
   /// three-parameter list), so a naive split loses the parameter that matters.
+  ///
+  /// **The quotes are optional.** RFC 7235 lets an auth-param value be a bare
+  /// token or a quoted-string, and Stripe sends it bare:
+  ///
+  /// ```
+  /// Bearer resource_metadata=https://mcp.stripe.com/.well-known/oauth-protected-resource
+  /// ```
+  ///
+  /// Requiring quotes read that as "no hint given" and fell through to the
+  /// well-known path on the resource's own origin. For Stripe the two happen to
+  /// be the same URL, so nothing broke and nothing said anything — which is
+  /// exactly why it is worth fixing: the next server to send it bare from a
+  /// different location would be probed at the wrong address, silently.
   static _Challenge parse(String header) {
     final trimmed = header.trim();
     if (trimmed.isEmpty) {
@@ -403,16 +466,30 @@ class _Challenge {
     }
     final space = trimmed.indexOf(' ');
     final scheme = space < 0 ? trimmed : trimmed.substring(0, space);
-
-    final match = RegExp(
-      r'resource_metadata\s*=\s*"([^"]+)"',
-      caseSensitive: false,
-    ).firstMatch(trimmed);
     return _Challenge(
-      resourceMetadata: match == null ? null : Uri.tryParse(match.group(1)!),
+      resourceMetadata: resourceMetadataFrom(trimmed),
       scheme: scheme,
     );
   }
+}
+
+/// The `resource_metadata` URL out of a `WWW-Authenticate` header, or null when
+/// the header doesn't carry one.
+///
+/// Its own function, and visible for testing, because it is the one piece of
+/// step 1 a test can pin without a network — and the header shapes measured in
+/// the wild are the whole reason it isn't a one-liner.
+///
+/// Quoted alternative first, so a quoted value containing a comma is taken
+/// whole; the bare alternative stops at whitespace or the next parameter.
+@visibleForTesting
+Uri? resourceMetadataFrom(String header) {
+  final match = RegExp(
+    r'resource_metadata\s*=\s*(?:"([^"]+)"|([^\s,]+))',
+    caseSensitive: false,
+  ).firstMatch(header);
+  final value = match?.group(1) ?? match?.group(2);
+  return value == null ? null : Uri.tryParse(value);
 }
 
 /// Overridable so tests and the dialog share one probe, and no suite reaches the
