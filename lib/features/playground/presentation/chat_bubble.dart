@@ -56,7 +56,11 @@ class ChatBubble extends StatelessWidget {
               ],
               if (message.model != null) ...[
                 const SizedBox(height: 8),
-                _ModelTag(model: message.model!, took: message.took),
+                _ModelTag(
+                  model: message.model!,
+                  took: message.took,
+                  firstToken: message.firstToken,
+                ),
               ],
             ],
           ),
@@ -104,7 +108,7 @@ class ChatBubble extends StatelessWidget {
 /// slow?" unanswerable; the time beside it makes switching models an informed
 /// choice rather than a guess.
 class _ModelTag extends StatelessWidget {
-  const _ModelTag({required this.model, this.took});
+  const _ModelTag({required this.model, this.took, this.firstToken});
 
   final String model;
 
@@ -112,11 +116,16 @@ class _ModelTag extends StatelessWidget {
   /// it — those keep the plain model name rather than claiming an unknown time.
   final Duration? took;
 
+  /// When the first word appeared. Null on a reply that never streamed, where
+  /// there was no first word to time — the total then stands alone rather than
+  /// repeating itself under a second label.
+  final Duration? firstToken;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads AppPalette tokens — follow theme flips.
     final style = TextStyle(fontSize: 11.5, color: AppPalette.textFaint);
-    return Row(
+    final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
@@ -125,8 +134,8 @@ class _ModelTag extends StatelessWidget {
           color: AppPalette.textFaint,
         ),
         const SizedBox(width: 5),
-        // The model can ellipsis; the time can't. A long model id on a narrow
-        // window has to give way to the number, not swallow it.
+        // The model can ellipsis; the times can't. A long model id on a narrow
+        // window has to give way to the numbers, not swallow them.
         Flexible(
           child: Text(
             modelShortLabel(model),
@@ -135,14 +144,33 @@ class _ModelTag extends StatelessWidget {
             style: style,
           ),
         ),
-        if (took != null) ...[
-          const SizedBox(width: 6),
-          Text('·', style: style),
-          const SizedBox(width: 6),
-          Text(formatTurnDuration(took!), style: style),
-        ],
+        if (took != null) ..._segment(formatTurnDuration(took!), style),
+        // Second, and only ever beside the total: on its own "1.2s" would read
+        // as how long the whole answer took.
+        if (took != null && firstToken != null)
+          ..._segment('first token ${formatTurnDuration(firstToken!)}', style),
       ],
     );
+    final plain = _plainSentence();
+    return plain == null ? row : Tooltip(message: plain, child: row);
+  }
+
+  /// A `·` and one more reading, so the footer's parts stay evenly spaced
+  /// wherever they are cut off.
+  List<Widget> _segment(String text, TextStyle style) => [
+    const SizedBox(width: 6),
+    Text('·', style: style),
+    const SizedBox(width: 6),
+    Text(text, style: style),
+  ];
+
+  /// The same two numbers as a sentence, for the hover — "first token" is the
+  /// term people compare models by, but it is still jargon on a screen built for
+  /// people who don't have it (§5). Null when there is nothing extra to explain.
+  String? _plainSentence() {
+    if (took == null || firstToken == null) return null;
+    return 'Started answering after ${formatTurnDuration(firstToken!)}, '
+        'finished in ${formatTurnDuration(took!)}.';
   }
 }
 

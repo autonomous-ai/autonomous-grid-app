@@ -233,6 +233,8 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   // Milliseconds, not a formatted string: the transcript re-renders it in
   // whatever shape the footer wants today, and a saved "8.4s" couldn't.
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
+  if (message.firstToken != null)
+    'first_token_ms': message.firstToken!.inMilliseconds,
 };
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
@@ -263,6 +265,9 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
     model: json['model'] is String ? json['model'] as String : null,
     took: json['took_ms'] is num
         ? Duration(milliseconds: (json['took_ms'] as num).toInt())
+        : null,
+    firstToken: json['first_token_ms'] is num
+        ? Duration(milliseconds: (json['first_token_ms'] as num).toInt())
         : null,
   );
 }

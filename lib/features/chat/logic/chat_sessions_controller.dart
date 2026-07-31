@@ -623,6 +623,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // that wait would tell the user this model is slow when another chat was
     // simply holding the slot.
     final clock = Stopwatch()..start();
+    // When the first word of the answer appeared. Set once, on the first
+    // streamed text: every later update carries the whole answer so far, so
+    // reading any of them would time the last word instead of the first.
+    Duration? firstToken;
 
     final updates = _senderFor(modality, attachments).send(
       network: network,
@@ -656,6 +660,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               SendGenerating(progress: progress, status: status),
             );
           case ChatSendStreaming(:final text):
+            if (firstToken == null && text.trim().isNotEmpty) {
+              firstToken = clock.elapsed;
+            }
             state = state.withPhase(id, SendStreaming(text));
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
@@ -666,7 +673,11 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               // says which one spoke even after switching models mid-chat.
               messages: [
                 ...current.messages,
-                reply.copyWith(model: model, took: clock.elapsed),
+                reply.copyWith(
+                  model: model,
+                  took: clock.elapsed,
+                  firstToken: firstToken,
+                ),
               ],
             );
             // A planning turn's reply is a plan waiting on approval — light the
@@ -702,7 +713,11 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
                   ...current.messages,
                   // The part-answer is stamped too: a turn that died after four
                   // minutes and one that died instantly are different problems.
-                  kept.copyWith(model: model, took: clock.elapsed),
+                  kept.copyWith(
+                    model: model,
+                    took: clock.elapsed,
+                    firstToken: firstToken,
+                  ),
                 ],
               ),
               phase: const SendIdle(),

@@ -60,6 +60,8 @@ class ChatController extends Notifier<ChatState> {
 
     // How long the answer takes, shown beside the model under the reply.
     final clock = Stopwatch()..start();
+    // Set once, on the first streamed text — see the Chat tab's own dispatch.
+    Duration? firstToken;
 
     // Fold updates through a stored subscription rather than `await for`, so
     // closing the dialog ([clear]) can cancel it — a late update must never
@@ -74,6 +76,9 @@ class ChatController extends Notifier<ChatState> {
               phase: SendGenerating(progress: progress, status: status),
             );
           case ChatSendStreaming(:final text):
+            if (firstToken == null && text.trim().isNotEmpty) {
+              firstToken = clock.elapsed;
+            }
             state = ChatState(messages: history, phase: SendStreaming(text));
           // The Playground's transcript is throwaway and has no name, so the
           // agent's session id is of no use to it.
@@ -84,7 +89,11 @@ class ChatController extends Notifier<ChatState> {
             state = ChatState(
               messages: [
                 ...history,
-                reply.copyWith(model: model, took: clock.elapsed),
+                reply.copyWith(
+                  model: model,
+                  took: clock.elapsed,
+                  firstToken: firstToken,
+                ),
               ],
             );
           case ChatSendFailure(:final error, :final partial):
@@ -102,7 +111,11 @@ class ChatController extends Notifier<ChatState> {
               messages: [
                 ...history,
                 if (kept != null)
-                  kept.copyWith(model: model, took: clock.elapsed),
+                  kept.copyWith(
+                    model: model,
+                    took: clock.elapsed,
+                    firstToken: firstToken,
+                  ),
               ],
               error: error,
             );
