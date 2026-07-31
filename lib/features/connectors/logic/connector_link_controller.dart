@@ -7,6 +7,9 @@ import '../../../infrastructure/logging/app_log.dart';
 import '../../../shared/external_launch.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/connector_token.dart';
+import '../../agents/logic/mcp_server.dart';
+import 'connector_catalog.dart';
+import 'connectors_controller.dart';
 import 'connector_refresh_service.dart';
 import 'connector_token_store.dart';
 import 'connectors_refresh.dart';
@@ -140,6 +143,153 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
       problem,
     );
   }
+
+  /// Link a catalog row by whichever route its connector supports.
+  ///
+  /// The one entry point the Connect button calls, so the widget never has to
+  /// know which path a connector is on — and so the two paths cannot drift into
+  /// different toasts, spinners or cancel behaviour for the same button.
+  ///
+  /// A self-serve entry ([ConnectorCatalogEntry.isSelfServe]) is probed first,
+  /// and **the probe is what decides** what happens next — not the catalog. The
+  /// bundled list is a file in the binary and a gateway `auth_type` is a config
+  /// row somebody typed; both are claims about a server that may have changed
+  /// its mind since. So `dcr` and `open` take the same route here, and the
+  /// server's own answer picks the ending:
+  ///
+  /// - **dynamic registration** → path A: register, authorize, store a token.
+  /// - **open** → write the MCP entry and stop. No browser, no credential.
+  /// - anything else → say so, without opening a browser the user would then
+  ///   have to close.
+  ///
+  /// That an entry declared `dcr` can end up adopted as open (or the reverse)
+  /// is the point rather than an accident: a server that drops its sign-in
+  /// should still connect, and one that adds a sign-in should still ask for it.
+  Future<(ConnectorLinkOutcome, String?)> connectCatalog(
+    ConnectorCatalogEntry entry,
+  ) async {
+    if (!entry.isSelfServe) return connect(entry.code);
+
+    final connector = entry.code;
+    final mcpUrl = entry.mcpUrl;
+    if (mcpUrl.isEmpty) {
+      return (
+        ConnectorLinkOutcome.notStarted,
+        'This connector has no server address to sign into.',
+      );
+    }
+
+    _cancelled = false;
+    // The row enters its waiting state *before* the probe, not after. Discovery
+    // is three round trips and allows twelve seconds each, and a Connect that
+    // sat silent that long before the browser appeared reads as a button that
+    // did nothing. It also puts Cancel on the row, which is the only way out
+    // while the probe is in flight.
+    state = ConnectorLinkState(
+      pending: PendingLink(connector: connector, startedAt: DateTime.now()),
+      message: 'Checking how this server signs in…',
+      subject: connector,
+    );
+
+    final probe = await ref.read(mcpAuthProbeProvider).probe(mcpUrl);
+    // Tested here rather than left to [connectDirect], which clears the flag on
+    // entry: a cancel during the probe would otherwise be forgotten, and the
+    // browser would open after the user had already backed out.
+    if (_cancelled) return (ConnectorLinkOutcome.cancelled, null);
+
+    ref
+        .read(appLogProvider)
+        .info(
+          'connectors',
+          'Probed catalog connector "$connector" at $mcpUrl → '
+              '${probe.kind.name} '
+              '(issuer ${probe.issuer.isEmpty ? '—' : probe.issuer})',
+        );
+
+    switch (probe.kind) {
+      case McpAuthKind.dynamicRegistration:
+        break; // the sign-in below
+      case McpAuthKind.open:
+        return _adoptOpen(connector, mcpUrl);
+      case McpAuthKind.preRegistered:
+      case McpAuthKind.manual:
+      case McpAuthKind.unreachable:
+        // Left on the row rather than flashed as a toast: the catalog offered
+        // this connector and its own server disagreed, which is a standing fact
+        // about the row until something changes.
+        return (
+          ConnectorLinkOutcome.failed,
+          _settle(connector, _cannotDrive(probe)),
+        );
+    }
+
+    final error = await connectDirect(
+      connector: connector,
+      mcpUrl: mcpUrl,
+      probe: probe,
+    );
+    if (_cancelled) return (ConnectorLinkOutcome.cancelled, null);
+
+    // The same test [connect] makes, for the same reason: path A reports its
+    // failures through the row's message and returns null for most of them, so
+    // the only honest answer to "did that work" is whether a credential is now
+    // on disk.
+    final linked = (await _readTokens()).containsKey(connector);
+    return (
+      linked ? ConnectorLinkOutcome.connected : ConnectorLinkOutcome.failed,
+      error,
+    );
+  }
+
+  /// Take on a server that asks for nothing: write the MCP entry, and stop.
+  ///
+  /// Nothing reaches `tokens.json`, because there is no credential to put
+  /// there. That has consequences worth stating, and all of them are the ones
+  /// we want: the row afterwards is an ordinary configured server — Edit and
+  /// Remove rather than a "Signed in" tag — removing it is the manual store's
+  /// own delete, and the refresh sweep never looks at it because there is
+  /// nothing to expire.
+  Future<(ConnectorLinkOutcome, String?)> _adoptOpen(
+    String connector,
+    String mcpUrl,
+  ) async {
+    ref
+        .read(appLogProvider)
+        .info(
+          'connectors',
+          'Adopting "$connector" at $mcpUrl as an open server — no credential',
+        );
+    final error = await ref
+        .read(mcpServersProvider.notifier)
+        .save(
+          McpServer(
+            name: connector,
+            transport: McpHttp(url: mcpUrl),
+          ),
+        );
+    // Clears the waiting state the probe put up. There is no browser round trip
+    // on this path, so nothing else would.
+    state = const ConnectorLinkState();
+    return error == null
+        ? (ConnectorLinkOutcome.connected, null)
+        : (ConnectorLinkOutcome.failed, error);
+  }
+
+  /// Why a connector the catalog offered turned out not to be drivable here.
+  ///
+  /// One line per outcome the probe can reach, each naming what the user can do
+  /// instead. The two kinds the caller has already handled are listed only to
+  /// keep the switch exhaustive, so a new probe result cannot be added without
+  /// deciding what this says about it.
+  String _cannotDrive(McpAuthProbeResult probe) => switch (probe.kind) {
+    McpAuthKind.preRegistered =>
+      'This server needs Grid to register an app first — not available yet.',
+    McpAuthKind.manual || McpAuthKind.unreachable =>
+      probe.detail.isEmpty
+          ? "This server's sign-in could not be read. Try again later."
+          : probe.detail,
+    McpAuthKind.dynamicRegistration || McpAuthKind.open => '',
+  };
 
   /// Link a server the user typed a URL for, with no gateway involved (path A).
   ///

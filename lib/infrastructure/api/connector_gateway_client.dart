@@ -357,11 +357,20 @@ List<ConnectorCatalogEntry>? parseGatewayConnectors(String raw) {
             ? entry['image_url'] as String
             : '',
         mcpUrl: entry['mcp_url'] is String ? entry['mcp_url'] as String : '',
-        // Only the literal "app" can be driven from here. "pat" means the user
-        // must paste a token by hand and there is no flow to call at all.
-        authMethod: entry['auth_type'] == 'app'
-            ? ConnectorAuthMethod.app
-            : ConnectorAuthMethod.manual,
+        // Two literals can be driven from here, and everything else falls to
+        // `manual` — the field is free text on the wire, and a value this build
+        // has never heard of must leave the row visible rather than invent a
+        // flow for it. ("pat" never reaches this line; it is dropped above.)
+        //
+        // "dcr" says the provider registers clients on demand, so the app signs
+        // in on its own and the gateway holds nothing. It is a *hint*: the
+        // probe at Connect time is what decides, so a backend that mislabels a
+        // connector costs a refusal on the row, not a broken sign-in.
+        authMethod: switch (entry['auth_type']) {
+          'app' => ConnectorAuthMethod.app,
+          'dcr' => ConnectorAuthMethod.dcr,
+          _ => ConnectorAuthMethod.manual,
+        },
         mcpReady: entry['mcp_ready'] == true,
         linkedAtServer: entry['status'] == 'connected',
         accountName: entry['account_name'] is String

@@ -1,0 +1,188 @@
+{
+  "_comment": [
+    "Connector app tự lo được, không cần gateway. Xem",
+    "lib/features/connectors/logic/self_serve_catalog.dart.",
+    "",
+    "auth:",
+    "  dcr  (mặc định) — AS đăng ký client theo yêu cầu (RFC 7591); app tự register",
+    "                    rồi chạy PKCE S256, gateway không giữ gì.",
+    "  open            — server không đòi credential; Connect chỉ ghi entry MCP vào",
+    "                    config agent, không có token nào.",
+    "Cả hai đều chỉ là KHAI BÁO. Lúc bấm Connect app probe server và làm theo câu",
+    "trả lời của server, không theo file này.",
+    "",
+    "Đo 2026-07-31 bằng Test_case/probe_mcp_oauth.py --register: mọi dòng dcr dưới",
+    "đây đã đăng ký thật thành công. Figma bị loại — quảng cáo registration_endpoint",
+    "nhưng POST vào trả 403 với mọi biến thể body.",
+    "",
+    "KHÔNG đưa vào đây thứ gateway đã có trong config-connector-auth.prod.json:",
+    "google_drive, gmail, google_calendar, slack, notion, asana, linear,",
+    "figma-api-app, amplitude, github, hubspot, mondaydotcom. mergeCatalog cũng",
+    "chặn trùng theo code, nhưng trùng thì hàng ở đây là rác — bỏ từ đầu.",
+    "",
+    "Tên field trùng wire shape của gateway, để chuyển một dòng sang backend là copy.",
+    "image_url bỏ trống thì suy từ host của mcp_url (globalping không có favicon nên",
+    "để trống, hàng sẽ dùng glyph).",
+    "",
+    "mcp_url lấy đúng URL mcpservers.org công bố, đã đối chiếu từng dòng 2026-07-31.",
+    "Cloudflare dùng endpoint hợp nhất mcp.cloudflare.com/mcp, KHÔNG phải các server",
+    "con bindings./docs. — chúng cũng chạy nhưng không phải thứ Cloudflare trỏ người",
+    "dùng tới, và hai dòng Cloudflare trong một danh sách là rác.",
+    "",
+    "Đã xét và LOẠI (2026-07-31), đừng thêm lại mà không đo lại:",
+    "  figma       registration_endpoint có, POST vào trả 403 với mọi body.",
+    "  box         không có registration_endpoint — phải đăng ký app trước.",
+    "  booking     403 mà không kèm WWW-Authenticate; URL còn chứa id theo tài khoản.",
+    "  bigquery    initialize + tools/list trả 200 KHÔNG cần auth, nhưng tools/call",
+    "              trả 'missing required authentication credential'. Server không hề",
+    "              challenge nên probe đọc ra 'open' và app sẽ nhận nó vào config;",
+    "              mọi tool call sau đó hỏng. Đây là lý do một dòng auth:open phải",
+    "              được gọi thử tool thật trước khi thêm, không chỉ nhìn handshake.",
+    "  browserbase cùng loại: handshake mở, nhưng tools/call trả 'Invalid query",
+    "              parameters' — URL cần ?apiKey=&projectId=, không dùng trần được."
+  ],
+  "connectors": [
+    {
+      "code": "canva",
+      "label": "Canva",
+      "description": "Designs, brand templates and assets in your Canva account, so the assistant can find them and make new ones.",
+      "mcp_url": "https://mcp.canva.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=canva.com&sz=128"
+    },
+    {
+      "code": "stripe",
+      "label": "Stripe",
+      "description": "Payments, customers, invoices and subscriptions in your Stripe account.",
+      "mcp_url": "https://mcp.stripe.com",
+      "image_url": "https://www.google.com/s2/favicons?domain=stripe.com&sz=128"
+    },
+    {
+      "code": "supabase",
+      "label": "Supabase",
+      "description": "Postgres databases, edge functions and project settings on Supabase.",
+      "mcp_url": "https://mcp.supabase.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=supabase.com&sz=128"
+    },
+    {
+      "code": "sentry",
+      "label": "Sentry",
+      "description": "Errors, issues and releases across your Sentry projects.",
+      "mcp_url": "https://mcp.sentry.dev/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=sentry.io&sz=128"
+    },
+    {
+      "code": "vercel",
+      "label": "Vercel",
+      "description": "Projects, deployments and build logs on Vercel.",
+      "mcp_url": "https://mcp.vercel.com",
+      "image_url": "https://www.google.com/s2/favicons?domain=vercel.com&sz=128"
+    },
+    {
+      "code": "neon",
+      "label": "Neon",
+      "description": "Postgres databases on Neon — branches, queries and schema.",
+      "mcp_url": "https://mcp.neon.tech/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=neon.tech&sz=128"
+    },
+    {
+      "code": "prisma",
+      "label": "Prisma",
+      "description": "Prisma Postgres databases — schema, migrations and queries.",
+      "mcp_url": "https://mcp.prisma.io/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=prisma.io&sz=128"
+    },
+    {
+      "code": "cloudflare",
+      "label": "Cloudflare",
+      "description": "Your Cloudflare account — Workers and their bindings, D1 databases, KV, R2, DNS and the docs.",
+      "mcp_url": "https://mcp.cloudflare.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=cloudflare.com&sz=128"
+    },
+    {
+      "code": "paypal",
+      "label": "PayPal",
+      "description": "Invoices, orders, payments and disputes in your PayPal account.",
+      "mcp_url": "https://mcp.paypal.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=paypal.com&sz=128"
+    },
+    {
+      "code": "square",
+      "label": "Square",
+      "description": "Payments, catalog, orders and customers in your Square account.",
+      "mcp_url": "https://mcp.squareup.com/sse",
+      "image_url": "https://www.google.com/s2/favicons?domain=squareup.com&sz=128"
+    },
+    {
+      "code": "webflow",
+      "label": "Webflow",
+      "description": "Sites, CMS collections and items in your Webflow account.",
+      "mcp_url": "https://mcp.webflow.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=webflow.com&sz=128"
+    },
+    {
+      "code": "wix",
+      "label": "Wix",
+      "description": "Sites, stores and business data in your Wix account.",
+      "mcp_url": "https://mcp.wix.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=wix.com&sz=128"
+    },
+    {
+      "code": "gitlab",
+      "label": "GitLab",
+      "description": "Projects, issues and merge requests on GitLab, including the code inside them.",
+      "mcp_url": "https://gitlab.com/api/v4/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=gitlab.com&sz=128"
+    },
+    {
+      "code": "clickup",
+      "label": "ClickUp",
+      "description": "Tasks, lists, docs and spaces in your ClickUp workspace.",
+      "mcp_url": "https://mcp.clickup.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=clickup.com&sz=128"
+    },
+    {
+      "code": "miro",
+      "label": "Miro",
+      "description": "Boards in Miro — read what is on them and add to them.",
+      "mcp_url": "https://mcp.miro.com/",
+      "image_url": "https://www.google.com/s2/favicons?domain=miro.com&sz=128"
+    },
+    {
+      "code": "openrouter",
+      "label": "OpenRouter",
+      "description": "Models, pricing and usage on your OpenRouter account.",
+      "mcp_url": "https://mcp.openrouter.ai/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=openrouter.ai&sz=128"
+    },
+    {
+      "code": "postman",
+      "label": "Postman",
+      "description": "Collections, environments and APIs in your Postman workspaces.",
+      "mcp_url": "https://mcp.postman.com/minimal",
+      "image_url": "https://www.google.com/s2/favicons?domain=postman.com&sz=128"
+    },
+    {
+      "code": "globalping",
+      "label": "Globalping",
+      "description": "Network measurements from probes worldwide — ping, traceroute, DNS and HTTP checks.",
+      "mcp_url": "https://mcp.globalping.dev/mcp"
+    },
+
+    {
+      "code": "deepwiki",
+      "label": "DeepWiki",
+      "description": "Generated documentation for public GitHub repositories — structure, contents and questions about them. Needs no account.",
+      "mcp_url": "https://mcp.deepwiki.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=deepwiki.com&sz=128",
+      "auth": "open"
+    },
+    {
+      "code": "huggingface",
+      "label": "Hugging Face",
+      "description": "Models, datasets and Spaces on the Hugging Face Hub. Used anonymously, so rate limits apply.",
+      "mcp_url": "https://huggingface.co/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=huggingface.co&sz=128",
+      "auth": "open"
+    }
+  ]
+}

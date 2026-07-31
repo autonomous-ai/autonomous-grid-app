@@ -2,12 +2,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/connector_gateway_client.dart';
 import 'connector_blurb_fallback.dart';
+import 'self_serve_catalog.dart';
 
 /// How a catalog service is signed into.
 enum ConnectorAuthMethod {
   /// The connector signs in through Grid — the app opens a browser and the
   /// account is linked. Everything the API returns today is this.
   app,
+
+  /// The provider registers OAuth clients on demand (RFC 7591), so the app is
+  /// its own client and the gateway is not involved at all: no `client_secret`
+  /// held server-side, no token brokered, nothing to disconnect there.
+  ///
+  /// Comes from the bundled list in `self_serve_catalog.dart`, and from a
+  /// gateway row that says `auth_type: "dcr"`. Either way the claim is only a
+  /// starting point — the probe at Connect time is what decides whether the
+  /// server can actually be driven this way.
+  dcr,
+
+  /// The server asks for no credential at all. Connecting is just writing the
+  /// MCP entry into the agent's config — no browser, no token, nothing stored
+  /// in `tokens.json`, and nothing to expire.
+  ///
+  /// Same standing as [dcr]: a claim from the bundled list, settled by the
+  /// probe at Connect time.
+  open,
 
   /// The user brings their own MCP endpoint or key. Kept because the field is
   /// free text on the wire and an unknown value must not drop the row.
@@ -89,7 +108,9 @@ class ConnectorCatalogEntry {
   /// The provider issues refresh tokens, so `/refresh` is worth calling.
   final bool canRefresh;
 
-  /// Whether Connect is offered: the connector signs in through Grid.
+  /// Whether Connect is offered: the app has a sign-in flow it can drive for
+  /// this connector, whether that runs through the gateway ([app]) or entirely
+  /// on this machine ([dcr]).
   ///
   /// `mcpReady` deliberately does **not** gate this. It says the gateway has an
   /// MCP server wired up, which decides whether the *agent* gains a tool — not
@@ -97,7 +118,17 @@ class ConnectorCatalogEntry {
   /// credential is real, and the row says "No tools yet" afterwards until the
   /// backend catches up. Withholding the button instead made connectors the
   /// gateway plainly advertises as `auth_type: app` look broken.
-  bool get canConnectFromApp => authMethod == ConnectorAuthMethod.app;
+  bool get canConnectFromApp =>
+      authMethod == ConnectorAuthMethod.app || isSelfServe;
+
+  /// The app handles this connector end to end, without the gateway.
+  ///
+  /// Both routes start the same way — probe the server, then do what it says —
+  /// so this is the test `connectCatalog` branches on, rather than either value
+  /// on its own.
+  bool get isSelfServe =>
+      authMethod == ConnectorAuthMethod.dcr ||
+      authMethod == ConnectorAuthMethod.open;
 
   /// This entry with display text filled in, for the fields the gateway left
   /// empty — today only the derived label.
@@ -182,23 +213,37 @@ String labelFromCode(String code) {
 /// and `image_url` filled in; when one is missing the row degrades on its own —
 /// a name derived from the code, a glyph instead of a logo, no description line
 /// at all.
+///
+/// The one thing added to the gateway's list is [selfServeCatalogProvider] —
+/// connectors the app signs into without it. Those are not a fallback and do
+/// not soften the paragraph above: they carry no backend state to be stale
+/// about, they never displace a gateway row ([mergeCatalog]), and they keep
+/// working while the grid is unreachable because nothing in their flow touches
+/// it. An empty gateway is still an empty gateway; it just no longer takes
+/// Canva down with it.
 final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
   ref,
 ) async {
   final (remote, _) = await ref
       .watch(connectorGatewayClientProvider)
       .connectors();
-  if (remote == null) return const [];
-  return sortCatalog([
-    // Called unconditionally, not only for the rows missing something:
-    // `withPresentation` fills empty fields and nothing else, so the guard the
-    // label used to carry was a second copy of a rule already stated there —
-    // and it applied to the label alone, which is how the description came to
-    // have no fallback at all.
-    for (final entry in remote)
-      entry.withPresentation(
-        label: labelFromCode(entry.code),
-        description: connectorBlurbFallback(entry.code),
-      ),
-  ]);
+  final selfServe = await ref.watch(selfServeCatalogProvider.future);
+  return mergeCatalog(
+    gateway: [
+      // Called unconditionally, not only for the rows missing something:
+      // `withPresentation` fills empty fields and nothing else, so the guard the
+      // label used to carry was a second copy of a rule already stated there —
+      // and it applied to the label alone, which is how the description came to
+      // have no fallback at all.
+      //
+      // `remote ?? []` rather than an early return: a gateway we could not
+      // reach still leaves the self-serve rows, which never needed it.
+      for (final entry in remote ?? const <ConnectorCatalogEntry>[])
+        entry.withPresentation(
+          label: labelFromCode(entry.code),
+          description: connectorBlurbFallback(entry.code),
+        ),
+    ],
+    selfServe: selfServe,
+  );
 });

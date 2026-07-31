@@ -76,6 +76,29 @@ void main() {
         )!.firstWhere((e) => e.code == 'notion');
         expect(notion.canConnectFromApp, isTrue);
       });
+
+      test('a dcr connector is offered, and signs in without the gateway', () {
+        // The backend's way of saying "this one registers clients on demand —
+        // drive it yourself". It reaches the same place the bundled self-serve
+        // list does, so the backend can take a connector over from that file
+        // without an app release.
+        final canva = parseGatewayConnectors(
+          '{"connectors": [{"code": "canva", "auth_type": "dcr", '
+          '"mcp_url": "https://mcp.canva.com/mcp"}]}',
+        )!.single;
+        expect(canva.authMethod, ConnectorAuthMethod.dcr);
+        expect(canva.canConnectFromApp, isTrue);
+      });
+
+      test('an auth type this build has never heard of keeps its row', () {
+        // Free text on the wire. Falling back to `manual` leaves the row
+        // visible with an explanation, rather than inventing a flow for it.
+        final entry = parseGatewayConnectors(
+          '{"connectors": [{"code": "future", "auth_type": "device_code"}]}',
+        )!.single;
+        expect(entry.authMethod, ConnectorAuthMethod.manual);
+        expect(entry.canConnectFromApp, isFalse);
+      });
     });
 
     test('an unreadable body is null so the caller can fall back', () {
