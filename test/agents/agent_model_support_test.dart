@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agent/logic/hermes_grid_link.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_model_support.dart';
@@ -54,15 +55,21 @@ void main() {
       );
     });
 
-    test('Hermes answers with every seat, responses-only included — it switches '
-        'dialect per model, so no seat is closed to it', () {
+    test('Hermes answers with both CLI seats — they serve chat-completions, '
+        'which is the dialect it speaks', () {
       expect(agentSupportsModel(AgentTool.hermes, 'claude:opus'), isTrue);
       expect(agentSupportsModel(AgentTool.hermes, 'codex-cli:gpt-5.5'), isTrue);
-      // Refused up front until 31/07, on the strength of one Hermes build that
-      // answered the config with "Unknown provider 'grid'". A build too old for
-      // a connection is not a pair that can't work: the failure is humanized
-      // where it lands instead (see agent_server_error_test).
-      expect(agentSupportsModel(AgentTool.hermes, 'codex:gpt-5.5'), isTrue);
+    });
+
+    test("Hermes can't answer with a responses-only model: the shipped build "
+        'resolves no config for it, and its Responses client omits the flags '
+        'the relay requires', () {
+      expect(agentSupportsModel(AgentTool.hermes, 'codex:gpt-5.5'), isFalse);
+      // The same rule the config writer applies, so a greyed row and a written
+      // config can never disagree about a model.
+      expect(hermesModelRefusal('codex:gpt-5.5'), kHermesCannotServeCodexModel);
+      expect(hermesModelRefusal('codex-cli:gpt-5.5'), isNull);
+      expect(hermesModelRefusal('qwen3.6-27b'), isNull);
     });
 
     test(
@@ -103,10 +110,7 @@ void main() {
         AgentTool.hermes,
         AgentTool.claude,
       ]);
-      expect(agentsForModel('codex:gpt-5.5'), [
-        AgentTool.hermes,
-        AgentTool.codex,
-      ]);
+      expect(agentsForModel('codex:gpt-5.5'), [AgentTool.codex]);
       expect(agentsForModel('qwen3.6-27b'), AgentTool.values);
     });
 
@@ -155,21 +159,21 @@ void main() {
     });
   });
 
-  group('a grid that serves only Codex seat models', () {
-    test(
-      'leaves Hermes something to answer with, so a Claude Code user is not '
-      'stranded on it — Hermes is the agent that always has somewhere to go',
-      () {
-        final container = _gridServing(['codex:gpt-5.5']);
+  group('a grid that serves only the ChatGPT-subscription seat', () {
+    test('has something for Codex and nothing for the other two — the notice '
+        'in the assistant picker is the only warning before a dead turn', () {
+      final container = _gridServing(['codex:gpt-5.5']);
+      expect(
+        container.read(agentHasModelHereProvider(AgentTool.codex)),
+        isTrue,
+      );
+      for (final tool in [AgentTool.hermes, AgentTool.claude]) {
         expect(
-          container.read(agentHasModelHereProvider(AgentTool.hermes)),
-          isTrue,
-        );
-        expect(
-          container.read(agentHasModelHereProvider(AgentTool.claude)),
+          container.read(agentHasModelHereProvider(tool)),
           isFalse,
+          reason: '$tool has nothing to answer with here',
         );
-      },
-    );
+      }
+    });
   });
 }
