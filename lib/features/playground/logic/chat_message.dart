@@ -25,6 +25,7 @@ class ChatMessage {
     this.plan = const [],
     this.model,
     this.took,
+    this.firstToken,
   });
 
   final ChatRole role;
@@ -56,6 +57,17 @@ class ChatMessage {
   /// on the user's own turns, and on replies saved before this was recorded.
   final Duration? took;
 
+  /// How long until the first word of the reply appeared, measured from the same
+  /// start as [took].
+  ///
+  /// The half of "was that slow?" the total can't answer: a model that starts
+  /// writing in a second and takes twenty is usable, one that thinks for
+  /// nineteen and then dumps the same answer is not — and on an agent turn the
+  /// gap is the tool work it did before it had anything to say. Null when the
+  /// reply never streamed (a media turn, an answer that arrived whole) and on
+  /// replies saved before this was recorded.
+  final Duration? firstToken;
+
   ChatMessage copyWith({
     ChatRole? role,
     String? text,
@@ -64,6 +76,7 @@ class ChatMessage {
     List<AgentPlanEntry>? plan,
     String? model,
     Duration? took,
+    Duration? firstToken,
   }) => ChatMessage(
     role: role ?? this.role,
     text: text ?? this.text,
@@ -72,6 +85,7 @@ class ChatMessage {
     plan: plan ?? this.plan,
     model: model ?? this.model,
     took: took ?? this.took,
+    firstToken: firstToken ?? this.firstToken,
   );
 }
 

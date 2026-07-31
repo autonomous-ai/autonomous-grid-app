@@ -240,6 +240,64 @@ void main() {
   tearDown(() => tmp.delete(recursive: true));
 
   test(
+    'a streamed reply is timed twice — when it started answering and when '
+    'it finished — so the footer can tell a slow model from a slow start',
+    () async {
+      final h = _harness(
+        tmp,
+        updates: [
+          const ChatSendStreaming('Hel'),
+          const ChatSendStreaming('Hello there'),
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'Hello there'),
+          ),
+        ],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+
+      final reply = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single
+          .messages
+          .last;
+      // Real clocks, so the assertion is on the relationship, not the numbers:
+      // the first word can't land after the turn ended, and both are recorded.
+      expect(reply.firstToken, isNotNull);
+      expect(reply.took, isNotNull);
+      expect(reply.firstToken! <= reply.took!, isTrue);
+    },
+  );
+
+  test('a reply that never streamed carries no first-word time, rather than '
+      'one equal to the total', () async {
+    final h = _harness(
+      tmp,
+      updates: [
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+        ),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+
+    final reply = h.container
+        .read(chatSessionsProvider)
+        .conversations
+        .single
+        .messages
+        .last;
+    expect(reply.firstToken, isNull);
+    expect(reply.took, isNotNull);
+  });
+
+  test(
     'send creates a conversation, appends the reply and persists it',
     () async {
       final h = _harness(

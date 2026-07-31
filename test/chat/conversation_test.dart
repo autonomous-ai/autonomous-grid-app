@@ -120,6 +120,28 @@ void main() {
       expect(restored.messages.first.took, isNull);
     });
 
+    test('round-trips when the first word appeared, which is the half of "was '
+        'that slow?" the total cannot answer', () {
+      final original = _conversation(
+        messages: [
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'Hello!',
+            model: 'qwen/qwen3.6-27b',
+            took: Duration(milliseconds: 8400),
+            firstToken: Duration(milliseconds: 1200),
+          ),
+        ],
+      );
+
+      final restored = Conversation.fromJson(original.toJson());
+
+      expect(
+        restored.messages.single.firstToken,
+        const Duration(milliseconds: 1200),
+      );
+    });
+
     test('a chat saved before turns were timed reloads without one, rather '
         'than claiming it was instant', () {
       final json = _conversation(
