@@ -13,8 +13,27 @@ import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../agents/logic/agent_catalog.dart';
+import '../../agents/logic/agent_model_support.dart';
 import 'agent_skill_installer.dart';
 import 'hermes_tool.dart';
+
+/// The line shown instead of pointing Hermes at a model it can't serve — see
+/// [hermesModelRefusal].
+const String kHermesCannotServeCodexModel =
+    "The Hermes assistant can't answer with a Codex model. Switch the assistant "
+    'to Codex for this model, or pick a different model for Hermes.';
+
+/// Why the Hermes assistant can't be pointed at [model], or null when it can.
+///
+/// *Which* models is [agentSupportsModel]'s call, not this file's: the composer
+/// greys out the same ones, and a second opinion here is how a greyed row and a
+/// written config end up disagreeing. This is the guard for everything that
+/// doesn't go through the composer — a scheduled task, the bot — where a config
+/// Hermes can't read is a failure nobody is watching for.
+String? hermesModelRefusal(String model) =>
+    agentSupportsModel(AgentTool.hermes, model)
+    ? null
+    : kHermesCannotServeCodexModel;
 
 /// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
 /// `~/.hermes` when the target grid or model changes. ACP reads the model from
@@ -51,12 +70,13 @@ class HermesGridLink {
   /// when the grid or model changed). Returns null on success, else a
   /// user-facing error line.
   Future<String?> point(NetworkCredential network, String model) async {
-    // Every model the grid serves is written here, responses-only ones included:
-    // those get a named provider carrying `api_mode: codex_responses`, which is
-    // how Hermes speaks that dialect. A build too old to resolve that provider
-    // fails the turn with its own words, humanized where the failure lands
-    // ([friendlyAgentUnknownProvider]) — the app used to refuse the model up
-    // front instead, which spent everyone's Codex models on one old build.
+    // Turn a model Hermes can't serve away before touching the config. The
+    // composer already greys those out, but this is the choke point every *other*
+    // way of pointing Hermes goes through — a scheduled task following the
+    // model, the Telegram bot — and writing the config for one takes the
+    // scheduler down with it (see [_letTasksFollow]).
+    final refusal = hermesModelRefusal(model);
+    if (refusal != null) return refusal;
     final key = '${network.networkId}|$model';
     if (_ref.read(hermesConfiguredProvider) == key) return null;
     final result = await _ref.read(clientAppConfiguratorProvider).apply(

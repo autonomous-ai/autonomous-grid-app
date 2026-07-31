@@ -26,17 +26,24 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   AgentTool.codex => !_namesKind(model, const {kClaudeSeatKind}),
   // Claude Code speaks Anthropic's messages, which no Codex seat answers.
   AgentTool.claude => !_namesKind(model, kCodexSeatKinds),
-  // Hermes takes every model: it speaks chat-completions, and switches to the
-  // Responses dialect on a named provider when the model needs it (`api_mode:
-  // codex_responses` — see `hermesConfigSnippet`), so no seat is closed to it.
+  // Hermes speaks chat-completions and both CLI seats answer it — but not a
+  // responses-only model, which fails twice over on the Hermes that ships
+  // today (measured 31/07, v0.19.0):
   //
-  // It used to be refused a responses-only model, because Hermes v0.19.0
-  // answered that config with "Unknown provider 'grid'" and died. That was a
-  // build being too old for a connection the app writes correctly, not a pair
-  // that can't work — so the app offers it and says so if a build still can't
-  // (see [friendlyAgentUnknownProvider]) rather than closing the road for
-  // everyone.
-  AgentTool.hermes => true,
+  //  - the config it needs (`provider: grid` + `api_mode: codex_responses`) is
+  //    a shape this build can't resolve — `session/new` refuses with "No LLM
+  //    provider configured", so no turn ever starts;
+  //  - and pointed at the endpoint by a config it *does* resolve, its Responses
+  //    client still can't talk to the seat: the relay answers `/responses` only
+  //    with `stream: true` **and** `store: false`, and Hermes sends neither
+  //    ("Invalid API response after 3 retries"). The same request with both
+  //    flags answers in a second, so the seat is fine — the client isn't.
+  //
+  // TODO(BE): the relay is the shorter road — it knows the seat's constraint
+  // (it is the one returning `engine error 400: Store must be set to false`),
+  // so defaulting `store: false` on the way to a codex seat unblocks this for
+  // every client at once. Reopen this line when it does.
+  AgentTool.hermes => !isResponsesOnlyModel(model),
 };
 
 /// The agents that can answer with [model], in catalog order — who the user can
