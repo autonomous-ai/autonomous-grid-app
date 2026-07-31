@@ -73,6 +73,38 @@ AgentActivityStatus aggregateActivityStatus(List<AgentActivity> steps) {
   return AgentActivityStatus.done;
 }
 
+/// How many steps a folded run shows at once, and the length past which a run
+/// folds at all. A short run reads at a glance; a long one — an agent that opens
+/// three dozen files before it says a word — would otherwise push the answer,
+/// the plan and the "Thinking…" line off the screen entirely.
+const int kFoldedStepLimit = 5;
+
+/// The rows a folded run shows: what is running *now*, filled up to
+/// [kFoldedStepLimit] with the steps that ran most recently, in the order they
+/// ran.
+///
+/// Both halves are needed. Running-only goes blank between tool calls, so a
+/// thinking agent looks like it has done nothing; newest-only can bury a slow
+/// command under five quick reads that started after it and finished first. The
+/// cap is what makes it a summary: an agent may have thirty reads in flight at
+/// once, and thirty spinning rows say no more than five do.
+List<AgentActivity> foldedActivitySteps(List<AgentActivity> steps) {
+  if (steps.length <= kFoldedStepLimit) return steps;
+  final picked = <int>{};
+  // Newest first, so what fills the remaining room is the latest work.
+  void take(bool Function(AgentActivity step) wanted) {
+    for (var i = steps.length - 1; i >= 0; i--) {
+      if (picked.length == kFoldedStepLimit) return;
+      if (wanted(steps[i])) picked.add(i);
+    }
+  }
+
+  take((step) => step.status == AgentActivityStatus.running);
+  take((_) => true);
+  final order = picked.toList()..sort();
+  return List.unmodifiable([for (final i in order) steps[i]]);
+}
+
 /// The web pages the in-flight agent run has cited so far, deduplicated by url
 /// and kept in the order they were found. The "agent is working" bubble shows
 /// them live; `HermesChatSender` clears it at the start of each send, adds each
