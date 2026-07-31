@@ -12,8 +12,8 @@ import '../../auth/logic/session_controller.dart';
 import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
 import '../../network/logic/network_models_provider.dart';
-import '../../provider_node/logic/api_engine_catalog.dart';
 import '../../agents/logic/agent_catalog.dart';
+import '../../agents/logic/agent_model_support.dart';
 import 'agent_skill_installer.dart';
 import 'hermes_tool.dart';
 
@@ -31,8 +31,14 @@ const String kHermesCannotServeCodexModel =
 /// models are the Codex assistant's to serve, so pointing Hermes at one is
 /// refused up front with a line that names the fix, rather than a config that
 /// only ever fails.
+///
+/// The *which* is [agentSupportsModel]'s call, not this file's: the composer
+/// greys the same pairs out up front, and a second opinion here is how the two
+/// end up disagreeing about the model on screen.
 String? hermesModelRefusal(String model) =>
-    isResponsesOnlyModel(model) ? kHermesCannotServeCodexModel : null;
+    agentSupportsModel(AgentTool.hermes, model)
+    ? null
+    : kHermesCannotServeCodexModel;
 
 /// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
 /// `~/.hermes` when the target grid or model changes. ACP reads the model from

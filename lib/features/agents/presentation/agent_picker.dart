@@ -38,6 +38,24 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     _menu.close();
   }
 
+  /// Why [tool] can't answer on the open grid, or null when it can.
+  ///
+  /// Two different walls, said apart: the grid answers no dialect this agent
+  /// speaks at all, or it does but serves nothing this agent can be pointed at
+  /// (a grid of `claude:*` models with Codex in force). One wording for both
+  /// would send a user hunting for the wrong fix — the second clears the moment
+  /// they pick another model, the first only on another grid.
+  String? _unavailableNote(AgentTool tool) {
+    if (!ref.watch(agentRunsOnGridProvider(tool))) {
+      return 'Not available on this grid — pick borrows chat until a grid '
+          'that runs it.';
+    }
+    if (!ref.watch(agentHasModelHereProvider(tool))) {
+      return 'No model on this grid it can answer with.';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
@@ -67,9 +85,7 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
           _AgentItem(
             tool: tool,
             selected: tool == active,
-            // An installed agent this grid serves no model for still shows, but
-            // says so — picking it borrows the chat until a grid that can run it.
-            runsHere: ref.watch(agentRunsOnGridProvider(tool)),
+            unavailable: _unavailableNote(tool),
             onTap: () => _select(tool),
           ),
       ],
@@ -83,19 +99,25 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
   }
 }
 
-/// One agent row: its mark, its name and one-line tagline, a "not on this grid"
-/// note when it can't run here, and a tick when it's the one answering.
+/// One agent row: its mark, its name and one-line tagline, the reason it can't
+/// answer here when there is one, and a tick when it's the one answering.
 class _AgentItem extends StatelessWidget {
   const _AgentItem({
     required this.tool,
     required this.selected,
-    required this.runsHere,
+    required this.unavailable,
     required this.onTap,
   });
 
   final AgentTool tool;
   final bool selected;
-  final bool runsHere;
+
+  /// Why this agent can't answer on the open grid — shown in place of the
+  /// tagline, in the warning tone. Null whenever it can, which is the common
+  /// case. An installed agent is still offered either way: picking it borrows
+  /// the chat until a grid that can run it.
+  final String? unavailable;
+
   final VoidCallback onTap;
 
   @override
@@ -144,14 +166,11 @@ class _AgentItem extends StatelessWidget {
                     ),
                     const SizedBox(height: 1),
                     Text(
-                      runsHere
-                          ? tool.tagline
-                          : "Not available on this grid — pick borrows chat "
-                                "until a grid that runs it.",
+                      unavailable ?? tool.tagline,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: runsHere
+                        color: unavailable == null
                             ? AppPalette.textSecondary
                             : AppPalette.warn,
                         fontSize: 11.5,
