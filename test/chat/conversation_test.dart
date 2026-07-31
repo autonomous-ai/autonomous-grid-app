@@ -100,6 +100,43 @@ void main() {
       expect(restored.messages.first.model, isNull);
     });
 
+    test('round-trips how long the answer took, so a reopened chat still says '
+        'which model was slow and which was not', () {
+      final original = _conversation(
+        messages: [
+          const ChatMessage(role: ChatRole.user, text: 'hi'),
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'Hello!',
+            model: 'qwen/qwen3.6-27b',
+            took: Duration(milliseconds: 8400),
+          ),
+        ],
+      );
+
+      final restored = Conversation.fromJson(original.toJson());
+
+      expect(restored.messages.last.took, const Duration(milliseconds: 8400));
+      expect(restored.messages.first.took, isNull);
+    });
+
+    test('a chat saved before turns were timed reloads without one, rather '
+        'than claiming it was instant', () {
+      final json = _conversation(
+        messages: [
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'Hello!',
+            model: 'qwen',
+          ),
+        ],
+      ).toJson();
+
+      final restored = Conversation.fromJson(json);
+
+      expect(restored.messages.single.took, isNull);
+    });
+
     test(
       'round-trips an agent turn with its to-do plan and each step status',
       () {

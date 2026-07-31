@@ -58,6 +58,9 @@ class ChatController extends Notifier<ChatState> {
           localBaseUrl: localBaseUrl,
         );
 
+    // How long the answer takes, shown beside the model under the reply.
+    final clock = Stopwatch()..start();
+
     // Fold updates through a stored subscription rather than `await for`, so
     // closing the dialog ([clear]) can cancel it — a late update must never
     // resurrect a closed dialog's transcript (or leave the input locked).
@@ -81,7 +84,7 @@ class ChatController extends Notifier<ChatState> {
             state = ChatState(
               messages: [
                 ...history,
-                reply.copyWith(model: model),
+                reply.copyWith(model: model, took: clock.elapsed),
               ],
             );
           case ChatSendFailure(:final error, :final partial):
@@ -98,7 +101,8 @@ class ChatController extends Notifier<ChatState> {
             state = ChatState(
               messages: [
                 ...history,
-                if (kept != null) kept.copyWith(model: model),
+                if (kept != null)
+                  kept.copyWith(model: model, took: clock.elapsed),
               ],
               error: error,
             );

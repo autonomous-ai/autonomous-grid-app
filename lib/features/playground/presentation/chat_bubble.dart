@@ -56,7 +56,7 @@ class ChatBubble extends StatelessWidget {
               ],
               if (message.model != null) ...[
                 const SizedBox(height: 8),
-                _ModelTag(model: message.model!),
+                _ModelTag(model: message.model!, took: message.took),
               ],
             ],
           ),
@@ -96,17 +96,26 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
-/// A quiet footer under an assistant reply naming the model that produced it —
-/// the bare model name, so the transcript says which one spoke without shouting
-/// it. Faint by design: it's a caption on the answer, not part of it.
+/// A quiet footer under an assistant reply: which model produced it, and how
+/// long it took. Faint by design — it's a caption on the answer, not part of it.
+///
+/// The two belong together. On a grid the same prompt is seconds on one
+/// machine and minutes on another, so the model name alone leaves "why was that
+/// slow?" unanswerable; the time beside it makes switching models an informed
+/// choice rather than a guess.
 class _ModelTag extends StatelessWidget {
-  const _ModelTag({required this.model});
+  const _ModelTag({required this.model, this.took});
 
   final String model;
+
+  /// How long the answer took, or null on a reply saved before the app recorded
+  /// it — those keep the plain model name rather than claiming an unknown time.
+  final Duration? took;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads AppPalette tokens — follow theme flips.
+    final style = TextStyle(fontSize: 11.5, color: AppPalette.textFaint);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -116,14 +125,22 @@ class _ModelTag extends StatelessWidget {
           color: AppPalette.textFaint,
         ),
         const SizedBox(width: 5),
+        // The model can ellipsis; the time can't. A long model id on a narrow
+        // window has to give way to the number, not swallow it.
         Flexible(
           child: Text(
             modelShortLabel(model),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11.5, color: AppPalette.textFaint),
+            style: style,
           ),
         ),
+        if (took != null) ...[
+          const SizedBox(width: 6),
+          Text('·', style: style),
+          const SizedBox(width: 6),
+          Text(formatTurnDuration(took!), style: style),
+        ],
       ],
     );
   }
