@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../../infrastructure/cli/hermes_acp_setup.dart';
+import '../../network/logic/app_guide_snippets.dart';
 
 /// A turn that ended with nothing to show. Shared by every agent so a silent
 /// Hermes and a silent Codex read the same to the user.
@@ -41,29 +42,42 @@ String agentLoopingMessage(String target) =>
 const String kAgentSetupUnfinished =
     "Grid couldn't finish setting up the assistant on this computer.";
 
+/// A turn that ended in the assistant's own error, with nothing streamed and no
+/// reason we recognise. Says the turn failed rather than that the agent had
+/// nothing to say ([kAgentNoAnswer]) — the two look identical in the chat and
+/// have different fixes. The raw reason is logged where it arrives.
+const String kAgentTurnFailed =
+    "The assistant couldn't answer that. Try sending again, or pick another "
+    'model.';
+
 /// The assistant couldn't read the connection Grid wrote for the model it was
 /// pointed at.
 ///
-/// Hermes says it as `Unknown provider 'grid'. Check 'hermes model' …` — an auth
-/// error raised while resolving the model, which kills the turn wherever it runs
-/// (chat, a scheduled task, Telegram). It comes from a build too old for the
-/// named-provider config a responses-only model needs, not from the model being
-/// wrong for the assistant, so the line names both levers: update, or pick
-/// something else. Its own constant because the app *used* to head this off by
-/// refusing those models outright, which cost every user the pairing to protect
-/// the few on an old build.
+/// Hermes says it two ways, both meaning the same thing: `Unknown provider
+/// 'grid'. Check 'hermes model' …` when it reads the provider and doesn't know
+/// it, and `No LLM provider configured. Run 'hermes model' …` when it refuses a
+/// session over it. Either kills every turn — chat, a scheduled task, Telegram —
+/// on a build too old for the named-provider config a responses-only model
+/// needs. The model is the thing the user can change, so the line names both
+/// levers: update, or pick something else.
 const String kAgentProviderUnknown =
     "The assistant didn't recognise the connection Grid set up for that model. "
     'Update it on the Agents screen, or pick another model.';
 
 /// [kAgentProviderUnknown] when [raw] is that failure, else null — so the
-/// startup path and the reply path can both catch it without either owning the
-/// wording. Matches on the provider name the app writes, so an assistant
-/// complaining about some *other* provider still keeps its own words.
-String? friendlyAgentUnknownProvider(String raw) =>
-    raw.toLowerCase().contains("unknown provider 'grid'")
-    ? kAgentProviderUnknown
-    : null;
+/// handshake path and the turn path can both catch it without either owning the
+/// wording.
+///
+/// Matched on the provider name the app itself writes, and on Hermes's
+/// "no provider configured" refusal: an assistant complaining about some *other*
+/// provider is a different problem and keeps its own words.
+String? friendlyAgentUnknownProvider(String raw) {
+  final lower = raw.toLowerCase();
+  final unusable =
+      lower.contains("unknown provider '$kHermesGridProviderKey'") ||
+      lower.contains('no llm provider configured');
+  return unusable ? kAgentProviderUnknown : null;
+}
 
 /// A plain line for why the assistant on *this computer* wouldn't start, from
 /// the raw reason it left on stderr as it died.
