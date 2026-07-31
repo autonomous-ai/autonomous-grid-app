@@ -143,7 +143,9 @@ void main() {
     ]) {
       final dir = Directory('${home.path}/$leaked/scripts');
       await dir.create(recursive: true);
-      await File('${dir.path}/generate.py').writeAsString('API_KEY = "eyJleak"');
+      await File(
+        '${dir.path}/generate.py',
+      ).writeAsString('API_KEY = "eyJleak"');
     }
 
     await installHermes();
@@ -151,8 +153,9 @@ void main() {
     // Nothing writes creative/ any more, so what's there is stale and would be
     // read beside the current copy as a second skill of the same name.
     expect(
-      Directory('${home.path}/.hermes/skills/creative/grid-image-gen')
-          .existsSync(),
+      Directory(
+        '${home.path}/.hermes/skills/creative/grid-image-gen',
+      ).existsSync(),
       isFalse,
       reason: 'the superseded creative/ copy must be gone',
     );
