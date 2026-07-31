@@ -41,6 +41,11 @@ void main() {
         skillSharerProvider.overrideWithValue(SkillSharer(home: home.path)),
       ],
     );
+    // Both skills providers auto-dispose, and nothing here is a widget: without
+    // a listener the notifier is gone the moment its first read completes, and
+    // every write after that would run on a disposed Ref — a test artefact, not
+    // what the app does with the screen open.
+    c.listen(skillsProvider, (_, _) {});
     addTearDown(c.dispose);
     return c;
   }
@@ -64,13 +69,14 @@ void main() {
           );
 
       expect(error, isNull);
-      final skills = c.read(skillsProvider).value!;
-      expect(skills.single.name, 'weekly-report');
-      expect(skills.single.isMine, isTrue);
+      // A write lands the screen on the folder the skill was given to, which
+      // rebuilds the list — so the fresh read is the one to assert on.
+      final skills = await c.read(skillsProvider.future);
+      expect(skills.map((s) => s.name), contains('weekly-report'));
     },
   );
 
-  test('edit under a new name moves the folder', () async {
+  test('edit under a new name moves the folder in the store', () async {
     final c = container();
     await c.read(skillsProvider.future);
     final notifier = c.read(skillsProvider.notifier);
@@ -79,6 +85,10 @@ void main() {
       description: 'd',
       instructions: 'i',
     );
+    // The write landed the screen on Hermes's folder (its copy). The rename is
+    // about the original, so read the store back.
+    c.read(skillSourceProvider.notifier).select(SkillSource.store);
+    await c.read(skillsProvider.future);
 
     final error = await notifier.edit(
       previousPath: '${home.path}/.grid/skills/$kUserSkillsDir/old-name',
@@ -88,7 +98,10 @@ void main() {
     );
 
     expect(error, isNull);
-    expect(c.read(skillsProvider).value!.map((s) => s.name), ['new-name']);
+    expect(
+      (await c.read(skillsProvider.future)).map((s) => s.name),
+      contains('new-name'),
+    );
     expect(
       Directory(
         '${home.path}/.grid/skills/$kUserSkillsDir/old-name',
@@ -111,7 +124,7 @@ void main() {
     final error = await notifier.delete(skill);
 
     expect(error, isNull);
-    expect(c.read(skillsProvider).value, isEmpty);
+    expect(await c.read(skillsProvider.future), isEmpty);
     expect(Directory(skill.path).existsSync(), isFalse);
   });
 
@@ -131,10 +144,14 @@ void main() {
     final error = await c.read(skillsProvider.notifier).delete(foreign);
 
     expect(error, isNotNull);
-    expect(error, contains("Couldn't save the skill"));
+    // The writer's own sentence, in the user's words — not "Couldn't save the
+    // skill: Invalid argument(s)" with a temp path stapled to it.
+    expect(error, contains("isn't in one of Grid's skill folders"));
+    expect(error, isNot(contains(home.path)));
   });
 
-  test('creating a skill points the agent at the shared store', () async {
+  test('a new skill reaches the agent as a copy, and never by pointing it at '
+      'the whole library', () async {
     final c = container();
     await c.read(skillsProvider.future);
 
@@ -142,15 +159,24 @@ void main() {
         .read(skillsProvider.notifier)
         .create(name: 'Anything', description: 'd', instructions: 'i');
 
-    final config = File('${home.path}/.hermes/config.yaml');
-    expect(config.existsSync(), isTrue);
-    expect(config.readAsStringSync(), contains('~/.grid/skills'));
-
-    // And the skill itself landed in the shared store, not the agent's own.
+    // The original belongs to the app's own store, which no agent reads
+    // wholesale: an entry for it in `external_dirs` would make every skill in
+    // the library live for Hermes, given to it or not.
     expect(
       Directory(
         '${home.path}/.grid/skills/$kUserSkillsDir/anything',
       ).existsSync(),
+      isTrue,
+    );
+    final config = File('${home.path}/.hermes/config.yaml');
+    expect(
+      config.existsSync() ? config.readAsStringSync() : '',
+      isNot(contains('~/.grid/skills')),
+    );
+
+    // What the agent gets is one copy, in its own folder.
+    expect(
+      Directory('${home.path}/.hermes/skills/anything').existsSync(),
       isTrue,
     );
   });
@@ -162,7 +188,7 @@ void main() {
     final error = await c.read(skillsProvider.notifier).reinstallGridSkills();
 
     expect(error, isNull);
-    final skills = c.read(skillsProvider).value!;
+    final skills = await c.read(skillsProvider.future);
     final names = skills.map((s) => s.name).toList();
     expect(names, contains('grid-image-gen'));
     expect(names, contains('grid-video-gen'));
@@ -178,19 +204,21 @@ void main() {
       ).writeAsString('---\nname: $name\ndescription: d\n---\n');
     }
 
-    test('picking an agent reads that agent\'s own folder instead', () async {
+    test('each pill reads that folder and no other — the screen opens on the '
+        'chat assistant\'s own', () async {
       await writeSkill('.grid/skills/$kUserSkillsDir/mine', 'mine');
       await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
       await writeSkill('.codex/skills/review-pr', 'review-pr');
       final c = container();
 
-      expect((await c.read(skillsProvider.future)).map((s) => s.name), [
-        'mine',
-      ]);
-
-      c.read(skillSourceProvider.notifier).select(SkillSource.hermes);
+      // Hermes by default: the agent the app installs and chats through.
       expect((await c.read(skillsProvider.future)).map((s) => s.name), [
         'apple-notes',
+      ]);
+
+      c.read(skillSourceProvider.notifier).select(SkillSource.store);
+      expect((await c.read(skillsProvider.future)).map((s) => s.name), [
+        'mine',
       ]);
 
       c.read(skillSourceProvider.notifier).select(SkillSource.codex);
@@ -199,12 +227,14 @@ void main() {
       ]);
     });
 
-    test('writing a skill while reading an agent\'s folder lands in the store '
-        'and takes the screen back there — otherwise it looks like the skill '
-        'vanished', () async {
+    test('a new skill is kept in the store and shown on the folder of the '
+        'assistant it was given to — otherwise it looks like it vanished',
+        () async {
       await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
       final c = container();
-      c.read(skillSourceProvider.notifier).select(SkillSource.hermes);
+      // Reading the store when the write happens, so the landing has somewhere
+      // to move the screen to.
+      c.read(skillSourceProvider.notifier).select(SkillSource.store);
       await c.read(skillsProvider.future);
 
       final error = await c
@@ -212,10 +242,14 @@ void main() {
           .create(name: 'Weekly report', description: 'd', instructions: 'i');
 
       expect(error, isNull);
-      expect(c.read(skillSourceProvider), SkillSource.store);
-      expect((await c.read(skillsProvider.future)).map((s) => s.name), [
-        'weekly-report',
-      ]);
+      // Hermes is the default recipient, so that is the folder to show.
+      expect(c.read(skillSourceProvider), SkillSource.hermes);
+      expect(
+        (await c.read(skillsProvider.future)).map((s) => s.name),
+        containsAll(['apple-notes', 'weekly-report']),
+      );
+      // The original stays in the app's own store — the copy is what the agent
+      // reads.
       expect(
         Directory(
           '${home.path}/.grid/skills/$kUserSkillsDir/weekly-report',

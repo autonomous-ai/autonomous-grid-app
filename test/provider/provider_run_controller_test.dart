@@ -198,7 +198,8 @@ void main() {
     },
   );
 
-  test('non-zero exit surfaces a failure', () async {
+  test('a consumer-only grid says what to do about it, not what the relay '
+      'said', () async {
     final fake = FakeGridCliService()
       ..stubStart(
         _args,
@@ -221,7 +222,11 @@ void main() {
 
     final state = container.read(providerRunControllerProvider);
     expect(state, isA<ProviderRunFailed>());
-    expect((state as ProviderRunFailed).message, contains('scope'));
+    final message = (state as ProviderRunFailed).message;
+    expect(message, contains('only its providers can'));
+    // "token has no provider scope" is the relay's sentence, not one anybody
+    // can act on; it stays in the command log (§6).
+    expect(message, isNot(contains('scope')));
   });
 
   test(

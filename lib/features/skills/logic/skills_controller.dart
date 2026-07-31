@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_skill.dart';
@@ -169,6 +170,9 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
   Future<String?> _landed(String? failure, Directory? dir) async {
     if (failure != null) return failure;
     if (dir == null) return null;
+    // The write is done and the skill is on disk; if the screen went away while
+    // it ran there is nobody left to move to its folder (see [_reread]).
+    if (!ref.mounted) return null;
     final target = ref.read(skillTargetProvider);
     // Show the assistant that just got it. "All agents" has no one tab, so it
     // leaves the screen where it was.
@@ -184,8 +188,24 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
       return 'Saved, but couldn\'t give it to ${target.label}: $error';
     } finally {
       _changed();
+      // Re-read *after* the copy lands. Switching to the agent's tab above
+      // starts a read of that folder while the copy is still being written, so
+      // without this the screen arrives on the right tab and shows everything
+      // except the skill just added — exactly the "it vanished" this landing
+      // exists to prevent.
+      await _refreshList();
     }
     return null;
+  }
+
+  /// Re-read whatever folder the screen is on now. For the changes that don't
+  /// go through [_write] — a copy handed to an agent — where the folder on
+  /// screen may also have changed in between.
+  Future<void> _refreshList() async {
+    if (!ref.mounted) return;
+    final plane = _plane;
+    if (plane == null) return;
+    await _reread(plane, _source);
   }
 
   /// Undo an install: take the skill away from the assistants currently
@@ -244,20 +264,25 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
   }
 
   /// Re-read which assistant holds what. There is no record to keep in step —
-  /// the folders are the record — so this is the whole of it.
-  void _changed() => ref.invalidate(agentSkillNamesProvider);
+  /// the folders are the record — so this is the whole of it. A no-op once this
+  /// notifier is gone: the folders are still right, and there is no list left
+  /// to redraw (see [_reread]).
+  void _changed() {
+    if (ref.mounted) ref.invalidate(agentSkillNamesProvider);
+  }
 
   /// Rewrite the skills Grid ships for this agent and re-read the folder.
   /// Idempotent — also the fix for a skill deleted by mistake.
   Future<String?> reinstallGridSkills() async {
     final plane = _plane;
     if (plane == null) return _noSkills;
+    final source = _source;
     try {
       await plane.installGridSkills();
     } on Object catch (error) {
       return "Couldn't install Grid's skills: $error";
     }
-    state = AsyncData(await plane.list(_source));
+    await _reread(plane, source);
     return null;
   }
 
@@ -268,6 +293,10 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
     final plane = _plane;
     final writer = plane?.writer;
     if (plane == null || writer == null) return _noSkills;
+    // Read the folder before the first await. This notifier is auto-disposed,
+    // and a write outlives it easily — the screen closed on a save, the pill
+    // switched — after which a Ref throws rather than answering.
+    final source = _source;
     try {
       // Close the old shortcut first: an agent still reading the library would
       // pick this skill up without anyone giving it to them.
@@ -278,13 +307,35 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
     } on ArgumentError catch (error) {
       // The writer's own refusals — a folder that isn't a skill, a name already
       // taken — are written for the user. Wrapping them in "Couldn't save" only
-      // buries the sentence that says what to do.
+      // buries the sentence that says what to do. The raw error, path included,
+      // still goes to the log: a sentence the user just read diagnoses nothing
+      // on its own (§6).
+      _log('refused a skill write: $error');
       return '${error.message}';
     } on Object catch (error) {
+      _log('a skill write failed: $error');
       return "Couldn't save the skill: $error";
     }
-    state = AsyncData(await plane.list(_source));
+    await _reread(plane, source);
     return null;
+  }
+
+  /// Re-read [source] into [state] after a write that changed it.
+  ///
+  /// Silently does nothing once this notifier is gone: the write itself
+  /// succeeded, and there is no longer a screen to show the new list on. Left
+  /// unguarded, a save the user closed the screen on threw instead — a Ref
+  /// after dispose — and took the turn down with it.
+  Future<void> _reread(AgentSkillsPlane plane, SkillSource source) async {
+    final skills = await plane.list(source);
+    if (!ref.mounted) return;
+    state = AsyncData(skills);
+  }
+
+  /// Best-effort diagnostics — skipped once this notifier is gone, like every
+  /// other Ref read here.
+  void _log(String line) {
+    if (ref.mounted) ref.read(appLogProvider).warn('skills', line);
   }
 
   /// The folder the screen is on right now. Read, never watched: a re-read

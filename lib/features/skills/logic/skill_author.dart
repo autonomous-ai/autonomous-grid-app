@@ -180,11 +180,21 @@ class SkillAuthor implements SkillWriter {
     for (final source in SkillSource.values) source.root(_home).path,
   ];
 
+  /// [action] is the verb the sentence needs ("change", "delete") — the refusal
+  /// is read by whoever pressed the button, so it says what didn't happen in
+  /// their words. The path stays out of it: it's a temp-looking absolute path
+  /// that answers nothing for them, and the controller logs the raw case.
   void _guard(String path, String action) {
     final inside = _writableRoots.any((root) => path.startsWith('$root/'));
     if (!inside) {
-      throw ArgumentError(
-        'Refusing to $action outside the skill folders: $path',
+      // The path rides along as the invalid value rather than in the sentence:
+      // the controller logs the whole error, so the case stays diagnosable
+      // without putting a temp path in front of the user (§6).
+      throw ArgumentError.value(
+        path,
+        'path',
+        "This skill isn't in one of Grid's skill folders, so it can't be "
+            '${action}d from here.',
       );
     }
   }

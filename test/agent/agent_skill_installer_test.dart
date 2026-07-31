@@ -116,44 +116,56 @@ void main() {
     );
   });
 
-  test('points Hermes at the store before writing into it — skills it '
-      'cannot see are not installed', () async {
+  test('takes the library back out of Hermes\'s config — a skill reaches an '
+      'agent as a copy it was given, not because the whole store is on its '
+      'path', () async {
+    final config = File('${home.path}/.hermes/config.yaml');
+    await config.parent.create(recursive: true);
+    // What an older build wrote, and what this one has to undo wherever it
+    // lands: with it in place Hermes read every skill in the library, given to
+    // it or not, beside the copies the app did make.
+    await config.writeAsString(
+      'skills:\n  external_dirs:\n    - ~/.grid/skills\n    - ~/work/mine\n',
+    );
+
     await installHermes();
 
-    final config = File('${home.path}/.hermes/config.yaml');
-    expect(config.existsSync(), isTrue);
-    expect(config.readAsStringSync(), contains('~/.grid/skills'));
+    expect(config.readAsStringSync(), isNot(contains('~/.grid/skills')));
+    // An entry the user added by hand is theirs, and stays.
+    expect(config.readAsStringSync(), contains('~/work/mine'));
   });
 
-  test(
-    'removes leaked prototypes under the creative/ and skills root',
-    () async {
-      for (final leaked in const [
-        '.hermes/skills/creative/grid-image-gen',
-        '.hermes/skills/grid-video-gen',
-      ]) {
-        final dir = Directory('${home.path}/$leaked/scripts');
-        await dir.create(recursive: true);
-        await File(
-          '${dir.path}/generate.py',
-        ).writeAsString('API_KEY = "eyJleak"');
-      }
+  test('removes the leaked prototypes under creative/, and overwrites the one '
+      'sitting where a copy goes today', () async {
+    for (final leaked in const [
+      '.hermes/skills/creative/grid-image-gen',
+      '.hermes/skills/grid-video-gen',
+    ]) {
+      final dir = Directory('${home.path}/$leaked/scripts');
+      await dir.create(recursive: true);
+      await File('${dir.path}/generate.py').writeAsString('API_KEY = "eyJleak"');
+    }
 
-      await installHermes();
+    await installHermes();
 
-      for (final leaked in const [
-        '.hermes/skills/creative/grid-image-gen',
-        '.hermes/skills/grid-video-gen',
-      ]) {
-        expect(
-          Directory('${home.path}/$leaked').existsSync(),
-          isFalse,
-          reason: '$leaked must be gone',
-        );
-      }
-      expect(script('grid-image-gen').existsSync(), isTrue);
-    },
-  );
+    // Nothing writes creative/ any more, so what's there is stale and would be
+    // read beside the current copy as a second skill of the same name.
+    expect(
+      Directory('${home.path}/.hermes/skills/creative/grid-image-gen')
+          .existsSync(),
+      isFalse,
+      reason: 'the superseded creative/ copy must be gone',
+    );
+    // The root copy is where install writes today: it must survive the cleanup
+    // — deleting it left Hermes with no image or video skill at all — and be
+    // rewritten, key and all.
+    final rewritten = File(
+      '${home.path}/.hermes/skills/grid-video-gen/scripts/generate.py',
+    );
+    expect(rewritten.existsSync(), isTrue);
+    expect(rewritten.readAsStringSync(), isNot(contains('eyJleak')));
+    expect(script('grid-image-gen').existsSync(), isTrue);
+  });
 
   test('is idempotent — a second install keeps both skills', () async {
     await installHermes();
