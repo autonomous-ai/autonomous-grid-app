@@ -8,7 +8,9 @@ import '../../../../shared/widgets/toast.dart';
 import '../../../../shared/widgets/extension_list.dart';
 import '../../../../shared/widgets/extension_tile_surface.dart';
 import '../../../../shared/widgets/app_spinner.dart';
+import '../../../agents/logic/connector_runtime.dart';
 import '../../../agents/logic/mcp_server.dart';
+import '../../../agents/logic/rest_entry.dart';
 import '../../logic/connector.dart';
 import '../../logic/connector_catalog.dart';
 import '../../logic/connector_link_controller.dart';
@@ -430,6 +432,17 @@ class _McpRowState extends ConsumerState<_McpRow> {
   /// store proves the app put the entry there.
   bool get _isLinkedConnector => widget.connector.token != null;
 
+  /// This row's server is the app's own loopback bridge, not the provider.
+  ///
+  /// Asked of the transport rather than of the URL, so a local MCP server the
+  /// user configured by hand keeps showing its address — that one is theirs and
+  /// the address is the point.
+  bool get _servedByBridge {
+    final token = widget.connector.token;
+    return token != null &&
+        effectiveTransport(token) == ConnectorTransport.rest;
+  }
+
   /// Hand back the credential, which also clears the config entry.
   ///
   /// Deliberately the connector's disconnect rather than
@@ -517,6 +530,7 @@ class _McpRowState extends ConsumerState<_McpRow> {
               name: widget.connector.name,
               server: server,
               signedIn: _isLinkedConnector,
+              hideAddress: _servedByBridge,
             ),
           ),
           const SizedBox(width: 8),
@@ -567,7 +581,16 @@ class _McpInfo extends StatelessWidget {
     required this.name,
     required this.server,
     this.signedIn = false,
+    this.hideAddress = false,
   });
+
+  /// Suppress the address line for a server the app itself is hosting.
+  ///
+  /// Decided by the caller from the connector's *transport*, not by matching
+  /// `127.0.0.1` in the URL: a user is perfectly entitled to configure their own
+  /// local MCP server by hand, and that one's address is exactly what they need
+  /// to see.
+  final bool hideAddress;
 
   /// What the user reads.
   ///
@@ -622,22 +645,31 @@ class _McpInfo extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 4),
         // One line, like the plugin and skill rows — a stdio server's command
         // line with its args is long, and wrapping it to two made the MCP rows
         // taller than everything else in the app.
-        Tooltip(
-          message: mcpServerSummary(server),
-          waitDuration: const Duration(milliseconds: 600),
-          child: Text(
-            mcpServerSummary(server),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppPalette.textSecondary,
+        //
+        // Dropped entirely for a bridge-backed connector. The line exists so two
+        // servers can be told apart at a glance, and
+        // `http://127.0.0.1:61755/c/gmail/mcp` does the opposite: it is this
+        // app's own loopback plumbing, it changes when the port does, and it
+        // says nothing about Gmail. Better an empty space than an address the
+        // user could only be confused by.
+        if (!hideAddress) ...[
+          const SizedBox(height: 4),
+          Tooltip(
+            message: mcpServerSummary(server),
+            waitDuration: const Duration(milliseconds: 600),
+            child: Text(
+              mcpServerSummary(server),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppPalette.textSecondary,
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
