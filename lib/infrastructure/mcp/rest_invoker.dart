@@ -155,14 +155,25 @@ class RestInvoker {
   }
 
   Uri _buildUri(RestRequest request, Map<String, Object?> arguments) {
-    final url = _substitute(request.url, arguments);
+    // Percent-encoded, because a value substituted into the *path* is the one
+    // place an argument can change the shape of the request rather than its
+    // content: `../../` or a bare `?` would otherwise walk to a different
+    // endpoint entirely. These arguments are filled in by a language model from
+    // a sentence, so they are untrusted by construction. Query values are left
+    // alone — `Uri.replace` encodes those itself, and double-encoding would
+    // send `%2540`.
+    final url = _substitute(request.url, arguments, urlSafe: true);
     final uri = Uri.parse(url);
     if (request.query.isEmpty) return uri;
     return uri.replace(
       queryParameters: {
         ...uri.queryParameters,
         for (final entry in request.query.entries)
-          entry.key: _substitute(entry.value, arguments),
+          // An optional parameter the model left out must be *absent*, not
+          // empty. `timeMin=` is a 400 from Google; no `timeMin` at all is the
+          // documented default. Required ones were already checked in [call].
+          if (_substitute(entry.value, arguments).isNotEmpty)
+            entry.key: _substitute(entry.value, arguments),
       },
     );
   }
@@ -197,11 +208,15 @@ class RestInvoker {
   /// A placeholder with no argument becomes empty rather than staying literal:
   /// an optional parameter left out must not send the provider the four
   /// characters `{cc}`.
-  String _substitute(String template, Map<String, Object?> arguments) =>
-      template.replaceAllMapped(RegExp(r'\{(\w+)\}'), (match) {
-        final value = arguments[match.group(1)];
-        return value == null ? '' : '$value';
-      });
+  String _substitute(
+    String template,
+    Map<String, Object?> arguments, {
+    bool urlSafe = false,
+  }) => template.replaceAllMapped(RegExp(r'\{(\w+)\}'), (match) {
+    final value = arguments[match.group(1)];
+    if (value == null) return '';
+    return urlSafe ? Uri.encodeComponent('$value') : '$value';
+  });
 
   void close() => _client.close(force: true);
 }
