@@ -1,4 +1,6 @@
+import 'connector_runtime.dart';
 import 'connector_token.dart';
+import 'rest_entry.dart';
 
 /// How one agent records that a configured MCP server belongs to Grid.
 ///
@@ -41,14 +43,20 @@ class InEntryMarker implements MarkerStrategy {
   /// The key added to every entry this app writes. `_grid` for Hermes.
   final String key;
 
+  /// The entry's marker never depends on *how* the connector is reached.
+  ///
+  /// It used to read straight off `mcpEntry`, which was fine while that was the
+  /// only way in and a null-pointer the moment a REST-backed connector arrived.
+  /// The gateway's entry is still preferred where it has an opinion, so the
+  /// bytes written for existing connectors do not move.
   @override
   Map<String, Object?> markerFor(ConnectorToken token) {
-    final mcp = token.mcpEntry!;
+    final mcp = token.mcpEntry;
+    final expiry = mcp?.expiresAt ?? token.expiresAt;
     return {
       'connector': token.connector,
-      if (mcp.expiresAt != null)
-        'expires_at': mcp.expiresAt!.millisecondsSinceEpoch ~/ 1000,
-      'refresh': mcp.canRefresh,
+      if (expiry != null) 'expires_at': expiry.millisecondsSinceEpoch ~/ 1000,
+      'refresh': mcp?.canRefresh ?? token.canBeRefreshed,
     };
   }
 
@@ -108,11 +116,19 @@ abstract class MarkedMapProjection {
     required Set<String> remove,
   });
 
-  /// The config value for one connector, in this agent's format.
+  /// The config value for one connector, in this agent's format, or **null when
+  /// this agent cannot express it right now**.
+  ///
+  /// Null is not an error and not a permanent verdict — the common case is a
+  /// REST-backed connector asked for before [ConnectorBridge] has bound its
+  /// port. Skipping leaves whatever is already in the config untouched and lets
+  /// the next projection (launch reconcile, refresh sweep, connect) write it,
+  /// which is strictly better than either writing a URL that resolves to
+  /// nothing or removing an entry that was working.
   ///
   /// [markerValue] is null when [marker] keeps its record out of band, in which
   /// case nothing about ownership belongs in the entry.
-  Map<String, Object?> entryFor(
+  Map<String, Object?>? entryFor(
     ConnectorToken token,
     Map<String, Object?>? markerValue,
   );
@@ -130,9 +146,14 @@ abstract class MarkedMapProjection {
     List<ConnectorToken> tokens, {
     Set<String> removing = const {},
   }) async {
+    // "Reachable at all", not "has an mcp_entry". A connector the gateway
+    // describes only as REST is just as real to the agent once the bridge is
+    // serving it, and gating on the entry alone is what left Gmail linked in
+    // the app and absent from Hermes.
     final wanted = <String, ConnectorToken>{
       for (final token in tokens)
-        if (token.mcpEntry != null) token.connector: token,
+        if (effectiveTransport(token) != ConnectorTransport.none)
+          token.connector: token,
     };
 
     final existing = await readEntries();
@@ -157,7 +178,9 @@ abstract class MarkedMapProjection {
       if (existing.containsKey(entry.key) && !ours.contains(entry.key)) {
         continue;
       }
-      upsert[entry.key] = entryFor(entry.value, marker.markerFor(entry.value));
+      final value = entryFor(entry.value, marker.markerFor(entry.value));
+      if (value == null) continue;
+      upsert[entry.key] = value;
     }
 
     if (upsert.isEmpty && remove.isEmpty) return;

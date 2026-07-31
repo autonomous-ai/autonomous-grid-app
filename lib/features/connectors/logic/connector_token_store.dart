@@ -77,9 +77,35 @@ class ConnectorTokenStore {
   }
 
   /// Add or replace one connector's token, leaving the others untouched.
+  ///
+  /// A wholesale replace, and correct for what calls it: a sign-in. Re-linking
+  /// a connector can *narrow* what was granted, so the new payload has to win
+  /// outright — merging would leave a scope the user has just revoked on disk.
+  /// Renewals take [saveRefreshed] instead.
   Future<void> save(ConnectorToken token) async {
     final tokens = await read();
     tokens[token.connector] = token;
+    await write(tokens);
+  }
+
+  /// Fold a renewed credential onto what is already stored.
+  ///
+  /// `/refresh` answers "here is a live token" and its payload carries only
+  /// that. Storing it wholesale erased everything the sign-in had established:
+  /// measured on 2026-07-31, `gmail` lost `scope` and `account_name` about an
+  /// hour after linking, and without `scope` there is nothing left to decide
+  /// which transport the grant can reach — a working connector reads as
+  /// unusable while its credential is perfectly good.
+  ///
+  /// Falls back to a plain insert when nothing is stored: a refresh for a
+  /// connector that vanished underneath us has nothing to merge onto, and
+  /// dropping it would lose a live credential.
+  Future<void> saveRefreshed(ConnectorToken token) async {
+    final tokens = await read();
+    final existing = tokens[token.connector];
+    tokens[token.connector] = existing == null
+        ? token
+        : existing.mergeRefreshed(token);
     await write(tokens);
   }
 

@@ -545,7 +545,7 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     }
 
     try {
-      await ref.read(connectorTokenStoreProvider).save(token);
+      await ref.read(connectorTokenStoreProvider).saveRefreshed(token);
     } on Object catch (failure) {
       return "Couldn't save the refreshed connection: $failure";
     }
@@ -584,7 +584,7 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     }
 
     try {
-      await ref.read(connectorTokenStoreProvider).save(renewed);
+      await ref.read(connectorTokenStoreProvider).saveRefreshed(renewed);
     } on Object catch (failure) {
       return "Couldn't save the refreshed connection: $failure";
     }

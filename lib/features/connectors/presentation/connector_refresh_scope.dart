@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/mcp/connector_bridge_provider.dart';
 import '../logic/connector_refresh_service.dart';
 
 /// Starts the connector token refresh schedule for the life of the app.
@@ -29,9 +30,15 @@ class _ConnectorRefreshScopeState extends ConsumerState<ConnectorRefreshScope> {
     // After the first frame: the sweep talks to the network and the disk, and
     // doing that during the first build would delay the window appearing for a
     // round trip the user is not waiting on.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      ref.read(connectorRefreshServiceProvider).start();
+      // The bridge binds first. Its port is what a REST-backed connector's
+      // config entry points at, so starting the sweep — which re-projects —
+      // before the port exists would skip exactly those connectors and leave
+      // them unprojected until something else happened to trigger a write.
+      await ref.read(connectorBridgeProvider).start();
+      if (!mounted) return;
+      await ref.read(connectorRefreshServiceProvider).start();
     });
   }
 

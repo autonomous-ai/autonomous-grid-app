@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../agents/logic/connector_runtime.dart';
 import '../../agents/logic/connector_token.dart';
 import '../../agents/logic/marked_map_projection.dart';
+import '../../agents/logic/rest_entry.dart';
 
 /// Writes the `mcp_servers` entries for connectors the app manages.
 ///
@@ -31,9 +33,15 @@ import '../../agents/logic/marked_map_projection.dart';
 /// marker guard, the refuse-to-overwrite guard) lives in [MarkedMapProjection]
 /// so the next agent's adapter inherits it rather than re-deriving it.
 class HermesConnectorServers extends MarkedMapProjection {
-  HermesConnectorServers({String? home}) : _home = home;
+  HermesConnectorServers({String? home, this.bridgeEndpointFor}) : _home = home;
 
   final String? _home;
+
+  /// The loopback MCP URL serving a REST-backed connector, when the bridge is
+  /// up. Null before it binds, and for a build with no bridge at all — in which
+  /// case those connectors are simply not projected, and the entries already in
+  /// the config are left alone.
+  final String? Function(String connector)? bridgeEndpointFor;
 
   /// Hermes resolves its home from `HERMES_HOME` before `~/.hermes`. Follow the
   /// same override, or a user running a second profile gets servers written
@@ -87,25 +95,43 @@ class HermesConnectorServers extends MarkedMapProjection {
     }
   });
 
-  /// The YAML value for one connector.
+  /// The YAML value for one connector — a URL, and headers when there are any.
   ///
   /// `auth` is deliberately absent. Hermes treats `auth: oauth` as "run the
   /// OAuth flow yourself", which would send it looking for the client
   /// credentials that live at the gateway and never on this machine — and,
-  /// failing to find them, open a browser. The headers carry the credential
-  /// already, so the entry is a plain authenticated HTTP server as far as
-  /// Hermes is concerned.
+  /// failing to find them, open a browser. Whatever credential is needed is
+  /// already attached, so the entry is a plain authenticated HTTP server as far
+  /// as Hermes is concerned.
+  ///
+  /// **Both transports land on the same shape.**
+  ///
+  /// That is the payoff of putting the bridge behind MCP: Hermes cannot tell a
+  /// connector the gateway hosts from one this app is translating out of a REST
+  /// API, and neither can the projection. A REST entry carries no headers at
+  /// all, because the credential never leaves the app — the bridge attaches it
+  /// per request, from the master store, at the moment of the call.
   @override
-  Map<String, Object?> entryFor(
+  Map<String, Object?>? entryFor(
     ConnectorToken token,
     Map<String, Object?>? markerValue,
   ) {
-    final mcp = token.mcpEntry!;
-    return {
-      'url': mcp.url,
-      if (mcp.headers.isNotEmpty) 'headers': mcp.headers,
-      markerKey: ?markerValue,
-    };
+    switch (effectiveTransport(token)) {
+      case ConnectorTransport.mcp:
+        final mcp = token.mcpEntry!;
+        return {
+          'url': mcp.url,
+          if (mcp.headers.isNotEmpty) 'headers': mcp.headers,
+          markerKey: ?markerValue,
+        };
+      case ConnectorTransport.rest:
+        final endpoint = bridgeEndpointFor?.call(token.connector);
+        // Skip rather than guess a port: see MarkedMapProjection.entryFor.
+        if (endpoint == null) return null;
+        return {'url': endpoint, markerKey: ?markerValue};
+      case ConnectorTransport.none:
+        return null;
+    }
   }
 
   Future<void> _edit(void Function(YamlEditor) change) async {

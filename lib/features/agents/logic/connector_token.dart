@@ -1,3 +1,5 @@
+import 'rest_entry.dart';
+
 /// The MCP server entry the gateway renders for a connector.
 ///
 /// The gateway builds this **per provider's own header convention** — most use
@@ -122,6 +124,8 @@ class ConnectorToken {
     this.tokenType = 'Bearer',
     this.accountName = '',
     this.mcpEntry,
+    this.restEntry,
+    this.declaredTransport,
     this.canRefresh,
     this.source = ConnectorTokenSource.gateway,
     this.issuer = '',
@@ -158,6 +162,29 @@ class ConnectorToken {
   /// before it gets here.
   final McpEntry? mcpEntry;
 
+  /// The provider's REST surface, described by the gateway, for a connector no
+  /// MCP server can serve.
+  ///
+  /// Gmail is why this exists. Google's MCP server accepts only
+  /// `gmail.readonly` / `gmail.modify` / `mail.google.com`; an organisation can
+  /// grant `gmail.send` and nothing more, and then no MCP server on earth will
+  /// take the token — while the REST API happily sends mail with it. The gap is
+  /// permanent, not a backlog item, so it needs a second way in rather than a
+  /// wait.
+  ///
+  /// The agent never sees any of this. `ConnectorBridge` serves these as
+  /// ordinary MCP tools over loopback, which is what keeps the whole idea
+  /// invisible to the projection layer and free across agents.
+  final RestEntry? restEntry;
+
+  /// What the gateway said to use, or null when it said nothing.
+  ///
+  /// Kept separate from the *effective* answer (`effectiveTransport`) because
+  /// the gateway can declare something this build cannot honour — `mcp` with no
+  /// entry attached — and a stored declaration must not be rewritten into a
+  /// decision the app made on its behalf.
+  final ConnectorTransport? declaredTransport;
+
   /// The gateway's own answer to "can this be renewed", from the top-level
   /// `refresh` on a `/poll` or `/refresh` payload.
   ///
@@ -182,8 +209,14 @@ class ConnectorToken {
   /// gateway tokens, which carry no local registration.
   final String issuer;
 
-  /// True when this connector can actually be used by an agent.
-  bool get isUsable => mcpEntry != null;
+  /// True when the gateway described *some* way for an agent to reach this.
+  ///
+  /// Says nothing about the local fallback in `rest_entry_fallback.dart`, which
+  /// lives a layer up: this is "what the server told us", and mixing a local
+  /// stand-in into it would make the two indistinguishable in the one place the
+  /// difference matters — deciding whether the backend still owes us anything.
+  /// Callers wanting the effective answer use `effectiveTransport`.
+  bool get isUsable => mcpEntry != null || restEntry != null;
 
   /// True when the token is gone or close enough to gone to be worth replacing
   /// before use. [skew] is the head start: refreshing exactly at expiry loses a
@@ -234,6 +267,8 @@ class ConnectorToken {
     String? tokenType,
     String? accountName,
     McpEntry? mcpEntry,
+    RestEntry? restEntry,
+    ConnectorTransport? declaredTransport,
     bool? canRefresh,
     ConnectorTokenSource? source,
     String? issuer,
@@ -247,11 +282,51 @@ class ConnectorToken {
       tokenType: tokenType ?? this.tokenType,
       accountName: accountName ?? this.accountName,
       mcpEntry: mcpEntry ?? this.mcpEntry,
+      restEntry: restEntry ?? this.restEntry,
+      declaredTransport: declaredTransport ?? this.declaredTransport,
       canRefresh: canRefresh ?? this.canRefresh,
       source: source ?? this.source,
       issuer: issuer ?? this.issuer,
     );
   }
+
+  /// Fold a freshly-issued [replacement] onto this token.
+  ///
+  /// **Why refresh is a merge and not an assignment.** `/refresh` answers a
+  /// narrow question — here is a live credential — and its payload carries only
+  /// what that question needs. Everything else about the connector (`scope`,
+  /// `account_name`, `mcp_entry`, `rest_entry`) is *description*, issued once at
+  /// sign-in and unchanged by a renewal.
+  ///
+  /// Storing the reply wholesale therefore erased those fields on every sweep.
+  /// Measured on 2026-07-31: `gmail` lost its `scope` and `account_name` about
+  /// an hour after linking, and with `scope` gone there is no way left to tell
+  /// which transport the grant can reach — the connector reads as unusable while
+  /// its credential is perfectly good.
+  ///
+  /// The credential fields below are the *only* ones a renewal owns. A field it
+  /// omits is not a field it cleared.
+  ConnectorToken mergeRefreshed(ConnectorToken replacement) => ConnectorToken(
+    connector: connector,
+    accessToken: replacement.accessToken,
+    refreshToken: replacement.refreshToken ?? refreshToken,
+    expiresAt: replacement.expiresAt ?? expiresAt,
+    tokenType: replacement.tokenType,
+    // Description: kept unless the reply actually restates it.
+    scope: replacement.scope.isNotEmpty ? replacement.scope : scope,
+    accountName: replacement.accountName.isNotEmpty
+        ? replacement.accountName
+        : accountName,
+    mcpEntry: replacement.mcpEntry ?? mcpEntry,
+    restEntry: replacement.restEntry ?? restEntry,
+    declaredTransport: replacement.declaredTransport ?? declaredTransport,
+    canRefresh: replacement.canRefresh ?? canRefresh,
+    // Identity of the credential's issuer never changes under a renewal, and a
+    // reply that omits `source` must not silently demote a DCR token to a
+    // gateway one — the refresh sweep would then call the wrong endpoint.
+    source: source,
+    issuer: issuer.isNotEmpty ? issuer : replacement.issuer,
+  );
 
   Map<String, dynamic> toJson() => {
     'access_token': accessToken,
@@ -262,6 +337,8 @@ class ConnectorToken {
     if (scope.isNotEmpty) 'scope': scope,
     if (accountName.isNotEmpty) 'account_name': accountName,
     if (mcpEntry != null) 'mcp_entry': mcpEntry!.toJson(),
+    if (restEntry != null) 'rest_entry': restEntry!.toJson(),
+    if (declaredTransport != null) 'transport': declaredTransport!.name,
     // Omitted when the gateway didn't say, so it reads back as null rather than
     // as a decision nobody made — the distinction [canBeRefreshed] relies on.
     if (canRefresh != null) 'refresh': canRefresh,
@@ -295,6 +372,8 @@ class ConnectorToken {
           ? raw['account_name'] as String
           : '',
       mcpEntry: McpEntry.fromJson(raw['mcp_entry']),
+      restEntry: RestEntry.fromJson(raw['rest_entry']),
+      declaredTransport: parseTransport(raw['transport']),
       // Left null when absent — a token stored before the gateway carried the
       // flag must keep falling back, not read as "cannot refresh".
       canRefresh: raw['refresh'] is bool ? raw['refresh'] as bool : null,

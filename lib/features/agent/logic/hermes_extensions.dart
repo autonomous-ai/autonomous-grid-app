@@ -7,6 +7,7 @@ import '../../../infrastructure/cli/hermes_acp_setup.dart';
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../infrastructure/cli/hermes_plugin_service.dart';
 import '../../../infrastructure/logging/app_log.dart';
+import '../../../infrastructure/mcp/connector_bridge_provider.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_catalog.dart';
@@ -305,8 +306,14 @@ final hermesConfigFileProvider = Provider<HermesConfigFile>(
 );
 
 /// The `mcp_servers` half of the connector projection.
+///
+/// Handed the bridge's endpoint resolver rather than the bridge itself: the
+/// adapter's only question is "what URL, if any, serves this connector right
+/// now", and a null answer is a legitimate one it already handles.
 final hermesConnectorServersProvider = Provider<HermesConnectorServers>(
-  (ref) => HermesConnectorServers(),
+  (ref) => HermesConnectorServers(
+    bridgeEndpointFor: ref.read(connectorBridgeProvider).endpointFor,
+  ),
 );
 
 /// Hermes's extension adapter. Always present — the skills and MCP planes are
