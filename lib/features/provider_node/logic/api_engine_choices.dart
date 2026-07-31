@@ -38,15 +38,12 @@ String apiKeyCardLine(List<ApiEngine> engines) {
   return 'Bring your own ${_joined(names)} key';
 }
 
-/// "Share Claude Code" / "Share Claude Code or Codex CLI" — the seat card's
-/// title, naming the CLIs found on this computer. Empty when none were found,
-/// which is also when the card isn't shown.
-String seatCardTitle(List<ApiEngine> engines) {
-  final names = [
-    for (final engine in seatEngines(engines)) engine.provider.label,
-  ];
-  return names.isEmpty ? '' : 'Share ${_joined(names)}';
-}
+/// "Share Claude Code" — one seat's row title.
+///
+/// A row per CLI, never one row naming both: a joined title ("Share Claude Code
+/// or Codex CLI") had to start *one* of them on the press, so the row said two
+/// things and did one, and the user who wanted the other had no way to say so.
+String seatRowTitle(ApiProvider provider) => 'Share ${provider.label}';
 
 /// `a`, `a or b`, `a, b or c` — an English list, so the subtitle reads as a
 /// sentence however many providers the CLI whitelists.

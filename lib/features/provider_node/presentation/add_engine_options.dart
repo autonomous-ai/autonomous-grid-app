@@ -27,9 +27,9 @@ import 'external_servers.dart';
 /// each card whose label mostly repeated the title above it ("Use an API key" →
 /// Enter a key).
 ///
-/// So: rows. The whole row is the target, which lets the button go; four options
-/// cost a third of the height; and the hairlines say these are four answers to
-/// one question rather than four things to get through. The first-run screen
+/// So: rows. The whole row is the target, which lets the button go; the options
+/// cost a third of the height; and the hairlines say these are answers to one
+/// question rather than a list to get through. The first-run screen
 /// offers the same rows, but one surface each — there the choice *is* the
 /// screen, and two separated targets read as two choices rather than a list.
 ///
@@ -48,7 +48,7 @@ class AddEngineOptions extends ConsumerWidget {
     // (see `_addEngineBlocks`). Every row can act.
     return ChoiceRowGroup(
       children: [
-        ?_seatRow(ref),
+        ..._seatRows(ref),
         if (ref.watch(supportsBuiltInEngineProvider))
           _LocalRow(network: network),
         ?_ApiKeyRow.forCatalog(ref, network),
@@ -57,35 +57,36 @@ class AddEngineOptions extends ConsumerWidget {
     );
   }
 
-  /// Share a coding CLI that's already signed in on this computer (Claude Code,
-  /// Codex) — nothing to download and no key to find, so it leads. Null when
-  /// this machine has none of them, so the group never offers a road it can't
+  /// A row per coding CLI already signed in on this computer (Claude Code,
+  /// Codex CLI) — nothing to download and no key to find, so they lead. Empty on
+  /// a machine with none of them, so the group never offers a road it can't
   /// walk.
   ///
-  /// Starts the first one found rather than asking which: the Cloud Provider
-  /// block below has the dropdown for picking between them, and a first-run row
-  /// that opens a chooser is one decision too many. It carries no busy state —
-  /// the starting card above owns that, and these rows leave the page the moment
-  /// a join begins.
-  ChoiceRow? _seatRow(WidgetRef ref) {
-    final available = ref.watch(apiEnginesProvider).asData?.value ?? const [];
-    final engines = seatEngines(available);
-    if (engines.isEmpty) return null;
-    final provider = engines.first.provider;
-    return ChoiceRow(
-      icon: const Icon(Icons.terminal_outlined),
-      title: seatCardTitle(available),
-      line: 'Fastest setup — it’s already installed and signed in',
-      action: ChoiceRowAction.act,
-      onPressed: () => ref
-          .read(providerRunControllerProvider.notifier)
-          .startApiEngine(
-            network: network.networkId,
-            provider: provider,
-            apiKey: '',
-          ),
-    );
-  }
+  /// One row each, not one row naming both: the joined row started whichever CLI
+  /// was found first, so a user with two of them could only share the other by
+  /// finding the dropdown in the Cloud Provider block further down the page.
+  List<Widget> _seatRows(WidgetRef ref) => [
+    for (final engine in seatEngines(
+      ref.watch(apiEnginesProvider).asData?.value ?? const [],
+    ))
+      _seatRow(ref, engine.provider),
+  ];
+
+  /// One seat's row. It carries no busy state — the starting card above owns
+  /// that, and these rows leave the page the moment a join begins.
+  ChoiceRow _seatRow(WidgetRef ref, ApiProvider provider) => ChoiceRow(
+    icon: const Icon(Icons.terminal_outlined),
+    title: seatRowTitle(provider),
+    line: 'Already installed and signed in — nothing to set up',
+    action: ChoiceRowAction.act,
+    onPressed: () => ref
+        .read(providerRunControllerProvider.notifier)
+        .startApiEngine(
+          network: network.networkId,
+          provider: provider,
+          apiKey: '',
+        ),
+  );
 }
 
 /// Run a downloaded model here with the built-in engine.

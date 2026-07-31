@@ -63,7 +63,6 @@ void main() {
   group('each card names the providers this computer can actually serve', () {
     test('one provider reads as a line, not a paragraph', () {
       expect(apiKeyCardLine([_claude, _openai]), 'Bring your own OpenAI key');
-      expect(seatCardTitle([_claude, _openai]), 'Share Claude Code');
     });
 
     test('several are listed with "or", so a card never over-promises the ones '
@@ -73,18 +72,24 @@ void main() {
         'Bring your own OpenAI or '
         'Anthropic key',
       );
-      expect(
-        seatCardTitle([_claude, _codexCli]),
-        'Share Claude Code or Codex CLI',
-      );
     });
 
     test(
       'nothing to offer yields nothing to say — the card is hidden then',
       () {
         expect(apiKeyCardLine([_claude]), isEmpty);
-        expect(seatCardTitle([_openai]), isEmpty);
       },
     );
+  });
+
+  group('a seat row speaks for its own CLI', () {
+    test('the title names the one CLI the press will share, so two signed-in '
+        'CLIs read as two offers rather than one row doing one of them', () {
+      final rows = [
+        for (final engine in seatEngines([_claude, _codexCli, _openai]))
+          seatRowTitle(engine.provider),
+      ];
+      expect(rows, ['Share Claude Code', 'Share Codex CLI']);
+    });
   });
 }

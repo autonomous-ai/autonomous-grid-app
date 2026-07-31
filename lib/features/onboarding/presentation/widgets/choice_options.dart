@@ -1,5 +1,5 @@
-/// The two rows the first-run choice screen is made of — one per way a grid can
-/// get a model — plus what they say when one fails.
+/// The rows the first-run choice screen is made of — one per way a grid can get
+/// a model — plus what they say when one fails.
 ///
 /// Split from the screen because the screen's own job is deciding *which* of
 /// these a given machine can honestly offer; each widget here answers only for
@@ -16,14 +16,14 @@ import '../../../provider_node/logic/api_engine_choices.dart';
 import '../../../provider_node/logic/provider_run_controller.dart';
 import '../../logic/onboarding_choice_controller.dart';
 
-/// Share a coding CLI this computer already has signed in (Claude Code, Codex) —
-/// the quickest way in when there is one: nothing to download, no key to go and
-/// find, and no account to hand over.
+/// The coding CLIs this computer already has signed in (Claude Code, Codex CLI)
+/// — the quickest way in when there is one: nothing to download, no key to go
+/// and find, and no account to hand over.
 ///
-/// No form and no model picker: the CLI's whole tier list is shared (the grid's
-/// own default), and choosing between them is a Model Engines decision, not a
-/// first-screen one. Renders nothing when this machine has no such CLI, so the
-/// screen never offers a road it can't walk.
+/// One option each, so the press shares the CLI the user actually picked; a
+/// single row naming both had to start whichever was found first. Renders
+/// nothing when this machine has neither, so the screen never offers a road it
+/// can't walk.
 class SeatOption extends ConsumerWidget {
   const SeatOption({super.key, required this.network});
 
@@ -31,24 +31,50 @@ class SeatOption extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final available = ref.watch(apiEnginesProvider).asData?.value ?? const [];
-    final engines = seatEngines(available);
+    final engines = seatEngines(
+      ref.watch(apiEnginesProvider).asData?.value ?? const [],
+    );
     if (engines.isEmpty) return const SizedBox.shrink();
-    final provider = engines.first.provider;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final engine in engines)
+          _SeatRow(network: network, provider: engine.provider),
+      ],
+    );
+  }
+}
 
+/// One signed-in CLI, offered on its own surface.
+///
+/// No form and no model picker: the CLI's whole tier list is shared (the grid's
+/// own default), and picking a tier out of it is a Model Engines decision, not a
+/// first-screen one.
+class _SeatRow extends ConsumerWidget {
+  const _SeatRow({required this.network, required this.provider});
+
+  final NetworkCredential network;
+  final ApiProvider provider;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final run = ref.watch(providerRunControllerProvider);
+    // Only the row that was pressed spins: a join with no `-m` records the kind
+    // as its model, so the *other* CLI's row stays pressable rather than
+    // claiming it is starting too.
     final starting =
         run is ProviderRunActive &&
         run.grid == network.networkId &&
+        run.model == provider.kind &&
         run.starting;
 
-    // The gap to the next option belongs to the option, not to the screen: this
-    // one hides itself on a machine with no such CLI, and a gap the screen owned
+    // The gap to the next option belongs to the option, not to the screen: these
+    // hide themselves on a machine without the CLI, and a gap the screen owned
     // would stay behind as a hole.
     return _Option(
       child: ChoiceRow(
         icon: const Icon(Icons.terminal_outlined),
-        title: seatCardTitle(available),
+        title: seatRowTitle(provider),
         line: 'Use the ${provider.label} you already have here.',
         badge: 'No setup',
         // Nothing opens and nothing is handed off: the press starts the join
