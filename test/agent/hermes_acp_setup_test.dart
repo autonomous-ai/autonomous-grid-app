@@ -27,10 +27,10 @@ class _FakeSetup implements HermesAcpSetup {
     return null;
   }
 
-  int webSearchEnsures = 0;
+  int runtimeTopUps = 0;
 
   @override
-  Future<void> ensureWebSearch() async => webSearchEnsures++;
+  Future<void> ensureRuntimeSupport() async => runtimeTopUps++;
 }
 
 /// A `hermes acp` that fails with [_error] until [healAfter] starts have gone by
@@ -80,9 +80,10 @@ const _missingAcp = HermesAcpException(
 
 void main() {
   group('what a repair asks for', () {
-    test('installs Hermes *with* the extra ACP needs — without it the binary '
-        'runs and the agent cannot answer at all', () {
-      expect(kHermesAcpRequirement, 'hermes-agent[acp]');
+    test('installs Hermes *with* the extras it is mute without — ACP or the '
+        'agent cannot answer at all, MCP and every connector it was given is '
+        'dropped in silence', () {
+      expect(kHermesAcpRequirement, 'hermes-agent[acp,mcp]');
       expect(hermesAcpRepairArgs(), contains(kHermesAcpRequirement));
       // Pinned to the interpreter the CLI installed Hermes on, so the repair
       // lands in that environment instead of building a second one.
@@ -140,16 +141,51 @@ void main() {
     });
   });
 
-  group('ensuring a keyless web-search backend', () {
-    test('installs the free ddgs package into the very interpreter Hermes runs '
-        'on, so its native web_search has a provider', () {
-      final args = hermesWebSearchInstallArgs(
+  group('topping up the tools Hermes only imports when asked', () {
+    test('covers both silent failures: a web search with no keyless backend, '
+        'and MCP servers with no SDK to run them', () {
+      // ddgs is the only backend of Hermes's own list that needs no key; mcp is
+      // what every `mcp_servers:` entry — every connector — runs on.
+      expect(kHermesRuntimePackages.keys, containsAll(['ddgs', 'mcp']));
+      // A floor, not a pin: a newer Hermes may install a newer SDK for itself,
+      // and topping the environment up must never drag it back.
+      expect(kHermesRuntimePackages['mcp'], 'mcp>=1.26,<2');
+    });
+
+    test('asks Hermes\'s own interpreter what is missing, so nothing is '
+        'installed on a machine that already has it', () {
+      final args = hermesRuntimeProbeArgs(['ddgs', 'mcp']);
+
+      expect(args.first, '-c');
+      expect(args.last, contains('"ddgs"'));
+      expect(args.last, contains('"mcp"'));
+      // find_spec, not an import: probing runs before every chat and must not
+      // pay for loading the packages it asks about.
+      expect(args.last, contains('find_spec'));
+    });
+
+    test('installs exactly what the probe reported missing', () {
+      expect(hermesMissingRequirements('mcp\n'), ['mcp>=1.26,<2']);
+      expect(hermesMissingRequirements('ddgs\nmcp\n'), [
+        'ddgs',
+        'mcp>=1.26,<2',
+      ]);
+      // Nothing missing — and the top-up must then run no installer at all.
+      expect(hermesMissingRequirements('\n'), isEmpty);
+      // A line the interpreter printed for its own reasons is not a package.
+      expect(hermesMissingRequirements('warning: something\n'), isEmpty);
+    });
+
+    test('adds them to the very interpreter Hermes runs on, without touching '
+        'the Hermes build the user already has', () {
+      final args = hermesRuntimeInstallArgs(
         '/g/tools/hermes-agent/bin/python',
+        ['ddgs'],
       );
-      expect(kHermesWebSearchPackage, 'ddgs');
+
+      // `pip install`, not `tool install`: the latter re-resolves hermes-agent
+      // itself and could move the user to a build they never asked for.
       expect(args, containsAllInOrder(['pip', 'install']));
-      // Pinned to Hermes's own interpreter — a backend in any other environment
-      // is one its web_search tool can't import.
       expect(
         args,
         containsAllInOrder([
@@ -158,7 +194,7 @@ void main() {
           'ddgs',
         ]),
       );
-      // Not --force: a fast no-op once ddgs is already there.
+      // Not --force: a fast no-op if the package turns out to be there.
       expect(args, isNot(contains('--force')));
     });
   });

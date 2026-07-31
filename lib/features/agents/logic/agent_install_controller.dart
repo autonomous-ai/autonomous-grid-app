@@ -91,23 +91,35 @@ class AgentInstallController extends Notifier<AgentInstallState> {
   Future<String?> _installedVersion(AgentTool tool) =>
       ref.read(agentVersionProvider(tool).future);
 
-  /// Make sure Hermes can actually serve ACP — the mode chat drives it in.
+  /// Make sure Hermes can actually serve ACP — the mode chat drives it in — and
+  /// that the tools it only imports when asked are there too.
   ///
   /// The CLI on this machine may be an older build, which installs Hermes
-  /// without that piece: the row would then read "installed" while every chat
-  /// turn failed. Installing is the moment to finish the job, so Update repairs
-  /// such a machine instead of running the same broken install again. Returns
-  /// null when there's nothing to do (or it worked), else the line to show.
+  /// without those pieces: the row would then read "installed" while every chat
+  /// turn failed, or — quieter — while its web search and every connector it was
+  /// given silently did nothing. Installing is the moment to finish the job, so
+  /// Update repairs such a machine instead of running the same broken install
+  /// again. Returns null when there's nothing to do (or it worked), else the line
+  /// to show.
   Future<String?> _finishAcpSetup(AgentTool tool) async {
     if (tool != AgentTool.hermes) return null;
     final setup = ref.read(hermesAcpSetupProvider);
-    if (setup == null || await setup.isReady()) return null;
-    // The raw reason is logged by the repair itself (§6) — this is the line the
-    // user reads.
-    return await setup.repair() == null
-        ? null
-        : '$kAgentSetupUnfinished It needs a connection to download the rest — '
-              'check yours and try again.';
+    if (setup == null) return null;
+    if (!await setup.isReady()) {
+      // The raw reason is logged by the repair itself (§6) — this is the line
+      // the user reads.
+      final failure = await setup.repair();
+      if (failure != null) {
+        return '$kAgentSetupUnfinished It needs a connection to download the '
+            'rest — check yours and try again.';
+      }
+    }
+    // A reinstall rebuilds Hermes's environment from the CLI's own requirement,
+    // which drops anything the app added to it — so the top-up runs after, not
+    // only on a repair. Best-effort by contract: it never throws, and an agent
+    // that installed must not be reported as failed over an optional tool.
+    await setup.ensureRuntimeSupport();
+    return null;
   }
 
   void clearError() {

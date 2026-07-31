@@ -61,8 +61,10 @@ class _FakeSetup implements HermesAcpSetup {
     return null;
   }
 
+  int runtimeTopUps = 0;
+
   @override
-  Future<void> ensureWebSearch() async {}
+  Future<void> ensureRuntimeSupport() async => runtimeTopUps++;
 }
 
 /// Claude Code's vendor installer, recorded rather than run — no download, and
@@ -241,6 +243,19 @@ void main() {
         expect(setup.repairs, 0);
       },
     );
+
+    test('the optional tools are topped up even when ACP already works — a '
+        'reinstall rebuilds the environment and drops what the app added, '
+        'leaving web search and every connector silently dead', () async {
+      final setup = _FakeSetup();
+      final container = _container(_FakeCli(), setup: setup);
+
+      await container
+          .read(agentInstallProvider.notifier)
+          .install(AgentTool.hermes, upgrade: true);
+
+      expect(setup.runtimeTopUps, 1);
+    });
 
     test('a repair that could not run says so, rather than reporting an '
         'install that answers nothing', () async {
