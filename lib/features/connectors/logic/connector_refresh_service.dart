@@ -56,7 +56,40 @@ class ConnectorRefreshService {
 
   /// Sweep once, then keep the schedule going. Safe to call more than once.
   Future<void> start() async {
+    await _reconcile();
     await _sweep();
+  }
+
+  /// Hand the agent whatever the store already holds, before renewing anything.
+  ///
+  /// Every other call to `projectTokens` is a side effect of *this app* having
+  /// just changed the store — a connect, a disconnect, a refresh. Nothing
+  /// covered the case where the store changed by some other route, and the
+  /// master store is a plain file that moves without the app watching: a token
+  /// re-issued against a newer gateway, a `~/.grid` restored from backup, a
+  /// hand edit.
+  ///
+  /// Measured on 2026-07-31: `gmail` gained an `mcp_entry` between one launch
+  /// and the next. No connector happened to be due for renewal, so [_sweep]
+  /// refreshed nothing, nothing called `projectTokens`, and the connector read
+  /// as linked in the app while not existing at all to Hermes. Launch is the
+  /// one moment the app can be sure the two have not drifted, so it is the one
+  /// moment worth checking.
+  ///
+  /// **Additive only, and that is load-bearing.** `removing` is left empty, and
+  /// `MarkedMapProjection.project` gates every deletion on that set — so a
+  /// reconcile can add and update but is structurally unable to remove. That is
+  /// what makes it safe to run against a store that failed to load, which is
+  /// exactly the shape of the failure that erased two working connectors on
+  /// 2026-07-30.
+  Future<void> _reconcile() async {
+    try {
+      await _ref.read(connectorLinkControllerProvider.notifier).projectTokens();
+    } on Object {
+      // A projection that fails must not stop the sweep: the credentials are
+      // still worth renewing even when one agent's config could not be written,
+      // and `projectTokens` already logs why.
+    }
   }
 
   void dispose() {
