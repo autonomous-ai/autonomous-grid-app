@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_grid_link.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_model_support.dart';
@@ -55,12 +54,15 @@ void main() {
       );
     });
 
-    test('Hermes answers with both seats but not a responses-only one — it '
-        'speaks chat-completions, which the CLI seats serve and the ChatGPT '
-        'subscription does not', () {
+    test('Hermes answers with every seat, responses-only included — it switches '
+        'dialect per model, so no seat is closed to it', () {
       expect(agentSupportsModel(AgentTool.hermes, 'claude:opus'), isTrue);
       expect(agentSupportsModel(AgentTool.hermes, 'codex-cli:gpt-5.5'), isTrue);
-      expect(agentSupportsModel(AgentTool.hermes, 'codex:gpt-5.5'), isFalse);
+      // Refused up front until 31/07, on the strength of one Hermes build that
+      // answered the config with "Unknown provider 'grid'". A build too old for
+      // a connection is not a pair that can't work: the failure is humanized
+      // where it lands instead (see agent_server_error_test).
+      expect(agentSupportsModel(AgentTool.hermes, 'codex:gpt-5.5'), isTrue);
     });
 
     test(
@@ -101,7 +103,10 @@ void main() {
         AgentTool.hermes,
         AgentTool.claude,
       ]);
-      expect(agentsForModel('codex:gpt-5.5'), [AgentTool.codex]);
+      expect(agentsForModel('codex:gpt-5.5'), [
+        AgentTool.hermes,
+        AgentTool.codex,
+      ]);
       expect(agentsForModel('qwen3.6-27b'), AgentTool.values);
     });
 
@@ -150,25 +155,20 @@ void main() {
     });
   });
 
-  group('the composer and Hermes agree on what Hermes can serve', () {
+  group('a grid that serves only Codex seat models', () {
     test(
-      'the config writer refuses exactly the models the picker greys out — '
-      'two opinions is how a greyed row and a written config drift apart',
+      'leaves Hermes something to answer with, so a Claude Code user is not '
+      'stranded on it — Hermes is the agent that always has somewhere to go',
       () {
-        const models = [
-          'codex:gpt-5.5',
-          'codex-cli:gpt-5.6-terra',
-          'claude:opus',
-          'qwen3.6-27b',
-          'auto',
-        ];
-        for (final model in models) {
-          expect(
-            hermesModelRefusal(model) == null,
-            agentSupportsModel(AgentTool.hermes, model),
-            reason: 'disagreed about $model',
-          );
-        }
+        final container = _gridServing(['codex:gpt-5.5']);
+        expect(
+          container.read(agentHasModelHereProvider(AgentTool.hermes)),
+          isTrue,
+        );
+        expect(
+          container.read(agentHasModelHereProvider(AgentTool.claude)),
+          isFalse,
+        );
       },
     );
   });

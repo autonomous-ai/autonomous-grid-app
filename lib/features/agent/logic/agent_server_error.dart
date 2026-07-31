@@ -41,6 +41,30 @@ String agentLoopingMessage(String target) =>
 const String kAgentSetupUnfinished =
     "Grid couldn't finish setting up the assistant on this computer.";
 
+/// The assistant couldn't read the connection Grid wrote for the model it was
+/// pointed at.
+///
+/// Hermes says it as `Unknown provider 'grid'. Check 'hermes model' …` — an auth
+/// error raised while resolving the model, which kills the turn wherever it runs
+/// (chat, a scheduled task, Telegram). It comes from a build too old for the
+/// named-provider config a responses-only model needs, not from the model being
+/// wrong for the assistant, so the line names both levers: update, or pick
+/// something else. Its own constant because the app *used* to head this off by
+/// refusing those models outright, which cost every user the pairing to protect
+/// the few on an old build.
+const String kAgentProviderUnknown =
+    "The assistant didn't recognise the connection Grid set up for that model. "
+    'Update it on the Agents screen, or pick another model.';
+
+/// [kAgentProviderUnknown] when [raw] is that failure, else null — so the
+/// startup path and the reply path can both catch it without either owning the
+/// wording. Matches on the provider name the app writes, so an assistant
+/// complaining about some *other* provider still keeps its own words.
+String? friendlyAgentUnknownProvider(String raw) =>
+    raw.toLowerCase().contains("unknown provider 'grid'")
+    ? kAgentProviderUnknown
+    : null;
+
 /// A plain line for why the assistant on *this computer* wouldn't start, from
 /// the raw reason it left on stderr as it died.
 ///
@@ -55,6 +79,12 @@ const String kAgentSetupUnfinished =
 /// keep their own "try again". The raw reason is logged separately (§6), so
 /// humanizing it here is never the only record.
 String friendlyAgentStartupError(String raw) {
+  // A build that can't read the connection Grid wrote for this model. Checked
+  // before the install cases: the assistant is installed and running fine — it
+  // is this *model* it can't be pointed at — so "finish the install" would send
+  // the user to the wrong lever.
+  final provider = friendlyAgentUnknownProvider(raw);
+  if (provider != null) return provider;
   // A half-finished install: the binary is there but a piece it needs isn't.
   if (isAcpSetupIncomplete(raw)) {
     // Only reached once [RepairingHermesAcpService] has already tried to finish

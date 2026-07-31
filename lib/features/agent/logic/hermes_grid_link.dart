@@ -13,32 +13,8 @@ import '../../network/logic/client_app_configurator.dart';
 import '../../network/logic/client_app_detector.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../agents/logic/agent_catalog.dart';
-import '../../agents/logic/agent_model_support.dart';
 import 'agent_skill_installer.dart';
 import 'hermes_tool.dart';
-
-/// The line shown instead of pointing Hermes at a Codex model — see
-/// [hermesModelRefusal].
-const String kHermesCannotServeCodexModel =
-    "The Hermes assistant can't answer with a Codex model. Switch the assistant "
-    'to Codex for this model, or pick a different model for Hermes.';
-
-/// Why the Hermes assistant can't be pointed at [model], or null when it can.
-///
-/// A Codex (responses-only) model makes the config writer set `provider: grid`
-/// — a provider the installed Hermes rejects outright ("Unknown provider
-/// 'grid'"), so every Hermes turn, chat or cron, dies before it starts. Codex
-/// models are the Codex assistant's to serve, so pointing Hermes at one is
-/// refused up front with a line that names the fix, rather than a config that
-/// only ever fails.
-///
-/// The *which* is [agentSupportsModel]'s call, not this file's: the composer
-/// greys the same pairs out up front, and a second opinion here is how the two
-/// end up disagreeing about the model on screen.
-String? hermesModelRefusal(String model) =>
-    agentSupportsModel(AgentTool.hermes, model)
-    ? null
-    : kHermesCannotServeCodexModel;
 
 /// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
 /// `~/.hermes` when the target grid or model changes. ACP reads the model from
@@ -75,12 +51,12 @@ class HermesGridLink {
   /// when the grid or model changed). Returns null on success, else a
   /// user-facing error line.
   Future<String?> point(NetworkCredential network, String model) async {
-    // Refuse a Codex model before touching the config: pointing Hermes at one
-    // writes `provider: grid`, which the installed Hermes can't resolve, so the
-    // whole assistant would fail. Better to say why, and leave a working config
-    // in place.
-    final refusal = hermesModelRefusal(model);
-    if (refusal != null) return refusal;
+    // Every model the grid serves is written here, responses-only ones included:
+    // those get a named provider carrying `api_mode: codex_responses`, which is
+    // how Hermes speaks that dialect. A build too old to resolve that provider
+    // fails the turn with its own words, humanized where the failure lands
+    // ([friendlyAgentUnknownProvider]) — the app used to refuse the model up
+    // front instead, which spent everyone's Codex models on one old build.
     final key = '${network.networkId}|$model';
     if (_ref.read(hermesConfiguredProvider) == key) return null;
     final result = await _ref.read(clientAppConfiguratorProvider).apply(
