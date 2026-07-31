@@ -26,10 +26,17 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   AgentTool.codex => !_namesKind(model, const {kClaudeSeatKind}),
   // Claude Code speaks Anthropic's messages, which no Codex seat answers.
   AgentTool.claude => !_namesKind(model, kCodexSeatKinds),
-  // Hermes speaks chat-completions and switches dialect per model, so both seats
-  // are open to it — bar a responses-only one, whose config names a provider the
-  // installed Hermes rejects outright (see `hermesModelRefusal`).
-  AgentTool.hermes => !isResponsesOnlyModel(model),
+  // Hermes takes every model: it speaks chat-completions, and switches to the
+  // Responses dialect on a named provider when the model needs it (`api_mode:
+  // codex_responses` — see `hermesConfigSnippet`), so no seat is closed to it.
+  //
+  // It used to be refused a responses-only model, because Hermes v0.19.0
+  // answered that config with "Unknown provider 'grid'" and died. That was a
+  // build being too old for a connection the app writes correctly, not a pair
+  // that can't work — so the app offers it and says so if a build still can't
+  // (see [friendlyAgentUnknownProvider]) rather than closing the road for
+  // everyone.
+  AgentTool.hermes => true,
 };
 
 /// The agents that can answer with [model], in catalog order — who the user can

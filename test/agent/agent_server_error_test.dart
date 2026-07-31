@@ -157,4 +157,39 @@ void main() {
       expect(message, isNot(contains('RuntimeError')));
     });
   });
+
+  group("a build that can't read the connection Grid wrote", () {
+    const raw =
+        "hermes_cli.auth.AuthError: Unknown provider 'grid'. Check 'hermes "
+        "model' for available providers, or run 'hermes doctor' to diagnose "
+        'config issues.';
+
+    test('the model the assistant was pointed at is named as the thing to '
+        'change — the assistant itself installed and ran fine', () {
+      final message = friendlyAgentUnknownProvider(raw);
+      expect(message, kAgentProviderUnknown);
+      expect(message!.toLowerCase(), contains('model'));
+      expect(message.toLowerCase(), contains('update'));
+      // Hermes's own instructions name commands the user has no terminal for.
+      expect(message, isNot(contains('hermes doctor')));
+      expect(message, isNot(contains('AuthError')));
+    });
+
+    test('it beats the install cases at the startup path, which would send the '
+        'user to finish an install that is already finished', () {
+      expect(
+        friendlyAgentStartupError('Hermes exited during startup: $raw'),
+        kAgentProviderUnknown,
+      );
+    });
+
+    test("another provider's complaint keeps the assistant's own words — this "
+        "line is about the connection *Grid* writes", () {
+      expect(
+        friendlyAgentUnknownProvider("Unknown provider 'openrouter'."),
+        isNull,
+      );
+      expect(friendlyAgentUnknownProvider('a perfectly good answer'), isNull);
+    });
+  });
 }
