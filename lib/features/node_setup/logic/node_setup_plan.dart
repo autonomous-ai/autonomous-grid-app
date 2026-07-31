@@ -23,6 +23,7 @@ class SetupStep {
     required this.detail,
     required this.args,
     required this.isDownload,
+    this.agent,
   });
 
   final SetupAction action;
@@ -30,6 +31,11 @@ class SetupStep {
   final String detail;
   final List<String> args;
   final bool isDownload;
+
+  /// The agent this step installs, for a [SetupAction.installAgent] step. The
+  /// app runs the agent's own recipe rather than a `grid` subcommand, so such a
+  /// step carries an agent instead of an argv and [args] is empty.
+  final AgentTool? agent;
 }
 
 /// Default ComfyUI bundle so the media engine is usable right after install.
@@ -126,22 +132,22 @@ List<SetupStep> buildSetupPlan(
 /// Only the required one, on purpose. The extras (Codex, and Claude Code)
 /// install quietly in the background once the user is in
 /// ([BackgroundAgentInstaller]), so a first run never blocks on an assistant the
-/// user didn't pick — and never on a whole vendor CLI's download. `grid agent
-/// install` needs no Homebrew and no admin rights, so the one required step
-/// still runs on every OS.
+/// user didn't pick — and never on a whole vendor CLI's download. The app
+/// installs it into `~/.grid` itself, needing no Homebrew and no admin rights,
+/// so the one required step still runs on every OS.
 ///
-/// It's [kChatAgent] that lands here because it is the one chat falls back to
-/// (and it is CLI-packaged, so a `grid agent install` argv can fetch it); the
-/// background installer is the single place that knows how to fetch *any* agent,
-/// Claude Code included, so the plan doesn't try to.
+/// It's [kChatAgent] that lands here because it is the one chat falls back to;
+/// the background installer is the single place that knows how to fetch *any*
+/// agent, Claude Code included, so the plan doesn't try to.
 List<SetupStep> agentInstallSteps(NodeCapabilities caps) => [
   if (!caps.installedAgents.contains(kChatAgent))
     SetupStep(
       action: SetupAction.installAgent,
       title: 'Install ${kChatAgent.name}',
       detail: kChatAgent.tagline,
-      args: ['agent', 'install', kChatAgent.id],
+      args: const [],
       isDownload: false,
+      agent: kChatAgent,
     ),
 ];
 

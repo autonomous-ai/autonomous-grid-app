@@ -4,9 +4,9 @@ import '../../../infrastructure/cli/agent_version_service.dart';
 import '../../../infrastructure/cli/host_environment.dart';
 
 /// Codex — OpenAI's coding agent, run as a chat agent the app drives over
-/// `codex exec --json`. The `grid` CLI installs it (`grid agent install codex`)
-/// and it's found on the augmented PATH, the same way Hermes is; there's no
-/// bundled sidecar and nothing for the user to pick.
+/// `codex exec --json`. The app installs it — a pinned, hash-verified release
+/// binary into `~/.grid/bin` — and finds it on the augmented PATH, the same way
+/// Hermes is; there's no bundled sidecar and nothing for the user to pick.
 const String codexExecutable = 'codex';
 
 /// Absolute path to the Codex binary, or null when it isn't installed yet.

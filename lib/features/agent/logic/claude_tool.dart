@@ -6,10 +6,10 @@ import '../../../infrastructure/cli/host_environment.dart';
 /// Claude Code — Anthropic's coding agent, run as a chat agent the app drives
 /// over `claude -p --output-format stream-json`.
 ///
-/// Unlike Hermes and Codex, the `grid` CLI has no recipe for installing it
-/// (`grid agent install` knows only those two), so the app installs it with the
-/// vendor's own script — see [ClaudeInstaller]. Once it's here it behaves like
-/// the others: found on the augmented PATH, nothing for the user to pick.
+/// Unlike Hermes and Codex, it isn't fetched from a recipe of ours: it ships its
+/// own installer, which knows its release channel better than a pinned URL here
+/// would — see [ClaudeInstaller]. Once it's here it behaves like the others:
+/// found on the augmented PATH, nothing for the user to pick.
 const String claudeExecutable = 'claude';
 
 /// Absolute path to the Claude Code binary, or null when it isn't installed yet.

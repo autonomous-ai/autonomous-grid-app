@@ -8,9 +8,8 @@ import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/background_agent_controller.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';
 import 'package:grid_app/features/node_setup/logic/node_capabilities.dart';
+import 'package:grid_app/infrastructure/cli/agent_spec_installer.dart';
 import 'package:grid_app/infrastructure/cli/claude_installer.dart';
-import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
-import 'package:grid_app/infrastructure/providers.dart';
 
 /// Claude Code's vendor installer, recorded rather than run — so the background
 /// round never shells out to the real `curl | bash` on the test machine.
@@ -24,16 +23,34 @@ class _FakeClaudeInstaller implements ClaudeInstaller {
   }
 }
 
+/// The recipe runner, recorded rather than run — nothing is downloaded on the
+/// test machine.
+class _FakeSpecInstaller implements AgentSpecInstaller {
+  _FakeSpecInstaller({this.failure});
+
+  final AgentInstallException? failure;
+  final ran = <AgentInstallSpec>[];
+
+  @override
+  Future<void> run(
+    AgentInstallSpec spec, {
+    void Function(String line)? onLog,
+  }) async {
+    ran.add(spec);
+    if (failure != null) throw failure!;
+  }
+}
+
 /// Capabilities the installer reads, with [installed] deciding what's missing —
 /// overridden wholesale so the test never probes the real machine.
 ProviderContainer _container(
-  FakeGridCliService? cli,
+  AgentSpecInstaller specs,
   ClaudeInstaller claude, {
   Set<AgentTool> installed = const {},
 }) {
   final container = ProviderContainer(
     overrides: [
-      gridCliServiceProvider.overrideWithValue(cli),
+      agentSpecInstallerProvider.overrideWithValue(specs),
       claudeInstallerProvider.overrideWithValue(claude),
       nodeCapabilitiesProvider.overrideWith(
         (_) async => NodeCapabilities(
@@ -55,67 +72,70 @@ ProviderContainer _container(
 }
 
 void main() {
-  test('a computer missing agents tops up every one — the CLI ones and Claude '
-      'Code together, without the installer screen', () async {
+  test('a computer missing agents tops up every one — the app-fetched ones and '
+      'Claude Code together, without the installer screen', () async {
     // The full-screen installer only runs when there's no assistant at all, so
     // agents added to the catalog later (Claude Code among them) would never
     // arrive on a computer that was already set up.
-    final cli = FakeGridCliService();
+    final specs = _FakeSpecInstaller();
     final claude = _FakeClaudeInstaller();
-    final container = _container(cli, claude, installed: {AgentTool.hermes});
+    final container = _container(specs, claude, installed: {AgentTool.hermes});
 
     await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
-    // Codex through the CLI, Claude Code through its own installer — both in the
-    // one background round.
-    expect(cli.runCalls, [
-      ['agent', 'install', AgentTool.codex.id],
-    ]);
+    // Codex through its own recipe, Claude Code through its vendor installer —
+    // both in the one background round.
+    expect(specs.ran.single, isA<GithubReleaseBinary>());
     expect(claude.upgrades, [false]);
   });
 
   test('a computer with every agent installs nothing', () async {
-    final cli = FakeGridCliService();
+    final specs = _FakeSpecInstaller();
     final claude = _FakeClaudeInstaller();
     final container = _container(
-      cli,
+      specs,
       claude,
       installed: AgentTool.values.toSet(),
     );
 
     await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
-    expect(cli.runCalls, isEmpty);
+    expect(specs.ran, isEmpty);
     expect(claude.upgrades, isEmpty);
   });
 
   test(
     'it runs at most once a session, however often the shell asks',
     () async {
-      final cli = FakeGridCliService();
+      final specs = _FakeSpecInstaller();
       final claude = _FakeClaudeInstaller();
-      final container = _container(cli, claude, installed: {AgentTool.hermes});
+      final container = _container(
+        specs,
+        claude,
+        installed: {AgentTool.hermes},
+      );
       final installer = container.read(backgroundAgentInstallerProvider);
 
       await installer.startIfNeeded();
       await installer.startIfNeeded();
 
-      expect(cli.runCalls, [
-        ['agent', 'install', AgentTool.codex.id],
-      ]);
+      expect(specs.ran, hasLength(1));
       expect(claude.upgrades, [false]); // Claude Code fetched once, not twice.
     },
   );
 
-  test('no grid tool still installs Claude Code — its installer needs nothing '
-      'from the CLI — and does not crash on the ones that do', () async {
+  test('one agent that will not download does not take the others with it — '
+      'the round logs it and carries on', () async {
     final claude = _FakeClaudeInstaller();
-    final container = _container(null, claude);
+    final container = _container(
+      _FakeSpecInstaller(
+        failure: const AgentInstallException('could not reach github.com'),
+      ),
+      claude,
+    );
 
     await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
-    // Claude Code doesn't go through the grid CLI, so a missing CLI can't stop
-    // it; Hermes and Codex simply fail (logged) and are skipped.
     expect(claude.upgrades, [false]);
   });
 }

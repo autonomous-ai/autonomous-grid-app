@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../../core/grid_paths.dart';
 import '../logging/app_log.dart';
+import 'agent_spec_installer.dart';
 import 'hermes_acp_service.dart';
 import 'host_environment.dart';
 
@@ -22,12 +23,14 @@ import 'host_environment.dart';
 /// every connector the app wrote into the config — Gmail, GitHub, a hand-added
 /// server — is dropped without a word.
 ///
-/// TODO(BE): `grid agent install` still asks for `hermes-agent[acp]` alone
-/// (`autonomous-grid → shared/agent/installer.py`), and it, not this constant,
-/// is what the Install/Update button runs — so every install rebuilds the
-/// environment without the SDK. [HermesAcpSetup.ensureRuntimeSupport] puts it
-/// back afterwards; until the CLI asks for `[acp,mcp]`, a `grid agent install`
-/// run from a terminal leaves the connectors dead until the app next starts.
+/// This is what the app installs Hermes with ([AgentTool.installSpec]) as well
+/// as what it repairs with, so the two can't drift apart.
+///
+/// TODO(BE): the CLI's own installer (`autonomous-grid →
+/// shared/agent/installer.py`) still asks for `hermes-agent[acp]` alone. The app
+/// no longer goes through it, but a `grid agent install` run from a terminal
+/// rebuilds the environment without the SDK, and the connectors stay dead until
+/// [HermesAcpSetup.ensureRuntimeSupport] next runs.
 const String kHermesAcpRequirement = 'hermes-agent[acp,mcp]';
 
 /// The interpreter Hermes is pinned to (`>=3.11,<3.14`), matching the CLI's own
@@ -39,14 +42,14 @@ const String kHermesPython = '3.13';
 ///
 /// Deliberately **not** `--force`: uv keeps the environment and installs only
 /// what the changed extra adds (one small package), where a forced reinstall
-/// would tear down and refetch the private CPython for no gain.
-List<String> hermesAcpRepairArgs() => const [
-  'tool',
-  'install',
-  '--python',
-  kHermesPython,
-  kHermesAcpRequirement,
-];
+/// would tear down and refetch the private CPython for no gain. The install
+/// proper does force it, and shares this argv builder so the two can't disagree
+/// about anything else.
+List<String> hermesAcpRepairArgs() => uvToolInstallArgs(
+  package: kHermesAcpRequirement,
+  python: kHermesPython,
+  force: false,
+);
 
 /// The environment that keeps uv's tool tree — and the CPython it downloads —
 /// inside `~/.grid`, exactly where the CLI's installer puts them. Without these

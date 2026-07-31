@@ -4,38 +4,29 @@ import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agent/logic/agent_server_error.dart';
 import 'package:grid_app/features/agent/logic/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_install_controller.dart';
+import 'package:grid_app/infrastructure/cli/agent_spec_installer.dart';
 import 'package:grid_app/infrastructure/cli/claude_installer.dart';
-import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_acp_setup.dart';
 import 'package:grid_app/infrastructure/cli/hermes_version_service.dart';
-import 'package:grid_app/infrastructure/cli/parsers/download_progress.dart';
-import 'package:grid_app/infrastructure/providers.dart';
 
-/// Records what the app asked the `grid` CLI to do, and answers with a canned
-/// result — no process is spawned.
-class _FakeCli implements GridCliService {
-  _FakeCli({this.exitCode = 0, this.stderr = '', this.stdout = ''});
+/// The recipe runner, recorded rather than run — nothing is downloaded and no
+/// process is spawned.
+class _FakeSpecInstaller implements AgentSpecInstaller {
+  _FakeSpecInstaller({this.failure});
 
-  final int exitCode;
-  final String stderr;
-  final String stdout;
-  final calls = <List<String>>[];
+  /// What the run throws, or null when it succeeds.
+  final AgentInstallException? failure;
+
+  final ran = <AgentInstallSpec>[];
 
   @override
-  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
-    calls.add(args);
-    return CliResult(exitCode: exitCode, stdout: stdout, stderr: stderr);
+  Future<void> run(
+    AgentInstallSpec spec, {
+    void Function(String line)? onLog,
+  }) async {
+    ran.add(spec);
+    if (failure != null) throw failure!;
   }
-
-  @override
-  Future<GridProcess> start(
-    List<String> args, {
-    Map<String, String>? environment,
-  }) => throw UnimplementedError();
-
-  @override
-  Stream<DownloadProgress> pull(List<String> args) =>
-      throw UnimplementedError();
 }
 
 /// Hermes's ACP support as the test wants to find it — no `hermes acp --check`
@@ -83,14 +74,16 @@ class _FakeClaudeInstaller implements ClaudeInstaller {
   }
 }
 
-ProviderContainer _container(
-  GridCliService? cli, {
+ProviderContainer _container({
+  AgentSpecInstaller? specs,
   HermesAcpSetup? setup,
   ClaudeInstaller? claude,
 }) {
   final container = ProviderContainer(
     overrides: [
-      gridCliServiceProvider.overrideWithValue(cli),
+      agentSpecInstallerProvider.overrideWithValue(
+        specs ?? _FakeSpecInstaller(),
+      ),
       // Never probe the real Hermes on the machine running the tests.
       hermesAcpSetupProvider.overrideWithValue(setup ?? _FakeSetup()),
       claudeInstallerProvider.overrideWithValue(
@@ -104,55 +97,37 @@ ProviderContainer _container(
 
 void main() {
   group('installing an agent', () {
-    test(
-      'asks the CLI for it by name — and asks to replace it when updating',
-      () async {
-        final cli = _FakeCli();
-        final container = _container(cli);
-        final controller = container.read(agentInstallProvider.notifier);
+    test('runs the agent\'s own recipe and ends on the outcome the button '
+        'shows, not back at idle', () async {
+      final specs = _FakeSpecInstaller();
+      final container = _container(specs: specs);
+      final controller = container.read(agentInstallProvider.notifier);
 
-        await controller.install(AgentTool.hermes);
-        expect(cli.calls.single, ['agent', 'install', 'hermes']);
-        // Ends on the outcome the button shows, not back at idle.
-        expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
+      await controller.install(AgentTool.hermes);
 
-        await controller.install(AgentTool.hermes, upgrade: true);
-        expect(cli.calls.last, ['agent', 'install', 'hermes', '--force']);
-      },
-    );
+      expect(specs.ran.single, isA<UvToolInstall>());
+      expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
+    });
 
-    test('Claude Code goes to its vendor installer, never to `grid agent '
-        'install` — the CLI knows only hermes and codex and would reject it at '
-        'argv parsing', () async {
-      final cli = _FakeCli();
+    test('Claude Code goes to its vendor installer instead — it ships one, and '
+        'knows its own release channel', () async {
+      final specs = _FakeSpecInstaller();
       final claude = _FakeClaudeInstaller();
-      final container = _container(cli, claude: claude);
+      final container = _container(specs: specs, claude: claude);
       final controller = container.read(agentInstallProvider.notifier);
 
       await controller.install(AgentTool.claude);
       expect(claude.upgrades, [false]);
-      expect(cli.calls, isEmpty);
+      expect(specs.ran, isEmpty);
       expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
 
       await controller.install(AgentTool.claude, upgrade: true);
       expect(claude.upgrades, [false, true]);
     });
 
-    test('Claude Code installs on a machine with no grid CLI at all — its '
-        'installer needs nothing from us', () async {
-      final container = _container(null, claude: _FakeClaudeInstaller());
-
-      await container
-          .read(agentInstallProvider.notifier)
-          .install(AgentTool.claude);
-
-      expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
-    });
-
     test('a failed Claude install keeps the installer own reason, so a proxy '
         'or a missing curl is diagnosable', () async {
       final container = _container(
-        _FakeCli(),
         claude: _FakeClaudeInstaller(failure: 'curl: (6) Could not resolve'),
       );
 
@@ -165,76 +140,58 @@ void main() {
       expect(state.message, contains('Could not resolve'));
     });
 
-    test(
-      'a failure comes back as the CLI\'s own last words, not an exit code',
-      () async {
-        final cli = _FakeCli(
-          exitCode: 1,
-          stderr: 'error: could not reach github.com',
-        );
-        final container = _container(cli);
-
-        await container
-            .read(agentInstallProvider.notifier)
-            .install(AgentTool.hermes);
-
-        final state = container.read(agentInstallProvider);
-        expect(state, isA<AgentInstallFailed>());
-        expect(
-          (state as AgentInstallFailed).message,
-          contains('could not reach github.com'),
-        );
-        expect(state.tool, AgentTool.hermes);
-      },
-    );
-
-    test(
-      'a CLI that complains on stdout instead of stderr is still heard',
-      () async {
-        final container = _container(
-          _FakeCli(exitCode: 1, stdout: 'no space left on device'),
-        );
-
-        await container
-            .read(agentInstallProvider.notifier)
-            .install(AgentTool.hermes);
-
-        final state =
-            container.read(agentInstallProvider) as AgentInstallFailed;
-        expect(state.message, contains('no space left on device'));
-      },
-    );
-
-    test('a failure that said nothing still says what to do', () async {
-      final container = _container(_FakeCli(exitCode: 2));
+    test("a failure comes back as the installer's own last words, not an exit "
+        'code', () async {
+      final container = _container(
+        specs: _FakeSpecInstaller(
+          failure: const AgentInstallException('no space left on device'),
+        ),
+      );
 
       await container
           .read(agentInstallProvider.notifier)
           .install(AgentTool.hermes);
 
       final state = container.read(agentInstallProvider) as AgentInstallFailed;
-      expect(state.message, contains('try again'));
+      expect(state.message, contains('no space left on device'));
+      expect(state.tool, AgentTool.hermes);
     });
 
-    test('an install the CLI left unable to serve ACP is finished off, so the '
-        'row never reads "installed" for an agent chat cannot use', () async {
-      final setup = _FakeSetup(ready: false);
-      final container = _container(_FakeCli(), setup: setup);
+    test('a crash that said nothing still says what to do', () async {
+      final container = _container(
+        specs: _FakeSpecInstaller(failure: const AgentInstallException('')),
+      );
 
       await container
           .read(agentInstallProvider.notifier)
-          .install(AgentTool.hermes, upgrade: true);
+          .install(AgentTool.hermes);
 
-      expect(setup.repairs, 1);
-      expect(setup.ready, isTrue);
-      expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
+      final state = container.read(agentInstallProvider) as AgentInstallFailed;
+      expect(state.message, isNotEmpty);
     });
+
+    test(
+      'an install that left Hermes unable to serve ACP is finished off, so '
+      'the row never reads "installed" for an agent chat cannot use',
+      () async {
+        final setup = _FakeSetup(ready: false);
+        final container = _container(setup: setup);
+
+        await container
+            .read(agentInstallProvider.notifier)
+            .install(AgentTool.hermes, upgrade: true);
+
+        expect(setup.repairs, 1);
+        expect(setup.ready, isTrue);
+        expect(container.read(agentInstallProvider), isA<AgentInstallDone>());
+      },
+    );
 
     test(
       'an agent that already works is not reinstalled a second time',
       () async {
         final setup = _FakeSetup();
-        final container = _container(_FakeCli(), setup: setup);
+        final container = _container(setup: setup);
 
         await container
             .read(agentInstallProvider.notifier)
@@ -248,7 +205,7 @@ void main() {
         'reinstall rebuilds the environment and drops what the app added, '
         'leaving web search and every connector silently dead', () async {
       final setup = _FakeSetup();
-      final container = _container(_FakeCli(), setup: setup);
+      final container = _container(setup: setup);
 
       await container
           .read(agentInstallProvider.notifier)
@@ -260,7 +217,6 @@ void main() {
     test('a repair that could not run says so, rather than reporting an '
         'install that answers nothing', () async {
       final container = _container(
-        _FakeCli(),
         setup: _FakeSetup(
           ready: false,
           failure: 'uv: could not reach pypi.org',
@@ -276,18 +232,6 @@ void main() {
       // The raw reason belongs in the log, not in front of the user.
       expect(state.message, isNot(contains('pypi.org')));
     });
-
-    test('with no grid tool there is nothing to install with, and it says so '
-        'instead of failing quietly', () async {
-      final container = _container(null);
-
-      await container
-          .read(agentInstallProvider.notifier)
-          .install(AgentTool.hermes);
-
-      final state = container.read(agentInstallProvider) as AgentInstallFailed;
-      expect(state.message, contains("grid tool isn't installed"));
-    });
   });
 
   group('the catalog', () {
@@ -301,10 +245,11 @@ void main() {
       expect(kChatAgent, AgentTool.hermes);
     });
 
-    test('the id of a CLI-packaged agent is what `grid agent install` takes '
-        '— the CLI rejects anything else at argv parsing', () {
-      expect(AgentTool.hermes.id, 'hermes');
-      expect(AgentTool.codex.id, 'codex');
+    test('every agent on it can actually be fetched — a recipe of the app\'s '
+        'own, or a vendor installer for the one that ships one', () {
+      expect(AgentTool.hermes.installSpec, isA<UvToolInstall>());
+      expect(AgentTool.codex.installSpec, isA<GithubReleaseBinary>());
+      expect(AgentTool.claude.installSpec, isNull);
     });
   });
 

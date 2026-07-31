@@ -44,7 +44,7 @@ final agentVersionProvider = FutureProvider.family<String?, AgentTool>((
 /// The probe behind [agentInstalledProvider] walks the PATH once and then caches
 /// the answer for the app's lifetime, so **anything that installs or removes an
 /// agent has to say so here**. The first-run installer didn't: it finished
-/// `grid agent install hermes` and every screen kept answering with the probe
+/// installing the chat agent and every screen kept answering with the probe
 /// taken at launch — Agents read "Not installed", and chat routed straight past
 /// the agent — until the user quit and reopened the app.
 void reprobeAgent(Ref ref, AgentTool tool) {
