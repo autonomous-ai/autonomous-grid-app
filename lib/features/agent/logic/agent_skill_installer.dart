@@ -130,6 +130,12 @@ class AgentSkillInstaller {
   /// [install] owns `skills/grid/` and rewrites it, so those copies are current
   /// by definition; these are the ones nothing rewrites, and leaving them would
   /// have the agent reading two skills of one name — the stale one at that.
+  /// Only paths **nothing writes any more** may be listed here. `skills/<name>`
+  /// at the root is where [gridDir] puts a copy today, so listing
+  /// `grid-image-gen` and `grid-video-gen` there deleted the two skills this
+  /// method had just installed: the library showed them, the Skills screen
+  /// listed them, and Hermes never had them — "draw me a picture" had nothing
+  /// to run for as long as that line was here.
   Future<void> _removeSupersededCopies(String home) async {
     for (final superseded in const [
       // Where install() itself wrote in an earlier build. Nothing rewrites it
@@ -138,8 +144,6 @@ class AgentSkillInstaller {
       '.hermes/skills/grid',
       '.hermes/skills/creative/grid-image-gen',
       '.hermes/skills/creative/grid-video-gen',
-      '.hermes/skills/grid-image-gen',
-      '.hermes/skills/grid-video-gen',
     ]) {
       final dir = Directory('$home/$superseded');
       if (await dir.exists()) await dir.delete(recursive: true);

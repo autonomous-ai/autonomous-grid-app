@@ -217,23 +217,43 @@ void main() {
       expect(author.exists('Taken'), isTrue);
     });
 
-    test('refuses to touch anything outside the store', () async {
+    test('refuses to touch anything outside the skill folders, and says so in '
+        'the words of whoever pressed the button', () async {
       final author = SkillAuthor(home: home.path);
       final outside = await Directory.systemTemp.createTemp('grid_outside');
       addTearDown(() => outside.delete(recursive: true));
 
-      await expectLater(author.delete(outside.path), throwsArgumentError);
-      // A skill still sitting in the agent's own folder is not ours to rewrite.
       await expectLater(
-        author.edit(
-          previousPath: '${home.path}/.hermes/skills/my-skills/notes',
-          name: 'Notes',
-          description: 'd',
-          instructions: 'i',
+        author.delete(outside.path),
+        throwsA(
+          isArgumentError.having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains("isn't in one of Grid's skill folders"),
+              // The path is the invalid value, for the log — not the sentence.
+              isNot(contains(outside.path)),
+            ),
+          ),
         ),
-        throwsArgumentError,
       );
       expect(outside.existsSync(), isTrue);
+    });
+
+    test("an agent's own folder is writable — the tabs *are* those folders, so "
+        'a row the screen shows must be editable from it', () async {
+      final author = SkillAuthor(home: home.path);
+      final notes = Directory('${home.path}/.hermes/skills/my-skills/notes');
+      await notes.create(recursive: true);
+
+      final edited = await author.edit(
+        previousPath: notes.path,
+        name: 'Notes',
+        description: 'd',
+        instructions: 'i',
+      );
+
+      expect(edited.existsSync(), isTrue);
     });
   });
 }

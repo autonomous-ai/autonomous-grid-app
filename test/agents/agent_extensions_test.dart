@@ -89,7 +89,7 @@ void main() {
     });
   });
 
-  group('projectSharedStore', () {
+  group('detachLibrary', () {
     late Directory home;
 
     setUp(() async {
@@ -114,38 +114,49 @@ void main() {
 
     File config() => File('${home.path}/.hermes/config.yaml');
 
-    test('writes external_dirs into a config that never had one', () async {
+    test('a config that never had the entry is left alone — the app does not '
+        'create one just to say nothing', () async {
       await project();
-      expect(config().readAsStringSync(), contains('~/.grid/skills'));
+
+      expect(config().existsSync(), isFalse);
     });
 
-    test('is idempotent — a second run changes nothing', () async {
+    test('takes the library entry out, and a second run has nothing left to '
+        'do', () async {
+      config().parent.createSync(recursive: true);
+      config().writeAsStringSync(
+        'skills:\n  external_dirs:\n    - ~/.grid/skills\n',
+      );
+
       await project();
       final once = config().readAsStringSync();
       await project();
+
+      expect(once, isNot(contains('~/.grid/skills')));
       expect(config().readAsStringSync(), once);
-      // Exactly one entry, not one per run.
-      expect('~/.grid/skills'.allMatches(once).length, 1);
     });
 
     test('keeps entries the user set by hand', () async {
       config().parent.createSync(recursive: true);
       config().writeAsStringSync(
-        'skills:\n  external_dirs:\n    - ~/work/my-skills\n',
+        'skills:\n  external_dirs:\n    - ~/work/my-skills\n'
+        '    - ~/.grid/skills\n',
       );
+
       await project();
+
       final text = config().readAsStringSync();
       expect(text, contains('~/work/my-skills'));
-      expect(text, contains('~/.grid/skills'));
+      expect(text, isNot(contains('~/.grid/skills')));
     });
 
     test('tolerates the bare-string form hermes accepts', () async {
       config().parent.createSync(recursive: true);
-      config().writeAsStringSync('skills:\n  external_dirs: ~/one-dir\n');
+      config().writeAsStringSync('skills:\n  external_dirs: ~/.grid/skills\n');
+
       await project();
-      final text = config().readAsStringSync();
-      expect(text, contains('~/one-dir'));
-      expect(text, contains('~/.grid/skills'));
+
+      expect(config().readAsStringSync(), isNot(contains('~/.grid/skills')));
     });
   });
 
