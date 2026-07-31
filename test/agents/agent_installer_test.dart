@@ -2,34 +2,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_installer.dart';
+import 'package:grid_app/infrastructure/cli/agent_spec_installer.dart';
 import 'package:grid_app/infrastructure/cli/claude_installer.dart';
-import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
-import 'package:grid_app/infrastructure/cli/parsers/download_progress.dart';
-import 'package:grid_app/infrastructure/providers.dart';
 
-/// Records the argv it was asked to run and answers with a canned result — no
-/// process spawned.
-class _FakeCli implements GridCliService {
-  _FakeCli({this.exitCode = 0, this.stderr = ''});
+/// Records the recipes it was asked to run and answers with a canned outcome —
+/// nothing is downloaded and no process is spawned.
+class _FakeSpecInstaller implements AgentSpecInstaller {
+  _FakeSpecInstaller({this.failure, this.chatter = const []});
 
-  final int exitCode;
-  final String stderr;
-  final calls = <List<String>>[];
+  /// What the run throws, or null when it succeeds.
+  final AgentInstallException? failure;
+
+  /// Lines the installer "prints" before finishing.
+  final List<String> chatter;
+
+  final ran = <AgentInstallSpec>[];
 
   @override
-  Future<CliResult> run(List<String> args, {Duration? timeout}) async {
-    calls.add(args);
-    return CliResult(exitCode: exitCode, stdout: '', stderr: stderr);
+  Future<void> run(
+    AgentInstallSpec spec, {
+    void Function(String line)? onLog,
+  }) async {
+    ran.add(spec);
+    chatter.forEach(onLog ?? (_) {});
+    if (failure != null) throw failure!;
   }
-
-  @override
-  Future<GridProcess> start(
-    List<String> a, {
-    Map<String, String>? environment,
-  }) => throw UnimplementedError();
-
-  @override
-  Stream<DownloadProgress> pull(List<String> a) => throw UnimplementedError();
 }
 
 class _FakeClaude implements ClaudeInstaller {
@@ -44,10 +41,15 @@ class _FakeClaude implements ClaudeInstaller {
   }
 }
 
-AgentInstaller _installer({GridCliService? cli, ClaudeInstaller? claude}) {
+AgentInstaller _installer({
+  AgentSpecInstaller? specs,
+  ClaudeInstaller? claude,
+}) {
   final container = ProviderContainer(
     overrides: [
-      gridCliServiceProvider.overrideWithValue(cli),
+      agentSpecInstallerProvider.overrideWithValue(
+        specs ?? _FakeSpecInstaller(),
+      ),
       claudeInstallerProvider.overrideWithValue(claude ?? _FakeClaude()),
     ],
   );
@@ -57,50 +59,90 @@ AgentInstaller _installer({GridCliService? cli, ClaudeInstaller? claude}) {
 
 void main() {
   group('one router, one route per agent', () {
-    test('a CLI-packaged agent goes to `grid agent install`, and Claude Code '
-        'never does — the CLI would reject it at argv parsing', () async {
-      final cli = _FakeCli();
+    test('the agents the app fetches run their own recipe, and Claude Code '
+        'goes to its vendor installer instead', () async {
+      final specs = _FakeSpecInstaller();
       final claude = _FakeClaude();
-      final installer = _installer(cli: cli, claude: claude);
+      final installer = _installer(specs: specs, claude: claude);
 
       expect(await installer.install(AgentTool.hermes), isNull);
       expect(await installer.install(AgentTool.codex), isNull);
       expect(await installer.install(AgentTool.claude), isNull);
 
-      expect(cli.calls, [
-        ['agent', 'install', 'hermes'],
-        ['agent', 'install', 'codex'],
-      ]);
+      expect(specs.ran, [
+        isA<UvToolInstall>(),
+        isA<GithubReleaseBinary>(),
+      ], reason: 'Hermes is a Python tool, Codex a release binary');
       expect(claude.upgrades, [false]);
     });
 
-    test('upgrade forces a reinstall on both routes', () async {
-      final cli = _FakeCli();
+    test("Hermes installs with the extras it's mute without — the same "
+        'requirement the ACP self-repair asks for', () {
+      final spec = AgentTool.hermes.installSpec;
+
+      expect((spec as UvToolInstall).package, contains('[acp,mcp]'));
+    });
+
+    test('an update runs the same recipe — each one installs over what is '
+        'there, so there is no second, weaker path to keep working', () async {
+      final specs = _FakeSpecInstaller();
       final claude = _FakeClaude();
-      final installer = _installer(cli: cli, claude: claude);
+      final installer = _installer(specs: specs, claude: claude);
 
       await installer.install(AgentTool.hermes, upgrade: true);
       await installer.install(AgentTool.claude, upgrade: true);
 
-      expect(cli.calls.single, ['agent', 'install', 'hermes', '--force']);
+      expect(specs.ran.single, isA<UvToolInstall>());
+      // The vendor's installer does need telling — its script has an upgrade
+      // mode of its own.
       expect(claude.upgrades, [true]);
+    });
+
+    test("the installer's output reaches the caller as it happens, so a "
+        'multi-minute download can show life', () async {
+      final lines = <String>[];
+      final installer = _installer(
+        specs: _FakeSpecInstaller(chatter: ['Downloading uv …', 'Installed.']),
+      );
+
+      await installer.install(AgentTool.hermes, onLog: lines.add);
+
+      expect(lines, ['Downloading uv …', 'Installed.']);
     });
   });
 
   group('a failure comes back as a line the user can act on', () {
-    test(
-      "a CLI failure keeps the CLI's own last words, not an exit code",
-      () async {
-        final installer = _installer(
-          cli: _FakeCli(
-            exitCode: 1,
-            stderr: 'error: could not reach github.com',
+    test("a failed install keeps the installer's own last words, not an exit "
+        'code', () async {
+      final installer = _installer(
+        specs: _FakeSpecInstaller(
+          failure: const AgentInstallException(
+            'SHA-256 mismatch for codex.tar.gz',
           ),
-        );
-        final message = await installer.install(AgentTool.codex);
-        expect(message, contains('could not reach github.com'));
-      },
-    );
+        ),
+      );
+
+      final message = await installer.install(AgentTool.codex);
+
+      expect(message, contains('SHA-256 mismatch'));
+    });
+
+    test('a download that never started invites a retry instead of quoting a '
+        'spawn error at the user', () async {
+      final installer = _installer(
+        specs: _FakeSpecInstaller(
+          failure: const AgentInstallException(
+            "Couldn't start uv: no such file",
+            retryable: true,
+          ),
+        ),
+      );
+
+      final message = await installer.install(AgentTool.hermes);
+
+      expect(message, contains('try again'));
+      expect(message, isNot(contains('no such file')));
+    });
 
     test('a Claude Code failure keeps the installer own reason', () async {
       final installer = _installer(
@@ -109,19 +151,5 @@ void main() {
       final message = await installer.install(AgentTool.claude);
       expect(message, contains('Could not resolve host'));
     });
-
-    test('a CLI-packaged agent with no grid tool says so, rather than failing '
-        'silently', () async {
-      final message = await _installer(cli: null).install(AgentTool.hermes);
-      expect(message, contains("grid tool isn't installed"));
-    });
-
-    test(
-      'Claude Code needs no grid tool, so a missing CLI never stops it',
-      () async {
-        final message = await _installer(cli: null).install(AgentTool.claude);
-        expect(message, isNull);
-      },
-    );
   });
 }

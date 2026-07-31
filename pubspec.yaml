@@ -11,8 +11,10 @@ environment:
   sdk: ^3.9.2
 
 dependencies:
+  archive: ^4.0.7
   auto_updater: ^1.0.0
   cached_network_image: ^3.4.1
+  crypto: ^3.0.6
   desktop_drop: ^0.7.1
   file_selector: ^1.0.3
   flutter:

@@ -4,6 +4,8 @@ import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/logging/node_setup_log.dart';
 import '../../../infrastructure/providers.dart';
+import '../../agents/logic/agent_catalog.dart';
+import '../../agents/logic/agent_installer.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
@@ -128,9 +130,7 @@ class NodeSetupController extends Notifier<NodeSetupState> {
         log: List.unmodifiable(log),
       );
 
-      final ok = steps[i].isDownload
-          ? await _runDownload(service, steps, i, log)
-          : await _runStreaming(service, steps, i, log);
+      final ok = await _runStep(service, steps, i, log);
       if (_cancelled) return; // cancel() writes its own footer
       if (!ok) {
         _logFile.endStep('failed');
@@ -150,6 +150,62 @@ class NodeSetupController extends Notifier<NodeSetupState> {
     _refresh();
     _logFile.endRun('completed — ${completed.length} step(s)');
     state = NodeSetupDone(completed);
+  }
+
+  /// Run step [i], on whichever of the three runners fits it. Agents install
+  /// through the app's own recipe (no `grid` subcommand can fetch them), long
+  /// downloads through the progress-streaming path, everything else by
+  /// streaming a CLI lifecycle command.
+  Future<bool> _runStep(
+    GridCliService service,
+    List<SetupStep> steps,
+    int i,
+    List<String> log,
+  ) {
+    final step = steps[i];
+    if (step.agent case final agent?) {
+      return _runAgentInstall(agent, steps, i, log);
+    }
+    if (step.isDownload) return _runDownload(service, steps, i, log);
+    return _runStreaming(service, steps, i, log);
+  }
+
+  /// Agent step: the app fetches the agent itself ([AgentInstaller]), streaming
+  /// the installer's own words into this step's log so a multi-minute first
+  /// download shows life. A failure keeps the installer's line, which is the
+  /// only thing that says what went wrong.
+  Future<bool> _runAgentInstall(
+    AgentTool agent,
+    List<SetupStep> steps,
+    int i,
+    List<String> log,
+  ) async {
+    final failure = await ref
+        .read(agentInstallerProvider)
+        .install(
+          agent,
+          onLog: (line) {
+            // A line that arrives after this step ended (cancelled, or the next
+            // step already started) must not revive a stale "Running step i".
+            if (_cancelled || state is! NodeSetupRunning) return;
+            _write(log, line);
+            state = NodeSetupRunning(
+              steps: steps,
+              index: i,
+              log: List.unmodifiable(log),
+            );
+          },
+        );
+    if (_cancelled) return false;
+    if (failure == null) return true;
+
+    _write(log, failure, isError: true);
+    state = NodeSetupFailed(
+      step: steps[i],
+      message: failure,
+      log: List.unmodifiable(log),
+    );
+    return false;
   }
 
   /// Streaming lifecycle step (`llama.cpp install`, `media install`): success is
@@ -279,9 +335,14 @@ class NodeSetupController extends Notifier<NodeSetupState> {
 
   /// Mirror one streamed line to both the durable file (tagging stderr) and the
   /// in-memory UI log.
-  void _output(List<String> log, CliLine line) {
-    _logFile.write(line.text, isError: line.isStderr);
-    _memo(log, line.text);
+  void _output(List<String> log, CliLine line) =>
+      _write(log, line.text, isError: line.isStderr);
+
+  /// The same, for a line that didn't come from the CLI — the app's own
+  /// installer speaks plain strings.
+  void _write(List<String> log, String text, {bool isError = false}) {
+    _logFile.write(text, isError: isError);
+    _memo(log, text);
   }
 
   /// Append to the in-memory UI log only, capped at [_maxLogLines].

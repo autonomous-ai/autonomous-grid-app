@@ -160,6 +160,15 @@ class GridPaths {
   /// nothing here depends on Homebrew or on the user's `PATH`.
   static Directory get binDir => Directory('${home.path}/bin');
 
+  /// Where `uv` keeps the agent tools it installs for Grid — one venv per tool
+  /// (mirrors the CLI's `paths.tools_dir()`). Under `~/.grid` so Grid owns what
+  /// Grid installed and a directory removal uninstalls it.
+  static Directory get toolsDir => Directory('${home.path}/tools');
+
+  /// Where `uv` downloads the private CPython those tools run on (mirrors the
+  /// CLI's `paths.python_dir()`). Under `~/.grid` for the same reason.
+  static Directory get pythonDir => Directory('${home.path}/python');
+
   static File get llamaServerBin => File('${binDir.path}/llama-server');
 
   /// Run records for detached engines launched by `grid join`, namespaced per

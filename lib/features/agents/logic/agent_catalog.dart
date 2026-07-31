@@ -1,3 +1,7 @@
+import '../../../infrastructure/cli/agent_release_pins.dart';
+import '../../../infrastructure/cli/agent_spec_installer.dart';
+import '../../../infrastructure/cli/hermes_acp_setup.dart';
+
 /// The agents the app can put in charge of a chat.
 ///
 /// Every entry here runs today: the app can get it onto this computer, and it
@@ -5,10 +9,10 @@
 /// list — a row the user can only look at takes up the same space as a working
 /// one and answers nothing.
 ///
-/// *How* it gets installed differs, and that difference lives in
-/// `AgentInstallController`, not here: Hermes and Codex come through the `grid`
-/// CLI (`grid agent install <id>`), Claude Code through its vendor's own
-/// installer, because the CLI has no recipe for it.
+/// *How* it gets installed is [installSpec]: a recipe the app runs itself, so
+/// adding an agent is a change here and nowhere else. Claude Code is the one
+/// exception — it ships its own installer, which knows things about its release
+/// channel that a pinned URL here would only get wrong.
 enum AgentTool {
   hermes(
     id: 'hermes',
@@ -36,8 +40,8 @@ enum AgentTool {
     required this.iconAsset,
   });
 
-  /// The agent's own slug — what `grid agent install` calls it, and the value
-  /// [ChatPrefs.chatAgent] remembers.
+  /// The agent's own slug — how it is named on disk and in the log, and the
+  /// value [ChatPrefs.chatAgent] remembers.
   final String id;
 
   final String name;
@@ -49,17 +53,28 @@ enum AgentTool {
   /// only what sets this agent apart from the others.
   final String tagline;
 
-  /// Which installer puts this agent on the machine: `grid agent install <id>`
-  /// for the ones the CLI packages (Hermes, Codex), the vendor's own script for
-  /// Claude Code, which the CLI has no recipe for. `AgentInstaller` reads this to
-  /// pick the route; every surface then installs any agent the same way.
+  /// The recipe the app runs to put this agent on the machine, or null for an
+  /// agent that ships its own installer (Claude Code — see
+  /// `ClaudeInstaller`). `AgentInstaller` reads this to pick the route; every
+  /// surface then installs any agent the same way.
   ///
-  /// It is a *route* flag, not a permission one: Claude Code auto-installs in the
-  /// background at startup like the others (its script needs no admin rights —
-  /// `~/.local/bin`, no sudo). What it still gates is the **CLI-argv setup plan**
-  /// ([buildSetupPlan]): those steps are literal `grid …` argv, so an agent with
-  /// no CLI recipe can't be one and rides the background installer instead.
-  bool get packagedByCli => this != AgentTool.claude;
+  /// Both recipes land inside `~/.grid`, need no Homebrew and no admin rights,
+  /// and verify what they download against a pinned hash before running it.
+  /// Hermes's requirement is [kHermesAcpRequirement] — the same string the
+  /// self-repair uses, so an install and a repair can never ask for different
+  /// extras and leave the agent half-equipped.
+  AgentInstallSpec? get installSpec => switch (this) {
+    AgentTool.hermes => const UvToolInstall(
+      package: kHermesAcpRequirement,
+      python: kHermesPython,
+    ),
+    AgentTool.codex => const GithubReleaseBinary(
+      executable: 'codex',
+      buildFor: codexBuildFor,
+      linuxMusl: true,
+    ),
+    AgentTool.claude => null,
+  };
 
   /// The agent's own mark, bundled with the app (declared in `pubspec.yaml`).
   ///
