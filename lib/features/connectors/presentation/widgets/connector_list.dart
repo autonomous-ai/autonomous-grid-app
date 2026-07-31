@@ -399,6 +399,20 @@ class _CatalogAction extends StatelessWidget {
   }
 }
 
+/// Temporarily strip the Connected rows down to name, tag and Remove.
+///
+/// Hides two things at once because they are one decision: the address line
+/// under the name, and the Edit button beside Remove. Half the Connected list is
+/// now bridge-backed and already hides its address, so the block read as two
+/// different row shapes stacked; and Edit on a signed-in row opens a form whose
+/// every field is either read-only or overwritten by the next projection.
+///
+/// A named flag rather than deleted code: this is a look to try, not a decision
+/// that the address and the editor are gone. Flip it back and both return.
+/// Row tap still opens Edit for a hand-added server, so nothing becomes
+/// unreachable while this is off.
+const bool _kShowRowDetails = false;
+
 class _McpRow extends ConsumerStatefulWidget {
   const _McpRow({
     required this.server,
@@ -530,7 +544,7 @@ class _McpRowState extends ConsumerState<_McpRow> {
               name: widget.connector.name,
               server: server,
               signedIn: _isLinkedConnector,
-              hideAddress: _servedByBridge,
+              hideAddress: !_kShowRowDetails || _servedByBridge,
             ),
           ),
           const SizedBox(width: 8),
@@ -542,17 +556,19 @@ class _McpRowState extends ConsumerState<_McpRow> {
             // dialog shows the name and hides the credential fields, because the
             // token belongs to the flow that fetched it and the next projection
             // would overwrite anything typed over it.
-            AppIconButton(
-              icon: Icons.edit_outlined,
-              size: 18,
-              tooltip: 'Edit',
-              onPressed: () => showEditMcpDialog(
-                context,
-                server,
-                signedIn: _isLinkedConnector,
+            if (_kShowRowDetails) ...[
+              AppIconButton(
+                icon: Icons.edit_outlined,
+                size: 18,
+                tooltip: 'Edit',
+                onPressed: () => showEditMcpDialog(
+                  context,
+                  server,
+                  signedIn: _isLinkedConnector,
+                ),
               ),
-            ),
-            const SizedBox(width: 2),
+              const SizedBox(width: 2),
+            ],
             // One word, two code paths. The *action* genuinely differs — a
             // signed-in row hands the credential back through the connector
             // controller, a hand-added one only drops the config entry — and

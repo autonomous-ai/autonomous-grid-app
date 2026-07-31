@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/connector_gateway_client.dart';
+import 'connector_blurb_fallback.dart';
 
 /// How a catalog service is signed into.
 enum ConnectorAuthMethod {
@@ -189,9 +190,15 @@ final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
       .connectors();
   if (remote == null) return const [];
   return sortCatalog([
+    // Called unconditionally, not only for the rows missing something:
+    // `withPresentation` fills empty fields and nothing else, so the guard the
+    // label used to carry was a second copy of a rule already stated there —
+    // and it applied to the label alone, which is how the description came to
+    // have no fallback at all.
     for (final entry in remote)
-      entry.label.isEmpty
-          ? entry.withPresentation(label: labelFromCode(entry.code))
-          : entry,
+      entry.withPresentation(
+        label: labelFromCode(entry.code),
+        description: connectorBlurbFallback(entry.code),
+      ),
   ]);
 });

@@ -122,7 +122,7 @@ List<Connector> buildConnectors({
             ? ConnectorKind.catalog
             : ConnectorKind.customMcp,
         name: byCode[server.name]?.label ?? server.name,
-        description: mcpServerSummary(server),
+        description: _describe(byCode[server.name], server),
         // The catalog's own mark first — it is the one the gateway chose, and
         // the only one guaranteed to be the service's real logo. A server the
         // user typed has no catalog entry at all, so its icon is derived from
@@ -158,6 +158,26 @@ List<Connector> buildConnectors({
   ];
   return [...connected, ...offered];
 }
+
+/// What a connected row *is*, in words — the catalog's blurb, or its address.
+///
+/// Same precedence as [_markFor], for the same reason: the gateway's blurb
+/// describes the service, the address describes the plumbing. This used to be
+/// the address unconditionally, which meant a signed-in Gmail's detail dialog
+/// opened on `http://127.0.0.1:61755/c/gmail/mcp` — the app's own bridge port,
+/// which changes between launches and says nothing about Gmail. The blurb was
+/// sitting in `catalogEntry` the whole time, thrown away at exactly the moment
+/// the connector became interesting.
+///
+/// The address stays the answer for a server the user typed in: there is no
+/// blurb for one of those, and the address is the only thing distinguishing two
+/// hand-added servers from each other.
+/// Deliberately not "blurb, or else the address": a catalog connector with an
+/// empty blurb falls through to *no description at all*, not to its URL. Those
+/// are the rows whose URL is the bridge, so the fallback would reintroduce the
+/// loopback line for exactly the connectors it was removed from.
+String _describe(ConnectorCatalogEntry? entry, McpServer server) =>
+    entry != null ? entry.description : mcpServerSummary(server);
 
 /// The mark for a configured server: the catalog's, or one derived from its host.
 ///
