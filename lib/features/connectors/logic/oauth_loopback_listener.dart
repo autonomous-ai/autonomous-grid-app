@@ -196,7 +196,7 @@ class OAuthLoopbackListener {
     LoopbackResult? result,
   ) async {
     final line = switch (result) {
-      LoopbackSuccess() => 'You can go back to Grid now.',
+      LoopbackSuccess() => 'Signed in. You can close this tab.',
       LoopbackDenied(isCancel: true) =>
         'Sign-in cancelled. You can close this '
             'tab and go back to Grid.',
@@ -208,7 +208,10 @@ class OAuthLoopbackListener {
     request.response
       ..statusCode = HttpStatus.ok
       ..headers.contentType = ContentType.html
-      ..write(_page(line));
+      // Only the success page tries to close itself. A cancel or a refusal is
+      // something the user may want to read twice — closing the tab out from
+      // under them would take the only explanation they were given.
+      ..write(_page(line, closeSelf: result is LoopbackSuccess));
     await request.response.close();
   }
 
@@ -218,7 +221,17 @@ class OAuthLoopbackListener {
   /// moments later, so a stylesheet or font request would land on nothing. It
   /// follows the system colour scheme so it doesn't flash white at a user in
   /// dark mode.
-  static String _page(String line) =>
+  ///
+  /// [closeSelf] adds a best-effort attempt to shut the tab. **Expect it to
+  /// fail**, and that is why the visible sentence still tells the user to close
+  /// it themselves rather than promising anything. Browsers permit
+  /// `window.close()` only for a browsing context a script opened, or one whose
+  /// session history has a single entry (HTML §7.5.3); this tab was opened by
+  /// the OS at the provider's authorize URL and then navigated through a consent
+  /// screen, so neither usually holds. It costs one line and one refused call,
+  /// and it does work on the providers that redirect straight through — the app
+  /// being raised in front (`bringAppToFront`) is the part that always works.
+  static String _page(String line, {bool closeSelf = false}) =>
       '''
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Grid</title>
@@ -231,6 +244,12 @@ class OAuthLoopbackListener {
     body { background: #0a0a0a; color: #ededed; }
   }
 </style></head>
-<body><p>$line</p></body></html>
+<body><p>$line</p>${closeSelf ? _closeScript : ''}</body></html>
 ''';
+
+  /// Deferred a beat rather than run inline: closing before the response has
+  /// finished painting leaves a blank tab flashing shut, and if the close is
+  /// refused — the common case — the delay is invisible anyway.
+  static const String _closeScript =
+      '<script>setTimeout(function(){try{window.close()}catch(e){}},350)</script>';
 }

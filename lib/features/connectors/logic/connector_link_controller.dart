@@ -128,6 +128,13 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     await openExternalUrl(authorization.authorizeUrl);
 
     final problem = await _awaitPickup(authorization);
+    // The browser has stopped being where the answer is. Raising Grid is what
+    // "close the browser when it's done" can actually deliver: a page cannot
+    // shut a tab a script didn't open, and this path doesn't even serve the
+    // final page — the gateway does — so there is nothing here to attach a
+    // close attempt to. Unconditional, because a cancel or a timeout is a
+    // result the user needs to come back and read too.
+    await bringAppToFront();
     // Cancel first: the user's own choice outranks whatever the loop was in the
     // middle of when they made it.
     if (_cancelled) return (ConnectorLinkOutcome.cancelled, null);
@@ -376,6 +383,10 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
       );
 
       final result = await listener.waitForCallback();
+      // Same reason as the gateway path above. Here the served page has also
+      // asked the tab to close itself, so on the browsers that allow it the two
+      // land together: the tab goes, Grid comes forward.
+      await bringAppToFront();
       if (_cancelled) return null;
 
       switch (result) {
