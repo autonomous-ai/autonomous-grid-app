@@ -4,6 +4,7 @@ import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../agents/logic/connector_token.dart';
+import '../../agents/logic/marked_map_projection.dart';
 
 /// Writes the `mcp_servers` entries for connectors the app manages.
 ///
@@ -23,7 +24,13 @@ import '../../agents/logic/connector_token.dart';
 /// ever modify or delete an entry that has one. An entry without the marker is
 /// somebody's hand-written config; removing it would lose work that cannot be
 /// recovered from anywhere.
-class HermesConnectorServers {
+///
+/// Only the four members below are Hermes-specific — which file, how YAML is
+/// read and written, what an entry looks like, and that the marker fits inside
+/// it. The policy that made this class worth getting right (delete by name, the
+/// marker guard, the refuse-to-overwrite guard) lives in [MarkedMapProjection]
+/// so the next agent's adapter inherits it rather than re-deriving it.
+class HermesConnectorServers extends MarkedMapProjection {
   HermesConnectorServers({String? home}) : _home = home;
 
   final String? _home;
@@ -40,65 +47,45 @@ class HermesConnectorServers {
   File get configFile => File('$_hermesHome/config.yaml');
 
   /// The key that marks an entry as written by this app.
-  static const String marker = '_grid';
+  static const String markerKey = '_grid';
 
-  /// Write an entry for every connector in [tokens] that has a usable MCP entry,
-  /// and remove the ones named in [removing].
-  ///
-  /// Idempotent — running it twice with the same tokens rewrites the same
-  /// bytes. Callers treat it as the thing to do whenever anything changed, so
-  /// it has to be cheap to over-call.
-  ///
-  /// **Deletion is by name, never by subtraction.** This method used to drop
-  /// every `_grid` entry absent from [tokens], which reads as "make the config
-  /// match the store" and is wrong in one specific, destructive way: `tokens` is
-  /// the *whole master store*, so an empty store means "delete everything". On
-  /// 2026-07-30 a single expired `asana` token was erased by a failed refresh,
-  /// the store went empty, and this wiped two unrelated working connectors out of
-  /// `config.yaml` — neither of which had anything to do with the failure.
-  ///
-  /// A projection cannot tell "this connector is gone" from "the store could not
-  /// be read" or "nothing has been linked yet", so it must not guess. Only a
-  /// caller that actually removed something knows the difference, and it says so
-  /// through [removing].
-  Future<void> project(
-    List<ConnectorToken> tokens, {
-    Set<String> removing = const {},
-  }) async {
-    final wanted = <String, ConnectorToken>{
-      for (final token in tokens)
-        if (token.mcpEntry != null) token.connector: token,
-    };
+  /// Hermes keeps unknown keys through its own edits (`hermes_cli/mcp_config.py`
+  /// upserts per key), so ownership rides inside the entry.
+  @override
+  final MarkerStrategy marker = const InEntryMarker(markerKey);
 
-    await _edit((editor) {
-      final existing = editor.parseAt([
-        'mcp_servers',
-      ], orElse: () => wrapAsYamlNode(null)).value;
-
-      // Only the named ones, and only if we wrote them — a disconnected
-      // connector has to stop working, and an entry left behind keeps the agent
-      // calling it until the token expires. Anything without the marker is
-      // somebody's own config and is left exactly as-is.
-      if (existing is Map) {
-        for (final name in removing) {
-          if (wanted.containsKey(name)) continue;
-          if (!_isOurs(existing[name])) continue;
-          editor.remove(['mcp_servers', name]);
-        }
-      }
-
-      if (wanted.isEmpty) return;
-      _ensureMap(editor, ['mcp_servers']);
-      for (final entry in wanted.entries) {
-        // Refuse to overwrite a server this app didn't write. A user with a
-        // hand-configured `notion` would otherwise have it silently replaced
-        // the moment they signed into the catalog's Notion.
-        final current = existing is Map ? existing[entry.key] : null;
-        if (current != null && !_isOurs(current)) continue;
-        editor.update(['mcp_servers', entry.key], _entryFor(entry.value));
-      }
-    });
+  @override
+  Future<Map<String, Object?>> readEntries() async {
+    final text = await _read();
+    if (text == null) return const {};
+    try {
+      final servers = YamlEditor(
+        text,
+      ).parseAt(['mcp_servers'], orElse: () => wrapAsYamlNode(null)).value;
+      if (servers is! Map) return const {};
+      // Keys come back as YAML scalars; the projection speaks in names.
+      return {for (final key in servers.keys) key.toString(): servers[key]};
+    } on Object {
+      return const {};
+    }
   }
+
+  @override
+  Future<void> applyEntries({
+    required Map<String, Object?> upsert,
+    required Set<String> remove,
+  }) => _edit((editor) {
+    // Safe without an `mcp_servers` guard: the base only names an entry it saw
+    // in [readEntries], which cannot have found one unless the map exists.
+    for (final name in remove) {
+      editor.remove(['mcp_servers', name]);
+    }
+    if (upsert.isEmpty) return;
+    _ensureMap(editor, ['mcp_servers']);
+    for (final entry in upsert.entries) {
+      editor.update(['mcp_servers', entry.key], entry.value);
+    }
+  });
 
   /// The YAML value for one connector.
   ///
@@ -108,43 +95,17 @@ class HermesConnectorServers {
   /// failing to find them, open a browser. The headers carry the credential
   /// already, so the entry is a plain authenticated HTTP server as far as
   /// Hermes is concerned.
-  Map<String, Object?> _entryFor(ConnectorToken token) {
+  @override
+  Map<String, Object?> entryFor(
+    ConnectorToken token,
+    Map<String, Object?>? markerValue,
+  ) {
     final mcp = token.mcpEntry!;
     return {
       'url': mcp.url,
       if (mcp.headers.isNotEmpty) 'headers': mcp.headers,
-      marker: {
-        'connector': token.connector,
-        if (mcp.expiresAt != null)
-          'expires_at': mcp.expiresAt!.millisecondsSinceEpoch ~/ 1000,
-        'refresh': mcp.canRefresh,
-      },
+      markerKey: ?markerValue,
     };
-  }
-
-  /// True when this app wrote the entry — the only ones it may touch.
-  ///
-  /// A `YamlMap` is already a `Map`, so this reads both the parsed nodes and
-  /// the plain maps written back during an edit.
-  bool _isOurs(Object? entry) => entry is Map && entry.containsKey(marker);
-
-  /// The connectors this app currently owns entries for. Used to tell a stale
-  /// token file from one Hermes obtained through its own OAuth flow.
-  Future<Set<String>> owned() async {
-    final text = await _read();
-    if (text == null) return const {};
-    try {
-      final servers = YamlEditor(
-        text,
-      ).parseAt(['mcp_servers'], orElse: () => wrapAsYamlNode(null)).value;
-      if (servers is! Map) return const {};
-      return {
-        for (final key in servers.keys)
-          if (_isOurs(servers[key])) key.toString(),
-      };
-    } on Object {
-      return const {};
-    }
   }
 
   Future<void> _edit(void Function(YamlEditor) change) async {
