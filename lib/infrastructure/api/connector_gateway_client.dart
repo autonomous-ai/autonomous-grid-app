@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/agents/logic/connector_token.dart';
+import '../../features/agents/logic/rest_entry.dart';
 import '../../features/auth/logic/session_controller.dart';
 import '../../features/connectors/logic/connector_catalog.dart';
 import '../providers.dart';
@@ -503,6 +504,17 @@ ConnectorToken? tokenFromPayload(
         ? payload['account_name'] as String
         : '',
     mcpEntry: McpEntry.fromJson(payload['mcp_entry']),
+    // The second way in, for a grant no MCP server will accept. Parsed here as
+    // well as in the store's own reader, because the two are separate
+    // deserializers over the same shape: this one turns a `/poll` or `/refresh`
+    // body into a token, that one reads `tokens.json` back. A field added to
+    // only one of them is a field the gateway can send and the app will
+    // silently drop.
+    restEntry: RestEntry.fromJson(payload['rest_entry']),
+    // Null when the gateway has no opinion, which is every payload written
+    // before the field existed — see [parseTransport], where null and `none`
+    // are deliberately different answers.
+    declaredTransport: parseTransport(payload['transport']),
     // Top level, not inside `mcp_entry._grid`: the same answer lives in both,
     // but the `_grid` copy vanishes with the entry — and a connector with no MCP
     // server (google_drive, gmail, google_calendar) still holds a one-hour token
