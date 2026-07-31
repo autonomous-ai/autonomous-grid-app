@@ -185,13 +185,20 @@ class ConnectorToken {
   /// decision the app made on its behalf.
   final ConnectorTransport? declaredTransport;
 
-  /// The gateway's own answer to "can this be renewed", from the top-level
-  /// `refresh` on a `/poll` or `/refresh` payload.
+  /// Whether this can be renewed, from the top-level `refresh` on a `/poll` or
+  /// `/refresh` payload — or, on path A, from whether the provider's token
+  /// response actually carried a `refresh_token`.
   ///
   /// Authoritative, and the only source that survives [mcpEntry] being null —
   /// which is precisely the case that matters, since a connector with no MCP
   /// server still holds a one-hour Google token. The copy inside
   /// `mcpEntry._grid` says the same thing but disappears with the entry.
+  ///
+  /// Both paths fill it, so the stored shape reads the same either way. A
+  /// self-registered token used to leave it null and lean on the entry's copy —
+  /// which worked, and meant a file full of `"refresh": true` gateway entries
+  /// next to DCR entries with no such line, inviting exactly the question of
+  /// whether the second kind renews at all.
   ///
   /// Null means "the gateway didn't say": a token written to disk before this
   /// field existed, or a payload from an older control plane. Kept nullable so

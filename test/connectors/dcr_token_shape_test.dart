@@ -62,6 +62,53 @@ void main() {
       expect(token.source, ConnectorTokenSource.dcr);
     });
 
+    test('records at the top level that it can be renewed', () async {
+      // Not only inside `mcp_entry._grid`. The entry is optional — a connector
+      // with no MCP server still holds an expiring credential — and a store
+      // where gateway rows carry `"refresh": true` while self-registered ones
+      // carry nothing reads as though the second kind cannot renew at all.
+      final (token, _) = client.tokenFrom(
+        payload(),
+        connector: 'Supabase',
+        mcpUrl: 'https://mcp.supabase.com/mcp',
+        issuer: probe.issuer,
+      );
+
+      expect(token!.canRefresh, isTrue);
+      expect(token.toJson()['refresh'], isTrue);
+      // The copy inside the entry still agrees with it.
+      expect(token.mcpEntry!.canRefresh, isTrue);
+    });
+
+    test('says so at the top level when it cannot be renewed', () async {
+      final (token, _) = client.tokenFrom(
+        payload(refreshToken: null),
+        connector: 'Supabase',
+        mcpUrl: 'https://mcp.supabase.com/mcp',
+        issuer: probe.issuer,
+      );
+
+      expect(token!.canRefresh, isFalse);
+      expect(token.toJson()['refresh'], isFalse);
+      expect(token.canBeRefreshed, isFalse);
+    });
+
+    test('records renewal even with no MCP entry to hold a copy', () async {
+      // The case the top-level field exists for: `mcpEntry` is null, so the
+      // `_grid.refresh` copy does not exist, and the old inference off
+      // `refresh_token` was the only thing left.
+      final (token, _) = client.tokenFrom(
+        payload(),
+        connector: 'Supabase',
+        mcpUrl: '',
+        issuer: probe.issuer,
+      );
+
+      expect(token!.mcpEntry, isNull);
+      expect(token.canRefresh, isTrue);
+      expect(token.canBeRefreshed, isTrue);
+    });
+
     test('is marked dcr, so the gateway is never asked about it', () async {
       // Calling the gateway's /refresh for a self-registered connector asks it
       // about a credential it has never seen.

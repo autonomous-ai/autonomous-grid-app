@@ -375,14 +375,20 @@ class DcrOAuthClient {
         ? DateTime.now().add(Duration(seconds: expiresIn.toInt()))
         : null;
     final refreshToken = payload['refresh_token'];
+    // On path A there is no gateway to answer "can this be renewed", and the
+    // provider's own reply is the whole answer: a `refresh_token` came back, or
+    // it did not. Recorded at the top level as well as inside `mcp_entry`,
+    // because the entry is optional — a connector with no MCP server still
+    // holds an expiring credential — and because a store where gateway entries
+    // carry `"refresh": true` and self-registered ones carry nothing invites
+    // the reader to conclude the second kind does not renew.
+    final renewable = refreshToken is String && refreshToken.isNotEmpty;
 
     return (
       ConnectorToken(
         connector: connector,
         accessToken: access,
-        refreshToken: refreshToken is String && refreshToken.isNotEmpty
-            ? refreshToken
-            : null,
+        refreshToken: renewable ? refreshToken : null,
         expiresAt: expiresAt,
         scope: payload['scope'] is String ? payload['scope'] as String : '',
         tokenType: type,
@@ -396,8 +402,9 @@ class DcrOAuthClient {
                 // be caught by the probe rather than guessed at here.
                 headers: {'Authorization': '$type $access'},
                 expiresAt: expiresAt,
-                canRefresh: refreshToken is String && refreshToken.isNotEmpty,
+                canRefresh: renewable,
               ),
+        canRefresh: renewable,
         source: ConnectorTokenSource.dcr,
         issuer: issuer,
       ),
