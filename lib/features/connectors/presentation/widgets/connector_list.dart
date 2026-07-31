@@ -292,6 +292,16 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
       toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
       return;
     }
+    // Success is worth saying out loud, and used not to be. Disconnecting is
+    // the one action here with no visible result: the row does not vanish, it
+    // moves back to Available, and from a dialog the user is looking at a
+    // closing sheet rather than the list. Silence read as "nothing happened".
+    toast?.show(
+      ToastSpec(
+        message: '${connector.name} is disconnected.',
+        severity: ToastSeverity.success,
+      ),
+    );
     // Same staleness problem in reverse: a dialog left open after a disconnect
     // would still offer Remove for a credential that is gone.
     //
@@ -437,9 +447,17 @@ class _McpRowState extends ConsumerState<_McpRow> {
         .read(connectorLinkControllerProvider.notifier)
         .disconnect(widget.connector.id);
     if (mounted) setState(() => _busy = false);
-    if (error != null) {
-      toast?.show(ToastSpec(message: error, severity: ToastSeverity.error));
-    }
+    // Both outcomes, in one place — the shape `_delete` below has always had.
+    // This method reported only failures, so a disconnect that worked looked
+    // exactly like a click that did not register.
+    toast?.show(
+      error != null
+          ? ToastSpec(message: error, severity: ToastSeverity.error)
+          : ToastSpec(
+              message: '$name is disconnected.',
+              severity: ToastSeverity.success,
+            ),
+    );
   }
 
   Future<void> _delete() async {
