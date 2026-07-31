@@ -77,9 +77,7 @@ class _SeatRow extends ConsumerWidget {
         title: seatRowTitle(provider),
         line: 'Use the ${provider.label} you already have here.',
         badge: 'No setup',
-        // Nothing opens and nothing is handed off: the press starts the join
-        // right here, and the row spins until it is serving.
-        action: ChoiceRowAction.act,
+        action: ChoiceRowAction.open,
         busy: starting,
         onPressed: () => ref
             .read(providerRunControllerProvider.notifier)
