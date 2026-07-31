@@ -15,11 +15,6 @@ enum ChoiceRowAction {
   /// Hands off to somewhere that isn't this window (the browser, for a sign-in)
   /// — an arrow leading out.
   leave,
-
-  /// Does the thing on the press: nothing opens underneath and nothing is handed
-  /// off, so the row carries a play mark rather than a chevron promising a form
-  /// that never appears.
-  act,
 }
 
 /// One way to do a thing, worn as a row you press: an icon, a title, one line,
@@ -150,9 +145,8 @@ class ChoiceRow extends StatelessWidget {
   }
 }
 
-/// The mark on the row's right, saying what the press will do: a chevron that
-/// turns as the row opens, an arrow leading out for a row that hands off to the
-/// browser, or a play mark for one that just gets on with it.
+/// The mark on the row's right: a chevron that turns as the row opens, or an
+/// arrow leading out for a row that hands off to the browser.
 class _Marker extends StatelessWidget {
   const _Marker({required this.action, required this.expanded});
 
@@ -165,13 +159,6 @@ class _Marker extends StatelessWidget {
       return Icon(
         Icons.arrow_outward_rounded,
         size: 17,
-        color: AppPalette.textFaint,
-      );
-    }
-    if (action == ChoiceRowAction.act) {
-      return Icon(
-        Icons.play_arrow_rounded,
-        size: 19,
         color: AppPalette.textFaint,
       );
     }

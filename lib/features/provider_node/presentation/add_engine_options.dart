@@ -78,7 +78,7 @@ class AddEngineOptions extends ConsumerWidget {
     icon: const Icon(Icons.terminal_outlined),
     title: seatRowTitle(provider),
     line: 'Already installed and signed in — nothing to set up',
-    action: ChoiceRowAction.act,
+    action: ChoiceRowAction.open,
     onPressed: () => ref
         .read(providerRunControllerProvider.notifier)
         .startApiEngine(
