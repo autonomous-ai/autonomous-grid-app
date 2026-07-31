@@ -64,8 +64,8 @@ class SkillList extends StatelessWidget {
           ? const EmptyState.noMatches(message: 'No skills match that search.')
           : _Empty(source: source);
     }
-    // The scanner already orders them — the user's own first, then by when they
-    // last changed — so the list draws what it's given.
+    // The scanner already orders them — by author, then by when they last
+    // changed — so the list draws what it's given.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -85,7 +85,10 @@ class SkillList extends StatelessWidget {
 /// Names the columns once, over the list.
 ///
 /// Indented to where a row's name starts (the icon well plus its gap) so the
-/// label sits over the thing it names rather than over the icons.
+/// label sits over the thing it names rather than over the icons — and inset on
+/// the right by the same two amounts a row is: the tile's own padding, and the
+/// gutter [ExtensionList] keeps clear for the scrollbar. Missing the second one
+/// is what put every heading 14px to the right of its column.
 class _ColumnHeader extends StatelessWidget {
   const _ColumnHeader();
 
@@ -99,7 +102,7 @@ class _ColumnHeader extends StatelessWidget {
       color: AppPalette.textSecondary,
     );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(57, 0, 14, 8),
+      padding: const EdgeInsets.fromLTRB(57, 0, 14 + extensionScrollGutter, 8),
       child: Row(
         children: [
           Expanded(child: Text('SKILL', style: style)),
@@ -107,11 +110,14 @@ class _ColumnHeader extends StatelessWidget {
             width: _kUpdatedColumn,
             child: Text('LAST UPDATED', style: style),
           ),
+          SizedBox(width: _kAuthorColumn, child: Text('AUTHOR', style: style)),
           SizedBox(
-            width: _kAuthorColumn,
-            child: Text('AUTHOR', style: style),
+            width: _kActionsColumn,
+            // Right-aligned, because the buttons under it are: they sit at the
+            // row's trailing edge, and a heading left-aligned over them would
+            // point at the gap instead.
+            child: Text('ACTION', style: style, textAlign: TextAlign.right),
           ),
-          const SizedBox(width: _kActionsColumn),
         ],
       ),
     );

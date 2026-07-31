@@ -1,5 +1,11 @@
 /// Who a skill came from — read off the folder it sits in, since that's the
 /// only record of it there is.
+///
+/// Declared in the order the list shows them: the user's own work first, then
+/// what Grid gave them, then what the assistant brought itself. That is the
+/// order of "how much is this mine", which is the order someone scanning the
+/// list is asking in — so [rank] is the index, and moving a value here moves
+/// the rows.
 enum SkillOwner {
   /// Written by the user in the app (`~/.grid/skills/user`).
   user('You'),
@@ -12,9 +18,17 @@ enum SkillOwner {
   hermes('hermes'),
 
   /// Codex's own (`~/.codex/skills`).
-  codex('codex');
+  codex('codex'),
+
+  /// Claude Code's own (`~/.claude/skills`).
+  claude('claude');
 
   const SkillOwner(this.label);
+
+  /// Where this owner sits in the list. See the note above: it is the
+  /// declaration order, named so the sort reads as intent rather than as a
+  /// clever use of `index`.
+  int get rank => index;
 
   /// What the Author column says. "You" for the user's own, otherwise the name
   /// of whoever maintains the folder — the same word the folder uses, so what's
