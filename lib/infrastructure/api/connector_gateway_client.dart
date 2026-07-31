@@ -503,6 +503,11 @@ ConnectorToken? tokenFromPayload(
         ? payload['account_name'] as String
         : '',
     mcpEntry: McpEntry.fromJson(payload['mcp_entry']),
+    // Top level, not inside `mcp_entry._grid`: the same answer lives in both,
+    // but the `_grid` copy vanishes with the entry — and a connector with no MCP
+    // server (google_drive, gmail, google_calendar) still holds a one-hour token
+    // that has to be renewed. Null when an older control plane omits it.
+    canRefresh: payload['refresh'] is bool ? payload['refresh'] as bool : null,
   );
 }
 

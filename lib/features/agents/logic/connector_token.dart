@@ -122,6 +122,7 @@ class ConnectorToken {
     this.tokenType = 'Bearer',
     this.accountName = '',
     this.mcpEntry,
+    this.canRefresh,
     this.source = ConnectorTokenSource.gateway,
     this.issuer = '',
   });
@@ -156,6 +157,20 @@ class ConnectorToken {
   /// can't call anything — which is why the screen gates on `mcpReady` long
   /// before it gets here.
   final McpEntry? mcpEntry;
+
+  /// The gateway's own answer to "can this be renewed", from the top-level
+  /// `refresh` on a `/poll` or `/refresh` payload.
+  ///
+  /// Authoritative, and the only source that survives [mcpEntry] being null —
+  /// which is precisely the case that matters, since a connector with no MCP
+  /// server still holds a one-hour Google token. The copy inside
+  /// `mcpEntry._grid` says the same thing but disappears with the entry.
+  ///
+  /// Null means "the gateway didn't say": a token written to disk before this
+  /// field existed, or a payload from an older control plane. Kept nullable so
+  /// those keep refreshing off the old inference instead of silently going
+  /// stale after an app update — see [canBeRefreshed].
+  final bool? canRefresh;
 
   /// Which path obtained this, and so which one can renew it.
   final ConnectorTokenSource source;
@@ -193,7 +208,19 @@ class ConnectorToken {
   /// whether the provider actually issued a `refresh_token`, so one predicate
   /// serves both paths and the scheduler never has to branch on [source] — only
   /// the controller does, when it picks *which* endpoint to call.
-  bool get canBeRefreshed => mcpEntry?.canRefresh ?? refreshToken != null;
+  ///
+  /// Three sources, most authoritative first:
+  ///
+  /// 1. [canRefresh] — what the gateway said, present for every connector.
+  /// 2. `mcpEntry.canRefresh` — the same answer, but only when there is an entry.
+  /// 3. "did the provider hand back a refresh_token" — the inference used before
+  ///    the gateway carried the flag. Only reached for tokens stored by an older
+  ///    build; a *non-empty* token, since the payload spells "none" as `""` and
+  ///    an empty string is still a String.
+  bool get canBeRefreshed =>
+      canRefresh ??
+      mcpEntry?.canRefresh ??
+      (refreshToken != null && refreshToken!.isNotEmpty);
 
   /// Worth refreshing now: it expires soon and a replacement can be obtained.
   /// Without the second half the call only spends a request.
@@ -207,6 +234,7 @@ class ConnectorToken {
     String? tokenType,
     String? accountName,
     McpEntry? mcpEntry,
+    bool? canRefresh,
     ConnectorTokenSource? source,
     String? issuer,
   }) {
@@ -219,6 +247,7 @@ class ConnectorToken {
       tokenType: tokenType ?? this.tokenType,
       accountName: accountName ?? this.accountName,
       mcpEntry: mcpEntry ?? this.mcpEntry,
+      canRefresh: canRefresh ?? this.canRefresh,
       source: source ?? this.source,
       issuer: issuer ?? this.issuer,
     );
@@ -233,6 +262,9 @@ class ConnectorToken {
     if (scope.isNotEmpty) 'scope': scope,
     if (accountName.isNotEmpty) 'account_name': accountName,
     if (mcpEntry != null) 'mcp_entry': mcpEntry!.toJson(),
+    // Omitted when the gateway didn't say, so it reads back as null rather than
+    // as a decision nobody made — the distinction [canBeRefreshed] relies on.
+    if (canRefresh != null) 'refresh': canRefresh,
     // Only written for the non-default path, so every token already on disk
     // stays byte-identical and reads back as `gateway` — see [fromJson].
     if (source != ConnectorTokenSource.gateway) 'source': source.name,
@@ -263,6 +295,9 @@ class ConnectorToken {
           ? raw['account_name'] as String
           : '',
       mcpEntry: McpEntry.fromJson(raw['mcp_entry']),
+      // Left null when absent — a token stored before the gateway carried the
+      // flag must keep falling back, not read as "cannot refresh".
+      canRefresh: raw['refresh'] is bool ? raw['refresh'] as bool : null,
       // Absent means gateway: every token written before path A existed came
       // from there, and reading a missing field as `dcr` would send the refresh
       // sweep looking for a `clients.json` registration that never existed.

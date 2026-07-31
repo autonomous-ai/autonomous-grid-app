@@ -176,6 +176,58 @@ void main() {
       expect(result.token!.isUsable, isFalse);
     });
 
+    test('the renewable flag survives a null mcp_entry', () {
+      // The whole reason the gateway repeats `refresh` at the top level. A
+      // connector with no MCP server still holds a one-hour Google token, and
+      // the `_grid` copy it used to be read from disappears with the entry.
+      final result = parsePollResult('''
+{"status": "ready", "connector": "google_drive",
+ "access_token": "ya29.a0Af", "refresh_token": "1//0eXy",
+ "expires_at": 1785312000, "refresh": true, "mcp_entry": null}
+''', fallbackConnector: 'google_drive')!;
+
+      expect(result.token!.canRefresh, isTrue);
+      expect(result.token!.isUsable, isFalse); // nothing for the agent to call…
+      expect(result.token!.canBeRefreshed, isTrue); // …but the cron must renew it
+    });
+
+    test('the gateway saying no outranks the provider handing back a token', () {
+      // github is `refresh: false` in the config while some providers still
+      // return a refresh_token. Inferring from the token alone would refresh
+      // against the server's own answer, once per cron tick, forever.
+      final result = parsePollResult('''
+{"status": "ready", "connector": "github",
+ "access_token": "gho_Uwq3", "refresh_token": "leftover",
+ "refresh": false, "mcp_entry": null}
+''', fallbackConnector: 'github')!;
+
+      expect(result.token!.canRefresh, isFalse);
+      expect(result.token!.canBeRefreshed, isFalse);
+    });
+
+    test('an older control plane omits the flag and the old inference stands', () {
+      // Not a regression path but the upgrade path: tokens minted before the
+      // field existed must keep refreshing rather than quietly going stale.
+      final result = parsePollResult('''
+{"status": "ready", "connector": "google_drive",
+ "access_token": "ya29.a0Af", "refresh_token": "1//0eXy", "mcp_entry": null}
+''', fallbackConnector: 'google_drive')!;
+
+      expect(result.token!.canRefresh, isNull);
+      expect(result.token!.canBeRefreshed, isTrue);
+    });
+
+    test('an empty refresh_token is not a refresh token', () {
+      // The payload spells "none" as "" and an empty string is still a String,
+      // so the pre-flag inference used to read it as renewable.
+      final result = parsePollResult('''
+{"status": "ready", "connector": "github",
+ "access_token": "gho_Uwq3", "refresh_token": "", "mcp_entry": null}
+''', fallbackConnector: 'github')!;
+
+      expect(result.token!.canBeRefreshed, isFalse);
+    });
+
     test('every failure is also HTTP 200 — status is the only signal', () {
       for (final (raw, expected) in [
         ('failed', ConnectorPollStatus.failed),
