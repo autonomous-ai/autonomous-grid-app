@@ -110,7 +110,10 @@ class _ColumnHeader extends StatelessWidget {
             width: _kUpdatedColumn,
             child: Text('LAST UPDATED', style: style),
           ),
-          SizedBox(width: _kAuthorColumn, child: Text('AUTHOR', style: style)),
+          SizedBox(
+            width: _kAuthorColumn,
+            child: Text('AUTHOR', style: style),
+          ),
           SizedBox(
             width: _kActionsColumn,
             // Right-aligned, because the buttons under it are: they sit at the

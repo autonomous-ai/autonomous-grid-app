@@ -183,8 +183,23 @@ void main() {
       );
     });
 
+    test(
+      'the refusal Hermes gives a session it has no model for reads the same '
+      'as the one it gives a provider it cannot resolve — one problem, one '
+      'sentence',
+      () {
+        expect(
+          friendlyAgentUnknownProvider(
+            'Internal error: No LLM provider configured. Run `hermes model` to '
+            'select a provider.',
+          ),
+          kAgentProviderUnknown,
+        );
+      },
+    );
+
     test("another provider's complaint keeps the assistant's own words — this "
-        "line is about the connection *Grid* writes", () {
+        'line is about the connection *Grid* writes', () {
       expect(
         friendlyAgentUnknownProvider("Unknown provider 'openrouter'."),
         isNull,

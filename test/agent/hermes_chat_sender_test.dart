@@ -532,6 +532,52 @@ void main() {
   );
 
   test(
+    'a turn that fails with an error the app understands says what went wrong, '
+    'not that the agent had nothing to say',
+    () async {
+      // What Hermes answers a prompt with when it can't resolve the model the
+      // app pointed it at (a responses-only model on a build that reads no
+      // named provider). Nothing streams, so this used to land as "the agent
+      // didn't return an answer" — a sentence about the agent, for a problem
+      // with the connection.
+      final service = _FakeAcp.single([
+        const HermesAcpTurnEnded(
+          '',
+          error:
+              "Internal error: No LLM provider configured. Run `hermes "
+              'model` to select a provider.',
+        ),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('go'))
+          .toList();
+
+      expect(updates.last, isA<ChatSendFailure>());
+      expect((updates.last as ChatSendFailure).error, kAgentProviderUnknown);
+    },
+  );
+
+  test('a turn that errors for a reason nobody has a line for still reads as a '
+      'failed turn, never as an agent with nothing to say', () async {
+    final service = _FakeAcp.single([
+      const HermesAcpTurnEnded('', error: 'Internal error: something odd'),
+    ]);
+    final container = _container(service, tmp);
+
+    final updates = await container
+        .read(hermesChatSenderProvider)
+        .send(network: _credential(), model: 'm', history: _history('go'))
+        .toList();
+
+    final failure = updates.last as ChatSendFailure;
+    expect(failure.error, kAgentTurnFailed);
+    expect(failure.error, isNot(kAgentNoAnswer));
+  });
+
+  test(
     'a turn that lays out a plan and then does nothing about it is a failure, '
     'not an answer — even with a line of text, and even ending cleanly',
     () async {

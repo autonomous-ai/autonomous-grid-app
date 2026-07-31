@@ -305,6 +305,10 @@ class HermesChatSender implements ChatSender {
     // is reset by a plan revision: an agent ticks its boxes on the way out.
     var endedCleanly = false;
     var workedAtAll = false;
+    // Hermes's own words when the turn ends in an error rather than an answer —
+    // null on an ordinary turn. Held here because it arrives with the turn's end
+    // and is read once the stream closes.
+    String? turnError;
     Timer? idle;
     late final StreamSubscription<HermesAcpEvent> events;
 
@@ -406,8 +410,9 @@ class HermesChatSender implements ChatSender {
             armIdle();
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
-          case HermesAcpTurnEnded(endedCleanly: final clean):
+          case HermesAcpTurnEnded(endedCleanly: final clean, :final error):
             endedCleanly = clean;
+            turnError = error;
         }
       },
       onDone: () async {
@@ -454,8 +459,18 @@ class HermesChatSender implements ChatSender {
                 ),
               );
         }
+        // A turn that ended in an error had nothing to answer with, so it takes
+        // precedence over "no answer": that line is for an agent that ran and
+        // said nothing, and using it here left the reason — a model Hermes can't
+        // be pointed at — invisible in the chat and in the log.
+        final failed = turnError == null
+            ? null
+            : (friendlyAgentUnknownProvider(turnError!) ??
+                  friendlyAgentServerError(turnError!) ??
+                  kAgentTurnFailed);
         final failure =
             refused ??
+            failed ??
             (stalled
                 ? kAgentStalledPlan
                 : (reply.isEmpty ? kAgentNoAnswer : null));

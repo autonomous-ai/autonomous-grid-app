@@ -63,7 +63,16 @@ class HermesAcpPlan extends HermesAcpEvent {
 /// step left unticked on a turn the agent ended itself is its own sloppy
 /// bookkeeping, not work it abandoned (see [agentTurnStalled]).
 class HermesAcpTurnEnded extends HermesAcpEvent {
-  const HermesAcpTurnEnded(this.stopReason);
+  const HermesAcpTurnEnded(this.stopReason, {this.error});
+
+  /// Hermes's own words when the turn ended in a JSON-RPC *error* rather than a
+  /// stop reason — null on every ordinary turn.
+  ///
+  /// A turn can fail with nothing streamed at all (a model the assistant can't
+  /// reach: it answers the prompt with an error and no updates). Without this
+  /// the chat read that as an agent with nothing to say — "The agent didn't
+  /// return an answer" — and the reason reached neither the user nor the log.
+  final String? error;
 
   /// ACP's `stopReason` — `end_turn` when the agent decided it was done, or one
   /// of the cut-short reasons below.
@@ -388,21 +397,56 @@ class _HermesAcpSession implements HermesAcpSession {
         });
       case _newSessionId:
         _sessionId = _str(message['result']?['sessionId']);
+        // No session means no turn can ever run: Hermes refuses one when it
+        // can't resolve a model to answer with ("No LLM provider configured").
+        // This used to complete the handshake anyway, leaving a session with a
+        // null id — every prompt then returned an empty stream, so a config
+        // Hermes couldn't read reached the user as an agent that said nothing.
+        if (_sessionId!.isEmpty) {
+          final said = _errorOf(message) ?? 'Hermes started no session.';
+          _log.failure('agent', 'Hermes refused a session: $said');
+          if (!_ready.isCompleted) {
+            _ready.completeError(HermesAcpException(said, retryable: false));
+          }
+          return;
+        }
         if (!_ready.isCompleted) _ready.complete();
       default:
         // A prompt response ends its turn, and its `stopReason` says whether
-        // Hermes got to the end of the work or was stopped short of it.
+        // Hermes got to the end of the work or was stopped short of it — or it
+        // carries an error, which is the turn failing with nothing streamed.
         if (message['id'] != _turnId) return;
-        _emitTurnEnded(message['result']);
+        _emitTurnEnded(message);
         _endTurn();
     }
   }
 
-  void _emitTurnEnded(Object? result) {
+  void _emitTurnEnded(Map<String, dynamic> message) {
+    final error = _errorOf(message);
+    // Logged here, where the raw text still exists: what the chat shows is a
+    // humanized line, and a log that only repeated it would diagnose nothing.
+    if (error != null) {
+      _log.failure('agent', 'Hermes ended the turn with an error: $error');
+    }
     final events = _events;
     if (events == null || events.isClosed) return;
+    final result = message['result'];
     final reason = result is Map ? _str(result['stopReason']) : '';
-    events.add(HermesAcpTurnEnded(reason));
+    events.add(HermesAcpTurnEnded(reason, error: error));
+  }
+
+  /// A JSON-RPC error as one readable line, or null when [message] carries none.
+  ///
+  /// Reads `data.details` as well as `message`: Hermes puts the sentence that
+  /// explains anything ("No LLM provider configured. Run `hermes model`…") in
+  /// the data, leaving `message` a bare "Internal error" that names no problem.
+  String? _errorOf(Map<String, dynamic> message) {
+    final error = message['error'];
+    if (error is! Map) return null;
+    final summary = _str(error['message'], fallback: 'Hermes failed');
+    final data = error['data'];
+    final details = data is Map ? _str(data['details']) : '';
+    return details.isEmpty ? summary : '$summary: $details';
   }
 
   void _handleUpdate(Object? raw) {
