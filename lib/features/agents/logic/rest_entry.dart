@@ -115,12 +115,33 @@ class RestRequest {
     required this.url,
     this.query = const {},
     this.json,
+    this.multipart,
   });
 
   final String method;
   final String url;
   final Map<String, String> query;
   final Object? json;
+
+  /// An upload sent as `multipart/related` — metadata and file bytes in one
+  /// request.
+  ///
+  /// ```jsonc
+  /// "multipart": { "metadata": { "name": "{name}" },
+  ///                "content": "{content}",
+  ///                "content_type": "text/plain" }
+  /// ```
+  ///
+  /// Modelled as its own shape rather than as another `$encode`, because the
+  /// boundary string has to appear in both the body *and* the `Content-Type`
+  /// header. An encoder returns only a body, so expressing this declaratively
+  /// would mean the payload naming a boundary — and a mismatch between the two
+  /// is a malformed request that reads as a provider error. The coupling stays
+  /// in code, where it can't drift.
+  ///
+  /// Google Drive is why it exists: `files.create` with content is a multipart
+  /// upload, and without it the only creatable thing is an empty file.
+  final Map<String, Object?>? multipart;
 
   static RestRequest? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -149,6 +170,9 @@ class RestRequest {
       url: url,
       query: query,
       json: raw['json'],
+      multipart: raw['multipart'] is Map
+          ? (raw['multipart'] as Map).cast<String, Object?>()
+          : null,
     );
   }
 }
@@ -262,6 +286,8 @@ class RestEntry {
             'url': tool.request.url,
             if (tool.request.query.isNotEmpty) 'query': tool.request.query,
             if (tool.request.json != null) 'json': tool.request.json,
+            if (tool.request.multipart != null)
+              'multipart': tool.request.multipart,
           },
         },
     ],

@@ -31,11 +31,19 @@ import 'rest_entry.dart';
 /// |-------------------|--------------------------------------------|----|
 /// | `gmail`           | `gmail.send` + `userinfo.*` + `openid`     | send only — no reading tool exists |
 /// | `google_calendar` | `calendar.events` + `userinfo.*` + `openid`| events read/write — **not** `calendarList`, **not** `freebusy` |
+/// | `google_drive`    | `drive.file` + `userinfo.*` + `openid`     | only files Grid itself created — **not** the user's Drive |
 ///
 /// `calendar.events` is "view and edit events on all your calendars". Listing
 /// the user's *calendars* needs `calendar.readonly` or `calendar`, and a
 /// free/busy query needs `calendar.freebusy` — neither was granted, so neither
 /// is offered, and everything here addresses `calendars/primary`.
+///
+/// `drive.file` is the narrowest Drive scope there is: per-file access to what
+/// *this OAuth client* created or the user explicitly picked. `files.list`
+/// therefore returns Grid's own files and nothing else — it is empty right
+/// after connecting. That is not a bug to work around and the tool descriptions
+/// say so outright, because the failure mode is not an error: it is the model
+/// reporting an empty list as "your Drive is empty".
 const Map<String, Map<String, Object?>> _fallbacks = {
   'gmail': {
     'auth': {
@@ -208,6 +216,125 @@ const Map<String, Map<String, Object?>> _fallbacks = {
           'method': 'DELETE',
           'url':
               'https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}',
+        },
+      },
+    ],
+  },
+  'google_drive': {
+    'auth': {
+      'in': 'header',
+      'name': 'Authorization',
+      'format': 'Bearer {access_token}',
+    },
+    'tools': [
+      {
+        'name': 'google_drive_list_files',
+        'description':
+            'List the Drive files Grid can see. This is NOT the whole Drive: '
+            'the connection only reaches files Grid itself created, so right '
+            'after connecting the list is empty and grows as files are made '
+            "with google_drive_create_file. Never tell the user this is all "
+            'their Drive contains.',
+        'params': {
+          'query': {
+            'type': 'string',
+            'description':
+                "Drive query syntax, e.g. name contains 'report'. Omit to "
+                'list everything reachable.',
+          },
+          'page_size': {
+            'type': 'integer',
+            'description': 'How many files to return. Omit for the default.',
+          },
+        },
+        'request': {
+          'method': 'GET',
+          'url': 'https://www.googleapis.com/drive/v3/files',
+          'query': {
+            'q': '{query}',
+            'pageSize': '{page_size}',
+            // Asked for explicitly: the default response is id and name only,
+            // which is not enough to tell two files apart or to answer "when
+            // did I write that".
+            'fields': 'files(id,name,mimeType,modifiedTime,size,webViewLink)',
+            'orderBy': 'modifiedTime desc',
+          },
+        },
+      },
+      {
+        'name': 'google_drive_read_file',
+        'description':
+            'Read the contents of a Drive file Grid created. Get the id from '
+            'google_drive_list_files. Works for plain text and similar; a '
+            'Google Docs/Sheets file is not stored as a file and cannot be '
+            'read this way.',
+        'params': {
+          'file_id': {
+            'type': 'string',
+            'required': true,
+            'description': 'The id from google_drive_list_files.',
+          },
+        },
+        'request': {
+          'method': 'GET',
+          'url': 'https://www.googleapis.com/drive/v3/files/{file_id}',
+          'query': {'alt': 'media'},
+        },
+      },
+      {
+        'name': 'google_drive_create_file',
+        'description':
+            "Save a new text file to the user's Google Drive. Grid keeps "
+            'access to whatever it creates, so the file can be listed and read '
+            'again afterwards.',
+        'params': {
+          'name': {
+            'type': 'string',
+            'required': true,
+            'description': 'File name including its extension, e.g. notes.txt.',
+          },
+          'content': {
+            'type': 'string',
+            'required': true,
+            'description': 'The full text to write into the file.',
+          },
+          'content_type': {
+            'type': 'string',
+            'description':
+                'MIME type of the content. Omit for text/plain; use text/'
+                'markdown, text/csv and so on where it fits.',
+          },
+        },
+        'request': {
+          'method': 'POST',
+          // The upload host, not the API host: `files.create` with content is
+          // an upload endpoint and the plain one silently creates an empty
+          // file instead.
+          'url': 'https://www.googleapis.com/upload/drive/v3/files',
+          'query': {'uploadType': 'multipart', 'fields': 'id,name,webViewLink'},
+          'multipart': {
+            'metadata': {'name': '{name}'},
+            'content': '{content}',
+            'content_type': '{content_type}',
+          },
+        },
+      },
+      {
+        'name': 'google_drive_delete_file',
+        'description':
+            'Permanently delete a Drive file Grid created. This does not go to '
+            'the trash and cannot be undone — get the id from '
+            'google_drive_list_files and confirm with the user first.',
+        'params': {
+          'file_id': {
+            'type': 'string',
+            'required': true,
+            'description': 'The id from google_drive_list_files.',
+          },
+        },
+        'request': {
+          'method': 'DELETE',
+          'url': 'https://www.googleapis.com/drive/v3/files/{file_id}',
         },
       },
     ],

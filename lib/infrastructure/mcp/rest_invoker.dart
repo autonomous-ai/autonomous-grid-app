@@ -90,7 +90,18 @@ class RestInvoker {
         }),
       );
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      if (body != null) {
+      final upload = tool.request.multipart;
+      if (upload != null) {
+        final boundary = 'grid-${DateTime.now().microsecondsSinceEpoch}';
+        request.headers.contentType = ContentType(
+          'multipart',
+          'related',
+          parameters: {'boundary': boundary},
+        );
+        request.add(
+          utf8.encode(_multipartBody(boundary, _fill(upload, arguments))),
+        );
+      } else if (body != null) {
         request.headers.contentType = ContentType.json;
         request.add(utf8.encode(jsonEncode(body)));
       }
@@ -152,6 +163,27 @@ class RestInvoker {
       // page into a chat helps nobody.
     }
     return '.';
+  }
+
+  /// RFC 2387 `multipart/related`: a JSON metadata part, then the content.
+  ///
+  /// Two parts and no more, because that is the whole of what an upload of this
+  /// shape needs and every extra degree of freedom here is a way for a payload
+  /// to describe a request nobody can debug. CRLF throughout — the spec says
+  /// so, and a bare LF is the kind of thing one server accepts and the next
+  /// rejects.
+  String _multipartBody(String boundary, Object? filled) {
+    final parts = filled is Map ? filled : const {};
+    final metadata = parts['metadata'] ?? const <String, Object?>{};
+    final content = parts['content'];
+    final contentType = parts['content_type'];
+    return '--$boundary\r\n'
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n'
+        '${jsonEncode(metadata)}\r\n'
+        '--$boundary\r\n'
+        'Content-Type: ${contentType is String && contentType.isNotEmpty ? contentType : 'text/plain'}\r\n\r\n'
+        '${content is String ? content : ''}\r\n'
+        '--$boundary--';
   }
 
   Uri _buildUri(RestRequest request, Map<String, Object?> arguments) {
