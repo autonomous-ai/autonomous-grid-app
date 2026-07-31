@@ -18,8 +18,20 @@ import '../../../agents/logic/mcp_server.dart';
 import 'connector_mark.dart';
 
 /// Add a new MCP server to Hermes's config.
-Future<void> showAddMcpDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _McpDialog());
+///
+/// [initialName] and [initialUrl] prefill the form. The browse dialog uses them
+/// to hand over a directory entry the app cannot sign into on its own: rather
+/// than dead-ending on "this server needs a token", it opens the form the user
+/// would otherwise have had to find and retype the address into, already on the
+/// screen that has the Headers box.
+Future<void> showAddMcpDialog(
+  BuildContext context, {
+  String initialName = '',
+  String initialUrl = '',
+}) => showDialog<void>(
+  context: context,
+  builder: (_) => _McpDialog(initialName: initialName, initialUrl: initialUrl),
+);
 
 /// Reopen a configured server to change how it's reached.
 ///
@@ -64,9 +76,21 @@ enum _Stage {
 
 /// The shared add/edit form. [existing] null means add.
 class _McpDialog extends ConsumerStatefulWidget {
-  const _McpDialog({this.existing, this.signedIn = false});
+  const _McpDialog({
+    this.existing,
+    this.signedIn = false,
+    this.initialName = '',
+    this.initialUrl = '',
+  });
 
   final McpServer? existing;
+
+  /// Prefill for the add case — see [showAddMcpDialog]. Ignored when [existing]
+  /// is set: an edit's fields come from the server being edited, and letting a
+  /// caller override those would be a way to rewrite a working entry by
+  /// accident.
+  final String initialName;
+  final String initialUrl;
 
   /// This entry is a projection of an OAuth token the app holds — see
   /// [showEditMcpDialog].
@@ -197,7 +221,15 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
   }
 
   void _prefill(McpServer? server) {
-    if (server == null) return;
+    if (server == null) {
+      // The add case, possibly handed an address by the browse dialog. Left at
+      // [_Stage.details] rather than probed on open: the probe is several
+      // requests to a third-party host, and doing it before the user has said
+      // "this one" would fire on every dialog that happens to be prefilled.
+      _name.text = widget.initialName;
+      _url.text = widget.initialUrl;
+      return;
+    }
     _name.text = server.name;
     switch (server.transport) {
       case McpStdio(:final command, :final args, :final env):
