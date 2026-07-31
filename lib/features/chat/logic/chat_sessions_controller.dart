@@ -618,6 +618,12 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // starts the next queued agent turn.
     if (viaAgent) state = state.copyWith(runningAgentId: id);
 
+    // How long the answer takes, timed from here rather than from `send`: an
+    // agent turn can sit in the queue behind another chat, and charging it for
+    // that wait would tell the user this model is slow when another chat was
+    // simply holding the slot.
+    final clock = Stopwatch()..start();
+
     final updates = _senderFor(modality, attachments).send(
       network: network,
       model: model,
@@ -660,7 +666,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               // says which one spoke even after switching models mid-chat.
               messages: [
                 ...current.messages,
-                reply.copyWith(model: model),
+                reply.copyWith(model: model, took: clock.elapsed),
               ],
             );
             // A planning turn's reply is a plan waiting on approval — light the
@@ -694,7 +700,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
                 updatedAt: DateTime.now(),
                 messages: [
                   ...current.messages,
-                  kept.copyWith(model: model),
+                  // The part-answer is stamped too: a turn that died after four
+                  // minutes and one that died instantly are different problems.
+                  kept.copyWith(model: model, took: clock.elapsed),
                 ],
               ),
               phase: const SendIdle(),

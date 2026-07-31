@@ -24,6 +24,7 @@ class ChatMessage {
     this.sources = const [],
     this.plan = const [],
     this.model,
+    this.took,
   });
 
   final ChatRole role;
@@ -46,6 +47,15 @@ class ChatMessage {
   /// on replies saved before this was recorded.
   final String? model;
 
+  /// How long this reply took to arrive — from the moment the turn was sent to
+  /// the answer landing, so a queued agent turn isn't charged for the wait.
+  ///
+  /// Shown beside the model, because "which model" and "how long" are one
+  /// question for a grid: the same prompt is seconds on one machine and minutes
+  /// on another, and the model name alone gives no way to tell them apart. Null
+  /// on the user's own turns, and on replies saved before this was recorded.
+  final Duration? took;
+
   ChatMessage copyWith({
     ChatRole? role,
     String? text,
@@ -53,6 +63,7 @@ class ChatMessage {
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
     String? model,
+    Duration? took,
   }) => ChatMessage(
     role: role ?? this.role,
     text: text ?? this.text,
@@ -60,8 +71,31 @@ class ChatMessage {
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
     model: model ?? this.model,
+    took: took ?? this.took,
   );
 }
+
+/// How long a reply took, in the shortest form that stays honest: `840ms`,
+/// `8.4s`, `42s`, `3m 20s`, `1h 04m`.
+///
+/// Sub-second turns keep milliseconds rather than rounding to `0.0s` — a turn
+/// that failed before it began really did take 2ms, and the number saying so is
+/// the first clue that nothing ran. Precision drops as the number grows: tenths
+/// of a second stop meaning anything once a turn runs for a minute.
+String formatTurnDuration(Duration took) {
+  final ms = took.inMilliseconds;
+  if (ms <= 0) return '0ms';
+  if (ms < 1000) return '${ms}ms';
+  if (ms < 10000) return '${(ms / 1000).toStringAsFixed(1)}s';
+  final seconds = took.inSeconds;
+  if (seconds < 60) return '${seconds}s';
+  final minutes = took.inMinutes;
+  if (minutes < 60) return '${minutes}m ${_pad(seconds % 60)}s';
+  return '${took.inHours}h ${_pad(minutes % 60)}m';
+}
+
+/// Two digits, so `3m 05s` lines up with `3m 55s` instead of jumping a column.
+String _pad(int value) => value.toString().padLeft(2, '0');
 
 /// A model id as the transcript shows it: the bare model name, dropping any
 /// `maker/` prefix (`qwen/qwen3.6-27b` → `qwen3.6-27b`).
