@@ -648,7 +648,15 @@ class _McpCardState extends ConsumerState<_McpCard> {
 
   Future<void> _delete() async {
     final server = widget.server;
-    final confirmed = await _confirmRemove(context, server.name);
+    // The resolved name for anything the user reads, the raw key for the write.
+    // These are the same string for most servers and deliberately not for the
+    // rest: `Connector.name` is the display form — a catalog label, or the
+    // config key with its first letter raised — while `remove` addresses the
+    // entry in `config.yaml`, which is case-sensitive and must stay verbatim.
+    // Asking "Remove bigquery?" one row under a list that says `Bigquery` is the
+    // small inconsistency this avoids.
+    final shown = widget.connector.name;
+    final confirmed = await _confirmRemove(context, shown);
     if (confirmed != true || !mounted) return;
 
     final toast = ToastScope.of(context);
@@ -661,7 +669,7 @@ class _McpCardState extends ConsumerState<_McpCard> {
       error != null
           ? ToastSpec(message: error, severity: ToastSeverity.error)
           : ToastSpec(
-              message: '${server.name} removed.',
+              message: '$shown removed.',
               severity: ToastSeverity.success,
             ),
     );

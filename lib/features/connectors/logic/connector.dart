@@ -121,7 +121,7 @@ List<Connector> buildConnectors({
         kind: byCode.containsKey(server.name)
             ? ConnectorKind.catalog
             : ConnectorKind.customMcp,
-        name: byCode[server.name]?.label ?? server.name,
+        name: byCode[server.name]?.label ?? capitalizeFirst(server.name),
         description: _describe(byCode[server.name], server),
         // The catalog's own mark first — it is the one the gateway chose, and
         // the only one guaranteed to be the service's real logo. A server the
@@ -157,6 +157,25 @@ List<Connector> buildConnectors({
         ),
   ];
   return [...connected, ...offered];
+}
+
+/// A config key shown as a name: same string, first letter raised.
+///
+/// Only ever applied where the display name **is** the config key — a server
+/// with no catalog entry behind it. Those keys are typed by a person or derived
+/// from a directory slug (`bigquery`, `jina`, `subwayinfo`), and a column of
+/// lowercase rows between `Figma` and `Google Drive` reads as a different class
+/// of thing rather than the same list.
+///
+/// Deliberately *only* the first letter. [labelFromCode] would also split on
+/// hyphens and title-case every word, which is right for a code the gateway
+/// coined and wrong here: this name may have been typed, and turning someone's
+/// `my-notes` into `My Notes` is rewriting their choice rather than tidying a
+/// slug. A leading digit or symbol is left alone — `1password` has no letter to
+/// raise, and `toUpperCase` on it is a no-op anyway.
+String capitalizeFirst(String value) {
+  if (value.isEmpty) return value;
+  return value[0].toUpperCase() + value.substring(1);
 }
 
 /// What a connected row *is*, in words — the catalog's blurb, or its address.
