@@ -5,8 +5,10 @@ import '../../agent/logic/claude_chat_sender.dart';
 import '../../agent/logic/codex_chat_sender.dart';
 import '../../agent/logic/hermes_chat_sender.dart';
 import '../../playground/logic/chat_sender.dart';
+import '../../playground/logic/playground_models.dart';
 import 'agent_catalog.dart';
 import 'agent_grid_support.dart';
+import 'agent_model_support.dart';
 import 'agent_status.dart';
 
 /// The agent that answers chats right now — the user's remembered choice when
@@ -63,6 +65,35 @@ final alternativeChatAgentProvider = Provider<AgentTool?>((ref) {
   }
   return null;
 });
+
+/// Whether the open grid serves a model [tool] could actually answer with — the
+/// model half of "can this agent take the chat here", beside
+/// [agentRunsOnGridProvider]'s grid half.
+///
+/// An empty list is "the grid hasn't answered yet", never "nothing to use":
+/// reading it as no would flash "no model it can use" on every grid switch, and
+/// a grid that really serves nothing has its own screen for that.
+final agentHasModelHereProvider = Provider.autoDispose.family<bool, AgentTool>((
+  ref,
+  tool,
+) {
+  final options = ref.watch(playgroundModelsProvider);
+  if (options.isEmpty) return true;
+  return options.any((option) => agentSupportsModel(tool, option.id));
+});
+
+/// The agent whose model requirements the composer has to respect — null when
+/// no agent is installed at all.
+///
+/// Null is not "none of them": it's "nothing stands between the chat and the
+/// grid". Without an agent the chat posts to the relay itself, which serves
+/// every model it lists, so filtering the picker by an agent that isn't there
+/// would grey out models that answer perfectly well.
+final chatModelAgentProvider = Provider<AgentTool?>(
+  (ref) => ref.watch(anyAgentInstalledProvider)
+      ? ref.watch(activeChatAgentProvider)
+      : null,
+);
 
 /// Installed on this computer, and runnable on the grid that's open.
 bool _canAnswer(Ref ref, AgentTool tool) =>

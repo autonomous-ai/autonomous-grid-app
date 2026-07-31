@@ -8,6 +8,9 @@ import '../../../shared/widgets/composer_trigger.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/modality_mark.dart';
 import '../../../shared/widgets/skeleton.dart';
+import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/logic/agent_catalog.dart';
+import '../../agents/logic/agent_model_support.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/playground_models.dart';
@@ -263,6 +266,10 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
     AppTheme.watch(context);
     final catalog = ref.watch(gridModelCatalogProvider);
     final currentGridId = ref.watch(selectedNetworkProvider)?.networkId;
+    // Who answers decides what can be picked: a seat model only its own vendor's
+    // CLI can drive is shown, but dead, rather than hidden — a model that
+    // vanishes when you change assistant reads as the grid losing it.
+    final agent = ref.watch(chatModelAgentProvider);
     // Both this and the per-grid /models call are autoDispose, so closing the
     // menu tears them down and every open refetches from scratch. That's the
     // churn: grids resolve one by one, each landing pushing the ones below it
@@ -292,7 +299,7 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
                   : Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: _rows(catalog, currentGridId),
+                      children: _rows(catalog, currentGridId, agent),
                     ),
             ),
           ),
@@ -301,7 +308,11 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
     );
   }
 
-  List<Widget> _rows(List<GridModelGroup> catalog, String? currentGridId) {
+  List<Widget> _rows(
+    List<GridModelGroup> catalog,
+    String? currentGridId,
+    AgentTool? agent,
+  ) {
     final rows = <Widget>[];
     for (final group in catalog) {
       // A grid with nothing to offer says why — loading, or offline. A *ready*
@@ -320,6 +331,11 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
             selected:
                 group.grid.networkId == currentGridId &&
                 option.id == widget.currentModelId,
+            // The agent that would answer with it, when it can't — the row then
+            // says so instead of taking a tap that ends at the relay's refusal.
+            blockedFor: agent != null && !agentSupportsModel(agent, option.id)
+                ? agent
+                : null,
             onTap: () {
               widget.onSelect(group.grid, option);
               widget.onClose();
@@ -344,22 +360,32 @@ class _OptionRow extends StatelessWidget {
     required this.option,
     required this.selected,
     required this.onTap,
+    this.blockedFor,
   });
 
   final PlaygroundModelOption option;
   final bool selected;
   final VoidCallback onTap;
 
+  /// The agent in force that can't answer with this model — null whenever the
+  /// row is pickable. It carries the agent rather than a bare flag so the row
+  /// can name who is refusing: "not for Codex" is a fact the user can act on,
+  /// "unavailable" is a mystery.
+  final AgentTool? blockedFor;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads colour tokens; follow theme flips.
-    return Padding(
+    final blocked = blockedFor;
+    final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: _rowGutter, vertical: 1),
       child: Material(
         color: Colors.transparent,
         borderRadius: _rowRadius,
         child: InkWell(
-          onTap: onTap,
+          // Dead, not hidden: a null tap leaves the row visible and legible so
+          // the list still says what the grid serves.
+          onTap: blocked == null ? onTap : null,
           borderRadius: _rowRadius,
           hoverColor: AppSurface.hoverFill,
           // macOS clicks land instantly; the global InkRipple would spread a
@@ -389,7 +415,9 @@ class _OptionRow extends StatelessWidget {
                   child: Icon(
                     modelIcon(option),
                     size: AppControl.iconSize,
-                    color: selected
+                    color: blocked != null
+                        ? AppPalette.textFaint
+                        : selected
                         ? AppPalette.accentMuted
                         : modalityTone(option.modality),
                   ),
@@ -403,11 +431,26 @@ class _OptionRow extends StatelessWidget {
                       fontSize: 13,
                       height: 1.2,
                       fontWeight: selected ? AppFont.medium : FontWeight.w400,
-                      color: AppPalette.textPrimary,
+                      color: blocked != null
+                          ? AppPalette.textFaint
+                          : AppPalette.textPrimary,
                     ),
                   ),
                 ),
-                if (selected) ...[
+                // Who is refusing, where the tick would sit — the two never
+                // collide, since a model the agent can't use is not one the
+                // composer is on.
+                if (blocked != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    agentModelBlockedLabel(blocked),
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.2,
+                      color: AppPalette.textFaint,
+                    ),
+                  ),
+                ] else if (selected) ...[
                   const SizedBox(width: 8),
                   Container(
                     width: 16,
@@ -430,6 +473,11 @@ class _OptionRow extends StatelessWidget {
         ),
       ),
     );
+    if (blocked == null) return row;
+    // The whole sentence on hover, since the row itself has room for three
+    // words. Only the blocked row gets it: a tooltip on the pickable ones would
+    // be a nag with nothing to say.
+    return Tooltip(message: agentModelBlockedReason(blocked), child: row);
   }
 }
 

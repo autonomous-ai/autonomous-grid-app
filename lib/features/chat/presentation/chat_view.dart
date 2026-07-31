@@ -14,6 +14,9 @@ import '../../../shared/widgets/typing_dots.dart';
 import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
+import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/logic/agent_catalog.dart';
+import '../../agents/logic/agent_model_support.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/presentation/agent_picker.dart';
 import '../../agent/presentation/agent_changes_bar.dart';
@@ -213,21 +216,69 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _synced = true;
       _syncedKey = key;
       final stored = active?.model ?? '';
-      final hasStored = options.any((o) => o.id == stored);
+      // The chat's own model, unless the agent answering now can't use it — a
+      // chat last used on Claude Code reopening under Codex would otherwise come
+      // back holding a pair that only fails.
+      final hasStored =
+          options.any((o) => o.id == stored) && _agentCanUse(stored);
       _setModelText(hasStored ? stored : _defaultModel(options));
       return;
     }
-    if (_model.text.isEmpty && options.isNotEmpty) {
+    if (options.isEmpty) return;
+    if (_model.text.isEmpty) {
       _setModelText(_defaultModel(options));
+      return;
     }
+    // The agent can change while this grid's models are still in flight — an
+    // install finishing, a grid handing the chat to another agent — and the
+    // listener that repairs the pair then has no list to repair it against. Do
+    // it again as soon as there is one, so the composer never settles on a pair
+    // the grid would refuse.
+    _retargetModel(ref.read(chatModelAgentProvider));
   }
 
   /// The model to fall back to when the conversation has none: the one the user
-  /// last used (if this grid still offers it), else the grid's first option.
+  /// last used (if this grid still offers it and the agent can answer with it),
+  /// else the first option that pairs with the agent answering.
   String _defaultModel(List<PlaygroundModelOption> options) {
+    // A grid that serves nothing this agent can use falls back to the whole
+    // list: the composer still names what the grid has, and the picker's greyed
+    // rows carry the reason — landing on an empty pill would say the grid was
+    // empty, which is a different problem with a different fix.
+    final usable = [
+      for (final option in options)
+        if (_agentCanUse(option.id)) option,
+    ];
+    final pool = usable.isEmpty ? options : usable;
     final saved = ref.read(chatPrefsProvider).model;
-    if (saved != null && options.any((o) => o.id == saved)) return saved;
-    return options.isEmpty ? '' : options.first.id;
+    if (saved != null && pool.any((o) => o.id == saved)) return saved;
+    return pool.isEmpty ? '' : pool.first.id;
+  }
+
+  /// Whether the agent that would answer can do so with [id] — true when no
+  /// agent stands between the chat and the grid (see [chatModelAgentProvider]).
+  bool _agentCanUse(String id) {
+    final agent = ref.read(chatModelAgentProvider);
+    return agent == null || agentSupportsModel(agent, id);
+  }
+
+  /// Move off a model [agent] can't answer with, onto the first one this grid
+  /// serves that it can.
+  ///
+  /// The pairing is decided here rather than at Send because the composer shows
+  /// both halves at once: leaving "Codex" beside `claude:opus` on screen makes
+  /// the grid's refusal look like a bug in the model. Nothing usable here leaves
+  /// the selection alone — the picker's rows say who is refusing, and swapping to
+  /// a model that fails for another reason only moves the wall.
+  void _retargetModel(AgentTool? agent) {
+    if (agent == null) return;
+    final current = _model.text.trim();
+    if (current.isEmpty || agentSupportsModel(agent, current)) return;
+    for (final option in _options) {
+      if (!agentSupportsModel(agent, option.id)) continue;
+      _setModelText(option.id, fromUser: true);
+      return;
+    }
   }
 
   /// Write [value] into the model field. [fromUser] marks a pick they actually
@@ -438,6 +489,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final loadingModels = ref.watch(playgroundModelsResolvingProvider);
 
     _syncModelField(sessions.active, options, widget.network.networkId);
+
+    // Switching the assistant moves the model with it when the two can't work
+    // together, so "who answers" and "with what" are never a pair the grid would
+    // refuse. Listened for rather than derived: the model is the user's to keep
+    // whenever it still works, and only a change of agent can invalidate it.
+    ref.listen(chatModelAgentProvider, (_, agent) => _retargetModel(agent));
 
     // Follow new turns while the user is already at the bottom, and always snap
     // down after switching conversations so a reopened chat shows its latest
