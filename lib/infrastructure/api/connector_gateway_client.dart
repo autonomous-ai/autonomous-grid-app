@@ -348,7 +348,14 @@ List<ConnectorCatalogEntry>? parseGatewayConnectors(String raw) {
         // provider can tell "the gateway named this" from "nobody did" and
         // derive a readable name for the second case. The screen never renders
         // this raw.
-        label: label is String ? label : '',
+        //
+        // A label equal to the code counts as nobody naming it. The gateway
+        // sends `"label": "gmail"` for some rows, which is the slug echoed back
+        // rather than a name a person would write, and taking it at face value
+        // put `gmail` and `github` in a list beside `Google Calendar` and
+        // `Supabase MCP remote`. Treating it as absent sends it down the same
+        // derivation path as a missing one.
+        label: label is String && label != code ? label : '',
         description: entry['description'] is String
             ? entry['description'] as String
             : '',
