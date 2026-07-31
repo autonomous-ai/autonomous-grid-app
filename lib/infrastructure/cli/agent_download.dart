@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -19,7 +20,9 @@ class AgentDownloadException implements Exception {
 const Duration kDownloadTimeout = Duration(minutes: 10);
 
 /// Stream [url] to a file under [dir], following redirects (GitHub release URLs
-/// bounce to a CDN). Throws [AgentDownloadException] on anything but 200.
+/// bounce to a CDN). Throws [AgentDownloadException] on anything but 200, and
+/// on a transfer that outstays [kDownloadTimeout] — a stalled connection would
+/// otherwise leave an install spinning with nothing behind it.
 Future<File> downloadToFile(Uri url, Directory dir) async {
   final dest = File('${dir.path}/${_basename(url.path)}');
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
@@ -32,10 +35,14 @@ Future<File> downloadToFile(Uri url, Directory dir) async {
       );
     }
     final sink = dest.openWrite();
-    await response.pipe(sink);
+    await response.pipe(sink).timeout(kDownloadTimeout);
     return dest;
   } on AgentDownloadException {
     rethrow;
+  } on TimeoutException {
+    throw AgentDownloadException(
+      'Download timed out after ${kDownloadTimeout.inMinutes} minutes: $url',
+    );
   } on Object catch (error) {
     throw AgentDownloadException("Couldn't download $url: $error");
   } finally {

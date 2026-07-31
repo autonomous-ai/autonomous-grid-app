@@ -53,12 +53,14 @@ class GithubReleaseBinary extends AgentInstallSpec {
 }
 
 /// The argv for `uv tool install`. `--force` reinstalls in place, so install and
-/// upgrade are the same call. Pure and unit-tested — a wrong flag fails exactly
-/// like a package that wouldn't build.
+/// upgrade are the same call; a repair passes `force: false` to keep the
+/// environment that's already there ([hermesAcpRepairArgs]). Pure and
+/// unit-tested — a wrong flag fails exactly like a package that wouldn't build.
 List<String> uvToolInstallArgs({
   required String package,
   required String python,
-}) => ['tool', 'install', '--force', '--python', python, package];
+  bool force = true,
+}) => ['tool', 'install', if (force) '--force', '--python', python, package];
 
 /// Why an install couldn't finish. [retryable] is true for a transient failure
 /// (a download, a spawn) where trying again might work.

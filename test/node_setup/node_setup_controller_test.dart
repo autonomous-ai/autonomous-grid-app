@@ -7,6 +7,7 @@ import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_status.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_controller.dart';
 import 'package:grid_app/features/node_setup/logic/node_setup_plan.dart';
+import 'package:grid_app/infrastructure/cli/agent_spec_installer.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/parsers/download_progress.dart';
@@ -91,9 +92,32 @@ const _agentStep = SetupStep(
   action: SetupAction.installAgent,
   title: 'Install Hermes',
   detail: '',
-  args: ['agent', 'install', 'hermes'],
+  args: [],
   isDownload: false,
+  agent: kChatAgent,
 );
+
+/// The agent recipe runner, scripted rather than run — no download, and nothing
+/// installed on the machine running the tests.
+class _FakeSpecInstaller implements AgentSpecInstaller {
+  _FakeSpecInstaller({this.failure, this.onRun});
+
+  final AgentInstallException? failure;
+
+  /// Runs before the outcome is decided, so a test can put the binary "on disk"
+  /// exactly when a real install would.
+  final void Function()? onRun;
+
+  @override
+  Future<void> run(
+    AgentInstallSpec spec, {
+    void Function(String line)? onLog,
+  }) async {
+    onRun?.call();
+    onLog?.call('Installing the assistant …');
+    if (failure != null) throw failure!;
+  }
+}
 
 /// [onDisk] stands in for the PATH probe, so a test can put the binary "there"
 /// mid-run the way an install does and see whether the app notices.
@@ -101,10 +125,14 @@ ProviderContainer _container(
   GridCliService? fake, {
   NodeSetupLog? log,
   String? Function()? onDisk,
+  AgentSpecInstaller? specs,
 }) {
   final container = ProviderContainer(
     overrides: [
       gridCliServiceProvider.overrideWithValue(fake),
+      agentSpecInstallerProvider.overrideWithValue(
+        specs ?? _FakeSpecInstaller(),
+      ),
       gridHomeStoreProvider.overrideWithValue(const _EmptyStore()),
       // Always override so no test ever writes to the real ~/.grid/logs.
       nodeSetupLogProvider.overrideWithValue(log ?? _RecordingLog()),
@@ -124,20 +152,15 @@ void main() {
       // read "Not installed" and chat routed past the agent on a machine that
       // had just installed one, until the user quit and reopened.
       var installed = false;
-      final fake = FakeGridCliService()
-        ..stubStart(
-          ['agent', 'install', 'hermes'],
-          exitCode: 0,
-          lines: const [],
-        );
       final container = _container(
-        fake,
+        FakeGridCliService(),
         onDisk: () => installed ? '/Users/x/.grid/bin/hermes' : null,
+        // What the install puts on disk, at the moment it runs.
+        specs: _FakeSpecInstaller(onRun: () => installed = true),
       );
 
       expect(container.read(agentInstalledProvider(AgentTool.hermes)), isFalse);
 
-      installed = true; // what the install step puts on disk
       await container.read(nodeSetupControllerProvider.notifier).run([
         _agentStep,
       ]);
@@ -148,13 +171,12 @@ void main() {
 
   test('a step that fails stops the run at that step — the plan is only what '
       'must be in place, so there is nothing safe to carry on past', () async {
-    final fake = FakeGridCliService()
-      ..stubStart(
-        ['agent', 'install', 'hermes'],
-        exitCode: 1,
-        lines: const [CliLine(isStderr: true, text: 'network unreachable')],
-      );
-    final container = _container(fake);
+    final container = _container(
+      FakeGridCliService(),
+      specs: _FakeSpecInstaller(
+        failure: const AgentInstallException('network unreachable'),
+      ),
+    );
 
     await container.read(nodeSetupControllerProvider.notifier).run([
       _agentStep,
