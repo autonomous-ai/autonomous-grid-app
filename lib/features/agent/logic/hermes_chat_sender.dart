@@ -465,7 +465,8 @@ class HermesChatSender implements ChatSender {
         // be pointed at — invisible in the chat and in the log.
         final failed = turnError == null
             ? null
-            : (friendlyAgentUnknownProvider(turnError!) ??
+            : (friendlyAgentLostContact(turnError!) ??
+                  friendlyAgentUnknownProvider(turnError!) ??
                   friendlyAgentServerError(turnError!) ??
                   kAgentTurnFailed);
         final failure =

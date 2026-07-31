@@ -6,6 +6,7 @@ import '../logging/app_log.dart';
 import 'agent_event.dart';
 import 'hermes_permission_policy.dart';
 import 'host_environment.dart';
+import 'stdio_line_writer.dart';
 
 /// One thing to show from a running Hermes ACP turn: a tool step for the
 /// activity feed, or a chunk of the streamed answer.
@@ -95,6 +96,12 @@ class HermesAcpTurnEnded extends HermesAcpEvent {
     'refusal',
   };
 }
+
+/// How a turn that lost the pipe to Hermes reports itself, ahead of the raw
+/// reason. The chat matches on this prefix to say so in plain words, instead of
+/// reading a broken pipe as an agent that couldn't answer — a different problem
+/// with a different fix (see `friendlyAgentLostContact`).
+const String kAcpLostContact = "Grid couldn't reach the assistant's process";
 
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
@@ -211,6 +218,7 @@ class _HermesAcpSession implements HermesAcpSession {
   int _nextId = 2;
 
   Process? _process;
+  StdioLineWriter? _writer;
   String? _sessionId;
   bool _closed = false;
   final _ready = Completer<void>();
@@ -250,6 +258,7 @@ class _HermesAcpSession implements HermesAcpSession {
       throw HermesAcpException('Hermes could not start: ${e.message}');
     }
 
+    _writer = StdioLineWriter(_process!.stdin, onError: _writeFailed);
     _listen();
     _write({
       'jsonrpc': '2.0',
@@ -632,15 +641,33 @@ class _HermesAcpSession implements HermesAcpSession {
     if (done != null && !done.isCompleted) done.complete();
   }
 
-  // Flush after each line: hermes reads newline-delimited JSON-RPC from stdin,
-  // and an unflushed buffer would leave it waiting while we wait for its output
-  // — a deadlock. Writes are response-driven (never concurrent), so
-  // fire-and-forget flushes don't overlap.
+  // Hermes reads newline-delimited JSON-RPC from stdin, and the writer flushes
+  // each line without letting the next one race that flush — see
+  // [StdioLineWriter] for what the race cost.
   void _write(Map<String, Object?> message) {
-    final stdin = _process?.stdin;
-    if (stdin == null) return;
-    stdin.write('${jsonEncode(message)}\n');
-    stdin.flush().ignore();
+    if (_closed) return;
+    _writer?.write('${jsonEncode(message)}\n');
+  }
+
+  /// A message that never reached Hermes: the pipe broke, or the process died
+  /// under it. Whatever it was waiting on — a permission answer, the prompt
+  /// itself — it waits on forever, so end the turn now and say why. This used to
+  /// surface only as minutes of silence and then the idle watchdog's line, which
+  /// blamed the model for a pipe the app had dropped.
+  void _writeFailed(Object error) {
+    // A stopped session kills the process under any queued line; that is the
+    // stop working, not a fault to report.
+    if (_closed) return;
+    _log.failure('agent', 'Hermes never got a message: $error');
+    final events = _events;
+    if (events != null && !events.isClosed) {
+      events.add(
+        HermesAcpTurnEnded('cancelled', error: '$kAcpLostContact: $error'),
+      );
+    }
+    // A session we can't write to is over: let go of the process so the next
+    // message starts a fresh one rather than talking into a pipe nobody reads.
+    unawaited(close());
   }
 }
 

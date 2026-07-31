@@ -577,6 +577,29 @@ void main() {
     expect(failure.error, isNot(kAgentNoAnswer));
   });
 
+  test('a message that never reached the assistant says the connection went, '
+      'not that the model let the user down', () async {
+    final service = _FakeAcp.single([
+      const HermesAcpTurnEnded(
+        'cancelled',
+        error: '$kAcpLostContact: SocketException: broken pipe',
+      ),
+    ]);
+    final container = _container(service, tmp);
+
+    final updates = await container
+        .read(hermesChatSenderProvider)
+        .send(network: _credential(), model: 'm', history: _history('go'))
+        .toList();
+
+    final failure = updates.last as ChatSendFailure;
+    expect(failure.error, kAgentLostContact);
+    // The lever is sending again, not the model picker — and the raw pipe error
+    // belongs in the log, never in the chat.
+    expect(failure.error, isNot(contains('model')));
+    expect(failure.error, isNot(contains('SocketException')));
+  });
+
   test(
     'a turn that lays out a plan and then does nothing about it is a failure, '
     'not an answer — even with a line of text, and even ending cleanly',
