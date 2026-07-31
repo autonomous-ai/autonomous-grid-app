@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../infrastructure/cli/hermes_acp_service.dart';
 import '../../../infrastructure/cli/hermes_acp_setup.dart';
 import '../../network/logic/app_guide_snippets.dart';
 
@@ -21,9 +22,9 @@ const String kAgentStalledPlan =
 /// so the chat doesn't spin forever; shares the other turn-end lines' shape (§5)
 /// — the raw silence is a gap in the log, nothing to humanize away.
 const String kAgentUnresponsive =
-    'The assistant stopped responding — it may be stuck on a command that '
-    "doesn't finish, like starting a server. It was stopped; send again, or "
-    'switch models.';
+    'The assistant went quiet — it can get stuck on a command that never '
+    'finishes, like starting a server. The turn was stopped; send again, or let '
+    'another agent take this chat.';
 
 /// A turn stopped because the assistant kept redoing the same step — the same
 /// file written, or the same command run, over and over — without finishing.
@@ -49,6 +50,25 @@ const String kAgentSetupUnfinished =
 const String kAgentTurnFailed =
     "The assistant couldn't answer that. Try sending again, or pick another "
     'model.';
+
+/// A turn that ended because a message never reached the assistant's process —
+/// the pipe to it broke, or it died under one. Nothing it was waiting on can
+/// arrive now, so the turn is over and the session with it.
+///
+/// Kept apart from [kAgentTurnFailed]: this isn't the assistant failing to
+/// answer, so "pick another model" would point at the wrong lever. The next
+/// message starts a fresh session, which is why "send again" is the whole fix.
+const String kAgentLostContact =
+    'Grid lost its connection to the assistant on this computer, so the turn '
+    'stopped. Send again — that starts it up fresh.';
+
+/// [kAgentLostContact] when [raw] is that failure, else null.
+///
+/// Matched on the line the session emits ([kAcpLostContact]) — the same shape as
+/// the other `friendlyAgent*` helpers, except the words being read are the app's
+/// own. The raw error stays in the log, where it names the pipe (§6).
+String? friendlyAgentLostContact(String raw) =>
+    raw.contains(kAcpLostContact) ? kAgentLostContact : null;
 
 /// The assistant couldn't read the connection Grid wrote for the model it was
 /// pointed at.
