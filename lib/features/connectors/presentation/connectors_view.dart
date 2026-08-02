@@ -13,6 +13,19 @@ import 'widgets/add_mcp_dialog.dart';
 import 'widgets/browse_connectors_dialog.dart';
 import 'widgets/connector_list.dart';
 
+/// Whether the Browse button reaches the public MCP directory.
+///
+/// **Temporary.** Turn back to `true` to restore it — that is the whole revert;
+/// nothing else is gated on this and no code was deleted. The directory dialog,
+/// its controller and its registry client are all still compiled and still
+/// reachable through [showBrowseConnectorsDialog], so flipping this back cannot
+/// leave a half-wired screen behind.
+///
+/// The one thing that moves with it is the accent: with Browse gone, "Add
+/// custom" takes the primary fill, because a toolbar carrying only the quiet
+/// button reads as a screen with nothing to do.
+const bool kShowBrowseConnectors = false;
+
 /// What connects the assistant to the outside: the MCP servers in the agent's
 /// config, and the catalog of services a future sign-in will connect in one
 /// step. The config is the only truth about what's live — the catalog only
@@ -136,16 +149,22 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
       createButton: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _ToolbarButton(
-            icon: Icons.travel_explore_rounded,
-            label: 'Browse',
-            accent: true,
-            onPressed: () => showBrowseConnectorsDialog(context),
-          ),
-          const SizedBox(width: 8),
+          if (kShowBrowseConnectors) ...[
+            _ToolbarButton(
+              icon: Icons.travel_explore_rounded,
+              label: 'Browse',
+              accent: true,
+              onPressed: () => showBrowseConnectorsDialog(context),
+            ),
+            const SizedBox(width: 8),
+          ],
           _ToolbarButton(
             icon: Icons.add_rounded,
             label: 'Add custom',
+            // The accent follows whichever button is the primary one present,
+            // rather than staying pinned to Browse: a toolbar whose only button
+            // is the quiet fill reads as a screen with no action to take.
+            accent: !kShowBrowseConnectors,
             onPressed: () => showAddMcpDialog(context),
           ),
         ],
