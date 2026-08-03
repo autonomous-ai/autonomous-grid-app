@@ -495,10 +495,24 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
         // whether the directory's footer has anything to sit under. Two copies
         // of this comprehension is two chances for the footer to appear over an
         // empty state, which is the layout that overflowed.
+        // **A directory row is not re-tested against the search text.** The
+        // registry has already answered it, and it matches on more than a name
+        // and a blurb: searching `email` returns `mailerlite` and
+        // `reckon/email-verifier`, neither of which carries the word where this
+        // local test can see it. Applying `matches` on top threw those away —
+        // the registry found 132 servers and the screen showed almost none.
+        //
+        // The local test still governs everything else, which is what keeps a
+        // connected connector findable: those come from the token store and the
+        // agent's config, and the registry has never heard of them.
+        //
+        // `matches` answers true for every row while the box is empty, so this
+        // reads the same when nobody is searching.
         List<Connector> visible(List<Connector> all) => [
           for (final connector in all)
             if (_filter.keeps(connector) &&
-                matches(connector.name, connector.description))
+                (connector.catalogEntry != null ||
+                    matches(connector.name, connector.description)))
               connector,
         ];
         return switch (ref.watch(connectorsProvider)) {
