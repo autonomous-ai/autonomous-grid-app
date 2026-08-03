@@ -111,13 +111,17 @@ class CodexExecRun {
 /// the sender is tested against a fake that replays scripted turns.
 abstract interface class CodexExecService {
   /// Run one turn. [resumeThreadId] continues an earlier conversation; null
-  /// starts a fresh one. [workdir] is the folder the turn opens in; the
-  /// model and grid endpoint come from `~/.codex/config.toml`, which the sender
-  /// points at the grid before the turn. Throws [CodexExecException] if the
-  /// process won't start.
+  /// starts a fresh one. [workdir] is the folder the turn opens in.
+  ///
+  /// [config] carries the grid and model as `-c` overrides for this run alone
+  /// (see `codexGridOverrides`) and [environment] the key they name — so a turn
+  /// answers on the app's grid without the user's own `~/.codex/config.toml`
+  /// being rewritten. Throws [CodexExecException] if the process won't start.
   CodexExecRun run({
     required String workdir,
     required String prompt,
+    required List<String> config,
+    required Map<String, String> environment,
     String? resumeThreadId,
   });
 }
@@ -127,24 +131,34 @@ abstract interface class CodexExecService {
 ///
 /// The two subcommands don't take the same flags, and Codex rejects the whole
 /// invocation over one it doesn't know — `exec resume` accepts neither
-/// `--sandbox` nor `-C`, so passing them killed every *second* turn of a
-/// conversation at argv parsing, before a single byte reached the model. So the
-/// sandbox is set through the `-c` config override, which both subcommands
-/// accept, and the working root is left to the process's own directory (a
-/// resumed session restores the one it started in).
+/// `--sandbox` nor `-C` (still true on 0.144.6), so passing them killed every
+/// *second* turn of a conversation at argv parsing, before a single byte reached
+/// the model. So the sandbox is set through the `-c` config override, which both
+/// subcommands accept, and the working root is left to the process's own
+/// directory (a resumed session restores the one it started in).
+///
+/// [config] is the rest of the run's configuration in the same `-c` form — the
+/// grid, the model, the provider to reach them through (`codexGridOverrides`).
+/// It goes on **every** turn, resumed ones included: a resumed session does not
+/// restore the model it was recorded with, so dropping it there has Codex fall
+/// back to its own default and answer as a model nobody picked.
 ///
 /// Pure, and unit-tested, because the failure mode is silent: a mistyped flag
 /// looks exactly like a model that wouldn't answer.
-List<String> codexExecArgs({required String workdir, String? resumeThreadId}) =>
-    [
-      'exec',
-      if (resumeThreadId != null) 'resume',
-      '--json',
-      '--skip-git-repo-check',
-      '-c',
-      'sandbox_mode="$kCodexSandboxMode"',
-      if (resumeThreadId != null) resumeThreadId else ...['-C', workdir],
-    ];
+List<String> codexExecArgs({
+  required String workdir,
+  required List<String> config,
+  String? resumeThreadId,
+}) => [
+  'exec',
+  if (resumeThreadId != null) 'resume',
+  '--json',
+  '--skip-git-repo-check',
+  '-c',
+  'sandbox_mode="$kCodexSandboxMode"',
+  for (final override in config) ...['-c', override],
+  if (resumeThreadId != null) resumeThreadId else ...['-C', workdir],
+];
 
 /// How much of this computer a Codex turn may touch.
 ///
@@ -170,19 +184,39 @@ class CodexExecServiceImpl implements CodexExecService {
   CodexExecRun run({
     required String workdir,
     required String prompt,
+    required List<String> config,
+    required Map<String, String> environment,
     String? resumeThreadId,
-  }) {
-    final turn = _CodexExecTurn(_path, workdir, prompt, resumeThreadId);
-    return turn.start();
-  }
+  }) => _CodexExecTurn(
+    path: _path,
+    workdir: workdir,
+    prompt: prompt,
+    config: config,
+    environment: environment,
+    resumeThreadId: resumeThreadId,
+  ).start();
 }
 
 class _CodexExecTurn {
-  _CodexExecTurn(this._path, this._workdir, this._prompt, this._resumeThreadId);
+  _CodexExecTurn({
+    required String path,
+    required String workdir,
+    required String prompt,
+    required List<String> config,
+    required Map<String, String> environment,
+    required String? resumeThreadId,
+  }) : _path = path,
+       _workdir = workdir,
+       _prompt = prompt,
+       _config = config,
+       _environment = environment,
+       _resumeThreadId = resumeThreadId;
 
   final String _path;
   final String _workdir;
   final String _prompt;
+  final List<String> _config;
+  final Map<String, String> _environment;
   final String? _resumeThreadId;
 
   final _events = StreamController<CodexExecEvent>();
@@ -215,13 +249,20 @@ class _CodexExecTurn {
       _path,
       _args(),
       workingDirectory: _workdir,
-      environment: {...Platform.environment, 'PATH': HostEnvironment.path()},
+      environment: {
+        ...Platform.environment,
+        'PATH': HostEnvironment.path(),
+        ..._environment,
+      },
     ).then(_onStarted).catchError(_onStartError);
     return CodexExecRun(events: _events.stream, done: _done.future, kill: kill);
   }
 
-  List<String> _args() =>
-      codexExecArgs(workdir: _workdir, resumeThreadId: _resumeThreadId);
+  List<String> _args() => codexExecArgs(
+    workdir: _workdir,
+    config: _config,
+    resumeThreadId: _resumeThreadId,
+  );
 
   void _onStarted(Process process) {
     if (_killed) {

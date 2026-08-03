@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/codex_chat_sender.dart';
+import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/agent_version_service.dart';
 import 'package:grid_app/infrastructure/cli/codex_exec_service.dart';
@@ -280,7 +281,7 @@ void main() {
 
   group('codexExecArgs — the two subcommands take different flags', () {
     test('a first turn runs in the folder it was given', () {
-      final args = codexExecArgs(workdir: '/tmp/work');
+      final args = codexExecArgs(workdir: '/tmp/work', config: const []);
 
       expect(args.first, 'exec');
       expect(args, isNot(contains('resume')));
@@ -289,7 +290,11 @@ void main() {
 
     test('a resumed turn passes no flag `exec resume` would reject — one '
         'unknown flag kills the turn before the model is ever reached', () {
-      final args = codexExecArgs(workdir: '/tmp/work', resumeThreadId: 'abc');
+      final args = codexExecArgs(
+        workdir: '/tmp/work',
+        config: const [],
+        resumeThreadId: 'abc',
+      );
 
       expect(args, containsAllInOrder(['exec', 'resume']));
       expect(args.last, 'abc');
@@ -301,8 +306,12 @@ void main() {
     test('both turns carry the sandbox mode, said the one way both subcommands '
         'take — `--sandbox` kills `exec resume` at argv parsing', () {
       for (final args in [
-        codexExecArgs(workdir: '/tmp/work'),
-        codexExecArgs(workdir: '/tmp/work', resumeThreadId: 'abc'),
+        codexExecArgs(workdir: '/tmp/work', config: const []),
+        codexExecArgs(
+          workdir: '/tmp/work',
+          config: const [],
+          resumeThreadId: 'abc',
+        ),
       ]) {
         expect(args, isNot(contains('--sandbox')));
         expect(
@@ -311,6 +320,90 @@ void main() {
         );
         expect(args, contains('--json'));
       }
+    });
+
+    test('the grid the app picked rides on every turn, resumed ones too — a '
+        'resumed session does not restore the model it was recorded with, so '
+        'a turn without it answers as a model nobody chose', () {
+      final config = codexGridOverrides(
+        base: 'https://relay.example/relay/v1',
+        model: 'qwen3',
+      );
+
+      for (final args in [
+        codexExecArgs(workdir: '/tmp/work', config: config),
+        codexExecArgs(
+          workdir: '/tmp/work',
+          config: config,
+          resumeThreadId: 'abc',
+        ),
+      ]) {
+        for (final override in config) {
+          expect(args, containsAllInOrder(['-c', override]));
+        }
+        expect(args, contains('model="qwen3"'));
+      }
+    });
+
+    test("the user's own config is still loaded, because their MCP servers "
+        'live in it — dropping it would take every connector away from an '
+        'in-app turn without saying so', () {
+      final args = codexExecArgs(
+        workdir: '/tmp/work',
+        config: codexGridOverrides(base: 'https://relay', model: 'qwen3'),
+      );
+
+      expect(args, isNot(contains('--ignore-user-config')));
+    });
+  });
+
+  group('codexGridOverrides — the grid, handed over per run', () {
+    const base = 'https://relay.example/relay/v1';
+    final overrides = codexGridOverrides(base: base, model: 'qwen3');
+
+    test('the provider it defines is the app\'s own, never the id the guide '
+        "writes into the user's file — one is theirs to keep, the other "
+        'exists for the length of one run', () {
+      expect(kCodexAppProviderId, isNot(kCodexProviderId));
+      expect(overrides, contains('model_provider="$kCodexAppProviderId"'));
+      expect(
+        overrides,
+        contains('model_providers.$kCodexAppProviderId.base_url="$base"'),
+      );
+    });
+
+    test('the provider is named — Codex refuses to load the whole config over '
+        'an empty provider name, before the model is ever reached', () {
+      final name = overrides.firstWhere(
+        (o) => o.startsWith('model_providers.$kCodexAppProviderId.name='),
+      );
+      expect(name, 'model_providers.$kCodexAppProviderId.name="Grid"');
+    });
+
+    test('the key is read from a variable the dotenv cannot shadow — Codex '
+        "loads ~/.codex/.env itself and it beats the app's environment, so a "
+        'stale key left there by an older build would outrank the live one', () {
+      expect(kCodexAppApiKeyEnv, isNot(gridApiKeyEnv));
+      expect(
+        overrides,
+        contains(
+          'model_providers.$kCodexAppProviderId.env_key="$kCodexAppApiKeyEnv"',
+        ),
+      );
+    });
+
+    test('the credential itself never reaches the command line', () {
+      final args = codexExecArgs(workdir: '/tmp/work', config: overrides);
+
+      expect(args.join(' '), isNot(contains('secret-key')));
+      expect(overrides.join(' '), isNot(contains('secret-key')));
+    });
+
+    test('it speaks the only dialect Codex still accepts', () {
+      expect(
+        overrides,
+        contains('model_providers.$kCodexAppProviderId.wire_api="responses"'),
+      );
     });
   });
 

@@ -152,8 +152,8 @@ class HermesGridLink {
   ///
   /// A config naming a model Hermes can't serve counts as **no** model, not as
   /// one: 03/08 the config still named a `claude:*` seat from before the pairing
-  /// was blocked, and every 8am task ran on it — the seat returns no tool calls,
-  /// so Hermes delivered the tool-call JSON as its report and marked the run ok.
+  /// was blocked, and every scheduled run went to it — each ended with the tool
+  /// call typed out as the report, and was recorded as `ok`.
   Future<bool> hasModel() async {
     final model = await configuredModel();
     return model != null && hermesModelRefusal(model) == null;
