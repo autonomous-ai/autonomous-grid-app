@@ -26,18 +26,14 @@ enum ShellSection {
     thinIcon: LucideIcons.calendarClock300,
   ),
   agents(LucideIcons.bot, 'Agents', thinIcon: LucideIcons.bot300),
-  skills(
-    LucideIcons.sparkles,
-    'Skills',
-    thinIcon: LucideIcons.sparkles300,
-    devOnly: true,
-  ),
-  connectors(
-    LucideIcons.cable,
-    'Connectors',
-    thinIcon: LucideIcons.cable300,
-    devOnly: true,
-  ),
+  skills(LucideIcons.sparkles, 'Skills', thinIcon: LucideIcons.sparkles300),
+  connectors(LucideIcons.cable, 'Connectors', thinIcon: LucideIcons.cable300),
+  // Still dev-only while Skills and Connectors have shipped. The three used to
+  // be gated together — "ready to ship at once" — and this is that plan being
+  // decided rather than abandoned: Plugins is the one whose backend is not
+  // there for every agent (Codex has no plugin manager at all, so its plane is
+  // permanently null), which would leave an end user on a screen that tells
+  // them their agent can't do this.
   plugins(
     LucideIcons.puzzle,
     'Plugins',
@@ -150,8 +146,11 @@ const kSettingsGroups = [
     ShellSection.guide,
   ]),
   // What the assistant can do — mirrors the mental model of other agent apps'
-  // settings. Every row is dev-only for now, so the whole group is invisible
-  // in a shipped build until the extension screens are ready to ship at once.
+  // settings. Skills and Connectors ship to everyone; Plugins stays dev-only,
+  // so a release build draws this group with two rows rather than three. The
+  // heading survives because the group still has rows — see
+  // [visibleSettingsGroups], which is also what would drop it silently if the
+  // last public row were ever gated again.
   SettingsGroup('Customize', [
     ShellSection.skills,
     ShellSection.connectors,

@@ -5,6 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/connector_gateway_client.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../shared/external_launch.dart';
+import '../../agent/logic/claude_tool.dart';
+import '../../agent/logic/codex_tool.dart';
+import '../../agent/logic/hermes_tool.dart';
+import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/connector_token.dart';
 import '../../agents/logic/mcp_server.dart';
@@ -595,7 +599,7 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     return null;
   }
 
-  /// Write every stored token into the selected agent's own format.
+  /// Write every stored token into **every installed agent's** own format.
   ///
   /// Called after any change to the master store. Idempotent by contract, so
   /// calling it when in doubt is cheap.
@@ -605,62 +609,132 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
   /// every ordinary call passes — this adds and updates but never deletes, so a
   /// store that failed to load, or one connector's bad day, cannot take other
   /// connectors down with it.
+  ///
+  /// **Fans out across agents, rather than writing only to the selected one.**
+  /// It used to project into `extensionAgentProvider` alone, and that quietly
+  /// broke the promise D10 exists to make. Nothing calls this when the *agent*
+  /// changes — every caller is a token-store event (connect, disconnect,
+  /// refresh) — so a connector only ever reached whichever agent happened to be
+  /// selected at the moment it was linked. Measured on 2026-08-03: ten
+  /// connectors linked under Hermes, then Claude Code selected, and
+  /// `~/.claude.json` still had no `mcpServers` at all. "Sign in once, every
+  /// agent can use it" was true for exactly one agent.
+  ///
+  /// Two guards keep the fan-out from being intrusive, both from §D21:
+  ///
+  /// - **Installed agents only.** Creating a config file for a program the user
+  ///   has never opened is not this app's business.
+  /// - **Errors are collected per agent, never thrown.** One agent's broken
+  ///   config must not stop the others from being written — the whole point of
+  ///   fanning out is that the connector lands everywhere it can.
   Future<String?> projectTokens({Set<String> removing = const {}}) async {
-    final tool = ref.read(extensionAgentProvider);
     final log = ref.read(appLogProvider);
-    final project = ref
-        .read(agentExtensionsProvider(tool))
-        ?.mcp
-        ?.projectConnectorTokens;
-    // A null projection is not an error: this agent has no concept of OAuth
-    // connectors. The screen says so; it does not fail a save over it.
-    if (project == null) {
+
+    final store = ref.read(connectorTokenStoreProvider);
+    // Read once, not per agent: three reads of the same file could disagree if
+    // a refresh lands mid-fan-out, and then two agents would hold different
+    // ideas of the same connector.
+    final Map<String, ConnectorToken> tokens;
+    try {
+      tokens = await store.read();
+    } on Object catch (error, stack) {
+      log.failure(
+        'connectors',
+        'Reading the token store failed — nothing projected',
+        error: error,
+        stackTrace: stack,
+      );
+      return "Couldn't read the stored connectors: $error";
+    }
+
+    final targets =
+        <
+          AgentTool,
+          Future<void> Function(
+            List<ConnectorToken> tokens, {
+            Set<String> removing,
+          })
+        >{};
+    for (final tool in AgentTool.values) {
+      if (!_isInstalled(tool)) continue;
+      final project = ref
+          .read(agentExtensionsProvider(tool))
+          ?.mcp
+          ?.projectConnectorTokens;
+      // A null projection is not an error: this agent has no concept of OAuth
+      // connectors. The screen says so; it does not fail a save over it.
+      if (project != null) targets[tool] = project;
+    }
+
+    if (targets.isEmpty) {
       log.warn(
         'connectors',
-        'Agent ${tool.name} has no connector projection — tokens stay in the '
-            'master store only',
+        'No installed agent can take a connector projection — tokens stay in '
+            'the master store only',
       );
       return null;
     }
 
-    try {
-      final store = ref.read(connectorTokenStoreProvider);
-      final tokens = await store.read();
-      // The count is the diagnostic that matters. Projecting *zero* tokens while
-      // an agent's config ends up holding one means the two halves disagree
-      // about where the truth lives — the exact split that hides a credential
-      // from every agent but the current one.
-      log.info(
-        'connectors',
-        'Projecting ${tokens.length} token(s) '
-            '[${tokens.keys.join(', ')}] from ${store.file.path} '
-            'into ${tool.name}'
-            '${removing.isEmpty ? '' : ', removing [${removing.join(', ')}]'}',
-      );
-      await project(tokens.values.toList(), removing: removing);
-    } on AgentExtensionException catch (error, stack) {
-      log.failure(
-        'connectors',
-        'Projecting tokens into ${tool.name} failed',
-        error: error,
-        stackTrace: stack,
-      );
-      return error.message;
-    } on Object catch (error, stack) {
-      log.failure(
-        'connectors',
-        'Projecting tokens into ${tool.name} failed',
-        error: error,
-        stackTrace: stack,
-      );
-      return "Couldn't hand the connector tokens to the agent: $error";
+    // The count is the diagnostic that matters. Projecting *zero* tokens while
+    // an agent's config ends up holding one means the two halves disagree
+    // about where the truth lives — the exact split that hides a credential
+    // from every agent but the current one.
+    log.info(
+      'connectors',
+      'Projecting ${tokens.length} token(s) '
+          '[${tokens.keys.join(', ')}] from ${store.file.path} '
+          'into ${targets.keys.map((t) => t.name).join(', ')}'
+          '${removing.isEmpty ? '' : ', removing [${removing.join(', ')}]'}',
+    );
+
+    final values = tokens.values.toList();
+    final failures = <String>[];
+    for (final entry in targets.entries) {
+      try {
+        await entry.value(values, removing: removing);
+      } on AgentExtensionException catch (error, stack) {
+        log.failure(
+          'connectors',
+          'Projecting tokens into ${entry.key.name} failed',
+          error: error,
+          stackTrace: stack,
+        );
+        failures.add('${entry.key.name}: ${error.message}');
+      } on Object catch (error, stack) {
+        log.failure(
+          'connectors',
+          'Projecting tokens into ${entry.key.name} failed',
+          error: error,
+          stackTrace: stack,
+        );
+        failures.add('${entry.key.name}: $error');
+      }
     }
-    // The projection just rewrote the agent's `mcp_servers`, which the screen
+
+    // The projection just rewrote the agents' `mcp_servers`, which the screen
     // reads separately from the tokens. Refreshed here rather than at each
-    // caller, because this is the only place that knows the config moved.
+    // caller, because this is the only place that knows the config moved. Run
+    // even when an agent failed — the ones that succeeded did move.
     refreshConnectors(ref);
-    return null;
+
+    if (failures.isEmpty) return null;
+    // Named per agent. "Couldn't hand the connector to the agent" was fine when
+    // there was one; with three it hides which config to go and look at.
+    return failures.length == 1
+        ? "Couldn't hand the connectors to ${failures.single}"
+        : "Couldn't hand the connectors to some agents — ${failures.join('; ')}";
   }
+
+  /// Whether [tool]'s binary is on this machine.
+  ///
+  /// Presence of the binary, not of a config file: an agent that is installed
+  /// but has never been run has no config yet, and that is exactly the case
+  /// where writing one is useful rather than intrusive.
+  bool _isInstalled(AgentTool tool) => switch (tool) {
+    AgentTool.hermes => ref.read(hermesInstalledProvider),
+    AgentTool.codex => ref.read(codexInstalledProvider),
+    AgentTool.claude => ref.read(claudeInstalledProvider),
+  };
 
   /// Renew a token that is close to expiring, then re-project it.
   ///
