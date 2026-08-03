@@ -490,6 +490,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
     _syncModelField(sessions.active, options, widget.network.networkId);
 
+    // The undo bar speaks for the chat on screen, so tell it which one that is.
+    // The snapshots themselves are kept per conversation and outlive the switch:
+    // an agent finishing after the user moved on files its edits under the chat
+    // that asked for them, and they're waiting there on the way back. Deferred
+    // because writing a provider during build would throw, and only when the
+    // answer moved — this build runs on every keystroke and streamed token.
+    if (ref.read(agentChangesScopeProvider) != sessions.activeId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ref.read(agentChangesScopeProvider.notifier).show(sessions.activeId);
+      });
+    }
+
     // Switching the assistant moves the model with it when the two can't work
     // together, so "who answers" and "with what" are never a pair the grid would
     // refuse. Listened for rather than derived: the model is the user's to keep
@@ -501,13 +514,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // message — but don't yank a user who scrolled up to read history.
     ref.listen(chatSessionsProvider, (prev, next) {
       final switched = prev?.activeId != next.activeId;
-      // The undo snapshots belong to the chat that made them; a different chat
-      // starts with a clean slate rather than another chat's pending changes.
-      if (switched) {
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => ref.read(agentChangesProvider.notifier).clear(),
-        );
-      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         // A switch arrives at the top of a transcript nothing has measured yet,
         // so its end has to be converged on; following a live reply is already

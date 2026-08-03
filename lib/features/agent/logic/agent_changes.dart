@@ -4,9 +4,10 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../../infrastructure/logging/app_log.dart';
 
-/// One file the agent changed this session — enough to show the change and put it
-/// back the way it was.
+/// One file the agent changed in a conversation — enough to show the change and
+/// put it back the way it was.
 ///
 /// [before] is the file's contents before the agent's first edit to it, or null
 /// when the agent created it (so undo deletes it). [after] is the latest
@@ -32,21 +33,63 @@ class AgentChange {
       AgentChange(path: path, before: before, after: after ?? this.after);
 }
 
-/// The files the agent has changed and can still put back.
+/// The conversation the chat is showing, so the undo bar and its dialog speak
+/// for that chat alone.
+///
+/// Published by the chat screen rather than derived here: which conversation is
+/// open is the chat feature's fact, and the agent feature only needs to be told.
+/// Null before any chat is on screen.
+final agentChangesScopeProvider =
+    NotifierProvider<AgentChangesScopeController, String?>(
+      AgentChangesScopeController.new,
+    );
+
+class AgentChangesScopeController extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  /// The user is now looking at [chatId] (null when no conversation is open).
+  void show(String? chatId) {
+    if (state == chatId) return;
+    state = chatId;
+  }
+}
+
+/// The files the agent has changed, per conversation, and can still put back.
 ///
 /// Every edit the agent makes — whether the user approved it or Full access let
-/// it through — is recorded here with the file's original contents, so "the
-/// agent just changed my files" always has an undo. Cleared when the user
-/// switches conversation; the snapshots live only in memory, so this is a
-/// same-session safety net, not a version history.
+/// it through — is recorded with the file's original contents, so "the agent
+/// just changed my files" always has an undo. Keyed by the chat whose turn made
+/// it: an agent keeps working after the user moves to another conversation, and
+/// that other chat must neither claim the change nor offer to undo work the user
+/// can't see there. The snapshots live only in memory, so this is a same-run
+/// safety net, not a version history.
 final agentChangesProvider =
-    NotifierProvider<AgentChangesController, List<AgentChange>>(
+    NotifierProvider<AgentChangesController, Map<String, List<AgentChange>>>(
       AgentChangesController.new,
     );
 
-class AgentChangesController extends Notifier<List<AgentChange>> {
+/// What the agent changed in the conversation on screen — what the bar counts
+/// and the dialog lists. Empty for a chat whose agent hasn't touched anything.
+final visibleAgentChangesProvider = Provider<List<AgentChange>>((ref) {
+  final chatId = ref.watch(agentChangesScopeProvider);
+  if (chatId == null) return const [];
+  return ref.watch(agentChangesProvider)[chatId] ?? const [];
+});
+
+class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
+  /// The conversation whose agent turn is running — claimed by the chat that
+  /// dispatched it. Agent turns run one at a time, so everything recorded until
+  /// the next turn belongs to this chat, including edits that land after the
+  /// user has moved on.
+  String? _owner;
+
   @override
-  List<AgentChange> build() => const [];
+  Map<String, List<AgentChange>> build() => const {};
+
+  /// The agent is about to work for [chatId]: file what it changes under that
+  /// conversation.
+  void attributeTo(String chatId) => _owner = chatId;
 
   /// Note that the agent changed [path] from [before] to [after]. The first
   /// [before] seen for a file wins, so undoing restores the pre-agent original
@@ -60,58 +103,103 @@ class AgentChangesController extends Notifier<List<AgentChange>> {
     required String? before,
     required String after,
   }) {
+    final chatId = _owner;
+    if (chatId == null) {
+      // Only a turn whose chat was deleted mid-flight gets here — an ordinary
+      // one claims the turn before its sender can run. Filed under no
+      // conversation the change would be shown by nothing and undoable from
+      // nowhere, so leave a trace instead of dropping it in silence.
+      ref
+          .read(appLogProvider)
+          .failure('agent', 'file change with no chat to file it under: $path');
+      return;
+    }
     final resolved = expandHome(path, GridPaths.userHome);
     if (!_isAbsolute(resolved)) return;
-    final existing = state.indexWhere((change) => change.path == resolved);
-    if (existing >= 0) {
-      state = [
-        for (final change in state)
+    final current = _changesIn(chatId);
+    if (current.any((change) => change.path == resolved)) {
+      _put(chatId, [
+        for (final change in current)
           if (change.path == resolved)
             change.copyWith(after: after)
           else
             change,
-      ];
+      ]);
       return;
     }
-    state = [
-      ...state,
+    _put(chatId, [
+      ...current,
       AgentChange(path: resolved, before: before, after: after),
-    ];
+    ]);
   }
 
   /// Put [change] back — restore its original contents, or delete it when the
-  /// agent had created it — and drop it from the list. Returns null on success,
-  /// else a line to show the user.
+  /// agent had created it — and drop it from the conversation on screen, the
+  /// only one whose changes are ever offered. Returns null on success, else a
+  /// line to show the user.
   Future<String?> revert(AgentChange change) async {
+    final chatId = ref.read(agentChangesScopeProvider);
+    if (chatId == null) return null;
     final error = await _restore(change);
     if (error != null) return error;
-    state = [
-      for (final c in state)
+    _put(chatId, [
+      for (final c in _changesIn(chatId))
         if (c.path != change.path) c,
-    ];
+    ]);
     return null;
   }
 
-  /// Undo every recorded change. Returns null when all succeeded, else how many
-  /// couldn't be put back (the rest still were).
+  /// Undo every change recorded in the conversation on screen. Returns null when
+  /// all succeeded, else how many couldn't be put back (the rest still were).
   Future<String?> revertAll() async {
+    final chatId = ref.read(agentChangesScopeProvider);
+    if (chatId == null) return null;
     final failures = <String>[];
     final remaining = <AgentChange>[];
-    for (final change in state) {
+    for (final change in _changesIn(chatId)) {
       final error = await _restore(change);
       if (error != null) {
         failures.add(change.name);
         remaining.add(change);
       }
     }
-    state = remaining;
+    _put(chatId, remaining);
     if (failures.isEmpty) return null;
     return "Couldn't undo ${failures.length} file(s): ${failures.join(', ')}.";
   }
 
-  /// Forget the recorded changes without touching any files — used when the
-  /// user switches conversation, so one chat's changes don't haunt another.
-  void clear() => state = const [];
+  /// Forget [chatId]'s recorded changes without touching any files — for a
+  /// conversation the user deleted, whose undo nothing can reach any more.
+  ///
+  /// A turn still running for that chat stops being recorded too: its edits
+  /// would rebuild the entry that was just dropped, in a chat that no longer
+  /// exists.
+  void forget(String chatId) {
+    if (_owner == chatId) _owner = null;
+    _drop(chatId);
+  }
+
+  List<AgentChange> _changesIn(String chatId) =>
+      state[chatId] ?? const <AgentChange>[];
+
+  void _put(String chatId, List<AgentChange> changes) {
+    // Undoing the last one leaves the chat with nothing to show, but its turn
+    // may still be running — drop the entry, not the chat's claim on what the
+    // agent writes next.
+    if (changes.isEmpty) {
+      _drop(chatId);
+      return;
+    }
+    state = {...state, chatId: List.unmodifiable(changes)};
+  }
+
+  void _drop(String chatId) {
+    if (!state.containsKey(chatId)) return;
+    state = {
+      for (final entry in state.entries)
+        if (entry.key != chatId) entry.key: entry.value,
+    };
+  }
 
   Future<String?> _restore(AgentChange change) async {
     try {
@@ -152,14 +240,15 @@ final agentChangesAutoHideProvider = Provider<Duration>(
   (ref) => kAgentChangesAutoHide,
 );
 
-/// Whether the bar summarising [agentChangesProvider] is currently on screen.
+/// Whether the bar summarising [visibleAgentChangesProvider] is on screen.
 ///
 /// The bar is a transient notice, not a permanent fixture: it appears when the
-/// agent touches a file, hides itself after [agentChangesAutoHideProvider], and
-/// can be waved away by hand. Hiding it never undoes anything — the snapshots in
-/// [agentChangesProvider] outlive the bar, so a later change raises it again over
-/// the whole set, and leaving the conversation clears those snapshots (which drops
-/// the bar with them).
+/// agent touches a file in the conversation on screen, hides itself after
+/// [agentChangesAutoHideProvider], and can be waved away by hand. Hiding it never
+/// undoes anything — the snapshots outlive the bar, so a later change raises it
+/// again over the whole set. Opening another conversation drops it (that chat has
+/// its own changes, or none), and coming back to one with changes still pending
+/// raises it again over them.
 final agentChangesBarProvider =
     NotifierProvider<AgentChangesBarController, bool>(
       AgentChangesBarController.new,
@@ -172,15 +261,17 @@ class AgentChangesBarController extends Notifier<bool> {
   bool build() {
     ref.onDispose(_cancelTimer);
     // The bar mirrors the change list it summarises — a change shows it and
-    // restarts the countdown, an emptied list drops it. Reading the data from
-    // here, rather than the undo store pushing to us, keeps that store unaware of
-    // how (or whether) its contents are shown.
-    ref.listen(agentChangesProvider, (_, next) {
+    // restarts the countdown, an emptied list drops it. Switching conversation
+    // moves that list too, so the same listener is what hides the bar on the way
+    // out and raises it again on the way back. Reading the data from here, rather
+    // than the undo store pushing to us, keeps that store unaware of how (or
+    // whether) its contents are shown.
+    ref.listen(visibleAgentChangesProvider, (_, next) {
       next.isEmpty ? _hide() : _show();
     });
-    // Whatever the list already holds when the bar first mounts — usually empty,
-    // since the composer builds before the agent has touched anything.
-    return ref.read(agentChangesProvider).isNotEmpty;
+    // Whatever the open chat already holds when the bar first mounts — usually
+    // empty, since the composer builds before the agent has touched anything.
+    return ref.read(visibleAgentChangesProvider).isNotEmpty;
   }
 
   /// Hide the bar now without undoing anything: the snapshots stay recorded, so a
