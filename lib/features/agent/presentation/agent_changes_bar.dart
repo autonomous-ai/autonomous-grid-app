@@ -10,19 +10,19 @@ import '../logic/agent_changes.dart';
 import '../logic/edit_diff.dart';
 import 'diff_view.dart';
 
-/// A slim bar above the composer summarising what the agent changed this session,
-/// with one tap to review the changes and one to undo them all.
+/// A slim bar above the composer summarising what the agent changed in this
+/// conversation, with one tap to review the changes and one to undo them all.
 ///
-/// Shown only when there's something to undo — the honest answer to Full access's
-/// old "Nothing to undo" — and only while the bar hasn't hidden itself or been
-/// waved away ([agentChangesBarProvider]). Undoing stays possible after either:
-/// hiding drops the notice, not the snapshots behind it.
+/// Shown only when the open chat has something to undo — the honest answer to
+/// Full access's old "Nothing to undo" — and only while the bar hasn't hidden
+/// itself or been waved away ([agentChangesBarProvider]). Undoing stays possible
+/// after either: hiding drops the notice, not the snapshots behind it.
 class AgentChangesBar extends ConsumerWidget {
   const AgentChangesBar({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final changes = ref.watch(agentChangesProvider);
+    final changes = ref.watch(visibleAgentChangesProvider);
     final barVisible = ref.watch(agentChangesBarProvider);
     if (changes.isEmpty || !barVisible) return const SizedBox.shrink();
     return ComposerNoticeBar(
@@ -128,7 +128,7 @@ class _ChangesDialog extends ConsumerWidget {
     // it must watch the theme itself to repaint its palette tokens on a flip.
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    final changes = ref.watch(agentChangesProvider);
+    final changes = ref.watch(visibleAgentChangesProvider);
     return AlertDialog(
       backgroundColor: AppPalette.windowBg,
       surfaceTintColor: Colors.transparent,
@@ -137,7 +137,7 @@ class _ChangesDialog extends ConsumerWidget {
       contentPadding: const EdgeInsets.fromLTRB(28, 14, 28, 4),
       actionsPadding: const EdgeInsets.fromLTRB(28, 10, 22, 22),
       title: Text(
-        'Changes this session',
+        'Changes in this chat',
         style: theme.textTheme.headlineSmall?.copyWith(
           fontWeight: FontWeight.w600,
         ),

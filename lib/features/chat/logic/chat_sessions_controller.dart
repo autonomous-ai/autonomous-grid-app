@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../agent/logic/agent_changes.dart';
 import '../../agent/logic/agent_permissions.dart';
 import '../../agent/logic/agent_routing.dart';
 import '../../agent/logic/agent_session_title.dart';
@@ -339,6 +340,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   void deleteConversation(String id) {
     _cancel(id);
     _store.delete(id);
+    // The chat that held this undo is gone, so nothing can reach it any more —
+    // drop the snapshots rather than keep whole file contents in memory for a
+    // conversation the user deleted.
+    ref.read(agentChangesProvider.notifier).forget(id);
     final remaining = [
       for (final c in state.conversations)
         if (c.id != id) c,
@@ -389,9 +394,11 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         if (c.isArchived && (ids == null || ids.contains(c.id))) c.id,
     ];
     if (doomed.isEmpty) return;
+    final changes = ref.read(agentChangesProvider.notifier);
     for (final id in doomed) {
       _cancel(id);
       _store.delete(id);
+      changes.forget(id);
     }
     final gone = doomed.toSet();
     final remaining = [
@@ -615,8 +622,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   }) {
     final id = conversation.id;
     // Claim the agent's single turn slot — released on finish/stop, which then
-    // starts the next queued agent turn.
-    if (viaAgent) state = state.copyWith(runningAgentId: id);
+    // starts the next queued agent turn — and with it the files this turn is
+    // about to change, so its undo stays with this chat even when the user has
+    // moved to another one by the time the agent writes.
+    if (viaAgent) {
+      state = state.copyWith(runningAgentId: id);
+      ref.read(agentChangesProvider.notifier).attributeTo(id);
+    }
 
     // How long the answer takes, timed from here rather than from `send`: an
     // agent turn can sit in the queue behind another chat, and charging it for

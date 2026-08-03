@@ -3,17 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agent/logic/agent_changes.dart';
 
 /// The bar summarising the agent's edits is a transient notice, not a fixture:
-/// these pin the three ways it should leave the screen — a hand dismiss, the
-/// auto-hide countdown, and leaving the conversation — while proving none of them
-/// throws away the undo the bar is a shortcut to.
+/// these pin the ways it should leave the screen — a hand dismiss, the auto-hide
+/// countdown, and opening another conversation — while proving none of them
+/// throws away the undo the bar is a shortcut to, and that the chat that made the
+/// changes still has them waiting on the way back.
 void main() {
   ProviderContainer container({
     Duration autoHide = const Duration(seconds: 10),
+    String chatId = 'chat-1',
   }) {
     final c = ProviderContainer(
       overrides: [agentChangesAutoHideProvider.overrideWithValue(autoHide)],
     );
     addTearDown(c.dispose);
+    c.read(agentChangesScopeProvider.notifier).show(chatId);
+    c.read(agentChangesProvider.notifier).attributeTo(chatId);
     // Read the bar so its listener on the change list is live before any edit.
     c.read(agentChangesBarProvider);
     return c;
@@ -21,6 +25,9 @@ void main() {
 
   // Let the bar's listener flush after a change to the underlying list.
   Future<void> settle() => Future<void>.delayed(Duration.zero);
+
+  List<AgentChange> changesIn(ProviderContainer c, String chatId) =>
+      c.read(agentChangesProvider)[chatId] ?? const [];
 
   test('stays hidden until the agent actually changes a file', () {
     final c = container();
@@ -46,12 +53,12 @@ void main() {
     c.read(agentChangesBarProvider.notifier).dismiss();
     expect(c.read(agentChangesBarProvider), isFalse);
     // The snapshot is still there — hiding is not undoing.
-    expect(c.read(agentChangesProvider), hasLength(1));
+    expect(changesIn(c, 'chat-1'), hasLength(1));
 
     changes.record(path: '/tmp/b.txt', before: 'x', after: 'y');
     await settle();
     expect(c.read(agentChangesBarProvider), isTrue);
-    expect(c.read(agentChangesProvider), hasLength(2));
+    expect(changesIn(c, 'chat-1'), hasLength(2));
   });
 
   test('hides itself once the auto-hide delay passes, leaving the undo '
@@ -65,22 +72,43 @@ void main() {
 
     await Future<void>.delayed(const Duration(milliseconds: 90));
     expect(c.read(agentChangesBarProvider), isFalse);
-    expect(c.read(agentChangesProvider), hasLength(1));
+    expect(changesIn(c, 'chat-1'), hasLength(1));
+  });
+
+  test('another conversation never shows the bar for changes it did not make, '
+      'and coming back to the one that did raises it again', () async {
+    final c = container();
+    c
+        .read(agentChangesProvider.notifier)
+        .record(path: '/tmp/a.txt', before: 'old', after: 'new');
+    await settle();
+    expect(c.read(agentChangesBarProvider), isTrue);
+
+    c.read(agentChangesScopeProvider.notifier).show('chat-2');
+    await settle();
+    expect(c.read(agentChangesBarProvider), isFalse);
+    // Leaving the chat hides the notice, it doesn't drop the undo behind it.
+    expect(changesIn(c, 'chat-1'), hasLength(1));
+
+    c.read(agentChangesScopeProvider.notifier).show('chat-1');
+    await settle();
+    expect(c.read(agentChangesBarProvider), isTrue);
   });
 
   test(
-    'leaving the conversation (clear) drops the bar with the changes',
+    'an agent still working for another chat leaves the open one quiet',
     () async {
-      final c = container();
-      final changes = c.read(agentChangesProvider.notifier);
-      changes.record(path: '/tmp/a.txt', before: 'old', after: 'new');
-      await settle();
-      expect(c.read(agentChangesBarProvider), isTrue);
+      final c = container(chatId: 'chat-2');
+      // The turn that is running belongs to the chat the user just left.
+      c.read(agentChangesProvider.notifier).attributeTo('chat-1');
 
-      changes.clear();
+      c
+          .read(agentChangesProvider.notifier)
+          .record(path: '/tmp/a.txt', before: 'old', after: 'new');
       await settle();
+
       expect(c.read(agentChangesBarProvider), isFalse);
-      expect(c.read(agentChangesProvider), isEmpty);
+      expect(changesIn(c, 'chat-1'), hasLength(1));
     },
   );
 }
