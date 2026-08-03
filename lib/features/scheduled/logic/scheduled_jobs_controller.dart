@@ -171,6 +171,11 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
       return 'This computer has no AI model set for tasks yet. Pick a grid in '
           'Chat, then try again.';
     }
+    // The one-tap fix must not arm the task on a model that can't run it: a
+    // config left naming a CLI seat would otherwise hand the task the very
+    // model whose runs come back as raw tool-call JSON (03/08).
+    final refusal = hermesModelRefusal(model);
+    if (refusal != null) return refusal;
     try {
       await service.followModel(model, onlyJobId: id);
     } on CronRearmException catch (error) {
