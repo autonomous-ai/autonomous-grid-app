@@ -54,7 +54,6 @@ class _DetailsDialog extends StatelessWidget {
     AppTheme.watch(context);
     final theme = Theme.of(context);
     final token = connector.token;
-    final account = connector.catalogEntry?.accountName ?? '';
 
     return AlertDialog(
       backgroundColor: AppGlass.surfaceFill,
@@ -131,7 +130,11 @@ class _DetailsDialog extends StatelessWidget {
                   ),
                 ),
               ),
-            if (account.isNotEmpty) _Fact(label: 'Account', value: account),
+            // The account is deliberately not shown. What the provider hands back
+            // is whichever of email/name/login it happens to have — GitHub gives a
+            // username, Google an address — so the row read as an arbitrary
+            // identifier rather than an answer to anything the user was asking.
+            // The gateway still carries `account_name`; nothing here reads it.
             if (token?.expiresAt != null)
               const _Fact(
                 label: 'Access renews',

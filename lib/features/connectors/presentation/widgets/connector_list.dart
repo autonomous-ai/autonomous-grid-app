@@ -242,8 +242,11 @@ class _CatalogCard extends ConsumerWidget {
       onTap: () => showConnectorDetailsDialog(
         context,
         connector,
-        actionBuilder: (close) =>
-            ConnectorAction(connector: connector, onSettled: close),
+        actionBuilder: (close) => ConnectorAction(
+          connector: connector,
+          onSettled: close,
+          labelled: true,
+        ),
       ),
     );
   }
@@ -257,9 +260,22 @@ class _CatalogCard extends ConsumerWidget {
 /// in both places — a second copy of this logic would drift the first time only
 /// one of them was edited.
 class ConnectorAction extends ConsumerStatefulWidget {
-  const ConnectorAction({super.key, required this.connector, this.onSettled});
+  const ConnectorAction({
+    super.key,
+    required this.connector,
+    this.onSettled,
+    this.labelled = false,
+  });
 
   final Connector connector;
+
+  /// Spell the action out instead of drawing it as `+` / `✕`.
+  ///
+  /// For the detail dialog, which already carries its own `✕` to dismiss itself.
+  /// Two identical glyphs a few pixels apart meant "close this" and "throw the
+  /// credential away", and nothing on screen said which was which — the worse
+  /// of the two being irreversible. A card cannot afford the words (they crowd
+  /// out a long service name), a dialog can.
 
   /// Called once a connect or disconnect has actually landed.
   ///
@@ -273,6 +289,8 @@ class ConnectorAction extends ConsumerStatefulWidget {
   /// The row passes nothing. A `Navigator.pop` from there would close the
   /// settings page.
   final VoidCallback? onSettled;
+
+  final bool labelled;
 
   @override
   ConsumerState<ConnectorAction> createState() => _ConnectorActionState();
@@ -410,6 +428,7 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
       connector: widget.connector,
       waiting: link.isPending(widget.connector.id),
       busy: _busy,
+      labelled: widget.labelled,
       onConnect: _connect,
       onCancel: () =>
           ref.read(connectorLinkControllerProvider.notifier).cancel(),
@@ -427,7 +446,11 @@ class _CatalogAction extends StatelessWidget {
     required this.onConnect,
     required this.onCancel,
     required this.onDisconnect,
+    this.labelled = false,
   });
+
+  /// Spell the action out rather than draw it. See [ConnectorAction.labelled].
+  final bool labelled;
 
   final Connector connector;
 
@@ -481,6 +504,17 @@ class _CatalogAction extends StatelessWidget {
     // on every card around it, which put the loudest control on the one card
     // where nothing needs doing.
     if (connector.token != null) {
+      // Spelled out in the dialog, where a bare ✕ sat beside the dialog's own ✕
+      // and neither said which one discarded the credential.
+      if (labelled) {
+        return TextButton(
+          onPressed: onDisconnect,
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
+          child: const Text('Disconnect'),
+        );
+      }
       // One control, not two. The ⓘ that used to sit here opened the detail —
       // which the whole card now does, so keeping it would put two affordances
       // for the same thing on every signed-in card.
@@ -498,6 +532,11 @@ class _CatalogAction extends StatelessWidget {
     // than no button.
     if (!connector.canConnect) return const SizedBox.shrink();
 
+    // Same reason as Disconnect: a dialog has room for the word, and `+` beside
+    // a dismiss ✕ reads as a pair of glyphs rather than the one thing to press.
+    if (labelled) {
+      return FilledButton(onPressed: onConnect, child: const Text('Connect'));
+    }
     return _AddButton(onPressed: onConnect);
   }
 }
@@ -727,6 +766,7 @@ class _McpCardState extends ConsumerState<_McpCard> {
               actionBuilder: (close) => ConnectorAction(
                 connector: widget.connector,
                 onSettled: close,
+                labelled: true,
               ),
             )
           : () => showEditMcpDialog(context, server, signedIn: false),
