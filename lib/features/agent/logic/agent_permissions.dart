@@ -27,16 +27,16 @@ final agentPermissionTimeoutProvider = Provider<Duration>(
   (ref) => kAgentPermissionTimeout,
 );
 
-/// How long a turn may go silent — no message, no tool step — while the agent
-/// isn't waiting on the user either, before it's treated as hung.
+/// How long a turn may go silent — no message, no tool step — before the app
+/// writes a line in the log saying so.
 ///
-/// A turn goes quiet for a good reason only while a permission is pending (the
-/// user is deciding) or a tool is mid-run; both re-arm the watch on their next
-/// event. Past this with no sign of life, the agent has stuck — one turn sat
-/// silent for twelve minutes after starting a dev server it then waited on
-/// forever. Generous, to spare a legitimately long command (a big `npm
-/// install`); the cost of stopping one early is a resend, far cheaper than a
-/// chat that spins with no way to tell working from wedged.
+/// A note, not a verdict. It used to end the turn, on the theory that silence
+/// meant the agent had wedged itself on a command that never returns. It also
+/// looks exactly like a long `npm install`, a full test suite, or a slow local
+/// model thinking, and the turns it cut were working — so the app no longer ends
+/// a turn the agent hasn't ended. What the user sees is the working bubble's own
+/// clock; Stop is theirs to press. This is only so the log can say afterwards
+/// where the quiet started.
 const Duration kAgentTurnIdleTimeout = Duration(minutes: 5);
 
 /// Overridable so tests don't sit through the wait.

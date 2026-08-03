@@ -286,40 +286,8 @@ void main() {
   });
 
   test(
-    'a loop the session reports ends the turn with a plain line naming what it '
-    'kept redoing — and nothing scripted after it reaches the chat',
-    () async {
-      final service = _FakeAcp.single([
-        const HermesAcpLoop('schema.prisma'),
-        // The turn is over when the loop lands; whatever the agent said next
-        // belongs to a turn that is no longer running.
-        const HermesAcpMessage('should never be shown'),
-      ]);
-      final container = _container(service, tmp);
-
-      final updates = await container
-          .read(hermesChatSenderProvider)
-          .send(
-            network: _credential(),
-            model: 'auto',
-            history: _history('build a CRUD app'),
-          )
-          .toList();
-
-      expect(updates.last, isA<ChatSendFailure>());
-      expect(
-        (updates.last as ChatSendFailure).error,
-        agentLoopingMessage('schema.prisma'),
-      );
-      expect(updates.whereType<ChatSendSuccess>(), isEmpty);
-      // Nothing left pinned waiting for an answer nobody will give.
-      expect(container.read(agentPermissionProvider), isNull);
-    },
-  );
-
-  test(
-    'a turn that goes silent — no events, nobody being asked — is stopped as '
-    'stuck, not left spinning (the dev-server-poll hang)',
+    'a turn that goes silent is left alone — the app does not end a turn the '
+    'agent has not ended, and a long install looks exactly like a hang',
     () async {
       final service = _LiveAcp();
       final container = _container(
@@ -340,17 +308,19 @@ void main() {
           .asFuture<void>();
 
       await _untilListening(service);
-      // The agent does one thing, then goes quiet — as it did after the last
-      // edit at 15:10, then sat on a server that never returned.
       service.session.events.add(
         HermesAcpActivity(_step('mv', AgentActivityStatus.done)),
       );
 
-      // Past the idle window with nothing more from the agent and nobody being
-      // asked, the turn ends itself rather than spinning forever.
+      // Well past the idle window, and the turn is still running: no failure
+      // has been put in the chat and the stream is still open.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(updates.whereType<ChatSendFailure>(), isEmpty);
+
+      // It ends when the agent ends it — or when the user presses Stop.
+      service.session.finish('Moved them and started the server.');
       await finished;
-      expect(updates.last, isA<ChatSendFailure>());
-      expect((updates.last as ChatSendFailure).error, kAgentUnresponsive);
+      expect(updates.last, isA<ChatSendSuccess>());
     },
   );
 
@@ -587,8 +557,8 @@ void main() {
   });
 
   test(
-    'a turn that lays out a plan and then does nothing about it is a failure, '
-    'not an answer — even with a line of text, and even ending cleanly',
+    'a turn that lays out a plan and then does nothing about it still shows '
+    'what it said — the unticked box goes to the log, not over the answer',
     () async {
       final service = _FakeAcp.single([
         const HermesAcpPlan([
@@ -606,10 +576,14 @@ void main() {
           .send(network: _credential(), model: 'm', history: _history('go'))
           .toList();
 
-      // A bare "let me write it" with no step run after the plan must not read
-      // as done, however tidily the turn ended.
-      expect(updates.last, isA<ChatSendFailure>());
-      expect((updates.last as ChatSendFailure).error, kAgentStalledPlan);
+      // The app doesn't overrule the agent about its own work: whatever it
+      // said is what the user reads, and the unfinished plan is a line in the
+      // log for whoever is diagnosing it.
+      expect(updates.last, isA<ChatSendSuccess>());
+      expect(
+        (updates.last as ChatSendSuccess).reply.text,
+        'Let me write it for you.',
+      );
     },
   );
 
@@ -729,7 +703,10 @@ void main() {
           .send(network: _credential(), model: 'm', history: _history('go'))
           .toList();
 
-      expect((updates.last as ChatSendFailure).error, kAgentStalledPlan);
+      // Cut off mid-step by the model's own limit — still the agent's turn to
+      // report, and it reported words.
+      expect(updates.last, isA<ChatSendSuccess>());
+      expect((updates.last as ChatSendSuccess).reply.text, 'Writing it now…');
     },
   );
 
