@@ -67,6 +67,32 @@ abstract interface class ClaudeExecService {
 /// commands back out of it.
 const String kClaudePermissionMode = 'bypassPermissions';
 
+/// Told to the model because the harness will not tell it.
+///
+/// **Claude Code never puts MCP tools in the initial tool list.** It offers
+/// `ToolSearch` and expects the model to go looking. Measured 2026-08-03 with a
+/// single server and `--strict-mcp-config`: 27 tools offered, **0 of them
+/// `mcp__*`**, `ToolSearch` present. So this is not a consequence of how many
+/// connectors are configured — it is how this version behaves, always.
+///
+/// That is a fine contract for a model trained on it, and invisible to everyone
+/// else. The grid serves whatever model the user picked: asked "lấy 3 email mới
+/// nhất", `minimax/minimax-m3` read its tool list, saw no Gmail, and answered —
+/// honestly — that it had no such tool. The same model on the same question
+/// through Hermes fetched the mail, because Hermes loads MCP tools into the list
+/// directly. Nothing was wrong with the connector, the bridge, the projection or
+/// the config; the model simply did not know there was a second place to look.
+///
+/// Kept to three sentences and appended rather than replacing: `--system-prompt`
+/// would throw away Claude Code's own instructions, which are the reason the
+/// rest of the harness works.
+const String kClaudeToolSearchPrompt =
+    'Your MCP tools — connectors such as Gmail, Google Drive or Figma — are not '
+    'listed in your initial tools. They are found at runtime with ToolSearch. '
+    'Before telling the user you cannot do something, call ToolSearch to look '
+    'for a tool that does it, and only say a capability is unavailable once '
+    'ToolSearch has come back with nothing.';
+
 /// The argv for one turn: a fresh `claude -p`, or `--resume <id>` to continue a
 /// session.
 ///
@@ -90,6 +116,8 @@ List<String> claudeExecArgs({required String model, String? resumeSessionId}) =>
       '--verbose',
       '--permission-mode',
       kClaudePermissionMode,
+      '--append-system-prompt',
+      kClaudeToolSearchPrompt,
       '--model',
       model,
       if (resumeSessionId != null) ...['--resume', resumeSessionId],
