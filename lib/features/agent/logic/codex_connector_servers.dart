@@ -81,16 +81,24 @@ class CodexConnectorServers extends MarkedMapProjection {
   /// a gateway-hosted connector from one the app is translating out of a REST
   /// API.
   ///
-  /// Returns null — skip, do not write — in two cases:
+  /// **An MCP connector needing a credential goes through the bridge too.** It
+  /// used to be skipped outright: the header *is* the credential, writing it
+  /// here would be D17 a second time, and writing the entry without it produces
+  /// the worst outcome available — an entry Codex loads, calls, and gets 401
+  /// from. Skipping was the honest answer while the bridge only spoke REST.
+  /// Now that it forwards MCP as well, there is a third option that was not
+  /// available before, and it is strictly better than both: Codex is given a
+  /// loopback address, the app attaches the credential per request, and the
+  /// connector works here exactly as it does for every other agent.
   ///
-  /// - **A REST connector before the bridge has bound.** Not an error and not
-  ///   permanent; the next projection writes it. Skipping beats writing a URL
-  ///   that resolves to nothing.
-  /// - **An MCP connector whose entry carries headers.** Those headers *are* the
-  ///   credential. Hermes writes them (D17); this does not. The connector is
-  ///   reported as not-projectable rather than being written without the header,
-  ///   which would produce the worst outcome available: an entry Codex loads,
-  ///   calls, and gets 401 from — a row that looks connected and cannot work.
+  /// A **header-less** MCP connector still points straight at its own server.
+  /// Nothing about it needs the app, and routing it through the bridge would
+  /// make it stop working whenever Grid is closed, buying nothing.
+  ///
+  /// Returns null — skip, do not write — when the bridge has not bound yet and
+  /// the connector needs it. Not an error and not permanent; the next
+  /// projection writes it. Skipping beats writing a URL that resolves to
+  /// nothing.
   @override
   Map<String, Object?>? entryFor(
     ConnectorToken token,
@@ -101,8 +109,10 @@ class CodexConnectorServers extends MarkedMapProjection {
     switch (effectiveTransport(token)) {
       case ConnectorTransport.mcp:
         final mcp = token.mcpEntry!;
-        if (mcp.headers.isNotEmpty) return null;
-        return {'url': mcp.url};
+        if (mcp.headers.isEmpty) return {'url': mcp.url};
+        final endpoint = bridgeEndpointFor?.call(token.connector);
+        if (endpoint == null) return null;
+        return {'url': endpoint};
       case ConnectorTransport.rest:
         final endpoint = bridgeEndpointFor?.call(token.connector);
         if (endpoint == null) return null;

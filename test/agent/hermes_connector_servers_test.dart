@@ -14,7 +14,17 @@ void main() {
 
   setUp(() async {
     home = await Directory.systemTemp.createTemp('grid_connector_servers');
-    servers = HermesConnectorServers(home: home.path);
+    // The tokens below carry an `Authorization` header, and a header-bearing
+    // connector is now projected as a bridge address rather than as the
+    // provider's URL plus the credential — that was D17, and repaying it is why
+    // these entries changed shape. Without a bridge endpoint they would be
+    // skipped entirely, which is the correct behaviour and not what this file
+    // is about.
+    servers = HermesConnectorServers(
+      home: home.path,
+      bridgeEndpointFor: (connector) =>
+          'http://127.0.0.1:61755/c/$connector/mcp',
+    );
   });
   tearDown(() => home.delete(recursive: true));
 
@@ -36,7 +46,13 @@ void main() {
 
       final text = await config();
       expect(text, contains('linear'));
-      expect(text, contains('https://mcp.example/linear'));
+      // The bridge's address, not the provider's: this connector needs a
+      // credential, and the app spends it per request instead of writing it
+      // here. The line below is D17 being repaid, pinned.
+      expect(text, contains('http://127.0.0.1:61755/c/linear/mcp'));
+      expect(text, isNot(contains('https://mcp.example/linear')));
+      expect(text, isNot(contains('Authorization')));
+      expect(text, isNot(contains('access-linear')));
       // The marker is what makes an entry ours to touch later.
       expect(await servers.owned(), {'linear'});
     });

@@ -119,11 +119,29 @@ class HermesConnectorServers extends MarkedMapProjection {
     switch (effectiveTransport(token)) {
       case ConnectorTransport.mcp:
         final mcp = token.mcpEntry!;
-        return {
-          'url': mcp.url,
-          if (mcp.headers.isNotEmpty) 'headers': mcp.headers,
-          markerKey: ?markerValue,
-        };
+        if (mcp.headers.isEmpty) {
+          return {'url': mcp.url, markerKey: ?markerValue};
+        }
+        // **This is D17 being repaid.** This branch used to write
+        // `headers: {Authorization: Bearer …}` straight into `config.yaml` —
+        // a live credential in a file that is shared, backed up to
+        // `config.yaml.bak`, and read by a human. It was the one place in the
+        // app that broke rule 5, recorded as a debt rather than a drift, and
+        // the reason Codex and Claude Code refused to copy this shape.
+        //
+        // The bridge now forwards MCP as well as REST, so the credential stays
+        // in the master store and Hermes is handed the same loopback address
+        // every other agent gets. All three adapters render the identical
+        // entry, which is the second win: the shape that could be copied wrongly
+        // no longer exists.
+        //
+        // The cost, stated plainly: a connector that used to work with Grid
+        // closed now needs Grid running, exactly like every REST connector
+        // already does. That is the price of the credential not living in a
+        // config file, and it was accepted deliberately.
+        final endpoint = bridgeEndpointFor?.call(token.connector);
+        if (endpoint == null) return null;
+        return {'url': endpoint, markerKey: ?markerValue};
       case ConnectorTransport.rest:
         final endpoint = bridgeEndpointFor?.call(token.connector);
         // Skip rather than guess a port: see MarkedMapProjection.entryFor.

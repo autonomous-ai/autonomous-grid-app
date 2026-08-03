@@ -72,16 +72,21 @@ class ClaudeConnectorServers extends MarkedMapProjection {
   /// Claude Code cannot tell a gateway-hosted connector from one the app is
   /// translating out of a REST API.
   ///
-  /// Returns null — skip, do not write — in two cases:
+  /// **An MCP connector needing a credential goes through the bridge too.** It
+  /// used to be skipped: the header *is* the credential, and writing the entry
+  /// without it produces the worst outcome available — an entry Claude Code
+  /// loads, calls, and gets 401 from. That was the honest answer while the
+  /// bridge only spoke REST; now that it forwards MCP as well, Claude Code can
+  /// be given a loopback address and the app attaches the credential per
+  /// request. Same rule as Codex, and for the same reason.
   ///
-  /// - **A REST connector before the bridge has bound.** Not an error and not
-  ///   permanent; the next projection writes it. Skipping beats writing a URL
-  ///   that resolves to nothing.
-  /// - **An MCP connector whose entry carries headers.** Those headers *are* the
-  ///   credential. The connector is reported as not-projectable rather than
-  ///   written without them, which would produce the worst outcome available: an
-  ///   entry Claude Code loads, calls, and gets 401 from — a row that looks
-  ///   connected and cannot work.
+  /// A **header-less** MCP connector still points straight at its own server:
+  /// nothing about it needs the app, and routing it through the bridge would
+  /// only make it stop working whenever Grid is closed.
+  ///
+  /// Returns null — skip, do not write — when the bridge has not bound yet and
+  /// the connector needs it. Not an error and not permanent; the next
+  /// projection writes it.
   @override
   Map<String, Object?>? entryFor(
     ConnectorToken token,
@@ -90,8 +95,12 @@ class ClaudeConnectorServers extends MarkedMapProjection {
     switch (effectiveTransport(token)) {
       case ConnectorTransport.mcp:
         final mcp = token.mcpEntry!;
-        if (mcp.headers.isNotEmpty) return null;
-        return {'type': 'http', 'url': mcp.url, markerKey: ?markerValue};
+        if (mcp.headers.isEmpty) {
+          return {'type': 'http', 'url': mcp.url, markerKey: ?markerValue};
+        }
+        final endpoint = bridgeEndpointFor?.call(token.connector);
+        if (endpoint == null) return null;
+        return {'type': 'http', 'url': endpoint, markerKey: ?markerValue};
       case ConnectorTransport.rest:
         final endpoint = bridgeEndpointFor?.call(token.connector);
         if (endpoint == null) return null;

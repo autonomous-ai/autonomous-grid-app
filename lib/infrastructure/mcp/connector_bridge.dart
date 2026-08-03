@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../core/grid_paths.dart';
+import '../../features/agents/logic/connector_runtime.dart';
 import '../../features/agents/logic/connector_token.dart';
 import '../../features/agents/logic/rest_entry.dart';
+import 'mcp_proxy.dart';
 import 'rest_invoker.dart';
 
 /// Serves a connector's REST surface to the agents as ordinary MCP tools.
@@ -35,8 +37,10 @@ class ConnectorBridge {
     required this.restEntryFor,
     this.refreshToken,
     RestInvoker? invoker,
+    McpProxy? proxy,
     Directory? home,
   }) : _invoker = invoker ?? RestInvoker(),
+       _proxyClient = proxy ?? McpProxy(),
        _home = home;
 
   /// Read straight from the master store, per call. Never cached.
@@ -71,7 +75,16 @@ class ConnectorBridge {
   final Future<String?> Function(String connector)? refreshToken;
 
   final RestInvoker _invoker;
+  final McpProxy _proxyClient;
   final Directory? _home;
+
+  /// The provider's session id per connector, when it issues one.
+  ///
+  /// Kept in memory only. It identifies a conversation with the provider, not
+  /// the user, and it is worthless after a restart — writing it anywhere would
+  /// be persisting something that is stale by definition. GitHub's server issues
+  /// one and also answers fine without it; Canva's issues none at all.
+  final Map<String, String> _sessions = {};
 
   /// Renewals in flight, keyed by connector.
   ///
@@ -133,6 +146,10 @@ class ConnectorBridge {
     await _server?.close(force: true);
     _server = null;
     _invoker.close();
+    _proxyClient.close();
+    // The provider's sessions belong to the connections just dropped; keeping
+    // them would send a dead id on the next start.
+    _sessions.clear();
   }
 
   Future<void> _handle(HttpRequest request) async {
@@ -185,6 +202,16 @@ class ConnectorBridge {
       return;
     }
 
+    // A connector whose way in is its own MCP server is forwarded whole, before
+    // any of the local handling below: this bridge has nothing to add to a
+    // conversation between an agent and a real MCP server, and answering
+    // `initialize` on its behalf would describe the wrong server's capabilities.
+    final proxied = await _proxy(connector, payload.cast<String, Object?>());
+    if (proxied != null) {
+      await _send(request, HttpStatus.ok, proxied);
+      return;
+    }
+
     final result = await _dispatch(
       connector: connector,
       method: method is String ? method : '',
@@ -197,6 +224,42 @@ class ConnectorBridge {
       'id': id,
       ...result,
     });
+  }
+
+  /// Forward to the connector's own MCP server, or null when that is not how
+  /// this connector is reached.
+  ///
+  /// Null means "handle it locally" — a REST-backed connector, or one whose
+  /// token has gone. Returning null rather than an error keeps the decision in
+  /// one place: [effectiveTransport] answers it, exactly as it does for the
+  /// projection and the screen.
+  Future<Map<String, Object?>?> _proxy(
+    String connector,
+    Map<String, Object?> payload,
+  ) async {
+    var token = (await readTokens())[connector];
+    if (token == null) return null;
+    if (effectiveTransport(token) != ConnectorTransport.mcp) return null;
+
+    // Renewed first, for the same reason a REST call is: the timer that would
+    // otherwise have done it only runs while the app is awake.
+    token = await _fresh(connector, token);
+    final entry = token.mcpEntry;
+    if (entry == null) return null;
+
+    final result = await _proxyClient.forward(
+      entry: entry,
+      token: token,
+      payload: payload,
+      sessionId: _sessions[connector],
+    );
+    // Remembered per connector, not per agent: two agents talking to one
+    // provider through this bridge are two clients of the same session, which
+    // is what the provider already assumes when it hands the id to a shared
+    // address.
+    final session = result.sessionId;
+    if (session != null) _sessions[connector] = session;
+    return result.body;
   }
 
   Future<Map<String, Object?>> _dispatch({
