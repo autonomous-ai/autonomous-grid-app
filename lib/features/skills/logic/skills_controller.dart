@@ -271,8 +271,9 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
     if (ref.mounted) ref.invalidate(agentSkillNamesProvider);
   }
 
-  /// Rewrite the skills Grid ships for this agent and re-read the folder.
-  /// Idempotent — also the fix for a skill deleted by mistake.
+  /// Put back any of Grid's own skills this agent is missing, and re-read the
+  /// folder. Idempotent — the fix for a skill deleted by mistake, and a no-op
+  /// for the ones already there.
   Future<String?> reinstallGridSkills() async {
     final plane = _plane;
     if (plane == null) return _noSkills;

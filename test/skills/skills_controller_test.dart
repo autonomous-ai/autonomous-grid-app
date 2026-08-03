@@ -190,8 +190,8 @@ void main() {
     expect(error, isNull);
     final skills = await c.read(skillsProvider.future);
     final names = skills.map((s) => s.name).toList();
-    expect(names, contains('grid-image-gen'));
-    expect(names, contains('grid-video-gen'));
+    expect(names, contains('grid-web'));
+    expect(names, contains('grid-serve'));
     expect(skills.every((s) => s.owner == SkillOwner.public), isTrue);
   });
 
