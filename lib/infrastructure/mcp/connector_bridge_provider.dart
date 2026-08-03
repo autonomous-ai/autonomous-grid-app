@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/agents/logic/connector_runtime.dart';
+import '../../features/connectors/logic/connector_link_controller.dart';
 import '../../features/connectors/logic/connector_token_store.dart';
 import 'connector_bridge.dart';
 
@@ -18,6 +19,15 @@ final connectorBridgeProvider = Provider<ConnectorBridge>((ref) {
   final bridge = ConnectorBridge(
     readTokens: () => ref.read(connectorTokenStoreProvider).read(),
     restEntryFor: effectiveRestEntry,
+    // The controller's own renewal, not a second implementation: it is the half
+    // that knows a self-registered token is renewed against the provider while
+    // a gateway one goes back to the gateway, that a 401 means the credential
+    // is gone for good rather than something to retry, and that a renewed token
+    // has to be re-projected into every agent. Read lazily, inside the
+    // callback — reading a notifier while building this provider would make the
+    // bridge a dependency of the controller that disposes it.
+    refreshToken: (connector) =>
+        ref.read(connectorLinkControllerProvider.notifier).refresh(connector),
   );
   ref.onDispose(bridge.stop);
   return bridge;

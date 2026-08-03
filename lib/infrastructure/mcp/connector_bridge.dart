@@ -33,6 +33,7 @@ class ConnectorBridge {
   ConnectorBridge({
     required this.readTokens,
     required this.restEntryFor,
+    this.refreshToken,
     RestInvoker? invoker,
     Directory? home,
   }) : _invoker = invoker ?? RestInvoker(),
@@ -51,8 +52,36 @@ class ConnectorBridge {
   /// stand-in while the gateway has not shipped one.
   final RestEntry? Function(ConnectorToken token) restEntryFor;
 
+  /// Renew a connector's credential, returning null on success and a sentence
+  /// on failure — `ConnectorLinkController.refresh`'s contract, passed in.
+  ///
+  /// **Why the bridge needs this at all.** [readTokens] keeps it perfectly
+  /// fresh with respect to the *store*, which is not the same as fresh with
+  /// respect to the *provider*. Renewal is a timer in `ConnectorRefreshService`,
+  /// and a timer only fires while the app is up and awake. Three windows where
+  /// it has not yet run and an agent calls anyway: the minutes right after a
+  /// launch that followed a long close (the sweep is a network round trip), a
+  /// machine resumed from sleep with the timer behind, and a provider that
+  /// revoked early. In all three the store holds a dead token and this served
+  /// it verbatim, so the agent got a 401 the app could have prevented — with a
+  /// live `refresh_token` sitting one file away.
+  ///
+  /// Null means "nobody wired renewal up": the call still goes out with what
+  /// the store holds, which is exactly the old behaviour.
+  final Future<String?> Function(String connector)? refreshToken;
+
   final RestInvoker _invoker;
   final Directory? _home;
+
+  /// Renewals in flight, keyed by connector.
+  ///
+  /// Two agents calling one connector at the same moment both read the same
+  /// expired token, and without this both would renew it. That is not merely
+  /// wasteful: providers routinely invalidate the old `refresh_token` when they
+  /// issue a new one, so the second exchange can revoke the first one's result
+  /// and leave the store holding a credential the provider has already retired.
+  /// The second caller awaits the first instead.
+  final Map<String, Future<void>> _refreshing = {};
 
   HttpServer? _server;
 
@@ -218,7 +247,7 @@ class ConnectorBridge {
     Map<String, Object?> params,
   ) async {
     final tokens = await readTokens();
-    final token = tokens[connector];
+    var token = tokens[connector];
     if (token == null) {
       // Disconnected while a session was open. Say so plainly — the agent will
       // relay it, and "reconnect it in Grid" is something the user can act on.
@@ -227,6 +256,7 @@ class ConnectorBridge {
         'again.',
       );
     }
+    token = await _fresh(connector, token);
     final entry = restEntryFor(token);
     final name = params['name'];
     final tool = entry?.tools.where((t) => t.name == name).firstOrNull;
@@ -249,6 +279,51 @@ class ConnectorBridge {
       ],
       'isError': !result.ok,
     };
+  }
+
+  /// [token], renewed first if it is close enough to expiry to be worth it.
+  ///
+  /// Returns the token to actually call with. **Never throws and never fails
+  /// the call**: a renewal that could not happen — no [refreshToken] wired, the
+  /// network down, the provider refusing — falls through to the stored token
+  /// and lets the request go out. It may well still work, since [ConnectorToken
+  /// .isExpired] carries a five-minute head start, and a provider's own verdict
+  /// beats a guess made here. Turning "couldn't renew" into a refused tool call
+  /// would invent failures the old code did not have.
+  ///
+  /// The re-read afterwards is the point of the exercise: `refresh` writes
+  /// through the store, so the new credential is only visible by asking again.
+  Future<ConnectorToken> _fresh(String connector, ConnectorToken token) async {
+    final renew = refreshToken;
+    if (renew == null || !token.needsRefresh()) return token;
+
+    // Join the renewal already running for this connector rather than starting
+    // a second one. The entry is cleared in the body's own `finally`, so a
+    // later call renews again rather than reusing a settled result.
+    //
+    // Deliberately an immediately-invoked async body and not
+    // `Future(...).whenComplete(...)`: the latter deadlocked here. Measured, not
+    // reasoned about — the renewal callback ran to completion and the awaited
+    // future never resolved, so the agent's request hung until it timed out.
+    final pending = _refreshing[connector];
+    if (pending != null) {
+      await pending;
+    } else {
+      final attempt = () async {
+        try {
+          await renew(connector);
+        } on Object {
+          // Reported by the controller, which owns the user-facing surface. The
+          // bridge's job here is only to have tried.
+        } finally {
+          _refreshing.remove(connector);
+        }
+      }();
+      _refreshing[connector] = attempt;
+      await attempt;
+    }
+
+    return (await readTokens())[connector] ?? token;
   }
 
   /// A failed call is an MCP *result* with `isError`, not a JSON-RPC error.
