@@ -79,6 +79,44 @@ List<String> cronRearmArgs({
   ]),
 ];
 
+/// argv that pins [jobIds] to [model] and leaves them pinned.
+///
+/// The counterpart to [cronRearmArgs]: that one ends unpinned (the job goes back
+/// to following the computer's model), this one is how a task the user chose a
+/// model for keeps it. Pass [clearError] when the pin is the fix for the error
+/// showing on the task — a task that will now run must not keep saying it won't.
+List<String> cronPinArgs({
+  required String model,
+  required List<String> jobIds,
+  bool clearError = false,
+}) => [
+  '-c',
+  kCronPinProgram,
+  model.trim(),
+  jsonEncode(jobIds),
+  clearError ? '1' : '0',
+];
+
+/// Pin a job to one model through Hermes's own job store.
+///
+/// `hermes cron create` has no `--model` flag (v0.19.0), so a task can only be
+/// pinned after it exists — which is also what makes the pin worth doing: an
+/// unpinned job is skipped, unrun, the first time the computer's model changes
+/// (#44585), and the user picked a model for this one precisely so it wouldn't
+/// follow the chat around.
+const String kCronPinProgram = '''
+import json, sys
+from cron.jobs import update_job
+
+model, job_ids, clear = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3] == "1"
+for job_id in job_ids:
+    updates = {"model": model}
+    if clear:
+        updates["last_error"] = None
+        updates["last_status"] = None
+    update_job(job_id, updates)
+''';
+
 /// Re-point a job at the current model through Hermes's own job store.
 ///
 /// `hermes cron edit` has no `--model`/`--provider` flag (v0.19.0), so the CLI
@@ -149,12 +187,33 @@ class HermesCronRearm {
       onlyJobId: onlyJobId,
     );
     if (targets.isEmpty) return const [];
+    await _write(cronRearmArgs(model: model, targets: targets));
+    return [for (final target in targets) target.id];
+  }
+
+  /// Pin [jobIds] to [model] so they answer with it whatever the computer's own
+  /// model becomes. Throws [CronRearmException] like [apply] when the store
+  /// refuses the write.
+  Future<void> pin(
+    String model,
+    List<String> jobIds, {
+    bool clearError = false,
+  }) async {
+    if (jobIds.isEmpty || model.trim().isEmpty) return;
+    await _write(
+      cronPinArgs(model: model, jobIds: jobIds, clearError: clearError),
+    );
+  }
+
+  /// Run one of the programs above on Hermes's own interpreter, against Hermes's
+  /// own store.
+  Future<void> _write(List<String> args) async {
     final python = _interpreter();
     if (python == null) throw const CronRearmException(kCronRearmUnavailable);
 
     final result = await Process.run(
       python,
-      cronRearmArgs(model: model, targets: targets),
+      args,
       environment: {
         ...HostEnvironment.hermesEnvironment(),
         // Honour the home this was built with, so a test never writes to the
@@ -167,7 +226,6 @@ class HermesCronRearm {
         cronRearmFailure(result.stderr as String, result.stdout as String),
       );
     }
-    return [for (final target in targets) target.id];
   }
 
   /// The interpreter Hermes itself runs on: its venv's `python`, beside the

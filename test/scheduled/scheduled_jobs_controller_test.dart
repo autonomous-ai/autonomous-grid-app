@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +21,10 @@ import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_task_policy.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
+
+/// The id Hermes's store gives the task the controller just saved — what the
+/// pin and the project link are applied to.
+const String kNewJobId = 'new-job';
 
 /// A grid the app has selected, with the models it serves stubbed per-test.
 NetworkCredential _network(String id) => NetworkCredential(
@@ -64,16 +69,15 @@ class _FakeCron implements HermesCronService {
 
   final calls = <String>[];
 
+  /// When set, a pin reports it couldn't be applied.
+  String? pinFailWith;
+
   /// Every re-arm asked for: which model, and whether it was for one task.
   final followed = <({String model, String? onlyJobId})>[];
-  ({
-    String schedule,
-    String prompt,
-    String name,
-    String? workdir,
-    String deliver,
-  })?
-  created;
+
+  /// Every pin asked for, in order — what a task will actually run on.
+  final pinned = <({String jobId, String model, bool clearError})>[];
+  ({String schedule, String prompt, String name, String? workdir})? created;
 
   void _maybeFail() {
     final message = failWith;
@@ -92,7 +96,6 @@ class _FakeCron implements HermesCronService {
     required String prompt,
     required String name,
     String? workdir,
-    String deliver = kDeliverLocal,
   }) async {
     calls.add('create');
     _maybeFail();
@@ -101,8 +104,33 @@ class _FakeCron implements HermesCronService {
       prompt: prompt,
       name: name,
       workdir: workdir,
-      deliver: deliver,
     );
+    // The store grows, as Hermes's does: the controller finds the new task by
+    // diffing the ids it knew, and everything it does *after* saving — pinning
+    // the model, filing it under a project — depends on that finding it.
+    final store =
+        jsonDecode(jobsJson ?? '{"jobs": []}') as Map<String, dynamic>;
+    final jobs = [...(store['jobs'] as List? ?? const [])];
+    jobs.add({
+      'id': kNewJobId,
+      'name': name,
+      'prompt': prompt,
+      'schedule': {'kind': 'cron', 'expr': schedule},
+      'enabled': true,
+    });
+    jobsJson = jsonEncode({...store, 'jobs': jobs});
+  }
+
+  @override
+  Future<void> pinModel(
+    String jobId,
+    String model, {
+    bool clearError = false,
+  }) async {
+    calls.add('pin:$jobId');
+    pinned.add((jobId: jobId, model: model, clearError: clearError));
+    final message = pinFailWith;
+    if (message != null) throw CronRearmException(message);
   }
 
   @override
@@ -175,6 +203,22 @@ const _blockedJob = '''
   "model_snapshot": "auto",
   "last_status": "error",
   "last_error": "RuntimeError: Skipped to prevent unintended spend: global inference config drifted since this job was created (model 'auto' -> 'maker/m1'), and this job is unpinned."
+}]}
+''';
+
+/// A task the app pinned, whose model then stopped answering — the shape the
+/// router fallback is for.
+const _pinnedFailedJob = '''
+{"jobs": [{
+  "id": "abc123",
+  "name": "Daily digest",
+  "prompt": "Summarise my folder",
+  "schedule": {"kind": "cron", "expr": "0 8 * * 1-5"},
+  "enabled": true,
+  "model": "qwen3.6-27b-office",
+  "model_snapshot": "qwen3.6-27b-office",
+  "last_status": "error",
+  "last_error": "RuntimeError: no providers available for this model"
 }]}
 ''';
 
@@ -259,6 +303,7 @@ void main() {
     final result = await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Weekly review',
           prompt: 'Summarise the week',
           schedule: const JobSchedule(
@@ -283,6 +328,7 @@ void main() {
     await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Inbox check',
           prompt: 'Any new mail?',
           schedule: const JobSchedule(cadence: JobCadence.every30Min),
@@ -311,24 +357,51 @@ void main() {
     expect(describeJobSchedule(jobs.single.cron), 'Every 2 hours');
   });
 
-  test('the answer goes where the user picked — this app by default, Telegram '
-      'only when they said so', () async {
+  test('a new task is pinned to the model the user picked, so changing the '
+      'model in Chat stops stranding it', () async {
     final h = harness();
     await h.container.read(scheduledJobsProvider.future);
-    final controller = h.container.read(scheduledJobsProvider.notifier);
     const daily = JobSchedule(cadence: JobCadence.everyDay, hour: 8, minute: 0);
 
-    await controller.create(name: 'Digest', prompt: 'p', schedule: daily);
-    expect(h.cron.created?.deliver, kDeliverLocal);
+    final result = await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          model: 'qwen3.6-27b-office',
+          name: 'Digest',
+          prompt: 'p',
+          schedule: daily,
+        );
 
-    await controller.create(
-      name: 'Digest',
-      prompt: 'p',
-      schedule: daily,
-      toTelegram: true,
-    );
-    expect(h.cron.created?.deliver, kDeliverTelegram);
+    expect(result.error, isNull);
+    expect(h.cron.pinned.single.jobId, kNewJobId);
+    expect(h.cron.pinned.single.model, 'qwen3.6-27b-office');
   });
+
+  test(
+    'a task cannot be created on a model the assistant cannot answer with — '
+    "the run would come back as the tool call, and be recorded as ok",
+    () async {
+      final h = harness();
+      await h.container.read(scheduledJobsProvider.future);
+
+      final result = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .create(
+            model: 'claude:claude-sonnet-5',
+            name: 'Digest',
+            prompt: 'p',
+            schedule: const JobSchedule(
+              cadence: JobCadence.everyDay,
+              hour: 8,
+              minute: 0,
+            ),
+          );
+
+      expect(result.error, kHermesCannotServeSeatModel);
+      expect(h.cron.created, isNull);
+      expect(h.cron.pinned, isEmpty);
+    },
+  );
 
   test('what a task is allowed to do is settled before it is saved — there is '
       'nobody to ask at 8am', () async {
@@ -338,6 +411,7 @@ void main() {
     await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Daily digest',
           prompt: 'Summarise',
           schedule: const JobSchedule(
@@ -367,6 +441,7 @@ void main() {
       final result = await h.container
           .read(scheduledJobsProvider.notifier)
           .create(
+            model: 'maker/m1',
             name: 'Digest',
             prompt: 'Summarise',
             schedule: const JobSchedule(
@@ -397,6 +472,7 @@ void main() {
     final result = await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Digest',
           prompt: 'Summarise',
           schedule: const JobSchedule(
@@ -423,6 +499,7 @@ void main() {
     final result = await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Digest',
           prompt: 'Summarise',
           schedule: const JobSchedule(
@@ -444,6 +521,7 @@ void main() {
     final result = await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Digest',
           prompt: 'Summarise',
           schedule: const JobSchedule(
@@ -467,6 +545,7 @@ void main() {
       await h.container
           .read(scheduledJobsProvider.notifier)
           .create(
+            model: 'maker/m1',
             name: 'Digest',
             prompt: 'Summarise',
             schedule: const JobSchedule(
@@ -498,6 +577,7 @@ void main() {
       final result = await h.container
           .read(scheduledJobsProvider.notifier)
           .create(
+            model: 'maker/m1',
             name: 'Digest',
             prompt: 'Summarise',
             schedule: const JobSchedule(
@@ -523,6 +603,7 @@ void main() {
     await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Daily digest',
           prompt: 'Summarise',
           schedule: const JobSchedule(
@@ -658,6 +739,58 @@ void main() {
 
       expect(error, contains('ValueError: no such job'));
     });
+
+    test(
+      'a pinned task is re-pinned rather than re-armed — a re-arm skips a '
+      'pinned job, so the button would report a success it never had',
+      () async {
+        await configureModel();
+        final h = harness(jobsJson: _pinnedFailedJob);
+        await h.container.read(scheduledJobsProvider.future);
+
+        final error = await h.container
+            .read(scheduledJobsProvider.notifier)
+            .useCurrentModel('abc123');
+
+        expect(error, isNull);
+        expect(h.cron.followed, isEmpty);
+        expect(h.cron.pinned.single.model, 'mine/own');
+        expect(
+          h.cron.pinned.single.clearError,
+          isTrue,
+          reason: 'a task that will now run must stop saying it will not',
+        );
+      },
+    );
+  });
+
+  group('a task whose model stopped answering', () {
+    test('is moved to the grid\'s router, with the failed run cleared — a task '
+        'nobody watches must not fail every morning into a file', () async {
+      final h = harness(jobsJson: _pinnedFailedJob);
+      await h.container.read(scheduledJobsProvider.future);
+
+      final moved = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .fallbackToAuto({'auto', 'maker/m1'});
+
+      expect(moved, ['abc123']);
+      expect(h.cron.pinned.single.model, 'auto');
+      expect(h.cron.pinned.single.clearError, isTrue);
+    });
+
+    test('is left alone while the model is still served and the last run was '
+        'fine — a pinned model is the user\'s choice', () async {
+      final h = harness();
+      await h.container.read(scheduledJobsProvider.future);
+
+      final moved = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .fallbackToAuto({'auto', 'maker/m1'});
+
+      expect(moved, isEmpty);
+      expect(h.cron.pinned, isEmpty);
+    });
   });
 
   test('switching the model the assistant uses lets the saved tasks follow it '
@@ -671,6 +804,7 @@ void main() {
     await h.container
         .read(scheduledJobsProvider.notifier)
         .create(
+          model: 'maker/m1',
           name: 'Digest',
           prompt: 'Summarise',
           schedule: const JobSchedule(

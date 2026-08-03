@@ -206,10 +206,6 @@ enum MessagingPlatform {
   final String? Function(String value) userIdValidate;
 
   final List<ConnectStep> steps;
-
-  /// The one platform the scheduler currently delivers task results to. Kept as a
-  /// single source of truth so the scheduled-task screen and this feature agree.
-  static const MessagingPlatform schedulerDelivery = MessagingPlatform.telegram;
 }
 
 /// The token @BotFather hands out looks like `8123456789:AAF…`. Checking the
