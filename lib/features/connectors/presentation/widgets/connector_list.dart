@@ -98,6 +98,7 @@ class _CardShell extends StatelessWidget {
     required this.name,
     required this.actions,
     this.tag,
+    this.popularity,
     this.note = '',
     this.blurb = '',
     this.onTap,
@@ -112,6 +113,13 @@ class _CardShell extends StatelessWidget {
 
   /// One tag beside the name, when the card has something to state.
   final Widget? tag;
+
+  /// How much this service is used, for a row from the public directory.
+  ///
+  /// Sits at the end of the name row rather than in [tag]: a tag states what
+  /// *this install* did — signed in, waiting — while this is a fact about the
+  /// service, and a connected directory row can honestly show both.
+  final Widget? popularity;
 
   /// What just happened to this connector, when something did.
   final String note;
@@ -159,6 +167,10 @@ class _CardShell extends StatelessWidget {
                         ),
                       ),
                       if (tag != null) ...[const SizedBox(width: 6), tag!],
+                      if (popularity != null) ...[
+                        const SizedBox(width: 8),
+                        popularity!,
+                      ],
                     ],
                   ),
                 ),
@@ -247,6 +259,7 @@ class _CatalogCard extends ConsumerWidget {
           ? const ExtensionTag(label: 'Signed in')
           : null,
       note: note,
+      popularity: _UseCount.of(connector),
       blurb: _cardBlurb(connector),
       actions: ConnectorAction(connector: connector),
       onTap: () => showConnectorDetailsDialog(
@@ -258,6 +271,61 @@ class _CatalogCard extends ConsumerWidget {
           labelled: true,
         ),
       ),
+    );
+  }
+}
+
+/// How much a directory service is used, as a star and a rounded number.
+///
+/// **The public registry's only quality signal that is a number.** On a list
+/// anyone can publish to, `useCount` is what separates a service people rely on
+/// from a weekend experiment — measured across one page it spans 0 to 76,715, so
+/// it separates a great deal.
+///
+/// Drawn only for a row that has one. Gateway rows, hand-typed servers and any
+/// directory entry the registry reports as unused all leave it off rather than
+/// showing a zero: "★ 0" reads as a verdict, and absence reads as "not
+/// applicable", which is what it is.
+class _UseCount extends StatelessWidget {
+  const _UseCount({required this.count});
+
+  final int count;
+
+  /// The badge for [connector], or null when there is no number to show.
+  static Widget? of(Connector connector) {
+    final count = connector.catalogEntry?.useCount ?? 0;
+    return count > 0 ? _UseCount(count: count) : null;
+  }
+
+  /// `76715` → `76.7k`. Four digits of precision on a card this size is four
+  /// digits nobody compares; the magnitude is the whole message.
+  static String format(int count) {
+    if (count < 1000) return '$count';
+    final thousands = count / 1000;
+    if (thousands < 10) return '${thousands.toStringAsFixed(1)}k';
+    if (count < 1000000) return '${thousands.round()}k';
+    return '${(count / 1000000).toStringAsFixed(1)}M';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Quiet on purpose: this is context for the name beside it, not a claim
+        // competing with the Connect button in the same row.
+        Icon(Icons.star_rounded, size: 13, color: AppPalette.textFaint),
+        const SizedBox(width: 2),
+        Text(
+          format(count),
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w500,
+            color: AppPalette.textFaint,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -26,6 +26,7 @@ class ExtensionScreen extends ConsumerStatefulWidget {
     required this.onRefresh,
     required this.listBuilder,
     this.filterBar,
+    this.onQueryChanged,
   }) : assert(
          createButton != null || (createLabel != null && onCreate != null),
          'give the screen a create action: a label + handler, or a button',
@@ -34,6 +35,15 @@ class ExtensionScreen extends ConsumerStatefulWidget {
   final String title;
   final String subtitle;
   final String searchHint;
+
+  /// The raw search text, as it is typed.
+  ///
+  /// Optional, and null for every screen whose list is already in memory —
+  /// [listBuilder]'s `matches` is the whole search for those. Connectors is the
+  /// exception: its rows come from a directory of four thousand servers and only
+  /// fifty are loaded, so a local `matches` searches the page rather than the
+  /// directory. That screen sends the text to the registry as well.
+  final ValueChanged<String>? onQueryChanged;
 
   /// The standard create button's label and handler. Skipped when the screen
   /// supplies its own [createButton].
@@ -108,7 +118,10 @@ class _ExtensionScreenState extends ConsumerState<ExtensionScreen> {
                     child: ExtensionSearchField(
                       controller: _search,
                       hintText: widget.searchHint,
-                      onChanged: (value) => setState(() => _query = value),
+                      onChanged: (value) {
+                        setState(() => _query = value);
+                        widget.onQueryChanged?.call(value);
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),

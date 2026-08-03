@@ -67,21 +67,38 @@ class BrowseConnectorsState {
   /// Nothing to show, and not because we are still looking.
   bool get isEmpty => servers.isEmpty && !loading && error == null;
 
-  /// What the screen draws: the fetched rows in the chosen order.
+  /// What the screen draws: the fetched rows, narrowed and ordered.
   ///
   /// Derived rather than stored, so [servers] and this can never disagree — the
   /// bug available in the stored version is a sort applied to page one and
   /// silently not to page two.
-  List<SmitheryServer> get visibleServers => sort.apply(servers);
+  List<SmitheryServer> get visibleServers {
+    // While a search is running the registry drops the filter token, so the
+    // narrowing has to happen here instead — over the rows that came back.
+    final rows = filtersNarrowedHere
+        ? [
+            for (final server in servers)
+              if (server.verified) server,
+          ]
+        : servers;
+    return sort.apply(rows);
+  }
 
-  /// Filters are selected but the registry is not applying them, because a
-  /// search is running and the two cannot be combined (see
-  /// `SmitheryRegistryClient.servers`).
+  /// Verified is selected, and it is this app applying it rather than the
+  /// registry — because a search is running and the two cannot be combined.
   ///
-  /// Exposed so the screen can *say* so. Dropping the token silently would leave
-  /// a lit-up pill over a list it had no part in choosing — the user would read
-  /// the results as verified when they are merely relevant.
-  bool get filtersSuspended => filters.isNotEmpty && query.isNotEmpty;
+  /// Measured 2026-08-03 on both `api.` and `registry.smithery.ai`:
+  /// `notion is:verified` answers with `riskmodels`, `mem0`, `thoughtbox` —
+  /// every row verified, not one of them Notion, and a total of exactly 100. The
+  /// token wins and the words are discarded.
+  ///
+  /// So the search is sent alone and the filter is applied to what returns. The
+  /// honest limit, which the screen states: this narrows the pages **loaded**,
+  /// not the whole directory. Better than the alternative it replaced — dropping
+  /// the filter entirely and leaving a lit pill over rows it had no part in
+  /// choosing.
+  bool get filtersNarrowedHere =>
+      filters.contains(SmitheryFilter.verified) && query.isNotEmpty;
 
   BrowseConnectorsState copyWith({
     List<SmitheryServer>? servers,
@@ -136,8 +153,15 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
   /// longer contains. Compared at every await boundary.
   int _generation = 0;
 
+  /// **Verified is on by default.** The directory is four thousand servers
+  /// anyone can publish to; `is:verified` is 199 of them, and it is the
+  /// registry's own answer to which ones it stands behind. Opening a settings
+  /// screen on the unfiltered set puts community code with no description above
+  /// names people recognise — measured, that is exactly the order it arrives in.
+  /// The pill is one press away for anyone who wants the rest.
   @override
-  BrowseConnectorsState build() => const BrowseConnectorsState();
+  BrowseConnectorsState build() =>
+      const BrowseConnectorsState(filters: {SmitheryFilter.verified});
 
   /// Load (or reload) the first page for [query].
   ///

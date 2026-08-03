@@ -33,6 +33,8 @@ ConnectorCatalogEntry smitheryCatalogEntry(
   imageUrl: server.iconUrl,
   mcpUrl: server.mcpUrl,
   authMethod: ConnectorAuthMethod.dcr,
+  useCount: server.useCount,
+  verified: server.verified,
   // Deliberately left at their defaults, and each for the same reason:
   // `installed`, `linkedAtServer`, `accountName` and `canRefresh` all
   // describe something *the gateway* knows about a user's account, and the

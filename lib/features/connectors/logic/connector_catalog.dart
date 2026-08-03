@@ -49,6 +49,8 @@ class ConnectorCatalogEntry {
     this.linkedAtServer = false,
     this.accountName = '',
     this.canRefresh = false,
+    this.useCount = 0,
+    this.verified = false,
   });
 
   /// The backend's own id. Opaque to the app.
@@ -104,6 +106,17 @@ class ConnectorCatalogEntry {
   /// The provider issues refresh tokens, so `/refresh` is worth calling.
   final bool canRefresh;
 
+  /// How many times the directory has seen this server used.
+  ///
+  /// A directory row only — zero everywhere else, which is also how the card
+  /// decides not to draw it. It is the nearest thing a public registry offers to
+  /// a star count, and on a list anyone can publish to it is the one number that
+  /// separates a service people rely on from a weekend experiment.
+  final int useCount;
+
+  /// The registry vouches for this row.
+  final bool verified;
+
   /// Whether Connect is offered: the app has a sign-in flow it can drive for
   /// this connector, whether that runs through the gateway ([app]) or entirely
   /// on this machine ([dcr]).
@@ -153,6 +166,8 @@ class ConnectorCatalogEntry {
       linkedAtServer: linkedAtServer,
       accountName: accountName,
       canRefresh: canRefresh,
+      useCount: useCount,
+      verified: verified,
     );
   }
 }

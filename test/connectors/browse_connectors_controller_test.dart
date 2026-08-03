@@ -36,12 +36,17 @@ class _FakeRegistry implements SmitheryRegistryClient {
   }
 }
 
-SmitheryServer _server(String name, {int useCount = 0}) => SmitheryServer(
+SmitheryServer _server(
+  String name, {
+  int useCount = 0,
+  bool verified = false,
+}) => SmitheryServer(
   qualifiedName: name,
   displayName: name.toUpperCase(),
   remote: true,
   deployed: true,
   useCount: useCount,
+  verified: verified,
 );
 
 SmitheryPage _page(
@@ -71,6 +76,12 @@ void main() {
       container.read(browseConnectorsProvider.notifier);
   BrowseConnectorsState state() => container.read(browseConnectorsProvider);
 
+  test('verified is on before anything is asked', () async {
+    // Four thousand servers anyone can publish to is not the set to open a
+    // settings screen on.
+    expect(state().filters, {SmitheryFilter.verified});
+  });
+
   test('a filter is sent to the registry, not applied locally', () async {
     // The registry caps browsing at 500 rows, so a local test would search only
     // what has been fetched and present that as the whole answer.
@@ -78,24 +89,27 @@ void main() {
       _page([_server('a')]),
     ];
 
-    await notifier().toggleFilter(SmitheryFilter.verified);
+    await notifier().search('');
 
     expect(registry.filterSets.single, {SmitheryFilter.verified});
-    expect(state().filters, {SmitheryFilter.verified});
   });
 
-  test('toggling the same filter twice clears it', () async {
-    registry.replies = [
-      _page([_server('a')]),
-      _page([_server('a'), _server('b')]),
-    ];
+  test(
+    'toggling the default filter clears it, and again restores it',
+    () async {
+      registry.replies = [
+        _page([_server('a')]),
+        _page([_server('a'), _server('b')]),
+      ];
 
-    await notifier().toggleFilter(SmitheryFilter.verified);
-    await notifier().toggleFilter(SmitheryFilter.verified);
+      await notifier().toggleFilter(SmitheryFilter.verified);
+      expect(state().filters, isEmpty);
+      expect(registry.filterSets.last, isEmpty);
 
-    expect(registry.filterSets.last, isEmpty);
-    expect(state().filters, isEmpty);
-  });
+      await notifier().toggleFilter(SmitheryFilter.verified);
+      expect(state().filters, {SmitheryFilter.verified});
+    },
+  );
 
   test('a filter change reloads from page one', () async {
     registry.replies = [
@@ -137,42 +151,43 @@ void main() {
       _page([_server('b')]),
     ];
 
-    await notifier().toggleFilter(SmitheryFilter.verified);
     notifier().setSort(SmitheryServerSort.name);
     await notifier().search('notion');
 
     expect(state().sort, SmitheryServerSort.name);
+    // The selection survives a search even though the registry will not honour
+    // it — that is what `filtersNarrowedHere` then acts on.
     expect(state().filters, {SmitheryFilter.verified});
   });
 
-  test(
-    'a search with a filter selected reports the filter as suspended',
-    () async {
-      // Measured 2026-08-03: `notion is:verified` returns riskmodels, mem0,
-      // thoughtbox — every row verified, not one of them Notion. The client sends
-      // the text alone; the screen has to be able to say so.
-      registry.replies = [
-        _page([_server('a')]),
-      ];
-
-      await notifier().toggleFilter(SmitheryFilter.verified);
-      registry.replies = [
-        _page([_server('b')]),
-      ];
-      await notifier().search('notion');
-
-      expect(state().filtersSuspended, isTrue);
-      expect(state().filters, {SmitheryFilter.verified});
-    },
-  );
-
-  test('with no search running the filter is live', () async {
+  test('a search narrows verified here, since the registry will not', () async {
+    // Measured 2026-08-03: `notion is:verified` returns riskmodels, mem0,
+    // thoughtbox — every row verified, not one of them Notion. So the text goes
+    // alone and the filter is applied to what comes back.
     registry.replies = [
-      _page([_server('a')]),
+      _page([_server('plain'), _server('vetted', verified: true)]),
     ];
-    await notifier().toggleFilter(SmitheryFilter.verified);
 
-    expect(state().filtersSuspended, isFalse);
+    await notifier().search('notion');
+
+    // The controller still passes the selection down; dropping the token when a
+    // search is running belongs to `SmitheryRegistryClient`, which this fake
+    // stands in for.
+    expect(state().filtersNarrowedHere, isTrue);
+    expect(state().visibleServers.map((s) => s.qualifiedName), ['vetted']);
+    // The fetched rows are untouched — clearing the search restores them.
+    expect(state().servers.length, 2);
+  });
+
+  test('with no search running the registry does the narrowing', () async {
+    registry.replies = [
+      _page([_server('a'), _server('b', verified: true)]),
+    ];
+    await notifier().search('');
+
+    expect(state().filtersNarrowedHere, isFalse);
+    // Both kept: the registry already returned only what the token allowed.
+    expect(state().visibleServers.length, 2);
   });
 
   test('load more appends, dedupes, and keeps the original query', () async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -397,6 +399,28 @@ class _DirectorySkeletonCard extends StatelessWidget {
 class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
   _ConnectorFilter _filter = _ConnectorFilter.all;
 
+  /// Holds the keystrokes back so the registry sees words, not letters.
+  ///
+  /// 350ms: long enough that typing "notion" is one request instead of six,
+  /// short enough that the list moves while the user is still looking at the
+  /// box. `_generation` in the controller covers the rest — a slow answer to an
+  /// abandoned query cannot land whatever this interval is.
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String query) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      ref.read(browseConnectorsProvider.notifier).search(query);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -457,6 +481,10 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
       // The same definition of "reload" the mutations use, so the button can't
       // drift from them as sources are added.
       onRefresh: () => refreshConnectorsFromWidget(ref),
+      // Sent to the registry as well as matched locally. The local pass keeps
+      // the connected rows searchable — they are not in the directory — while
+      // this reaches the 4,000 the loaded page is a slice of.
+      onQueryChanged: _onQueryChanged,
       filterBar: _FilterBar(
         filter: _filter,
         onFilter: (option) => setState(() => _filter = option),
@@ -501,7 +529,7 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           AsyncValue(:final value?) => _ConnectorsBody(
             rows: visible(value),
             filtered: filtered || _filter != _ConnectorFilter.all,
-            filtersSuspended: browse.filtersSuspended,
+            filtersNarrowedHere: browse.filtersNarrowedHere,
             showDirectoryTail: _filter != _ConnectorFilter.connected,
             onLoadMore: () =>
                 ref.read(browseConnectorsProvider.notifier).loadMore(),
@@ -524,14 +552,14 @@ class _ConnectorsBody extends StatelessWidget {
   const _ConnectorsBody({
     required this.rows,
     required this.filtered,
-    required this.filtersSuspended,
+    required this.filtersNarrowedHere,
     required this.showDirectoryTail,
     required this.onLoadMore,
   });
 
   final List<Connector> rows;
   final bool filtered;
-  final bool filtersSuspended;
+  final bool filtersNarrowedHere;
   final bool showDirectoryTail;
 
   /// Fetch the directory's next page. Safe to call repeatedly — see
@@ -546,12 +574,12 @@ class _ConnectorsBody extends StatelessWidget {
         // Said before the list, because it explains what the list *is*. A
         // lit-up Verified pill over rows the registry chose on relevance alone
         // would read as a promise the screen cannot keep.
-        if (filtersSuspended)
+        if (filtersNarrowedHere)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),
             child: _DirectoryNote(
-              'Showing search results — the directory can filter or search, '
-              'not both. Clear the search to use Verified.',
+              'The directory cannot filter a search, so Verified is being '
+              'applied to the results loaded so far — scroll for more.',
             ),
           ),
         // `Expanded`, so the list is handed what its siblings leave rather than
