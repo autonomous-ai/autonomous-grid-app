@@ -221,7 +221,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     }
     return PlaygroundModelOption(
       id: trimmed,
-      label: trimmed,
+      label: modelDisplayLabel(trimmed),
       modality: switch (trimmed) {
         kImageModeLabel => PlaygroundModality.image,
         kVideoModeLabel => PlaygroundModality.video,
