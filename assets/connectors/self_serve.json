@@ -21,8 +21,19 @@
     "chặn trùng theo code, nhưng trùng thì hàng ở đây là rác — bỏ từ đầu.",
     "",
     "Tên field trùng wire shape của gateway, để chuyển một dòng sang backend là copy.",
-    "image_url bỏ trống thì suy từ host của mcp_url (globalping không có favicon nên",
-    "để trống, hàng sẽ dùng glyph).",
+    "",
+    "image_url KHAI RÕ cho mọi dòng, đừng dựa vào fallback suy từ host. Fallback cắt",
+    "'mcp.' rồi hỏi favicon service về phần còn lại, và phần còn lại không phải lúc nào",
+    "cũng là domain mang thương hiệu: mcp.globalping.dev -> globalping.dev (404), trong",
+    "khi logo nằm ở globalping.io. Kết quả là một card glyph xám giữa một lưới có logo.",
+    "Kiểm bằng cách mở thẳng URL trong trình duyệt; 404 nghĩa là card sẽ dùng glyph.",
+    "",
+    "MỘT NGOẠI LỆ về host: mọi dòng khác đều là endpoint chính chủ của nhà cung cấp,",
+    "riêng yahoo_finance chạy trên gateway.mcpservers.org — bên thứ ba làm cầu sang",
+    "Yahoo. Không có credential nào đi qua đó (dữ liệu công khai), nhưng họ thấy được",
+    "người dùng tra mã nào. Vì vậy label ghi kèm tên bên vận hành và description nói",
+    "thẳng, để không ai tưởng Yahoo chạy nó. Thêm dòng trung gian nào nữa cũng phải",
+    "ghi như vậy.",
     "",
     "mcp_url lấy đúng URL mcpservers.org công bố, đã đối chiếu từng dòng 2026-07-31.",
     "Cloudflare dùng endpoint hợp nhất mcp.cloudflare.com/mcp, KHÔNG phải các server",
@@ -162,10 +173,41 @@
       "image_url": "https://www.google.com/s2/favicons?domain=postman.com&sz=128"
     },
     {
+      "code": "craft",
+      "label": "Craft",
+      "description": "Documents and spaces in your Craft account — read them, search them and add to them.",
+      "mcp_url": "https://mcp.craft.do/my/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=craft.do&sz=128"
+    },
+    {
+      "code": "coindesk",
+      "label": "CoinDesk",
+      "description": "Crypto market data and news from CoinDesk — prices, indices and coverage.",
+      "mcp_url": "https://mcp.coindesk.com/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=coindesk.com&sz=128"
+    },
+    {
+      "code": "crypto_com",
+      "label": "Crypto.com",
+      "description": "Live market data from the Crypto.com Exchange — tickers, order book, trades and candles. Needs no account.",
+      "mcp_url": "https://mcp.crypto.com/market-data/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=crypto.com&sz=128",
+      "auth": "open"
+    },
+    {
+      "code": "yahoo_finance",
+      "label": "Yahoo Finance (mcpservers.org)",
+      "description": "Quotes, price history and company data for public markets. Run by mcpservers.org, not by Yahoo — every query goes through their server. Needs no account.",
+      "mcp_url": "https://gateway.mcpservers.org/yahoo-finance/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=finance.yahoo.com&sz=128",
+      "auth": "open"
+    },
+    {
       "code": "globalping",
       "label": "Globalping",
       "description": "Network measurements from probes worldwide — ping, traceroute, DNS and HTTP checks.",
-      "mcp_url": "https://mcp.globalping.dev/mcp"
+      "mcp_url": "https://mcp.globalping.dev/mcp",
+      "image_url": "https://www.google.com/s2/favicons?domain=globalping.io&sz=128"
     },
 
     {

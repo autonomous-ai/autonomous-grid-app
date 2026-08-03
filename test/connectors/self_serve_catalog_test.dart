@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/connectors/logic/connector_catalog.dart';
@@ -182,6 +184,29 @@ void main() {
         expect(entry.mcpUrl, startsWith('https://'), reason: entry.code);
         expect(entry.label, isNotEmpty, reason: entry.code);
         expect(entry.description, isNotEmpty, reason: entry.code);
+      }
+    });
+
+    test('every row states its own mark rather than deriving one', () async {
+      // The parser will derive a favicon URL from the server's host, and that
+      // is a fine default for a row typed into Add custom. It is a bad default
+      // *here*, because the derived host is not always the one carrying the
+      // brand: `mcp.globalping.dev` trims to `globalping.dev`, which serves no
+      // icon, while the logo lives on `globalping.io`. The fallback hides that
+      // — the row simply renders a grey glyph in a grid of logos.
+      //
+      // So a shipped row must say its mark out loud. This does not prove the
+      // URL resolves (nothing offline can), but it forces the decision to be
+      // made and looked at once per row instead of never.
+      final json = await rootBundle.loadString(kSelfServeCatalogAsset);
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      for (final row in decoded['connectors'] as List) {
+        final entry = row as Map<String, dynamic>;
+        expect(
+          entry['image_url'],
+          isA<String>().having((u) => u.isNotEmpty, 'is set', isTrue),
+          reason: entry['code'] as String,
+        );
       }
     });
 
