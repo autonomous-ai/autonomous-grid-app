@@ -213,7 +213,20 @@ class _CardShell extends StatelessWidget {
 /// description: it is the only thing that tells two of them apart.
 String _cardBlurb(Connector connector) {
   final blurb = connector.catalogEntry?.description ?? '';
-  return blurb.isNotEmpty ? blurb : connector.description;
+  if (blurb.isNotEmpty) return blurb;
+  if (connector.description.isNotEmpty) return connector.description;
+  // **Says the absence rather than leaving one.** 14% of the public directory
+  // ships no description at all — measured over 300 rows, and concentrated in
+  // six publishers, one of which accounts for 19 of them. There is nowhere else
+  // to look: the registry has no per-server endpoint (every path shape 404s), so
+  // the blurb is missing at the source.
+  //
+  // A blank half-card reads as a row that failed to load, which is the one thing
+  // it is not. Naming the author keeps the sentence honest — this is something
+  // they did not write, not something the app could not fetch.
+  return connector.catalogEntry != null
+      ? 'No description — the author of this server did not write one.'
+      : '';
 }
 
 /// A catalog service: its mark, its name, what it gives you, and whatever action
