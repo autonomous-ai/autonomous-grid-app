@@ -25,10 +25,33 @@ class ExtensionGrid<T> extends StatefulWidget {
     this.targetCardWidth = 320,
     this.maxColumns = 3,
     this.cardHeight = 118,
+    this.onReachedEnd,
+    this.footer,
   });
 
   final List<ExtensionSection<T>> sections;
   final Widget Function(BuildContext context, T item) cardBuilder;
+
+  /// Called when the scroll comes within [_endThreshold] of the bottom.
+  ///
+  /// Optional, and null for every caller that has a finite list — skills,
+  /// plugins, models and engines all know everything they will ever show. Only
+  /// Connectors pages a directory, and only it passes this.
+  ///
+  /// **Called repeatedly while the user sits near the end**, so the callback has
+  /// to be idempotent. `BrowseConnectorsController.loadMore` already is: it
+  /// returns immediately unless there is a further page and nothing is in
+  /// flight. Debouncing here instead would put that knowledge in the wrong
+  /// place — this widget cannot tell a fetch that is pending from one that is
+  /// finished.
+  final VoidCallback? onReachedEnd;
+
+  /// Drawn after the last card, inside the same scroll view.
+  ///
+  /// Inside rather than beneath: a footer under the viewport is a fixed block
+  /// competing with the list for the pane's height, which is what overflowed
+  /// the Connectors screen by 20px when its empty state had nowhere to go.
+  final Widget? footer;
 
   /// The width a card wants. Columns are whatever fits, so a narrow settings
   /// pane collapses to one and a wide window fills out — the layout is decided
@@ -56,10 +79,38 @@ class _ExtensionGridState<T> extends State<ExtensionGrid<T>> {
   /// documents: two controllers on one position asserts.
   final _controller = ScrollController();
 
+  /// How close to the bottom counts as "the end".
+  ///
+  /// Roughly two card rows. Far enough that the next page is usually in by the
+  /// time the user gets there — the point of doing this instead of a button —
+  /// and near enough that a long list does not fetch its whole tail the moment
+  /// it is opened.
+  static const double _endThreshold = 320;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.onReachedEnd != null) _controller.addListener(_onScroll);
+  }
+
   @override
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeListener(_onScroll)
+      ..dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_controller.hasClients) return;
+    final position = _controller.position;
+    // `maxScrollExtent` is 0 before the first layout and while the content is
+    // shorter than the viewport. Asking for more in either case would page
+    // through the directory without the user having scrolled at all.
+    if (position.maxScrollExtent <= 0) return;
+    if (position.pixels >= position.maxScrollExtent - _endThreshold) {
+      widget.onReachedEnd!.call();
+    }
   }
 
   @override
@@ -118,6 +169,15 @@ class _ExtensionGridState<T> extends State<ExtensionGrid<T>> {
                   ),
                 ),
               ],
+              if (widget.footer case final footer?)
+                SliverPadding(
+                  padding: const EdgeInsets.only(
+                    right: extensionScrollGutter,
+                    top: 16,
+                    bottom: 8,
+                  ),
+                  sliver: SliverToBoxAdapter(child: footer),
+                ),
             ],
           ),
         );

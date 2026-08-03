@@ -36,6 +36,8 @@ class ConnectorList extends StatelessWidget {
     super.key,
     required this.connectors,
     this.filtered = false,
+    this.onReachedEnd,
+    this.footer,
   });
 
   final List<Connector> connectors;
@@ -43,6 +45,12 @@ class ConnectorList extends StatelessWidget {
   /// A search or a status pill is narrowing the list, so an empty [connectors]
   /// means "nothing matched" — not "nothing configured".
   final bool filtered;
+
+  /// Fetch the directory's next page — the scroll is near the bottom.
+  final VoidCallback? onReachedEnd;
+
+  /// The directory's tail, drawn after the last card *inside* the scroll view.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +69,8 @@ class ConnectorList extends StatelessWidget {
     );
     return ExtensionGrid(
       sections: sections,
+      onReachedEnd: onReachedEnd,
+      footer: footer,
       cardBuilder: (context, connector) => switch (connector.server) {
         final McpServer server => _McpCard(
           server: server,

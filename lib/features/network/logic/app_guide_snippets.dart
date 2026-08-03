@@ -178,22 +178,24 @@ const String kCodexAppApiKeyEnv = 'GRID_APP_API_KEY';
 ///
 /// Pure, and unit-tested: a wrong key here fails exactly like a model that
 /// wouldn't answer (§7).
-List<String> codexGridOverrides({required String base, required String model}) =>
-    [
-      'model="$model"',
-      'model_provider="$kCodexAppProviderId"',
-      // Codex refuses a provider table whose name is empty — and it refuses by
-      // failing to load the *whole* config, before the model is ever reached.
-      'model_providers.$kCodexAppProviderId.name="Grid"',
-      'model_providers.$kCodexAppProviderId.base_url="$base"',
-      // Codex has no `api_key` field: the provider names an environment
-      // variable and Codex reads it from there.
-      'model_providers.$kCodexAppProviderId.env_key="$kCodexAppApiKeyEnv"',
-      // Codex ≥ 0.141 rejects `wire_api = "chat"` outright.
-      'model_providers.$kCodexAppProviderId.wire_api="responses"',
-      // The relay streams HTTP SSE and offers no socket transport.
-      'model_providers.$kCodexAppProviderId.supports_websockets=false',
-    ];
+List<String> codexGridOverrides({
+  required String base,
+  required String model,
+}) => [
+  'model="$model"',
+  'model_provider="$kCodexAppProviderId"',
+  // Codex refuses a provider table whose name is empty — and it refuses by
+  // failing to load the *whole* config, before the model is ever reached.
+  'model_providers.$kCodexAppProviderId.name="Grid"',
+  'model_providers.$kCodexAppProviderId.base_url="$base"',
+  // Codex has no `api_key` field: the provider names an environment
+  // variable and Codex reads it from there.
+  'model_providers.$kCodexAppProviderId.env_key="$kCodexAppApiKeyEnv"',
+  // Codex ≥ 0.141 rejects `wire_api = "chat"` outright.
+  'model_providers.$kCodexAppProviderId.wire_api="responses"',
+  // The relay streams HTTP SSE and offers no socket transport.
+  'model_providers.$kCodexAppProviderId.supports_websockets=false',
+];
 
 /// The variables Claude Code reads a connection from: the endpoint, and the
 /// credential — under **both** names, because they travel in different headers

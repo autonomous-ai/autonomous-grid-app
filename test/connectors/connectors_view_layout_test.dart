@@ -94,6 +94,33 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the directory footer scrolls with the list, not under it', (
+    tester,
+  ) async {
+    // Enough rows to make the grid scroll. The footer is a sliver after the
+    // last card, so it must be *below* the viewport's bottom edge at rest —
+    // reachable by scrolling rather than pinned where it competes with the list
+    // for the pane's height.
+    await tester.pumpWidget(
+      host(catalog: [for (var i = 0; i < 40; i++) entry('svc$i')]),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final list = tester.getRect(find.byType(ConnectorList));
+    expect(list.height, greaterThan(0));
+  });
+
+  testWidgets('an empty list draws no directory footer at all', (tester) async {
+    // The overflow this file was written for: `EmptyState` centres a fixed
+    // 229px, and a footer taking 46 of them overflowed by exactly 20.
+    await tester.pumpWidget(host());
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Scroll for more'), findsNothing);
+  });
 }
 
 /// No agent, so the screen's config side is empty and the catalog is all there

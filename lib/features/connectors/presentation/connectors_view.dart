@@ -290,47 +290,35 @@ class _DirectoryTail extends ConsumerWidget {
     final browse = ref.watch(browseConnectorsProvider);
 
     // First page in flight: cards the same shape as the real ones, on the same
-    // two-up grid, so the list does not reflow when they are replaced.
-    //
-    // `SingleChildScrollView`, and that is load-bearing rather than tidy. This
-    // sits *below* a `Flexible` list that has already taken the room it wanted:
-    // on a screen with nothing configured the empty state fills the pane, and a
-    // fixed-height block underneath it overflowed by exactly the skeletons'
-    // 20px. Letting the placeholder scroll away is the honest resolution —
-    // shrinking it would misreport how much is coming, and hiding it would make
-    // the first load look like nothing was happening.
-    if (browse.loading) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 12),
-        child: _DirectorySkeletonGrid(),
-      );
-    }
+    // grid, so the list does not reflow when they are replaced.
+    if (browse.loading) return const _DirectorySkeletonGrid();
 
     if (browse.error != null) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 12),
-        // Not an `ErrorBox`: the gateway's connectors are fine and the screen
-        // works. A directory that could not be reached is a missing *addition*,
-        // and shouting about it would misreport the state of everything above.
-        child: _DirectoryNote(
-          '${browse.error} The rest of this list is '
-          'unaffected.',
-        ),
+      // Not an `ErrorBox`: the gateway's connectors are fine and the screen
+      // works. A directory that could not be reached is a missing *addition*,
+      // and shouting about it would misreport the state of everything above.
+      return _DirectoryNote(
+        '${browse.error} The rest of this list is unaffected.',
       );
     }
 
     if (!browse.hasMore) return const SizedBox.shrink();
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 4),
+    // **No button.** Reaching the end of the scroll is the request now
+    // (`ExtensionGrid.onReachedEnd`), so this only reports. The space is still
+    // held while a page is in flight: an indicator that appears and disappears
+    // under the pointer moves the cards above it, and the whole point of paging
+    // on scroll is that the list does not jump.
+    return SizedBox(
+      height: 40,
       child: Center(
         child: browse.loadingMore
             // The list stays put and only this changes — the distinction
             // `loading` and `loadingMore` exist to make.
             ? const AppSpinner(size: SpinnerSize.medium)
-            : _LoadMoreButton(
-                onPressed: () =>
-                    ref.read(browseConnectorsProvider.notifier).loadMore(),
+            : Text(
+                'Scroll for more',
+                style: TextStyle(fontSize: 12.5, color: AppPalette.textFaint),
               ),
       ),
     );
@@ -400,70 +388,6 @@ class _DirectorySkeletonCard extends StatelessWidget {
             const SizedBox(height: 7),
             const Skeleton(width: 160, height: 11),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The directory's Load more control.
-class _LoadMoreButton extends StatefulWidget {
-  const _LoadMoreButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  State<_LoadMoreButton> createState() => _LoadMoreButtonState();
-}
-
-class _LoadMoreButtonState extends State<_LoadMoreButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    // Owns its own hover, rather than reading a parent's: a parent that tracks
-    // the whole row cannot tell "on the button" from "near it", and the glyph
-    // would sit at its resting colour under the pointer.
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: _hovered ? AppSurface.hoverFill : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.expand_more_rounded,
-                size: 17,
-                // Full colour on hover: a glyph that stays dim under the
-                // pointer reads as decoration.
-                color: _hovered
-                    ? AppPalette.textPrimary
-                    : AppPalette.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Load more',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: _hovered
-                      ? AppPalette.textPrimary
-                      : AppPalette.textSecondary,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -569,6 +493,8 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
             filtered: filtered || _filter != _ConnectorFilter.all,
             filtersSuspended: browse.filtersSuspended,
             showDirectoryTail: _filter != _ConnectorFilter.connected,
+            onLoadMore: () =>
+                ref.read(browseConnectorsProvider.notifier).loadMore(),
           ),
           AsyncError(:final error) => ErrorBox(
             message: "Couldn't read the connectors: $error",
@@ -590,12 +516,17 @@ class _ConnectorsBody extends StatelessWidget {
     required this.filtered,
     required this.filtersSuspended,
     required this.showDirectoryTail,
+    required this.onLoadMore,
   });
 
   final List<Connector> rows;
   final bool filtered;
   final bool filtersSuspended;
   final bool showDirectoryTail;
+
+  /// Fetch the directory's next page. Safe to call repeatedly — see
+  /// `ExtensionGrid.onReachedEnd`.
+  final VoidCallback onLoadMore;
 
   @override
   Widget build(BuildContext context) {
@@ -627,25 +558,22 @@ class _ConnectorsBody extends StatelessWidget {
             // reads as "nothing matched", not "nothing configured".
             filtered: filtered,
             connectors: rows,
+            // Paging happens by scrolling, so the request belongs to the thing
+            // that scrolls. `loadMore` is a no-op unless there is a further
+            // page and none is in flight, which is what makes it safe to call
+            // on every frame near the bottom.
+            onReachedEnd: showDirectoryTail ? onLoadMore : null,
+            // **Inside the scroll view, not under it.** A footer below the
+            // viewport is a fixed block competing with the list for the pane's
+            // height: reserving 46px for it left the empty state 209 of the
+            // 229 it centres, and the screen overflowed by exactly the 20px the
+            // first report showed. As a sliver it costs the list nothing and
+            // scrolls into view where it belongs — after the last card.
+            footer: rows.isNotEmpty && showDirectoryTail
+                ? const _DirectoryTail(visible: true)
+                : null,
           ),
         ),
-        // The directory's tail — skeletons while its first page is in flight,
-        // then Load more — and **only when there are rows for it to sit under**.
-        //
-        // With none, `ConnectorList` draws an `EmptyState`: a shared widget
-        // that centres a fixed 229px of icon, copy and button inside whatever
-        // it is given. Reserving 46px here left it 209, and it overflowed by
-        // exactly the 20px the first bug report showed. Found with
-        // `RenderFlex.size`, not by reasoning: three earlier guesses —
-        // Expanded vs Flexible, a scroll view, a shorter skeleton — each moved
-        // the number without fixing it, because none of them was the widget
-        // actually overflowing.
-        //
-        // Nothing is lost by hiding it: an empty list has no further pages to
-        // load, and a directory error still reaches the user through the row
-        // the search was made from.
-        if (rows.isNotEmpty && showDirectoryTail)
-          const _DirectoryTail(visible: true),
       ],
     );
   }

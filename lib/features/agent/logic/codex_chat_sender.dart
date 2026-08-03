@@ -294,7 +294,6 @@ class CodexChatSender implements ChatSender {
   /// relay that answers no `/responses` from a rejected key or a dead network.
   void _logRaw(String raw) =>
       _ref.read(appLogProvider).failure('agent', 'codex turn failed: $raw');
-
 }
 
 /// Shown when the grid answered Codex's request with a flat "no such endpoint".
