@@ -400,9 +400,7 @@ class DcrOAuthClient {
         const DcrOAuthError('The server returned no access token.'),
       );
     }
-    final type = payload['token_type'] is String
-        ? payload['token_type'] as String
-        : 'Bearer';
+    final type = bearerScheme(payload['token_type']);
     final expiresIn = payload['expires_in'];
     final expiresAt = expiresIn is num && expiresIn > 0
         ? DateTime.now().add(Duration(seconds: expiresIn.toInt()))
@@ -552,6 +550,35 @@ class DcrOAuthClient {
 /// so this is the one part of path A that is worth a test on its own.
 String challengeFor(String verifier) =>
     PkcePair._base64Url(_sha256(utf8.encode(verifier)));
+
+/// The auth scheme to write into `Authorization`, from a `token_type` reply.
+///
+/// **Spelled `Bearer` whatever the server called it.** RFC 6750 §2.1 defines
+/// the scheme with that capitalisation and RFC 7235 §2.1 makes it
+/// case-insensitive — on paper. In practice servers compare it literally, and
+/// three of them reject their own answer:
+///
+/// ```
+/// mcp.canva.com      token_type "bearer"  →  "bearer …" 401,  "Bearer …" 200
+/// mcp.cloudflare.com token_type "bearer"  →  "bearer …" 401,  "Bearer …" 200
+/// mcp.postman.com    token_type "bearer"  →  "bearer …" 401,  "Bearer …" 200
+/// ```
+///
+/// Measured 2026-08-03 against live tokens with two hours left on them. It read
+/// as "the OAuth token expired" — the tokens were fine, and the only difference
+/// was one capital letter the app had faithfully copied from the provider.
+///
+/// Gateway connectors never hit this: the backend renders their header and
+/// normalises it there, which is why `notion` carries `token_type: bearer` and a
+/// `Bearer` header while `canva` carried `bearer` in both.
+///
+/// Anything that is *not* bearer is passed through untouched — a server using
+/// DPoP or a scheme of its own is entitled to its own spelling, and this only
+/// claims to know about one word.
+String bearerScheme(Object? tokenType) {
+  if (tokenType is! String || tokenType.isEmpty) return 'Bearer';
+  return tokenType.toLowerCase() == 'bearer' ? 'Bearer' : tokenType;
+}
 
 /// A URL-safe random string, used for `state`.
 String randomStateValue() {

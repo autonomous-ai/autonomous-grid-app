@@ -38,8 +38,16 @@ class McpEntry {
   String? get bearerToken {
     final auth = headers['Authorization'] ?? headers['authorization'];
     if (auth != null) {
-      const prefix = 'Bearer ';
-      return auth.startsWith(prefix) ? auth.substring(prefix.length) : auth;
+      // Case-insensitively, because the scheme is (RFC 7235 §2.1) and because a
+      // stored header may predate the normalisation in [fromJson]. Matching
+      // `Bearer ` literally returned the *whole* header as the token for an
+      // entry written `bearer …`, and Hermes then filed `bearer sbp_…` as the
+      // credential itself.
+      final space = auth.indexOf(' ');
+      if (space > 0 && auth.substring(0, space).toLowerCase() == 'bearer') {
+        return auth.substring(space + 1);
+      }
+      return auth;
     }
     return headers.length == 1 ? headers.values.first : null;
   }
@@ -67,7 +75,9 @@ class McpEntry {
       for (final entry in rawHeaders.entries) {
         final key = entry.key;
         final value = entry.value;
-        if (key is String && value is String) headers[key] = value;
+        if (key is String && value is String) {
+          headers[key] = _normalizeAuth(key, value);
+        }
       }
     }
 
@@ -82,6 +92,35 @@ class McpEntry {
       canRefresh: grid is Map && grid['refresh'] == true,
     );
   }
+}
+
+/// Repair a stored `Authorization` header whose scheme is spelled `bearer`.
+///
+/// **On read, so a token already on disk is fixed without being re-fetched.**
+/// The header is minted correctly now (`bearerScheme` in `dcr_oauth_client`),
+/// but an entry written before that carries the provider's own lowercase answer
+/// — and the provider then refuses it:
+///
+/// ```
+/// mcp.canva.com   "bearer <token>"  401
+/// mcp.canva.com   "Bearer <token>"  200
+/// ```
+///
+/// Measured 2026-08-03 on canva, cloudflare and postman, all three with hours
+/// left on the credential. Without this, those keep failing until each one's
+/// next renewal happens to rewrite the entry — up to an hour of an agent that
+/// reports "unauthorized" about a perfectly good token.
+///
+/// Only the scheme is touched, and only when it is bearer: the token itself is
+/// never rewritten, and a server using DPoP or something of its own keeps its
+/// spelling.
+String _normalizeAuth(String key, String value) {
+  if (key.toLowerCase() != 'authorization') return value;
+  final space = value.indexOf(' ');
+  if (space <= 0) return value;
+  final scheme = value.substring(0, space);
+  if (scheme.toLowerCase() != 'bearer' || scheme == 'Bearer') return value;
+  return 'Bearer${value.substring(space)}';
 }
 
 /// Who obtained a token, and therefore who can renew it.
