@@ -83,6 +83,56 @@ class CodexMcpConfig {
     });
   }
 
+  /// Every `mcp_servers` entry, values left opaque.
+  ///
+  /// For the projection layer, which needs to see exactly what is on disk — the
+  /// not-ours guard compares against raw entries, and a normalised view would
+  /// report a server the app must not touch in the same shape as one it wrote.
+  Future<Map<String, Object?>> readRaw() async {
+    try {
+      final servers = (await _document())[_section];
+      if (servers is! Map) return const {};
+      return {for (final key in servers.keys) '$key': servers[key]};
+    } on Object {
+      return const {};
+    }
+  }
+
+  /// Apply a batch of upserts and removals in **one** read-modify-write.
+  ///
+  /// One pass, not a loop over [upsert] and [remove]: every write re-encodes the
+  /// whole document and copies a `.bak`, so N calls would mean N rewrites of the
+  /// user's file — and N chances for a crash to land between two of them.
+  ///
+  /// Each upsert merges like [upsert] does, preserving keys this app does not
+  /// model.
+  Future<void> applyEntries({
+    required Map<String, Object?> upsert,
+    required Set<String> remove,
+  }) async {
+    if (upsert.isEmpty && remove.isEmpty) return;
+    await _edit((root) {
+      final servers = _childMap(root, _section);
+      for (final name in remove) {
+        servers.remove(name);
+      }
+      for (final entry in upsert.entries) {
+        final existing = servers[entry.key];
+        final table = existing is Map
+            ? Map<String, dynamic>.from(existing)
+            : <String, dynamic>{};
+        table.removeWhere((key, _) => _ownedKeys.contains(key));
+        final value = entry.value;
+        if (value is Map) {
+          table.addAll({
+            for (final field in value.entries) '${field.key}': field.value,
+          });
+        }
+        servers[entry.key] = table;
+      }
+    });
+  }
+
   /// Remove the server named [name]; a no-op when it isn't there.
   ///
   /// A no-op is not merely tolerated, it is required: without the guard, every

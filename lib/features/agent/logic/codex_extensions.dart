@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/codex_mcp_service.dart';
+import '../../../infrastructure/logging/app_log.dart';
+import '../../../infrastructure/mcp/connector_bridge_provider.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_extensions.dart';
@@ -10,6 +12,7 @@ import '../../agents/logic/mcp_server.dart';
 import '../../agents/logic/skill_writer.dart';
 import '../../skills/logic/skill_author.dart';
 import 'agent_skill_installer.dart';
+import 'codex_connector_servers.dart';
 import 'codex_mcp_config.dart';
 import 'codex_tool.dart';
 import 'hermes_skill_scanner.dart';
@@ -30,9 +33,11 @@ class CodexExtensions implements AgentExtensions {
     required SkillAuthor author,
     required AgentSkillInstaller installer,
     required CodexMcpConfig mcpConfig,
+    required CodexConnectorServers connectorServers,
     CodexMcpService? mcpService,
+    AppLog? log,
   }) : skills = _CodexSkillsPlane(scanner, author, installer),
-       mcp = _CodexMcpPlane(mcpConfig, mcpService);
+       mcp = _CodexMcpPlane(mcpConfig, mcpService, connectorServers, log);
 
   @override
   AgentTool get tool => AgentTool.codex;
@@ -93,9 +98,14 @@ class _CodexSkillsPlane implements AgentSkillsPlane {
 }
 
 class _CodexMcpPlane implements AgentMcpPlane {
-  _CodexMcpPlane(this._config, this._service);
+  _CodexMcpPlane(this._config, this._service, this._servers, this._log);
 
   final CodexMcpConfig _config;
+  final CodexConnectorServers _servers;
+
+  /// Nullable so tests construct this without one, and so a projection can never
+  /// fail for want of a logger.
+  final AppLog? _log;
 
   /// Codex's own `codex mcp list --json`, or null when the binary isn't there.
   final CodexMcpService? _service;
@@ -167,41 +177,54 @@ class _CodexMcpPlane implements AgentMcpPlane {
     await upsert(server);
   }
 
-  /// Empty — this app has never written a connector projection into Codex.
-  ///
-  /// The set answers "which entries did *we* write from a token", and its
-  /// callers use it to avoid adopting a projection as a hand-typed server. With
-  /// [projectConnectorTokens] null there are no such entries, so every server in
-  /// Codex's config is genuinely the user's and the empty set is the true
-  /// answer, not a stub.
   @override
-  Future<Set<String>> connectorEntries() async => const {};
+  Future<Set<String>> connectorEntries() => _servers.owned();
 
-  /// Null — connector tokens are not projected into Codex yet, on purpose.
+  /// Write the connector's *address* into Codex's config — never its credential.
   ///
-  /// Two separate reasons, either one sufficient:
+  /// Only half of what the Hermes plane does, because Codex only needs half.
+  /// Hermes gets a credential file plus a config entry; here there is no
+  /// credential to place. A REST connector is reached through the app's own
+  /// bridge, which attaches the token per call from the master store, and an
+  /// MCP connector that would need a header is skipped rather than written
+  /// insecurely ([CodexConnectorServers.entryFor]).
   ///
-  /// 1. **Codex's remote-MCP shape is unverified here.** Every connector is
-  ///    HTTP, and nothing on this machine demonstrates how Codex expects a
-  ///    remote server to be declared — the one real `config.toml` holds two
-  ///    stdio servers and no `url` anywhere, and the binary is the ChatGPT app
-  ///    bundle rather than a CLI that could be asked. Writing a guessed shape
-  ///    produces a row the screen calls Connected and an agent that never had
-  ///    the tools, which is the precise failure `_ensureMcpRuntime` exists to
-  ///    prevent on the Hermes side.
-  /// 2. **It would be D17 a second time.** That debt is a live credential in
-  ///    `~/.hermes/config.yaml` — a file the user edits by hand, with a `.bak`
-  ///    beside it. Codex's `config.toml` is the same kind of file, and this one
-  ///    is shared with the ChatGPT desktop app. Repeating the shape before the
-  ///    first instance is paid back would double a known violation of rule 5
-  ///    rather than contain it.
-  ///
-  /// Null is not a gap in the screen: the Connectors screen reads it and says
-  /// the agent doesn't support connectors, instead of promising a tool Codex
-  /// could not call. Skills and hand-configured MCP servers work fully.
+  /// So this is the one projection in the app that cannot leak a secret: the
+  /// worst it can write is a URL.
   @override
   Future<void> Function(List<ConnectorToken> tokens, {Set<String> removing})?
-  get projectConnectorTokens => null;
+  get projectConnectorTokens => (tokens, {removing = const {}}) async {
+    try {
+      await _servers.project(tokens, removing: removing);
+      final after = await _servers.owned();
+      // Named, not derived from a count difference. A connector with no
+      // projectable address — a REST one before the bridge binds, or an MCP one
+      // whose entry carries headers — is deliberately absent, so "3 tokens in,
+      // 1 entry out" is a correct outcome rather than a bug. The same reading
+      // mistake was made once on the Hermes log.
+      final skipped = {
+        for (final token in tokens)
+          if (!after.contains(token.connector)) token.connector,
+      };
+      _log?.info(
+        'connectors',
+        'Codex projection: ${tokens.length} token(s), '
+            'removing [${removing.join(', ')}] → config owns '
+            '${after.length} [${after.join(', ')}]'
+            '${skipped.isEmpty ? '' : ', not projectable [${skipped.join(', ')}]'}',
+      );
+    } on Object catch (error, stack) {
+      _log?.failure(
+        'connectors',
+        'Codex projection failed',
+        error: error,
+        stackTrace: stack,
+      );
+      throw AgentExtensionException(
+        "Couldn't hand the connector addresses to Codex: $error",
+      );
+    }
+  };
 }
 
 /// The MCP config seam. A plain provider so tests can point it at a temp home,
@@ -219,6 +242,19 @@ final codexMcpServiceProvider = Provider<CodexMcpService?>((ref) {
   return path == null ? null : CodexMcpServiceImpl(path);
 });
 
+/// The connector projection into Codex's config.
+///
+/// Handed the bridge's endpoint resolver rather than the bridge itself, exactly
+/// as `hermesConnectorServersProvider` is: the projection's only question is
+/// "what URL, if any, serves this connector right now", and null is an answer it
+/// already handles.
+final codexConnectorServersProvider = Provider<CodexConnectorServers>(
+  (ref) => CodexConnectorServers(
+    config: ref.watch(codexMcpConfigProvider),
+    bridgeEndpointFor: ref.read(connectorBridgeProvider).endpointFor,
+  ),
+);
+
 /// Codex's extension adapter. Always present — both planes are file-based and
 /// outlive the binary, with the CLI used to sharpen the MCP read when it is
 /// there.
@@ -228,6 +264,8 @@ final codexExtensionsProvider = Provider<AgentExtensions?>((ref) {
     author: ref.watch(skillAuthorProvider),
     installer: ref.watch(agentSkillInstallerProvider),
     mcpConfig: ref.watch(codexMcpConfigProvider),
+    connectorServers: ref.watch(codexConnectorServersProvider),
     mcpService: ref.watch(codexMcpServiceProvider),
+    log: ref.watch(appLogProvider),
   );
 });

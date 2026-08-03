@@ -62,13 +62,15 @@ void main() {
       expect(adapter.plugins, isNull);
     });
 
-    test('codex does not project connector tokens', () {
+    test('codex projects connector addresses', () {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       final mcp = c.read(agentExtensionsProvider(AgentTool.codex))!.mcp!;
-      // Deliberate, and load-bearing: a non-null here would write a credential
-      // into `~/.codex/config.toml` in a shape nothing has verified Codex reads.
-      expect(mcp.projectConnectorTokens, isNull);
+      // Non-null since D29. What it writes is an address and never a
+      // credential — a REST connector goes through the app's bridge, and an MCP
+      // one whose entry needs a header is skipped rather than written insecurely
+      // (`CodexConnectorServers.entryFor`).
+      expect(mcp.projectConnectorTokens, isNotNull);
     });
 
     test('claude still has no adapter', () {

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'connector_runtime.dart';
 import 'connector_token.dart';
 import 'rest_entry.dart';
@@ -74,6 +77,97 @@ class InEntryMarker implements MarkerStrategy {
     required Set<String> added,
     required Set<String> removed,
   }) async {}
+}
+
+/// Ownership recorded in a file beside the store, for an agent that will not
+/// keep an unknown key.
+///
+/// **Measured, not assumed** (2026-08-03, `codex-cli 0.146.0-alpha.3.1`): a
+/// `config.toml` holding
+///
+/// ```toml
+/// [mcp_servers.marked]
+/// url = "http://127.0.0.1:61755/c/gmail/mcp"
+///
+/// [mcp_servers.marked._grid]
+/// connector = "gmail"
+/// ```
+///
+/// loses the whole `_grid` table the next time `codex mcp add` runs for a
+/// **different** server. Nothing warns; the entry simply comes back without it.
+/// That is the exact failure [MarkerStrategy] was split to avoid: an entry that
+/// loses its marker stops being recognised as ours, and
+/// `ConnectorsController._projectManual` then adopts it into the manual store —
+/// copying a credential into a second file and resurrecting a connector the user
+/// disconnected.
+///
+/// So the record lives at [file] and holds **names only, never a token**. The
+/// names are worthless on their own; the credential stays in the master store.
+class SidecarMarker implements MarkerStrategy {
+  SidecarMarker({required this.file});
+
+  /// Where the owned names are kept — `~/.grid/connectors/projections/<agent>.json`.
+  final File file;
+
+  /// Nothing goes in the entry. The agent would drop it anyway, and a marker
+  /// that is silently unreliable is worse than none: it reads as ownership right
+  /// up until the edit that erases it.
+  @override
+  Map<String, Object?>? markerFor(ConnectorToken token) => null;
+
+  /// The recorded names, **intersected with what is actually configured**.
+  ///
+  /// The intersection is the point. A sidecar can outlive the thing it
+  /// describes: a user who deletes an entry by hand, or runs `codex mcp remove`,
+  /// leaves a name behind here. Claiming to own an entry that no longer exists
+  /// would let the next projection "remove" a name that is already gone and,
+  /// worse, let a *new* server the user later creates under the same name be
+  /// treated as ours and overwritten.
+  @override
+  Future<Set<String>> owned(Map<String, Object?> entries) async {
+    final recorded = await _read();
+    return {
+      for (final name in recorded)
+        if (entries.containsKey(name)) name,
+    };
+  }
+
+  @override
+  Future<void> record({
+    required Set<String> added,
+    required Set<String> removed,
+  }) async {
+    final next = (await _read())..addAll(added);
+    next.removeAll(removed);
+    try {
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode({'connectors': next.toList()..sort()}),
+        flush: true,
+      );
+    } on Object {
+      // Losing this file costs ownership of the entries it named: they stay in
+      // the config and stop being recognised as ours. That is the safe
+      // direction — the app under-claims rather than over-claims — so it is not
+      // worth failing a projection that already succeeded.
+    }
+  }
+
+  Future<Set<String>> _read() async {
+    try {
+      if (!await file.exists()) return <String>{};
+      final decoded = jsonDecode(await file.readAsString());
+      final list = decoded is Map ? decoded['connectors'] : null;
+      if (list is! List) return <String>{};
+      return {
+        for (final name in list)
+          if (name is String && name.isNotEmpty) name,
+      };
+    } on Object {
+      // Unreadable reads as "we own nothing", which leaves every entry alone.
+      return <String>{};
+    }
+  }
 }
 
 /// The projection policy every agent shares, with rendering left to each.
