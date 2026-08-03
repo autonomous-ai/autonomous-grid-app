@@ -248,6 +248,38 @@ AgentActivity _step(String id, AgentActivityStatus status) => AgentActivity(
   status: status,
 );
 
+const _fullAccessOptions = [
+  (optionId: 'allow_once', kind: 'allow_once'),
+  (optionId: 'deny', kind: 'reject_once'),
+];
+
+/// One more pass over the file being debugged, as Full access hands it over.
+AgentPermission _editCache(int id) => AgentPermission(
+  id: id,
+  kind: AgentPermissionKind.edit,
+  summary: 'Change this file',
+  path: '/repo/plugins/cache.js',
+  options: _fullAccessOptions,
+);
+
+/// A different check each time — the work a debug round does between two edits.
+AgentPermission _runTest(int id) => AgentPermission(
+  id: id,
+  kind: AgentPermissionKind.command,
+  summary: 'Run this on your computer',
+  command: 'node -e "check $id"',
+  options: _fullAccessOptions,
+);
+
+/// The very same check, over and over: a run going nowhere.
+AgentPermission _runSameTest(int id) => AgentPermission(
+  id: id,
+  kind: AgentPermissionKind.command,
+  summary: 'Run this on your computer',
+  command: 'npm test',
+  options: _fullAccessOptions,
+);
+
 void main() {
   late Directory tmp;
   setUp(() async {
@@ -328,6 +360,68 @@ void main() {
       expect(updates.whereType<ChatSendSuccess>(), isEmpty);
       // Nothing left pinned waiting for an answer nobody will give.
       expect(container.read(agentPermissionProvider), isNull);
+    },
+  );
+
+  test('a debug round under Full access — change a file, run a test, change it '
+      'again — is not a loop: the command between two edits is the progress that '
+      'resets the count', () async {
+    final service = _FakeAcp.single([
+      HermesAcpEdit(_editCache(1)),
+      HermesAcpEdit(_editCache(2)),
+      HermesAcpEdit(_editCache(3)),
+      HermesAcpCommand(_runTest(4)),
+      HermesAcpEdit(_editCache(5)),
+      HermesAcpCommand(_runTest(6)),
+      HermesAcpEdit(_editCache(7)),
+      HermesAcpEdit(_editCache(8)),
+      const HermesAcpMessage('X-Cache was undefined: onSend never set it.'),
+    ]);
+    final container = _container(service, tmp);
+
+    final updates = await container
+        .read(hermesChatSenderProvider)
+        .send(
+          network: _credential(),
+          model: 'qwen/qwen3.6-27b',
+          history: _history('why is X-Cache undefined?'),
+        )
+        .toList();
+
+    expect(updates.last, isA<ChatSendSuccess>());
+    expect(
+      (updates.last as ChatSendSuccess).reply.text,
+      'X-Cache was undefined: onSend never set it.',
+    );
+    expect(updates.whereType<ChatSendFailure>(), isEmpty);
+  });
+
+  test(
+    'a turn stuck rerunning one command under Full access is stopped too — the '
+    'commands it approved without asking used to be invisible to the watch',
+    () async {
+      final service = _FakeAcp.single([
+        for (var i = 0; i < kMaxRepeatsPerTarget; i++)
+          HermesAcpCommand(_runSameTest(i)),
+        // Never reached: the turn is over when the fourth pass lands.
+        const HermesAcpMessage('should never be shown'),
+      ]);
+      final container = _container(service, tmp);
+
+      final updates = await container
+          .read(hermesChatSenderProvider)
+          .send(
+            network: _credential(),
+            model: 'auto',
+            history: _history('fix the failing test'),
+          )
+          .toList();
+
+      expect(updates.last, isA<ChatSendFailure>());
+      expect(
+        (updates.last as ChatSendFailure).error,
+        agentLoopingMessage('npm test'),
+      );
     },
   );
 

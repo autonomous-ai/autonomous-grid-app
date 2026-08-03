@@ -43,6 +43,19 @@ class HermesAcpEdit extends HermesAcpEvent {
   final AgentPermission request;
 }
 
+/// The agent ran a command without the user being asked — Full access let it
+/// through. Nothing to undo and nothing to draw (the activity feed already shows
+/// the step); it exists so the turn still *sees* the command.
+///
+/// Without it, everything the agent did between two edits was invisible to the
+/// loop watch, which counts consecutive repeats of one target: a debug round of
+/// edit → run → edit → run read as four edits in a row and was stopped as a loop
+/// 18 minutes in, while the agent was making progress.
+class HermesAcpCommand extends HermesAcpEvent {
+  const HermesAcpCommand(this.request);
+  final AgentPermission request;
+}
+
 /// The pages a web look-up turned up, parsed from a `web_search` tool result.
 /// The chat collects these across the turn and shows them as citations under
 /// the answer, so a reply built from the web says where it came from.
@@ -554,15 +567,19 @@ class _HermesAcpSession implements HermesAcpSession {
     switch (decision) {
       case HermesAllow(:final optionId):
         answerPermission(id, optionId);
-        // Full access approved an edit without asking — still surface it so the
-        // change can be recorded for undo. Reads are nothing to undo.
-        if (toolKind == 'edit') {
-          final request = parseAgentPermission(id: id, params: params);
-          final events = _events;
-          if (request != null && events != null && !events.isClosed) {
-            events.add(HermesAcpEdit(request));
-          }
-        }
+        // Full access approved without asking — still surface what it approved:
+        // an edit so the change can be recorded for undo, a command so the turn
+        // knows work happened between two edits (see [HermesAcpCommand]). A safe
+        // read is neither: nothing to undo, and nothing to be stuck on.
+        if (toolKind != 'edit' && toolKind != 'execute') return;
+        final request = parseAgentPermission(id: id, params: params);
+        final events = _events;
+        if (request == null || events == null || events.isClosed) return;
+        events.add(
+          toolKind == 'edit'
+              ? HermesAcpEdit(request)
+              : HermesAcpCommand(request),
+        );
       case HermesRefuse(:final optionId):
         answerPermission(id, optionId);
         _blocked(id, label);
