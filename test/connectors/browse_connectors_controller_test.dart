@@ -171,27 +171,26 @@ void main() {
     expect(state().filters, {SmitheryFilter.smitheryManaged});
   });
 
-  test('a search narrows verified here, since the registry will not', () async {
-    // Measured 2026-08-03: `notion is:verified` returns riskmodels, mem0,
-    // thoughtbox — every row verified, not one of them Notion. So the text goes
-    // alone and the filter is applied to what comes back.
+  test('a search reaches the whole directory, shortlist set aside', () async {
+    // The plain listing is a shortlist — seventeen servers Smithery runs, out of
+    // four thousand anyone can publish to. A search is the opposite request: the
+    // user named the thing they want, and answering "email" with Gmail alone
+    // because the other matches are community-run is refusing to look.
     registry.replies = [
       _page([_server('plain'), _server('vetted', managed: true)]),
     ];
 
-    await notifier().search('notion');
+    await notifier().search('mail');
 
-    // The controller still passes the selection down; dropping the token when a
-    // search is running belongs to `SmitheryRegistryClient`, which this fake
-    // stands in for.
-    expect(state().visibleServers.map((s) => s.qualifiedName), ['vetted']);
-    // The fetched rows are untouched — clearing the search restores them.
-    expect(state().servers.length, 2);
+    expect(state().visibleServers.map((s) => s.qualifiedName), [
+      'plain',
+      'vetted',
+    ]);
+    // The selection is untouched — clearing the box restores the shortlist.
+    expect(state().filters, {SmitheryFilter.smitheryManaged});
   });
 
-  test('an unverified row is hidden whether or not a search is running', () {
-    // The narrowing does not depend on the query — it is the same local test
-    // either way, which is what makes the pill mean one thing.
+  test('the shortlist test reads the row, not the registry', () {
     const plain = SmitheryServer(qualifiedName: 'p', displayName: 'P');
     const vetted = SmitheryServer(
       qualifiedName: 'v',
@@ -200,6 +199,7 @@ void main() {
     );
     expect(SmitheryFilter.verified.keeps(plain), isFalse);
     expect(SmitheryFilter.verified.keeps(vetted), isTrue);
+    expect(SmitheryFilter.smitheryManaged.keeps(plain), isFalse);
   });
 
   test('load more appends, dedupes, and keeps the original query', () async {

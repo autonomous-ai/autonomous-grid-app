@@ -73,11 +73,18 @@ class BrowseConnectorsState {
   /// bug available in the stored version is a sort applied to page one and
   /// silently not to page two.
   List<SmitheryServer> get visibleServers {
-    // **Always narrowed here, never by the registry.** `is:verified` excludes
+    // **Narrowed here, never by the registry** — `is:verified` excludes
     // Smithery's own first-party servers, which are the four most-used rows in
-    // the directory — see [SmitheryFilter]. Read off the row instead, and the
-    // pill means what it says.
-    final rows = filters.isEmpty
+    // the directory (see [SmitheryFilter]). Read off the row instead.
+    //
+    // **And only while nobody is searching.** The plain listing is a shortlist:
+    // out of four thousand servers anyone can publish to, the seventeen Smithery
+    // runs are what a settings screen should open on. A search is the opposite
+    // request — the user has named the thing they want, and answering "email"
+    // with Gmail alone because the other matches are community-run is refusing
+    // to look. Curated by default, everything on demand, which is how a store
+    // behaves.
+    final rows = filters.isEmpty || query.isNotEmpty
         ? servers
         : [
             for (final server in servers)
