@@ -13,6 +13,7 @@ class _Facts extends StatelessWidget {
       child: Column(
         children: [
           _FactRow(label: 'Runs', value: describeJobSchedule(job.cron)),
+          _FactRow(label: 'Model', value: _model(job)),
           _FactRow(label: 'State', value: _state(status)),
           _FactRow(label: 'Next run', value: _when(job.nextRunAt, status)),
           _FactRow(label: 'Last run', value: _lastRun(job)),
@@ -20,6 +21,17 @@ class _Facts extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Which model answers this task. A task the app created is pinned to one and
+  /// says so; an older one follows whatever the computer is set to, and saying
+  /// *that* is what explains why its answers can change without the user
+  /// touching it.
+  static String _model(ScheduledJob job) {
+    final model = job.model;
+    if (model == null) return 'Whatever this computer is set to';
+    if (model == kAutoModelId) return 'Auto — the grid picks';
+    return modelDisplayLabel(model);
   }
 
   static String _state(JobStatus status) => switch (status) {

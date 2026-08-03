@@ -12,6 +12,7 @@ class ScheduledJob {
     required this.prompt,
     required this.cron,
     required this.enabled,
+    this.model,
     this.nextRunAt,
     this.lastRunAt,
     this.lastStatus,
@@ -30,6 +31,16 @@ class ScheduledJob {
 
   /// False when the user paused it: it stays in the list but doesn't run.
   final bool enabled;
+
+  /// The model this task is **pinned** to — what it will answer with whatever
+  /// the assistant is set to elsewhere. Null for a job that follows whatever
+  /// model the computer is on (Hermes's own default, and how tasks made before
+  /// the app pinned them still behave).
+  ///
+  /// Pinning is what stops Hermes's drift guard skipping a task the moment the
+  /// user changes model in Chat (#44585), so every task the app creates carries
+  /// one.
+  final String? model;
 
   final DateTime? nextRunAt;
   final DateTime? lastRunAt;
@@ -83,6 +94,7 @@ ScheduledJob? _job(Map<String, dynamic> raw) {
     prompt: prompt,
     cron: cron,
     enabled: raw['enabled'] != false,
+    model: _stringOrNull(raw['model']),
     nextRunAt: _time(raw['next_run_at']),
     lastRunAt: _time(raw['last_run_at']),
     lastStatus: _stringOrNull(raw['last_status']),

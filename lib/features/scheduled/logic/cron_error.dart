@@ -75,6 +75,26 @@ bool isNoModelConfigured(String text) {
       lower.contains('model.default missing or empty');
 }
 
+/// Whether a failed run blames the **model** the task is pinned to, rather than
+/// the task itself.
+///
+/// These are the failures another model would survive: nothing on the grid
+/// serving that id any more (the machine went off, the seat was removed), or the
+/// relay refusing to route it. A prompt that crashed a tool is not one of them —
+/// swapping the model there would hide a bug behind a model change.
+///
+/// Matched on the stable half of each phrase, since the relay and Hermes each
+/// word theirs differently and both carry the model id in the middle.
+bool isModelRunFailure(String text) {
+  final lower = text.toLowerCase();
+  return lower.contains('no providers available') ||
+      lower.contains('model not found') ||
+      lower.contains('unknown model') ||
+      lower.contains('is not serving') ||
+      lower.contains('no machine on this grid is serving') ||
+      isNoModelConfigured(lower);
+}
+
 /// Cron failures that keep failing until the user acts — they get the blunter
 /// "Won't run" status, not the hopeful "Last run failed". One predicate so the
 /// status layer and any future caller can't disagree about which errors those

@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/hermes_task_policy.dart';
-import '../../../../shared/layouts/shell_state.dart';
+import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_select_field.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../../messaging/logic/messaging_controller.dart';
-import '../../../messaging/logic/messaging_platform.dart';
+import '../../../network/logic/node_display.dart';
+import '../../../playground/logic/chat_message.dart';
+import '../../../playground/logic/playground_models.dart';
 import '../../../projects/logic/project.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/job_suggestions.dart';
 import '../../logic/scheduled_jobs_controller.dart';
+import '../../logic/task_models.dart';
 import '../../logic/task_power_controller.dart';
 import 'scheduled_pill_choice.dart';
 import 'task_power_bar.dart';
@@ -58,9 +61,9 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   late int _weekday;
   bool _saving = false;
 
-  /// Where the answer lands. Off by default: this app is where the user is
-  /// standing, and posting to Telegram before they asked would be a surprise.
-  bool _toTelegram = false;
+  /// The model the task is pinned to. Null until the grid's list has landed —
+  /// [_ModelRow] then shows what it can, and [_model] resolves the default.
+  String? _picked;
 
   @override
   void initState() {
@@ -90,10 +93,27 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     weekday: _weekday,
   );
 
-  bool get _canSave =>
+  /// The model this task will be pinned to, out of [options]: the user's pick
+  /// while it's still on offer, else the default for what the grid serves.
+  ///
+  /// Resolved from a list the build already watched rather than read from a
+  /// provider here — this is also what `Schedule it` sends, and `ref.watch`
+  /// outside `build` is not allowed.
+  String _modelIn(List<PlaygroundModelOption> options) {
+    final picked = _picked;
+    if (picked != null && options.any((option) => option.id == picked)) {
+      return picked;
+    }
+    return defaultTaskModel(options, ref.read(chatPrefsProvider).model);
+  }
+
+  /// Empty means the grid serves nothing the assistant can use — [_ModelRow]
+  /// says so, and there's nothing to pin a task to.
+  bool _canSave(String model) =>
       !_saving &&
       _name.text.trim().isNotEmpty &&
-      _prompt.text.trim().isNotEmpty;
+      _prompt.text.trim().isNotEmpty &&
+      model.isNotEmpty;
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(context: context, initialTime: _time);
@@ -116,10 +136,10 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     });
   }
 
-  /// Save it, and — when [runNow] — kick off one run immediately so the user can
-  /// see what it produces before trusting it to a schedule. Either way the new
-  /// task is opened in the pane behind the dialog.
-  Future<void> _save({bool runNow = false}) async {
+  /// Save it on [model], and — when [runNow] — kick off one run immediately so
+  /// the user can see what it produces before trusting it to a schedule. Either
+  /// way the new task is opened in the pane behind the dialog.
+  Future<void> _save(String model, {bool runNow = false}) async {
     setState(() => _saving = true);
     final result = await ref
         .read(scheduledJobsProvider.notifier)
@@ -127,9 +147,9 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
           name: _name.text.trim(),
           prompt: _prompt.text.trim(),
           schedule: _schedule,
+          model: model,
           workdir: widget.project?.path,
           projectId: widget.project?.id,
-          toTelegram: _toTelegram,
           runNow: runNow,
         );
     if (!mounted) return;
@@ -159,6 +179,10 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Watched once, here, and handed down: the row draws from it, the resolved
+    // model rides into `create`, and nothing reads a provider outside build.
+    final options = taskModelOptions(ref.watch(playgroundModelsProvider));
+    final model = _modelIn(options);
     return Dialog(
       elevation: 18,
       backgroundColor: AppCard.base,
@@ -226,11 +250,12 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                   _TimeRow(time: _time, onPick: _pickTime),
                 ],
                 const SizedBox(height: 22),
-                const _GroupLabel('Where the answer goes'),
+                const _GroupLabel('Which model runs it'),
                 const SizedBox(height: 10),
-                _DeliverRow(
-                  toTelegram: _toTelegram,
-                  onChanged: (value) => setState(() => _toTelegram = value),
+                _ModelRow(
+                  options: options,
+                  model: model,
+                  onChanged: (value) => setState(() => _picked = value),
                 ),
                 const SizedBox(height: 20),
                 _WhatItMayDo(
@@ -240,10 +265,10 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                 const SizedBox(height: 22),
                 _DialogActions(
                   saving: _saving,
-                  canSave: _canSave,
+                  canSave: _canSave(model),
                   onCancel: () => Navigator.of(context).pop(),
-                  onSave: () => _save(),
-                  onTryNow: () => _save(runNow: true),
+                  onSave: () => _save(model),
+                  onTryNow: () => _save(model, runNow: true),
                 ),
               ],
             ),

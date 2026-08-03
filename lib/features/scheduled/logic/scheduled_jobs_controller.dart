@@ -2,12 +2,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_cron_rearm.dart';
 import '../../../infrastructure/cli/hermes_cron_service.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../agent/logic/agent_providers.dart';
 import '../../agent/logic/hermes_grid_link.dart';
+import '../../network/logic/node_display.dart';
 import '../../projects/logic/project_tasks_store.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'task_delivery.dart';
+import 'task_model_fallback.dart';
 import 'task_power_controller.dart';
 
 /// Whether the thing that actually fires jobs is alive. Jobs are saved either
@@ -102,15 +105,23 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
   /// read that project's files) instead of the shared agent workspace; pass
   /// [projectId] to record which project it belongs to, so the project's rail
   /// can list it. The two go together — a project-scoped task supplies both.
+  ///
+  /// [model] is the one the user picked in the dialog, and the task is **pinned**
+  /// to it: it keeps answering with that model when the chat moves to another,
+  /// instead of being skipped unrun by Hermes's drift guard.
   Future<({String? error, String? id})> create({
     required String name,
     required String prompt,
     required JobSchedule schedule,
+    required String model,
     String? workdir,
     String? projectId,
-    bool toTelegram = false,
     bool runNow = false,
   }) async {
+    // The model has to be one Hermes can actually answer with — the picker only
+    // offers those, but this is the door every caller comes through.
+    final refusal = hermesModelRefusal(model);
+    if (refusal != null) return (error: refusal, id: null);
     // A task fires with nobody there to pick a model. Unless Hermes already has
     // one, every run would fail with a raw "no model configured", so point it
     // at the selected grid now — and refuse to save a task that could only
@@ -136,7 +147,6 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
         prompt: prompt,
         name: name,
         workdir: workdir ?? ref.read(agentWorkspaceDirProvider).path,
-        deliver: toTelegram ? kDeliverTelegram : kDeliverLocal,
       ),
     );
     if (error != null) return (error: error, id: null);
@@ -144,6 +154,14 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     final created = (state.value ?? const <ScheduledJob>[])
         .where((job) => !before.contains(job.id))
         .firstOrNull;
+    // Pin it to the model the user picked. Only possible once the job exists
+    // (`cron create` has no --model), so it's a second write — and one worth
+    // reporting: a task that silently kept following the chat's model is the
+    // drift skip all over again.
+    if (created != null) {
+      final pinned = await _pin(created.id, model);
+      if (pinned != null) return (error: pinned, id: created.id);
+    }
     // Tie the new task to its project so the project's rail shows only its own.
     if (created != null && projectId != null) {
       ref.read(projectTasksProvider.notifier).assign(created.id, projectId);
@@ -163,6 +181,11 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
   /// app changed it, by pointing Hermes at another grid or model. Re-creating the
   /// task is the only other way out and costs the user its results, so this is
   /// the one-tap path back for a task that's already stranded.
+  ///
+  /// Two shapes of task reach here: one the app pinned (re-pin it) and one from
+  /// before it did (re-arm it, which re-snapshots and leaves it unpinned). A
+  /// re-arm silently skips a pinned job, so telling them apart is what keeps the
+  /// button from reporting a success it didn't have.
   Future<String?> useCurrentModel(String id) async {
     final service = ref.read(hermesCronServiceProvider);
     if (service == null) return _noAgent;
@@ -173,9 +196,10 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     }
     // The one-tap fix must not arm the task on a model that can't run it: a
     // config left naming a CLI seat would otherwise hand the task the very
-    // model whose runs come back as raw tool-call JSON (03/08).
+    // model whose runs come back as the tool call typed out (03/08).
     final refusal = hermesModelRefusal(model);
     if (refusal != null) return refusal;
+    if (_jobById(id)?.model != null) return _pin(id, model, clearError: true);
     try {
       await service.followModel(model, onlyJobId: id);
     } on CronRearmException catch (error) {
@@ -185,6 +209,66 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     state = AsyncData(await _load());
     return null;
   }
+
+  /// Move every task whose pinned model has stopped working onto the grid's
+  /// router (`auto`), and hand back the ids moved.
+  ///
+  /// A task fires with nobody watching, so a model that has gone quiet doesn't
+  /// produce an error someone reads — it produces months of nothing. [served] is
+  /// what the grid lists right now; empty reads as "don't know", so an unloaded
+  /// list never re-points anything (see [autoFallbackTargets]).
+  ///
+  /// The swap is logged with its evidence: the app is overriding a choice the
+  /// user made, and a silent override is indistinguishable from a bug.
+  Future<List<String>> fallbackToAuto(Set<String> served) async {
+    final service = ref.read(hermesCronServiceProvider);
+    if (service == null) return const [];
+    final jobs = state.value ?? const <ScheduledJob>[];
+    final targets = autoFallbackTargets(jobs, served);
+    if (targets.isEmpty) return const [];
+
+    final log = ref.read(appLogProvider);
+    final moved = <String>[];
+    for (final job in jobs.where((job) => targets.contains(job.id))) {
+      try {
+        await service.pinModel(job.id, kAutoModelId, clearError: true);
+        moved.add(job.id);
+        log.info(
+          'tasks',
+          'switched to auto — ${autoFallbackReason(job, served)}',
+        );
+      } on CronRearmException catch (error) {
+        log.failure(
+          'tasks',
+          "couldn't switch \"${job.name}\" to auto: ${error.message}",
+        );
+      }
+    }
+    if (moved.isNotEmpty) state = AsyncData(await _load());
+    return List.unmodifiable(moved);
+  }
+
+  /// Pin [id] to [model] as a line to show rather than an exception — every
+  /// caller is a button or a sweep, and neither can catch.
+  Future<String?> _pin(
+    String id,
+    String model, {
+    bool clearError = false,
+  }) async {
+    final service = ref.read(hermesCronServiceProvider);
+    if (service == null) return _noAgent;
+    try {
+      await service.pinModel(id, model, clearError: clearError);
+    } on CronRearmException catch (error) {
+      return "Couldn't set the model this task runs on: ${error.message}";
+    }
+    state = AsyncData(await _load());
+    return null;
+  }
+
+  ScheduledJob? _jobById(String id) => (state.value ?? const <ScheduledJob>[])
+      .where((job) => job.id == id)
+      .firstOrNull;
 
   Future<String?> pause(String id) => _act((s) => s.pause(id));
 

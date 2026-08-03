@@ -7,11 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/hermes_cron_service.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import '../../network/logic/network_models_provider.dart';
 import '../../projects/logic/project_tasks_store.dart';
 import 'cron_output.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'scheduled_jobs_controller.dart';
+import 'task_model_fallback.dart';
 import 'task_unread_store.dart';
 
 /// Prefix on a task chat's id, the seam between it and the job id it carries.
@@ -164,6 +166,11 @@ class TaskDeliveryController extends Notifier<List<String>> {
         arrived.add(job.id);
       }
 
+      // A task whose model has stopped working goes to the grid's router rather
+      // than failing every morning into a file nobody reads. Done here because
+      // this is the one loop that runs whether or not the Tasks screen is open.
+      await ref.read(scheduledJobsProvider.notifier).fallbackToAuto(_served());
+
       if (arrived.isEmpty) return;
       ref.read(taskDeliveryStoreProvider).save(delivered);
       // Badge each task that just delivered, so the sidebar and the Scheduled
@@ -178,6 +185,16 @@ class TaskDeliveryController extends Notifier<List<String>> {
       _sweeping = false;
     }
   }
+
+  /// What the open grid is serving, as far as the app already knows.
+  ///
+  /// Read, never fetched: this runs every 30 seconds, and a relay call on that
+  /// clock would be a poll nobody asked for. An answer that hasn't loaded comes
+  /// back empty, which [autoFallbackTargets] reads as "don't know" rather than
+  /// as "every model is gone".
+  Set<String> _served() =>
+      (ref.read(networkModelsProvider).asData?.value ?? const <String>[])
+          .toSet();
 
   /// Deliver [job]'s results newer than [since] into its chat, homing it under
   /// [projectId] when the task belongs to a project. Returns the time of the

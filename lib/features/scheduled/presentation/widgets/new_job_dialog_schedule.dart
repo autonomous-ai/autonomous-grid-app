@@ -1,65 +1,57 @@
 part of 'new_job_dialog.dart';
 
-/// Where the answer lands when the task has run.
+/// Which model the task answers with — pinned to it, so it keeps running on
+/// what was picked here when the chat moves to another one.
 ///
-/// Telegram is only offered once a bot is actually connected — an option that
-/// silently does nothing is worse than no option at all. The row says why it's
-/// out of reach, and where to fix that.
-class _DeliverRow extends ConsumerWidget {
-  const _DeliverRow({required this.toTelegram, required this.onChanged});
+/// Only models the assistant can actually answer with are offered (a Claude or
+/// Codex seat is another vendor's CLI behind the relay, and a task pointed at
+/// one comes back with the tool call typed out instead of a report). `auto` sits
+/// at the top as the grid's own router: it picks a model per run, so it survives
+/// one machine going off.
+class _ModelRow extends StatelessWidget {
+  const _ModelRow({
+    required this.options,
+    required this.model,
+    required this.onChanged,
+  });
 
-  final bool toTelegram;
-  final ValueChanged<bool> onChanged;
+  /// What this grid serves that a task could run on — resolved by the dialog's
+  /// own build, so the row and the model the task is saved with can't disagree.
+  final List<PlaygroundModelOption> options;
+
+  final String model;
+  final ValueChanged<String> onChanged;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final connected =
-        ref.watch(messagingProvider(MessagingPlatform.schedulerDelivery)).value
-            is MessagingConnected;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Send the answer to',
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: AppFont.medium,
-            color: AppPalette.textSecondary,
+  Widget build(BuildContext context) {
+    if (options.isEmpty) {
+      return Text(
+        "This grid isn't sharing a model the assistant can use yet, so a task "
+        'would have nothing to answer with.',
+        style: TextStyle(
+          fontSize: 12.5,
+          height: 1.35,
+          color: AppPalette.textSecondary,
+        ),
+      );
+    }
+    return AppSelectField<String>(
+      label: 'Which model runs it',
+      showLabel: false,
+      value: model,
+      options: [
+        for (final option in options)
+          AppSelectOption(
+            value: option.id,
+            label: option.id == kAutoModelId
+                ? 'Auto — the grid picks'
+                : modelDisplayLabel(option.id),
+            detail: option.id == kAutoModelId
+                ? 'Keeps working when one machine goes off'
+                : null,
           ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ScheduledPillChoice(
-              label: const Text('This app'),
-              selected: !toTelegram,
-              onTap: () => onChanged(false),
-            ),
-            Tooltip(
-              message: connected
-                  ? 'Your Telegram chat with the bot'
-                  : 'Connect a Telegram bot first (account menu ▸ Messages)',
-              child: ScheduledPillChoice(
-                label: Text(
-                  'Telegram',
-                  style: TextStyle(
-                    color: connected ? null : AppPalette.textFaint,
-                  ),
-                ),
-                selected: toTelegram,
-                onTap: () => connected
-                    ? onChanged(true)
-                    : ref
-                          .read(shellSectionProvider.notifier)
-                          .select(ShellSection.messages),
-              ),
-            ),
-          ],
-        ),
       ],
+      onChanged: onChanged,
     );
   }
 }
