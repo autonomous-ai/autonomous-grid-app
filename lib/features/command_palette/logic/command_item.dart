@@ -86,14 +86,32 @@ class GoToCommand extends CommandItem {
 
 /// A titled run of items, as the palette draws them.
 class CommandGroup {
-  const CommandGroup(this.label, this.items);
+  CommandGroup(this.label, this.items, {int? matched})
+    : matched = matched ?? items.length;
+
   final String label;
   final List<CommandItem> items;
+
+  /// How many matched in total, when [items] is only the first of them — the
+  /// group's heading says so, because a list that quietly stops at eight reads
+  /// as "that's all there is".
+  final int matched;
+
+  /// Whether matches were left out of [items].
+  bool get isCapped => matched > items.length;
 }
 
 /// The most recent chats offered when the palette opens with nothing typed —
 /// enough to reach yesterday's work, not so many the list becomes a scroll.
 const int kRecentChatCount = 6;
+
+/// How many matches per group a search shows.
+///
+/// The palette measures itself against its rows, so every match it returns is
+/// one it also lays out — on every keystroke. Eight is more than the panel shows
+/// at once and more than ⌘1…⌘9 can reach; past that the answer is a narrower
+/// query, not a longer list. The heading says how many were left out.
+const int kMaxMatchesPerGroup = 8;
 
 /// What the palette shows for [query].
 ///
@@ -150,7 +168,12 @@ List<CommandGroup> searchCommands({
       ('Scheduled', _rank(taskItems, q)),
       ('Commands', _rank(commands, q)),
     ])
-      if (group.$2.isNotEmpty) CommandGroup(group.$1, group.$2),
+      if (group.$2.isNotEmpty)
+        CommandGroup(
+          group.$1,
+          group.$2.take(kMaxMatchesPerGroup).toList(),
+          matched: group.$2.length,
+        ),
   ];
 }
 

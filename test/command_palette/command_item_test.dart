@@ -145,4 +145,31 @@ void main() {
     expect(items.first.label, 'Holiday plan');
     expect(items[1], isA<NewChatCommand>());
   });
+
+  test('a search over a long history shows the best few and says how many more '
+      'there are — the panel lays out every row it is given, on every '
+      'keystroke', () {
+    final groups = search(
+      'note',
+      chats: [for (var i = 0; i < 40; i++) _chat('$i', 'Notes $i')],
+    );
+
+    final chats = groups.single;
+    expect(chats.items, hasLength(kMaxMatchesPerGroup));
+    expect(chats.matched, 40);
+    expect(chats.isCapped, isTrue, reason: 'the heading has to say so');
+  });
+
+  test(
+    'a search that fits shows every match and claims nothing was left out',
+    () {
+      final groups = search(
+        'note',
+        chats: [for (var i = 0; i < 3; i++) _chat('$i', 'Notes $i')],
+      );
+
+      expect(groups.single.items, hasLength(3));
+      expect(groups.single.isCapped, isFalse);
+    },
+  );
 }

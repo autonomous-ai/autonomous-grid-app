@@ -33,6 +33,12 @@ class ChatHistoryList extends ConsumerStatefulWidget {
   ConsumerState<ChatHistoryList> createState() => _ChatHistoryListState();
 }
 
+/// The rail's own inset. The scrollbar rides in a 6px gutter at its edge, so the
+/// rows are inset a matching amount on the right (10 base + 6 gutter) and their
+/// content — and the "+" button — never runs under the thumb. Codex keeps exactly
+/// this clear gap between the list and its scrollbar.
+const _railPadding = EdgeInsets.only(left: 10, right: 16);
+
 class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
   // The list and its scrollbar have to share one controller, or the desktop
   // scroll behaviour mounts a *second*, uncontrolled bar over the top.
@@ -53,6 +59,10 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
     final conversations = ref.watch(
       chatSessionsProvider.select((s) => s.conversations),
     );
+    // The saved chats are read off the first frame, so an empty list is two
+    // different facts — nothing saved, or nothing read *yet*. Only the first of
+    // them may be told to the user.
+    final loading = ref.watch(chatSessionsProvider.select((s) => s.loading));
     final projects = ref.watch(sortedProjectsProvider);
     // Live only: an archived chat is hidden from the rail until the user brings
     // it back from Settings › Archived.
@@ -63,45 +73,60 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
         if (c.projectId == null || !projects.any((p) => p.id == c.projectId)) c,
     ];
 
-    // The scrollbar rides in a 6px gutter at the rail's edge; the rows are
-    // inset a matching amount on the right (10 base + 6 gutter) so their content
-    // — and the "+" button — never runs under the thumb. Codex keeps exactly
-    // this clear gap between the list and its scrollbar.
     return Scrollbar(
       controller: _scrollController,
-      child: ListView(
+      child: CustomScrollView(
         controller: _scrollController,
-        padding: const EdgeInsets.only(left: 10, right: 16),
-        children: [
-          _ProjectsHeader(
-            onAdd: () => showCreateProjectDialog(context),
-            onManage: () => ref
-                .read(shellSectionProvider.notifier)
-                .select(ShellSection.projects),
+        slivers: [
+          SliverPadding(
+            padding: _railPadding,
+            sliver: SliverList.list(
+              children: [
+                _ProjectsHeader(
+                  onAdd: () => showCreateProjectDialog(context),
+                  onManage: () => ref
+                      .read(shellSectionProvider.notifier)
+                      .select(ShellSection.projects),
+                ),
+                if (projects.isEmpty)
+                  const _AddFirstProjectHint()
+                else
+                  for (final project in projects)
+                    _ProjectGroup(
+                      project: project,
+                      chats: [
+                        for (final c in matches)
+                          if (c.projectId == project.id) c,
+                      ],
+                    ),
+                const SidebarSectionLabel(label: 'Chats'),
+                // Nothing yet, and nothing to say about it — the history is
+                // still being read, and "there are none" would be a guess.
+                if (loose.isEmpty && loading)
+                  const SizedBox.shrink()
+                else if (loose.isEmpty)
+                  const _Hint(
+                    text: 'Chats outside a project show up here.',
+                    indented: true,
+                  ),
+              ],
+            ),
           ),
-          if (projects.isEmpty)
-            const _AddFirstProjectHint()
-          else
-            for (final project in projects)
-              _ProjectGroup(
-                project: project,
-                chats: [
-                  for (final c in matches)
-                    if (c.projectId == project.id) c,
-                ],
-              ),
-          const SidebarSectionLabel(label: 'Chats'),
-          if (loose.isEmpty)
-            const _Hint(
-              text: 'Chats outside a project show up here.',
-              indented: true,
-            )
-          else
-            // Indented like a project's chats so every conversation's title sits
-            // in the same column, whether or not it belongs to a project — the
-            // "Chats" and "Projects" labels stay at the outer edge, their contents
-            // line up one step in.
-            for (final chat in loose) _ChatRow(chat: chat, indented: true),
+          // The loose chats are the one part of this rail that grows without a
+          // ceiling — a year of chats is a year of rows — so they're built as
+          // they're scrolled to rather than all at once on every change to the
+          // list. Indented like a project's chats so every conversation's title
+          // sits in the same column, whether or not it belongs to a project: the
+          // "Chats" and "Projects" labels stay at the outer edge, their contents
+          // line up one step in.
+          SliverPadding(
+            padding: _railPadding,
+            sliver: SliverList.builder(
+              itemCount: loose.length,
+              itemBuilder: (_, index) =>
+                  _ChatRow(chat: loose[index], indented: true),
+            ),
+          ),
         ],
       ),
     );
