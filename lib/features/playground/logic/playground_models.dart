@@ -5,6 +5,7 @@ import '../../network/logic/grid_overview_provider.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../network/logic/node_display.dart';
+import 'chat_message.dart';
 import 'playground_request.dart';
 
 /// One selectable option in the Playground model picker: a text model to chat
@@ -170,7 +171,10 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
       if (mediaCapabilityLabel(model.id) == null)
         PlaygroundModelOption(
           id: model.id,
-          label: model.id,
+          // The id is what a request carries; the row shows its readable form,
+          // so a seat model sits in the list as `claude/opus-5` beside
+          // `qwen/qwen3.6-27b` instead of as the relay's `claude:claude-opus-5`.
+          label: modelDisplayLabel(model.id),
           modality: modalityFromString(model.modality),
           hosting: modelKey(model.id) == kAutoModelId
               ? ModelHosting.routed

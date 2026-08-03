@@ -111,16 +111,50 @@ String formatTurnDuration(Duration took) {
 /// Two digits, so `3m 05s` lines up with `3m 55s` instead of jumping a column.
 String _pad(int value) => value.toString().padLeft(2, '0');
 
+/// A model id as a person reads it — maker and model, punctuated the way every
+/// other model on a grid already is (`qwen/qwen3.6-27b`).
+///
+/// A seat model reaches the app in the relay's own form, `kind:model`, with the
+/// vendor's name usually sitting in both halves: `claude:claude-opus-5` said
+/// "claude" twice and read as a config string rather than as Opus. This gives
+/// `claude/opus-5`, and `codex-cli:gpt-5.6-terra` → `codex-cli/gpt-5.6-terra`.
+///
+/// Display only — the id itself is what a request carries, so this never goes on
+/// the wire. Anything without a kind (a grid model, `auto`, the media modes)
+/// comes back trimmed and otherwise untouched.
+String modelDisplayLabel(String id) {
+  final trimmed = id.trim();
+  final colon = trimmed.indexOf(':');
+  if (colon <= 0) return trimmed;
+  final kind = trimmed.substring(0, colon);
+  final name = _withoutRepeatedKind(trimmed.substring(colon + 1).trim(), kind);
+  if (name.isEmpty) return trimmed;
+  return '$kind/$name';
+}
+
+/// `claude-opus-5` served under the `claude` kind → `opus-5`. A name that
+/// doesn't repeat its kind (`gpt-5.5` under `codex-cli`) is left whole, so
+/// nothing a vendor actually named is trimmed away.
+String _withoutRepeatedKind(String name, String kind) {
+  final prefix = '$kind-';
+  if (!name.toLowerCase().startsWith(prefix.toLowerCase())) return name;
+  return name.substring(prefix.length);
+}
+
 /// A model id as the transcript shows it: the bare model name, dropping any
 /// `maker/` prefix (`qwen/qwen3.6-27b` → `qwen3.6-27b`).
+///
+/// Reads the display form ([modelDisplayLabel]), so a seat model shortens the
+/// same way its row in the picker does — `claude:claude-opus-5` → `opus-5`,
+/// rather than the whole relay id for want of a slash.
 ///
 /// Trimmed; an id that is blank or only a maker prefix comes back as given
 /// rather than as an empty string.
 String modelShortLabel(String id) {
-  final trimmed = id.trim();
-  final slash = trimmed.lastIndexOf('/');
-  if (slash == -1 || slash == trimmed.length - 1) return trimmed;
-  return trimmed.substring(slash + 1);
+  final display = modelDisplayLabel(id);
+  final slash = display.lastIndexOf('/');
+  if (slash == -1 || slash == display.length - 1) return display;
+  return display.substring(slash + 1);
 }
 
 /// What the controller is doing right now — modelled as a sealed hierarchy so
