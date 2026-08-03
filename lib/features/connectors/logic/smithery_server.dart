@@ -1,21 +1,17 @@
-/// A narrowing the **registry** applies, as a token inside the search string.
+/// A narrowing this app applies to the rows the registry returned.
 ///
-/// Server-side on purpose. The alternative — fetch everything and filter here —
-/// cannot work against a directory that caps browsing at 500 rows: filtering
-/// locally would search only the 500 already seen, while a token narrows the
-/// whole 4,078 before the cap applies. `is:remote is:verified` is 199 rows, all
-/// of them reachable; the same filter applied to a fetched page would show a
-/// handful and claim that was all there is.
+/// **Not a registry token, and that is a correction.** `is:verified` looked like
+/// the right thing to send and is not: measured 2026-08-03 it answers 50/50
+/// `verified` but **0/50 `bySmithery`**, so it means "vouched for *and not ours*"
+/// and deliberately excludes Smithery's own first-party servers — which are
+/// exactly the ones people recognise. `jina` (76,715), `googlesheets` (63,663),
+/// `gmail` (60,499) and `brave` (60,204) are all `verified: true` and all absent
+/// from the first 200 results of `is:verified`. Sent as a token, the filter hid
+/// the best of the directory; read off the row, it does what it says.
 ///
-/// Counts measured 2026-08-03 against the live registry.
-///
-/// **Only tokens that were verified to actually work belong here.**
-/// `owner:smithery` was written, measured and removed in the same sitting: it
-/// reports 100 results whose rows come back `bySmithery: false`, and only 2 in
-/// 10 `remote: true` even when combined with `is:remote`. A filter the registry
-/// answers with the wrong rows is worse than no filter, because the user cannot
-/// tell. Check any new token against the *fields of the rows it returns*, not
-/// against the fact that the count changed.
+/// Same lesson as `owner:smithery`, which was written and deleted the same way:
+/// **check a token against the fields of the rows it returns**, never against
+/// the fact that the count changed.
 enum SmitheryFilter {
   /// Smithery vouches for it — 199 of the 4,078 remote entries.
   ///
@@ -24,15 +20,17 @@ enum SmitheryFilter {
   /// registry's own answer to which rows it stands behind. Measured as honest —
   /// `is:remote is:verified` returns rows that are 10/10 remote and 10/10
   /// verified.
-  verified('is:verified', 'Verified');
+  verified('Verified');
 
-  const SmitheryFilter(this.token, this.label);
-
-  /// The registry's own search token.
-  final String token;
+  const SmitheryFilter(this.label);
 
   /// What the pill says.
   final String label;
+
+  /// Whether [server] passes this narrowing.
+  bool keeps(SmitheryServer server) => switch (this) {
+    SmitheryFilter.verified => server.verified,
+  };
 }
 
 /// How the fetched rows are ordered.
@@ -43,11 +41,16 @@ enum SmitheryFilter {
 /// an honest limit rather than a broken feature, but it does mean sorting by
 /// name reaches further as the user loads more.
 ///
-/// **[relevance] is the default, and it is the only one that appends cleanly.**
-/// The other two reorder the *whole* accumulated list, so a popular row arriving
-/// on page three jumps to the top and shifts everything the user was reading —
-/// on a list that pages as you scroll, that is the jolt the paging was meant to
-/// avoid. Registry order only ever grows at the end.
+/// **[mostUsed] is the default.** [relevance] was, and it reads as arbitrary:
+/// the registry's order is not by anything the screen shows, so a 5,000-use
+/// server sits above a 60,000-use one for reasons nobody can see. Measured, the
+/// unfiltered first page runs Exa (12k), Agent News (39k), Keenable (10k) — up
+/// and down with no pattern a user can follow.
+///
+/// The cost, and it is real: the other two orders reshuffle the *whole*
+/// accumulated list, so a popular row arriving on page three jumps to the top
+/// and shifts what the user was reading. [relevance] is the only order that only
+/// ever grows at the end, which is why it is still here.
 enum SmitheryServerSort {
   /// The registry's own order, untouched.
   ///

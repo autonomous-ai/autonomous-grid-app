@@ -18,7 +18,7 @@ class BrowseConnectorsState {
     this.servers = const [],
     this.query = '',
     this.filters = const {},
-    this.sort = SmitheryServerSort.relevance,
+    this.sort = SmitheryServerSort.mostUsed,
     this.page = 0,
     this.totalPages = 0,
     this.totalCount = 0,
@@ -35,8 +35,8 @@ class BrowseConnectorsState {
   /// approximation of it.
   final List<SmitheryServer> servers;
 
-  /// The registry tokens narrowing this search. Changing these refetches, since
-  /// they are applied by the registry and not here.
+  /// What is narrowing the fetched rows. Applied here, not by the registry, so
+  /// changing one costs a rebuild rather than a round trip.
   final Set<SmitheryFilter> filters;
 
   /// How [visibleServers] is ordered. Changing this does **not** refetch.
@@ -73,32 +73,18 @@ class BrowseConnectorsState {
   /// bug available in the stored version is a sort applied to page one and
   /// silently not to page two.
   List<SmitheryServer> get visibleServers {
-    // While a search is running the registry drops the filter token, so the
-    // narrowing has to happen here instead — over the rows that came back.
-    final rows = filtersNarrowedHere
-        ? [
+    // **Always narrowed here, never by the registry.** `is:verified` excludes
+    // Smithery's own first-party servers, which are the four most-used rows in
+    // the directory — see [SmitheryFilter]. Read off the row instead, and the
+    // pill means what it says.
+    final rows = filters.isEmpty
+        ? servers
+        : [
             for (final server in servers)
-              if (server.verified) server,
-          ]
-        : servers;
+              if (filters.every((f) => f.keeps(server))) server,
+          ];
     return sort.apply(rows);
   }
-
-  /// Verified is selected, and it is this app applying it rather than the
-  /// registry — because a search is running and the two cannot be combined.
-  ///
-  /// Measured 2026-08-03 on both `api.` and `registry.smithery.ai`:
-  /// `notion is:verified` answers with `riskmodels`, `mem0`, `thoughtbox` —
-  /// every row verified, not one of them Notion, and a total of exactly 100. The
-  /// token wins and the words are discarded.
-  ///
-  /// So the search is sent alone and the filter is applied to what returns. The
-  /// honest limit, which the screen states: this narrows the pages **loaded**,
-  /// not the whole directory. Better than the alternative it replaced — dropping
-  /// the filter entirely and leaving a lit pill over rows it had no part in
-  /// choosing.
-  bool get filtersNarrowedHere =>
-      filters.contains(SmitheryFilter.verified) && query.isNotEmpty;
 
   BrowseConnectorsState copyWith({
     List<SmitheryServer>? servers,
@@ -153,12 +139,12 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
   /// longer contains. Compared at every await boundary.
   int _generation = 0;
 
-  /// **Verified is on by default.** The directory is four thousand servers
-  /// anyone can publish to; `is:verified` is 199 of them, and it is the
-  /// registry's own answer to which ones it stands behind. Opening a settings
-  /// screen on the unfiltered set puts community code with no description above
-  /// names people recognise — measured, that is exactly the order it arrives in.
-  /// The pill is one press away for anyone who wants the rest.
+  /// **Verified is on by default**, and read off the row rather than asked of
+  /// the registry. The directory is four thousand servers anyone can publish to;
+  /// about 10% carry the flag, and those are the ones it vouches for — including
+  /// `gmail`, `jina` and `brave`, every one of which the `is:verified` *token*
+  /// would have hidden. Sorted by use, that opens the screen on names people
+  /// recognise. The pill is one press away for anyone who wants the rest.
   @override
   BrowseConnectorsState build() =>
       const BrowseConnectorsState(filters: {SmitheryFilter.verified});
@@ -182,7 +168,7 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
 
     final (page, error) = await ref
         .read(smitheryRegistryClientProvider)
-        .servers(page: 1, pageSize: pageSize, query: trimmed, filters: active);
+        .servers(page: 1, pageSize: pageSize, query: trimmed);
     if (generation != _generation) return;
 
     if (page == null) {
@@ -199,17 +185,12 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
     );
   }
 
-  /// Turn [filter] on or off and reload from page one.
-  ///
-  /// A refetch, not a local narrowing: these are registry tokens, and the
-  /// registry caps browsing at 500 rows. Filtering the fetched page instead
-  /// would search only what has been seen and present that as the whole answer —
-  /// `is:verified` finds 199 rows across the directory, while the same test over
-  /// one loaded page finds whatever happens to be there.
-  Future<void> toggleFilter(SmitheryFilter filter) {
+  /// Turn [filter] on or off. **No refetch** — the narrowing is local now, so
+  /// the pages already loaded are re-read rather than thrown away.
+  void toggleFilter(SmitheryFilter filter) {
     final next = {...state.filters};
     if (!next.remove(filter)) next.add(filter);
-    return search(state.query, filters: next);
+    state = state.copyWith(filters: next);
   }
 
   /// Reorder what is already loaded. **No refetch**, because the registry has no
@@ -233,10 +214,6 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
           page: current.page + 1,
           pageSize: pageSize,
           query: current.query,
-          // The filters this list was built with, not whatever is selected now:
-          // the same reasoning as `query` above. A pill toggled mid-scroll
-          // starts a new search, so it can never append onto the old one.
-          filters: current.filters,
         );
     if (generation != _generation) return;
 

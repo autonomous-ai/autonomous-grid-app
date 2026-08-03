@@ -490,7 +490,6 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
         onFilter: (option) => setState(() => _filter = option),
       ),
       listBuilder: (context, {required filtered, required matches}) {
-        final browse = ref.watch(browseConnectorsProvider);
         // Filtered once, read twice — by the list, and by the decision of
         // whether the directory's footer has anything to sit under. Two copies
         // of this comprehension is two chances for the footer to appear over an
@@ -543,7 +542,6 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           AsyncValue(:final value?) => _ConnectorsBody(
             rows: visible(value),
             filtered: filtered || _filter != _ConnectorFilter.all,
-            filtersNarrowedHere: browse.filtersNarrowedHere,
             showDirectoryTail: _filter != _ConnectorFilter.connected,
             onLoadMore: () =>
                 ref.read(browseConnectorsProvider.notifier).loadMore(),
@@ -566,14 +564,12 @@ class _ConnectorsBody extends StatelessWidget {
   const _ConnectorsBody({
     required this.rows,
     required this.filtered,
-    required this.filtersNarrowedHere,
     required this.showDirectoryTail,
     required this.onLoadMore,
   });
 
   final List<Connector> rows;
   final bool filtered;
-  final bool filtersNarrowedHere;
   final bool showDirectoryTail;
 
   /// Fetch the directory's next page. Safe to call repeatedly — see
@@ -585,17 +581,6 @@ class _ConnectorsBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Said before the list, because it explains what the list *is*. A
-        // lit-up Verified pill over rows the registry chose on relevance alone
-        // would read as a promise the screen cannot keep.
-        if (filtersNarrowedHere)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: _DirectoryNote(
-              'The directory cannot filter a search, so Verified is being '
-              'applied to the results loaded so far — scroll for more.',
-            ),
-          ),
         // `Expanded`, so the list is handed what its siblings leave rather than
         // taking the pane and pushing them off it. `ConnectorList` renders an
         // `ExtensionGrid` — a `CustomScrollView` — and a viewport needs a

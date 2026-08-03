@@ -37,43 +37,26 @@ class SmitheryRegistryClient {
 
   /// One page of the directory, ordered as the registry orders it.
   ///
-  /// [query] is the user's search text, empty for the plain listing. [filters]
-  /// are registry tokens appended to the search — see [SmitheryFilter].
+  /// [query] is the user's search text, empty for the plain listing. Callers
+  /// pass their own [pageSize] — `BrowseConnectorsController.pageSize` is the
+  /// one the app actually uses, and the default here only keeps this callable on
+  /// its own.
   ///
-  /// Callers pass their own [pageSize] — `BrowseConnectorsController.pageSize`
-  /// is the one the app actually uses, and the default here only keeps this
-  /// callable on its own.
-  ///
-  /// **There is deliberately no `sort` parameter.** The registry accepts none:
-  /// `sort`, `sortBy` and `order` were each sent with a range of values on
-  /// 2026-08-03 and every one returned the identical page. Ordering therefore
-  /// belongs to the controller, over the rows it has fetched — and saying so
-  /// here stops the next reader from adding a parameter that looks like it
-  /// works because the default order is already sensible.
+  /// **There is no `sort` and no filter parameter, and both absences are
+  /// measured.** `sort`, `sortBy` and `order` were each sent with a range of
+  /// values on 2026-08-03 and every one returned the identical page. And the
+  /// filter tokens the registry does accept are not what they look like:
+  /// `is:verified` answers 50/50 verified but 0/50 `bySmithery`, so it excludes
+  /// the four most-used servers in the directory, while `owner:smithery` returns
+  /// rows whose own `bySmithery` is false. Ordering and narrowing therefore
+  /// belong to the caller, over the rows this returns — see [SmitheryFilter] and
+  /// `SmitheryServerSort`.
   Future<(SmitheryPage?, String?)> servers({
     int page = 1,
     int pageSize = 50,
     String query = '',
-    Set<SmitheryFilter> filters = const {},
   }) async {
-    // **Search text wins over a filter token, and they are never sent
-    // together.** Measured 2026-08-03: `notion is:verified` returns
-    // `riskmodels`, `mem0`, `thoughtbox` — every row verified, not one of them
-    // Notion. The registry treats the token as the query and drops the words,
-    // so combining them silently answers a question the user did not ask.
-    // Honouring the typed text is the obvious choice: it is the more specific
-    // request, and it is the one they can see they made.
-    //
-    // `is:remote` is exempt — it is a reachability precondition rather than a
-    // preference, and `notion is:remote` really does return Notion servers
-    // (120 of them).
-    final searching = query.trim().isNotEmpty;
-    final terms = [
-      if (searching) query.trim(),
-      _remoteOnly,
-      if (!searching)
-        for (final filter in filters) filter.token,
-    ];
+    final terms = [if (query.trim().isNotEmpty) query.trim(), _remoteOnly];
     final search = terms.join(' ');
     final uri = Uri.parse(_base).replace(
       queryParameters: {'q': search, 'page': '$page', 'pageSize': '$pageSize'},

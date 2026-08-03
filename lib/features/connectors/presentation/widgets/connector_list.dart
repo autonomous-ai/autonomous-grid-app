@@ -313,9 +313,10 @@ class _UseCount extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Quiet on purpose: this is context for the name beside it, not a claim
-        // competing with the Connect button in the same row.
-        Icon(Icons.star_rounded, size: 13, color: AppPalette.textFaint),
+        // Gold, from `AppPalette.warn` rather than a literal: it resolves per
+        // brightness (#FFB020 dark, #B45309 light), so the star stays legible on
+        // a white card instead of glaring off it.
+        Icon(Icons.star_rounded, size: 13, color: AppPalette.warn),
         const SizedBox(width: 2),
         Text(
           format(count),
