@@ -42,10 +42,39 @@ void main() {
       expect(adapter!.tool, AgentTool.hermes);
     });
 
-    test('codex has no adapter yet', () {
+    test('codex resolves to its own adapter', () {
       final c = ProviderContainer();
       addTearDown(c.dispose);
-      expect(c.read(agentExtensionsProvider(AgentTool.codex)), isNull);
+      final adapter = c.read(agentExtensionsProvider(AgentTool.codex));
+      expect(adapter, isNotNull);
+      expect(adapter!.tool, AgentTool.codex);
+    });
+
+    test('codex has skills and MCP, but no plugin manager', () {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      final adapter = c.read(agentExtensionsProvider(AgentTool.codex))!;
+      expect(adapter.skills, isNotNull);
+      expect(adapter.mcp, isNotNull);
+      // Not "not built yet": Codex's `[plugins.*]` table is written by the
+      // ChatGPT desktop app, so there is no verb the screen's buttons could
+      // call. The null plane is the honest answer.
+      expect(adapter.plugins, isNull);
+    });
+
+    test('codex does not project connector tokens', () {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      final mcp = c.read(agentExtensionsProvider(AgentTool.codex))!.mcp!;
+      // Deliberate, and load-bearing: a non-null here would write a credential
+      // into `~/.codex/config.toml` in a shape nothing has verified Codex reads.
+      expect(mcp.projectConnectorTokens, isNull);
+    });
+
+    test('claude still has no adapter', () {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      expect(c.read(agentExtensionsProvider(AgentTool.claude)), isNull);
     });
 
     test('the selected agent defaults to hermes', () {
