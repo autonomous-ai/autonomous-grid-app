@@ -332,7 +332,7 @@ void main() {
       expect(h.sender.history!.single.text, 'hi');
 
       // Persisted to disk and reloadable.
-      final reloaded = ChatStore(directory: tmp).loadAll();
+      final reloaded = await ChatStore(directory: tmp).loadAll();
       expect(reloaded, hasLength(1));
       expect(reloaded.single.messages.last.text, 'hi back');
     },
@@ -384,7 +384,7 @@ void main() {
       );
       // And it is persisted, not only held in memory.
       expect(
-        ChatStore(directory: tmp).loadAll().single.messages.last.text,
+        (await ChatStore(directory: tmp).loadAll()).single.messages.last.text,
         "Here's my plan",
       );
     },
@@ -735,7 +735,7 @@ void main() {
       expect(messages.last.text, 'A grid is your private');
       // On disk too — a stopped answer survives closing the app.
       expect(
-        ChatStore(directory: tmp).loadAll().single.messages.last.text,
+        (await ChatStore(directory: tmp).loadAll()).single.messages.last.text,
         'A grid is your private',
       );
     });
@@ -782,7 +782,7 @@ void main() {
       expect(state.conversations.single.messages, hasLength(1));
       expect(state.conversations.single.messages.single.role, ChatRole.user);
 
-      final reloaded = ChatStore(directory: tmp).loadAll();
+      final reloaded = await ChatStore(directory: tmp).loadAll();
       expect(reloaded.single.messages.single.text, 'hi');
     },
   );
@@ -843,7 +843,7 @@ void main() {
     expect(File(userMsg.media.single.path).existsSync(), isTrue);
 
     // The saved image path survives a reload from disk.
-    final reloaded = ChatStore(directory: tmp).loadAll().single;
+    final reloaded = (await ChatStore(directory: tmp).loadAll()).single;
     expect(
       reloaded.messages.first.media.single.path,
       userMsg.media.single.path,
@@ -982,7 +982,7 @@ void main() {
     final state = h.container.read(chatSessionsProvider);
     expect(state.conversations, isEmpty);
     expect(state.activeId, isNull);
-    expect(ChatStore(directory: tmp).loadAll(), isEmpty);
+    expect(await ChatStore(directory: tmp).loadAll(), isEmpty);
   });
 
   test('loads saved conversations on build and opens the newest', () async {
@@ -1015,7 +1015,13 @@ void main() {
     );
     addTearDown(container.dispose);
 
+    // Nothing is read on the first frame — the rail says so rather than
+    // claiming an empty history.
+    expect(container.read(chatSessionsProvider).loading, isTrue);
+    await container.read(chatSessionsProvider.notifier).restored;
+
     final state = container.read(chatSessionsProvider);
+    expect(state.loading, isFalse);
     expect(state.conversations, hasLength(2));
     expect(state.activeId, 'new'); // newest-first
   });
@@ -1042,7 +1048,7 @@ void main() {
 
     expect(h.agent.workdir, project.path);
     // And the chat remembers its project across a reload from disk.
-    final reloaded = ChatStore(directory: tmp).loadAll().single;
+    final reloaded = (await ChatStore(directory: tmp).loadAll()).single;
     expect(reloaded.projectId, project.id);
   });
 
@@ -1100,7 +1106,10 @@ void main() {
       // Renaming doesn't move the chat or steal the open one.
       expect(state.activeId, conv.id);
       // And the name is on disk, not just on screen.
-      expect(ChatStore(directory: tmp).loadAll().single.title, conv.title);
+      expect(
+        (await ChatStore(directory: tmp).loadAll()).single.title,
+        conv.title,
+      );
     },
   );
 
@@ -1148,7 +1157,10 @@ void main() {
     // ...and the second turn didn't re-derive it back to 'hi'.
     final conv = h.container.read(chatSessionsProvider).conversations.single;
     expect(conv.title, 'Đọc thư mục dự án');
-    expect(ChatStore(directory: tmp).loadAll().single.title, conv.title);
+    expect(
+      (await ChatStore(directory: tmp).loadAll()).single.title,
+      conv.title,
+    );
   });
 
   test('a name the user typed survives the agent naming the same chat — the '
@@ -1178,7 +1190,10 @@ void main() {
     expect(conv.title, 'Ngân sách quý 4');
     expect(conv.titleLocked, isTrue);
     // On disk too, so reopening the app doesn't restore the agent's name.
-    expect(ChatStore(directory: tmp).loadAll().single.title, 'Ngân sách quý 4');
+    expect(
+      (await ChatStore(directory: tmp).loadAll()).single.title,
+      'Ngân sách quý 4',
+    );
   });
 
   test('the lock outlives a restart — a chat reloaded from disk still refuses '
@@ -1195,7 +1210,7 @@ void main() {
       ),
     );
 
-    expect(store.loadAll().single.titleLocked, isTrue);
+    expect((await store.loadAll()).single.titleLocked, isTrue);
   });
 
   test('a chat with no project sends no folder — the agent falls back to its '
@@ -1242,21 +1257,24 @@ void main() {
       expect(after.updatedAt, before.updatedAt);
       // Persisted, so a reload (next launch) keeps the choice.
       expect(
-        ChatStore(directory: tmp).loadAll().single.model,
+        (await ChatStore(directory: tmp).loadAll()).single.model,
         'deepreinforce-ai/ornith-1.0-35b',
       );
     });
 
-    test('is a no-op for a not-yet-saved compose — nothing to persist yet', () {
-      final h = _harness(tmp, updates: const []);
-      final controller = h.container.read(chatSessionsProvider.notifier);
-      controller.newChat();
+    test(
+      'is a no-op for a not-yet-saved compose — nothing to persist yet',
+      () async {
+        final h = _harness(tmp, updates: const []);
+        final controller = h.container.read(chatSessionsProvider.notifier);
+        controller.newChat();
 
-      controller.setActiveModel('ornith-35b');
+        controller.setActiveModel('ornith-35b');
 
-      expect(h.container.read(chatSessionsProvider).active, isNull);
-      expect(ChatStore(directory: tmp).loadAll(), isEmpty);
-    });
+        expect(h.container.read(chatSessionsProvider).active, isNull);
+        expect(await ChatStore(directory: tmp).loadAll(), isEmpty);
+      },
+    );
   });
 
   group('Plan mode', () {

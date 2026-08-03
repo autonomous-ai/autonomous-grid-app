@@ -54,10 +54,16 @@ class ChatSessionsState {
     this.errors = const {},
     this.awaitingPlanIds = const {},
     this.runningAgentId,
+    this.loading = false,
   });
 
   final List<Conversation> conversations;
   final String? activeId;
+
+  /// True until the saved history has been read off disk. [conversations] is
+  /// empty meanwhile, which is not the same fact as "this user has no chats" —
+  /// anything that would tell them so must wait for this to clear.
+  final bool loading;
 
   /// The project a not-yet-saved chat is being composed in, or null. A new chat
   /// isn't persisted until its first message, so [active] is null while it's
@@ -149,7 +155,9 @@ class ChatSessionsState {
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
     Object? runningAgentId = _keep,
+    bool? loading,
   }) => ChatSessionsState(
+    loading: loading ?? this.loading,
     conversations: conversations ?? this.conversations,
     activeId: identical(activeId, _keep) ? this.activeId : activeId as String?,
     draftProjectId: identical(draftProjectId, _keep)
@@ -247,23 +255,67 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// touch none of this and never queue.
   final List<({String id, void Function() dispatch})> _agentQueue = [];
 
+  /// Whether the user has already chosen what to look at — opened a chat, or
+  /// started a new one — before the saved history landed. Once they have,
+  /// restoring must not move them somewhere else.
+  bool _chose = false;
+
+  /// Chats deleted while the history was still being read, so restoring can't
+  /// bring one back from a file listed before it was removed. Null once there's
+  /// nothing left to restore.
+  Set<String>? _deletedWhileLoading = {};
+
+  Future<void>? _restoring;
+
+  /// Completes when the saved conversations have been read off disk and folded
+  /// in. The app never awaits it — the sidebar reads
+  /// [ChatSessionsState.loading] instead — but a test seeding a temp dir does,
+  /// rather than guessing how many event-loop turns a disk read takes.
+  Future<void> get restored => _restoring ?? Future<void>.value();
+
   @override
   ChatSessionsState build() {
     ref.onDispose(() {
       _disposed = true;
       _cancelAll();
     });
-    final conversations = ref.read(chatStoreProvider).loadAll();
-    // Opens on the newest *live* chat: `conversations` holds the archived ones
-    // too, and landing the user in one they filed away — in a transcript the
-    // sidebar doesn't even list — would look like the app lost their history.
+    // Read off the first frame: the whole history is on disk, and decoding it
+    // here is the frame's budget spent before anything is drawn (see
+    // [ChatStore.loadAll]). The rail shows its loading state until this lands.
+    _restoring = _restore();
+    return const ChatSessionsState(loading: true);
+  }
+
+  /// Fold the saved conversations in once they're read.
+  ///
+  /// Whatever the user did while the disk was read wins: a chat they started is
+  /// kept and not duplicated by its own file, one they deleted stays deleted,
+  /// and wherever they chose to be is where they stay. Only a user who hasn't
+  /// touched anything gets the default — the newest *live* chat, never an
+  /// archived one, since landing in a transcript the sidebar doesn't list would
+  /// look like the app lost their history.
+  Future<void> _restore() async {
+    final saved = await _store.loadAll();
+    if (_disposed) return;
+    final known = {for (final c in state.conversations) c.id};
+    final deleted = _deletedWhileLoading ?? const <String>{};
+    final merged = [
+      ...state.conversations,
+      for (final c in saved)
+        if (!known.contains(c.id) && !deleted.contains(c.id)) c,
+    ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    _deletedWhileLoading = null;
     final opening = [
-      for (final c in conversations)
+      for (final c in merged)
         if (!c.isArchived) c,
     ];
-    return ChatSessionsState(
-      conversations: conversations,
-      activeId: opening.isEmpty ? null : opening.first.id,
+    final settled = _chose || state.activeId != null;
+    state = state.copyWith(
+      loading: false,
+      conversations: merged,
+      activeId: settled
+          ? state.activeId
+          : (opening.isEmpty ? null : opening.first.id),
     );
   }
 
@@ -281,6 +333,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Allowed while another chat is still streaming: its reply keeps folding into
   /// that chat in the background, and the user gets a clean composer here.
   void newChat({String? projectId}) {
+    _chose = true;
     state = state.copyWith(activeId: null, draftProjectId: projectId);
   }
 
@@ -289,6 +342,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// the wrong transcript, because each send folds into its own conversation id.
   void select(String id) {
     if (id == state.activeId) return;
+    _chose = true;
     state = state.copyWith(activeId: id);
   }
 
@@ -340,6 +394,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   void deleteConversation(String id) {
     _cancel(id);
     _store.delete(id);
+    _deletedWhileLoading?.add(id);
     // The chat that held this undo is gone, so nothing can reach it any more —
     // drop the snapshots rather than keep whole file contents in memory for a
     // conversation the user deleted.
@@ -399,6 +454,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       _cancel(id);
       _store.delete(id);
       changes.forget(id);
+      _deletedWhileLoading?.add(id);
     }
     final gone = doomed.toSet();
     final remaining = [

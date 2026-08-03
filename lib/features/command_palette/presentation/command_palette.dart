@@ -209,7 +209,7 @@ class _Results extends StatelessWidget {
     final rows = <Widget>[];
     var index = 0;
     for (final group in groups) {
-      rows.add(_GroupLabel(label: group.label));
+      rows.add(_GroupLabel(group: group));
       for (final item in group.items) {
         rows.add(
           CommandRow(
@@ -223,6 +223,10 @@ class _Results extends StatelessWidget {
       }
     }
 
+    // shrinkWrap so the panel is only as tall as its results — which means every
+    // row here is laid out on every keystroke. That's what
+    // [kMaxMatchesPerGroup] bounds: the work per keystroke stays flat however
+    // long the user's history gets.
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 6),
       shrinkWrap: true,
@@ -232,12 +236,17 @@ class _Results extends StatelessWidget {
 }
 
 class _GroupLabel extends StatelessWidget {
-  const _GroupLabel({required this.label});
+  const _GroupLabel({required this.group});
 
-  final String label;
+  final CommandGroup group;
 
   @override
   Widget build(BuildContext context) {
+    // Say when there are more than these — a list that stops at eight with no
+    // word about it reads as the whole answer.
+    final label = group.isCapped
+        ? '${group.label} · first ${group.items.length} of ${group.matched}'
+        : group.label;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Text(
