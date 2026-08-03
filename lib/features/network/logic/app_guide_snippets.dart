@@ -137,6 +137,64 @@ String codexConfigSnippet(String base, String model) =>
 /// itself, so the user never has to export a variable in their shell.
 String codexEnvSnippet(String key) => '$gridApiKeyEnv=$key';
 
+/// The provider the **app's own** Codex turns run under, kept apart from the one
+/// the guide writes into the user's config ([kCodexProviderId]).
+///
+/// Two ids rather than one because they answer to different owners. `grid` is
+/// the user's: they pressed "Apply for me" (or pasted the block), it lives in
+/// their `~/.codex/config.toml`, and their terminal `codex` uses it. This one is
+/// the app's, exists only for the length of one `codex exec`, and must not
+/// depend on — or quietly repoint — anything the user set.
+const String kCodexAppProviderId = 'grid-app';
+
+/// The variable the app's own Codex turns read the grid's key from.
+///
+/// **Not** [gridApiKeyEnv], and that is the whole point. Codex loads
+/// `~/.codex/.env` itself, and that dotenv **beats the environment the app hands
+/// the child process** (measured on codex-cli 0.144.6). A machine set up by an
+/// older build still has `GRID_API_KEY` sitting in that file, so reusing the name
+/// would let a stale key silently outrank the live one — and a key from the grid
+/// the user left reads as the grid turning them away. A name the dotenv doesn't
+/// define can't be shadowed.
+const String kCodexAppApiKeyEnv = 'GRID_APP_API_KEY';
+
+/// The grid Codex should answer with, as `-c` overrides for **one run** — the
+/// same connection [codexConfigSnippet] describes, handed over on the command
+/// line instead of written to the user's file.
+///
+/// Writing it was hijacking: `~/.codex/config.toml` is shared with the user's own
+/// terminal `codex` *and* with the ChatGPT desktop app (which maintains its own
+/// tables in there), so pointing it at a grid changed the default `model` and
+/// `model_provider` for every Codex session on the machine — and re-encoding the
+/// TOML cost the file its comments and key order every time. Claude Code has
+/// always been handed its connection per-process for exactly this reason
+/// ([claudeCodeEnv]); this is Codex catching up.
+///
+/// The user's config is still **loaded** — no `--ignore-user-config` — because
+/// that is where their MCP servers live (`mcp_servers`, written by this app's
+/// Connectors screen and by the ChatGPT app). Skipping it would take every
+/// connector away from an in-app turn without saying so. These overrides sit on
+/// top of it; the key rides in the child's environment ([kCodexAppApiKeyEnv]).
+///
+/// Pure, and unit-tested: a wrong key here fails exactly like a model that
+/// wouldn't answer (§7).
+List<String> codexGridOverrides({required String base, required String model}) =>
+    [
+      'model="$model"',
+      'model_provider="$kCodexAppProviderId"',
+      // Codex refuses a provider table whose name is empty — and it refuses by
+      // failing to load the *whole* config, before the model is ever reached.
+      'model_providers.$kCodexAppProviderId.name="Grid"',
+      'model_providers.$kCodexAppProviderId.base_url="$base"',
+      // Codex has no `api_key` field: the provider names an environment
+      // variable and Codex reads it from there.
+      'model_providers.$kCodexAppProviderId.env_key="$kCodexAppApiKeyEnv"',
+      // Codex ≥ 0.141 rejects `wire_api = "chat"` outright.
+      'model_providers.$kCodexAppProviderId.wire_api="responses"',
+      // The relay streams HTTP SSE and offers no socket transport.
+      'model_providers.$kCodexAppProviderId.supports_websockets=false',
+    ];
+
 /// The variables Claude Code reads a connection from: the endpoint, and the
 /// credential — under **both** names, because they travel in different headers
 /// (`ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` →

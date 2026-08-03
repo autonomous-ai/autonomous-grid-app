@@ -8,8 +8,7 @@ import '../../../infrastructure/cli/codex_exec_service.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../network/logic/client_app_configurator.dart';
-import '../../network/logic/client_app_detector.dart';
+import '../../network/logic/app_guide_snippets.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
@@ -28,20 +27,6 @@ final codexExecServiceProvider = Provider<CodexExecService?>((ref) {
   return path == null ? null : CodexExecServiceImpl(path);
 });
 
-/// The `networkId|model` Codex's config was last pointed at, so `~/.codex` is
-/// only rewritten when the target grid or model changes. Codex reads the model
-/// and endpoint from its config, so the config must carry the current selection.
-final codexConfiguredProvider = NotifierProvider<CodexConfigured, String?>(
-  CodexConfigured.new,
-);
-
-class CodexConfigured extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  void set(String? key) => state = key;
-}
-
 /// A [ChatSender] backed by Codex over `codex exec --json`.
 ///
 /// Codex runs one turn per process and exits, so — unlike Hermes's persistent
@@ -54,6 +39,14 @@ class CodexConfigured extends Notifier<String?> {
 /// Codex streams the same activity/plan shapes Hermes does, so this feeds the
 /// shared activity feed ([agentActivityProvider]) and streams the answer into the
 /// bubble as it lands.
+///
+/// The grid it answers with is handed over **per run** — `-c` overrides on the
+/// command line, the key in the child process's environment
+/// ([codexGridOverrides]) — and nothing of the user's is written. This used to
+/// rewrite `~/.codex/config.toml`, which is their file and their terminal
+/// `codex`'s: chatting here changed the default model and provider for every
+/// Codex session on the machine. Their config is still *read*, so the MCP
+/// servers in it stay available to an in-app turn.
 ///
 /// It runs with **no sandbox** ([kCodexSandboxMode]): Codex changes files and
 /// runs commands on this computer, and — unlike Hermes over ACP — `codex exec`
@@ -70,6 +63,10 @@ class CodexChatSender implements ChatSender {
   final Ref _ref;
 
   final _slots = AgentSessionSlots();
+
+  /// Whether Grid's skills have been written into `~/.codex` this run — see
+  /// [_installSkills].
+  bool _skillsInstalled = false;
 
   @override
   Stream<ChatSendUpdate> send({
@@ -100,17 +97,12 @@ class CodexChatSender implements ChatSender {
       return;
     }
 
-    // Clear the shared feed now — synchronously, before the awaited grid setup
-    // and skill install below — so the chat's "working" bubble, already on
-    // screen, can't flash the previous turn's steps (or another chat's) while
-    // Codex is pointed at the grid. See [resetAgentFeed].
+    // Clear the shared feed now — synchronously, before the awaited skill
+    // install below — so the chat's "working" bubble, already on screen, can't
+    // flash the previous turn's steps (or another chat's). See [resetAgentFeed].
     resetAgentFeed(_ref);
 
-    final pointed = await _pointAtGrid(network, model);
-    if (pointed != null) {
-      yield ChatSendFailure(pointed);
-      return;
-    }
+    await _installSkills();
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(
@@ -128,9 +120,31 @@ class CodexChatSender implements ChatSender {
       ),
       resumeThreadId: turn.resumeSessionId,
       model: model,
+      // The grid rides on this run's own command line, and its key in this
+      // process's environment — nothing on disk is touched, so the user's
+      // terminal `codex` keeps answering with whatever *they* pointed it at.
+      config: codexGridOverrides(base: network.relayBaseUrl, model: model),
+      environment: {kCodexAppApiKeyEnv: network.relayApiKey},
       planFirst: planFirst,
       slot: turn.slot,
     );
+  }
+
+  /// Give Codex the web-search skill — its only way to reach the web on a grid,
+  /// since the relay doesn't serve the OpenAI `web_search` tool.
+  ///
+  /// Once per run of the app: the skill is a few static files that depend on
+  /// neither the grid nor the model, so rewriting them on every turn would be
+  /// disk work for nothing. A hiccup must not block chatting, so failure is
+  /// swallowed — Codex still chats, just without web search this session.
+  Future<void> _installSkills() async {
+    if (_skillsInstalled) return;
+    try {
+      await _ref.read(agentSkillInstallerProvider).install(AgentTool.codex);
+      _skillsInstalled = true;
+    } on Object {
+      // Left false so the next turn tries again.
+    }
   }
 
   /// Run one turn: stream the answer into the bubble as it arrives, mirror tool
@@ -143,6 +157,8 @@ class CodexChatSender implements ChatSender {
     required String prompt,
     required String? resumeThreadId,
     required String model,
+    required List<String> config,
+    required Map<String, String> environment,
     required bool planFirst,
     required AgentSessionSlot slot,
   }) {
@@ -159,6 +175,8 @@ class CodexChatSender implements ChatSender {
     final run = service.run(
       workdir: workdir,
       prompt: prompt,
+      config: config,
+      environment: environment,
       resumeThreadId: resumeThreadId,
     );
 
@@ -302,32 +320,6 @@ class CodexChatSender implements ChatSender {
   void _logRaw(String raw) =>
       _ref.read(appLogProvider).failure('agent', 'codex turn failed: $raw');
 
-  /// Ensure `~/.codex` points at [network] with [model] (idempotent, only
-  /// rewritten when the grid or model changed). Returns null on success, else a
-  /// user-facing error line.
-  Future<String?> _pointAtGrid(NetworkCredential network, String model) async {
-    final key = '${network.networkId}|$model';
-    if (_ref.read(codexConfiguredProvider) == key) return null;
-    final result = await _ref.read(clientAppConfiguratorProvider).apply(
-      ClientApp.codex,
-      network.relayBaseUrl,
-      network.relayApiKey,
-      [model],
-    );
-    if (result is ApplyError) {
-      return "Couldn't point Codex at this grid: ${result.message}";
-    }
-    // Give Codex the web-search skill — its only way to reach the web on a grid,
-    // since the relay doesn't serve the OpenAI web_search tool. A skill-install
-    // hiccup must not block chatting, so its failure is swallowed here.
-    try {
-      await _ref.read(agentSkillInstallerProvider).install(AgentTool.codex);
-    } on Object {
-      // Non-fatal: Codex still chats, just without web search this session.
-    }
-    _ref.read(codexConfiguredProvider.notifier).set(key);
-    return null;
-  }
 }
 
 /// Shown when the grid answered Codex's request with a flat "no such endpoint".
