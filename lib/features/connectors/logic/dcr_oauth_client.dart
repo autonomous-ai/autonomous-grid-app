@@ -104,9 +104,13 @@ class DcrOAuthClient {
   /// preferred port busy, or a registration written before that change —
   /// re-registering is the only thing that can work, and costs one spare client
   /// entry at the provider rather than a connector that cannot be signed into.
+  /// [redirectUris] are the spellings of the same loopback callback, in the
+  /// order worth trying. The first that registers is the one stored, and every
+  /// later step reads it back off the client — so authorize and the token
+  /// exchange stay byte-identical to what was registered, whichever won.
   Future<(DcrClient?, DcrOAuthError?)> register(
     McpAuthProbeResult probe, {
-    required String redirectUri,
+    required List<String> redirectUris,
   }) async {
     if (!probe.canSelfRegister) {
       return (
@@ -130,6 +134,12 @@ class DcrOAuthClient {
       );
     }
 
+    if (redirectUris.isEmpty) {
+      return (
+        null,
+        const DcrOAuthError('No local address to receive the sign-in.'),
+      );
+    }
     final existing = await _store.find(probe.issuer);
     // Reuse only when the stored registration was made for *this* redirect URI.
     //
@@ -144,65 +154,88 @@ class DcrOAuthClient {
     // busy, or a registration made before this change — re-registering is the
     // only thing that can work, and it costs one extra client entry at the
     // provider rather than a sign-in that cannot complete.
-    if (existing != null && existing.redirectUri == redirectUri) {
+    if (existing != null && redirectUris.contains(existing.redirectUri)) {
       return (existing, null);
     }
 
-    final (payload, error) = await _post(
-      Uri.parse(probe.registrationEndpoint),
-      body: {
-        'client_name': 'Grid',
-        'redirect_uris': [redirectUri],
-        'grant_types': ['authorization_code', 'refresh_token'],
-        'response_types': ['code'],
-        // Ask to be public. A server that can honour it (Notion, Linear) then
-        // issues no secret; one that cannot (Supabase) overrides us and returns
-        // one, which is why the reply is read rather than the request trusted.
-        'token_endpoint_auth_method': 'none',
-        'application_type': 'native',
-      },
-      failure: "Couldn't register with this server.",
-      // Registration is unauthenticated by design (RFC 7591 §3.1 open
-      // registration), which is what makes path A possible at all.
-      json: true,
-    );
-    if (payload == null) return (null, error);
-
-    final clientId = payload['client_id'];
-    if (clientId is! String || clientId.isEmpty) {
-      return (
-        null,
-        const DcrOAuthError(
-          'This server accepted the registration but returned no client id.',
-        ),
+    DcrOAuthError? refusal;
+    for (final redirectUri in redirectUris) {
+      final (payload, error) = await _post(
+        Uri.parse(probe.registrationEndpoint),
+        body: {
+          'client_name': 'Grid',
+          'redirect_uris': [redirectUri],
+          'grant_types': ['authorization_code', 'refresh_token'],
+          'response_types': ['code'],
+          // Ask to be public. A server that can honour it (Notion, Linear) then
+          // issues no secret; one that cannot (Supabase) overrides us and
+          // returns one, which is why the reply is read rather than the request
+          // trusted.
+          'token_endpoint_auth_method': 'none',
+          'application_type': 'native',
+        },
+        failure: "Couldn't register with this server.",
+        // Registration is unauthenticated by design (RFC 7591 §3.1 open
+        // registration), which is what makes path A possible at all.
+        json: true,
       );
-    }
 
-    final secret = payload['client_secret'];
-    final client = DcrClient(
-      issuer: probe.issuer,
-      clientId: clientId,
-      clientSecret: secret is String && secret.isNotEmpty ? secret : null,
-      // Trust the server's stated method, then fall back to what the presence of
-      // a secret implies — some servers echo nothing here.
-      authMethod: _authMethod(payload, probe, hasSecret: secret is String),
-      authorizationEndpoint: probe.authorizationEndpoint,
-      tokenEndpoint: probe.tokenEndpoint,
-      redirectUri: redirectUri,
-      registeredAt: DateTime.now(),
-    );
+      if (payload == null) {
+        refusal = error;
+        // Another spelling of the same address is only worth trying when the
+        // address is what was refused. Measured 2026-07-31: CoinDesk answers
+        // `redirect_uris must be absolute https URIs (http allowed only for
+        // localhost)` to the IP form and accepts the `localhost` one.
+        //
+        // Narrow on purpose. Retrying every failure would send a second
+        // registration at a server that is down, rate-limiting us, or refusing
+        // open registration outright — and would replace its own clear message
+        // with whatever the second attempt happened to say.
+        final says = error?.message.toLowerCase() ?? '';
+        if (!says.contains('redirect')) break;
+        continue;
+      }
 
-    try {
-      await _store.save(client);
-    } on Object catch (failure) {
-      // The registration exists at the server but not here. Say so: silently
-      // continuing would work once and then re-register on the next attempt.
-      return (
-        null,
-        DcrOAuthError("Couldn't save the registration ($failure)."),
+      final clientId = payload['client_id'];
+      if (clientId is! String || clientId.isEmpty) {
+        return (
+          null,
+          const DcrOAuthError(
+            'This server accepted the registration but returned no client id.',
+          ),
+        );
+      }
+
+      final secret = payload['client_secret'];
+      final client = DcrClient(
+        issuer: probe.issuer,
+        clientId: clientId,
+        clientSecret: secret is String && secret.isNotEmpty ? secret : null,
+        // Trust the server's stated method, then fall back to what the presence
+        // of a secret implies — some servers echo nothing here.
+        authMethod: _authMethod(payload, probe, hasSecret: secret is String),
+        authorizationEndpoint: probe.authorizationEndpoint,
+        tokenEndpoint: probe.tokenEndpoint,
+        // Whichever spelling the server took. Stored, so authorize and the
+        // token exchange send that one back byte for byte (RFC 6749 §4.1.3)
+        // rather than the one this app would have preferred.
+        redirectUri: redirectUri,
+        registeredAt: DateTime.now(),
       );
+
+      try {
+        await _store.save(client);
+      } on Object catch (failure) {
+        // The registration exists at the server but not here. Say so: silently
+        // continuing would work once and then re-register on the next attempt.
+        return (
+          null,
+          DcrOAuthError("Couldn't save the registration ($failure)."),
+        );
+      }
+      return (client, null);
     }
-    return (client, null);
+    return (null, refusal);
   }
 
   /// The authorize URL to open in the system browser.

@@ -30,6 +30,37 @@ void main() {
       },
     );
 
+    test('offers both spellings of the same callback, IP first', () async {
+      // The IP stays the default: `localhost` resolves through the OS and can
+      // land on a family the listener isn't on. The word is a fallback for a
+      // server that reads "localhost" literally — CoinDesk refuses the IP form
+      // outright (measured 2026-07-31).
+      final listener = await OAuthLoopbackListener.bind();
+      addTearDown(listener.close);
+
+      expect(listener.redirectUris, [
+        'http://127.0.0.1:${listener.port}/callback',
+        'http://localhost:${listener.port}/callback',
+      ]);
+    });
+
+    test('a callback to localhost lands, not only one to the IP', () async {
+      // The half that makes the fallback usable rather than merely acceptable
+      // to the server: registering `localhost` and then listening on IPv4 alone
+      // leaves the callback landing on a closed port whenever the OS resolves
+      // the name to `::1` — a sign-in that hangs to its timeout with nothing to
+      // explain it. Whichever family this machine's resolver picks, one of the
+      // two sockets is on it.
+      final listener = await OAuthLoopbackListener.bind();
+      final pending = listener.waitForCallback();
+
+      await hit('${listener.localhostRedirectUri}?code=lh-code&state=lh-state');
+      final result = await pending;
+
+      expect(result, isA<LoopbackSuccess>());
+      expect((result as LoopbackSuccess).code, 'lh-code');
+    });
+
     test('two listeners never collide', () async {
       // This test used to assert the port was *never* fixed, on the reasoning
       // that a hardcoded one would collide. That reasoning held and the

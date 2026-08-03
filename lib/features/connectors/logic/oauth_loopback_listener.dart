@@ -68,19 +68,43 @@ class LoopbackTimeout extends LoopbackResult {
 /// The listener lives only while one link is pending, and stops at the first
 /// request it can read.
 class OAuthLoopbackListener {
-  OAuthLoopbackListener._(this._server);
+  OAuthLoopbackListener._(this._servers);
 
-  final HttpServer _server;
+  /// One socket per loopback family, on the same port. See [bind].
+  final List<HttpServer> _servers;
 
-  int get port => _server.port;
+  int get port => _servers.first.port;
 
   /// The URI to register and to send as `redirect_uri`.
   ///
   /// The same string must go into the registration, the authorize call, and the
   /// token exchange — byte for byte (RFC 6749 §4.1.3). `127.0.0.1` rather than
-  /// `localhost` on purpose: RFC 8252 §7.3 prefers the literal address, since
-  /// `localhost` can resolve to IPv6 and miss a listener bound to IPv4.
+  /// `localhost`: RFC 8252 §7.3 prefers the literal address, since `localhost`
+  /// resolves through the OS and can land on a family the listener isn't on.
   String get redirectUri => 'http://127.0.0.1:$port/callback';
+
+  /// The same callback, spelled the way a server that insists on the literal
+  /// word `localhost` will accept.
+  ///
+  /// Measured 2026-07-31: `mcp.coindesk.com` answers a registration carrying
+  /// `http://127.0.0.1:51789/callback` with
+  ///
+  /// ```
+  /// 400  redirect_uris must be absolute https URIs
+  ///      (http allowed only for localhost)
+  /// ```
+  ///
+  /// and accepts the identical URI with `localhost` in place of the IP. It reads
+  /// "localhost" as the literal string RFC 8252 §7.3 also permits, rather than
+  /// as the loopback range — a stricter reading than the RFC's, and one the
+  /// server is entitled to.
+  ///
+  /// Offered as a *fallback* rather than the default, because the IP is still
+  /// the better first choice for the reason above.
+  String get localhostRedirectUri => 'http://localhost:$port/callback';
+
+  /// Both spellings, in the order to try them at registration.
+  List<String> get redirectUris => [redirectUri, localhostRedirectUri];
 
   /// Ports tried, in order, before giving up and letting the OS choose.
   ///
@@ -105,20 +129,45 @@ class OAuthLoopbackListener {
   ///
   /// Loopback-only on purpose: binding to `anyIPv4` would put the callback on
   /// the local network, where a machine on the same Wi-Fi could reach it.
+  ///
+  /// **Both loopback families, on the same port.** `127.0.0.1` and `::1` are
+  /// different sockets, and the wildcard trick that makes one accept the other
+  /// (`anyIPv6` with `v6Only: false`) also binds every other interface — the one
+  /// thing the paragraph above rules out. So it is two sockets or nothing.
+  ///
+  /// It is needed because [localhostRedirectUri] exists: `localhost` resolves
+  /// through the OS, browsers commonly prefer the IPv6 answer, and a callback to
+  /// `[::1]` would land on a closed port with the listener sitting on IPv4 —
+  /// a sign-in that hangs until it times out, with nothing to say why.
+  ///
+  /// The v6 socket is best-effort. A machine with IPv6 switched off simply
+  /// doesn't get one, and everything still works through the address the app
+  /// registers first.
   static Future<OAuthLoopbackListener> bind() async {
     for (final port in preferredPorts) {
-      try {
-        final server = await HttpServer.bind(
-          InternetAddress.loopbackIPv4,
-          port,
-        );
-        return OAuthLoopbackListener._(server);
-      } on SocketException {
-        // In use by something else. Try the next.
-      }
+      final v4 = await _tryBind(InternetAddress.loopbackIPv4, port);
+      if (v4 == null) continue; // In use by something else. Try the next.
+      return OAuthLoopbackListener._([
+        v4,
+        ?await _tryBind(InternetAddress.loopbackIPv6, port),
+      ]);
     }
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    return OAuthLoopbackListener._(server);
+    // Every preferred port taken. Let the OS pick, then match the v6 socket to
+    // whatever it chose — the two must share a port or the redirect URI names
+    // only one of them.
+    final v4 = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    return OAuthLoopbackListener._([
+      v4,
+      ?await _tryBind(InternetAddress.loopbackIPv6, v4.port),
+    ]);
+  }
+
+  static Future<HttpServer?> _tryBind(InternetAddress address, int port) async {
+    try {
+      return await HttpServer.bind(address, port);
+    } on SocketException {
+      return null;
+    }
   }
 
   /// Wait for the browser, then stop listening.
@@ -132,33 +181,45 @@ class OAuthLoopbackListener {
     Duration timeout = const Duration(minutes: 5),
   }) async {
     final completer = Completer<LoopbackResult>();
-    late final StreamSubscription<HttpRequest> subscription;
 
     final timer = Timer(timeout, () {
       if (!completer.isCompleted) completer.complete(const LoopbackTimeout());
     });
 
-    subscription = _server.listen(
-      (request) async {
-        final result = _read(request.uri);
-        await _respond(request, result);
-        // Anything that isn't a callback (a favicon probe, a stray scan) gets
-        // its page and is otherwise ignored — closing on the first byte of
-        // noise would abandon a user who hasn't finished yet.
-        if (result != null && !completer.isCompleted) {
-          completer.complete(result);
-        }
-      },
-      onError: (Object _) {
-        if (!completer.isCompleted) completer.complete(const LoopbackTimeout());
-      },
-    );
+    // One subscription per socket, first answer wins. The browser arrives on
+    // exactly one of them — whichever family `localhost` resolved to — and the
+    // other never sees a request.
+    final subscriptions = [
+      for (final server in _servers)
+        server.listen(
+          (request) async {
+            final result = _read(request.uri);
+            await _respond(request, result);
+            // Anything that isn't a callback (a favicon probe, a stray scan)
+            // gets its page and is otherwise ignored — closing on the first
+            // byte of noise would abandon a user who hasn't finished yet.
+            if (result != null && !completer.isCompleted) {
+              completer.complete(result);
+            }
+          },
+          onError: (Object _) {
+            // Only if *nothing* is left listening: one family failing while the
+            // other is still open is not a timeout, and reporting it as one
+            // would abandon a sign-in that is still perfectly able to land.
+            if (!completer.isCompleted && _servers.length == 1) {
+              completer.complete(const LoopbackTimeout());
+            }
+          },
+        ),
+    ];
 
     try {
       return await completer.future;
     } finally {
       timer.cancel();
-      await subscription.cancel();
+      for (final subscription in subscriptions) {
+        await subscription.cancel();
+      }
       await close();
     }
   }
@@ -166,10 +227,12 @@ class OAuthLoopbackListener {
   /// Stop listening. Safe to call more than once — cancelling a pending link
   /// and finishing one both end here.
   Future<void> close() async {
-    try {
-      await _server.close(force: true);
-    } on Object {
-      // Already closed; nothing to report.
+    for (final server in _servers) {
+      try {
+        await server.close(force: true);
+      } on Object {
+        // Already closed; nothing to report.
+      }
     }
   }
 

@@ -342,7 +342,7 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     try {
       final (client, registerError) = await oauth.register(
         probe,
-        redirectUri: listener.redirectUri,
+        redirectUris: listener.redirectUris,
       );
       if (client == null) {
         log.failure(

@@ -197,7 +197,7 @@ void main() {
           registrationEndpoint: 'https://weak.example/register',
           supportsS256: false,
         ),
-        redirectUri: 'http://127.0.0.1:51789/callback',
+        redirectUris: const ['http://127.0.0.1:51789/callback'],
       );
 
       expect(registered, isNull);
@@ -216,7 +216,7 @@ void main() {
           tokenEndpoint: 'https://google.example/token',
           supportsS256: true,
         ),
-        redirectUri: 'http://127.0.0.1:51789/callback',
+        redirectUris: const ['http://127.0.0.1:51789/callback'],
       );
 
       expect(registered, isNull);
