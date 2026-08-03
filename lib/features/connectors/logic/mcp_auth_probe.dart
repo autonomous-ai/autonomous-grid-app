@@ -152,11 +152,27 @@ class McpAuthProbe {
         detail: challenge.detail,
       );
     }
-    // It answered, and it answered without asking for anything. Usable as-is.
-    if (challenge == null) {
-      return const McpAuthProbeResult(kind: McpAuthKind.open);
-    }
-    if (challenge.isEmpty) {
+    // It answered without asking for anything — which is not the end of the
+    // question, and treating it as one is the bug this flag exists to stop.
+    //
+    // **A server can serve anonymous callers and still offer a sign-in.**
+    // Hugging Face does: `initialize` returns 200 to a client with no
+    // credential (rate-limited), and it publishes a full protected-resource
+    // document with `registration_endpoint` and S256 beside it. Stopping at the
+    // 200 called that `open`, so the app filed the connector with no credential
+    // and left the user anonymous on an account they could have signed into —
+    // and Hugging Face then served its *web page* to the agent's SSE GET, which
+    // is what a browser gets at that URL and what an unauthenticated client
+    // therefore got too. With a credential the same GET answers `405`, exactly
+    // like every other MCP server.
+    //
+    // Claude asks for the metadata regardless of the challenge, which is why
+    // its Hugging Face row opens a consent screen and ours did not.
+    //
+    // So discovery now runs either way, and `open` is the answer only when
+    // discovery turns up nothing — see [noSignIn].
+    final anonymousWorks = challenge == null;
+    if (!anonymousWorks && challenge.isEmpty) {
       return const McpAuthProbeResult(
         kind: McpAuthKind.manual,
         detail:
@@ -165,27 +181,41 @@ class McpAuthProbe {
       );
     }
 
-    // RFC 9728 says the challenge names its metadata document. Falling back to
-    // the well-known path on the resource's own origin covers servers that
-    // challenge without the hint.
-    final metadataUrl =
-        challenge.resourceMetadata ??
-        target.replace(
-          path: '/.well-known/oauth-protected-resource',
-          query: '',
-        );
+    /// What a dead end in discovery means — which depends entirely on whether
+    /// the server let us in without one.
+    ///
+    /// The same missing document is "this needs no sign-in" for a server that
+    /// answered 200 and "we could not work out how to sign in" for one that
+    /// refused us. Getting this backwards is the whole risk of the change
+    /// above: reporting a refusing server as `open` files a connector whose
+    /// every call then fails (the BigQuery shape), and reporting an open one as
+    /// `manual` takes the Connect button off a row that works today.
+    McpAuthProbeResult noSignIn(String detail) => anonymousWorks
+        ? const McpAuthProbeResult(kind: McpAuthKind.open)
+        : McpAuthProbeResult(kind: McpAuthKind.manual, detail: detail);
 
-    final resourceMeta = await _json(metadataUrl);
+    // RFC 9728 §3.1 says the challenge names its metadata document. Where it
+    // doesn't — which now includes every server that never challenged at all —
+    // the URL is derived from the resource the same way RFC 8414 derives the
+    // authorization server's, and for the same reason: the segment is inserted
+    // before the path, not appended. See [resourceMetadataCandidates].
+    Map<String, dynamic>? resourceMeta;
+    for (final candidate in [
+      ?challenge?.resourceMetadata,
+      ...resourceMetadataCandidates(target),
+    ]) {
+      resourceMeta = await _json(candidate);
+      if (resourceMeta != null) break;
+    }
+
     final servers = resourceMeta?['authorization_servers'];
     final asBase = servers is List && servers.isNotEmpty
         ? Uri.tryParse('${servers.first}')
         : null;
     if (asBase == null) {
-      return const McpAuthProbeResult(
-        kind: McpAuthKind.manual,
-        detail:
-            "This server's sign-in details could not be read. You will "
-            'need to paste a token.',
+      return noSignIn(
+        "This server's sign-in details could not be read. You will "
+        'need to paste a token.',
       );
     }
 
@@ -199,12 +229,9 @@ class McpAuthProbe {
 
     final asMeta = await _authServerMetadata(asBase);
     if (asMeta == null) {
-      return McpAuthProbeResult(
-        kind: McpAuthKind.manual,
-        issuer: asBase.toString(),
-        detail:
-            'The sign-in service at ${asBase.host} did not describe itself. '
-            'You will need to paste a token.',
+      return noSignIn(
+        'The sign-in service at ${asBase.host} did not describe itself. '
+        'You will need to paste a token.',
       );
     }
 
@@ -241,12 +268,9 @@ class McpAuthProbe {
     final register = field('registration_endpoint');
     // Without these two there is nothing to drive, registration or not.
     if (authorize.isEmpty || token.isEmpty) {
-      return McpAuthProbeResult(
-        kind: McpAuthKind.manual,
-        issuer: field('issuer').isEmpty ? asBase.toString() : field('issuer'),
-        detail:
-            'The sign-in service at ${asBase.host} is missing endpoints '
-            'this app needs. You will need to paste a token.',
+      return noSignIn(
+        'The sign-in service at ${asBase.host} is missing endpoints '
+        'this app needs. You will need to paste a token.',
       );
     }
 
@@ -332,6 +356,38 @@ class McpAuthProbe {
       if (json != null) return json;
     }
     return null;
+  }
+
+  /// Where a resource's own metadata could be, in the order worth asking.
+  ///
+  /// RFC 9728 §3.1 mirrors RFC 8414: the well-known segment goes *between* host
+  /// and path, so `https://huggingface.co/mcp` publishes at
+  /// `https://huggingface.co/.well-known/oauth-protected-resource/mcp`. Only the
+  /// bare origin was tried before, which happened to work for Hugging Face —
+  /// they serve both — and would silently miss a resource that serves only the
+  /// spelling the RFC names.
+  ///
+  /// The origin form stays as a fallback for the same reason its counterpart
+  /// does: it costs one request on a path already making several, and it is
+  /// what several servers actually publish.
+  ///
+  /// A resource with no path makes the two identical, and only one is yielded.
+  /// Built field by field rather than with `replace`, because the resource URL
+  /// may carry a query and the metadata URL must not: `replace(query: '')`
+  /// leaves a bare `?` on the end, which is a different URL to the server.
+  @visibleForTesting
+  static Iterable<Uri> resourceMetadataCandidates(Uri resource) sync* {
+    const wellKnown = '.well-known/oauth-protected-resource';
+    final path = resource.path.replaceAll(RegExp(r'/+$'), '');
+    Uri at(String p) => Uri(
+      scheme: resource.scheme,
+      userInfo: resource.userInfo,
+      host: resource.host,
+      port: resource.hasPort ? resource.port : null,
+      path: p,
+    );
+    yield at('/$wellKnown$path');
+    if (path.isNotEmpty) yield at('/$wellKnown');
   }
 
   /// Every URL that metadata could be at, in the order worth asking.
