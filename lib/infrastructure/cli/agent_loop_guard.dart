@@ -60,8 +60,11 @@ class AgentLoopGuard {
   /// of text.
   final Map<String, Set<int>> _versions = {};
 
-  /// How many times each file has been put back to a version already seen.
-  final Map<String, int> _rewinds = {};
+  /// How many times, *in the current run*, the file has been put back to a
+  /// version already seen. Reset by any different target, exactly like [_run]:
+  /// a revert with a test run either side is a bisect, not a circle — the model
+  /// learned something between the two writes.
+  int _rewinds = 0;
 
   /// Record [request]; return a short label for what it's stuck on when this is
   /// the step that makes it a loop, else null.
@@ -74,6 +77,7 @@ class AgentLoopGuard {
     } else {
       _lastKey = key;
       _run = 1;
+      _rewinds = 0;
     }
 
     if (request.kind == AgentPermissionKind.command) {
@@ -87,9 +91,8 @@ class AgentLoopGuard {
     // `add` answers false when the file has already held these contents: this
     // write undoes rather than advances.
     if (!seen.add((request.newText ?? '').hashCode)) {
-      final rewinds = (_rewinds[key] ?? 0) + 1;
-      _rewinds[key] = rewinds;
-      if (rewinds >= kMaxRewindsPerFile) return _labelOf(request);
+      _rewinds++;
+      if (_rewinds >= kMaxRewindsPerFile) return _labelOf(request);
     }
 
     return _run >= kMaxEditsInARow ? _labelOf(request) : null;
