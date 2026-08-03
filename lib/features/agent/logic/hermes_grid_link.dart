@@ -145,10 +145,19 @@ class HermesGridLink {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  /// Whether Hermes already has a model to answer with. Lets a caller tell "not
-  /// pointed at anything yet" (the bot would be mute) from "configured
-  /// elsewhere", instead of blocking someone who set Hermes up themselves.
-  Future<bool> hasModel() async => await configuredModel() != null;
+  /// Whether Hermes already has a model it can actually answer with. Lets a
+  /// caller tell "not pointed at anything yet" (the bot would be mute) from
+  /// "configured elsewhere", instead of blocking someone who set Hermes up
+  /// themselves.
+  ///
+  /// A config naming a model Hermes can't serve counts as **no** model, not as
+  /// one: 03/08 the config still named a `claude:*` seat from before the pairing
+  /// was blocked, and every 8am task ran on it — the seat returns no tool calls,
+  /// so Hermes delivered the tool-call JSON as its report and marked the run ok.
+  Future<bool> hasModel() async {
+    final model = await configuredModel();
+    return model != null && hermesModelRefusal(model) == null;
+  }
 
   /// Point Hermes at whatever grid the app has selected, resolving a model for
   /// it, so an unattended surface can actually answer. Returns null when Hermes
@@ -170,9 +179,18 @@ class HermesGridLink {
       return 'Pick a grid in Chat first — the assistant answers with that '
           "grid, and there's no answer without one.";
     }
-    final model = await _modelForGrid(grid.networkId);
+    final (:model, :servesAnything) = await _modelForGrid(grid.networkId);
     if (model == null) {
       if (await hasModel()) return null;
+      // Two different problems, and telling the user the wrong one costs them
+      // the fix: an empty grid needs a model shared on it, a grid of CLI seats
+      // needs another assistant.
+      if (servesAnything) {
+        return 'This grid only shares AI that Claude Code or Codex answers, so '
+            'the Hermes assistant has nothing to run on here. Switch the '
+            'assistant, or share a model on this computer (Settings ▸ This '
+            'computer).';
+      }
       return "This grid isn't sharing any AI yet, so the assistant would have "
           'nothing to answer with. Start sharing on this computer (Settings ▸ '
           'This computer), then try again.';
@@ -180,13 +198,30 @@ class HermesGridLink {
     return point(grid, model);
   }
 
-  /// The model to answer [networkId] with: the one the user last chatted with
-  /// when the grid still serves it, else whatever that grid serves first. Null
-  /// when the grid serves nothing at all.
-  Future<String?> _modelForGrid(String networkId) async {
+  /// The model to answer [networkId] with — the one the user last chatted with
+  /// when the grid still serves it, else the first the grid serves — alongside
+  /// whether the grid serves anything at all.
+  ///
+  /// Only models Hermes can answer with are candidates: a CLI seat on this grid
+  /// is another vendor's agent behind the relay (see [hermesModelRefusal]), and
+  /// this picks for runs nobody is watching. [servesAnything] is what separates
+  /// "nothing shared here" from "nothing *Hermes* can use here" for the caller's
+  /// message.
+  Future<({String? model, bool servesAnything})> _modelForGrid(
+    String networkId,
+  ) async {
     final served = await _ref.read(networkModelsForProvider(networkId).future);
-    if (served.isEmpty) return null;
+    final usable = [
+      for (final model in served)
+        if (agentSupportsModel(AgentTool.hermes, model)) model,
+    ];
+    if (usable.isEmpty) {
+      return (model: null, servesAnything: served.isNotEmpty);
+    }
     final chosen = _ref.read(chatPrefsProvider).model;
-    return served.contains(chosen) ? chosen : served.first;
+    return (
+      model: usable.contains(chosen) ? chosen : usable.first,
+      servesAnything: true,
+    );
   }
 }

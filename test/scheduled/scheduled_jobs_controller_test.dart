@@ -436,6 +436,52 @@ void main() {
     expect(h.cron.created, isNull);
   });
 
+  test('a grid whose only AI is another vendor\'s CLI seat is refused with the '
+      'fix that works — the assistant, not the sharing', () async {
+    final h = harness(models: const ['claude:claude-sonnet-5']);
+    await h.container.read(scheduledJobsProvider.future);
+
+    final result = await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: 'Digest',
+          prompt: 'Summarise',
+          schedule: const JobSchedule(
+            cadence: JobCadence.everyDay,
+            hour: 8,
+            minute: 0,
+          ),
+        );
+
+    expect(result.error, contains('Switch the assistant'));
+    expect(h.cron.created, isNull);
+  });
+
+  test(
+    'a task runs on the model Hermes can answer with, never the seat the '
+    'grid also shares — an 8am run has nobody to notice the difference',
+    () async {
+      final h = harness(models: const ['claude:claude-sonnet-5', 'maker/m1']);
+      await h.container.read(scheduledJobsProvider.future);
+
+      await h.container
+          .read(scheduledJobsProvider.notifier)
+          .create(
+            name: 'Digest',
+            prompt: 'Summarise',
+            schedule: const JobSchedule(
+              cadence: JobCadence.everyDay,
+              hour: 8,
+              minute: 0,
+            ),
+          );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.cron.created, isNotNull);
+      expect(h.cron.followed.first.model, 'maker/m1');
+    },
+  );
+
   test(
     'a task still saves when the user configured Hermes themselves — no '
     'grid picked is no reason to refuse a model that is already there',
@@ -577,6 +623,25 @@ void main() {
           .useCurrentModel('abc123');
 
       expect(error, contains('no AI model set'));
+      expect(h.cron.followed, isEmpty);
+    });
+
+    test('a config left naming a CLI seat is refused, not armed onto the task '
+        '— that pairing comes back as raw tool-call JSON, marked ok', () async {
+      await HermesConfigFile(home: workspace.path).edit(
+        (editor) => HermesConfigFile.upsert(editor, [
+          'model',
+          'default',
+        ], 'claude:claude-sonnet-5'),
+      );
+      final h = harness(jobsJson: _blockedJob);
+      await h.container.read(scheduledJobsProvider.future);
+
+      final error = await h.container
+          .read(scheduledJobsProvider.notifier)
+          .useCurrentModel('abc123');
+
+      expect(error, kHermesCannotServeSeatModel);
       expect(h.cron.followed, isEmpty);
     });
 
