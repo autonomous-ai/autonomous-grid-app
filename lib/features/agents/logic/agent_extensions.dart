@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/skills/agent_skill_home.dart';
+import '../../agent/logic/claude_extensions.dart';
 import '../../agent/logic/codex_extensions.dart';
 import '../../agent/logic/hermes_extensions.dart';
 import 'agent_catalog.dart';
@@ -140,9 +141,7 @@ final agentExtensionsProvider = Provider.family<AgentExtensions?, AgentTool>((
   return switch (tool) {
     AgentTool.hermes => ref.watch(hermesExtensionsProvider),
     AgentTool.codex => ref.watch(codexExtensionsProvider),
-    // Claude Code keeps skills in its own home but has no adapter yet — its
-    // extensions land with that adapter, not before.
-    AgentTool.claude => null,
+    AgentTool.claude => ref.watch(claudeExtensionsProvider),
   };
 });
 

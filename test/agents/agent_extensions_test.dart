@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agent/logic/claude_extensions.dart';
 import 'package:grid_app/features/agent/logic/hermes_extensions.dart';
 import 'package:grid_app/features/agent/logic/hermes_mcp_config.dart';
+import 'package:grid_app/infrastructure/cli/claude_plugin_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_extensions.dart';
@@ -17,6 +19,26 @@ class _ThrowingPlugins implements HermesPluginService {
   @override
   Future<void> install(String identifier) =>
       throw const HermesPluginException('install blew up');
+
+  @override
+  Future<void> enable(String name) async {}
+
+  @override
+  Future<void> disable(String name) async {}
+
+  @override
+  Future<void> remove(String name) async {}
+}
+
+/// Stands in for the `claude` binary so the plugins plane is non-null without
+/// spawning anything — the tests here are about which planes exist, not about
+/// what the CLI answers.
+class _StubClaudePlugins implements ClaudePluginService {
+  @override
+  Future<String> listJson() async => '[]';
+
+  @override
+  Future<void> install(String identifier) async {}
 
   @override
   Future<void> enable(String name) async {}
@@ -73,10 +95,51 @@ void main() {
       expect(mcp.projectConnectorTokens, isNotNull);
     });
 
-    test('claude still has no adapter', () {
+    test('claude resolves to its own adapter', () {
       final c = ProviderContainer();
       addTearDown(c.dispose);
-      expect(c.read(agentExtensionsProvider(AgentTool.claude)), isNull);
+      final adapter = c.read(agentExtensionsProvider(AgentTool.claude));
+      expect(adapter, isNotNull);
+      expect(adapter!.tool, AgentTool.claude);
+    });
+
+    test('claude has all three planes when the binary is there', () {
+      final c = ProviderContainer(
+        overrides: [
+          claudePluginServiceProvider.overrideWithValue(_StubClaudePlugins()),
+        ],
+      );
+      addTearDown(c.dispose);
+      final adapter = c.read(agentExtensionsProvider(AgentTool.claude))!;
+      expect(adapter.skills, isNotNull);
+      expect(adapter.mcp, isNotNull);
+      // The first adapter with nothing missing: unlike Codex, `claude plugin`
+      // has a verb behind every button the screen offers.
+      expect(adapter.plugins, isNotNull);
+    });
+
+    test('claude loses only its plugins plane without the binary', () {
+      final c = ProviderContainer(
+        overrides: [claudePluginServiceProvider.overrideWithValue(null)],
+      );
+      addTearDown(c.dispose);
+      final adapter = c.read(agentExtensionsProvider(AgentTool.claude))!;
+      // The plugin manager IS the CLI, so it goes with the binary — but skills
+      // and MCP are files on disk and outlive it.
+      expect(adapter.plugins, isNull);
+      expect(adapter.skills, isNotNull);
+      expect(adapter.mcp, isNotNull);
+    });
+
+    test('claude projects connector addresses', () {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      final mcp = c.read(agentExtensionsProvider(AgentTool.claude))!.mcp!;
+      // Non-null, and what it writes is an address rather than a credential: a
+      // REST connector goes through the app's bridge, and an MCP one whose entry
+      // needs a header is skipped rather than written insecurely
+      // (`ClaudeConnectorServers.entryFor`).
+      expect(mcp.projectConnectorTokens, isNotNull);
     });
 
     test('the selected agent defaults to hermes', () {
