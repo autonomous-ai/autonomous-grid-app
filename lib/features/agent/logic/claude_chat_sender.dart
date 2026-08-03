@@ -9,7 +9,6 @@ import '../../../infrastructure/cli/claude_exec_service.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../agents/logic/agent_catalog.dart';
 import '../../network/logic/app_guide_snippets.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
@@ -19,7 +18,6 @@ import 'agent_prompt.dart';
 import 'agent_providers.dart';
 import 'agent_server_error.dart';
 import 'agent_session_slots.dart';
-import 'agent_skill_installer.dart';
 import 'claude_tool.dart';
 
 /// The Claude Code exec seam, or null when Claude Code is absent.
@@ -86,19 +84,10 @@ class ClaudeChatSender implements ChatSender {
       return;
     }
 
-    // Clear the shared feed now — synchronously, before the awaited skill
-    // install below — so the chat's "working" bubble, already on screen, can't
-    // flash the previous turn's steps (or another chat's). See [resetAgentFeed].
+    // Clear the shared feed now, so the chat's "working" bubble, already on
+    // screen, can't flash the previous turn's steps (or another chat's). See
+    // [resetAgentFeed].
     resetAgentFeed(_ref);
-
-    // Claude's own web tools are served by Anthropic's API, so on a grid they
-    // answer nothing; the `grid-web` skill is its only way to the web. A
-    // skill-install hiccup must not block chatting, so its failure is swallowed.
-    try {
-      await _ref.read(agentSkillInstallerProvider).install(AgentTool.claude);
-    } on Object {
-      // Non-fatal: Claude still chats, just without web search this session.
-    }
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(

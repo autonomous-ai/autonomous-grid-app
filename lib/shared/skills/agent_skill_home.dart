@@ -154,12 +154,6 @@ class AgentSkillHome {
   Directory gridDir(String name) => agentSkillCopy(agent, home, name);
 }
 
-/// Write (or refresh) a skill into [dir]: wipe it first so a stale file from an
-/// old copy can never linger beside the current one, then lay down the card and
-/// every file it runs. Idempotent.
-///
-/// The one primitive every Grid-skill installer shares, so "how a skill folder is
-/// written" lives in exactly one place.
 /// Copy a whole skill folder to [to], replacing whatever is there.
 ///
 /// Replacing, not merging: a skill is one unit, and a merge would leave a file
@@ -181,6 +175,14 @@ Future<void> copySkillFolder(Directory from, Directory to) async {
   }
 }
 
+/// Write (or refresh) a skill into [dir]: wipe it first so a stale file from an
+/// old copy can never linger beside the current one, then lay down the card and
+/// every file it runs. Idempotent.
+///
+/// The one primitive every Grid-skill installer shares, so "how a skill folder
+/// is written" lives in exactly one place. It always writes — deciding whether
+/// a folder needs writing at all is the caller's call, and only the installer
+/// makes it (see `AgentSkillInstaller.install`).
 Future<void> writeSkillFolder(Directory dir, GridSkillFiles skill) async {
   if (await dir.exists()) await dir.delete(recursive: true);
   await dir.create(recursive: true);
@@ -191,3 +193,4 @@ Future<void> writeSkillFolder(Directory dir, GridSkillFiles skill) async {
     await file.writeAsString(entry.value);
   }
 }
+

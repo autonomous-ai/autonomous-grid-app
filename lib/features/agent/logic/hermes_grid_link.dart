@@ -14,7 +14,6 @@ import '../../network/logic/client_app_detector.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
-import 'agent_skill_installer.dart';
 import 'hermes_tool.dart';
 
 /// The line shown instead of pointing Hermes at a model it can't serve — see
@@ -88,14 +87,6 @@ class HermesGridLink {
     );
     if (result is ApplyError) {
       return "Couldn't point Hermes at this grid: ${result.message}";
-    }
-    // Give the agent the grid's skills (image generation). Credential-free — the
-    // skill reads the endpoint/key from the `.env` just written. A skill-install
-    // hiccup must not block chatting, so its failure is swallowed here.
-    try {
-      await _ref.read(agentSkillInstallerProvider).install(AgentTool.hermes);
-    } on Object {
-      // Non-fatal: the agent still chats, just without the image skill.
     }
     // Top up the pieces Hermes imports only when it needs them — a keyless
     // web-search backend, the MCP SDK its connectors run on — so it isn't

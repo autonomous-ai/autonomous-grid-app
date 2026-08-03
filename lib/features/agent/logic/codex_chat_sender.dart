@@ -12,13 +12,11 @@ import '../../network/logic/app_guide_snippets.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
-import '../../agents/logic/agent_catalog.dart';
 import 'agent_changes.dart';
 import 'agent_prompt.dart';
 import 'agent_session_slots.dart';
 import 'agent_server_error.dart';
 import 'agent_providers.dart';
-import 'agent_skill_installer.dart';
 import 'codex_tool.dart';
 
 /// The Codex exec seam, or null when Codex is absent.
@@ -64,10 +62,6 @@ class CodexChatSender implements ChatSender {
 
   final _slots = AgentSessionSlots();
 
-  /// Whether Grid's skills have been written into `~/.codex` this run — see
-  /// [_installSkills].
-  bool _skillsInstalled = false;
-
   @override
   Stream<ChatSendUpdate> send({
     required NetworkCredential network,
@@ -97,12 +91,10 @@ class CodexChatSender implements ChatSender {
       return;
     }
 
-    // Clear the shared feed now — synchronously, before the awaited skill
-    // install below — so the chat's "working" bubble, already on screen, can't
-    // flash the previous turn's steps (or another chat's). See [resetAgentFeed].
+    // Clear the shared feed now, so the chat's "working" bubble, already on
+    // screen, can't flash the previous turn's steps (or another chat's). See
+    // [resetAgentFeed].
     resetAgentFeed(_ref);
-
-    await _installSkills();
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(
@@ -128,23 +120,6 @@ class CodexChatSender implements ChatSender {
       planFirst: planFirst,
       slot: turn.slot,
     );
-  }
-
-  /// Give Codex the web-search skill — its only way to reach the web on a grid,
-  /// since the relay doesn't serve the OpenAI `web_search` tool.
-  ///
-  /// Once per run of the app: the skill is a few static files that depend on
-  /// neither the grid nor the model, so rewriting them on every turn would be
-  /// disk work for nothing. A hiccup must not block chatting, so failure is
-  /// swallowed — Codex still chats, just without web search this session.
-  Future<void> _installSkills() async {
-    if (_skillsInstalled) return;
-    try {
-      await _ref.read(agentSkillInstallerProvider).install(AgentTool.codex);
-      _skillsInstalled = true;
-    } on Object {
-      // Left false so the next turn tries again.
-    }
   }
 
   /// Run one turn: stream the answer into the bubble as it arrives, mirror tool

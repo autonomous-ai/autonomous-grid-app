@@ -99,7 +99,18 @@ class AgentSkillInstaller {
 
   final String? _home;
 
-  /// Write (or refresh) every built-in skill that applies to [agent].
+  /// Put every built-in skill that applies to [agent] where that agent reads,
+  /// and keep a copy in the library.
+  ///
+  /// **A skill whose folder is already there is left completely alone.** This
+  /// runs on every launch and again before chats, and rewriting each time
+  /// churned the disk and moved every card's timestamp — which is what the
+  /// Skills screen shows as "Last updated" and sorts by, so a skill nobody had
+  /// touched in a month read as changed a second ago.
+  ///
+  /// The check is the folder's own existence, nothing finer. So a card whose
+  /// wording changed in a new build does *not* reach an agent that already has
+  /// the skill; only a folder that was deleted is put back.
   Future<void> install(AgentTool agent) async {
     final skillHome = AgentSkillHome(agent, home: _home);
     // An older build pointed Hermes at the app's library; this one doesn't,
@@ -116,6 +127,7 @@ class AgentSkillInstaller {
         skillHome.libraryGridDir(skill.name),
         skillHome.gridDir(skill.name),
       ]) {
+        if (await dir.exists()) continue;
         await writeSkillFolder(dir, skill.build(dir));
       }
     }
