@@ -210,18 +210,17 @@ class CodexChatSender implements ChatSender {
         settled = true;
         final reply = answer.toString().trim();
         final plan = _ref.read(agentPlanProvider);
-        // A turn that announced a plan and stopped before doing it must not read
-        // as an answer (§5) — but an unfinished plan alone doesn't mean that, so
-        // the verdict weighs how the turn ended and what it did (see
-        // [agentTurnStalled]). Shared with Hermes so a stalled turn reads the
-        // same whichever agent ran it.
-        final stalled = agentTurnStalled(
+        // A turn that announced a plan and stopped before finishing it is worth
+        // recording — but only recording, and identically for every agent: the
+        // verdict is a guess about work the app can't see, and calling a finished
+        // answer a failure on the strength of an unticked box put an error over
+        // turns that had answered (§5).
+        if (agentTurnStalled(
           plan: plan,
           endedCleanly: endedCleanly,
           workedAtAll: workedAtAll,
           planFirst: planFirst,
-        );
-        if (stalled) {
+        )) {
           _ref
               .read(appLogProvider)
               .failure(
@@ -233,11 +232,7 @@ class CodexChatSender implements ChatSender {
                 ),
               );
         }
-        final error =
-            failure ??
-            (stalled
-                ? kAgentStalledPlan
-                : (reply.isEmpty ? kAgentNoAnswer : null));
+        final error = failure ?? (reply.isEmpty ? kAgentNoAnswer : null);
         log.finish(logId, error: error);
         // The answer is about to be appended to the chat, and Codex wrote it —
         // so its thread already holds it. Counting it here keeps the next turn

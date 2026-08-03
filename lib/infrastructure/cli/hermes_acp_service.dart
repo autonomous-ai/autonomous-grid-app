@@ -4,7 +4,6 @@ import 'dart:io';
 
 import '../logging/app_log.dart';
 import 'agent_event.dart';
-import 'agent_loop_guard.dart';
 import 'hermes_permission_policy.dart';
 import 'host_environment.dart';
 import 'stdio_line_writer.dart';
@@ -42,20 +41,6 @@ class HermesAcpPermission extends HermesAcpEvent {
 class HermesAcpEdit extends HermesAcpEvent {
   const HermesAcpEdit(this.request);
   final AgentPermission request;
-}
-
-/// The assistant is going in circles — [AgentLoopGuard] recognised the step it
-/// just asked for, and that step was **refused** rather than approved.
-///
-/// The turn is over: the chat ends it with [target] named (the file or command
-/// it kept redoing). Refusing rather than approving is the difference between an
-/// agent that stops and one whose half-written file is yanked out from under it.
-class HermesAcpLoop extends HermesAcpEvent {
-  const HermesAcpLoop(this.target);
-
-  /// A short name for what it kept redoing — a file's base name, or a clipped
-  /// command line.
-  final String target;
 }
 
 /// The pages a web look-up turned up, parsed from a `web_search` tool result.
@@ -260,12 +245,6 @@ class _HermesAcpSession implements HermesAcpSession {
   // turn so one turn's tools don't bleed into the next.
   final _tools = <String, AgentActivity>{};
 
-  /// The turn's watch for an assistant redoing one step forever. It lives here,
-  /// beside the permission answer, so the step that trips it is *refused* —
-  /// approving it and killing the process a moment later left the file it was
-  /// writing half applied, twice.
-  AgentLoopGuard _loop = AgentLoopGuard();
-
   /// Spawn and run the handshake; completes when the session is ready to prompt.
   Future<void> open() async {
     try {
@@ -341,9 +320,6 @@ class _HermesAcpSession implements HermesAcpSession {
     _turnDone = done;
     _turnId = _nextId++;
     _tools.clear();
-    // One watch per turn: a file rewritten twice across two turns is two
-    // separate pieces of work, and the second must not inherit the first's run.
-    _loop = AgentLoopGuard();
 
     _write({
       'jsonrpc': '2.0',
@@ -563,22 +539,6 @@ class _HermesAcpSession implements HermesAcpSession {
     );
 
     final request = parseAgentPermission(id: id, params: params);
-
-    // Before anything is approved: an assistant going in circles is stopped by
-    // refusing the step that proves it. Approving that step and killing the
-    // process a moment later is what left a file half applied — twice, both
-    // times the very fix the agent had just worked out.
-    final stuck = request == null ? null : _loop.observe(request);
-    if (stuck != null) {
-      _log.info(
-        'agent',
-        'acp permission $toolKind "$label" refused: looping ($stuck)',
-      );
-      answerPermission(id, refuseOption(options));
-      final events = _events;
-      if (events != null && !events.isClosed) events.add(HermesAcpLoop(stuck));
-      return;
-    }
 
     final decision = decideHermesPermission(
       toolKind: toolKind,

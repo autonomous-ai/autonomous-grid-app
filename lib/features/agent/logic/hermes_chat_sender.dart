@@ -326,39 +326,28 @@ class HermesChatSender implements ChatSender {
       );
     }
 
-    // End a turn that's gone wrong before it drags on. Mirrors the Stop path
-    // (cancel + kill + log) but lands a plain line in the chat rather than
-    // stopping in silence — carrying the partial work so a loop/hang cut mid-way
-    // keeps what it built. [logError] is what the command log records; [failure]
-    // is the line the user reads.
-    Future<void> endEarly(String failure, String logError) async {
-      if (settled) return;
-      settled = true;
-      idle?.cancel();
-      await events.cancel();
-      permissions.clear();
-      run.kill();
-      log.finish(logId, error: logError);
-      updates.add(ChatSendFailure(failure, partial: partialReply()));
-      await updates.close();
-    }
-
-    void stopForLoop(String stuck) =>
-        unawaited(endEarly(agentLoopingMessage(stuck), 'looping ($stuck)'));
-
-    // Catch a hung turn: the agent has sent nothing for too long and isn't
+    // Note a turn that has gone quiet — nothing sent for a long stretch, and not
     // waiting on the user either. Re-armed by every event (below) and by every
     // answered permission; cancelled while a permission is pending, because the
-    // user's own thinking time isn't the agent hanging. One turn sat silent for
-    // twelve minutes after starting a dev server it then waited on forever —
-    // this is what ends that instead of spinning.
+    // user's own thinking time isn't the agent going quiet.
+    //
+    // A note in the log, and nothing else: the app doesn't end a turn the agent
+    // hasn't ended. Silence is not proof of a hang — a long install, a full test
+    // suite and a slow model all look exactly like it, and the turns this used to
+    // cut were working. What the user sees is the working bubble's own clock, and
+    // Stop is theirs to press.
     final idleTimeout = _ref.read(agentTurnIdleTimeoutProvider);
     void armIdle() {
       idle?.cancel();
-      idle = Timer(
-        idleTimeout,
-        () => unawaited(endEarly(kAgentUnresponsive, 'unresponsive')),
-      );
+      idle = Timer(idleTimeout, () {
+        if (settled) return;
+        _ref
+            .read(appLogProvider)
+            .warn(
+              'agent',
+              'turn quiet for ${idleTimeout.inMinutes}m — still running',
+            );
+      });
     }
 
     events = run.events.listen(
@@ -383,12 +372,6 @@ class HermesChatSender implements ChatSender {
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
             _recordEdit(request);
-          case HermesAcpLoop(:final target):
-            // The step that proved the loop was refused before it ran (see
-            // [AgentLoopGuard]); nothing is half-applied, and there's nothing
-            // left for this turn to do but say so.
-            stopForLoop(target);
-            return;
           case HermesAcpSources(:final sources):
             armIdle();
             // A web look-up finished — collect its pages to cite under the
@@ -427,19 +410,17 @@ class HermesChatSender implements ChatSender {
             friendlyAgentServerError(reply) ??
             friendlyAgentEmptyResponse(reply);
         if (refused != null) _ref.read(appLogProvider).failure('agent', reply);
-        // A turn that announced a plan and stopped before doing it must not read
-        // as an answer (§5) — but an unfinished plan alone doesn't mean that, so
-        // the verdict weighs how the turn ended and what it did (see
-        // [agentTurnStalled]). Shared with Codex so a stalled turn reads the same
-        // whichever agent ran it.
+        // A turn that announced a plan and stopped before finishing it is worth
+        // recording — but only recording. The verdict is a guess about work the
+        // app can't see, and calling a finished answer a failure on the strength
+        // of an unticked box put an error over turns that had answered (§5).
         final plan = _ref.read(agentPlanProvider);
-        final stalled = agentTurnStalled(
+        if (agentTurnStalled(
           plan: plan,
           endedCleanly: endedCleanly,
           workedAtAll: workedAtAll,
           planFirst: planFirst,
-        );
-        if (stalled) {
+        )) {
           _ref
               .read(appLogProvider)
               .failure(
@@ -462,11 +443,7 @@ class HermesChatSender implements ChatSender {
                   friendlyAgentServerError(turnError!) ??
                   kAgentTurnFailed);
         final failure =
-            refused ??
-            failed ??
-            (stalled
-                ? kAgentStalledPlan
-                : (reply.isEmpty ? kAgentNoAnswer : null));
+            refused ?? failed ?? (reply.isEmpty ? kAgentNoAnswer : null);
 
         log.finish(logId, error: failure);
         // The answer is about to be appended to the chat, and the agent wrote it

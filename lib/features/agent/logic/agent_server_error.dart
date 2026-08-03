@@ -8,34 +8,6 @@ import '../../network/logic/app_guide_snippets.dart';
 /// Hermes and a silent Codex read the same to the user.
 const String kAgentNoAnswer = "The agent didn't return an answer.";
 
-/// A turn that laid out a plan and then stopped before finishing it — no steps
-/// ticked off, nothing built. Shared by both agents so a stalled Hermes and a
-/// stalled Codex read the same. The chat pairs it with the switch-agent button,
-/// so "let another agent take this chat" is an offer to try, not a promise (§5).
-const String kAgentStalledPlan =
-    'The agent planned the work but stopped before finishing it. Try sending '
-    'again, or let another agent take this chat.';
-
-/// A turn that went silent — the assistant sent nothing for a long stretch and
-/// wasn't waiting on the user either, so it's stuck. A frequent cause: it
-/// started a command that never returns (a dev server) and waited on it. Ended
-/// so the chat doesn't spin forever; shares the other turn-end lines' shape (§5)
-/// — the raw silence is a gap in the log, nothing to humanize away.
-const String kAgentUnresponsive =
-    'The assistant went quiet — it can get stuck on a command that never '
-    'finishes, like starting a server. The turn was stopped; send again, or let '
-    'another agent take this chat.';
-
-/// A turn stopped because the assistant kept redoing the same step — the same
-/// file written, or the same command run, over and over — without finishing.
-/// [target] names what it was stuck on (a file's base name, or a clipped
-/// command) so the line says what happened, and points at the lever that helps:
-/// a stronger model. The raw repeats stay in the log to diagnose from (§6).
-String agentLoopingMessage(String target) =>
-    'The assistant kept redoing the same step ($target) without finishing, so '
-    'it was stopped. A stronger model handles this better — switch models, or '
-    'send again.';
-
 /// The fact behind an assistant that installed but can't run: Grid tried to
 /// complete the install and couldn't. Shared by the chat and the Agents screen
 /// so the same problem doesn't read as two (§5); each adds its own next step,
