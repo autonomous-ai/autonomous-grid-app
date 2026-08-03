@@ -55,21 +55,23 @@ void main() {
       );
     });
 
-    test('Hermes answers with both CLI seats — they serve chat-completions, '
-        'which is the dialect it speaks', () {
-      expect(agentSupportsModel(AgentTool.hermes, 'claude:opus'), isTrue);
-      expect(agentSupportsModel(AgentTool.hermes, 'codex-cli:gpt-5.5'), isTrue);
+    test("Hermes can't answer with any CLI seat — it drives neither vendor's "
+        'CLI, so a Claude or Codex seat model dead-ends after send', () {
+      expect(agentSupportsModel(AgentTool.hermes, 'claude:opus'), isFalse);
+      expect(agentSupportsModel(AgentTool.hermes, 'codex:gpt-5.5'), isFalse);
+      expect(agentSupportsModel(AgentTool.hermes, 'codex-cli:gpt-5.5'), isFalse);
     });
 
-    test("Hermes can't answer with a responses-only model: the shipped build "
-        'resolves no config for it, and its Responses client omits the flags '
-        'the relay requires', () {
-      expect(agentSupportsModel(AgentTool.hermes, 'codex:gpt-5.5'), isFalse);
-      // The same rule the config writer applies, so a greyed row and a written
-      // config can never disagree about a model.
-      expect(hermesModelRefusal('codex:gpt-5.5'), kHermesCannotServeCodexModel);
-      expect(hermesModelRefusal('codex-cli:gpt-5.5'), isNull);
+    test('the config writer refuses the same models the composer greys out, so '
+        'a scheduled task can never be pointed at one the chat would block', () {
+      expect(hermesModelRefusal('claude:opus'), kHermesCannotServeSeatModel);
+      expect(hermesModelRefusal('codex:gpt-5.5'), kHermesCannotServeSeatModel);
+      expect(
+        hermesModelRefusal('codex-cli:gpt-5.5'),
+        kHermesCannotServeSeatModel,
+      );
       expect(hermesModelRefusal('qwen3.6-27b'), isNull);
+      expect(hermesModelRefusal('auto'), isNull);
     });
 
     test(
@@ -106,11 +108,9 @@ void main() {
   group('who to switch to when the pair does not work', () {
     test('the agents offered for a model are the ones that can answer with it, '
         'so a blocked row can point somewhere real', () {
-      expect(agentsForModel('claude:opus'), [
-        AgentTool.hermes,
-        AgentTool.claude,
-      ]);
+      expect(agentsForModel('claude:opus'), [AgentTool.claude]);
       expect(agentsForModel('codex:gpt-5.5'), [AgentTool.codex]);
+      expect(agentsForModel('codex-cli:gpt-5.5'), [AgentTool.codex]);
       expect(agentsForModel('qwen3.6-27b'), AgentTool.values);
     });
 
@@ -124,21 +124,21 @@ void main() {
   });
 
   group('whether a grid has anything an agent could answer with', () {
-    test('a grid of Claude seat models has nothing for Codex — the note in the '
-        'assistant picker is what stops the user picking a dead end', () {
+    test('a grid of Claude seat models has something for Claude Code and '
+        'nothing for the other two — the note in the assistant picker is what '
+        'stops the user picking a dead end', () {
       final container = _gridServing(['claude:opus', 'claude:sonnet']);
-      expect(
-        container.read(agentHasModelHereProvider(AgentTool.codex)),
-        isFalse,
-      );
       expect(
         container.read(agentHasModelHereProvider(AgentTool.claude)),
         isTrue,
       );
-      expect(
-        container.read(agentHasModelHereProvider(AgentTool.hermes)),
-        isTrue,
-      );
+      for (final tool in [AgentTool.codex, AgentTool.hermes]) {
+        expect(
+          container.read(agentHasModelHereProvider(tool)),
+          isFalse,
+          reason: '$tool has nothing to answer with here',
+        );
+      }
     });
 
     test('one model an agent can use is enough — the rest being foreign is the '

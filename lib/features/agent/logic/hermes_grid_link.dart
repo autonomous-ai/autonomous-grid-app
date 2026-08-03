@@ -19,9 +19,10 @@ import 'hermes_tool.dart';
 
 /// The line shown instead of pointing Hermes at a model it can't serve — see
 /// [hermesModelRefusal].
-const String kHermesCannotServeCodexModel =
-    "The Hermes assistant can't answer with a Codex model. Switch the assistant "
-    'to Codex for this model, or pick a different model for Hermes.';
+const String kHermesCannotServeSeatModel =
+    "The Hermes assistant can't answer with a Claude or Codex model. Switch the "
+    'assistant to Claude Code or Codex for this model, or pick a different '
+    'model for Hermes.';
 
 /// Why the Hermes assistant can't be pointed at [model], or null when it can.
 ///
@@ -33,7 +34,7 @@ const String kHermesCannotServeCodexModel =
 String? hermesModelRefusal(String model) =>
     agentSupportsModel(AgentTool.hermes, model)
     ? null
-    : kHermesCannotServeCodexModel;
+    : kHermesCannotServeSeatModel;
 
 /// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
 /// `~/.hermes` when the target grid or model changes. ACP reads the model from

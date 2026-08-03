@@ -10,13 +10,17 @@ const String kClaudeSeatKind = 'claude';
 /// OpenAI's CLI answering, whichever way it signed in.
 const Set<String> kCodexSeatKinds = {'codex', 'codex-cli'};
 
+/// Every CLI-seat kind — a vendor's own coding CLI answering behind the relay,
+/// rather than a model a machine on the grid is serving.
+const Set<String> kCliSeatKinds = {kClaudeSeatKind, ...kCodexSeatKinds};
+
 /// Whether [tool] can answer a chat with [model].
 ///
-/// A seat model **is** a vendor's own CLI answering behind the relay, so the
-/// other vendor's CLI has nothing to say to it. Pairing them doesn't degrade —
-/// it dead-ends at the relay with "No machine on this grid is serving a model
-/// Codex can use right now", a wall the user only meets *after* sending, on a
-/// pair the composer offered them.
+/// A seat model **is** a vendor's own CLI answering behind the relay, and only
+/// that vendor's agent can drive it. Pairing it with any other agent doesn't
+/// degrade — it dead-ends at the relay with "No machine on this grid is serving
+/// a model Codex can use right now", a wall the user only meets *after* sending,
+/// on a pair the composer offered them.
 ///
 /// Everything else — a gguf on someone's machine, `auto`, a key provider's model
 /// — answers plain chat-completions and is open to all three agents.
@@ -26,24 +30,22 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   AgentTool.codex => !_namesKind(model, const {kClaudeSeatKind}),
   // Claude Code speaks Anthropic's messages, which no Codex seat answers.
   AgentTool.claude => !_namesKind(model, kCodexSeatKinds),
-  // Hermes speaks chat-completions and both CLI seats answer it — but not a
-  // responses-only model, which fails twice over on the Hermes that ships
-  // today (measured 31/07, v0.19.0):
+  // Hermes drives neither vendor's CLI, so no seat model is its to answer with:
   //
-  //  - the config it needs (`provider: grid` + `api_mode: codex_responses`) is
-  //    a shape this build can't resolve — `session/new` refuses with "No LLM
-  //    provider configured", so no turn ever starts;
-  //  - and pointed at the endpoint by a config it *does* resolve, its Responses
-  //    client still can't talk to the seat: the relay answers `/responses` only
-  //    with `stream: true` **and** `store: false`, and Hermes sends neither
-  //    ("Invalid API response after 3 retries"). The same request with both
-  //    flags answers in a second, so the seat is fine — the client isn't.
-  //
-  // TODO(BE): the relay is the shorter road — it knows the seat's constraint
-  // (it is the one returning `engine error 400: Store must be set to false`),
-  // so defaulting `store: false` on the way to a codex seat unblocks this for
-  // every client at once. Reopen this line when it does.
-  AgentTool.hermes => !isResponsesOnlyModel(model),
+  //  - a `claude:*` seat is Claude Code behind the relay, answering on
+  //    Anthropic's `/v1/messages` (see `agentDialect`) — the chat-completions
+  //    request Hermes sends has no provider there;
+  //  - a `codex:*` seat fails twice over on the Hermes that ships today
+  //    (measured 31/07, v0.19.0): the config it needs (`provider: grid` +
+  //    `api_mode: codex_responses`) is a shape this build can't resolve
+  //    (`session/new` refuses with "No LLM provider configured"), and pointed at
+  //    the endpoint by a config it *does* resolve, its Responses client omits
+  //    the `stream: true` / `store: false` the relay requires ("Invalid API
+  //    response after 3 retries") — the same request with both flags answers in
+  //    a second, so the seat is fine and the client isn't;
+  //  - a `codex-cli:*` seat is the Codex CLI's own agent loop answering, which
+  //    a Hermes turn dead-ends on the same way.
+  AgentTool.hermes => !_namesKind(model, kCliSeatKinds),
 };
 
 /// The agents that can answer with [model], in catalog order — who the user can
