@@ -251,7 +251,8 @@ final browseConnectorsProvider =
 /// screen is then exactly the screen it was before this existed. The alternative
 /// — letting a directory failure propagate — would take sixteen working gateway
 /// connectors offline over a third party's bad afternoon, which is the same
-/// trade `selfServeCatalogProvider` already makes and for the same reason.
+/// trade the catalog has always made: an offer that cannot be fetched is a
+/// missing row, not a broken screen.
 /// Synchronous on purpose. As a `FutureProvider` this mapped an already-loaded
 /// list through an `async` body, so every page and every sort flipped it to
 /// `AsyncLoading` and back — a whole extra round of rebuilds for a computation

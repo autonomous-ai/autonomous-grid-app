@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'browse_connectors_controller.dart';
 import 'connector_catalog.dart';
 import 'connector_link_controller.dart';
 import 'connectors_controller.dart';
@@ -43,4 +44,15 @@ void refreshConnectorsFromWidget(WidgetRef ref) {
   ref.invalidate(mcpServersProvider);
   ref.invalidate(connectorCatalogProvider);
   ref.invalidate(connectorTokensProvider);
+  // **The directory has to be asked again, not just re-read.** Since it became
+  // the only source of offers, invalidating the catalog re-derives the same rows
+  // from the same controller state — which is a refresh that refreshes nothing.
+  // Its pages live in a `Notifier`, so the fetch is the thing to repeat.
+  //
+  // Only here, and deliberately: the `Ref` twin above runs after every token
+  // event (connect, disconnect, the renewal sweep), and putting a network call
+  // on that path would re-fetch four thousand rows every time a credential was
+  // renewed. This one is a button somebody pressed.
+  final browse = ref.read(browseConnectorsProvider);
+  ref.read(browseConnectorsProvider.notifier).search(browse.query);
 }

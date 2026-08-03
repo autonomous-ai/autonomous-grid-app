@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/connectors/logic/connector_catalog.dart';
-import 'package:grid_app/features/connectors/logic/self_serve_catalog.dart';
 import 'package:grid_app/features/connectors/logic/smithery_catalog.dart';
 import 'package:grid_app/features/connectors/logic/smithery_server.dart';
 
@@ -214,83 +213,6 @@ void main() {
       expect(entry.installed, isFalse);
       expect(entry.accountName, isEmpty);
       expect(entry.canRefresh, isFalse);
-    });
-  });
-
-  group('precedence in the merged catalog', () {
-    ConnectorCatalogEntry entry(String code, String label) =>
-        ConnectorCatalogEntry(
-          id: code,
-          code: code,
-          label: label,
-          description: '',
-        );
-
-    test('the gateway wins a code clash against the directory', () {
-      final merged = mergeCatalog(
-        gateway: [entry('notion', 'Notion (gateway)')],
-        selfServe: const [],
-        directory: [entry('notion', 'Notion (community)')],
-      );
-
-      expect(merged.length, 1);
-      expect(merged.single.label, 'Notion (gateway)');
-    });
-
-    test('a bundled row also outranks the directory', () {
-      final merged = mergeCatalog(
-        gateway: const [],
-        selfServe: [entry('stripe', 'Stripe (bundled)')],
-        directory: [entry('stripe', 'Stripe (community)')],
-      );
-
-      expect(merged.single.label, 'Stripe (bundled)');
-    });
-
-    test('directory rows the other two do not claim are kept', () {
-      final merged = mergeCatalog(
-        gateway: [entry('github', 'GitHub')],
-        selfServe: [entry('stripe', 'Stripe')],
-        directory: [entry('exa', 'Exa'), entry('github', 'GitHub (community)')],
-      );
-
-      expect(merged.map((e) => e.code).toSet(), {'github', 'stripe', 'exa'});
-      expect(merged.firstWhere((e) => e.code == 'github').label, 'GitHub');
-    });
-
-    test('directory rows keep the order they were given', () {
-      // The bug this pins: `mergeCatalog` used to run everything through
-      // `sortCatalog`, which alphabetised four thousand community servers —
-      // putting `agentai` above Brave Search and silently undoing whatever the
-      // Sort control had just done. The sort ran; this threw it away.
-      final merged = mergeCatalog(
-        gateway: const [],
-        selfServe: const [],
-        directory: [entry('zebra', 'Zebra'), entry('alpha', 'Alpha')],
-      );
-
-      expect(merged.map((e) => e.code), ['zebra', 'alpha']);
-    });
-
-    test('curated rows are still alphabetical, and still come first', () {
-      final merged = mergeCatalog(
-        gateway: [entry('zulu', 'Zulu'), entry('alfa', 'Alfa')],
-        selfServe: const [],
-        directory: [entry('mike', 'Mike')],
-      );
-
-      // Forty curated entries somebody chose: a name is how you find one.
-      expect(merged.map((e) => e.code), ['alfa', 'zulu', 'mike']);
-    });
-
-    test('an absent directory leaves the old two-source behaviour', () {
-      // The whole feature has to be removable without touching this call.
-      final merged = mergeCatalog(
-        gateway: [entry('github', 'GitHub')],
-        selfServe: [entry('stripe', 'Stripe')],
-      );
-
-      expect(merged.map((e) => e.code), ['github', 'stripe']);
     });
   });
 }

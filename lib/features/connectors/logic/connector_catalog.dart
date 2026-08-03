@@ -1,8 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/api/connector_gateway_client.dart';
-import 'connector_blurb_fallback.dart';
-import 'self_serve_catalog.dart';
+import 'browse_connectors_controller.dart';
 
 /// How a catalog service is signed into.
 enum ConnectorAuthMethod {
@@ -14,18 +12,16 @@ enum ConnectorAuthMethod {
   /// its own client and the gateway is not involved at all: no `client_secret`
   /// held server-side, no token brokered, nothing to disconnect there.
   ///
-  /// Comes from the bundled list in `self_serve_catalog.dart`, and from a
-  /// gateway row that says `auth_type: "dcr"`. Either way the claim is only a
-  /// starting point — the probe at Connect time is what decides whether the
-  /// server can actually be driven this way.
+  /// What every directory row claims. The claim is only a starting point — the
+  /// probe at Connect time is what decides whether the server can actually be
+  /// driven this way.
   dcr,
 
   /// The server asks for no credential at all. Connecting is just writing the
   /// MCP entry into the agent's config — no browser, no token, nothing stored
   /// in `tokens.json`, and nothing to expire.
   ///
-  /// Same standing as [dcr]: a claim from the bundled list, settled by the
-  /// probe at Connect time.
+  /// Same standing as [dcr]: a claim, settled by the probe at Connect time.
   open,
 
   /// The user brings their own MCP endpoint or key. Kept because the field is
@@ -200,58 +196,28 @@ String labelFromCode(String code) {
   return words.isEmpty ? code : words.join(' ');
 }
 
-/// The connectors catalog: the gateway's list, and nothing else.
+/// The connectors catalog: the public MCP directory, and nothing else.
 ///
-/// There is no bundled fallback. One used to ship in the app, and it was a
-/// liability rather than a safety net — it knew eight connectors while the
-/// gateway serves sixteen, carried no `mcp_ready` or `status`, and so produced
-/// rows that looked real and could not be signed into. A catalog the backend
-/// hasn't confirmed is worse than an empty screen, which at least says the
-/// truth: we could not reach the grid.
+/// **One source, by decision (Tony, 2026-08-03).** Two others used to feed this:
+/// the gateway's own sixteen curated rows (`GET {gridApiUrl}/v1/grid/connectors`)
+/// and a bundled list of twenty-four self-serve services. Both are gone from the
+/// screen. What replaced them reaches four thousand servers with no backend of
+/// ours in the path at all — the registry answers unauthenticated, and each
+/// server's own authorization server handles the sign-in.
 ///
-/// Presentation is the backend's too. Rows arrive with `label`, `description`
-/// and `image_url` filled in; when one is missing the row degrades on its own —
-/// a name derived from the code, a glyph instead of a logo, no description line
-/// at all.
+/// **The gateway client is still wired, and must stay.** Removing the catalog
+/// call is not removing the gateway: credentials obtained through it
+/// (`ConnectorTokenSource.gateway`) are renewed and revoked against it, so
+/// `connector_link_controller.dart` still holds four references. Cutting those
+/// would strand every connector signed in before this change — they would work
+/// until their token expired and then have nowhere to go.
 ///
-/// The one thing added to the gateway's list is [selfServeCatalogProvider] —
-/// connectors the app signs into without it. Those are not a fallback and do
-/// not soften the paragraph above: they carry no backend state to be stale
-/// about, they never displace a gateway row ([mergeCatalog]), and they keep
-/// working while the grid is unreachable because nothing in their flow touches
-/// it. An empty gateway is still an empty gateway; it just no longer takes
-/// Canva down with it.
+/// What this costs, plainly: connectors needing a pre-registered OAuth app —
+/// Google and Slack, whose `client_secret` can only live server-side — can no
+/// longer be signed into from here at all. Rows already connected keep working;
+/// they come from the token store and the agent's config, not from this list.
 final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
   ref,
 ) async {
-  final (remote, _) = await ref
-      .watch(connectorGatewayClientProvider)
-      .connectors();
-  final selfServe = await ref.watch(selfServeCatalogProvider.future);
-  // **The directory is deliberately not merged here.** It used to be, and that
-  // put the gateway's HTTP call downstream of every keystroke and every scroll:
-  // appending page two flipped `loadingMore`, which invalidated this provider,
-  // which re-fetched the gateway, which sent `connectorsProvider` to
-  // `AsyncLoading` — and the screen swapped the whole list for skeletons and
-  // back. That is the blank flash at the bottom of the list. The merge happens
-  // one level down, in `connectorsProvider`, where it costs a rebuild and not a
-  // round trip.
-  return mergeCatalog(
-    gateway: [
-      // Called unconditionally, not only for the rows missing something:
-      // `withPresentation` fills empty fields and nothing else, so the guard the
-      // label used to carry was a second copy of a rule already stated there —
-      // and it applied to the label alone, which is how the description came to
-      // have no fallback at all.
-      //
-      // `remote ?? []` rather than an early return: a gateway we could not
-      // reach still leaves the self-serve rows, which never needed it.
-      for (final entry in remote ?? const <ConnectorCatalogEntry>[])
-        entry.withPresentation(
-          label: labelFromCode(entry.code),
-          description: connectorBlurbFallback(entry.code),
-        ),
-    ],
-    selfServe: selfServe,
-  );
+  return ref.watch(directoryCatalogProvider);
 });
