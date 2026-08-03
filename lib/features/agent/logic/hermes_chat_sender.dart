@@ -12,7 +12,6 @@ import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import 'agent_changes.dart';
-import 'agent_loop_guard.dart';
 import 'agent_server_error.dart';
 import 'agent_permissions.dart';
 import 'agent_prompt.dart';
@@ -298,7 +297,6 @@ class HermesChatSender implements ChatSender {
     final run = session.prompt(text);
     final answer = StringBuffer();
     final updates = StreamController<ChatSendUpdate>();
-    final guard = AgentLoopGuard();
     var settled = false;
     // The two facts the stall check reads — see [agentTurnStalled]: whether
     // Hermes ended the turn itself, and whether it did any work at all. Neither
@@ -371,12 +369,6 @@ class HermesChatSender implements ChatSender {
             if (isAgentWork(activity)) workedAtAll = true;
             activityLog.upsert(activity);
           case HermesAcpPermission(:final request):
-            // The same file or command coming back yet again is a loop, not
-            // work — stop before asking the user to approve the fourth pass.
-            if (guard.observe(request) case final stuck?) {
-              stopForLoop(stuck);
-              return;
-            }
             // The agent has stopped and is waiting on the user; pause the idle
             // watch (their time isn't a hang) and re-arm it once they answer.
             idle?.cancel();
@@ -391,23 +383,12 @@ class HermesChatSender implements ChatSender {
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
             _recordEdit(request);
-            // ...and count it: a Full-access loop rewrites the same file with
-            // no prompt to slow it down, so catching the repeat matters more.
-            if (guard.observe(request) case final stuck?) {
-              stopForLoop(stuck);
-              return;
-            }
-          case HermesAcpCommand(:final request):
-            armIdle();
-            workedAtAll = true;
-            // Nothing to record — a command isn't undoable — but the loop watch
-            // has to see it: a command between two edits *is* the progress that
-            // tells a debug round (edit → run → edit → run) from a model stuck
-            // rewriting one file.
-            if (guard.observe(request) case final stuck?) {
-              stopForLoop(stuck);
-              return;
-            }
+          case HermesAcpLoop(:final target):
+            // The step that proved the loop was refused before it ran (see
+            // [AgentLoopGuard]); nothing is half-applied, and there's nothing
+            // left for this turn to do but say so.
+            stopForLoop(target);
+            return;
           case HermesAcpSources(:final sources):
             armIdle();
             // A web look-up finished — collect its pages to cite under the
