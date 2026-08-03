@@ -30,11 +30,16 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   AgentTool.codex => !_namesKind(model, const {kClaudeSeatKind}),
   // Claude Code speaks Anthropic's messages, which no Codex seat answers.
   AgentTool.claude => !_namesKind(model, kCodexSeatKinds),
-  // Hermes drives neither vendor's CLI, so no seat model is its to answer with:
+  // Hermes drives neither vendor's CLI, and a seat can't take its agent turns:
   //
-  //  - a `claude:*` seat is Claude Code behind the relay, answering on
-  //    Anthropic's `/v1/messages` (see `agentDialect`) — the chat-completions
-  //    request Hermes sends has no provider there;
+  //  - a `claude:*` seat answers Hermes's chat-completions call and can emit a
+  //    `tool_calls` field — but under Hermes's real tool set it keeps ending the
+  //    turn by *typing* the call out as prose with `finish_reason: stop`
+  //    instead. Hermes reads a text response as the final answer and stops
+  //    there, so the turn's whole output is the tool call. Measured 03/08 on
+  //    three cron runs (`agent.log`: `tool_turns=0/1/6`, `response_len=470/256/
+  //    10`); the same jobs on a grid model the same morning ended ~10,000 chars
+  //    into a real report;
   //  - a `codex:*` seat fails twice over on the Hermes that ships today
   //    (measured 31/07, v0.19.0): the config it needs (`provider: grid` +
   //    `api_mode: codex_responses`) is a shape this build can't resolve
@@ -43,8 +48,9 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   //    the `stream: true` / `store: false` the relay requires ("Invalid API
   //    response after 3 retries") — the same request with both flags answers in
   //    a second, so the seat is fine and the client isn't;
-  //  - a `codex-cli:*` seat is the Codex CLI's own agent loop answering, which
-  //    a Hermes turn dead-ends on the same way.
+  //  - a `codex-cli:*` seat is the same shape as the Claude one — the vendor's
+  //    coding CLI answering a single turn behind the relay — and is blocked with
+  //    it rather than waiting to be measured on somebody's 8am task.
   AgentTool.hermes => !_namesKind(model, kCliSeatKinds),
 };
 
