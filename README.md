@@ -168,8 +168,12 @@ which builds each target and publishes a **draft** GitHub Release with:
 
 ```
 Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized)
-Grid-<ver>-Windows-x64.zip           (unsigned; SmartScreen may warn)
+Grid-<ver>-macOS-Intel.dmg           (signed + notarized)
 ```
+
+macOS only: the Windows job is commented out in the workflow until the app is
+code-signed and has an update feed there. `flutter build windows` still works
+locally — CI just doesn't publish a zip.
 
 ```bash
 git tag v0.1.2 && git push origin v0.1.2

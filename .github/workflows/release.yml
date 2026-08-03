@@ -8,15 +8,17 @@ name: release
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized; arm64 grid sidecar)
 #   Grid-<ver>-macOS-Intel.dmg           (signed + notarized; x86_64 grid sidecar, built under Rosetta 2)
-#   Grid-<ver>-Windows-x64.zip           (UNSIGNED — SmartScreen may warn; no auto-update yet)
 #
 # Both DMGs carry the same Flutter app — a Release build is universal (arm64 + x86_64),
 # so it launches on either Mac. They differ only in the bundled `grid` sidecar's arch:
 # Nuitka can't emit a universal binary, so we run one macOS job per sidecar arch (see the
-# matrix below), and each job's sidecar is built for that job's target. Windows builds
-# natively (x64) and ships an unsigned onefile sidecar zip — code-signing + WinSparkle
-# auto-update are still TODO(release), so Windows users get a SmartScreen prompt and no
-# in-app updates for now.
+# matrix below), and each job's sidecar is built for that job's target.
+#
+# macOS only for now — the Windows job is DISABLED (commented out in the matrix and
+# in the steps below). It shipped `Grid-<ver>-Windows-x64.zip` unsigned, so SmartScreen
+# warned on it, and with no WinSparkle feed those users never got an update. Its scripts
+# (scripts/cli/build_sidecar.ps1, scripts/package_windows.ps1) and the Flutter `windows/`
+# runner are untouched — uncomment to bring the job back once signing + a feed exist.
 #
 #   git tag v0.1.2 && git push origin v0.1.2
 #
@@ -67,13 +69,18 @@ jobs:
             arch: x64                   # the same arm64 runner — GitHub retired the free
             label: macOS-Intel          # macos-13 Intel image, so this avoids a paid runner.
             appcast_file: appcast-x86_64.xml   # Sparkle feed this arch's app polls
-          - platform: windows-latest    # Windows x64, native build. UNSIGNED zip (SmartScreen
-            arch: x64                   # may warn); the `if: runner.os == 'Windows'` steps
-            label: Windows-x64          # below build the onefile sidecar + package the zip.
+          # Windows x64, native build — DISABLED, see the header. Uncomment this
+          # entry together with the "Windows" steps below to build it again; the
+          # steps are guarded by `runner.os == 'Windows'`, so they only wake up
+          # when this entry is back.
+          # - platform: windows-latest
+          #   arch: x64
+          #   label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
-    # The Nuitka sidecar build is slow (macOS ~45m; Windows >56m), and macOS adds
-    # notarization wait on top — 60m timed Windows out mid-compile. 120m is safe.
+    # The Nuitka sidecar build is slow (~45m, and 1.5-2x that for the Intel slice
+    # compiling under Rosetta), with the notarization wait on top. 120m is safe —
+    # it was raised from 60m, which timed a sidecar out mid-compile.
     timeout-minutes: 120
 
     steps:
@@ -302,23 +309,26 @@ jobs:
           src="dist/${{ matrix.appcast_file }}"
           [ -f "$src" ] && cp "$src" dist/appcast.xml || echo "no appcast to alias (key unset)"
 
-      # ───────────────────────── Windows ─────────────────────────
-      - name: Build grid sidecar (Windows)
-        if: runner.os == 'Windows'
-        working-directory: grid-app
-        # grid-app's own driver compiles the cloned CLI source -> autonomous-grid\dist\grid.exe.
-        run: powershell -ExecutionPolicy Bypass -File scripts\cli\build_sidecar.ps1 -CliSrc "${{ github.workspace }}\autonomous-grid"
-
-      - name: Build Windows app + package zip
-        if: runner.os == 'Windows'
-        shell: pwsh
-        working-directory: grid-app
-        run: |
-          flutter config --enable-windows-desktop
-          flutter build windows --release
-          powershell -ExecutionPolicy Bypass -File scripts\package_windows.ps1 `
-            -Sidecar ..\autonomous-grid\dist\grid.exe `
-            -OutZip  "${{ github.workspace }}\grid-app\dist\Grid-${{ env.VERSION }}-Windows-x64.zip"
+      # ──────────────────── Windows (DISABLED) ────────────────────
+      # Kept verbatim, not deleted: nothing here is broken — the release just
+      # doesn't ship Windows yet. Uncomment these two steps and the matrix entry
+      # above, in one go, to build it again.
+      # - name: Build grid sidecar (Windows)
+      #   if: runner.os == 'Windows'
+      #   working-directory: grid-app
+      #   # grid-app's own driver compiles the cloned CLI source -> autonomous-grid\dist\grid.exe.
+      #   run: powershell -ExecutionPolicy Bypass -File scripts\cli\build_sidecar.ps1 -CliSrc "${{ github.workspace }}\autonomous-grid"
+      #
+      # - name: Build Windows app + package zip
+      #   if: runner.os == 'Windows'
+      #   shell: pwsh
+      #   working-directory: grid-app
+      #   run: |
+      #     flutter config --enable-windows-desktop
+      #     flutter build windows --release
+      #     powershell -ExecutionPolicy Bypass -File scripts\package_windows.ps1 `
+      #       -Sidecar ..\autonomous-grid\dist\grid.exe `
+      #       -OutZip  "${{ github.workspace }}\grid-app\dist\Grid-${{ env.VERSION }}-Windows-x64.zip"
 
       # ───────────────────────── Publish ─────────────────────────
       # Cross-publish to the PUBLIC downloads repo (not this private one) so the
@@ -334,7 +344,8 @@ jobs:
           draft: true
           name: Grid ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          # One glob per runner's dist/: mac -> .dmg + appcast.xml (Sparkle feed),
-          # Windows -> .zip. Strict, without cross-platform misses.
+          # Whatever this runner's dist/ holds — the .dmg plus the appcast.xml
+          # (Sparkle feed) beside it. Strict: an empty dist/ fails the job rather
+          # than publishing a draft with a slice missing.
           fail_on_unmatched_files: true
           files: grid-app/dist/*
