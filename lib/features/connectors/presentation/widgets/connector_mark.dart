@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -60,10 +61,23 @@ class ConnectorMark extends StatelessWidget {
   /// the fallback glyph while the request itself was a clean 200. The backend
   /// picks the format per connector and can change it without telling us, so
   /// the choice is made from the URL rather than from a list of connectors.
+  ///
+  /// **And when the URL will not say, the bytes have to.** The public directory
+  /// serves every mark from one extensionless path —
+  /// `api.smithery.ai/servers/<name>/icon` — and answers with whatever that
+  /// author uploaded: measured across fourteen rows on 2026-08-03, **6 SVG, 6
+  /// PNG, 2 JPEG**. Deciding by extension put all six SVGs down the bitmap path,
+  /// so half the directory drew the grey glyph while the other half looked
+  /// fine — which reads as a broken row rather than a missing format, and is
+  /// exactly how it was reported.
   Widget _image() {
     final glyph = Icon(fallbackIcon, size: 16, color: AppPalette.textSecondary);
 
     if (_isSvg(imageUrl)) return _SvgMark(url: imageUrl, fallback: glyph);
+    // No extension to read: fetch once and look at what came back.
+    if (!_hasRasterExtension(imageUrl)) {
+      return _SniffedMark(url: imageUrl, fallback: glyph);
+    }
 
     return CachedNetworkImage(
       imageUrl: imageUrl,
@@ -88,6 +102,144 @@ class ConnectorMark extends StatelessWidget {
   static bool _isSvg(String url) {
     final path = Uri.tryParse(url)?.path ?? url;
     return path.toLowerCase().endsWith('.svg');
+  }
+
+  /// The URL names a format Flutter's own codecs can read.
+  ///
+  /// Only these keep the [CachedNetworkImage] path, which is worth preserving
+  /// for the disk cache. Anything else — including no extension at all — has to
+  /// be sniffed, because the alternative is guessing.
+  static bool _hasRasterExtension(String url) {
+    final path = (Uri.tryParse(url)?.path ?? url).toLowerCase();
+    return const [
+      '.png',
+      '.jpg',
+      '.jpeg',
+      '.webp',
+      '.gif',
+      '.bmp',
+      '.ico',
+    ].any(path.endsWith);
+  }
+}
+
+/// A mark at a URL that does not say what it is: fetched once, then read.
+///
+/// The sniff is the first few bytes, not the `Content-Type` header. Both would
+/// work for the directory as it stands today, but a header is a claim and the
+/// bytes are the thing — and this widget already has to hold the bytes to draw
+/// them, so believing them costs nothing.
+class _SniffedMark extends StatefulWidget {
+  const _SniffedMark({required this.url, required this.fallback});
+
+  final String url;
+  final Widget fallback;
+
+  @override
+  State<_SniffedMark> createState() => _SniffedMarkState();
+}
+
+class _SniffedMarkState extends State<_SniffedMark> {
+  /// Shared across every row and every rebuild, for the reason [_SvgMark] gives:
+  /// a list of fifty redraws these on every scroll, and neither branch here has
+  /// a cache of its own.
+  ///
+  /// A null entry is a remembered failure — worth caching too, or a mark that
+  /// 404s is re-requested on every frame that rebuilds the row.
+  static final Map<String, Uint8List?> _cache = {};
+
+  Uint8List? _bytes;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_SniffedMark old) {
+    super.didUpdateWidget(old);
+    if (old.url != widget.url) _load();
+  }
+
+  Future<void> _load() async {
+    if (_cache.containsKey(widget.url)) {
+      final cached = _cache[widget.url];
+      setState(() {
+        _bytes = cached;
+        _failed = cached == null;
+      });
+      return;
+    }
+
+    Uint8List? bytes;
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10);
+      try {
+        final request = await client.getUrl(Uri.parse(widget.url));
+        final response = await request.close().timeout(
+          const Duration(seconds: 15),
+        );
+        if (response.statusCode == 200) {
+          final chunks = await response.toList();
+          bytes = Uint8List.fromList([for (final c in chunks) ...c]);
+        }
+      } finally {
+        client.close(force: true);
+      }
+    } on Object {
+      // Offline, timed out, malformed — all the same answer: draw the glyph.
+      bytes = null;
+    }
+
+    _cache[widget.url] = bytes;
+    if (!mounted) return;
+    setState(() {
+      _bytes = bytes;
+      _failed = bytes == null;
+    });
+  }
+
+  /// True when the payload opens like markup rather than a bitmap.
+  ///
+  /// Leading whitespace, a byte-order mark and an XML declaration all come
+  /// before the `<svg` in real files, so the test is "does the first markup-ish
+  /// token appear early", not "does it start with `<svg`".
+  static bool _looksLikeSvg(Uint8List bytes) {
+    final head = String.fromCharCodes(
+      bytes.take(256),
+    ).toLowerCase().replaceAll('﻿', '').trimLeft();
+    return head.startsWith('<svg') ||
+        head.startsWith('<?xml') ||
+        head.startsWith('<!doctype svg');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) return widget.fallback;
+    final bytes = _bytes;
+    // Nothing yet: the white plate is already the right shape, so an empty box
+    // is quieter than a spinner in every row of a list.
+    if (bytes == null) return const SizedBox.shrink();
+
+    if (_looksLikeSvg(bytes)) {
+      return SvgPicture.string(
+        // The same repair the extension-named path does — the directory's SVGs
+        // carry class-based `<style>` sheets too, and without this they draw as
+        // one black silhouette.
+        inlineSvgStyles(utf8.decode(bytes, allowMalformed: true)),
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => widget.fallback,
+      );
+    }
+    return Image.memory(
+      bytes,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, _, _) => widget.fallback,
+    );
   }
 }
 
