@@ -66,6 +66,52 @@ void main() {
     });
   });
 
+  group('resourceMetadataCandidates', () {
+    List<String> urlsFor(String resource) =>
+        McpAuthProbe.resourceMetadataCandidates(
+          Uri.parse(resource),
+        ).map((u) => u.toString()).toList();
+
+    test('inserts the well-known before the path, then falls back', () {
+      // RFC 9728 §3.1, the same rule RFC 8414 uses for the authorization
+      // server. Only the bare origin was tried before, which happened to work
+      // for Hugging Face — it serves both — and would miss a resource that
+      // publishes only the spelling the RFC names.
+      expect(urlsFor('https://huggingface.co/mcp'), [
+        'https://huggingface.co/.well-known/oauth-protected-resource/mcp',
+        'https://huggingface.co/.well-known/oauth-protected-resource',
+      ]);
+    });
+
+    test('a resource with no path asks once, not twice', () {
+      expect(urlsFor('https://mcp.stripe.com'), [
+        'https://mcp.stripe.com/.well-known/oauth-protected-resource',
+      ]);
+    });
+
+    test('a trailing slash is not a path', () {
+      expect(urlsFor('https://mcp.miro.com/'), [
+        'https://mcp.miro.com/.well-known/oauth-protected-resource',
+      ]);
+    });
+
+    test('a deep path keeps every segment', () {
+      expect(
+        urlsFor('https://gateway.example.com/yahoo/mcp').first,
+        [
+          'https://gateway.example.com/.well-known/oauth-protected-resource/yahoo/mcp',
+        ].single,
+      );
+    });
+
+    test('a query on the resource is not carried into the metadata URL', () {
+      expect(
+        urlsFor('https://mcp.example.com/mcp?tenant=7').first,
+        isNot(contains('tenant')),
+      );
+    });
+  });
+
   group('resourceMetadataFrom', () {
     test('reads a quoted value', () {
       expect(

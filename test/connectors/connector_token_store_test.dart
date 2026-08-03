@@ -108,6 +108,72 @@ void main() {
     );
   });
 
+  group('the auth scheme a stored entry carries', () {
+    /// Reads an entry straight out of the wire shape, which is where the repair
+    /// happens — the store hands these to every agent projection.
+    McpEntry entryWith(String authorization) => McpEntry.fromJson({
+      'url': 'https://mcp.canva.com/mcp',
+      'headers': {'Authorization': authorization},
+    })!;
+
+    test('a lowercase bearer is repaired on read', () async {
+      // Measured 2026-08-03: canva, cloudflare and postman each answer
+      // `token_type: "bearer"`, the app copied that into the header verbatim,
+      // and all three then refused their own spelling — 401 on `bearer …`, 200
+      // on `Bearer …`, with hours left on the credential. It reported itself as
+      // "the OAuth token expired".
+      //
+      // Repaired on *read* so an entry already on disk is fixed at the next
+      // projection, rather than waiting for its own renewal to rewrite it.
+      expect(
+        entryWith('bearer sbp_abc').headers['Authorization'],
+        'Bearer sbp_abc',
+      );
+    });
+
+    test('a correct header is left exactly as it was', () async {
+      expect(
+        entryWith('Bearer sbp_abc').headers['Authorization'],
+        'Bearer sbp_abc',
+      );
+    });
+
+    test('a scheme that is not bearer keeps its own spelling', () async {
+      // Only one word is claimed here. A server using DPoP or something of its
+      // own is entitled to be written the way it asked for.
+      expect(
+        entryWith('DPoP sbp_abc').headers['Authorization'],
+        'DPoP sbp_abc',
+      );
+    });
+
+    test('the token is never rewritten, only the scheme', () async {
+      // The credential can contain anything, including the word bearer.
+      expect(
+        entryWith('bearer bearer-looking-token').headers['Authorization'],
+        'Bearer bearer-looking-token',
+      );
+    });
+
+    test('bearerToken strips the scheme however it is spelled', () async {
+      // The same bug, one layer down: matching `Bearer ` literally returned the
+      // *whole* header as the credential, and Hermes filed `bearer sbp_…` as
+      // the token itself.
+      expect(entryWith('bearer sbp_abc').bearerToken, 'sbp_abc');
+      expect(entryWith('Bearer sbp_abc').bearerToken, 'sbp_abc');
+      expect(entryWith('BEARER sbp_abc').bearerToken, 'sbp_abc');
+    });
+
+    test('a header with no scheme at all is the credential', () async {
+      // Some providers use their own header name and put the bare key in it.
+      final entry = McpEntry.fromJson({
+        'url': 'https://mcp.example/x',
+        'headers': {'X-Figma-Token': 'figd_abc'},
+      })!;
+      expect(entry.bearerToken, 'figd_abc');
+    });
+  });
+
   group('file protection', () {
     test('the store is written owner-only', () async {
       // The token is a live credential sitting in the user's home directory.

@@ -109,6 +109,45 @@ void main() {
       expect(token.canBeRefreshed, isTrue);
     });
 
+    test('renders Bearer even when the provider answered "bearer"', () async {
+      // Canva, Cloudflare and Postman all reply `token_type: "bearer"`, and all
+      // three reject a header spelled that way. RFC 6750 §2.1 gives the scheme
+      // as `Bearer` and RFC 7235 §2.1 makes it case-insensitive — on paper.
+      // Copying the provider's own answer back to it produced three connectors
+      // that failed with 401 while their credentials were still valid.
+      final (token, _) = client.tokenFrom(
+        {...payload(), 'token_type': 'bearer'},
+        connector: 'Canva',
+        mcpUrl: 'https://mcp.canva.com/mcp',
+        issuer: probe.issuer,
+      );
+
+      expect(token!.mcpEntry!.headers['Authorization'], 'Bearer sbp_oauth_abc');
+      expect(token.tokenType, 'Bearer');
+    });
+
+    test('a scheme that is not bearer is passed through', () async {
+      final (token, _) = client.tokenFrom(
+        {...payload(), 'token_type': 'DPoP'},
+        connector: 'x',
+        mcpUrl: 'https://x/mcp',
+        issuer: probe.issuer,
+      );
+
+      expect(token!.mcpEntry!.headers['Authorization'], 'DPoP sbp_oauth_abc');
+    });
+
+    test('a payload with no token_type still says Bearer', () async {
+      final (token, _) = client.tokenFrom(
+        {'access_token': 'sbp_oauth_abc'},
+        connector: 'x',
+        mcpUrl: 'https://x/mcp',
+        issuer: probe.issuer,
+      );
+
+      expect(token!.mcpEntry!.headers['Authorization'], 'Bearer sbp_oauth_abc');
+    });
+
     test('is marked dcr, so the gateway is never asked about it', () async {
       // Calling the gateway's /refresh for a self-registered connector asks it
       // about a credential it has never seen.
