@@ -250,6 +250,15 @@ class _DirectoryNote extends StatelessWidget {
         Expanded(
           child: Text(
             message,
+            // **Bounded, and that is structural rather than cosmetic.** This
+            // line sits under a list that has already claimed the pane, so its
+            // height comes out of whatever slack is left. A registry error is
+            // an arbitrary sentence — long enough to wrap to three lines and
+            // overflow the Column by exactly the 20px the first bug report
+            // showed. Two lines is what the leftover reliably affords, and an
+            // ellipsis says plainly that there is more.
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12.5,
               height: 1.35,
@@ -282,6 +291,14 @@ class _DirectoryTail extends ConsumerWidget {
 
     // First page in flight: cards the same shape as the real ones, on the same
     // two-up grid, so the list does not reflow when they are replaced.
+    //
+    // `SingleChildScrollView`, and that is load-bearing rather than tidy. This
+    // sits *below* a `Flexible` list that has already taken the room it wanted:
+    // on a screen with nothing configured the empty state fills the pane, and a
+    // fixed-height block underneath it overflowed by exactly the skeletons'
+    // 20px. Letting the placeholder scroll away is the honest resolution —
+    // shrinking it would misreport how much is coming, and hiding it would make
+    // the first load look like nothing was happening.
     if (browse.loading) {
       return const Padding(
         padding: EdgeInsets.only(top: 12),
@@ -328,8 +345,13 @@ class _DirectorySkeletonGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        for (var row = 0; row < 2; row++)
+        // **One row, not two.** This block sits under a `Flexible` list that has
+        // already claimed the pane, so its height comes out of the slack the
+        // list left. Two rows of cards asked for 66px where 46 were going, and
+        // overflowed by exactly the 20 the error reported.
+        for (var row = 0; row < 1; row++)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Opacity(
@@ -517,44 +539,36 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
       ),
       listBuilder: (context, {required filtered, required matches}) {
         final browse = ref.watch(browseConnectorsProvider);
+        // Filtered once, read twice — by the list, and by the decision of
+        // whether the directory's footer has anything to sit under. Two copies
+        // of this comprehension is two chances for the footer to appear over an
+        // empty state, which is the layout that overflowed.
+        List<Connector> visible(List<Connector> all) => [
+          for (final connector in all)
+            if (_filter.keeps(connector) &&
+                matches(connector.name, connector.description))
+              connector,
+        ];
         return switch (ref.watch(connectorsProvider)) {
-          AsyncData(:final value) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Said before the list, because it explains what the list *is*.
-              // A lit-up Verified pill over rows the registry chose on relevance
-              // alone would read as a promise the screen cannot keep.
-              if (browse.filtersSuspended)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 12),
-                  child: _DirectoryNote(
-                    'Showing search results — the directory can filter or '
-                    'search, not both. Clear the search to use Verified.',
-                  ),
-                ),
-              ConnectorList(
-                // A status pill narrows the list just like a search does:
-                // sections collapse (they'd all be one status anyway) and an
-                // empty result reads as "nothing matched", not "nothing
-                // configured".
-                filtered: filtered || _filter != _ConnectorFilter.all,
-                connectors: [
-                  for (final connector in value)
-                    if (_filter.keeps(connector) &&
-                        matches(connector.name, connector.description))
-                      connector,
-                ],
-              ),
-              // The directory's own tail: skeletons while its first page is in
-              // flight, then Load more. Below the list rather than replacing it
-              // — the gateway's connectors are already on screen and blanking
-              // them for a third party's page would be the worse trade.
-              _DirectoryTail(
-                // Under Connected the directory contributes nothing, so its
-                // footer would be a control for rows that are not there.
-                visible: _filter != _ConnectorFilter.connected,
-              ),
-            ],
+          // **`ConnectorList` must be the flexible child.** It renders an
+          // `ExtensionGrid`, which is a `CustomScrollView`, and a viewport needs
+          // a bounded height on its scroll axis. Dropped straight into a Column
+          // it gets an unbounded one, throws `debugCheckHasBoundedAxis`, and
+          // takes the *whole screen* down with it — not just the list: the
+          // failed layout leaves every ancestor unlaid-out, so the pane renders
+          // blank with the toolbar still drawn above it.
+          //
+          // The siblings then have to be *small*, and stay small: whatever the
+          // list does not take, they share. `_DirectoryTail` is one row of
+          // controls and `_DirectoryNote` one line of text, both well under the
+          // slack a `Flexible` list leaves them. A block of any real height here
+          // overflows the moment the list fills the pane — measured at exactly
+          // 20px when the tail rendered a two-row skeleton grid.
+          AsyncData(:final value) => _ConnectorsBody(
+            rows: visible(value),
+            filtered: filtered || _filter != _ConnectorFilter.all,
+            filtersSuspended: browse.filtersSuspended,
+            showDirectoryTail: _filter != _ConnectorFilter.connected,
           ),
           AsyncError(:final error) => ErrorBox(
             message: "Couldn't read the connectors: $error",
@@ -562,6 +576,77 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           _ => const ExtensionLoadingRows(),
         };
       },
+    );
+  }
+}
+
+/// The assembled screen body: the note, the list, and the directory's footer.
+///
+/// Split out so the layout rule below lives in one place with the reason for it,
+/// rather than inline in a `switch` arm three levels deep.
+class _ConnectorsBody extends StatelessWidget {
+  const _ConnectorsBody({
+    required this.rows,
+    required this.filtered,
+    required this.filtersSuspended,
+    required this.showDirectoryTail,
+  });
+
+  final List<Connector> rows;
+  final bool filtered;
+  final bool filtersSuspended;
+  final bool showDirectoryTail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Said before the list, because it explains what the list *is*. A
+        // lit-up Verified pill over rows the registry chose on relevance alone
+        // would read as a promise the screen cannot keep.
+        if (filtersSuspended)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: _DirectoryNote(
+              'Showing search results — the directory can filter or search, '
+              'not both. Clear the search to use Verified.',
+            ),
+          ),
+        // `Expanded`, so the list is handed what its siblings leave rather than
+        // taking the pane and pushing them off it. `ConnectorList` renders an
+        // `ExtensionGrid` — a `CustomScrollView` — and a viewport needs a
+        // bounded height on its scroll axis. Dropped into a Column without
+        // this it gets an unbounded one, throws `debugCheckHasBoundedAxis`, and
+        // takes the **whole pane** down: a failed layout leaves every ancestor
+        // unlaid-out, so the screen renders blank with the toolbar still drawn.
+        Expanded(
+          child: ConnectorList(
+            // A status pill narrows the list just like a search does: sections
+            // collapse (they'd all be one status anyway) and an empty result
+            // reads as "nothing matched", not "nothing configured".
+            filtered: filtered,
+            connectors: rows,
+          ),
+        ),
+        // The directory's tail — skeletons while its first page is in flight,
+        // then Load more — and **only when there are rows for it to sit under**.
+        //
+        // With none, `ConnectorList` draws an `EmptyState`: a shared widget
+        // that centres a fixed 229px of icon, copy and button inside whatever
+        // it is given. Reserving 46px here left it 209, and it overflowed by
+        // exactly the 20px the first bug report showed. Found with
+        // `RenderFlex.size`, not by reasoning: three earlier guesses —
+        // Expanded vs Flexible, a scroll view, a shorter skeleton — each moved
+        // the number without fixing it, because none of them was the widget
+        // actually overflowing.
+        //
+        // Nothing is lost by hiding it: an empty list has no further pages to
+        // load, and a directory error still reaches the user through the row
+        // the search was made from.
+        if (rows.isNotEmpty && showDirectoryTail)
+          const _DirectoryTail(visible: true),
+      ],
     );
   }
 }
