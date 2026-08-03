@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/smithery_registry_client.dart';
+import 'connector_catalog.dart';
+import 'smithery_catalog.dart';
 import 'smithery_server.dart';
 
 /// What the browse dialog is showing right now.
@@ -15,6 +17,8 @@ class BrowseConnectorsState {
   const BrowseConnectorsState({
     this.servers = const [],
     this.query = '',
+    this.filters = const {},
+    this.sort = SmitheryServerSort.relevance,
     this.page = 0,
     this.totalPages = 0,
     this.totalCount = 0,
@@ -23,7 +27,20 @@ class BrowseConnectorsState {
     this.error,
   });
 
+  /// The rows as fetched, in the registry's own order.
+  ///
+  /// [visibleServers] is what the screen draws. Keeping the fetched order here
+  /// means switching sort never needs a refetch, and switching *back* to
+  /// relevance restores exactly what the registry sent rather than an
+  /// approximation of it.
   final List<SmitheryServer> servers;
+
+  /// The registry tokens narrowing this search. Changing these refetches, since
+  /// they are applied by the registry and not here.
+  final Set<SmitheryFilter> filters;
+
+  /// How [visibleServers] is ordered. Changing this does **not** refetch.
+  final SmitheryServerSort sort;
 
   /// The search this list answers — not what is in the box, which may have moved
   /// on. Load more sends *this*, so appending page 2 of an old search onto a new
@@ -50,9 +67,27 @@ class BrowseConnectorsState {
   /// Nothing to show, and not because we are still looking.
   bool get isEmpty => servers.isEmpty && !loading && error == null;
 
+  /// What the screen draws: the fetched rows in the chosen order.
+  ///
+  /// Derived rather than stored, so [servers] and this can never disagree — the
+  /// bug available in the stored version is a sort applied to page one and
+  /// silently not to page two.
+  List<SmitheryServer> get visibleServers => sort.apply(servers);
+
+  /// Filters are selected but the registry is not applying them, because a
+  /// search is running and the two cannot be combined (see
+  /// `SmitheryRegistryClient.servers`).
+  ///
+  /// Exposed so the screen can *say* so. Dropping the token silently would leave
+  /// a lit-up pill over a list it had no part in choosing — the user would read
+  /// the results as verified when they are merely relevant.
+  bool get filtersSuspended => filters.isNotEmpty && query.isNotEmpty;
+
   BrowseConnectorsState copyWith({
     List<SmitheryServer>? servers,
     String? query,
+    Set<SmitheryFilter>? filters,
+    SmitheryServerSort? sort,
     int? page,
     int? totalPages,
     int? totalCount,
@@ -63,6 +98,8 @@ class BrowseConnectorsState {
   }) => BrowseConnectorsState(
     servers: servers ?? this.servers,
     query: query ?? this.query,
+    filters: filters ?? this.filters,
+    sort: sort ?? this.sort,
     page: page ?? this.page,
     totalPages: totalPages ?? this.totalPages,
     totalCount: totalCount ?? this.totalCount,
@@ -103,14 +140,25 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
   BrowseConnectorsState build() => const BrowseConnectorsState();
 
   /// Load (or reload) the first page for [query].
-  Future<void> search(String query) async {
+  ///
+  /// [filters] defaults to whatever is already selected, so a search keeps the
+  /// user's narrowing; pass a set to change both at once.
+  Future<void> search(String query, {Set<SmitheryFilter>? filters}) async {
     final generation = ++_generation;
     final trimmed = query.trim();
-    state = BrowseConnectorsState(query: trimmed, loading: true);
+    final active = filters ?? state.filters;
+    // Sort survives a search — it is a view preference, not part of the query,
+    // and resetting it on every keystroke would fight the user.
+    state = BrowseConnectorsState(
+      query: trimmed,
+      filters: active,
+      sort: state.sort,
+      loading: true,
+    );
 
     final (page, error) = await ref
         .read(smitheryRegistryClientProvider)
-        .servers(page: 1, pageSize: pageSize, query: trimmed);
+        .servers(page: 1, pageSize: pageSize, query: trimmed, filters: active);
     if (generation != _generation) return;
 
     if (page == null) {
@@ -127,6 +175,26 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
     );
   }
 
+  /// Turn [filter] on or off and reload from page one.
+  ///
+  /// A refetch, not a local narrowing: these are registry tokens, and the
+  /// registry caps browsing at 500 rows. Filtering the fetched page instead
+  /// would search only what has been seen and present that as the whole answer —
+  /// `is:verified` finds 199 rows across the directory, while the same test over
+  /// one loaded page finds whatever happens to be there.
+  Future<void> toggleFilter(SmitheryFilter filter) {
+    final next = {...state.filters};
+    if (!next.remove(filter)) next.add(filter);
+    return search(state.query, filters: next);
+  }
+
+  /// Reorder what is already loaded. **No refetch**, because the registry has no
+  /// sort of its own to ask for.
+  void setSort(SmitheryServerSort sort) {
+    if (sort == state.sort) return;
+    state = state.copyWith(sort: sort);
+  }
+
   /// Append the next page of the *current* search.
   Future<void> loadMore() async {
     final current = state;
@@ -141,6 +209,10 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
           page: current.page + 1,
           pageSize: pageSize,
           query: current.query,
+          // The filters this list was built with, not whatever is selected now:
+          // the same reasoning as `query` above. A pill toggled mid-scroll
+          // starts a new search, so it can never append onto the old one.
+          filters: current.filters,
         );
     if (generation != _generation) return;
 
@@ -171,3 +243,18 @@ final browseConnectorsProvider =
     NotifierProvider<BrowseConnectorsController, BrowseConnectorsState>(
       BrowseConnectorsController.new,
     );
+
+/// The directory rows the Connectors screen offers, as catalog entries.
+///
+/// **Never throws and never blocks the gateway's list.** A registry that is
+/// down, rate-limiting or answering nonsense yields an empty list, and the
+/// screen is then exactly the screen it was before this existed. The alternative
+/// — letting a directory failure propagate — would take sixteen working gateway
+/// connectors offline over a third party's bad afternoon, which is the same
+/// trade `selfServeCatalogProvider` already makes and for the same reason.
+final directoryCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
+  ref,
+) async {
+  final state = ref.watch(browseConnectorsProvider);
+  return smitheryCatalogEntries(state.visibleServers);
+});

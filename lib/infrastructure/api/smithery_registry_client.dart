@@ -35,20 +35,46 @@ class SmitheryRegistryClient {
   /// filtering are not in tension.
   static const String _remoteOnly = 'is:remote';
 
-  /// One page of the directory, newest-first as the registry orders it.
+  /// One page of the directory, ordered as the registry orders it.
   ///
-  /// [query] is the user's search text, empty for the plain listing. Callers
-  /// pass their own [pageSize] — `BrowseConnectorsController.pageSize` is the
-  /// one the app actually uses, and the default here only keeps this callable on
-  /// its own.
+  /// [query] is the user's search text, empty for the plain listing. [filters]
+  /// are registry tokens appended to the search — see [SmitheryFilter].
+  ///
+  /// Callers pass their own [pageSize] — `BrowseConnectorsController.pageSize`
+  /// is the one the app actually uses, and the default here only keeps this
+  /// callable on its own.
+  ///
+  /// **There is deliberately no `sort` parameter.** The registry accepts none:
+  /// `sort`, `sortBy` and `order` were each sent with a range of values on
+  /// 2026-08-03 and every one returned the identical page. Ordering therefore
+  /// belongs to the controller, over the rows it has fetched — and saying so
+  /// here stops the next reader from adding a parameter that looks like it
+  /// works because the default order is already sensible.
   Future<(SmitheryPage?, String?)> servers({
     int page = 1,
     int pageSize = 50,
     String query = '',
+    Set<SmitheryFilter> filters = const {},
   }) async {
-    final search = query.trim().isEmpty
-        ? _remoteOnly
-        : '${query.trim()} $_remoteOnly';
+    // **Search text wins over a filter token, and they are never sent
+    // together.** Measured 2026-08-03: `notion is:verified` returns
+    // `riskmodels`, `mem0`, `thoughtbox` — every row verified, not one of them
+    // Notion. The registry treats the token as the query and drops the words,
+    // so combining them silently answers a question the user did not ask.
+    // Honouring the typed text is the obvious choice: it is the more specific
+    // request, and it is the one they can see they made.
+    //
+    // `is:remote` is exempt — it is a reachability precondition rather than a
+    // preference, and `notion is:remote` really does return Notion servers
+    // (120 of them).
+    final searching = query.trim().isNotEmpty;
+    final terms = [
+      if (searching) query.trim(),
+      _remoteOnly,
+      if (!searching)
+        for (final filter in filters) filter.token,
+    ];
+    final search = terms.join(' ');
     final uri = Uri.parse(_base).replace(
       queryParameters: {'q': search, 'page': '$page', 'pageSize': '$pageSize'},
     );

@@ -1,3 +1,80 @@
+/// A narrowing the **registry** applies, as a token inside the search string.
+///
+/// Server-side on purpose. The alternative — fetch everything and filter here —
+/// cannot work against a directory that caps browsing at 500 rows: filtering
+/// locally would search only the 500 already seen, while a token narrows the
+/// whole 4,078 before the cap applies. `is:remote is:verified` is 199 rows, all
+/// of them reachable; the same filter applied to a fetched page would show a
+/// handful and claim that was all there is.
+///
+/// Counts measured 2026-08-03 against the live registry.
+///
+/// **Only tokens that were verified to actually work belong here.**
+/// `owner:smithery` was written, measured and removed in the same sitting: it
+/// reports 100 results whose rows come back `bySmithery: false`, and only 2 in
+/// 10 `remote: true` even when combined with `is:remote`. A filter the registry
+/// answers with the wrong rows is worse than no filter, because the user cannot
+/// tell. Check any new token against the *fields of the rows it returns*, not
+/// against the fact that the count changed.
+enum SmitheryFilter {
+  /// Smithery vouches for it — 199 of the 4,078 remote entries.
+  ///
+  /// The one filter worth offering: a public directory anyone can publish to is
+  /// not something to put in front of a person unsorted, and this is the
+  /// registry's own answer to which rows it stands behind. Measured as honest —
+  /// `is:remote is:verified` returns rows that are 10/10 remote and 10/10
+  /// verified.
+  verified('is:verified', 'Verified');
+
+  const SmitheryFilter(this.token, this.label);
+
+  /// The registry's own search token.
+  final String token;
+
+  /// What the pill says.
+  final String label;
+}
+
+/// How the fetched rows are ordered.
+///
+/// **Applied to what has been fetched, not to the directory.** The registry
+/// accepts no sort parameter (measured: `sort`, `sortBy` and `order` all return
+/// the identical page), so this can only order the pages already loaded. That is
+/// an honest limit rather than a broken feature — the registry's own default is
+/// most-used-first, which is what [SortOrder.relevance] preserves — but it does
+/// mean sorting by name reaches further as the user loads more.
+enum SmitheryServerSort {
+  /// The registry's own order, untouched. Most-used first in practice.
+  relevance('Relevance'),
+
+  /// Most-used first, explicitly — identical to the registry's default for the
+  /// first page, and meaningful once filters have reshuffled things.
+  mostUsed('Most used'),
+
+  /// Alphabetical, for finding a name you already know.
+  name('Name');
+
+  const SmitheryServerSort(this.label);
+
+  final String label;
+
+  /// [servers], ordered. Never sorts in place — the caller's list is state.
+  List<SmitheryServer> apply(List<SmitheryServer> servers) {
+    switch (this) {
+      case SmitheryServerSort.relevance:
+        return servers;
+      case SmitheryServerSort.mostUsed:
+        return [...servers]..sort((a, b) => b.useCount.compareTo(a.useCount));
+      case SmitheryServerSort.name:
+        return [...servers]..sort(
+          (a, b) => a.displayName.toLowerCase().compareTo(
+            b.displayName.toLowerCase(),
+          ),
+        );
+    }
+  }
+}
+
 /// One entry in the Smithery registry — a public directory of MCP servers.
 ///
 /// This is a *browse* model, not a connector. Nothing here is written anywhere:
@@ -13,6 +90,9 @@ class SmitheryServer {
     this.iconUrl = '',
     this.remote = false,
     this.deployed = false,
+    this.verified = false,
+    this.useCount = 0,
+    this.bySmithery = false,
   });
 
   /// `namespace/slug`, or a bare `namespace` for Smithery's own servers
@@ -28,13 +108,33 @@ class SmitheryServer {
   final bool remote;
 
   /// Smithery is currently hosting it.
-  ///
-  /// The registry also returns `verified` and `useCount`. Neither is modelled:
-  /// nothing reads them, the list is ordered by the registry rather than here,
-  /// and a "Verified" badge sat on nearly every row — a mark almost everything
-  /// carries separates nothing. Parsing a field to leave it unused only makes
-  /// the model look like it has an opinion it doesn't.
   final bool deployed;
+
+  /// Smithery vouches for this entry.
+  ///
+  /// **Previously not modelled, and the reasoning has been overturned by
+  /// measurement.** The earlier note said a "Verified" badge sat on nearly every
+  /// row, so the mark separated nothing. That was read off a page of the
+  /// *default* listing — which the registry returns most-used first, and the
+  /// most-used are exactly the vouched-for ones. Across the directory it
+  /// separates a great deal: `is:remote` is **4,078** rows and
+  /// `is:remote is:verified` is **199** (measured 2026-08-03).
+  ///
+  /// So this is not a badge, it is the filter that makes 4,000 community servers
+  /// safe to put in front of someone. Still not rendered as a mark on every row
+  /// for the original reason.
+  final bool verified;
+
+  /// How many times the directory has seen this server used.
+  ///
+  /// The only quality signal that is a *number*, and the only thing the app can
+  /// sort by: the registry accepts no sort parameter of its own (measured — all
+  /// of `sort`, `sortBy` and `order` return identical pages), so ordering is
+  /// this field, applied to what has been fetched.
+  final int useCount;
+
+  /// Published by Smithery itself rather than by a community author.
+  final bool bySmithery;
 
   /// This row can be connected from here.
   ///
@@ -87,6 +187,11 @@ class SmitheryServer {
       iconUrl: raw['iconUrl'] is String ? raw['iconUrl'] : '',
       remote: raw['remote'] == true,
       deployed: raw['isDeployed'] == true,
+      verified: raw['verified'] == true,
+      // `num`, not `int`: JSON has one number type and a count that arrives as
+      // `1.0` would otherwise silently become zero and sort to the bottom.
+      useCount: raw['useCount'] is num ? (raw['useCount'] as num).toInt() : 0,
+      bySmithery: raw['bySmithery'] == true,
     );
   }
 }

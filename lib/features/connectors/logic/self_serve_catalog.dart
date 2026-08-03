@@ -145,11 +145,22 @@ List<ConnectorCatalogEntry> parseSelfServeCatalog(String raw) {
 List<ConnectorCatalogEntry> mergeCatalog({
   required List<ConnectorCatalogEntry> gateway,
   required List<ConnectorCatalogEntry> selfServe,
+  List<ConnectorCatalogEntry> directory = const [],
 }) {
+  // Precedence, most authoritative first: the gateway vouches for a row and can
+  // broker its sign-in; a bundled self-serve row was chosen by hand; a directory
+  // row is whatever the public registry happens to hold. A `code` clash is
+  // resolved by the earlier source, so the day the backend starts serving
+  // `notion` the community `notion` steps aside with no file to edit.
   final claimed = {for (final entry in gateway) entry.code};
+  final curated = [
+    for (final entry in selfServe)
+      if (claimed.add(entry.code)) entry,
+  ];
   return sortCatalog([
     ...gateway,
-    for (final entry in selfServe)
-      if (!claimed.contains(entry.code)) entry,
+    ...curated,
+    for (final entry in directory)
+      if (claimed.add(entry.code)) entry,
   ]);
 }
