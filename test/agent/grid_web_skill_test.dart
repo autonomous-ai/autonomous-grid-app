@@ -125,15 +125,13 @@ void main() {
     },
   );
 
-  test(
-    'the installer puts grid-web alongside the media skills for Hermes',
-    () async {
-      await AgentSkillInstaller(home: tmp.path).install(AgentTool.hermes);
+  test('the installer puts grid-web in the library alongside Grid\'s other '
+      'skills for Hermes', () async {
+    await AgentSkillInstaller(home: tmp.path).install(AgentTool.hermes);
 
-      final base = '${tmp.path}/.grid/skills/$kPublicSkillsDir';
-      expect(File('$base/grid-web/SKILL.md').existsSync(), isTrue);
-      // The existing media skills are untouched.
-      expect(File('$base/grid-image-gen/SKILL.md').existsSync(), isTrue);
-    },
-  );
+    final base = '${tmp.path}/.grid/skills/$kPublicSkillsDir';
+    expect(File('$base/grid-web/SKILL.md').existsSync(), isTrue);
+    // Beside the rest of the registry, not instead of them.
+    expect(File('$base/grid-host/SKILL.md').existsSync(), isTrue);
+  });
 }

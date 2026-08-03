@@ -23,10 +23,10 @@ import '../../agents/logic/agent_status.dart';
 /// nothing and rebuilds nothing — [child] passes straight through.
 ///
 /// Above the router, because these skills are for the agents and an agent
-/// answers chats whether or not the Skills screen is ever opened. The chat
-/// senders still install too — that stays, as the one path that covers an agent
-/// installed *after* launch — and costs nothing now that a folder already
-/// holding the skill is left alone.
+/// answers chats whether or not the Skills screen is ever opened. This is now
+/// the *only* automatic path — the chat senders no longer install before a turn
+/// — so an agent installed after launch has no Grid skills until the next one,
+/// or until the user presses "Reinstall Grid's skills".
 class GridSkillsScope extends ConsumerStatefulWidget {
   const GridSkillsScope({super.key, required this.child});
 

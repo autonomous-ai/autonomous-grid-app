@@ -446,8 +446,11 @@ class _Empty extends StatelessWidget {
   };
 }
 
-/// Rewrites the skills Grid ships (image generation on your grid) and re-reads
-/// the folder. Idempotent — also the fix for a skill deleted by mistake.
+/// Puts back any of Grid's own skills (web search, this machine's notes, the
+/// service supervisor) that are missing, and re-reads the folder.
+///
+/// Only the missing ones: a folder already there is left alone, so this repairs
+/// a skill deleted by mistake and does nothing to one the user has edited.
 class ReinstallGridSkillsButton extends ConsumerStatefulWidget {
   const ReinstallGridSkillsButton({super.key});
 

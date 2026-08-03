@@ -119,7 +119,7 @@ void main() {
     });
 
     test('the image skill\'s #media: marker is rendered inline', () {
-      // The grid-image-gen skill replies with this exact shape.
+      // A skill that saves an image replies with this exact shape.
       final segs = parseMessageSegments(
         '[File: /Users/me/Downloads/img_001.png](#media:/Users/me/Downloads/img_001.png)',
       );

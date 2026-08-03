@@ -40,8 +40,9 @@ abstract interface class AgentSkillsPlane {
   /// screen hides Create/Edit/Delete when null.
   SkillWriter? get writer;
 
-  /// Write (or refresh) the skills Grid ships for this agent. Idempotent —
-  /// also the fix for a skill deleted by mistake.
+  /// Put back any of the skills Grid ships for this agent that are missing, and
+  /// take away the ones Grid has withdrawn. Idempotent, and a no-op for a skill
+  /// already there — so it repairs a deletion without touching an edit.
   Future<void> installGridSkills();
 
   /// Make sure this agent is *not* reading the app's library behind the user's

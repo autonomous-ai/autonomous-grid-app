@@ -6,7 +6,6 @@ import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_catalog.dart';
 import 'grid_host_skill.dart';
-import 'grid_media_skills.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
 import 'hermes_shared_skills.dart';
@@ -26,9 +25,8 @@ class BuiltinGridSkill {
   /// The skill's folder name, e.g. `grid-web`.
   final String name;
 
-  /// The agents this skill is installed for. Web search, the host notes and the
-  /// server supervisor go to all three; the media skills are Hermes-only today,
-  /// so an agent that can't use one never sees it.
+  /// The agents this skill is installed for — all three today, though the field
+  /// stays because a skill can depend on something only one agent has.
   final Set<AgentTool> agents;
 
   /// Builds the card + scripts for the folder the skill lands in.
@@ -68,17 +66,25 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridServeSkillFiles,
   ),
-  // Image + video generation through the grid's media API — Hermes-only for now.
-  BuiltinGridSkill(
-    name: kGridImageSkillName,
-    agents: const {AgentTool.hermes},
-    build: gridImageSkillFiles,
-  ),
-  BuiltinGridSkill(
-    name: kGridVideoSkillName,
-    agents: const {AgentTool.hermes},
-    build: gridVideoSkillFiles,
-  ),
+];
+
+/// Skills Grid used to install and has withdrawn — taken off every machine they
+/// reached, rather than left behind.
+///
+/// A skill nothing writes any more is worse than one that was never there: it
+/// keeps firing, on instructions no build maintains and against an endpoint
+/// nobody is checking, and the Skills screen can't offer to remove it once the
+/// library copy that recorded its authorship is gone. So the installer deletes
+/// both copies wherever it finds them.
+///
+/// **A name here must appear in no [BuiltinGridSkill].** Listing a live skill
+/// would delete the folder [install] had just written — that exact bug shipped
+/// once, and `retires nothing the registry still installs` in
+/// `agent_skill_installer_test.dart` is what keeps it from shipping twice.
+const List<String> kRetiredGridSkills = [
+  // Image and video generation through the grid's media API, dropped 2026-08-03.
+  'grid-image-gen',
+  'grid-video-gen',
 ];
 
 /// Installs the Grid skills an agent uses in Agent mode: into the app's library
@@ -93,7 +99,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
 ///
 /// Replaces the old per-agent installer pair: one class, keyed on [AgentTool], so
 /// a new agent or a new skill is a registry entry rather than a new installer.
-/// Idempotent — safe to call every time the app points an agent at a grid.
+/// Idempotent — safe to call on every launch, for every agent that is here.
 class AgentSkillInstaller {
   AgentSkillInstaller({String? home}) : _home = home;
 
@@ -131,23 +137,41 @@ class AgentSkillInstaller {
         await writeSkillFolder(dir, skill.build(dir));
       }
     }
+    await _removeRetired(skillHome);
     if (agent == AgentTool.hermes) {
       await _removeSupersededCopies(skillHome.home);
+    }
+  }
+
+  /// Take the withdrawn skills off this agent, and out of the library.
+  ///
+  /// Every agent, not just the one that was given them: a copy could have been
+  /// shared by hand from the Skills screen, and a skill Grid no longer ships
+  /// should not survive in a folder it was copied into. The library is
+  /// agent-neutral, so whichever agent installs first clears it.
+  Future<void> _removeRetired(AgentSkillHome skillHome) async {
+    for (final name in kRetiredGridSkills) {
+      for (final dir in [
+        skillHome.libraryGridDir(name),
+        skillHome.gridDir(name),
+      ]) {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      }
     }
   }
 
   /// The hand-made prototypes, which baked a live API key into their scripts
   /// and sat under `creative/` or at the skills root.
   ///
-  /// [install] owns `skills/grid/` and rewrites it, so those copies are current
-  /// by definition; these are the ones nothing rewrites, and leaving them would
-  /// have the agent reading two skills of one name — the stale one at that.
+  /// Leaving them would have the agent reading two skills of one name — the
+  /// stale one at that.
+  ///
   /// Only paths **nothing writes any more** may be listed here. `skills/<name>`
-  /// at the root is where [gridDir] puts a copy today, so listing
-  /// `grid-image-gen` and `grid-video-gen` there deleted the two skills this
-  /// method had just installed: the library showed them, the Skills screen
-  /// listed them, and Hermes never had them — "draw me a picture" had nothing
-  /// to run for as long as that line was here.
+  /// at the root is where [gridDir] puts a copy today, so a live skill named
+  /// there is deleted right after [install] wrote it: that shipped once, and
+  /// Hermes had no image skill at all for as long as the line was here.
+  /// Withdrawing a skill for good goes through [kRetiredGridSkills] instead,
+  /// which covers every agent and the library rather than one hardcoded path.
   Future<void> _removeSupersededCopies(String home) async {
     for (final superseded in const [
       // Where install() itself wrote in an earlier build. Nothing rewrites it
