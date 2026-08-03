@@ -17,7 +17,6 @@ class BrowseConnectorsState {
   const BrowseConnectorsState({
     this.servers = const [],
     this.query = '',
-    this.filters = const {},
     this.sort = SmitheryServerSort.mostUsed,
     this.page = 0,
     this.totalPages = 0,
@@ -34,10 +33,6 @@ class BrowseConnectorsState {
   /// relevance restores exactly what the registry sent rather than an
   /// approximation of it.
   final List<SmitheryServer> servers;
-
-  /// What is narrowing the fetched rows. Applied here, not by the registry, so
-  /// changing one costs a rebuild rather than a round trip.
-  final Set<SmitheryFilter> filters;
 
   /// How [visibleServers] is ordered. Changing this does **not** refetch.
   final SmitheryServerSort sort;
@@ -72,31 +67,25 @@ class BrowseConnectorsState {
   /// Derived rather than stored, so [servers] and this can never disagree — the
   /// bug available in the stored version is a sort applied to page one and
   /// silently not to page two.
-  List<SmitheryServer> get visibleServers {
-    // **Narrowed here, never by the registry** — `is:verified` excludes
-    // Smithery's own first-party servers, which are the four most-used rows in
-    // the directory (see [SmitheryFilter]). Read off the row instead.
-    //
-    // **And only while nobody is searching.** The plain listing is a shortlist:
-    // out of four thousand servers anyone can publish to, the seventeen Smithery
-    // runs are what a settings screen should open on. A search is the opposite
-    // request — the user has named the thing they want, and answering "email"
-    // with Gmail alone because the other matches are community-run is refusing
-    // to look. Curated by default, everything on demand, which is how a store
-    // behaves.
-    final rows = filters.isEmpty || query.isNotEmpty
-        ? servers
-        : [
-            for (final server in servers)
-              if (filters.every((f) => f.keeps(server))) server,
-          ];
-    return sort.apply(rows);
-  }
+  /// What the screen draws: the fetched rows in the chosen order.
+  ///
+  /// **Nothing is filtered out, and that is a reversal.** A shortlist of the
+  /// seventeen Smithery-managed servers was the default, and it broke paging in
+  /// a way that read as a bug: all seventeen are on page one, so scrolling to
+  /// the end fetched fifty more rows of which **none** passed the filter and the
+  /// list did not grow. Infinite scroll cannot work over a set that is already
+  /// complete.
+  ///
+  /// Ordering does the work instead. `mostUsed` — the default — opens on
+  /// `jina` (76,715), `googlesheets` (63,663), `gmail` (60,499) and `brave`
+  /// (60,204), which is the quality-first list the filter was reaching for, and
+  /// scrolling carries on into the rest of the directory instead of stopping
+  /// dead.
+  List<SmitheryServer> get visibleServers => sort.apply(servers);
 
   BrowseConnectorsState copyWith({
     List<SmitheryServer>? servers,
     String? query,
-    Set<SmitheryFilter>? filters,
     SmitheryServerSort? sort,
     int? page,
     int? totalPages,
@@ -108,7 +97,6 @@ class BrowseConnectorsState {
   }) => BrowseConnectorsState(
     servers: servers ?? this.servers,
     query: query ?? this.query,
-    filters: filters ?? this.filters,
     sort: sort ?? this.sort,
     page: page ?? this.page,
     totalPages: totalPages ?? this.totalPages,
@@ -146,33 +134,18 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
   /// longer contains. Compared at every await boundary.
   int _generation = 0;
 
-  /// **Smithery managed is on by default**, and read off the row rather than
-  /// asked of the registry.
-  ///
-  /// Not `verified`, which was the first attempt: on the registry's own site
-  /// those are two different marks, and the servers people recognise carry the
-  /// managed one. `gmail`, `jina`, `brave` and `googlesheets` are all
-  /// Smithery-run, and the `is:verified` *token* hides every one of them (see
-  /// [SmitheryFilter]). Seventeen rows, all on the first page, sorted by use —
-  /// that is what a settings screen should open on out of four thousand servers
-  /// anyone can publish to. Either pill is one press away.
   @override
-  BrowseConnectorsState build() =>
-      const BrowseConnectorsState(filters: {SmitheryFilter.smitheryManaged});
+  BrowseConnectorsState build() => const BrowseConnectorsState();
 
   /// Load (or reload) the first page for [query].
   ///
-  /// [filters] defaults to whatever is already selected, so a search keeps the
-  /// user's narrowing; pass a set to change both at once.
-  Future<void> search(String query, {Set<SmitheryFilter>? filters}) async {
+  Future<void> search(String query) async {
     final generation = ++_generation;
     final trimmed = query.trim();
-    final active = filters ?? state.filters;
     // Sort survives a search — it is a view preference, not part of the query,
     // and resetting it on every keystroke would fight the user.
     state = BrowseConnectorsState(
       query: trimmed,
-      filters: active,
       sort: state.sort,
       loading: true,
     );
@@ -194,14 +167,6 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
       loading: false,
       clearError: true,
     );
-  }
-
-  /// Turn [filter] on or off. **No refetch** — the narrowing is local now, so
-  /// the pages already loaded are re-read rather than thrown away.
-  void toggleFilter(SmitheryFilter filter) {
-    final next = {...state.filters};
-    if (!next.remove(filter)) next.add(filter);
-    state = state.copyWith(filters: next);
   }
 
   /// Reorder what is already loaded. **No refetch**, because the registry has no

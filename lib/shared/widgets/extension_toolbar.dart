@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'app_icon_button.dart';
 import 'extension_list.dart';
 import 'extension_tile_surface.dart';
 import 'skeleton.dart';
@@ -37,6 +38,40 @@ class ExtensionSearchField extends StatelessWidget {
           filled: false,
           hintText: hintText,
           prefixIcon: const Icon(Icons.search_rounded, size: 18),
+          // Only while there is something to clear. A ✕ sitting on an empty
+          // field is a control that does nothing, and on a row of quiet icons
+          // it reads as one more thing to work out.
+          //
+          // `ValueListenableBuilder` rather than making this stateful: the
+          // controller is already a `ValueNotifier`, so this rebuilds the icon
+          // and nothing else on every keystroke.
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (context, value, _) => value.text.isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: AppIconButton(
+                      icon: Icons.close_rounded,
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        controller.clear();
+                        // The field's own `onChanged` does not fire for a
+                        // programmatic clear, and every caller derives its list
+                        // from that callback — without this the text goes and
+                        // the results stay.
+                        onChanged('');
+                      },
+                    ),
+                  ),
+          ),
+          // Keeps the field from growing when the button appears: without a
+          // bound, `suffixIcon` reserves the icon's own 48px minimum and the
+          // search bar changes height on the first keystroke.
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 0,
+            minHeight: 0,
+          ),
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
           focusedBorder: InputBorder.none,

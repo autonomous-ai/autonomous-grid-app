@@ -183,12 +183,11 @@ class _FilterBar extends ConsumerWidget {
                 onTap: () => onFilter(option),
               ),
             ),
-          // **The directory's own filters are not offered.** Two more pills for
-          // a distinction most people never make, on a toolbar already carrying
-          // three — and the one that matters is applied anyway: the plain
-          // listing is the Smithery-managed shortlist, and a search drops it to
-          // reach the whole directory (see `visibleServers`). `SmitheryFilter`
-          // stays, because that behaviour is what it encodes.
+          // **No directory filter pills.** They were two more controls for a
+          // distinction most people never make, and the shortlist they produced
+          // broke paging: every Smithery-managed server is on page one, so
+          // scrolling fetched more and the list never grew. Ordering carries the
+          // quality signal instead — see `visibleServers`.
           if (filter != _ConnectorFilter.connected) ...[
             const SizedBox(width: 4),
             _BarDivider(),

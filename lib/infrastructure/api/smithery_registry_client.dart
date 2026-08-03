@@ -49,7 +49,7 @@ class SmitheryRegistryClient {
   /// `is:verified` answers 50/50 verified but 0/50 `bySmithery`, so it excludes
   /// the four most-used servers in the directory, while `owner:smithery` returns
   /// rows whose own `bySmithery` is false. Ordering and narrowing therefore
-  /// belong to the caller, over the rows this returns — see [SmitheryFilter] and
+  /// belong to the caller, over the rows this returns — see
   /// `SmitheryServerSort`.
   Future<(SmitheryPage?, String?)> servers({
     int page = 1,
