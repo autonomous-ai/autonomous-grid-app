@@ -127,7 +127,7 @@ void main() {
     expect(chat.messages.single.text, contains('Three PRs need review.'));
     expect(chat.messages.single.text, contains('14/07 at 08:00'));
     // On disk too, so closing the app doesn't lose the result.
-    expect(h.chats.loadAll().single.messages, hasLength(1));
+    expect((await h.chats.loadAll()).single.messages, hasLength(1));
   });
 
   test('a result is delivered once — not again on the next sweep, or the next '
@@ -144,12 +144,12 @@ void main() {
     await h.container.read(taskDeliveryProvider.notifier).sweep();
     await h.container.read(taskDeliveryProvider.notifier).sweep();
 
-    expect(h.chats.loadAll().single.messages, hasLength(1));
+    expect((await h.chats.loadAll()).single.messages, hasLength(1));
 
     // A fresh app (new container, same stores) doesn't re-deliver it either.
     final next = harness(h.cron);
     await next.container.read(taskDeliveryProvider.notifier).sweep();
-    expect(next.chats.loadAll().single.messages, hasLength(1));
+    expect((await next.chats.loadAll()).single.messages, hasLength(1));
   });
 
   test('the next morning\'s run is appended to the same chat', () async {
@@ -176,7 +176,7 @@ void main() {
     );
     await tomorrow.container.read(taskDeliveryProvider.notifier).sweep();
 
-    final chat = tomorrow.chats.loadAll().single;
+    final chat = (await tomorrow.chats.loadAll()).single;
     expect(chat.messages, hasLength(2));
     expect(chat.messages.last.text, contains('Tuesday'));
     expect(chat.updatedAt, DateTime(2026, 7, 15, 8));
@@ -215,7 +215,7 @@ void main() {
 
     await h.container.read(taskDeliveryProvider.notifier).sweep();
 
-    expect(h.chats.loadAll(), isEmpty);
+    expect((await h.chats.loadAll()), isEmpty);
     expect(File('${tmp.path}/task_delivery.json').existsSync(), isFalse);
   });
 

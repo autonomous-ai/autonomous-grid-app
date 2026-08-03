@@ -7,9 +7,13 @@ import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 
 /// A store backed by a temp dir, so nothing here touches a real `~/.grid`.
-({ProviderContainer container, Directory dir}) _harness(
+///
+/// Waits for the saved chats to be read back in: the controller reads them off
+/// the first frame now, so a seeded dir isn't in its state the instant the
+/// container is built.
+Future<({ProviderContainer container, Directory dir})> _harness(
   List<Conversation> seed,
-) {
+) async {
   final dir = Directory.systemTemp.createTempSync('archive_test');
   final store = ChatStore(directory: dir);
   for (final c in seed) {
@@ -20,6 +24,7 @@ import 'package:grid_app/features/chat/logic/conversation.dart';
   );
   addTearDown(container.dispose);
   addTearDown(() => dir.deleteSync(recursive: true));
+  await container.read(chatSessionsProvider.notifier).restored;
   return (container: container, dir: dir);
 }
 
@@ -42,28 +47,31 @@ Conversation _chat({
 
 void main() {
   group('archiving', () {
-    test('hides the chat from `live` while keeping it in `conversations`', () {
-      final h = _harness([_chat(id: 'a'), _chat(id: 'b')]);
-      final controller = h.container.read(chatSessionsProvider.notifier);
+    test(
+      'hides the chat from `live` while keeping it in `conversations`',
+      () async {
+        final h = await _harness([_chat(id: 'a'), _chat(id: 'b')]);
+        final controller = h.container.read(chatSessionsProvider.notifier);
 
-      controller.archiveConversation('a');
+        controller.archiveConversation('a');
 
-      final state = h.container.read(chatSessionsProvider);
-      expect(state.live.map((c) => c.id), ['b']);
-      expect(state.archived.map((c) => c.id), ['a']);
-      expect(state.conversations.length, 2, reason: 'nothing is deleted');
-    });
+        final state = h.container.read(chatSessionsProvider);
+        expect(state.live.map((c) => c.id), ['b']);
+        expect(state.archived.map((c) => c.id), ['a']);
+        expect(state.conversations.length, 2, reason: 'nothing is deleted');
+      },
+    );
 
-    test('keeps every message — archiving is hiding, not deleting', () {
-      final h = _harness([_chat(id: 'a')]);
+    test('keeps every message — archiving is hiding, not deleting', () async {
+      final h = await _harness([_chat(id: 'a')]);
       h.container.read(chatSessionsProvider.notifier).archiveConversation('a');
 
       final archived = h.container.read(chatSessionsProvider).archived.single;
       expect(archived.messages.single.text, 'hello');
     });
 
-    test('survives a reload — the flag is on disk, not in memory', () {
-      final h = _harness([_chat(id: 'a')]);
+    test('survives a reload — the flag is on disk, not in memory', () async {
+      final h = await _harness([_chat(id: 'a')]);
       h.container.read(chatSessionsProvider.notifier).archiveConversation('a');
 
       // A fresh container over the same directory is what a relaunch looks like.
@@ -72,14 +80,15 @@ void main() {
         overrides: [chatStoreProvider.overrideWithValue(store)],
       );
       addTearDown(reloaded.dispose);
+      await reloaded.read(chatSessionsProvider.notifier).restored;
 
       expect(reloaded.read(chatSessionsProvider).archived.map((c) => c.id), [
         'a',
       ]);
     });
 
-    test('moves off the chat when the open one is archived', () {
-      final h = _harness([
+    test('moves off the chat when the open one is archived', () async {
+      final h = await _harness([
         _chat(id: 'a', updatedAt: DateTime(2026, 2, 1)),
         _chat(id: 'b', updatedAt: DateTime(2026, 1, 1)),
       ]);
@@ -93,29 +102,32 @@ void main() {
       expect(h.container.read(chatSessionsProvider).activeId, 'b');
     });
 
-    test('archiving the last chat leaves a fresh compose', () {
-      final h = _harness([_chat(id: 'only')]);
+    test('archiving the last chat leaves a fresh compose', () async {
+      final h = await _harness([_chat(id: 'only')]);
       final controller = h.container.read(chatSessionsProvider.notifier);
       controller.archiveConversation('only');
 
       expect(h.container.read(chatSessionsProvider).activeId, isNull);
     });
 
-    test('leaves the open chat alone when a different one is archived', () {
-      final h = _harness([_chat(id: 'a'), _chat(id: 'b')]);
-      final controller = h.container.read(chatSessionsProvider.notifier);
-      controller.select('b');
+    test(
+      'leaves the open chat alone when a different one is archived',
+      () async {
+        final h = await _harness([_chat(id: 'a'), _chat(id: 'b')]);
+        final controller = h.container.read(chatSessionsProvider.notifier);
+        controller.select('b');
 
-      controller.archiveConversation('a');
+        controller.archiveConversation('a');
 
-      expect(h.container.read(chatSessionsProvider).activeId, 'b');
-    });
+        expect(h.container.read(chatSessionsProvider).activeId, 'b');
+      },
+    );
   });
 
   group('unarchiving', () {
-    test('puts the chat back without touching updatedAt', () {
+    test('puts the chat back without touching updatedAt', () async {
       final talkedIn = DateTime(2026, 3, 15);
-      final h = _harness([
+      final h = await _harness([
         _chat(id: 'a', updatedAt: talkedIn, archivedAt: DateTime(2026, 6, 1)),
       ]);
       final controller = h.container.read(chatSessionsProvider.notifier);
@@ -129,21 +141,23 @@ void main() {
       expect(restored.updatedAt, talkedIn);
     });
 
-    test('clears the flag on disk too', () {
-      final h = _harness([_chat(id: 'a', archivedAt: DateTime(2026, 6, 1))]);
+    test('clears the flag on disk too', () async {
+      final h = await _harness([
+        _chat(id: 'a', archivedAt: DateTime(2026, 6, 1)),
+      ]);
       h.container
           .read(chatSessionsProvider.notifier)
           .unarchiveConversation('a');
 
-      final reloaded = ChatStore(directory: h.dir).loadAll();
+      final reloaded = await ChatStore(directory: h.dir).loadAll();
       expect(reloaded.single.isArchived, isFalse);
     });
   });
 
   group('launch', () {
-    test('opens a live chat, never an archived one', () {
+    test('opens a live chat, never an archived one', () async {
       // The archived chat is the newest, so a naive "first" would open it.
-      final h = _harness([
+      final h = await _harness([
         _chat(
           id: 'archived',
           updatedAt: DateTime(2026, 6, 1),
@@ -155,15 +169,17 @@ void main() {
       expect(h.container.read(chatSessionsProvider).activeId, 'live');
     });
 
-    test('opens a compose when every saved chat is archived', () {
-      final h = _harness([_chat(id: 'a', archivedAt: DateTime(2026, 6, 1))]);
+    test('opens a compose when every saved chat is archived', () async {
+      final h = await _harness([
+        _chat(id: 'a', archivedAt: DateTime(2026, 6, 1)),
+      ]);
       expect(h.container.read(chatSessionsProvider).activeId, isNull);
     });
   });
 
   group('deleteArchivedConversations', () {
-    test('deletes every archived chat and spares the live ones', () {
-      final h = _harness([
+    test('deletes every archived chat and spares the live ones', () async {
+      final h = await _harness([
         _chat(id: 'x', archivedAt: DateTime(2026, 6, 1)),
         _chat(id: 'y', archivedAt: DateTime(2026, 6, 2)),
         _chat(id: 'keep'),
@@ -176,11 +192,13 @@ void main() {
       final state = h.container.read(chatSessionsProvider);
       expect(state.conversations.map((c) => c.id), ['keep']);
       // And gone from disk, not just from memory.
-      expect(ChatStore(directory: h.dir).loadAll().map((c) => c.id), ['keep']);
+      expect((await ChatStore(directory: h.dir).loadAll()).map((c) => c.id), [
+        'keep',
+      ]);
     });
 
-    test('scopes to the given ids for "delete all in project"', () {
-      final h = _harness([
+    test('scopes to the given ids for "delete all in project"', () async {
+      final h = await _harness([
         _chat(id: 'web1', projectId: 'web', archivedAt: DateTime(2026, 6, 1)),
         _chat(id: 'api1', projectId: 'api', archivedAt: DateTime(2026, 6, 2)),
       ]);
@@ -194,9 +212,9 @@ void main() {
       ]);
     });
 
-    test('cannot delete a live chat even if its id is passed', () {
+    test('cannot delete a live chat even if its id is passed', () async {
       // The guard that keeps "Delete all" from ever reaching working history.
-      final h = _harness([_chat(id: 'live')]);
+      final h = await _harness([_chat(id: 'live')]);
 
       h.container
           .read(chatSessionsProvider.notifier)

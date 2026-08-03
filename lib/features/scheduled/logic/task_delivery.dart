@@ -138,6 +138,12 @@ class TaskDeliveryController extends Notifier<List<String>> {
     if (cron == null || _sweeping) return;
     _sweeping = true;
     try {
+      // Wait for the saved chats to be read before deciding a task's chat is
+      // missing: [ChatSessionsController.deliverFromAgent] starts one when it
+      // can't find it, and a sweep that ran during the read would start a
+      // *second* one over the same id — the day's result replacing the history
+      // it should have been appended to.
+      await ref.read(chatSessionsProvider.notifier).restored;
       final jobs = await ref.read(scheduledJobsProvider.future);
       final delivered = {...ref.read(taskDeliveryStoreProvider).load()};
       final links = ref.read(projectTasksProvider);

@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/chat/presentation/archived_chats_view.dart';
-import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The controls bar is hidden when nothing is archived and shown otherwise —
@@ -34,22 +34,36 @@ void main() {
   setUp(() => tmp = Directory.systemTemp.createTempSync('archived_view'));
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  Widget host(List<Conversation> seed) {
+  /// Show the screen over a temp store seeded with [seed], with the saved chats
+  /// already read back in — they land off the first frame now, so a pumped tree
+  /// starts empty until that read completes.
+  Future<void> pumpView(WidgetTester tester, List<Conversation> seed) async {
     final store = ChatStore(directory: tmp);
     for (final c in seed) {
       store.save(c);
     }
-    return ProviderScope(
+    final container = ProviderContainer(
       overrides: [chatStoreProvider.overrideWithValue(store)],
-      child: const MaterialApp(home: Scaffold(body: ArchivedChatsView())),
     );
+    addTearDown(container.dispose);
+    // Through [WidgetTester.runAsync], because the read is real file I/O: the
+    // test binding's zone parks a plain await on it forever.
+    await tester.runAsync(
+      () => container.read(chatSessionsProvider.notifier).restored,
+    );
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: ArchivedChatsView())),
+      ),
+    );
+    await tester.pump();
   }
 
   testWidgets('nothing archived: the whole controls bar is hidden', (
     tester,
   ) async {
-    await tester.pumpWidget(host([_chat(id: 'live')]));
-    await tester.pump();
+    await pumpView(tester, [_chat(id: 'live')]);
 
     expect(find.text('No archived chats'), findsOneWidget);
     // Search, the filters and Delete all would all be dead ends over an empty
@@ -61,10 +75,9 @@ void main() {
   });
 
   testWidgets('with archived chats the controls are back', (tester) async {
-    await tester.pumpWidget(
-      host([_chat(id: 'a', title: 'Deploy', archivedAt: DateTime(2026, 6, 1))]),
-    );
-    await tester.pump();
+    await pumpView(tester, [
+      _chat(id: 'a', title: 'Deploy', archivedAt: DateTime(2026, 6, 1)),
+    ]);
 
     expect(_searchField, findsOneWidget);
     expect(_deleteAll, findsOneWidget);
@@ -82,10 +95,9 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      host([_chat(id: 'a', title: 'Deploy', archivedAt: DateTime(2026, 6, 1))]),
-    );
-    await tester.pump();
+    await pumpView(tester, [
+      _chat(id: 'a', title: 'Deploy', archivedAt: DateTime(2026, 6, 1)),
+    ]);
 
     final button = find.byIcon(LucideIcons.ellipsis300);
     final row = find.ancestor(of: button, matching: find.byType(Row)).first;
@@ -109,10 +121,9 @@ void main() {
   testWidgets('filtered to nothing keeps the controls — the way back out', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      host([_chat(id: 'a', title: 'Deploy', archivedAt: DateTime(2026, 6, 1))]),
-    );
-    await tester.pump();
+    await pumpView(tester, [
+      _chat(id: 'a', title: 'Deploy', archivedAt: DateTime(2026, 6, 1)),
+    ]);
 
     await tester.enterText(find.byType(TextField), 'zzzz no such chat');
     await tester.pump();

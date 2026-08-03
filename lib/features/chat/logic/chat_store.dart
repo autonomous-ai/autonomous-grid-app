@@ -19,13 +19,26 @@ class ChatStore {
 
   /// Every saved conversation, newest activity first. Unreadable files are
   /// skipped so one bad file can't hide the rest of the history.
-  List<Conversation> loadAll() {
-    if (!_dir.existsSync()) return const [];
+  ///
+  /// Asynchronous, and one file at a time, because this reads the *whole*
+  /// history: measured at 28 ms over 57 chats (396 KB) on a cold cache, and it
+  /// grows with every chat the user keeps. Read synchronously — as it was, from
+  /// inside a provider's `build()` — that is the first frame's budget spent
+  /// before anything is drawn. Awaiting each file hands the frame back between
+  /// them, so a long history costs many short gaps instead of one long freeze.
+  Future<List<Conversation>> loadAll() async {
     final out = <Conversation>[];
-    for (final entry in _dir.listSync()) {
-      if (entry is! File || !entry.path.endsWith('.json')) continue;
-      final parsed = _read(entry);
-      if (parsed != null) out.add(parsed);
+    try {
+      await for (final entry in _dir.list()) {
+        if (entry is! File || !entry.path.endsWith('.json')) continue;
+        final parsed = await _read(entry);
+        if (parsed != null) out.add(parsed);
+      }
+    } on FileSystemException {
+      // No chats folder yet (nothing has been saved), or it went away while
+      // being read. Keep whatever was already read: the same leniency a corrupt
+      // file gets, and the only alternative is turning a read into a crash the
+      // user can do nothing about.
     }
     out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return out;
@@ -48,9 +61,9 @@ class ChatStore {
 
   File _fileFor(String id) => File('${_dir.path}/$id.json');
 
-  Conversation? _read(File file) {
+  Future<Conversation?> _read(File file) async {
     try {
-      final decoded = jsonDecode(file.readAsStringSync());
+      final decoded = jsonDecode(await file.readAsString());
       if (decoded is! Map<String, dynamic>) return null;
       return Conversation.fromJson(decoded);
     } on Object {

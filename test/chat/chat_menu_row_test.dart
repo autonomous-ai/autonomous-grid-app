@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
+import 'package:grid_app/features/chat/logic/chat_store.dart';
+import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/chat/presentation/chat_header.dart';
 
 /// The chat "…" menu's rows follow the design system's §5 recipe. Geometry is
@@ -10,12 +15,44 @@ import 'package:grid_app/features/chat/presentation/chat_header.dart';
 /// visualDensity worth pinning in the first place.
 
 /// Opens the chat header's "…" menu and settles it.
+///
+/// The open chat is seeded into a temp store here. It used to come from
+/// whatever was in the developer's own `~/.grid` — the menu only exists when a
+/// chat is open, so this passed on a machine with a chat history and would have
+/// found no button anywhere else.
 Future<void> _openMenu(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1000, 800);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(const ProviderScope(child: _MenuHarness()));
+  final dir = Directory.systemTemp.createTempSync('chat_menu_row');
+  addTearDown(() => dir.deleteSync(recursive: true));
+  ChatStore(directory: dir).save(
+    Conversation(
+      id: 'open',
+      title: 'Deploy notes',
+      model: 'm',
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+      messages: const [ChatMessage(role: ChatRole.user, text: 'hello')],
+    ),
+  );
+  final container = ProviderContainer(
+    overrides: [chatStoreProvider.overrideWithValue(ChatStore(directory: dir))],
+  );
+  addTearDown(container.dispose);
+  // Through [WidgetTester.runAsync]: reading the saved chats is real file I/O,
+  // which the test binding's zone parks a plain await on forever.
+  await tester.runAsync(
+    () => container.read(chatSessionsProvider.notifier).restored,
+  );
+
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: const _MenuHarness(),
+    ),
+  );
   await tester.pumpAndSettle();
 
   await tester.tap(find.byTooltip('Chat options'));
