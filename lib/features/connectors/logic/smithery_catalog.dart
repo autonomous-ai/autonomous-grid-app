@@ -29,7 +29,7 @@ ConnectorCatalogEntry smitheryCatalogEntry(
   // to drift.
   code: server.suggestedName,
   label: server.displayName,
-  description: server.description,
+  description: flattenDescription(server.description),
   imageUrl: server.iconUrl,
   mcpUrl: server.mcpUrl,
   authMethod: ConnectorAuthMethod.dcr,
@@ -46,6 +46,43 @@ ConnectorCatalogEntry smitheryCatalogEntry(
   // (`canConnectFromApp` reads `isSelfServe`), so leaving it false costs the
   // row nothing.
 );
+
+/// A registry blurb as one line of plain text.
+///
+/// **Community authors write READMEs, not blurbs.** Measured over 150 rows on
+/// 2026-08-03: **22%** carry raw markdown — `# EmblemAI MCP`, `**Agentic CRM for
+/// service businesses** — 136 typed tools`, embedded newlines, bare doc URLs —
+/// and the card was rendering it verbatim, hashes and asterisks and all. The
+/// gateway's own rows never need this: a backend edits them.
+///
+/// Deliberately *flattening*, not parsing. The card shows two clamped lines, so
+/// structure has nowhere to go; what matters is that no syntax survives to be
+/// read as content. A real markdown renderer here would be a much larger
+/// dependency for a string that ends in an ellipsis either way.
+///
+/// The remaining **11%** that come back genuinely empty are left empty. The card
+/// already degrades to a name and a mark, and inventing a sentence for a server
+/// nobody described would be the app claiming to know something it doesn't.
+String flattenDescription(String raw) {
+  var text = raw;
+  // `[label](url)` → `label`, before the brackets are stripped as punctuation.
+  text = text.replaceAllMapped(
+    RegExp(r'\[([^\]]+)\]\([^)]*\)'),
+    (m) => m[1] ?? '',
+  );
+  // Heading markers and list bullets, but only where markdown puts them — at
+  // the start of a line. A `#` mid-sentence is somebody's issue number.
+  text = text.replaceAll(RegExp(r'^\s{0,3}#{1,6}\s*', multiLine: true), '');
+  text = text.replaceAll(RegExp(r'^\s{0,3}[-*+]\s+', multiLine: true), '');
+  // Emphasis and code spans. Paired only: a lone asterisk in `2 * 3` stays.
+  text = text.replaceAllMapped(
+    RegExp(r'(\*\*|__|\*|_|`)(.+?)\1', dotAll: true),
+    (m) => m[2] ?? '',
+  );
+  // Every run of whitespace — newlines included — becomes one space. This is
+  // what turns a three-paragraph README into a line.
+  return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
 
 /// [servers] as catalog rows, dropping any that could not be connected anyway.
 ///

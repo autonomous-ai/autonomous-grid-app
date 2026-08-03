@@ -146,6 +146,53 @@ void main() {
     });
   });
 
+  group('description flattening', () {
+    test('a heading loses its hashes', () {
+      expect(
+        flattenDescription('# EmblemAI MCP\n\nEmblemAI is a hosted server.'),
+        'EmblemAI MCP EmblemAI is a hosted server.',
+      );
+    });
+
+    test('bold and code spans keep their text', () {
+      expect(
+        flattenDescription('**Agentic CRM** — 136 `typed` tools'),
+        'Agentic CRM — 136 typed tools',
+      );
+    });
+
+    test('a link keeps its label, not its URL', () {
+      expect(
+        flattenDescription('See [the docs](https://example.test/x) first'),
+        'See the docs first',
+      );
+    });
+
+    test('paragraphs collapse to one line', () {
+      expect(
+        flattenDescription('Docs: https://x.test/mcp\n\nKeenable search.'),
+        'Docs: https://x.test/mcp Keenable search.',
+      );
+    });
+
+    test('an unpaired asterisk is arithmetic, not markdown', () {
+      expect(
+        flattenDescription('Charges 2 * 3 credits'),
+        'Charges 2 * 3 credits',
+      );
+    });
+
+    test('a mid-sentence hash is somebody\'s issue number', () {
+      expect(flattenDescription('Closes #42 on merge'), 'Closes #42 on merge');
+    });
+
+    test('an empty description stays empty', () {
+      // 11% of the directory has none. The card degrades to a name and a mark;
+      // inventing a sentence would be the app claiming to know something.
+      expect(flattenDescription('   \n  '), '');
+    });
+  });
+
   group('as catalog rows', () {
     test('a directory row carries the address and signs itself in', () {
       final entry = smitheryCatalogEntry(
