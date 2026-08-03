@@ -397,6 +397,17 @@ class HermesChatSender implements ChatSender {
               stopForLoop(stuck);
               return;
             }
+          case HermesAcpCommand(:final request):
+            armIdle();
+            workedAtAll = true;
+            // Nothing to record — a command isn't undoable — but the loop watch
+            // has to see it: a command between two edits *is* the progress that
+            // tells a debug round (edit → run → edit → run) from a model stuck
+            // rewriting one file.
+            if (guard.observe(request) case final stuck?) {
+              stopForLoop(stuck);
+              return;
+            }
           case HermesAcpSources(:final sources):
             armIdle();
             // A web look-up finished — collect its pages to cite under the
