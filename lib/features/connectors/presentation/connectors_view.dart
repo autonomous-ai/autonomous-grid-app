@@ -164,60 +164,69 @@ class _FilterBar extends ConsumerWidget {
     final browse = ref.watch(browseConnectorsProvider);
     final notifier = ref.read(browseConnectorsProvider.notifier);
 
-    return Row(
-      children: [
-        for (final option in _ConnectorFilter.values)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: PillChoice(
-              label: Text(option.label),
-              selected: option == filter,
-              onTap: () => onFilter(option),
-            ),
-          ),
-        // Only offered where it can do something. Under Connected every row is
-        // already on this machine, and a directory term cannot narrow that.
-        if (filter != _ConnectorFilter.connected) ...[
-          const SizedBox(width: 4),
-          _BarDivider(),
-          const SizedBox(width: 12),
-          for (final option in SmitheryFilter.values)
+    // **Scrolls horizontally.** Three status pills, two directory pills and a
+    // sort field is more than a narrow window holds — measured at 218px over on
+    // an 800px pane, which is an overflow stripe across the toolbar rather than
+    // a control that quietly wraps. Scrolling keeps every one of them reachable
+    // at any width, and at the sizes this app is normally used the row never
+    // moves.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final option in _ConnectorFilter.values)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: PillChoice(
                 label: Text(option.label),
-                selected: browse.filters.contains(option),
-                // Inert rather than hidden while the registry is answering: a
-                // pill that vanishes mid-press moves the ones beside it, and a
-                // second toggle would start a search that supersedes the first
-                // anyway.
-                onTap: browse.loading
-                    ? () {}
-                    : () => notifier.toggleFilter(option),
+                selected: option == filter,
+                onTap: () => onFilter(option),
               ),
             ),
-          const SizedBox(width: 4),
-          // `AppSelectField`, not a hand-rolled menu and certainly not
-          // `DropdownButtonFormField`: this is the app's one select control and
-          // it already owns the panel style, the radius and the hover.
-          // `showLabel: false` because the row names it by position — a
-          // "Sort" caption here would add height the pills beside it don't have
-          // and knock the bar out of alignment.
-          SizedBox(
-            width: 150,
-            child: AppSelectField<SmitheryServerSort>(
-              label: 'Sort',
-              showLabel: false,
-              value: browse.sort,
-              options: [
-                for (final option in SmitheryServerSort.values)
-                  AppSelectOption(value: option, label: option.label),
-              ],
-              onChanged: notifier.setSort,
+          // Only offered where it can do something. Under Connected every row is
+          // already on this machine, and a directory term cannot narrow that.
+          if (filter != _ConnectorFilter.connected) ...[
+            const SizedBox(width: 4),
+            _BarDivider(),
+            const SizedBox(width: 12),
+            for (final option in SmitheryFilter.values)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: PillChoice(
+                  label: Text(option.label),
+                  selected: browse.filters.contains(option),
+                  // Inert rather than hidden while the registry is answering: a
+                  // pill that vanishes mid-press moves the ones beside it, and a
+                  // second toggle would start a search that supersedes the first
+                  // anyway.
+                  onTap: browse.loading
+                      ? () {}
+                      : () => notifier.toggleFilter(option),
+                ),
+              ),
+            const SizedBox(width: 4),
+            // `AppSelectField`, not a hand-rolled menu and certainly not
+            // `DropdownButtonFormField`: this is the app's one select control and
+            // it already owns the panel style, the radius and the hover.
+            // `showLabel: false` because the row names it by position — a
+            // "Sort" caption here would add height the pills beside it don't have
+            // and knock the bar out of alignment.
+            SizedBox(
+              width: 150,
+              child: AppSelectField<SmitheryServerSort>(
+                label: 'Sort',
+                showLabel: false,
+                value: browse.sort,
+                options: [
+                  for (final option in SmitheryServerSort.values)
+                    AppSelectOption(value: option, label: option.label),
+                ],
+                onChanged: notifier.setSort,
+              ),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

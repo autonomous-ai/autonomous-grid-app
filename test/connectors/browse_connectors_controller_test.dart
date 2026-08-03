@@ -40,6 +40,7 @@ SmitheryServer _server(
   String name, {
   int useCount = 0,
   bool verified = false,
+  bool managed = false,
 }) => SmitheryServer(
   qualifiedName: name,
   displayName: name.toUpperCase(),
@@ -47,6 +48,7 @@ SmitheryServer _server(
   deployed: true,
   useCount: useCount,
   verified: verified,
+  bySmithery: managed,
 );
 
 SmitheryPage _page(
@@ -76,10 +78,11 @@ void main() {
       container.read(browseConnectorsProvider.notifier);
   BrowseConnectorsState state() => container.read(browseConnectorsProvider);
 
-  test('verified is on before anything is asked', () async {
+  test('smithery-managed is on before anything is asked', () async {
     // Four thousand servers anyone can publish to is not the set to open a
-    // settings screen on.
-    expect(state().filters, {SmitheryFilter.verified});
+    // settings screen on — and `verified` is the wrong narrowing, because the
+    // servers people recognise carry the *managed* mark instead.
+    expect(state().filters, {SmitheryFilter.smitheryManaged});
   });
 
   test('the filter narrows here — the registry is never asked', () async {
@@ -87,7 +90,7 @@ void main() {
     // answers 50/50 verified and 0/50 bySmithery, so gmail (60,499 uses) is
     // absent from its first 200 results. Read off the row instead.
     registry.replies = [
-      _page([_server('plain'), _server('vetted', verified: true)]),
+      _page([_server('plain'), _server('vetted', managed: true)]),
     ];
 
     await notifier().search('');
@@ -99,24 +102,24 @@ void main() {
 
   test('toggling the filter costs no request', () async {
     registry.replies = [
-      _page([_server('plain'), _server('vetted', verified: true)]),
+      _page([_server('plain'), _server('vetted', managed: true)]),
     ];
     await notifier().search('');
     final requests = registry.pages.length;
 
-    notifier().toggleFilter(SmitheryFilter.verified);
+    notifier().toggleFilter(SmitheryFilter.smitheryManaged);
     expect(state().filters, isEmpty);
     expect(state().visibleServers.length, 2, reason: 'nothing narrows it now');
 
-    notifier().toggleFilter(SmitheryFilter.verified);
-    expect(state().filters, {SmitheryFilter.verified});
+    notifier().toggleFilter(SmitheryFilter.smitheryManaged);
+    expect(state().filters, {SmitheryFilter.smitheryManaged});
     expect(state().visibleServers.length, 1);
     expect(registry.pages.length, requests, reason: 'no refetch either way');
   });
 
   test('a filter change keeps the pages already loaded', () async {
     registry.replies = [
-      _page([_server('a', verified: true)], totalPages: 2),
+      _page([_server('a', managed: true)], totalPages: 2),
       _page([_server('b')], page: 2, totalPages: 2),
     ];
 
@@ -124,7 +127,7 @@ void main() {
     await notifier().loadMore();
     expect(state().servers.length, 2);
 
-    notifier().toggleFilter(SmitheryFilter.verified);
+    notifier().toggleFilter(SmitheryFilter.smitheryManaged);
 
     // Two pages of scrolling are not thrown away for a view preference.
     expect(state().servers.length, 2);
@@ -134,8 +137,8 @@ void main() {
   test('sort reorders without asking the registry again', () async {
     registry.replies = [
       _page([
-        _server('low', useCount: 1, verified: true),
-        _server('high', useCount: 99, verified: true),
+        _server('low', useCount: 1, managed: true),
+        _server('high', useCount: 99, managed: true),
       ]),
     ];
     await notifier().search('');
@@ -165,7 +168,7 @@ void main() {
     expect(state().sort, SmitheryServerSort.name);
     // The selection survives a search even though the registry will not honour
     // it — that is what `filtersNarrowedHere` then acts on.
-    expect(state().filters, {SmitheryFilter.verified});
+    expect(state().filters, {SmitheryFilter.smitheryManaged});
   });
 
   test('a search narrows verified here, since the registry will not', () async {
@@ -173,7 +176,7 @@ void main() {
     // thoughtbox — every row verified, not one of them Notion. So the text goes
     // alone and the filter is applied to what comes back.
     registry.replies = [
-      _page([_server('plain'), _server('vetted', verified: true)]),
+      _page([_server('plain'), _server('vetted', managed: true)]),
     ];
 
     await notifier().search('notion');

@@ -20,6 +20,25 @@ enum SmitheryFilter {
   /// registry's own answer to which rows it stands behind. Measured as honest —
   /// `is:remote is:verified` returns rows that are 10/10 remote and 10/10
   /// verified.
+  /// Run by Smithery itself rather than by a community author.
+  ///
+  /// **The default, and the one that answers "can I trust this".** Measured
+  /// 2026-08-03: 17 rows of the first page carry it, and they are the names
+  /// people recognise — `jina` (76,715 uses), `googlesheets` (63,663), `gmail`
+  /// (60,499), `brave` (60,204), `pubmed`, `googlecalendar`. All 17 sit in the
+  /// first page, so this narrows to a short, stable, high-quality list rather
+  /// than something that only fills in as you scroll.
+  ///
+  /// It is also the distinction the registry's own site draws first: two
+  /// separate marks, an orange square for managed and a round tick for
+  /// [verified], and Gmail carries the square.
+  smitheryManaged('Smithery managed'),
+
+  /// Vouched for, but written by someone else.
+  ///
+  /// A wider net than [smitheryManaged] and a weaker claim — 21 rows on the same
+  /// page, 13 of which are managed anyway. Offered because the two are genuinely
+  /// different questions: "who runs it" and "has anyone checked it".
   verified('Verified');
 
   const SmitheryFilter(this.label);
@@ -29,6 +48,7 @@ enum SmitheryFilter {
 
   /// Whether [server] passes this narrowing.
   bool keeps(SmitheryServer server) => switch (this) {
+    SmitheryFilter.smitheryManaged => server.bySmithery,
     SmitheryFilter.verified => server.verified,
   };
 }

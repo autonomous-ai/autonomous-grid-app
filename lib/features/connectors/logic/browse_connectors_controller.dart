@@ -139,15 +139,19 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
   /// longer contains. Compared at every await boundary.
   int _generation = 0;
 
-  /// **Verified is on by default**, and read off the row rather than asked of
-  /// the registry. The directory is four thousand servers anyone can publish to;
-  /// about 10% carry the flag, and those are the ones it vouches for — including
-  /// `gmail`, `jina` and `brave`, every one of which the `is:verified` *token*
-  /// would have hidden. Sorted by use, that opens the screen on names people
-  /// recognise. The pill is one press away for anyone who wants the rest.
+  /// **Smithery managed is on by default**, and read off the row rather than
+  /// asked of the registry.
+  ///
+  /// Not `verified`, which was the first attempt: on the registry's own site
+  /// those are two different marks, and the servers people recognise carry the
+  /// managed one. `gmail`, `jina`, `brave` and `googlesheets` are all
+  /// Smithery-run, and the `is:verified` *token* hides every one of them (see
+  /// [SmitheryFilter]). Seventeen rows, all on the first page, sorted by use —
+  /// that is what a settings screen should open on out of four thousand servers
+  /// anyone can publish to. Either pill is one press away.
   @override
   BrowseConnectorsState build() =>
-      const BrowseConnectorsState(filters: {SmitheryFilter.verified});
+      const BrowseConnectorsState(filters: {SmitheryFilter.smitheryManaged});
 
   /// Load (or reload) the first page for [query].
   ///
