@@ -211,6 +211,31 @@ void main() {
       expect(merged.firstWhere((e) => e.code == 'github').label, 'GitHub');
     });
 
+    test('directory rows keep the order they were given', () {
+      // The bug this pins: `mergeCatalog` used to run everything through
+      // `sortCatalog`, which alphabetised four thousand community servers —
+      // putting `agentai` above Brave Search and silently undoing whatever the
+      // Sort control had just done. The sort ran; this threw it away.
+      final merged = mergeCatalog(
+        gateway: const [],
+        selfServe: const [],
+        directory: [entry('zebra', 'Zebra'), entry('alpha', 'Alpha')],
+      );
+
+      expect(merged.map((e) => e.code), ['zebra', 'alpha']);
+    });
+
+    test('curated rows are still alphabetical, and still come first', () {
+      final merged = mergeCatalog(
+        gateway: [entry('zulu', 'Zulu'), entry('alfa', 'Alfa')],
+        selfServe: const [],
+        directory: [entry('mike', 'Mike')],
+      );
+
+      // Forty curated entries somebody chose: a name is how you find one.
+      expect(merged.map((e) => e.code), ['alfa', 'zulu', 'mike']);
+    });
+
     test('an absent directory leaves the old two-source behaviour', () {
       // The whole feature has to be removable without touching this call.
       final merged = mergeCatalog(

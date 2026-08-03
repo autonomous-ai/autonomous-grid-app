@@ -59,20 +59,29 @@ void main() {
         'CLI, so a Claude or Codex seat model dead-ends after send', () {
       expect(agentSupportsModel(AgentTool.hermes, 'claude:opus'), isFalse);
       expect(agentSupportsModel(AgentTool.hermes, 'codex:gpt-5.5'), isFalse);
-      expect(agentSupportsModel(AgentTool.hermes, 'codex-cli:gpt-5.5'), isFalse);
+      expect(
+        agentSupportsModel(AgentTool.hermes, 'codex-cli:gpt-5.5'),
+        isFalse,
+      );
     });
 
-    test('the config writer refuses the same models the composer greys out, so '
-        'a scheduled task can never be pointed at one the chat would block', () {
-      expect(hermesModelRefusal('claude:opus'), kHermesCannotServeSeatModel);
-      expect(hermesModelRefusal('codex:gpt-5.5'), kHermesCannotServeSeatModel);
-      expect(
-        hermesModelRefusal('codex-cli:gpt-5.5'),
-        kHermesCannotServeSeatModel,
-      );
-      expect(hermesModelRefusal('qwen3.6-27b'), isNull);
-      expect(hermesModelRefusal('auto'), isNull);
-    });
+    test(
+      'the config writer refuses the same models the composer greys out, so '
+      'a scheduled task can never be pointed at one the chat would block',
+      () {
+        expect(hermesModelRefusal('claude:opus'), kHermesCannotServeSeatModel);
+        expect(
+          hermesModelRefusal('codex:gpt-5.5'),
+          kHermesCannotServeSeatModel,
+        );
+        expect(
+          hermesModelRefusal('codex-cli:gpt-5.5'),
+          kHermesCannotServeSeatModel,
+        );
+        expect(hermesModelRefusal('qwen3.6-27b'), isNull);
+        expect(hermesModelRefusal('auto'), isNull);
+      },
+    );
 
     test(
       'a model nobody owns is open to every agent — a gguf on a machine, the '

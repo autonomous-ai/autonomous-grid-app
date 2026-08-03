@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/connector_gateway_client.dart';
-import 'browse_connectors_controller.dart';
 import 'connector_blurb_fallback.dart';
 import 'self_serve_catalog.dart';
 
@@ -229,12 +228,14 @@ final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
       .watch(connectorGatewayClientProvider)
       .connectors();
   final selfServe = await ref.watch(selfServeCatalogProvider.future);
-  // The public directory, when the user has asked for it. Never awaited into a
-  // failure: `directoryCatalogProvider` degrades to an empty list, so a registry
-  // having a bad afternoon cannot take the gateway's sixteen rows with it.
-  final directory =
-      ref.watch(directoryCatalogProvider).asData?.value ??
-      const <ConnectorCatalogEntry>[];
+  // **The directory is deliberately not merged here.** It used to be, and that
+  // put the gateway's HTTP call downstream of every keystroke and every scroll:
+  // appending page two flipped `loadingMore`, which invalidated this provider,
+  // which re-fetched the gateway, which sent `connectorsProvider` to
+  // `AsyncLoading` — and the screen swapped the whole list for skeletons and
+  // back. That is the blank flash at the bottom of the list. The merge happens
+  // one level down, in `connectorsProvider`, where it costs a rebuild and not a
+  // round trip.
   return mergeCatalog(
     gateway: [
       // Called unconditionally, not only for the rows missing something:
@@ -252,6 +253,5 @@ final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
         ),
     ],
     selfServe: selfServe,
-    directory: directory,
   );
 });

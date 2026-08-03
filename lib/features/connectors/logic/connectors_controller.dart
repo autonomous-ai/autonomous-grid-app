@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/mcp_server.dart';
+import 'browse_connectors_controller.dart';
 import 'connector.dart';
 import 'connector_catalog.dart';
+import 'self_serve_catalog.dart';
 import '../../agents/logic/connector_token.dart';
 import 'connector_link_controller.dart';
 import 'connectors_refresh.dart';
@@ -32,7 +34,27 @@ final connectorsProvider = FutureProvider<List<Connector>>((ref) async {
   final tokens =
       ref.watch(connectorTokensProvider).asData?.value ??
       const <String, ConnectorToken>{};
-  return buildConnectors(servers: servers, catalog: catalog, tokens: tokens);
+  // The public directory joins here rather than inside `connectorCatalogProvider`
+  // — the merge is a list concat, while that provider is an HTTP call. Watching
+  // it from there put the gateway fetch downstream of every scroll: paging
+  // flipped `loadingMore`, the catalog re-ran, this went to `AsyncLoading`, and
+  // the screen blanked. Here, a page costs a rebuild over two resolved futures.
+  //
+  // Precedence is `mergeCatalog`'s, unchanged: [catalog] is already the merged
+  // gateway-and-bundled list, so a directory row with the same `code` steps
+  // aside for it.
+  final directory = ref.watch(directoryCatalogProvider);
+  return buildConnectors(
+    servers: servers,
+    catalog: directory.isEmpty
+        ? catalog
+        : mergeCatalog(
+            gateway: catalog,
+            selfServe: const [],
+            directory: directory,
+          ),
+    tokens: tokens,
+  );
 });
 
 class McpServersController extends AsyncNotifier<List<McpServer>> {

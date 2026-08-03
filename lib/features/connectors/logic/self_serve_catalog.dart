@@ -157,10 +157,17 @@ List<ConnectorCatalogEntry> mergeCatalog({
     for (final entry in selfServe)
       if (claimed.add(entry.code)) entry,
   ];
-  return sortCatalog([
-    ...gateway,
-    ...curated,
+  return [
+    // The curated rows are alphabetical: forty entries somebody chose, and a
+    // name is how you find one of those.
+    ...sortCatalog([...gateway, ...curated]),
+    // **The directory keeps the order it arrived in, and that is the point.**
+    // Running these through `sortCatalog` alphabetised four thousand community
+    // servers — which put `agentai`, description and all ("" ), above Brave
+    // Search, and silently threw away both the registry's own relevance
+    // ordering *and* whatever the user picked in the Sort control. The sort
+    // ran, and then this undid it.
     for (final entry in directory)
       if (claimed.add(entry.code)) entry,
-  ]);
+  ];
 }

@@ -40,15 +40,26 @@ enum SmitheryFilter {
 /// **Applied to what has been fetched, not to the directory.** The registry
 /// accepts no sort parameter (measured: `sort`, `sortBy` and `order` all return
 /// the identical page), so this can only order the pages already loaded. That is
-/// an honest limit rather than a broken feature — the registry's own default is
-/// most-used-first, which is what [SortOrder.relevance] preserves — but it does
-/// mean sorting by name reaches further as the user loads more.
+/// an honest limit rather than a broken feature, but it does mean sorting by
+/// name reaches further as the user loads more.
+///
+/// **[relevance] is the default, and it is the only one that appends cleanly.**
+/// The other two reorder the *whole* accumulated list, so a popular row arriving
+/// on page three jumps to the top and shifts everything the user was reading —
+/// on a list that pages as you scroll, that is the jolt the paging was meant to
+/// avoid. Registry order only ever grows at the end.
 enum SmitheryServerSort {
-  /// The registry's own order, untouched. Most-used first in practice.
+  /// The registry's own order, untouched.
+  ///
+  /// **Not most-used-first**, though it correlates: measured 2026-08-03 the
+  /// first page runs Gmail (60,499), Jina (76,715), Brave (60,204), Exa
+  /// (12,491) — recognisable services first, by a ranking the registry does not
+  /// publish. Good enough to be the default, and the only order that survives
+  /// paging without moving what is already on screen.
   relevance('Relevance'),
 
-  /// Most-used first, explicitly — identical to the registry's default for the
-  /// first page, and meaningful once filters have reshuffled things.
+  /// Strictly by [SmitheryServer.useCount], descending — the closest thing the
+  /// directory has to a star count.
   mostUsed('Most used'),
 
   /// Alphabetical, for finding a name you already know.

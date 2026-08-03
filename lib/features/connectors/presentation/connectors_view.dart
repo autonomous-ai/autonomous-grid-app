@@ -488,7 +488,17 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           // slack a `Flexible` list leaves them. A block of any real height here
           // overflows the moment the list fills the pane — measured at exactly
           // 20px when the tail rendered a two-row skeleton grid.
-          AsyncData(:final value) => _ConnectorsBody(
+          // **`hasValue`, not `AsyncData`.** A provider that is re-running holds
+          // `AsyncLoading` *with the previous value attached*, which the
+          // `AsyncData` pattern does not match — so every rebuild of this chain
+          // fell through to the skeletons and swapped the whole list out and
+          // back. That is the blink at the bottom of the list: not a slow
+          // fetch, a screen that threw away rows it still had.
+          //
+          // Reading the value instead means a reload is invisible unless it
+          // changes something, which is the behaviour a list being appended to
+          // has to have.
+          AsyncValue(:final value?) => _ConnectorsBody(
             rows: visible(value),
             filtered: filtered || _filter != _ConnectorFilter.all,
             filtersSuspended: browse.filtersSuspended,

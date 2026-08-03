@@ -252,9 +252,12 @@ final browseConnectorsProvider =
 /// — letting a directory failure propagate — would take sixteen working gateway
 /// connectors offline over a third party's bad afternoon, which is the same
 /// trade `selfServeCatalogProvider` already makes and for the same reason.
-final directoryCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
-  ref,
-) async {
+/// Synchronous on purpose. As a `FutureProvider` this mapped an already-loaded
+/// list through an `async` body, so every page and every sort flipped it to
+/// `AsyncLoading` and back — a whole extra round of rebuilds for a computation
+/// that never awaits anything. That churn is half of what made the list blink
+/// when it reached the bottom.
+final directoryCatalogProvider = Provider<List<ConnectorCatalogEntry>>((ref) {
   final state = ref.watch(browseConnectorsProvider);
   return smitheryCatalogEntries(state.visibleServers);
 });
