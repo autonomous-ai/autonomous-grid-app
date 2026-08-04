@@ -48,7 +48,6 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
   final _instructions = TextEditingController();
   bool _saving = false;
   bool _loading = false;
-  bool _drafting = false;
 
   bool get _isEdit => widget.existing != null;
 
@@ -84,6 +83,10 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
     _instructions.dispose();
     super.dispose();
   }
+
+  /// True while the AI draft is being fetched — only reachable when
+  /// [_showAiDraft] is on.
+  bool _drafting = false;
 
   bool get _canSave =>
       !_saving &&
@@ -227,8 +230,10 @@ class _SkillDialogState extends ConsumerState<_SkillDialog> {
                 autofocus: !_isEdit,
                 onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: 10),
-              _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
+              if (_showAiDraft) ...[
+                const SizedBox(height: 10),
+                _AiDraftButton(busy: _drafting, onPressed: _draftWithAi),
+              ],
               const SizedBox(height: 20),
               LabeledField(
                 fill: AppTheme.isDark ? AppCard.inset : AppPalette.cardBg,
@@ -319,6 +324,13 @@ class _SavedNote extends StatelessWidget {
     );
   }
 }
+
+/// Whether the dialog offers to draft the form with AI.
+///
+/// Off, and the button below is kept rather than deleted: the feature works and
+/// is only being held back, so turning it back on is this one line instead of
+/// re-writing the generator, the error handling and the busy states.
+final bool _showAiDraft = false;
 
 /// Drafts the whole form from the name using AI — a head start for someone who
 /// knows what they want but not how to phrase it as a skill.
