@@ -99,6 +99,11 @@ class GridPaths {
   /// with `/`. App-owned; the CLI never touches it.
   static File get promptsFile => File('${home.path}/app/prompts.json');
 
+  /// How much context each model turned out to have (`{"<model id>": 96000}`),
+  /// learned from the engines themselves. App-owned; the CLI never touches it.
+  static File get modelContextFile =>
+      File('${home.path}/app/model_context.json');
+
   /// The first-run onboarding choice (run a model locally, use a cloud provider,
   /// or set up later) — remembered so a user who already picked a path isn't
   /// asked again on every launch, including the paths that install nothing.
