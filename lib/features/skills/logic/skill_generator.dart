@@ -45,17 +45,29 @@ class SkillGenerator {
     }
 
     final target = _resolveTarget();
+    final messages = _promptFor(trimmed);
     final log = _ref.read(commandLogProvider.notifier);
-    final id = log.begin(CliCallKind.http, 'POST ${target.endpoint}');
+    final id = log.begin(
+      CliCallKind.http,
+      'POST ${target.endpoint}',
+      detail: CommandDetail.json(
+        chatCompletionsPayload(model: target.model, messages: messages),
+      ),
+    );
     final (reply, error) = await _ref
         .read(chatTransportProvider)
         .complete(
           endpoint: target.endpoint,
           apiKey: target.apiKey,
           model: target.model,
-          messages: _promptFor(trimmed),
+          messages: messages,
         );
-    log.finish(id, exitCode: error?.statusCode ?? 200, error: error?.message);
+    log.finish(
+      id,
+      exitCode: error?.statusCode ?? 200,
+      error: error?.message,
+      responseBody: reply,
+    );
 
     if (error != null) throw SkillGenerationException(_friendlyError(error));
 

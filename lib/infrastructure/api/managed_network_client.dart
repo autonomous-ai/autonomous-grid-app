@@ -63,9 +63,7 @@ class ManagedNetworkClient {
         HttpHeaders.authorizationHeader,
         'Bearer $sessionToken',
       );
-      request.add(
-        utf8.encode(jsonEncode({'name': name, 'network_type': type.wire})),
-      );
+      request.add(utf8.encode(jsonEncode(createBody(name, type))));
 
       final response = await request.close().timeout(
         const Duration(seconds: 30),
@@ -171,7 +169,7 @@ class ManagedNetworkClient {
         HttpHeaders.authorizationHeader,
         'Bearer $sessionToken',
       );
-      request.add(utf8.encode(jsonEncode({'email': email, 'roles': roles})));
+      request.add(utf8.encode(jsonEncode(addMemberBody(email, roles))));
 
       final response = await request.close().timeout(
         const Duration(seconds: 30),
@@ -261,7 +259,7 @@ class ManagedNetworkClient {
         HttpHeaders.authorizationHeader,
         'Bearer $sessionToken',
       );
-      request.add(utf8.encode(jsonEncode({'name': name})));
+      request.add(utf8.encode(jsonEncode(renameBody(name))));
 
       final response = await request.close().timeout(
         const Duration(seconds: 30),
@@ -357,6 +355,19 @@ class ManagedNetworkClient {
   /// The full create-managed-network URL for [apiUrl] (which may or may not end
   /// in `/`). Public so callers can log the same URL the request hits.
   static Uri endpoint(String apiUrl) => _url(apiUrl, _path);
+
+  /// The request bodies, public for the same reason the URLs are: a caller
+  /// logging what it sent reads the payload from here rather than writing a
+  /// second copy of it, which is a copy that drifts.
+  static Map<String, dynamic> createBody(
+    String name,
+    ManagedNetworkType type,
+  ) => {'name': name, 'network_type': type.wire};
+
+  static Map<String, dynamic> addMemberBody(String email, List<String> roles) =>
+      {'email': email, 'roles': roles};
+
+  static Map<String, dynamic> renameBody(String name) => {'name': name};
 
   /// The rename (PATCH) URL for [networkId]. Public so callers can log the same
   /// URL the request hits.

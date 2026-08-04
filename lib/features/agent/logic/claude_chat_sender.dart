@@ -19,6 +19,7 @@ import 'agent_prompt.dart';
 import 'agent_providers.dart';
 import 'agent_server_error.dart';
 import 'agent_session_slots.dart';
+import 'agent_turn_log.dart';
 import 'claude_tool.dart';
 import 'model_context_window.dart';
 
@@ -139,7 +140,21 @@ class ClaudeChatSender implements ChatSender {
     final activityLog = _ref.read(agentActivityProvider.notifier);
     final planLog = _ref.read(agentPlanProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
-    final logId = log.begin(CliCallKind.start, 'claude -p $model (agent)');
+    // The argv comes from the same pure builder the service runs, so the Debug
+    // tab shows the flags this turn really carried and not a second copy of them.
+    final logId = log.begin(
+      CliCallKind.start,
+      'claude -p $model (agent)',
+      detail: agentTurnDetail(
+        args: [
+          'claude',
+          ...claudeExecArgs(model: model, resumeSessionId: resumeSessionId),
+        ],
+        workdir: workdir,
+        environment: environment,
+        prompt: prompt,
+      ),
+    );
 
     final run = _ref
         .read(claudeExecServiceProvider)!

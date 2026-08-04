@@ -14,9 +14,16 @@ class LoggingGridCliService implements GridCliService {
   final GridCliService _inner;
   final CommandLogNotifier _log;
 
+  /// The Debug-list summary: the line a user would have typed themselves.
+  static String _line(List<String> args) => 'grid ${args.join(' ')}';
+
   @override
   Future<CliResult> run(List<String> args, {Duration? timeout}) async {
-    final id = _log.begin(CliCallKind.run, 'grid ${args.join(' ')}');
+    final id = _log.begin(
+      CliCallKind.run,
+      _line(args),
+      detail: CommandDetail(args: args),
+    );
     try {
       final result = await _inner.run(args, timeout: timeout);
       _log.finish(
@@ -36,9 +43,19 @@ class LoggingGridCliService implements GridCliService {
     List<String> args, {
     Map<String, String>? environment,
   }) async {
-    // Log only [args] — never [environment], which may carry a secret (e.g. an
-    // API-engine key). That's the whole point of the env channel.
-    final id = _log.begin(CliCallKind.start, 'grid ${args.join(' ')}');
+    // Log [args] in full, and of [environment] only the variable *names* — a
+    // value there may be a secret (e.g. an API-engine key), which is the whole
+    // point of the env channel. See [envParam].
+    final id = _log.begin(
+      CliCallKind.start,
+      _line(args),
+      detail: CommandDetail(
+        args: args,
+        params: environment == null || environment.isEmpty
+            ? const {}
+            : {'env': envParam(environment)},
+      ),
+    );
     try {
       final process = await _inner.start(args, environment: environment);
       // Finalize when the process exits; leave the lines stream for the caller.
@@ -57,7 +74,11 @@ class LoggingGridCliService implements GridCliService {
 
   @override
   Stream<DownloadProgress> pull(List<String> args) async* {
-    final id = _log.begin(CliCallKind.pull, 'grid ${args.join(' ')}');
+    final id = _log.begin(
+      CliCallKind.pull,
+      _line(args),
+      detail: CommandDetail(args: args),
+    );
     var finished = false;
     void finish({int? exitCode, String? error}) {
       if (finished) return;

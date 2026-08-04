@@ -231,8 +231,15 @@ class DefaultChatSender implements ChatSender {
     required String model,
     required List<ChatMessage> history,
   }) async* {
+    final messages = _messagesFor(history);
     final log = _ref.read(commandLogProvider.notifier);
-    final id = log.begin(CliCallKind.http, 'POST $endpoint');
+    final id = log.begin(
+      CliCallKind.http,
+      'POST $endpoint',
+      detail: CommandDetail.json(
+        chatCompletionsPayload(model: model, messages: messages),
+      ),
+    );
 
     final answer = StringBuffer();
     await for (final event
@@ -242,7 +249,7 @@ class DefaultChatSender implements ChatSender {
               endpoint: endpoint,
               apiKey: network.relayApiKey,
               model: model,
-              messages: _messagesFor(history),
+              messages: messages,
             )) {
       switch (event) {
         case ChatDelta(:final text):
@@ -256,7 +263,7 @@ class DefaultChatSender implements ChatSender {
           break;
       }
     }
-    log.finish(id, exitCode: 200);
+    log.finish(id, exitCode: 200, responseBody: answer.toString());
 
     final text = answer.isEmpty ? 'The model returned no text.' : '$answer';
     yield ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: text));
@@ -271,8 +278,20 @@ class DefaultChatSender implements ChatSender {
     required String model,
     required List<ChatMessage> history,
   }) async* {
+    const instructions = 'You are a helpful assistant.';
+    final input = buildResponsesInput(history, _imageDataUri);
     final log = _ref.read(commandLogProvider.notifier);
-    final id = log.begin(CliCallKind.http, 'POST $endpoint');
+    final id = log.begin(
+      CliCallKind.http,
+      'POST $endpoint',
+      detail: CommandDetail.json(
+        responsesPayload(
+          model: model,
+          input: input,
+          instructions: instructions,
+        ),
+      ),
+    );
 
     final (reply, error) = await _ref
         .read(responsesTransportProvider)
@@ -280,10 +299,15 @@ class DefaultChatSender implements ChatSender {
           endpoint: endpoint,
           apiKey: network.relayApiKey,
           model: model,
-          input: buildResponsesInput(history, _imageDataUri),
-          instructions: 'You are a helpful assistant.',
+          input: input,
+          instructions: instructions,
         );
-    log.finish(id, exitCode: error?.statusCode ?? 200, error: error?.message);
+    log.finish(
+      id,
+      exitCode: error?.statusCode ?? 200,
+      error: error?.message,
+      responseBody: reply,
+    );
 
     if (error != null) {
       yield ChatSendFailure(_friendlyChatError(error));
@@ -304,7 +328,13 @@ class DefaultChatSender implements ChatSender {
   }) async* {
     final url = '${network.relayBaseUrl}/${operation.path}';
     final log = _ref.read(commandLogProvider.notifier);
-    final id = log.begin(CliCallKind.http, 'POST $url');
+    // The payload carries the source images base64-encoded and runs to
+    // megabytes; [CommandLogNotifier] clips it before it is kept.
+    final id = log.begin(
+      CliCallKind.http,
+      'POST $url',
+      detail: CommandDetail.json(payload),
+    );
 
     // Show a generating bubble right away, before the first progress event.
     yield const ChatSendGenerating(0, 'starting');

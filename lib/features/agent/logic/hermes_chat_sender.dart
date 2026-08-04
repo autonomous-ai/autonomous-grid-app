@@ -292,7 +292,13 @@ class HermesChatSender implements ChatSender {
     final planLog = _ref.read(agentPlanProvider.notifier);
     final permissions = _ref.read(agentPermissionProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
-    final logId = log.begin(CliCallKind.start, 'hermes acp -m $model (agent)');
+    // No argv to show: the turn is a prompt over an ACP session that is already
+    // running, so what it carried is the text itself (the model is on the line).
+    final logId = log.begin(
+      CliCallKind.start,
+      'hermes acp -m $model (agent)',
+      detail: CommandDetail(requestBody: text),
+    );
 
     final run = session.prompt(text);
     final answer = StringBuffer();

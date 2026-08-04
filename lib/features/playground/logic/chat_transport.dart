@@ -120,7 +120,7 @@ class HttpChatTransport implements ChatTransport {
       }
       request.add(
         utf8.encode(
-          jsonEncode({'model': model, 'messages': messages, 'stream': true}),
+          jsonEncode(chatCompletionsPayload(model: model, messages: messages)),
         ),
       );
 
@@ -196,6 +196,14 @@ class HttpChatTransport implements ChatTransport {
     return trimmed.length > 200 ? '${trimmed.substring(0, 200)}…' : trimmed;
   }
 }
+
+/// The `chat/completions` request body. Pure, and the single definition of the
+/// payload: the Debug tab records what a call sent, and a body hand-written a
+/// second time for the log is a body that quietly stops matching the wire.
+Map<String, dynamic> chatCompletionsPayload({
+  required String model,
+  required List<Map<String, dynamic>> messages,
+}) => {'model': model, 'messages': messages, 'stream': true};
 
 /// The chat transport used by the Playground and the Chat tab. Override in tests
 /// with a fake.

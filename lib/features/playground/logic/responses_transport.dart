@@ -61,17 +61,13 @@ class HttpResponsesTransport implements ResponsesTransport {
       }
       request.add(
         utf8.encode(
-          jsonEncode({
-            'model': model,
-            if (instructions != null && instructions.isNotEmpty)
-              'instructions': instructions,
-            'input': input,
-            // The relay's `/responses` requires both: `stream` for the SSE body
-            // we read, and `store: false` so the vendor keeps no server-side copy
-            // of the response (grid never persists it either).
-            'stream': true,
-            'store': false,
-          }),
+          jsonEncode(
+            responsesPayload(
+              model: model,
+              input: input,
+              instructions: instructions,
+            ),
+          ),
         ),
       );
 
@@ -166,6 +162,24 @@ class HttpResponsesTransport implements ResponsesTransport {
     return buffer.toString();
   }
 }
+
+/// The `/responses` request body. Pure, and the single definition of the
+/// payload, so what the Debug tab shows is the body that was actually sent.
+Map<String, dynamic> responsesPayload({
+  required String model,
+  required List<Map<String, dynamic>> input,
+  String? instructions,
+}) => {
+  'model': model,
+  if (instructions != null && instructions.isNotEmpty)
+    'instructions': instructions,
+  'input': input,
+  // The relay's `/responses` requires both: `stream` for the SSE body we read,
+  // and `store: false` so the vendor keeps no server-side copy of the response
+  // (grid never persists it either).
+  'stream': true,
+  'store': false,
+};
 
 /// Builds the Responses `input[]` array from the Playground history. User/system
 /// text parts are `input_text`, prior assistant turns are `output_text` — the

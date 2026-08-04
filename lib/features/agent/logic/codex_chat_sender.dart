@@ -15,6 +15,7 @@ import '../../playground/logic/playground_request.dart';
 import 'agent_changes.dart';
 import 'agent_prompt.dart';
 import 'agent_session_slots.dart';
+import 'agent_turn_log.dart';
 import 'agent_server_error.dart';
 import 'agent_providers.dart';
 import 'codex_tool.dart';
@@ -144,7 +145,26 @@ class CodexChatSender implements ChatSender {
     final activityLog = _ref.read(agentActivityProvider.notifier);
     final planLog = _ref.read(agentPlanProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
-    final logId = log.begin(CliCallKind.start, 'codex exec -m $model (agent)');
+    // Same builder the service runs (see [codexExecArgs]) — the `-c` overrides
+    // are where a turn's grid and model actually live, and a wrong one fails
+    // exactly like a model that wouldn't answer, so they belong on screen.
+    final logId = log.begin(
+      CliCallKind.start,
+      'codex exec -m $model (agent)',
+      detail: agentTurnDetail(
+        args: [
+          'codex',
+          ...codexExecArgs(
+            workdir: workdir,
+            config: config,
+            resumeThreadId: resumeThreadId,
+          ),
+        ],
+        workdir: workdir,
+        environment: environment,
+        prompt: prompt,
+      ),
+    );
 
     final service = _ref.read(codexExecServiceProvider)!;
     final run = service.run(

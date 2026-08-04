@@ -16,6 +16,7 @@ import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../onboarding/preflight_providers.dart';
 import '../../onboarding/preflight_report.dart';
+import 'log_tile.dart';
 
 /// The status/kind lens the list is filtered to. Named so an empty result can
 /// say "nothing matches this filter" rather than "nothing has run".
@@ -110,7 +111,7 @@ class _DebugViewState extends ConsumerState<DebugView> {
       return ListView.separated(
         itemCount: visible.length,
         separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (context, i) => _LogTile(log: visible[i]),
+        itemBuilder: (context, i) => LogTile(log: visible[i]),
       );
     }
     // Nothing exists yet vs the filter hid everything — two different stories, so
@@ -394,131 +395,6 @@ class _OpenLogsButton extends ConsumerWidget {
       onPressed: () => _open(context, ref),
     );
   }
-}
-
-class _LogTile extends StatelessWidget {
-  const _LogTile({required this.log});
-  final GridCommandLog log;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // list item — must self-watch to follow flips.
-    final theme = Theme.of(context);
-    return GlassCard(
-      style: GlassCardStyle.inset,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _StatusIcon(status: log.status),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SelectableText(
-                  log.command,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: AppFont.mono,
-                    fontFamilyFallback: AppFont.monoFallback,
-                    color: AppPalette.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              _Meta(log: log),
-            ],
-          ),
-          if (log.error != null) ...[
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.only(left: 26),
-              child: SelectableText(
-                log.error!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                  fontFamily: AppFont.mono,
-                  fontFamilyFallback: AppFont.monoFallback,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusIcon extends StatelessWidget {
-  const _StatusIcon({required this.status});
-  final CliCallStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppPalette.online — follow theme flips.
-    return switch (status) {
-      CliCallStatus.running => const AppSpinner(),
-      CliCallStatus.success => Icon(
-        Icons.check_circle,
-        size: 16,
-        color: AppPalette.online,
-      ),
-      CliCallStatus.failed => Icon(
-        Icons.error,
-        size: 16,
-        color: Theme.of(context).colorScheme.error,
-      ),
-    };
-  }
-}
-
-class _Meta extends StatelessWidget {
-  const _Meta({required this.log});
-  final GridCommandLog log;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppPalette.textFaint — follow theme flips.
-    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: AppPalette.textFaint,
-      fontFamily: AppFont.mono,
-      fontFamilyFallback: AppFont.monoFallback,
-      fontSize: 11.5,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(log.kind.name, style: style),
-        const SizedBox(height: 2),
-        Text(_detail(log), style: style),
-      ],
-    );
-  }
-
-  String _detail(GridCommandLog log) {
-    final time = _formatTime(log.startedAt);
-    if (log.status == CliCallStatus.running) return '$time · running…';
-    final dur = log.duration == null
-        ? ''
-        : ' · ${_formatDuration(log.duration!)}';
-    final code = switch (log.exitCode) {
-      null => '',
-      final c when log.kind == CliCallKind.http => ' · HTTP $c',
-      final c => ' · exit $c',
-    };
-    return '$time$dur$code';
-  }
-}
-
-String _formatTime(DateTime t) {
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
-}
-
-String _formatDuration(Duration d) {
-  final ms = d.inMilliseconds;
-  if (ms < 1000) return '${ms}ms';
-  return '${(ms / 1000).toStringAsFixed(ms < 10000 ? 1 : 0)}s';
 }
 
 /// Shows which `grid` binary the app resolved (and from where), plus whether it

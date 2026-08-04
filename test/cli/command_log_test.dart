@@ -109,4 +109,63 @@ void main() {
     expect(httpLog.started, isEmpty);
     expect(httpLog.finished, isEmpty);
   });
+
+  group('detail', () {
+    test('keeps the request body a call was started with', () async {
+      log.begin(
+        CliCallKind.http,
+        'POST https://api/chat',
+        detail: CommandDetail.json(const {'model': 'qwen3', 'stream': true}),
+      );
+      await pumpEventQueue();
+
+      final detail = container.read(commandLogProvider).single.detail;
+      expect(detail.requestBody, '{"model":"qwen3","stream":true}');
+    });
+
+    test('records what came back only when the caller has it', () async {
+      final id = log.begin(CliCallKind.http, 'POST https://api/chat');
+      log.finish(id, exitCode: 200, responseBody: 'Hello there');
+      await pumpEventQueue();
+
+      expect(
+        container.read(commandLogProvider).single.detail.responseBody,
+        'Hello there',
+      );
+    });
+
+    test('clips a body so one media payload cannot hold the buffer', () async {
+      log.begin(
+        CliCallKind.http,
+        'POST https://api/media',
+        // A base64 image arrives as a single line of megabytes; the ring buffer
+        // holds 200 entries, so an unclipped one is the app's memory.
+        detail: CommandDetail(requestBody: 'x' * (kMaxLoggedBody + 500)),
+      );
+      await pumpEventQueue();
+
+      final body = container
+          .read(commandLogProvider)
+          .single
+          .detail
+          .requestBody!;
+      expect(body.length, lessThan(kMaxLoggedBody + 100));
+      expect(body, endsWith('… 500 more characters not kept'));
+    });
+
+    test('leaves a body shorter than the cap exactly as it was', () async {
+      expect(clipLogBody('{"a":1}'), '{"a":1}');
+      expect(clipLogBody(null), isNull);
+    });
+
+    test('names environment variables without disclosing their values', () {
+      expect(
+        envParam(const {
+          'OPENAI_API_KEY': 'sk-secret',
+          'GRID_BIN': '/tmp/grid',
+        }),
+        'OPENAI_API_KEY, GRID_BIN — values hidden',
+      );
+    });
+  });
 }

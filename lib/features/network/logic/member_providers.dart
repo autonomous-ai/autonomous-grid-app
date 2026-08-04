@@ -112,6 +112,9 @@ final addMemberActionProvider = Provider<AddMemberAction>((ref) {
     final logId = log.begin(
       CliCallKind.http,
       'POST ${ManagedNetworkClient.membersEndpoint(apiUrl, networkId)}',
+      detail: CommandDetail.json(
+        ManagedNetworkClient.addMemberBody(email, roles),
+      ),
     );
     final (member, error) = await ref.read(memberAddFnProvider)(
       apiUrl: apiUrl,

@@ -94,6 +94,7 @@ class RenameNetworkController extends Notifier<RenameNetworkState> {
     final logId = log.begin(
       CliCallKind.http,
       'PATCH ${ManagedNetworkClient.renameEndpoint(apiUrl, networkId)}',
+      detail: CommandDetail.json(ManagedNetworkClient.renameBody(trimmed)),
     );
     final (ok, error) = await ref.read(managedNetworkRenameProvider)(
       apiUrl: apiUrl,

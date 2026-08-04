@@ -88,6 +88,9 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
     final logId = log.begin(
       CliCallKind.http,
       'POST ${ManagedNetworkClient.endpoint(apiUrl)}',
+      detail: CommandDetail.json(
+        ManagedNetworkClient.createBody(trimmed, type),
+      ),
     );
     final (network, error) = await create(
       apiUrl: apiUrl,
