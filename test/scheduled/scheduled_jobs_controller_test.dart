@@ -79,6 +79,9 @@ class _FakeCron implements HermesCronService {
   final pinned = <({String jobId, String model, bool clearError})>[];
   ({String schedule, String prompt, String name, String? workdir})? created;
 
+  /// The last edit asked for — what a saved task was rewritten to.
+  ({String id, String schedule, String prompt, String name})? edited;
+
   void _maybeFail() {
     final message = failWith;
     if (message != null) throw HermesCronException(message);
@@ -118,6 +121,35 @@ class _FakeCron implements HermesCronService {
       'schedule': {'kind': 'cron', 'expr': schedule},
       'enabled': true,
     });
+    jobsJson = jsonEncode({...store, 'jobs': jobs});
+  }
+
+  @override
+  Future<void> edit({
+    required String id,
+    required String schedule,
+    required String prompt,
+    required String name,
+  }) async {
+    calls.add('edit:$id');
+    _maybeFail();
+    edited = (id: id, schedule: schedule, prompt: prompt, name: name);
+    // Hermes rewrites the entry in place — same id, same model, same everything
+    // the edit didn't name.
+    final store =
+        jsonDecode(jobsJson ?? '{"jobs": []}') as Map<String, dynamic>;
+    final jobs = [
+      for (final raw in (store['jobs'] as List? ?? const []))
+        if (raw is Map<String, dynamic> && raw['id'] == id)
+          {
+            ...raw,
+            'name': name,
+            'prompt': prompt,
+            'schedule': {'kind': 'cron', 'expr': schedule},
+          }
+        else
+          raw,
+    ];
     jobsJson = jsonEncode({...store, 'jobs': jobs});
   }
 
@@ -402,6 +434,105 @@ void main() {
       expect(h.cron.pinned, isEmpty);
     },
   );
+
+  group('editing a saved task', () {
+    /// The form's save, over the task the fixtures carry.
+    Future<String?> edit(
+      ProviderContainer container, {
+      String model = 'maker/m1',
+      String prompt = 'Summarise my folder, and say what changed',
+      JobSchedule schedule = const JobSchedule(
+        cadence: JobCadence.everyDay,
+        hour: 7,
+        minute: 30,
+      ),
+    }) => container
+        .read(scheduledJobsProvider.notifier)
+        .edit(
+          id: 'abc123',
+          name: 'Daily digest',
+          prompt: prompt,
+          schedule: schedule,
+          model: model,
+        );
+
+    test('rewrites what the task does and when — the same task, so the results '
+        'it has already produced survive the change', () async {
+      final h = harness();
+      await h.container.read(scheduledJobsProvider.future);
+
+      final error = await edit(h.container);
+
+      expect(error, isNull);
+      expect(h.cron.edited?.id, 'abc123');
+      expect(h.cron.edited?.schedule, '30 7 * * *');
+      expect(
+        h.cron.edited?.prompt,
+        'Summarise my folder, and say what changed',
+      );
+      expect(
+        h.cron.calls,
+        isNot(contains('create')),
+        reason: 'an edit that re-creates the task loses its history',
+      );
+      final saved = h.container.read(scheduledJobsProvider).value!.single;
+      expect(saved.id, 'abc123');
+      expect(
+        saved.cron,
+        '30 7 * * *',
+        reason:
+            'the screen must show the new '
+            'schedule without a reload',
+      );
+    });
+
+    test('leaves the model alone when the user did not touch it — an edit to '
+        'the wording must not clear a failure nobody has read yet', () async {
+      final h = harness(jobsJson: _pinnedFailedJob);
+      await h.container.read(scheduledJobsProvider.future);
+
+      final error = await edit(h.container, model: 'qwen3.6-27b-office');
+
+      expect(error, isNull);
+      expect(h.cron.pinned, isEmpty);
+    });
+
+    test('re-pins the task when the form comes back with another model, so '
+        'what runs is what the user just picked', () async {
+      final h = harness(jobsJson: _pinnedFailedJob);
+      await h.container.read(scheduledJobsProvider.future);
+
+      final error = await edit(h.container, model: 'maker/m1');
+
+      expect(error, isNull);
+      expect(h.cron.pinned.single.jobId, 'abc123');
+      expect(h.cron.pinned.single.model, 'maker/m1');
+      expect(
+        h.cron.pinned.single.clearError,
+        isTrue,
+        reason: 'picking a model is the fix for the run that blamed one',
+      );
+    });
+
+    test('a model only another vendor\'s CLI can drive is refused before '
+        'anything is written', () async {
+      final h = harness();
+      await h.container.read(scheduledJobsProvider.future);
+
+      final error = await edit(h.container, model: 'claude:claude-sonnet-5');
+
+      expect(error, contains('Switch the assistant'));
+      expect(h.cron.edited, isNull, reason: 'nothing may be half-written');
+    });
+
+    test('a scheduler that refuses the change hands back its own line, not a '
+        'success', () async {
+      final h = harness(failWith: 'no such job: abc123');
+      await h.container.read(scheduledJobsProvider.future);
+
+      expect(await edit(h.container), 'no such job: abc123');
+    });
+  });
 
   test('what a task is allowed to do is settled before it is saved — there is '
       'nobody to ask at 8am', () async {

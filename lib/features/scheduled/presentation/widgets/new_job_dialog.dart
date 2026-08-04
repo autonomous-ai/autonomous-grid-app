@@ -12,6 +12,7 @@ import '../../../playground/logic/playground_models.dart';
 import '../../../projects/logic/project.dart';
 import '../../logic/job_schedule.dart';
 import '../../logic/job_suggestions.dart';
+import '../../logic/scheduled_job.dart';
 import '../../logic/scheduled_jobs_controller.dart';
 import '../../logic/task_models.dart';
 import '../../logic/task_power_controller.dart';
@@ -21,6 +22,7 @@ import 'task_power_bar.dart';
 part 'new_job_dialog_actions.dart';
 part 'new_job_dialog_fields.dart';
 part 'new_job_dialog_schedule.dart';
+part 'new_job_dialog_summary.dart';
 
 /// Asks for the three things a scheduled task needs — a name, what to do, and
 /// when — and saves it with Hermes's scheduler.
@@ -41,10 +43,24 @@ Future<void> showNewJobDialog(
   builder: (_) => _NewJobDialog(suggestion: from, project: project),
 );
 
+/// The same form over a task that already exists — the way to fix a typo, move
+/// the time or say more about the job without deleting it and losing every
+/// result it has produced.
+Future<void> showEditJobDialog(BuildContext context, ScheduledJob job) =>
+    showDialog<void>(
+      context: context,
+      barrierColor: const Color(0x66000000),
+      builder: (_) => _NewJobDialog(job: job),
+    );
+
 class _NewJobDialog extends ConsumerStatefulWidget {
-  const _NewJobDialog({this.suggestion, this.project});
+  const _NewJobDialog({this.suggestion, this.project, this.job});
 
   final JobSuggestion? suggestion;
+
+  /// The task being changed, or null when this is a new one. It decides what the
+  /// form is seeded with, what the buttons say, and which write it makes.
+  final ScheduledJob? job;
 
   /// The project this task belongs to, or null for a workspace-wide task.
   final Project? project;
@@ -65,18 +81,30 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   /// [_ModelRow] then shows what it can, and [_model] resolves the default.
   String? _picked;
 
+  /// The task's own schedule expression when this form can't draw it —
+  /// [_ForeignScheduleNote] then says so rather than letting the default read as
+  /// what the task runs on. Null in every other case.
+  String? _foreignSchedule;
+
   @override
   void initState() {
     super.initState();
+    final job = widget.job;
     final seed = widget.suggestion;
+    // An existing task is seeded from itself; a new one from a suggestion, or
+    // from the default hour if it hasn't got one.
+    final stored = job == null ? null : parseJobSchedule(job.cron);
     final schedule =
+        stored ??
         seed?.schedule ??
         const JobSchedule(cadence: JobCadence.everyDay, hour: 9, minute: 0);
-    _name = TextEditingController(text: seed?.name ?? '');
-    _prompt = TextEditingController(text: seed?.prompt ?? '');
+    _name = TextEditingController(text: job?.name ?? seed?.name ?? '');
+    _prompt = TextEditingController(text: job?.prompt ?? seed?.prompt ?? '');
+    _picked = job?.model;
     _cadence = schedule.cadence;
     _time = TimeOfDay(hour: schedule.hour, minute: schedule.minute);
     _weekday = schedule.weekday;
+    if (job != null && stored == null) _foreignSchedule = job.cron;
   }
 
   @override
@@ -92,6 +120,19 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     minute: _time.minute,
     weekday: _weekday,
   );
+
+  /// Where the task will run, as a phrase [_WhatItMayDo] drops into its
+  /// sentence — null while editing.
+  ///
+  /// A saved task's folder isn't part of what the app reads back out of Hermes,
+  /// and an edit doesn't move it. Saying nothing is the honest half of the
+  /// sentence; naming "your Projects folder" over a task that has been reading a
+  /// project all along would be the app inventing an answer it doesn't have.
+  String? get _location {
+    if (widget.job != null) return null;
+    final project = widget.project;
+    return project == null ? 'in your Projects folder' : 'in "${project.name}"';
+  }
 
   /// The model this task will be pinned to, out of [options]: the user's pick
   /// while it's still on offer, else the default for what the grid serves.
@@ -177,12 +218,45 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     Navigator.of(context).pop();
   }
 
+  /// Write the form back onto [job]. The dialog stays open on a failure, with
+  /// what the user typed still in it — closing it would take the edit with it.
+  Future<void> _saveEdit(ScheduledJob job, String model) async {
+    setState(() => _saving = true);
+    final error = await ref
+        .read(scheduledJobsProvider.notifier)
+        .edit(
+          id: job.id,
+          name: _name.text.trim(),
+          prompt: _prompt.text.trim(),
+          schedule: _schedule,
+          model: model,
+        );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (error != null) {
+      ToastScope.show(
+        context,
+        ToastSpec(message: error, severity: ToastSeverity.error),
+      );
+      return;
+    }
+    ToastScope.show(
+      context,
+      const ToastSpec(
+        message: 'Task updated.',
+        severity: ToastSeverity.success,
+      ),
+    );
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     // Watched once, here, and handed down: the row draws from it, the resolved
     // model rides into `create`, and nothing reads a provider outside build.
     final options = taskModelOptions(ref.watch(playgroundModelsProvider));
     final model = _modelIn(options);
+    final job = widget.job;
     return Dialog(
       elevation: 18,
       backgroundColor: AppCard.base,
@@ -198,7 +272,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _DialogTitle(),
+                _DialogTitle(editing: job != null),
                 const SizedBox(height: 4),
                 Text(
                   'Work the assistant does on its own, on a timer.',
@@ -227,11 +301,20 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                   maxLines: 6,
                   onChanged: () => setState(() {}),
                 ),
-                const SizedBox(height: 10),
-                _ExampleRow(onPick: _applyExample),
+                // Examples are a way into a blank form; over a task that already
+                // says something, "start from an example" only offers to
+                // overwrite it.
+                if (job == null) ...[
+                  const SizedBox(height: 10),
+                  _ExampleRow(onPick: _applyExample),
+                ],
                 const SizedBox(height: 22),
                 const _GroupLabel('When it runs'),
                 const SizedBox(height: 10),
+                if (_foreignSchedule case final expression?) ...[
+                  _ForeignScheduleNote(expression: expression),
+                  const SizedBox(height: 10),
+                ],
                 _CadenceRow(
                   cadence: _cadence,
                   onChanged: (value) => setState(() => _cadence = value),
@@ -258,137 +341,25 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                   onChanged: (value) => setState(() => _picked = value),
                 ),
                 const SizedBox(height: 20),
-                _WhatItMayDo(
-                  schedule: _schedule,
-                  projectName: widget.project?.name,
-                ),
+                _WhatItMayDo(schedule: _schedule, location: _location),
                 const SizedBox(height: 22),
                 _DialogActions(
                   saving: _saving,
                   canSave: _canSave(model),
+                  saveLabel: job == null ? 'Schedule it' : 'Save changes',
                   onCancel: () => Navigator.of(context).pop(),
-                  onSave: () => _save(model),
-                  onTryNow: () => _save(model, runNow: true),
+                  onSave: () =>
+                      job == null ? _save(model) : _saveEdit(job, model),
+                  // "Try it now" belongs to a task that doesn't exist yet. The
+                  // saved one already has Run now on its own screen.
+                  onTryNow: job == null
+                      ? () => _save(model, runNow: true)
+                      : null,
                 ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// When it runs, where — and what it's allowed to do while nobody is watching.
-/// The last part is the one the user can't guess, so it isn't left out.
-class _WhatItMayDo extends ConsumerWidget {
-  const _WhatItMayDo({required this.schedule, this.projectName});
-
-  final JobSchedule schedule;
-
-  /// The project the task will run in, when it's scoped to one — named so the
-  /// line says where it actually runs instead of a vague "Projects folder".
-  final String? projectName;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final power = ref.watch(taskPowerProvider).value;
-    final risky = power == TaskPower.fullAccess;
-    final where = projectName == null
-        ? 'in your Projects folder'
-        : 'in "$projectName"';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppPalette.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppPalette.divider),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _InfoLine(
-            icon: Icons.folder_outlined,
-            text:
-                'Runs ${schedule.describe().toLowerCase()}, on this computer, '
-                '$where.',
-          ),
-          // The asleep warning is about a single nightly time; an interval task
-          // runs all day, so it doesn't apply the same way.
-          if (!schedule.cadence.isInterval && _asleepHour(schedule.hour)) ...[
-            const SizedBox(height: 9),
-            _InfoLine(
-              icon: Icons.bedtime_outlined,
-              text:
-                  'Only runs while your computer is awake. At '
-                  '${_hourLabel(schedule.hour)} it may be asleep — that run is '
-                  'skipped, not caught up later.',
-            ),
-          ],
-          if (power != null) ...[
-            const SizedBox(height: 9),
-            _InfoLine(
-              icon: taskPowerIcon(power),
-              text: taskPowerDetail(power),
-              tone: risky ? AppPalette.warn : null,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// The hours a personal computer is most likely asleep. A deliberately narrow
-  /// window — we warn about 3am, not about lunchtime, so the note stays rare
-  /// enough to mean something when it appears.
-  static bool _asleepHour(int hour) => hour >= 0 && hour < 7;
-
-  static String _hourLabel(int hour) => '${hour.toString().padLeft(2, '0')}:00';
-}
-
-/// One icon-led fact in the info card. [tone] colours both icon and text when a
-/// line needs to warn (Full access), otherwise it reads as quiet secondary text.
-class _InfoLine extends StatelessWidget {
-  const _InfoLine({required this.icon, required this.text, this.tone});
-
-  final IconData icon;
-  final String text;
-  final Color? tone;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = tone ?? AppPalette.textSecondary;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 15, color: color),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(fontSize: 12.5, height: 1.4, color: color),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DialogTitle extends StatelessWidget {
-  const _DialogTitle();
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      'New scheduled task',
-      style: TextStyle(
-        color: AppPalette.textPrimary,
-        fontSize: 21,
-        fontWeight: AppFont.semibold,
-        letterSpacing: -0.3,
-        height: 1.12,
       ),
     );
   }

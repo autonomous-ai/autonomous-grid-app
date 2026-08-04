@@ -74,6 +74,20 @@ abstract interface class HermesCronService {
     String? workdir,
   });
 
+  /// Change a saved job: what it does, what it's called, and when it runs.
+  ///
+  /// Only the three fields the app's form owns are sent. `cron edit` leaves out
+  /// what it isn't given, so the folder the job runs in, its skills and its
+  /// delivery survive an edit — none of them are on that form, and rewriting
+  /// them to the form's idea of a default would quietly change what the task can
+  /// see. The model isn't a flag here either; it's a separate write ([pinModel]).
+  Future<void> edit({
+    required String id,
+    required String schedule,
+    required String prompt,
+    required String name,
+  });
+
   /// Pin [jobId] to [model] — what it answers with from now on, whatever the
   /// computer's own model becomes.
   ///
@@ -155,6 +169,24 @@ class HermesCronServiceImpl implements HermesCronService {
     '--deliver',
     kDeliverLocal,
     if (workdir != null) ...['--workdir', workdir],
+  ]);
+
+  @override
+  Future<void> edit({
+    required String id,
+    required String schedule,
+    required String prompt,
+    required String name,
+  }) => _run([
+    'cron',
+    'edit',
+    id,
+    '--schedule',
+    schedule,
+    '--prompt',
+    prompt,
+    '--name',
+    name,
   ]);
 
   @override

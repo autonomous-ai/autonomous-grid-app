@@ -20,6 +20,7 @@ import '../../logic/job_status.dart';
 import '../../logic/scheduled_job.dart';
 import '../../logic/scheduled_jobs_controller.dart';
 import '../../logic/task_delivery.dart';
+import 'new_job_dialog.dart';
 import 'status_pill.dart';
 
 part 'job_detail_actions.dart';

@@ -42,6 +42,14 @@ class FakeCron implements HermesCronService {
     String? workdir,
   }) async {}
 
+  @override
+  Future<void> edit({
+    required String id,
+    required String schedule,
+    required String prompt,
+    required String name,
+  }) async {}
+
   /// Every task the sweep re-pointed, and at what.
   final pinned = <({String jobId, String model})>[];
 

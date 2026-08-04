@@ -174,6 +174,45 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     return (error: null, id: created?.id);
   }
 
+  /// Save changes to a task that already exists, keeping its results and its
+  /// place in the schedule.
+  ///
+  /// Recreating it was the only way to fix a typo before this, and it cost the
+  /// user every result the task had produced. Only what the form asks for moves;
+  /// the folder it runs in and what it's allowed to do stay as they were.
+  ///
+  /// The model is a second write, as it is on create — `cron edit` has no
+  /// `--model` — and only when the user actually moved it, so an edit to the
+  /// wording doesn't re-pin (and silently clear) a task that is failing for a
+  /// reason nobody has looked at yet.
+  Future<String?> edit({
+    required String id,
+    required String name,
+    required String prompt,
+    required JobSchedule schedule,
+    required String model,
+  }) async {
+    final refusal = hermesModelRefusal(model);
+    if (refusal != null) return refusal;
+    // Read before the write: `_act` re-reads the store, and the answer to "did
+    // the user change the model?" is only in the job as it stands now.
+    final moved = _jobById(id)?.model != model;
+
+    final error = await _act(
+      (service) => service.edit(
+        id: id,
+        schedule: schedule.toSchedule(),
+        prompt: prompt,
+        name: name,
+      ),
+    );
+    if (error != null) return error;
+    if (!moved) return null;
+    // Picking a model *is* the fix for a task the scheduler was skipping, so the
+    // stale skip goes with it — the same reasoning as `useCurrentModel`.
+    return _pin(id, model, clearError: true);
+  }
+
   /// Let a task the scheduler has been skipping run on the model this computer
   /// uses now, and clear the skip it was showing.
   ///
