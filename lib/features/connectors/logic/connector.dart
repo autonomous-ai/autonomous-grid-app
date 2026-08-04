@@ -195,8 +195,35 @@ String capitalizeFirst(String value) {
 /// empty blurb falls through to *no description at all*, not to its URL. Those
 /// are the rows whose URL is the bridge, so the fallback would reintroduce the
 /// loopback line for exactly the connectors it was removed from.
-String _describe(ConnectorCatalogEntry? entry, McpServer server) =>
-    entry != null ? entry.description : mcpServerSummary(server);
+///
+/// **The address is also suppressed when it points at this app.** Having no
+/// catalog entry is not proof the row is hand-written: the catalog is a page of
+/// *search results*, so picking a category the connector does not match drops
+/// its entry and this fell straight through to
+/// `http://127.0.0.1:61755/c/gmail/mcp` on a signed-in Gmail — measured
+/// 2026-08-04 with the Finance pill selected. Asking the URL is what
+/// distinguishes the two cases; the transport cannot, because MCP-over-bridge
+/// (D32) looks exactly like a real MCP server from there.
+String _describe(ConnectorCatalogEntry? entry, McpServer server) {
+  if (entry != null) return entry.description;
+  final summary = mcpServerSummary(server);
+  return isBridgeAddress(summary) ? '' : summary;
+}
+
+/// Whether [text] is one of this app's own loopback bridge addresses.
+///
+/// Deliberately a shape test rather than an equality check against the live
+/// port: the port moves between launches, a row can have been written by an
+/// earlier one, and this has to be right for a value that is already stale.
+/// Every bridge URL is loopback with a `/c/<connector>/mcp` path, and nothing a
+/// user would type by hand looks like that.
+bool isBridgeAddress(String text) {
+  final uri = Uri.tryParse(text.trim());
+  if (uri == null || !uri.hasScheme) return false;
+  final host = uri.host;
+  final loopback = host == '127.0.0.1' || host == 'localhost' || host == '::1';
+  return loopback && uri.path.startsWith('/c/');
+}
 
 /// The mark for a configured server: the catalog's, or one derived from its host.
 ///

@@ -20,12 +20,72 @@ final mcpServersProvider =
       McpServersController.new,
     );
 
+/// Every catalog entry this session has seen, kept past the page it arrived on.
+///
+/// **The catalog is a page of search results, not a directory.** It holds the
+/// ~50 rows the registry last answered with, so a connector the user signed in
+/// to yesterday is in it only while it happens to match the current query. The
+/// moment it drops out, the row loses the entry it was joined to and with it its
+/// label, its logo and its blurb: a signed-in Gmail rendered as a cloud glyph
+/// named "Gmail" describing `http://127.0.0.1:61755/c/gmail/mcp` as soon as the
+/// Finance pill was pressed (measured 2026-08-04).
+///
+/// Accumulating fixes that at the source. An entry is a *description of a
+/// service* — Gmail's logo and blurb do not stop being true because the user
+/// searched for something else — so once seen it is worth keeping for as long as
+/// the screen is open.
+///
+/// Not persisted, and deliberately unbounded within a session: the registry caps
+/// browsing at 500 rows, so this cannot grow past a few hundred small objects.
+class SeenCatalogEntries extends Notifier<Map<String, ConnectorCatalogEntry>> {
+  @override
+  Map<String, ConnectorCatalogEntry> build() => const {};
+
+  /// Fold a freshly fetched page in, newest description winning.
+  ///
+  /// Returns without notifying when the page adds nothing — this is called from
+  /// inside a provider body, and a state write that changes nothing would
+  /// rebuild every listener on every page fetch.
+  void remember(List<ConnectorCatalogEntry> entries) {
+    if (entries.isEmpty) return;
+    final merged = {...state, for (final entry in entries) entry.code: entry};
+    if (merged.length == state.length &&
+        entries.every((e) => identical(state[e.code], e))) {
+      return;
+    }
+    state = merged;
+  }
+}
+
+final seenCatalogEntriesProvider =
+    NotifierProvider<SeenCatalogEntries, Map<String, ConnectorCatalogEntry>>(
+      SeenCatalogEntries.new,
+    );
+
 /// The full Connectors screen model: what's live in the agent's config joined
 /// with what the catalog offers. The config side stays the only truth about
 /// what the agent loads — the catalog only ever adds "available" rows.
 final connectorsProvider = FutureProvider<List<Connector>>((ref) async {
   final servers = await ref.watch(mcpServersProvider.future);
-  final catalog = await ref.watch(connectorCatalogProvider.future);
+  final page = await ref.watch(connectorCatalogProvider.future);
+  // Remember this page, then join against everything seen so far. Order
+  // matters: the fresh page has to be in the map before the join, or a
+  // connector connected from the page currently on screen would miss its own
+  // entry for one frame.
+  ref.read(seenCatalogEntriesProvider.notifier).remember(page);
+  final remembered = ref.read(seenCatalogEntriesProvider);
+  // The page itself still governs which rows are *offered* — that is the
+  // search result, and remembering must not put yesterday's search back on
+  // screen. Entries are recalled only to describe rows that exist for another
+  // reason: a configured server, or a credential held here.
+  final configured = {for (final server in servers) server.name};
+  final catalog = <ConnectorCatalogEntry>[
+    ...page,
+    for (final entry in remembered.values)
+      if (configured.contains(entry.code) &&
+          !page.any((p) => p.code == entry.code))
+        entry,
+  ];
   // The third source: the credentials this machine actually holds. Optional —
   // an unreadable store leaves the rows reading from config and catalog alone,
   // which is the same screen this was before the gateway existed.
