@@ -44,13 +44,16 @@ abstract interface class ClaudeExecService {
   /// Run one turn. [resumeSessionId] continues an earlier conversation; null
   /// starts a fresh one. [workdir] is the folder the turn opens in, and
   /// [environment] carries the grid the answer comes from (see
-  /// `claudeCodeEnv`). Throws [ClaudeExecException] if the process won't start.
+  /// `claudeCodeEnv`). [mcpConfigPath] narrows the turn to the app's own
+  /// connectors; null leaves it reading `~/.claude.json`. Throws
+  /// [ClaudeExecException] if the process won't start.
   ClaudeExecRun run({
     required String workdir,
     required String prompt,
     required String model,
     required Map<String, String> environment,
     String? resumeSessionId,
+    String? mcpConfigPath,
   });
 }
 
@@ -67,31 +70,22 @@ abstract interface class ClaudeExecService {
 /// commands back out of it.
 const String kClaudePermissionMode = 'bypassPermissions';
 
-/// Told to the model because the harness will not tell it.
-///
-/// **Claude Code never puts MCP tools in the initial tool list.** It offers
-/// `ToolSearch` and expects the model to go looking. Measured 2026-08-03 with a
-/// single server and `--strict-mcp-config`: 27 tools offered, **0 of them
-/// `mcp__*`**, `ToolSearch` present. So this is not a consequence of how many
-/// connectors are configured — it is how this version behaves, always.
-///
-/// That is a fine contract for a model trained on it, and invisible to everyone
-/// else. The grid serves whatever model the user picked: asked "lấy 3 email mới
-/// nhất", `minimax/minimax-m3` read its tool list, saw no Gmail, and answered —
-/// honestly — that it had no such tool. The same model on the same question
-/// through Hermes fetched the mail, because Hermes loads MCP tools into the list
-/// directly. Nothing was wrong with the connector, the bridge, the projection or
-/// the config; the model simply did not know there was a second place to look.
-///
-/// Kept to three sentences and appended rather than replacing: `--system-prompt`
-/// would throw away Claude Code's own instructions, which are the reason the
-/// rest of the harness works.
-const String kClaudeToolSearchPrompt =
-    'Your MCP tools — connectors such as Gmail, Google Drive or Figma — are not '
-    'listed in your initial tools. They are found at runtime with ToolSearch. '
-    'Before telling the user you cannot do something, call ToolSearch to look '
-    'for a tool that does it, and only say a capability is unavailable once '
-    'ToolSearch has come back with nothing.';
+// Removed 2026-08-04: `kClaudeToolSearchPrompt`, an `--append-system-prompt`
+// telling the model its MCP tools were hidden behind `ToolSearch`.
+//
+// It was added on the finding that "Claude Code never puts MCP tools in the
+// initial tool list", measured 2026-08-03 against a single server. **That
+// finding does not hold for `claude 2.1.221`**: re-measured 2026-08-04, a turn
+// whose servers reach `connected` carries their tools inline — 90 `mcp__github__*`
+// entries in a 139-tool list, no lookup required.
+//
+// What the original session actually hit was the race [ClaudeTurnMcpConfig]
+// fixes: with 27 servers configured, a connector's status at tool-list time is
+// `pending` about as often as `connected`, and a `pending` server contributes
+// nothing whether or not the model goes looking. The prompt could not have
+// helped — there was no second place to look, only a server that had not
+// finished its handshake — and left behind it a paragraph telling every model
+// something untrue about its own tools.
 
 /// The argv for one turn: a fresh `claude -p`, or `--resume <id>` to continue a
 /// session.
@@ -107,21 +101,31 @@ const String kClaudeToolSearchPrompt =
 ///   see.
 /// - The prompt goes on **stdin**, not in argv, so a long replayed history can't
 ///   overflow an argv limit.
-List<String> claudeExecArgs({required String model, String? resumeSessionId}) =>
-    [
-      '-p',
-      '--output-format',
-      'stream-json',
-      '--include-partial-messages',
-      '--verbose',
-      '--permission-mode',
-      kClaudePermissionMode,
-      '--append-system-prompt',
-      kClaudeToolSearchPrompt,
-      '--model',
-      model,
-      if (resumeSessionId != null) ...['--resume', resumeSessionId],
-    ];
+/// - `--mcp-config` with `--strict-mcp-config` narrows the turn to the app's own
+///   connectors. See [ClaudeTurnMcpConfig] for why, and why [mcpConfigPath] is
+///   nullable: a path that doesn't exist aborts the turn outright, so a failed
+///   write must drop **both** flags rather than pass a broken one.
+List<String> claudeExecArgs({
+  required String model,
+  String? resumeSessionId,
+  String? mcpConfigPath,
+}) => [
+  '-p',
+  '--output-format',
+  'stream-json',
+  '--include-partial-messages',
+  '--verbose',
+  '--permission-mode',
+  kClaudePermissionMode,
+  '--model',
+  model,
+  if (mcpConfigPath != null) ...[
+    '--mcp-config',
+    mcpConfigPath,
+    '--strict-mcp-config',
+  ],
+  if (resumeSessionId != null) ...['--resume', resumeSessionId],
+];
 
 /// Real implementation: spawns `claude -p`, feeds the prompt on stdin, and turns
 /// its JSONL into [ClaudeExecEvent]s.
@@ -137,6 +141,7 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     required String model,
     required Map<String, String> environment,
     String? resumeSessionId,
+    String? mcpConfigPath,
   }) => _ClaudeExecTurn(
     path: _path,
     workdir: workdir,
@@ -144,6 +149,7 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     model: model,
     environment: environment,
     resumeSessionId: resumeSessionId,
+    mcpConfigPath: mcpConfigPath,
   ).start();
 }
 
@@ -155,6 +161,7 @@ class _ClaudeExecTurn {
     required this.model,
     required this.environment,
     required this.resumeSessionId,
+    required this.mcpConfigPath,
   });
 
   final String path;
@@ -163,6 +170,7 @@ class _ClaudeExecTurn {
   final String model;
   final Map<String, String> environment;
   final String? resumeSessionId;
+  final String? mcpConfigPath;
 
   final _events = StreamController<ClaudeExecEvent>();
   final _done = Completer<void>();
@@ -189,7 +197,11 @@ class _ClaudeExecTurn {
   ClaudeExecRun start() {
     Process.start(
       path,
-      claudeExecArgs(model: model, resumeSessionId: resumeSessionId),
+      claudeExecArgs(
+        model: model,
+        resumeSessionId: resumeSessionId,
+        mcpConfigPath: mcpConfigPath,
+      ),
       workingDirectory: workdir,
       environment: {
         ...Platform.environment,

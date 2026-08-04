@@ -21,6 +21,7 @@ import 'agent_server_error.dart';
 import 'agent_session_slots.dart';
 import 'agent_turn_log.dart';
 import 'claude_tool.dart';
+import 'claude_turn_mcp_config.dart';
 import 'model_context_window.dart';
 
 /// The Claude Code exec seam, or null when Claude Code is absent.
@@ -104,6 +105,12 @@ class ClaudeChatSender implements ChatSender {
     // until something knows — see [modelContextWindowProvider].
     final window = _ref.read(modelContextWindowProvider(model));
 
+    // Rewritten per turn, not cached: a connector signed in or disconnected
+    // since the last message has to be in — or out of — this one. Null when the
+    // write failed, which launches the turn on `~/.claude.json` rather than on
+    // a path `claude` would reject. See [ClaudeTurnMcpConfig.write].
+    final mcpConfigPath = await ClaudeTurnMcpConfig().write();
+
     yield* _runTurn(
       workdir: root,
       prompt: withProjectInstructions(
@@ -120,6 +127,7 @@ class ClaudeChatSender implements ChatSender {
       ),
       planFirst: planFirst,
       slot: turn.slot,
+      mcpConfigPath: mcpConfigPath,
     );
   }
 
@@ -136,6 +144,7 @@ class ClaudeChatSender implements ChatSender {
     required Map<String, String> environment,
     required bool planFirst,
     required AgentSessionSlot slot,
+    required String? mcpConfigPath,
   }) {
     final activityLog = _ref.read(agentActivityProvider.notifier);
     final planLog = _ref.read(agentPlanProvider.notifier);
@@ -148,7 +157,11 @@ class ClaudeChatSender implements ChatSender {
       detail: agentTurnDetail(
         args: [
           'claude',
-          ...claudeExecArgs(model: model, resumeSessionId: resumeSessionId),
+          ...claudeExecArgs(
+            model: model,
+            resumeSessionId: resumeSessionId,
+            mcpConfigPath: mcpConfigPath,
+          ),
         ],
         workdir: workdir,
         environment: environment,
@@ -164,6 +177,7 @@ class ClaudeChatSender implements ChatSender {
           model: model,
           environment: environment,
           resumeSessionId: resumeSessionId,
+          mcpConfigPath: mcpConfigPath,
         );
 
     final answer = StringBuffer();
