@@ -59,6 +59,25 @@ final gridModelCatalogProvider = Provider.autoDispose<List<GridModelGroup>>((
 List<OverviewNode> nodesOf(AsyncValue<GridOverview> overview) =>
     overview.value?.nodes ?? const <OverviewNode>[];
 
+/// Re-reads what the selected grid serves, in the background.
+///
+/// Nothing else does. The list is fetched once when the app opens and then held
+/// for as long as the composer is mounted — the model pill watches
+/// [gridModelCatalogProvider], so the `/models` call never auto-disposes and
+/// never runs again. A teammate who starts serving a model an hour in doesn't
+/// appear, and one who stopped is still offered — the overview beside it polls,
+/// but it only supplies the media modes, never the model rows.
+///
+/// Opening the picker is the moment the user asks "what can I pick?", so that's
+/// when it's re-read. Silent by design: the models already listed stay up while
+/// the call is in flight (see [gridModelGroupFrom]), so the menu opens on the
+/// list it knew and swaps when the answer lands, rather than on a skeleton.
+void refreshGridModelCatalog(WidgetRef ref) {
+  final grid = ref.read(selectedNetworkProvider);
+  if (grid == null) return;
+  ref.invalidate(networkModelsForProvider(grid.networkId));
+}
+
 /// Maps a grid's served-model list plus its [nodes] into a menu group. The
 /// list's [models] async drives the loading / ready / offline state; the nodes
 /// add the Image/Video modes and say where each model actually runs. Pure so the
@@ -68,7 +87,11 @@ GridModelGroup gridModelGroupFrom(
   AsyncValue<List<String>> models,
   List<OverviewNode> nodes,
 ) => models.when(
-  skipLoadingOnReload: false,
+  // A refresh keeps the models it already had. Only a grid with nothing cached
+  // reads as loading — every open would otherwise blink the menu (and the pill
+  // beside it) to a skeleton for the length of a round trip, which is a worse
+  // trade than showing one model a second late.
+  skipLoadingOnReload: true,
   data: (ids) => GridModelGroup(
     grid: grid,
     options: playgroundOptionsFrom(
