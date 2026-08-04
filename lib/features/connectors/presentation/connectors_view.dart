@@ -14,9 +14,12 @@ import '../../../shared/widgets/pill_choice.dart';
 import '../../agents/presentation/extension_screen.dart';
 import '../logic/browse_connectors_controller.dart';
 import '../logic/connector.dart';
+import '../logic/connector_category.dart';
 import '../logic/connectors_controller.dart';
 import '../logic/connectors_refresh.dart';
 import '../logic/smithery_server.dart';
+import 'widgets/connector_details_dialog.dart';
+import 'widgets/connector_mark.dart';
 import 'widgets/add_mcp_dialog.dart';
 import 'widgets/browse_connectors_dialog.dart';
 import 'widgets/connector_list.dart';
@@ -52,19 +55,41 @@ class ConnectorsView extends ConsumerStatefulWidget {
   ConsumerState<ConnectorsView> createState() => _ConnectorsViewState();
 }
 
+/// Which half of the screen the user is looking at.
+///
+/// **Two, not three.** There was an "Available" pill beside these, and the
+/// moment "All" stopped listing connected rows the two became the same view —
+/// same rows, same order, same everything. Two controls that do one thing is
+/// worse than one: pressing the second and seeing nothing change reads as a
+/// broken filter. "Browse" is the honest name for what "All" now shows.
 enum _ConnectorFilter {
-  all('All'),
-  connected('Connected'),
-  available('Available');
+  all('Browse'),
+  connected('Connected');
 
   const _ConnectorFilter(this.label);
 
   final String label;
 
+  /// **"All" means the whole directory, not "everything on this machine too".**
+  ///
+  /// It used to keep connected rows as well, which put them at the top of every
+  /// view — the browsing one included. With seven of them that is 281px, 63% of
+  /// the list area on a 700px window, leaving about one card's worth of room for
+  /// the results the user came to look at (measured 2026-08-04).
+  ///
+  /// Filtering them *by category* was tried first and abandoned: the registry
+  /// has no taxonomy, and searching for one puts Paradex — a crypto exchange —
+  /// under Marketing while Gmail, Drive, Sheets and Jina match no category at
+  /// all. A filter that silently drops six of seven connectors is worse than no
+  /// filter.
+  ///
+  /// So the rule is the plain one, with no exception to remember: **connected
+  /// connectors live under the Connected pill**. Tony chose this over keeping
+  /// them on "All" and hiding them only once a category is picked — one rule
+  /// beats a rule plus a special case.
   bool keeps(Connector connector) => switch (this) {
-    all => true,
+    all => !connector.connected,
     connected => connector.connected,
-    available => !connector.connected,
   };
 }
 
@@ -164,12 +189,39 @@ class _FilterBar extends ConsumerWidget {
     final browse = ref.watch(browseConnectorsProvider);
     final notifier = ref.read(browseConnectorsProvider.notifier);
 
-    // **Scrolls horizontally.** Three status pills, two directory pills and a
-    // sort field is more than a narrow window holds — measured at 218px over on
-    // an 800px pane, which is an overflow stripe across the toolbar rather than
-    // a control that quietly wraps. Scrolling keeps every one of them reachable
-    // at any width, and at the sizes this app is normally used the row never
-    // moves.
+    // Two rows, because they answer different questions: the top one is about
+    // *this install* — have I connected it — and the bottom is about the
+    // directory's subject matter. Interleaved on one line they read as six
+    // equal choices, and the ten subjects would push the status pills off the
+    // scroll before anyone found them.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _statusRow(browse, notifier),
+        // Categories narrow the *directory*, so they go where the directory
+        // does: hidden on Connected, which lists what this computer already
+        // holds and never pages the registry at all.
+        if (filter != _ConnectorFilter.connected) ...[
+          const SizedBox(height: 8),
+          _CategoryRow(
+            selected: browse.category,
+            onSelect: notifier.setCategory,
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// **Scrolls horizontally.** Three status pills and a sort field is more than
+  /// a narrow window holds — measured at 218px over on an 800px pane, which is
+  /// an overflow stripe across the toolbar rather than a control that quietly
+  /// wraps. Scrolling keeps every one of them reachable at any width, and at the
+  /// sizes this app is normally used the row never moves.
+  Widget _statusRow(
+    BrowseConnectorsState browse,
+    BrowseConnectorsController notifier,
+  ) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -213,6 +265,232 @@ class _FilterBar extends ConsumerWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// The subject pills: Finance, Developer, Design…
+///
+/// **One at a time, and none by default.** The directory opens on everything,
+/// which is the honest starting point for a catalogue nobody has told us
+/// anything about yet. Selecting is a narrowing; pressing the selected pill
+/// again widens back out, which is the only way to undo one without a "Clear"
+/// control that would sit unused for the whole time no category is chosen.
+///
+/// Single-select rather than multi: these are search terms, and the registry
+/// ANDs them — "Finance" plus "Design" would ask for servers that are both,
+/// which is close to none. A control that reliably empties the list is worse
+/// than one that cannot express the combination.
+class _CategoryRow extends StatelessWidget {
+  const _CategoryRow({required this.selected, required this.onSelect});
+
+  final ConnectorCategory? selected;
+  final ValueChanged<ConnectorCategory?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    // **Wraps, where the status row above scrolls.** Ten pills overflow every
+    // window this app is used at, and a horizontal scroller hid the last two
+    // behind an edge with nothing to say they were there — "Analytics" rendered
+    // clipped mid-word. Wrapping shows all ten at any width and costs one extra
+    // line only when the window is genuinely narrow. The row above keeps
+    // scrolling because it holds three pills and a select field, which fit.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // The label the row was missing: without it a second bank of pills
+        // reads as more status filters rather than as a different question.
+        Padding(
+          padding: const EdgeInsets.only(top: 7, right: 10),
+          child: Text(
+            'Category',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: AppFont.medium,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final category in ConnectorCategory.values)
+                PillChoice(
+                  label: Text(category.label),
+                  selected: category == selected,
+                  // Pressing the live one clears it. See the note above:
+                  // without this there is no way back to the whole directory.
+                  onTap: () => onSelect(category == selected ? null : category),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// What is running, kept beside what you are browsing.
+///
+/// **The problem it solves.** Connected connectors were moved off the Browse
+/// view because seven of them took 281px — 63% of the list area on a 700px
+/// window — and pushed the search results the user came for below the fold. That
+/// fixed the crowding and created a new gap: nothing on screen said what was
+/// already signed in, so "do I have Gmail?" meant switching tabs to find out.
+///
+/// A column answers both. It costs no vertical space at all, which is the axis
+/// the grid actually competes for, and it is *always* the same seven rows — the
+/// search box and the category pills never touch it, so it stays a stable
+/// reference while everything to its left changes.
+///
+/// Rows, not cards: this is a list to scan down for a name, and the description
+/// that makes a card worth its size is exactly the thing already known about a
+/// connector you chose to sign in to.
+class _ConnectedSidebar extends StatelessWidget {
+  const _ConnectedSidebar({required this.connected});
+
+  final List<Connector> connected;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        // A raised surface with its own shadow, per §2: fill alone separates
+        // nothing — `surfaceFill` is 1.13:1 against the page — so the shadow is
+        // what actually lifts this off the pane, not decoration on top of it.
+        color: AppGlass.surfaceFill,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 5, 8, 9),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Running',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: AppFont.medium,
+                      letterSpacing: .06,
+                      color: AppPalette.textFaint,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${connected.length}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: AppFont.medium,
+                    color: AppPalette.textFaint,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Scrolls rather than growing: a machine with twenty connectors must
+          // not push its own column past the pane. `shrinkWrap` so a short list
+          // takes only the height it needs and the panel ends under the last
+          // row instead of running to the bottom of the screen.
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: connected.length,
+              itemBuilder: (context, index) =>
+                  _ConnectedSidebarRow(connector: connected[index]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One running connector: its mark, its name, and whether it is usable.
+class _ConnectedSidebarRow extends StatefulWidget {
+  const _ConnectedSidebarRow({required this.connector});
+
+  final Connector connector;
+
+  @override
+  State<_ConnectedSidebarRow> createState() => _ConnectedSidebarRowState();
+}
+
+class _ConnectedSidebarRowState extends State<_ConnectedSidebarRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final connector = widget.connector;
+    // Amber for signed-in-but-no-tools, which is a real state five connectors
+    // sit in — green there would promise something the agent cannot do yet.
+    final usable = connector.token?.isUsable ?? true;
+    final tint = usable ? AppPalette.online : AppPalette.warn;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => showConnectorDetailsDialog(
+          context,
+          connector,
+          actionBuilder: (close) => ConnectorAction(
+            connector: connector,
+            onSettled: close,
+            labelled: true,
+          ),
+        ),
+        child: AnimatedContainer(
+          duration: AppMotion.hover,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          decoration: BoxDecoration(
+            color: _hovered ? AppSurface.hoverFill : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            children: [
+              ConnectorMark(
+                imageUrl: connector.imageUrl,
+                fallbackIcon: Icons.link_rounded,
+                size: 22,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  connector.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: AppFont.medium,
+                    color: _hovered
+                        ? AppPalette.textPrimary
+                        : AppPalette.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -458,6 +736,15 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           'Connect the assistant to tools outside this computer — a database, '
           'a design tool, a web service.',
       searchHint: 'Search connectors',
+      // Wider than the shared 940, and the sidebar is why. That cap is a
+      // *reading measure* for the screens that are columns of rows; this one is
+      // a grid, so width buys columns rather than line length. At 940 the pane
+      // could not reach the sidebar's 1164px threshold even maximised on a
+      // 1884px display — measured, and the reason the column never appeared.
+      //
+      // 1200 clears it with the grid still at three 312px cards. Not more: past
+      // this the cards stop reading as a grid and start reading as a table.
+      maxContentWidth: 1200,
       // Two ways in, so the toolbar owns the button rather than taking the
       // standard one. They are genuinely different questions — "find me
       // something" and "I already have an address" — and a menu would hide the
@@ -552,13 +839,32 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           // has to have.
           AsyncValue(:final value?) => _ConnectorsBody(
             rows: visible(value),
-            filtered: filtered || _filter != _ConnectorFilter.all,
+            // Straight off the full list, not off `visible` — which drops every
+            // connected row by design, so filtering it here would always be
+            // empty. Untouched by the search box and the category pills too:
+            // this is "what is running", and it stays the same answer whatever
+            // the user happens to be looking for.
+            connected: [
+              for (final connector in value)
+                if (connector.connected) connector,
+            ],
+            // A category counts as narrowing. Without it, picking one that
+            // returns nothing renders "No connectors yet" — the empty state for
+            // a machine with nothing set up — when the truth is that this
+            // subject came back empty.
+            filtered:
+                filtered ||
+                _filter != _ConnectorFilter.all ||
+                ref.watch(
+                  browseConnectorsProvider.select((s) => s.category != null),
+                ),
             // `search()` clears the rows and sets `loading` together, so
             // without this the empty list in between renders as "No matches"
             // — a verdict on a search that has not come back yet.
             searching:
                 _typing ||
                 ref.watch(browseConnectorsProvider.select((s) => s.loading)),
+            showingConnected: _filter == _ConnectorFilter.connected,
             showDirectoryTail: _filter != _ConnectorFilter.connected,
             onLoadMore: () =>
                 ref.read(browseConnectorsProvider.notifier).loadMore(),
@@ -580,26 +886,84 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
 class _ConnectorsBody extends StatelessWidget {
   const _ConnectorsBody({
     required this.rows,
+    required this.connected,
     required this.filtered,
     required this.searching,
+    required this.showingConnected,
     required this.showDirectoryTail,
     required this.onLoadMore,
   });
 
   final List<Connector> rows;
+
+  /// Everything signed in on this machine, for the sidebar. Unfiltered — see
+  /// the note at the call site.
+  final List<Connector> connected;
+
   final bool filtered;
 
   /// The directory has been asked and has not answered. Kept distinct from
   /// [filtered]: one describes the question, the other whether it has a result.
   final bool searching;
+
+  /// The Connected pill is selected. Passed explicitly rather than derived from
+  /// `!showDirectoryTail`: the two happen to agree today, and a screen whose
+  /// empty-state wording depends on a *footer* flag is one rename away from
+  /// telling users the wrong thing.
+  final bool showingConnected;
+
   final bool showDirectoryTail;
 
   /// Fetch the directory's next page. Safe to call repeatedly — see
   /// `ExtensionGrid.onReachedEnd`.
   final VoidCallback onLoadMore;
 
+  /// Below this the sidebar is dropped and the grid gets the whole pane.
+  ///
+  /// **Measured, not guessed.** Three cards at their 300px target plus two 10px
+  /// gaps is 920px of grid; add the 14px scroll gutter, the 216px sidebar and
+  /// the 14px between them and the pane has to be 1164px before the sidebar is
+  /// free. Below that it costs a column — 940px drops the grid from three cards
+  /// to two, and 760px drops it to one, which is a list pretending to be a grid.
+  ///
+  /// So the sidebar is a *reward for a wide window*, not a fixture. Maximised on
+  /// a 1080p display the pane is ~1640px and it always shows; the narrow window
+  /// in the report that prompted this keeps its three columns instead.
+  static const double _sidebarBreakpoint = 1164;
+  static const double _sidebarWidth = 216;
+  static const double _sidebarGap = 14;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Never on the Connected pill: that view *is* the list of connected
+        // connectors, and a sidebar repeating it beside itself is the same
+        // content twice.
+        final showSidebar =
+            !showingConnected &&
+            connected.isNotEmpty &&
+            constraints.maxWidth >= _sidebarBreakpoint;
+
+        final list = _list();
+        if (!showSidebar) return list;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: list),
+            const SizedBox(width: _sidebarGap),
+            SizedBox(
+              width: _sidebarWidth,
+              child: _ConnectedSidebar(connected: connected),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _list() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -617,6 +981,7 @@ class _ConnectorsBody extends StatelessWidget {
             // reads as "nothing matched", not "nothing configured".
             filtered: filtered,
             searching: searching,
+            showingConnected: showingConnected,
             connectors: rows,
             // Paging happens by scrolling, so the request belongs to the thing
             // that scrolls. `loadMore` is a no-op unless there is a further

@@ -27,6 +27,7 @@ class ExtensionScreen extends ConsumerStatefulWidget {
     required this.listBuilder,
     this.filterBar,
     this.onQueryChanged,
+    this.maxContentWidth = 940,
   }) : assert(
          createButton != null || (createLabel != null && onCreate != null),
          'give the screen a create action: a label + handler, or a button',
@@ -35,6 +36,19 @@ class ExtensionScreen extends ConsumerStatefulWidget {
   final String title;
   final String subtitle;
   final String searchHint;
+
+  /// How wide the content column is allowed to grow, whatever the window does.
+  ///
+  /// 940 by default, and that number is a reading measure: Skills, Plugins and
+  /// Models are columns of rows, and a row stretched across a maximised 1900px
+  /// display puts its name and its control at opposite ends of the desk.
+  ///
+  /// Connectors overrides it. That screen is a *grid* of cards rather than a
+  /// column of rows, so the width buys columns instead of line length — and it
+  /// carries a sidebar the cap made unreachable: measured 2026-08-04, a
+  /// maximised 1884px window still handed the pane exactly 940, so the sidebar's
+  /// 1164px threshold could never be met and it simply never appeared.
+  final double maxContentWidth;
 
   /// The raw search text, as it is typed.
   ///
@@ -108,7 +122,7 @@ class _ExtensionScreenState extends ConsumerState<ExtensionScreen> {
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 940),
+          constraints: BoxConstraints(maxWidth: widget.maxContentWidth),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
