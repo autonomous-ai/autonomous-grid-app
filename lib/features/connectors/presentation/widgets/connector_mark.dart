@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -8,6 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/extension_tile_surface.dart';
+import 'mark_backdrop.dart';
 
 /// The service's own logo, or the glyph badge when there isn't one.
 ///
@@ -39,19 +41,7 @@ class ConnectorMark extends StatelessWidget {
     if (imageUrl.isEmpty) {
       return ExtensionIconBadge(icon: fallbackIcon, size: size);
     }
-    return Container(
-      width: size,
-      height: size,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        // A white plate under every logo: these are the services' own marks,
-        // each with its own backdrop, and half of them are dark-on-transparent
-        // — on the dark card fill they would disappear.
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(padding: const EdgeInsets.all(4), child: _image()),
-    );
+    return _Plate(url: imageUrl, size: size, child: _image());
   }
 
   /// The logo, decoded by whatever can read this format.
@@ -120,6 +110,109 @@ class ConnectorMark extends StatelessWidget {
       '.bmp',
       '.ico',
     ].any(path.endsWith);
+  }
+}
+
+/// The ground a logo is drawn on, chosen from the logo itself.
+///
+/// **The plate is not decoration — it is what makes the logo legible**, and
+/// which plate depends on the ink. See [MarkBackdrop] for the measurements: the
+/// directory's marks split evenly between dark ink that needs a light ground and
+/// light ink that a white plate erases. A fixed white square served half of them
+/// and washed out the rest, which is the sameness the redesign was asked to fix.
+///
+/// Rebuilds itself once the tone is known. Until then it paints the light plate,
+/// which is the safe half of the choice — nothing is ever invisible on it, so
+/// the first frame is never wrong in the way that matters, only plainer.
+class _Plate extends StatefulWidget {
+  const _Plate({required this.url, required this.size, required this.child});
+
+  final String url;
+  final double size;
+  final Widget child;
+
+  @override
+  State<_Plate> createState() => _PlateState();
+}
+
+class _PlateState extends State<_Plate> {
+  MarkTone? _tone;
+
+  @override
+  void initState() {
+    super.initState();
+    _tone = MarkBackdrop.cached(widget.url);
+    // Subscribed only while the answer is unknown. Once a tone lands it never
+    // changes — it is a property of the bytes — so a resolved plate has nothing
+    // left to listen for and unsubscribes itself.
+    if (_tone == null) MarkBackdrop.resolved.addListener(_onResolved);
+  }
+
+  @override
+  void didUpdateWidget(_Plate old) {
+    super.didUpdateWidget(old);
+    if (old.url == widget.url) return;
+    _tone = MarkBackdrop.cached(widget.url);
+    if (_tone == null) {
+      MarkBackdrop.resolved.addListener(_onResolved);
+    } else {
+      MarkBackdrop.resolved.removeListener(_onResolved);
+    }
+  }
+
+  @override
+  void dispose() {
+    MarkBackdrop.resolved.removeListener(_onResolved);
+    super.dispose();
+  }
+
+  /// A tone was decoded somewhere — check whether it was this one.
+  ///
+  /// **Nothing is fetched here.** `_SniffedMark` below is already downloading
+  /// this exact URL to draw it, and publishes the tone from those same bytes;
+  /// a second request would double every image a grid loads. This only waits
+  /// for the answer.
+  void _onResolved() {
+    final tone = MarkBackdrop.cached(widget.url);
+    if (tone == null || !mounted) return;
+    MarkBackdrop.resolved.removeListener(_onResolved);
+    setState(() => _tone = tone);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    // Light ink gets a dark plate — the Claude Desktop look, and the only ground
+    // a pale logo is legible on.
+    //
+    // **A fixed colour, not a theme token, and that is measured.** The obvious
+    // choice was `AppCard.inset`, the app's recessed surface. It resolves to
+    // `#181818` in dark, where a pale mark reads at 12.95:1 — and to `#F7F7F5`
+    // in light, where the same mark drops to **1.28:1** and disappears. The
+    // plate is not a surface of the app here; it is the logo's own backdrop, and
+    // it has to stay dark whichever theme the window is in.
+    final light = _tone == MarkTone.light;
+    return Container(
+      width: widget.size,
+      height: widget.size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        // `#2A2A2A` chosen by measurement, not taste: a pale mark reads at
+        // 10.47:1 on it, and of the dark candidates it is the one that stays
+        // most distinct from the dark card behind it (1.16:1, where `#202020`
+        // is 1.02 and vanishes into it). It is also the app's own menu-panel
+        // fill, so the value is not a new one in the codebase.
+        color: light ? const Color(0xFF2A2A2A) : Colors.white,
+        borderRadius: BorderRadius.circular(widget.size * 0.3),
+      ),
+      // Light marks are usually drawn edge to edge by their author, dark ones
+      // usually come with their own margin. A little more room for the former
+      // keeps both looking like the same size.
+      child: Padding(
+        padding: EdgeInsets.all(light ? 3 : 4),
+        child: widget.child,
+      ),
+    );
   }
 }
 
@@ -195,6 +288,11 @@ class _SniffedMarkState extends State<_SniffedMark> {
     }
 
     _cache[widget.url] = bytes;
+    // Hand the same bytes to the plate rather than letting it fetch them again.
+    // Both widgets want this one URL, and without this a grid of fifty marks
+    // makes a hundred requests — `MarkBackdrop` fetches only when nobody has
+    // already given it the bytes.
+    if (bytes != null) unawaited(MarkBackdrop.toneOf(widget.url, bytes));
     if (!mounted) return;
     setState(() {
       _bytes = bytes;
