@@ -95,6 +95,13 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
   /// stop it without waiting out the interval.
   bool _cancelled = false;
 
+  /// The loopback listener for a path-A sign-in that is currently waiting.
+  ///
+  /// Held only so [cancel] can end the wait — see the note there. Null on the
+  /// gateway path, which polls on a timer this flag already interrupts, and
+  /// cleared as soon as the direct path is done with its socket.
+  OAuthLoopbackListener? _listener;
+
   @override
   ConnectorLinkState build() => const ConnectorLinkState();
 
@@ -342,6 +349,9 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
       );
       return "Couldn't open a local port to finish the sign-in: $error";
     }
+    // Published before the first await below, so a Cancel arriving at any point
+    // from here on finds something to abort.
+    _listener = listener;
 
     try {
       final (client, registerError) = await oauth.register(
@@ -394,6 +404,12 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
       if (_cancelled) return null;
 
       switch (result) {
+        case LoopbackAborted():
+          // Say nothing on the row. The user pressed Cancel; `cancel()` has
+          // already cleared the state, and settling a message here would put a
+          // note back on a row they just finished with.
+          log.info('connectors', 'Sign-in for "$connector" cancelled here');
+          return null;
         case LoopbackTimeout():
           log.warn('connectors', 'No callback arrived for "$connector"');
           return _settle(connector, 'The sign-in timed out. Try again.');
@@ -456,6 +472,10 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
           return _store(token);
       }
     } finally {
+      // Cleared first: a Cancel landing after this point has nothing left to
+      // abort, and leaving a closed listener published would have `cancel`
+      // reach into a finished sign-in.
+      if (identical(_listener, listener)) _listener = null;
       // Whatever happened, the socket goes away. `waitForCallback` closes it on
       // its own paths; this covers the ones that never got there.
       await listener.close();
@@ -867,8 +887,15 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
 
   /// Stop waiting. The user may still finish in the browser; that result simply
   /// goes uncollected, and the next Connect starts a fresh authorization.
+  ///
+  /// **Aborts the loopback wait too, and that is the whole fix.** Clearing the
+  /// state alone made the row *look* cancelled — the Cancel button belongs to
+  /// `isPending` — while `connectDirect` stayed parked on `waitForCallback` for
+  /// up to five minutes. The row fell back to `_busy`, which only the connect
+  /// path clears, and rendered a bare spinner with no button: the reported bug.
   void cancel() {
     _cancelled = true;
+    _listener?.abort();
     state = const ConnectorLinkState();
   }
 

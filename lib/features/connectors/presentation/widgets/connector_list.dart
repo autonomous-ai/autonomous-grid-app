@@ -557,8 +557,20 @@ class _ConnectorActionState extends ConsumerState<ConnectorAction> {
       busy: _busy,
       labelled: widget.labelled,
       onConnect: _connect,
-      onCancel: () =>
-          ref.read(connectorLinkControllerProvider.notifier).cancel(),
+      // Drop `_busy` here as well as telling the controller to stop.
+      //
+      // Two flags decide this row and only one of them is the controller's.
+      // `cancel()` clears `isPending`, which takes the Cancel button away, and
+      // `_busy` then rendered a bare spinner — no button, no way out — until
+      // the awaited connect finally returned. Aborting the loopback wait makes
+      // that return quickly now, but "quickly" is still a round trip; clearing
+      // the local flag in the same gesture is what makes the row answer the
+      // press immediately. `_connect` sets it false again when it returns,
+      // which is a no-op by then.
+      onCancel: () {
+        ref.read(connectorLinkControllerProvider.notifier).cancel();
+        if (mounted) setState(() => _busy = false);
+      },
       onDisconnect: _disconnect,
     );
   }

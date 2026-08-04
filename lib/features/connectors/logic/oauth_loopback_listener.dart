@@ -45,6 +45,15 @@ class LoopbackTimeout extends LoopbackResult {
   const LoopbackTimeout();
 }
 
+/// The app stopped waiting — the user pressed Cancel.
+///
+/// Distinct from [LoopbackTimeout] even though both mean "no callback": a
+/// timeout is worth telling the user about ("the sign-in timed out, try again")
+/// and this is not, because they are the one who ended it.
+class LoopbackAborted extends LoopbackResult {
+  const LoopbackAborted();
+}
+
 /// A one-shot HTTP server on `127.0.0.1` that catches a single OAuth callback.
 ///
 /// **Used by path A only** (the app as its own OAuth client, via dynamic client
@@ -72,6 +81,10 @@ class OAuthLoopbackListener {
 
   /// One socket per loopback family, on the same port. See [bind].
   final List<HttpServer> _servers;
+
+  /// The wait currently in progress, so [abort] can end it. Null before
+  /// [waitForCallback] is called and after it returns.
+  Completer<LoopbackResult>? _pending;
 
   int get port => _servers.first.port;
 
@@ -181,6 +194,11 @@ class OAuthLoopbackListener {
     Duration timeout = const Duration(minutes: 5),
   }) async {
     final completer = Completer<LoopbackResult>();
+    // Held so [abort] can end this wait from outside. Closing the sockets is
+    // not enough on its own: an `HttpServer` stream that closes simply stops
+    // delivering requests, and this completer would sit unresolved until the
+    // timer fires — which is the five minutes the bug below describes.
+    _pending = completer;
 
     final timer = Timer(timeout, () {
       if (!completer.isCompleted) completer.complete(const LoopbackTimeout());
@@ -217,11 +235,28 @@ class OAuthLoopbackListener {
       return await completer.future;
     } finally {
       timer.cancel();
+      _pending = null;
       for (final subscription in subscriptions) {
         await subscription.cancel();
       }
       await close();
     }
+  }
+
+  /// End a wait in progress with [LoopbackAborted], now.
+  ///
+  /// **Why this exists.** Pressing Cancel used to clear the controller's state
+  /// and nothing else, so the row lost its Cancel button while the `await` on
+  /// [waitForCallback] kept running — leaving a spinner with no way out until
+  /// the five-minute timeout expired. The wait has to actually end, and only
+  /// something holding the completer can end it.
+  ///
+  /// Safe to call when nothing is waiting, and safe to call twice: the guard
+  /// covers a Cancel that races the browser coming back.
+  void abort() {
+    final pending = _pending;
+    if (pending == null || pending.isCompleted) return;
+    pending.complete(const LoopbackAborted());
   }
 
   /// Stop listening. Safe to call more than once — cancelling a pending link
