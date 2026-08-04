@@ -201,8 +201,7 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
 /// machine in the room can be told apart.
 final playgroundModelsProvider =
     Provider.autoDispose<List<PlaygroundModelOption>>((ref) {
-      final ids =
-          ref.watch(networkModelsProvider).asData?.value ?? const <String>[];
+      final ids = ref.watch(servedModelIdsProvider);
       final nodes =
           ref.watch(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[];
       return playgroundOptionsFrom(

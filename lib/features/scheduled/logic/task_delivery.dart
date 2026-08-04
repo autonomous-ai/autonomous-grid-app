@@ -192,9 +192,11 @@ class TaskDeliveryController extends Notifier<List<String>> {
   /// clock would be a poll nobody asked for. An answer that hasn't loaded comes
   /// back empty, which [autoFallbackTargets] reads as "don't know" rather than
   /// as "every model is gone".
-  Set<String> _served() =>
-      (ref.read(networkModelsProvider).asData?.value ?? const <String>[])
-          .toSet();
+  ///
+  /// Through [servedModelIdsProvider] so that "hasn't loaded" means the first
+  /// answer only: a tick that landed while the list was being re-read used to
+  /// see nothing served and retarget a job that was fine.
+  Set<String> _served() => ref.read(servedModelIdsProvider).toSet();
 
   /// Deliver [job]'s results newer than [since] into its chat, homing it under
   /// [projectId] when the task belongs to a project. Returns the time of the

@@ -62,3 +62,20 @@ final networkModelsProvider = FutureProvider.autoDispose<List<String>>((
   if (network == null) return const [];
   return ref.watch(networkModelsForProvider(network.networkId).future);
 });
+
+/// What the selected grid last said it serves — the previous answer while a
+/// re-read is in flight, empty only until the first one lands.
+///
+/// **Everything that wants the list rather than the loading state reads this**,
+/// never `ref.watch(networkModelsProvider).asData`. `asData` is null on every
+/// refreshing frame, and this list is re-read on purpose — opening the chat's
+/// model picker invalidates it — so reading it through `asData` blanked the
+/// options for the length of a round trip. Long enough for the chat to decide
+/// the grid had nothing to answer with and swap the conversation for "No engine
+/// is running yet", over a grid whose picker was listing a dozen models.
+///
+/// The same lesson `gridOverviewSnapshot` carries for the overview, and it
+/// arrived the same way.
+final servedModelIdsProvider = Provider.autoDispose<List<String>>(
+  (ref) => ref.watch(networkModelsProvider).value ?? const [],
+);

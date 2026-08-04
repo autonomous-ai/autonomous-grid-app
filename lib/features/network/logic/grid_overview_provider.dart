@@ -103,8 +103,7 @@ final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
   final source = rich.isNotEmpty
       ? rich
       : [
-          for (final id
-              in ref.watch(networkModelsProvider).asData?.value ?? const [])
+          for (final id in ref.watch(servedModelIdsProvider))
             OverviewModel(id: id),
         ];
   return [
