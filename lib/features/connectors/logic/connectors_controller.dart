@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/mcp_server.dart';
+import 'connected_catalog_lookup.dart';
 import 'connector.dart';
 import 'connector_catalog.dart';
 import '../../agents/logic/connector_token.dart';
@@ -79,9 +80,15 @@ final connectorsProvider = FutureProvider<List<Connector>>((ref) async {
   // screen. Entries are recalled only to describe rows that exist for another
   // reason: a configured server, or a credential held here.
   final configured = {for (final server in servers) server.name};
+  // Entries fetched one by one for connectors the directory's pages have never
+  // shown. See `MissingCatalogEntries`: the catalog is a page of search
+  // results, so a connector that no longer ranks has no entry to join to at
+  // all — measured 2026-08-04, three of eleven signed-in connectors on this
+  // machine — and drew the generic glyph with no description under it.
+  final fetched = ref.watch(missingCatalogEntriesProvider).value ?? const {};
   final catalog = <ConnectorCatalogEntry>[
     ...page,
-    for (final entry in remembered.values)
+    for (final entry in [...remembered.values, ...fetched.values])
       if (configured.contains(entry.code) &&
           !page.any((p) => p.code == entry.code))
         entry,
@@ -92,6 +99,21 @@ final connectorsProvider = FutureProvider<List<Connector>>((ref) async {
   final tokens =
       ref.watch(connectorTokensProvider).asData?.value ??
       const <String, ConnectorToken>{};
+
+  // Ask for whatever is still unaccounted for, after this build rather than
+  // during it: `fill` writes to a provider, and a provider that writes to
+  // another while building throws. The fetch publishes and this rebuilds once
+  // more with the entries in hand.
+  final describable = {
+    for (final entry in page) entry.code,
+    ...remembered.keys,
+    ...fetched.keys,
+  };
+  Future.microtask(
+    () => ref
+        .read(missingCatalogEntriesProvider.notifier)
+        .fill(configured.union(tokens.keys.toSet()), describable),
+  );
   // No merge left to do: `connectorCatalogProvider` *is* the public directory
   // now, and it is the only source of offers. The gateway's curated rows and the
   // bundled self-serve list were both removed (Tony, 2026-08-03).
