@@ -74,6 +74,7 @@ class DeleteNetworkController extends Notifier<DeleteNetworkState> {
     final logId = log.begin(
       CliCallKind.http,
       'DELETE ${ManagedNetworkClient.networkEndpoint(apiUrl, networkId)}',
+      detail: const CommandDetail(authorized: true),
     );
     final (ok, error) = await ref.read(managedNetworkDeleteProvider)(
       apiUrl: apiUrl,

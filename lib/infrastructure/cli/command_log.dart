@@ -20,21 +20,22 @@ enum CliCallStatus { running, success, failed }
 /// said out loud rather than trailing off, so nobody reads a cut body as whole.
 const int kMaxLoggedBody = 8000;
 
+/// The tail [clipLogBody] leaves on a body it had to cut. Read back by
+/// [isClippedBody], so a copied `curl` can warn that its `-d` is not the whole
+/// payload rather than quietly sending a truncated one.
+const String kClippedBodyNote = 'more characters not kept';
+
 /// [body] cut to [kMaxLoggedBody] characters, with a line naming what was left
 /// out. Null in, null out.
 String? clipLogBody(String? body) {
   if (body == null || body.length <= kMaxLoggedBody) return body;
   final dropped = body.length - kMaxLoggedBody;
   return '${body.substring(0, kMaxLoggedBody)}\n'
-      '… $dropped more characters not kept';
+      '… $dropped $kClippedBodyNote';
 }
 
-/// The value for an `env` parameter: the **names** of the overrides that were
-/// set, never their values. A value here is typically an API key — carrying it
-/// through the environment instead of argv is the whole point of that channel,
-/// and a debug panel that printed it would undo it.
-String envParam(Map<String, String> environment) =>
-    '${environment.keys.join(', ')} — values hidden';
+/// Whether [body] is one [clipLogBody] shortened.
+bool isClippedBody(String body) => body.endsWith(kClippedBodyNote);
 
 /// Everything the one-line [GridCommandLog.command] leaves out, shown when a
 /// row in the Debug tab is opened.
@@ -42,34 +43,51 @@ String envParam(Map<String, String> environment) =>
 /// The list has to stay scannable, so a row is one line — and one line is
 /// exactly what cannot hold the two things a failure is usually about: the
 /// arguments as they were really passed, and the body that went over the wire.
-/// Both live here instead.
+/// Both live here instead, in the form a terminal would take them: the argv is
+/// whole (program included) and the body is the bytes that were sent, so the
+/// panel can hand back a command that runs.
 ///
-/// Never carries a secret: env values are dropped at the call site (only their
-/// names travel, via [envParam]) and request headers — where the bearer key
-/// sits — are not recorded at all.
+/// Never carries a secret: of the environment only [envKeys] travels, and
+/// request headers — where the bearer key sits — are not recorded at all.
 class CommandDetail {
   const CommandDetail({
     this.args = const [],
     this.params = const {},
+    this.envKeys = const [],
     this.requestBody,
     this.responseBody,
+    this.authorized = false,
   });
 
   /// Detail for a call whose request body is [body], encoded exactly the way it
   /// was sent. One place does the encoding so no call site hand-writes JSON that
   /// then drifts from the real payload.
-  CommandDetail.json(Map<String, dynamic> body, {this.params = const {}})
-    : args = const [],
-      requestBody = jsonEncode(body),
-      responseBody = null;
+  ///
+  /// [authorized] records *that* the request carried a bearer token, never
+  /// which — enough for a copied `curl` to include the header with a shell
+  /// variable in place of the key.
+  CommandDetail.json(
+    Map<String, dynamic> body, {
+    this.params = const {},
+    this.authorized = false,
+  }) : args = const [],
+       envKeys = const [],
+       requestBody = jsonEncode(body),
+       responseBody = null;
 
-  /// One entry per argv token, so an argument containing spaces reads as the
-  /// single argument it was and not as two words of a joined line.
+  /// The full argv, program first (`['grid', '--remote', 'sync']`) — one entry
+  /// per token, so an argument containing spaces reads as the single argument
+  /// it was and can be re-quoted when the command is copied.
   final List<String> args;
 
-  /// Named inputs the summary line doesn't spell out — the model a turn ran, the
-  /// folder it opened in, the names of the env vars that carried its secrets.
+  /// Named inputs the summary line doesn't spell out — the folder a turn opened
+  /// in, a URL's query string.
   final Map<String, String> params;
+
+  /// Names of the environment overrides the command was given. **Names only**: a
+  /// value here is typically an API key, and carrying it through the environment
+  /// instead of argv is the whole point of that channel.
+  final List<String> envKeys;
 
   /// The request payload as sent.
   final String? requestBody;
@@ -78,28 +96,38 @@ class CommandDetail {
   /// stream, say. Filled in at [CommandLogNotifier.finish].
   final String? responseBody;
 
+  /// Whether the request carried an `Authorization` header.
+  final bool authorized;
+
   /// Whether there is anything to show beyond the summary line.
   bool get isEmpty =>
       args.isEmpty &&
       params.isEmpty &&
+      envKeys.isEmpty &&
       requestBody == null &&
       responseBody == null;
 
   /// A copy with both bodies cut to [kMaxLoggedBody]. Applied centrally by
   /// [CommandLogNotifier] so no call site can forget it.
-  CommandDetail clipped() => CommandDetail(
-    args: args,
-    params: params,
+  CommandDetail clipped() => _copy(
     requestBody: clipLogBody(requestBody),
     responseBody: clipLogBody(responseBody),
   );
 
   /// The same detail with [body] recorded as what came back.
-  CommandDetail withResponse(String body) => CommandDetail(
+  CommandDetail withResponse(String body) =>
+      _copy(requestBody: requestBody, responseBody: clipLogBody(body));
+
+  CommandDetail _copy({
+    required String? requestBody,
+    required String? responseBody,
+  }) => CommandDetail(
     args: args,
     params: params,
+    envKeys: envKeys,
     requestBody: requestBody,
-    responseBody: clipLogBody(body),
+    responseBody: responseBody,
+    authorized: authorized,
   );
 }
 

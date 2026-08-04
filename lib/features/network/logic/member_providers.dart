@@ -68,6 +68,7 @@ final networkMembersProvider = FutureProvider.autoDispose
       final logId = log.begin(
         CliCallKind.http,
         'GET ${ManagedNetworkClient.membersEndpoint(apiUrl, networkId)}',
+        detail: const CommandDetail(authorized: true),
       );
       final (members, error) = await ref.read(memberListFnProvider)(
         apiUrl: apiUrl,
@@ -114,6 +115,7 @@ final addMemberActionProvider = Provider<AddMemberAction>((ref) {
       'POST ${ManagedNetworkClient.membersEndpoint(apiUrl, networkId)}',
       detail: CommandDetail.json(
         ManagedNetworkClient.addMemberBody(email, roles),
+        authorized: true,
       ),
     );
     final (member, error) = await ref.read(memberAddFnProvider)(
@@ -137,6 +139,7 @@ final removeMemberActionProvider = Provider<RemoveMemberAction>((ref) {
     final logId = log.begin(
       CliCallKind.http,
       'DELETE ${ManagedNetworkClient.memberEndpoint(apiUrl, networkId, email)}',
+      detail: const CommandDetail(authorized: true),
     );
     final (ok, error) = await ref.read(memberRemoveFnProvider)(
       apiUrl: apiUrl,

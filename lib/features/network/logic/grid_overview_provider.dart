@@ -33,6 +33,7 @@ final gridOverviewForProvider = FutureProvider.autoDispose
       final id = log.begin(
         CliCallKind.http,
         'GET ${network.relayBaseUrl}/grid/overview',
+        detail: CommandDetail(authorized: network.relayApiKey.isNotEmpty),
       );
       try {
         final overview = await client.overview(

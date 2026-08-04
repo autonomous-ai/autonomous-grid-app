@@ -238,6 +238,8 @@ class DefaultChatSender implements ChatSender {
       'POST $endpoint',
       detail: CommandDetail.json(
         chatCompletionsPayload(model: model, messages: messages),
+        // A local engine is reached without one; the relay always carries it.
+        authorized: network.relayApiKey.isNotEmpty,
       ),
     );
 
@@ -290,6 +292,7 @@ class DefaultChatSender implements ChatSender {
           input: input,
           instructions: instructions,
         ),
+        authorized: network.relayApiKey.isNotEmpty,
       ),
     );
 
@@ -333,7 +336,10 @@ class DefaultChatSender implements ChatSender {
     final id = log.begin(
       CliCallKind.http,
       'POST $url',
-      detail: CommandDetail.json(payload),
+      detail: CommandDetail.json(
+        payload,
+        authorized: network.relayApiKey.isNotEmpty,
+      ),
     );
 
     // Show a generating bubble right away, before the first progress event.

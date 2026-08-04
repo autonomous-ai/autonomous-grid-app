@@ -193,4 +193,3 @@ Future<void> writeSkillFolder(Directory dir, GridSkillFiles skill) async {
     await file.writeAsString(entry.value);
   }
 }
-

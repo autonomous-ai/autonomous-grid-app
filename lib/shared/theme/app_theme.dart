@@ -857,6 +857,17 @@ abstract final class AppControl {
   /// louder tells that a desktop app was drawn to phone conventions.
   static const double menuRadius = 6;
 
+  /// The tallest a menu panel ever draws, whatever it lists — `appMenuStyle`
+  /// caps every menu here.
+  ///
+  /// A token rather than a number inside that style, because the menus that
+  /// open *upward* have to place themselves by summing the height they are
+  /// about to take: a caller that predicts 310 for a panel the style then draws
+  /// at 240 lifts it 70px clear of its button. That is what floated the chat
+  /// model list off the composer and over the conversation.
+  /// [anchoredMenuPosition] clamps to this by default.
+  static const double menuMaxHeight = 240;
+
   /// The label. 13pt medium is the macOS control font — Apple sets a push
   /// button's label at medium, not semibold; at 13pt the extra step reads as a
   /// button trying to be a heading.

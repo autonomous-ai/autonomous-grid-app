@@ -33,6 +33,7 @@ final networkModelsForProvider = FutureProvider.autoDispose
       final id = log.begin(
         CliCallKind.http,
         'GET ${network.relayBaseUrl}/models',
+        detail: CommandDetail(authorized: network.relayApiKey.isNotEmpty),
       );
       try {
         final ids = await client.models(

@@ -272,7 +272,12 @@ MenuStyle appMenuStyle() {
     // their hover highlight reads as an inset pill; adding side padding here
     // would double it.
     padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 5)),
-    maximumSize: const WidgetStatePropertyAll(Size.fromHeight(240)),
+    // The cap lives in [AppControl] because the upward-opening menus need to
+    // predict it: a panel placed by a taller estimate than it draws floats off
+    // its button.
+    maximumSize: const WidgetStatePropertyAll(
+      Size.fromHeight(AppControl.menuMaxHeight),
+    ),
     shape: WidgetStatePropertyAll(
       RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),

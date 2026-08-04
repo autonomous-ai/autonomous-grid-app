@@ -158,14 +158,30 @@ void main() {
       expect(clipLogBody(null), isNull);
     });
 
-    test('names environment variables without disclosing their values', () {
-      expect(
-        envParam(const {
-          'OPENAI_API_KEY': 'sk-secret',
-          'GRID_BIN': '/tmp/grid',
-        }),
-        'OPENAI_API_KEY, GRID_BIN — values hidden',
+    test('a clipped body owns up to it, so a copy can say so too', () {
+      expect(isClippedBody(clipLogBody('x' * (kMaxLoggedBody + 1))!), isTrue);
+      expect(isClippedBody('{"a":1}'), isFalse);
+    });
+
+    test('carries the argv, the env names and the bearer flag through a '
+        'finish', () async {
+      final id = log.begin(
+        CliCallKind.start,
+        'grid join --api openai',
+        detail: const CommandDetail(
+          args: ['grid', 'join', '--api', 'openai'],
+          envKeys: ['OPENAI_API_KEY'],
+          authorized: true,
+        ),
       );
+      log.finish(id, exitCode: 0, responseBody: 'ok');
+      await pumpEventQueue();
+
+      final detail = container.read(commandLogProvider).single.detail;
+      expect(detail.args, ['grid', 'join', '--api', 'openai']);
+      expect(detail.envKeys, ['OPENAI_API_KEY']);
+      expect(detail.authorized, isTrue);
+      expect(detail.responseBody, 'ok');
     });
   });
 }

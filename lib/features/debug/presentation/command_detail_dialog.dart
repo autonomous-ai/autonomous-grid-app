@@ -83,9 +83,11 @@ class _DetailDialog extends ConsumerWidget {
         ),
       ),
       actions: [
-        // The whole entry as text, because this is what gets pasted into a bug
-        // report — the panels above each copy only their own block.
-        CopyButton(value: logAsText(log), label: 'Copy all'),
+        // Not a transcript of the panel: what a terminal will take. A request
+        // copies as the `curl` that repeats it, a spawned process as its own
+        // command line — with how it ended on comment lines above, so the same
+        // copy still tells a bug report what happened.
+        CopyButton(value: logAsCommand(log), label: copyActionLabel(log)),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Close'),
@@ -161,8 +163,14 @@ class _Body extends StatelessWidget {
     AppTheme.watch(context);
     final detail = log.detail;
     // The URL's own query string belongs with the recorded parameters: to
-    // whoever is reading, `?json=true` is a parameter like any other.
-    final params = {...logQueryParams(log), ...detail.params};
+    // whoever is reading, `?json=true` is a parameter like any other. The env
+    // row is built from the names here rather than stored as a sentence, so the
+    // copied command can turn them back into `KEY="$KEY"`.
+    final params = {
+      ...logQueryParams(log),
+      ...detail.params,
+      if (detail.envKeys.isNotEmpty) 'env': envNamesLabel(detail.envKeys),
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

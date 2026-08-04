@@ -35,8 +35,10 @@ void main() {
     await pumpEventQueue();
 
     // The joined line can't say whether that was one argument or three; the
-    // recorded argv can, which is the point of keeping it.
+    // recorded argv can, which is the point of keeping it. `grid` leads it so
+    // the Debug tab can hand the whole thing back as a command that runs.
     expect(entry().detail.args, [
+      'grid',
       'network',
       'rename',
       '--name',
@@ -60,18 +62,19 @@ void main() {
       await pumpEventQueue();
 
       final detail = entry().detail;
-      expect(detail.params['env'], contains('OPENAI_API_KEY'));
-      expect(detail.params['env'], isNot(contains('sk-do-not-log-me')));
+      expect(detail.envKeys, ['OPENAI_API_KEY']);
+      // The whole entry, however it is later formatted, must not hold the key.
+      expect('${detail.envKeys}${detail.params}', isNot(contains('sk-do-not')));
     },
   );
 
-  test('leaves the env parameter off when a command sets none', () async {
+  test('records no environment names when a command sets none', () async {
     inner.stubStart(['sync'], lines: const []);
 
     final process = await service.start(['sync']);
     await process.exitCode;
     await pumpEventQueue();
 
-    expect(entry().detail.params, isEmpty);
+    expect(entry().detail.envKeys, isEmpty);
   });
 }

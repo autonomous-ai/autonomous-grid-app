@@ -90,6 +90,7 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
       'POST ${ManagedNetworkClient.endpoint(apiUrl)}',
       detail: CommandDetail.json(
         ManagedNetworkClient.createBody(trimmed, type),
+        authorized: true,
       ),
     );
     final (network, error) = await create(

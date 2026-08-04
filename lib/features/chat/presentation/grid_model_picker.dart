@@ -32,14 +32,24 @@ const _rowIconSlot = 16.0;
 const _rowIconGap = 9.0;
 final _rowRadius = BorderRadius.circular(AppControl.radius);
 
-/// The panel's fixed width, and what the list can grow to before it scrolls.
+/// The panel's fixed width.
 const _menuWidth = 340.0;
-const _menuMaxListHeight = 300.0;
 
 /// The panel's own vertical padding — [appMenuStyle]'s `vertical: 5`. Read off
 /// that style rather than guessed: the two drifting apart is what pushes a menu
 /// off its button.
 const _menuPadding = 5.0;
+
+/// What the list can grow to before it scrolls: the whole panel, less its own
+/// padding.
+///
+/// Derived, not chosen. It used to be a flat 300 while `appMenuStyle` caps the
+/// panel at [AppControl.menuMaxHeight] (240) — so a grid serving more than six
+/// models built a 310px list inside a 240px panel, which left the menu *twice*
+/// scrollable (the panel's own scroll view over this one) and, worse, made the
+/// height this picker predicts to place itself 70px taller than what draws: the
+/// list opened hanging in the middle of the conversation instead of on the pill.
+const _menuMaxListHeight = AppControl.menuMaxHeight - _menuPadding * 2;
 
 /// What one option row measures, measured with `getRect` rather than derived:
 /// text at 13/1.2 rounds up to a 16px line box inside `vertical: 8`, and the
@@ -62,6 +72,9 @@ const _loadingRowCount = 3;
 /// so it follows if the row's padding ever changes. Unlike the other menus in
 /// the app this height can't be a constant: the list grows with what the grid
 /// serves, and a stale constant is exactly what floats a menu off its anchor.
+///
+/// Capped by [_menuMaxListHeight] at exactly what the panel can draw, so a grid
+/// serving twenty models places the same as one serving three.
 Size _menuSize(int rows) {
   final list = (_optionRowHeight * rows + _listPadding * 2).clamp(
     0.0,

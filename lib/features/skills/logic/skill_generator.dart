@@ -52,6 +52,7 @@ class SkillGenerator {
       'POST ${target.endpoint}',
       detail: CommandDetail.json(
         chatCompletionsPayload(model: target.model, messages: messages),
+        authorized: target.apiKey.isNotEmpty,
       ),
     );
     final (reply, error) = await _ref

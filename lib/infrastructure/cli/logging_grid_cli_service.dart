@@ -17,12 +17,16 @@ class LoggingGridCliService implements GridCliService {
   /// The Debug-list summary: the line a user would have typed themselves.
   static String _line(List<String> args) => 'grid ${args.join(' ')}';
 
+  /// The argv as a shell sees it, program first — what the Debug tab hands back
+  /// when the command is copied.
+  static List<String> _argv(List<String> args) => ['grid', ...args];
+
   @override
   Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     final id = _log.begin(
       CliCallKind.run,
       _line(args),
-      detail: CommandDetail(args: args),
+      detail: CommandDetail(args: _argv(args)),
     );
     try {
       final result = await _inner.run(args, timeout: timeout);
@@ -45,15 +49,13 @@ class LoggingGridCliService implements GridCliService {
   }) async {
     // Log [args] in full, and of [environment] only the variable *names* — a
     // value there may be a secret (e.g. an API-engine key), which is the whole
-    // point of the env channel. See [envParam].
+    // point of the env channel. See [CommandDetail.envKeys].
     final id = _log.begin(
       CliCallKind.start,
       _line(args),
       detail: CommandDetail(
-        args: args,
-        params: environment == null || environment.isEmpty
-            ? const {}
-            : {'env': envParam(environment)},
+        args: _argv(args),
+        envKeys: environment?.keys.toList(growable: false) ?? const [],
       ),
     );
     try {
@@ -77,7 +79,7 @@ class LoggingGridCliService implements GridCliService {
     final id = _log.begin(
       CliCallKind.pull,
       _line(args),
-      detail: CommandDetail(args: args),
+      detail: CommandDetail(args: _argv(args)),
     );
     var finished = false;
     void finish({int? exitCode, String? error}) {
