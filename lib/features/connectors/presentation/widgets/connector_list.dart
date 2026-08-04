@@ -288,7 +288,14 @@ class _CatalogCard extends ConsumerWidget {
           ? const ExtensionTag(label: 'Signed in')
           : null,
       note: note,
-      popularity: _UseCount.of(connector),
+      // **Dropped while a sign-in is pending**, because the name row cannot
+      // afford all three. Measured at a 320px card: with the star present, a
+      // spinner and a Cancel button leave the name 53px — "Instagram" and
+      // "Google Sheets" both render as an ellipsis, and at 260px the name is
+      // squeezed to nothing at all. The star is standing information that will
+      // be back the moment this resolves; the name is how the user knows which
+      // card is asking them to finish in the browser.
+      popularity: link.isPending(connector.id) ? null : _UseCount.of(connector),
       blurb: _cardBlurb(connector),
       actions: ConnectorAction(connector: connector),
       onTap: () => showConnectorDetailsDialog(
@@ -580,10 +587,13 @@ class _CatalogAction extends StatelessWidget {
     // the user may have closed the tab, and a control that only spins would
     // strand them.
     //
-    // A ✕ rather than the word, now that this sits in a card corner: the card's
-    // own body already reads "Finish in your browser, then come back here", so
-    // the control does not have to carry the explanation as well — and a
-    // text button in the corner squeezed the name beside it to an ellipsis.
+    // **The word, not a ✕.** This was a ✕ to keep the corner narrow, and that
+    // was the wrong trade: the identical glyph, at the identical size, is
+    // *Remove* on a connected card a few rows down. Two unrelated actions —
+    // "stop waiting for this sign-in" and "throw away a working credential" —
+    // rendered the same, and the only thing telling them apart was a tooltip
+    // nobody hovers mid-sign-in. A word costs ~40px and removes the ambiguity
+    // outright.
     if (waiting) {
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -592,13 +602,8 @@ class _CatalogAction extends StatelessWidget {
           // both themes, under the 3:1 floor a non-text element needs to be
           // seen at all.
           AppSpinner(size: SpinnerSize.small, color: AppPalette.textSecondary),
-          const SizedBox(width: 4),
-          AppIconButton(
-            icon: Icons.close_rounded,
-            size: 16,
-            tooltip: 'Cancel sign-in',
-            onPressed: onCancel,
-          ),
+          const SizedBox(width: 6),
+          _CancelButton(onPressed: onCancel),
         ],
       );
     }
@@ -646,6 +651,72 @@ class _CatalogAction extends StatelessWidget {
       return FilledButton(onPressed: onConnect, child: const Text('Connect'));
     }
     return _AddButton(onPressed: onConnect);
+  }
+}
+
+/// The way out of a sign-in that is still waiting on the browser.
+///
+/// **Spelled out, and quiet.** The word is the whole point — see the note at
+/// its call site for why the ✕ it replaced was ambiguous — but it is also the
+/// control on a card whose primary business is happening in another window, so
+/// it stays a text button rather than a filled one. Loud here would read as
+/// "press this to finish", which is the opposite of what it does.
+///
+/// Not destructive-red either: cancelling a sign-in the user started, and may
+/// have abandoned by closing the tab, is an ordinary way for this to end. Red
+/// would tell them they had broken something.
+class _CancelButton extends StatefulWidget {
+  const _CancelButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_CancelButton> createState() => _CancelButtonState();
+}
+
+class _CancelButtonState extends State<_CancelButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette/AppSurface tokens.
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      // The button owns its own hover. The card tracks hover too, but only to
+      // reveal trailing controls — it does not tell a child the pointer is on
+      // *it*, so a control that leaned on the parent's state would sit at its
+      // resting colour with the cursor directly over it.
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onPressed,
+        child: AnimatedContainer(
+          duration: AppMotion.hover,
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            // A fill of its own on hover, not just a colour change: this row
+            // already lightens under the pointer, so colour alone could not
+            // separate "on the card" from "on the button".
+            color: _hovered ? AppSurface.hoverFill : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: AppFont.medium,
+              // Climbs to full colour under the pointer — an affordance that
+              // stays dim while the cursor is on it reads as decoration.
+              color: _hovered
+                  ? AppPalette.textPrimary
+                  : AppPalette.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
