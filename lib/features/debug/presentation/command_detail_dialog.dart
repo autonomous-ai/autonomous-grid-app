@@ -52,20 +52,27 @@ class _DetailDialog extends ConsumerWidget {
     // Dialog content: watch brightness so tokens re-color on a theme flip.
     AppTheme.watch(context);
     final log = ref.watch(commandLogProvider.select(_current));
+    // Wider than a form dialog: this one holds argv and JSON, which wrap badly
+    // at 460. Capped against the window so a 13" screen keeps page either side.
+    //
+    // The *title* is given it too, not only the content. An `AlertDialog` sizes
+    // itself to the widest of the two, so a long URL on one line stretched the
+    // dialog past this figure and left the body sitting narrow inside it.
+    final width = math.min(640.0, MediaQuery.sizeOf(context).width - 120);
 
     return AlertDialog(
       backgroundColor: AppGlass.surfaceFill,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 16, 16, 0),
+      titlePadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 8),
       actionsPadding: const EdgeInsets.fromLTRB(24, 0, 20, 16),
-      title: _Header(log: log),
+      title: SizedBox(
+        width: width,
+        child: _Header(log: log),
+      ),
       content: SizedBox(
-        // Wider than a form dialog: this one holds argv and JSON, which wrap
-        // badly at 460. Capped against the window so a 13" screen still keeps
-        // page either side.
-        width: math.min(640, MediaQuery.sizeOf(context).width - 120),
+        width: width,
         // The body scrolls on its own so the command line and its status stay
         // put while a long payload moves under them.
         child: ConstrainedBox(
@@ -190,9 +197,9 @@ class _Body extends StatelessWidget {
           _TextSection(title: 'What came back', body: prettyBody(body)),
         ],
         if (detail.isEmpty && log.error == null && params.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 18),
-            child: _NothingElse(),
+          Padding(
+            padding: const EdgeInsets.only(top: 18),
+            child: _NothingElse(kind: log.kind),
           ),
       ],
     );
@@ -251,7 +258,10 @@ class _TextSection extends StatelessWidget {
       title: title,
       trailing: CopyIconButton(value: body),
       children: [
-        Padding(
+        // Full width, or the card shrink-wraps this text and every panel ends
+        // at a different place down the dialog.
+        Container(
+          width: double.infinity,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: SelectableText(
             body,
@@ -272,14 +282,24 @@ class _TextSection extends StatelessWidget {
 /// Shown when the summary line really is the whole record — better than an
 /// empty panel that reads as something failing to load.
 class _NothingElse extends StatelessWidget {
-  const _NothingElse();
+  const _NothingElse({required this.kind});
+
+  final CliCallKind kind;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    // A plain GET has no arguments to speak of; calling its empty record "no
+    // arguments" reads as something having gone missing.
     return Text(
-      'This command ran with no arguments and sent nothing — the line above '
-      'is the whole record.',
+      switch (kind) {
+        CliCallKind.http =>
+          'This request carried no parameters and no body — the line above is '
+              'the whole record.',
+        _ =>
+          'This command ran with no arguments and sent nothing — the line '
+              'above is the whole record.',
+      },
       style: TextStyle(
         color: AppPalette.textSecondary,
         fontSize: 12.5,

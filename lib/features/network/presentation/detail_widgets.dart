@@ -140,8 +140,12 @@ class MetaRow extends StatelessWidget {
             label,
             style: TextStyle(color: AppPalette.textSecondary, fontSize: 13),
           ),
-          const Spacer(),
-          Flexible(
+          // One flexible child, not a `Spacer` plus a `Flexible`: those carry
+          // the same flex, so they split the free space and the value started
+          // at the middle of the row instead of at its right edge — invisible
+          // on a narrow card, plain to see on a wide one.
+          const SizedBox(width: 16),
+          Expanded(
             child: Text(
               value,
               textAlign: TextAlign.right,
