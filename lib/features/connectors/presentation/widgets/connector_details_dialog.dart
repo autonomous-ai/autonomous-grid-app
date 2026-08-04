@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../logic/connector.dart';
 import 'connector_mark.dart';
+import 'connector_tools_panel.dart';
 
 /// What Grid knows about one connector, opened by tapping its row.
 ///
@@ -58,6 +61,12 @@ class _DetailsDialog extends StatelessWidget {
     return AlertDialog(
       backgroundColor: AppGlass.surfaceFill,
       surfaceTintColor: Colors.transparent,
+      // Deliberately **not** `scrollable: true`, which is the obvious fix for a
+      // dialog that grew and is the wrong one here. It wraps the content in an
+      // `IntrinsicWidth`, which asks the tool list for its natural height; a
+      // `ListView` cannot answer that, and the dialog dies on a `hasSize`
+      // assertion before `maxHeight` is ever consulted. Measured, not reasoned
+      // about — the harness threw it. The content scrolls itself instead, below.
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       titlePadding: const EdgeInsets.fromLTRB(28, 18, 20, 0),
       contentPadding: const EdgeInsets.fromLTRB(28, 16, 28, 24),
@@ -112,47 +121,70 @@ class _DetailsDialog extends StatelessWidget {
         ],
       ),
       content: SizedBox(
-        width: 460,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (connector.description.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 20),
-                child: Text(
-                  connector.description,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    // Not textFaint: on this dialog's own fill (#202020 in dark)
-                    // it reaches only 3.18:1, under the 4.5:1 floor for body.
-                    color: AppPalette.textSecondary,
-                    height: 1.5,
+        // Wider than the 460 this dialog carried when it was only a paragraph
+        // of prose. A tool row is a name over a one-line description, and at
+        // 460 the description was the part that got clipped — the width buys
+        // back roughly a dozen characters on every row, on a list of 23.
+        //
+        // Capped against the window rather than fixed: on a 13" MacBook
+        // (1280 logical) a hard 560 leaves almost no page either side, so the
+        // smaller of the two wins.
+        width: math.min(560, MediaQuery.sizeOf(context).width - 120),
+        // Bounded so a long description plus a full tool list cannot push the
+        // dialog past a 13" screen; `AlertDialog`'s own insets take the rest.
+        // The scroll view is here rather than around the whole dialog so the
+        // title — the name, the state and Disconnect — stays put while the body
+        // moves under it.
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (connector.description.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: Text(
+                      connector.description,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        // Not textFaint: on this dialog's own fill (#202020 in dark)
+                        // it reaches only 3.18:1, under the 4.5:1 floor for body.
+                        color: AppPalette.textSecondary,
+                        height: 1.5,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            // The account is deliberately not shown. What the provider hands back
-            // is whichever of email/name/login it happens to have — GitHub gives a
-            // username, Google an address — so the row read as an arbitrary
-            // identifier rather than an answer to anything the user was asking.
-            // The gateway still carries `account_name`; nothing here reads it.
-            if (token?.expiresAt != null)
-              const _Fact(
-                label: 'Access renews',
-                // Not the timestamp. Nobody signed in to learn a date — they
-                // want to know whether they will have to do this again, and the
-                // honest answer is no.
-                value: 'Automatically, in the background',
-              ),
-            if (token != null)
-              Text(
-                'Grid looks after this connection for you — there is nothing to '
-                'set up or keep up to date.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppPalette.textSecondary,
-                  height: 1.45,
-                ),
-              ),
-          ],
+                // The account is deliberately not shown. What the provider hands back
+                // is whichever of email/name/login it happens to have — GitHub gives a
+                // username, Google an address — so the row read as an arbitrary
+                // identifier rather than an answer to anything the user was asking.
+                // The gateway still carries `account_name`; nothing here reads it.
+                if (token?.expiresAt != null)
+                  const _Fact(
+                    label: 'Access renews',
+                    // Not the timestamp. Nobody signed in to learn a date — they
+                    // want to know whether they will have to do this again, and the
+                    // honest answer is no.
+                    value: 'Automatically, in the background',
+                  ),
+                if (token != null)
+                  Text(
+                    'Grid looks after this connection for you — there is nothing to '
+                    'set up or keep up to date.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textSecondary,
+                      height: 1.45,
+                    ),
+                  ),
+                // Last, and only once connected: the question it answers ("what can
+                // I do with this?") only arises after the ones above.
+                if (token != null) ConnectorToolsPanel(connector: connector),
+              ],
+            ),
+          ),
         ),
       ),
     );
