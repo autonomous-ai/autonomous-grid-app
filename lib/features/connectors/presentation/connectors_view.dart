@@ -403,6 +403,16 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
   /// abandoned query cannot land whatever this interval is.
   Timer? _debounce;
 
+  /// A keystroke has landed and the registry has not been asked yet.
+  ///
+  /// **The 350ms above is a hole the controller's own `loading` cannot cover.**
+  /// It is false until `search()` runs, while the local `matches` test has
+  /// already emptied the list — so for the length of the debounce the screen
+  /// showed "No matches" about a query nobody had sent. Same bug as the one
+  /// during the request, a third of a second earlier, and it needs its own flag
+  /// because only this widget knows a timer is pending.
+  bool _typing = false;
+
   @override
   void dispose() {
     _debounce?.cancel();
@@ -411,8 +421,13 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
 
   void _onQueryChanged(String query) {
     _debounce?.cancel();
+    if (!_typing) setState(() => _typing = true);
     _debounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
+      // Cleared here rather than when the answer lands: `search()` sets
+      // `loading` in the same turn, so the two flags hand over without a frame
+      // in between where both are false and the empty state flashes.
+      setState(() => _typing = false);
       ref.read(browseConnectorsProvider.notifier).search(query);
     });
   }
@@ -538,6 +553,12 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           AsyncValue(:final value?) => _ConnectorsBody(
             rows: visible(value),
             filtered: filtered || _filter != _ConnectorFilter.all,
+            // `search()` clears the rows and sets `loading` together, so
+            // without this the empty list in between renders as "No matches"
+            // — a verdict on a search that has not come back yet.
+            searching:
+                _typing ||
+                ref.watch(browseConnectorsProvider.select((s) => s.loading)),
             showDirectoryTail: _filter != _ConnectorFilter.connected,
             onLoadMore: () =>
                 ref.read(browseConnectorsProvider.notifier).loadMore(),
@@ -560,12 +581,17 @@ class _ConnectorsBody extends StatelessWidget {
   const _ConnectorsBody({
     required this.rows,
     required this.filtered,
+    required this.searching,
     required this.showDirectoryTail,
     required this.onLoadMore,
   });
 
   final List<Connector> rows;
   final bool filtered;
+
+  /// The directory has been asked and has not answered. Kept distinct from
+  /// [filtered]: one describes the question, the other whether it has a result.
+  final bool searching;
   final bool showDirectoryTail;
 
   /// Fetch the directory's next page. Safe to call repeatedly — see
@@ -590,6 +616,7 @@ class _ConnectorsBody extends StatelessWidget {
             // collapse (they'd all be one status anyway) and an empty result
             // reads as "nothing matched", not "nothing configured".
             filtered: filtered,
+            searching: searching,
             connectors: rows,
             // Paging happens by scrolling, so the request belongs to the thing
             // that scrolls. `loadMore` is a no-op unless there is a further

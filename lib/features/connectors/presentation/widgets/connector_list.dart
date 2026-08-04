@@ -8,6 +8,7 @@ import '../../../../shared/widgets/toast.dart';
 import '../../../../shared/widgets/extension_grid.dart';
 import '../../../../shared/widgets/extension_list.dart';
 import '../../../../shared/widgets/extension_tile_surface.dart';
+import '../../../../shared/widgets/skeleton.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../agents/logic/connector_runtime.dart';
 import '../../../agents/logic/mcp_server.dart';
@@ -36,6 +37,7 @@ class ConnectorList extends StatelessWidget {
     super.key,
     required this.connectors,
     this.filtered = false,
+    this.searching = false,
     this.onReachedEnd,
     this.footer,
   });
@@ -46,6 +48,17 @@ class ConnectorList extends StatelessWidget {
   /// means "nothing matched" — not "nothing configured".
   final bool filtered;
 
+  /// A directory search is in flight, so an empty [connectors] means "not yet"
+  /// rather than "nothing matched".
+  ///
+  /// **Without this the screen accuses the search of failing before it has
+  /// run.** `search()` clears the rows and sets `loading` in the same breath, so
+  /// between the keystroke and the registry's answer the list is genuinely
+  /// empty — and said so, in as many words, until the results arrived and
+  /// replaced it. Whichever way the search ends, the user saw "No matches"
+  /// first.
+  final bool searching;
+
   /// Fetch the directory's next page — the scroll is near the bottom.
   final VoidCallback? onReachedEnd;
 
@@ -55,6 +68,9 @@ class ConnectorList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (connectors.isEmpty) {
+      // Checked before either verdict: both of them state a result, and there
+      // is no result yet.
+      if (searching) return const _SearchingGrid();
       return filtered
           ? const EmptyState.noMatches(
               message: 'No connectors match that search.',
@@ -1001,6 +1017,86 @@ Future<bool?> _confirmDisconnect(BuildContext context, String name) {
 }
 
 /// No servers yet — say what MCP is for, and offer the one action that fixes it.
+/// Placeholder cards while a search is in flight, in place of a verdict.
+///
+/// Cards rather than a spinner, and cards the same shape as the real ones: what
+/// is coming is a grid of connectors, and a skeleton that matches it means the
+/// results replace the placeholders without the layout reflowing. A centred
+/// spinner would move everything the moment it was swapped out.
+///
+/// Six, in three rows of two — enough to fill the pane on the window sizes this
+/// screen is used at. Unlike `_DirectorySkeletonGrid`, which is bound to the
+/// slack a `Flexible` list leaves it, this one *is* the pane.
+class _SearchingGrid extends StatelessWidget {
+  const _SearchingGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return SingleChildScrollView(
+      // The results will scroll; a placeholder that cannot leaves the pane
+      // jumping between a fixed block and a scroll view as the answer lands.
+      physics: const NeverScrollableScrollPhysics(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var row = 0; row < 3; row++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Opacity(
+                // Fading down the page says "and more below" rather than
+                // ending on a hard edge — the same trick the directory's own
+                // skeletons use.
+                opacity: 1 - row * 0.28,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var col = 0; col < 2; col++) ...[
+                      if (col > 0) const SizedBox(width: 10),
+                      const Expanded(child: _SearchingCard()),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One placeholder card, laid out like a real connector card: a 30px mark, a
+/// 12px gap, the name, then two lines of blurb.
+class _SearchingCard extends StatelessWidget {
+  const _SearchingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return ExtensionTileSurface(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Row(
+              children: [
+                Skeleton(width: 30, height: 30, radius: 9),
+                SizedBox(width: 12),
+                Skeleton(width: 96, height: 13),
+              ],
+            ),
+            SizedBox(height: 14),
+            Skeleton(height: 11),
+            SizedBox(height: 7),
+            SkeletonLine(widthFactor: 0.62, height: 11),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Empty extends StatelessWidget {
   const _Empty();
 
