@@ -219,6 +219,18 @@ const String kClaudeModelEnv = 'ANTHROPIC_MODEL';
 const String kClaudeSmallFastModelEnv = 'ANTHROPIC_SMALL_FAST_MODEL';
 const String kClaudeSubagentModelEnv = 'CLAUDE_CODE_SUBAGENT_MODEL';
 
+/// How much context Claude Code may fill before it summarizes the conversation
+/// to make room.
+///
+/// It has no other way to find out. Claude Code sizes its window from the model
+/// it *thinks* it's talking to — Anthropic's, 200k and up — so against a grid
+/// model served with 96k it never summarizes at all, and the turn that crosses
+/// the line comes back `400 … exceeds the available context size`, with the
+/// conversation then stuck there. Set from what the model really has, see
+/// `agentContextCeiling`. Claude Code takes the smaller of this and the model's
+/// own maximum, so a value that's too generous is capped rather than obeyed.
+const String kClaudeCompactWindowEnv = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
+
 /// The model tier each `ANTHROPIC_DEFAULT_*_MODEL` variable overrides. Claude
 /// Code resolves an alias like `opus` through these, so a grid that serves its
 /// own Claude tiers (`claude:opus`) answers every `/model` switch the user makes
@@ -259,11 +271,17 @@ String claudeTierModel(String tier, List<String> models) => models.firstWhere(
 /// `anthropic-beta`). A grid serving Claude tiers through the relay does; a grid
 /// serving only local models needs the relay to translate, and until it does the
 /// steps end in a connection error.
+///
+/// [compactWindow] is how much context the model can be filled with before
+/// Claude Code has to make room (see [kClaudeCompactWindowEnv]); omitted — as
+/// the guide and the "Set up for me" merge do — when nothing is known about the
+/// model, since Claude Code's own default is the better guess of the two.
 Map<String, String> claudeCodeEnv(
   String base,
   String key,
-  List<String> models,
-) {
+  List<String> models, {
+  int? compactWindow,
+}) {
   // Opus leads and sonnet takes the side work: the same split Claude Code makes
   // on Anthropic's own API, so a grid serving the tiers behaves as users expect
   // (and on a grid without them both resolve to its one model anyway).
@@ -277,6 +295,8 @@ Map<String, String> claudeCodeEnv(
     kClaudeSubagentModelEnv: sonnet,
     for (final tier in kClaudeTierModelEnv.entries)
       tier.value: claudeTierModel(tier.key, models),
+    if (compactWindow != null && compactWindow > 0)
+      kClaudeCompactWindowEnv: '$compactWindow',
   };
 }
 

@@ -196,6 +196,27 @@ void main() {
       expect(env[kClaudeModelEnv], kGuideDefaultModel);
     });
 
+    test('a known context window is passed on, so Claude Code summarizes '
+        'before the engine refuses the turn', () {
+      final env = claudeCodeEnv(_base, _key, const [
+        _model,
+      ], compactWindow: 76800);
+
+      expect(env[kClaudeCompactWindowEnv], '76800');
+    });
+
+    test('nothing is passed when the window is unknown — an invented ceiling '
+        'would compact a chat that had room to spare', () {
+      expect(
+        claudeCodeEnv(_base, _key, const [_model]),
+        isNot(contains(kClaudeCompactWindowEnv)),
+      );
+      expect(
+        claudeCodeEnv(_base, _key, const [_model], compactWindow: 0),
+        isNot(contains(kClaudeCompactWindowEnv)),
+      );
+    });
+
     test('appSnippets gives it one block naming its settings file', () {
       final blocks = appSnippets(
         kClientApps[ClientApp.claudeCode]!,

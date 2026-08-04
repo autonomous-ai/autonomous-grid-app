@@ -8,6 +8,7 @@ import '../../../infrastructure/cli/claude_exec_event.dart';
 import '../../../infrastructure/cli/claude_exec_service.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/logging/app_log.dart';
+import '../../../infrastructure/state/model_context_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../network/logic/app_guide_snippets.dart';
 import '../../playground/logic/chat_message.dart';
@@ -19,6 +20,7 @@ import 'agent_providers.dart';
 import 'agent_server_error.dart';
 import 'agent_session_slots.dart';
 import 'claude_tool.dart';
+import 'model_context_window.dart';
 
 /// The Claude Code exec seam, or null when Claude Code is absent.
 final claudeExecServiceProvider = Provider<ClaudeExecService?>((ref) {
@@ -97,6 +99,10 @@ class ClaudeChatSender implements ChatSender {
     );
     final prompt = planFirst ? withPlanPreamble(turn.text) : turn.text;
 
+    // How much of the model Claude Code may fill before it summarizes. Null
+    // until something knows — see [modelContextWindowProvider].
+    final window = _ref.read(modelContextWindowProvider(model));
+
     yield* _runTurn(
       workdir: root,
       prompt: withProjectInstructions(
@@ -105,9 +111,12 @@ class ClaudeChatSender implements ChatSender {
       ),
       resumeSessionId: turn.resumeSessionId,
       model: model,
-      environment: claudeCodeEnv(network.relayBaseUrl, network.relayApiKey, [
-        model,
-      ]),
+      environment: claudeCodeEnv(
+        network.relayBaseUrl,
+        network.relayApiKey,
+        [model],
+        compactWindow: window == null ? null : agentContextCeiling(window),
+      ),
       planFirst: planFirst,
       slot: turn.slot,
     );
@@ -179,6 +188,7 @@ class ClaudeChatSender implements ChatSender {
           case ClaudeTurnFailed(:final message):
             failure = friendlyClaudeError(message);
             _logRaw(message);
+            if (isContextOverflow(message)) _contextFull(model, message, slot);
         }
       },
       onError: (Object error) {
@@ -288,6 +298,30 @@ class ClaudeChatSender implements ChatSender {
     }());
   }
 
+  /// The model ran out of room. Two things follow, and both are for the *next*
+  /// turn — this one is already lost.
+  ///
+  /// The window the engine named is remembered, so every later turn on this
+  /// model starts with a ceiling and summarizes instead of walking into the same
+  /// wall (see [modelContextWindowProvider]). And the session is dropped:
+  /// resuming it would hand the engine the identical over-long conversation and
+  /// fail identically, which is the loop the user was stuck in — a fresh session
+  /// replays only the recent messages, which is what [kClaudeContextFull]
+  /// promises.
+  void _contextFull(String model, String raw, AgentSessionSlot slot) {
+    slot.sessionId = null;
+    final window = contextWindowFromError(raw);
+    if (window == null) return;
+    _ref.read(learnedModelContextProvider.notifier).learn(model, window);
+    _ref
+        .read(appLogProvider)
+        .info(
+          'agent',
+          '$model holds $window tokens; later turns compact at '
+              '${agentContextCeiling(window)}',
+        );
+  }
+
   /// Keep Claude's own words for the log while the chat shows the friendly line.
   ///
   /// Without this the raw reason is lost the moment it's humanized, and the log
@@ -318,6 +352,17 @@ const String kClaudeNoProviderFailure =
     'No machine on this grid is serving a model Claude Code can use right now. '
     'Try another model, or let another agent take this chat.';
 
+/// Shown when the conversation outgrew the model serving it.
+///
+/// Says what to do rather than what broke: the app has already dropped the
+/// session behind the scenes ([ClaudeChatSender._contextFull]), so sending again
+/// really does carry on — from the recent messages, which is the honest promise.
+/// It doesn't offer "a model with more room": no grid says how much room any of
+/// its models has (`TODO(BE)`), so that would be a guess dressed as advice.
+const String kClaudeContextFull =
+    'This chat got longer than the model can hold. Send again and the assistant '
+    'picks it up from the recent messages — everything said stays here.';
+
 /// Humanize Claude's failure so the chat shows a next step, not a stack trace.
 ///
 /// Claude reports HTTP trouble as `API Error: <status> <body>`; a raw
@@ -329,6 +374,9 @@ String friendlyClaudeError(String raw) {
   // so both route through the one shared line.
   final empty = friendlyAgentEmptyResponse(raw);
   if (empty != null) return empty;
+  // Ahead of the status-code branches below: this one arrives as a 400, and
+  // "bad request" is the least useful thing that could be said about it.
+  if (isContextOverflow(raw)) return kClaudeContextFull;
 
   final detail = raw
       .split('\n')
