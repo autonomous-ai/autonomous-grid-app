@@ -99,6 +99,11 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
       controller.close();
       return;
     }
+    // What a grid serves changes while the app is open and nothing re-reads it
+    // on its own, so the list you open is the one the app saw at launch. Asked
+    // for here, before the panel opens, so the answer lands into an open menu —
+    // and without blanking it, see [refreshGridModelCatalog].
+    refreshGridModelCatalog(ref);
     // Positioned, not aligned. `MenuStyle.alignment: topRight` reads as "put the
     // menu's top-*left* on the pill's top-right", so a 340px panel grew off to
     // the right and the window-edge clamp parked it against the screen edge —
@@ -270,11 +275,10 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
     // CLI can drive is shown, but dead, rather than hidden — a model that
     // vanishes when you change assistant reads as the grid losing it.
     final agent = ref.watch(chatModelAgentProvider);
-    // Both this and the per-grid /models call are autoDispose, so closing the
-    // menu tears them down and every open refetches from scratch. That's the
-    // churn: grids resolve one by one, each landing pushing the ones below it
-    // down, and a ready-but-empty grid now vanishes as it resolves rather than
-    // just moving. Hold the skeleton until the whole catalog has settled — a
+    // The first load only. The pill above watches the same catalog, so it never
+    // auto-disposes, and the re-read every open asks for keeps the rows it
+    // already had — a refresh reads as ready throughout and lands as a swap.
+    // What's left to hold the skeleton for is a grid with nothing cached yet: a
     // list that assembles itself in front of you is the thing to avoid, and
     // there's nothing to pick from mid-flight anyway.
     final settling = catalog.any((g) => g.status == GridModelStatus.loading);

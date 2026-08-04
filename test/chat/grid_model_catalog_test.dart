@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
@@ -135,6 +137,63 @@ void main() {
     expect(catalog.map((g) => g.grid.networkId), ['grid-foo']);
     // The stubbed probes haven't resolved yet — the group starts loading.
     expect(catalog.single.status, GridModelStatus.loading);
+  });
+
+  test('re-reading /models — what opening the picker asks for — swaps the list '
+      'for the new one, and shows the old one meanwhile', () async {
+    var served = ['maker/m1'];
+    var calls = 0;
+    // Open once the first read is over, so the refetch can be held mid-flight
+    // and the menu inspected while it waits.
+    var gate = Completer<void>()..complete();
+    final container = ProviderContainer(
+      overrides: [
+        selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(foo)),
+        networkModelsForProvider('grid-foo').overrideWith((ref) async {
+          calls++;
+          await gate.future;
+          return served;
+        }),
+        gridOverviewForProvider('grid-foo').overrideWith(
+          (ref) => Future.value(
+            GridOverview(
+              stats: const GridStats(models: 0, nodes: 0),
+              models: const [],
+              nodes: const [],
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    // The model pill holds the catalog open for as long as the composer is
+    // mounted — which is why nothing re-reads it on its own.
+    final sub = container.listen(gridModelCatalogProvider, (_, _) {});
+    addTearDown(sub.close);
+    await pumpEventQueue();
+    expect(calls, 1);
+    expect(
+      container.read(gridModelCatalogProvider).single.options.single.id,
+      'maker/m1',
+    );
+
+    served = ['maker/m1', 'maker/m2'];
+    gate = Completer<void>();
+    container.invalidate(networkModelsForProvider('grid-foo'));
+    await pumpEventQueue();
+
+    final inFlight = container.read(gridModelCatalogProvider).single;
+    expect(calls, 2);
+    expect(inFlight.status, GridModelStatus.ready);
+    expect(inFlight.options.map((o) => o.id), ['maker/m1']);
+
+    gate.complete();
+    await pumpEventQueue();
+    expect(
+      container.read(gridModelCatalogProvider).single.options.map((o) => o.id),
+      ['maker/m1', 'maker/m2'],
+    );
   });
 
   test('catalog is empty when no grid is selected', () {
