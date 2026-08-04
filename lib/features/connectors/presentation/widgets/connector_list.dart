@@ -38,6 +38,7 @@ class ConnectorList extends StatelessWidget {
     required this.connectors,
     this.filtered = false,
     this.searching = false,
+    this.showingConnected = false,
     this.onReachedEnd,
     this.footer,
   });
@@ -47,6 +48,14 @@ class ConnectorList extends StatelessWidget {
   /// A search or a status pill is narrowing the list, so an empty [connectors]
   /// means "nothing matched" — not "nothing configured".
   final bool filtered;
+
+  /// The Connected pill is selected, so an empty [connectors] means "you have
+  /// not connected anything" — not "nothing matched".
+  ///
+  /// Needed because [filtered] is true here by construction: selecting the pill
+  /// *is* a narrowing, so without this a fresh machine opening Connected is told
+  /// "No connectors match that search" about a search nobody ran.
+  final bool showingConnected;
 
   /// A directory search is in flight, so an empty [connectors] means "not yet"
   /// rather than "nothing matched".
@@ -71,6 +80,9 @@ class ConnectorList extends StatelessWidget {
       // Checked before either verdict: both of them state a result, and there
       // is no result yet.
       if (searching) return const _SearchingGrid();
+      // Before the `filtered` verdict, which would otherwise claim a search
+      // came back empty on a screen where nobody searched.
+      if (showingConnected) return const _NothingConnected();
       return filtered
           ? const EmptyState.noMatches(
               message: 'No connectors match that search.',
@@ -1164,6 +1176,27 @@ class _SearchingCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The Connected pill, on a machine that has not connected anything.
+///
+/// Says what is true and points at the way out. Deliberately not phrased as a
+/// failure: nothing is wrong, the user is simply early — so no red, no "none
+/// found", and the action is the one that fixes it.
+class _NothingConnected extends StatelessWidget {
+  const _NothingConnected();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return const EmptyState(
+      icon: Icons.link_off_rounded,
+      title: 'Nothing connected yet',
+      message:
+          'Connectors you sign in to appear here. Browse the directory to '
+          'find one.',
     );
   }
 }
