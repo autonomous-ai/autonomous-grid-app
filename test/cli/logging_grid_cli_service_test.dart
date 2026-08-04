@@ -49,10 +49,14 @@ void main() {
     () async {
       inner.stubStart(['join', '--api', 'openai'], lines: const []);
 
-      await service.start(
+      final process = await service.start(
         ['join', '--api', 'openai'],
         environment: {'OPENAI_API_KEY': 'sk-do-not-log-me'},
       );
+      // A started process is only logged as finished when it exits, and that
+      // arrives on a later turn of the loop — so the exit is awaited here
+      // rather than left to land after the test (and its container) are gone.
+      await process.exitCode;
       await pumpEventQueue();
 
       final detail = entry().detail;
@@ -64,7 +68,8 @@ void main() {
   test('leaves the env parameter off when a command sets none', () async {
     inner.stubStart(['sync'], lines: const []);
 
-    await service.start(['sync']);
+    final process = await service.start(['sync']);
+    await process.exitCode;
     await pumpEventQueue();
 
     expect(entry().detail.params, isEmpty);
