@@ -17,18 +17,23 @@
 /// and shifts what the user was reading. [relevance] is the only order that only
 /// ever grows at the end, which is why it is still here.
 enum SmitheryServerSort {
+  /// Strictly by [SmitheryServer.useCount], descending — the closest thing the
+  /// directory has to a star count, and **the default**.
+  ///
+  /// First in the enum on purpose: `SmitheryServerSort.values` is what fills the
+  /// menu, so the default is also the row a fallback would land on. It opens the
+  /// screen on `jina` (76,715), `googlesheets` (63,663), `gmail` (60,499) and
+  /// `brave` (60,204).
+  mostUsed('Most used'),
+
   /// The registry's own order, untouched.
   ///
   /// **Not most-used-first**, though it correlates: measured 2026-08-03 the
   /// first page runs Gmail (60,499), Jina (76,715), Brave (60,204), Exa
   /// (12,491) — recognisable services first, by a ranking the registry does not
-  /// publish. Good enough to be the default, and the only order that survives
-  /// paging without moving what is already on screen.
+  /// publish. Kept because it is the only order that appends without moving what
+  /// is already on screen.
   relevance('Relevance'),
-
-  /// Strictly by [SmitheryServer.useCount], descending — the closest thing the
-  /// directory has to a star count.
-  mostUsed('Most used'),
 
   /// Alphabetical, for finding a name you already know.
   name('Name');

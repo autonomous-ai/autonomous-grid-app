@@ -62,12 +62,11 @@ class BrowseConnectorsState {
   /// Nothing to show, and not because we are still looking.
   bool get isEmpty => servers.isEmpty && !loading && error == null;
 
-  /// What the screen draws: the fetched rows, narrowed and ordered.
+  /// What the screen draws: the fetched rows in the chosen order.
   ///
   /// Derived rather than stored, so [servers] and this can never disagree — the
   /// bug available in the stored version is a sort applied to page one and
   /// silently not to page two.
-  /// What the screen draws: the fetched rows in the chosen order.
   ///
   /// **Nothing is filtered out, and that is a reversal.** A shortlist of the
   /// seventeen Smithery-managed servers was the default, and it broke paging in
@@ -134,11 +133,16 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
   /// longer contains. Compared at every await boundary.
   int _generation = 0;
 
+  /// Sort stated here rather than left to the constructor's default.
+  ///
+  /// It *was* the default and the screen still opened on Relevance, which a
+  /// default buried in a parameter list is very good at hiding. Naming it at the
+  /// one place someone looks for "what does this start as" costs a line.
   @override
-  BrowseConnectorsState build() => const BrowseConnectorsState();
+  BrowseConnectorsState build() =>
+      const BrowseConnectorsState(sort: SmitheryServerSort.mostUsed);
 
   /// Load (or reload) the first page for [query].
-  ///
   Future<void> search(String query) async {
     final generation = ++_generation;
     final trimmed = query.trim();
@@ -176,7 +180,6 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
     state = state.copyWith(sort: sort);
   }
 
-  /// Append the next page of the *current* search.
   /// Append the next page — and keep going until it is worth having appended.
   ///
   /// **The registry repeats itself, heavily.** Measured 2026-08-03 over ten
