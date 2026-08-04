@@ -1,12 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/composio_catalog_client.dart';
 import '../../../infrastructure/api/smithery_registry_client.dart';
-import 'connector_category.dart';
+import 'composio_catalog.dart';
+import 'composio_toolkit.dart';
 import 'connector_catalog.dart';
+import 'connector_category.dart';
 import 'smithery_catalog.dart';
-import 'smithery_server.dart';
 
-/// What the browse dialog is showing right now.
+/// Which directory answered.
+///
+/// Worth naming because the two behave differently in ways a reader of the
+/// state will otherwise have to infer: Composio rows sign in through the
+/// gateway and carry no address, Smithery rows sign themselves in and carry
+/// one. It is also how [BrowseConnectorsController] reports that it is running
+/// on the fallback rather than the intended source.
+enum DirectorySource { composio, smithery }
+
+/// What the connector directory is showing right now.
 ///
 /// One object rather than four providers because the states are *mutually
 /// constraining*: "loading" with rows already on screen means a page is being
@@ -16,37 +27,43 @@ import 'smithery_server.dart';
 /// halfway through.
 class BrowseConnectorsState {
   const BrowseConnectorsState({
-    this.servers = const [],
+    this.entries = const [],
     this.query = '',
     this.category,
-    this.sort = SmitheryServerSort.mostUsed,
-    this.page = 0,
-    this.totalPages = 0,
+    this.sort = ComposioToolkitSort.mostUsed,
+    this.source = DirectorySource.composio,
+    this.cursor,
     this.totalCount = 0,
     this.loading = false,
     this.loadingMore = false,
     this.error,
   });
 
-  /// The rows as fetched, in the registry's own order.
+  /// The rows, already converted to the app's own catalog type.
   ///
-  /// [visibleServers] is what the screen draws. Keeping the fetched order here
-  /// means switching sort never needs a refetch, and switching *back* to
-  /// relevance restores exactly what the registry sent rather than an
-  /// approximation of it.
-  final List<SmitheryServer> servers;
+  /// **Neutral on purpose, and this is what makes a second source cheap.** The
+  /// state used to hold `SmitheryServer`, so every consumer — the screen, the
+  /// browse dialog, the catalog provider — spoke one vendor's vocabulary, and
+  /// changing directory meant changing all of them. `ConnectorCatalogEntry` is
+  /// the type the rest of the app already uses; each source converts into it and
+  /// nothing downstream can tell, or needs to, which one answered.
+  final List<ConnectorCatalogEntry> entries;
 
-  /// How [visibleServers] is ordered. Changing this does **not** refetch.
-  final SmitheryServerSort sort;
+  /// How the catalog is ordered. **Refetches**, unlike the previous directory's
+  /// sort — see [BrowseConnectorsController.setSort].
+  final ComposioToolkitSort sort;
 
-  /// The search this list answers — not what is in the box, which may have moved
-  /// on. Load more sends *this*, so appending page 2 of an old search onto a new
+  /// Which directory produced [entries].
+  final DirectorySource source;
+
+  /// The search these rows answer — not what is in the box, which may have moved
+  /// on. Paging sends *this*, so appending page 2 of an old search onto a new
   /// one is impossible.
   ///
   /// The user's words only. The category's own term is **not** folded in here:
-  /// this is what the search box shows, and rewriting it to `notion chat
-  /// messaging` would put words in the box the user never typed. The two are
-  /// combined at the moment of the request instead — see [searchTerms].
+  /// this is what the search box shows, and rewriting it would put words in the
+  /// box the user never typed. The two are combined at request time — see
+  /// [searchTerms].
   final String query;
 
   /// The subject pill in force, or null for the whole directory.
@@ -56,18 +73,23 @@ class BrowseConnectorsState {
   /// deselecting the category must not empty the box.
   final ConnectorCategory? category;
 
-  /// What actually goes to the registry: the user's words and the category's,
-  /// in that order.
+  /// What actually goes to the directory: the user's words and the category's.
   String get searchTerms => categorySearchTerms(category, query);
 
-  /// The last page successfully appended. Zero means nothing has loaded.
-  final int page;
+  /// Where the next page starts, or null when there is none.
+  ///
+  /// **A cursor, not a page number.** Composio hands back an opaque
+  /// `next_cursor` and null means the end, so there is no page arithmetic to get
+  /// wrong. The Smithery fallback has page numbers instead; it stringifies them
+  /// into this field rather than adding a second paging concept nobody reading
+  /// the state would know which of to trust.
+  final String? cursor;
 
-  final int totalPages;
+  /// How many rows match, across every page. Zero when the source didn't say.
   final int totalCount;
 
-  /// The first page of a search is in flight — the list is replaced, so the
-  /// dialog shows skeletons.
+  /// The first page is in flight — the list is replaced, so the screen shows
+  /// skeletons.
   final bool loading;
 
   /// A further page is in flight — the list stays, and only the footer changes.
@@ -75,65 +97,51 @@ class BrowseConnectorsState {
 
   final String? error;
 
-  bool get hasMore => page > 0 && page < totalPages;
+  bool get hasMore => cursor != null && cursor!.isNotEmpty;
 
   /// Nothing to show, and not because we are still looking.
-  bool get isEmpty => servers.isEmpty && !loading && error == null;
-
-  /// What the screen draws: the fetched rows in the chosen order.
-  ///
-  /// Derived rather than stored, so [servers] and this can never disagree — the
-  /// bug available in the stored version is a sort applied to page one and
-  /// silently not to page two.
-  ///
-  /// **Nothing is filtered out, and that is a reversal.** A shortlist of the
-  /// seventeen Smithery-managed servers was the default, and it broke paging in
-  /// a way that read as a bug: all seventeen are on page one, so scrolling to
-  /// the end fetched fifty more rows of which **none** passed the filter and the
-  /// list did not grow. Infinite scroll cannot work over a set that is already
-  /// complete.
-  ///
-  /// Ordering does the work instead. `mostUsed` — the default — opens on
-  /// `jina` (76,715), `googlesheets` (63,663), `gmail` (60,499) and `brave`
-  /// (60,204), which is the quality-first list the filter was reaching for, and
-  /// scrolling carries on into the rest of the directory instead of stopping
-  /// dead.
-  List<SmitheryServer> get visibleServers => sort.apply(servers);
+  bool get isEmpty => entries.isEmpty && !loading && error == null;
 
   BrowseConnectorsState copyWith({
-    List<SmitheryServer>? servers,
+    List<ConnectorCatalogEntry>? entries,
     String? query,
     ConnectorCategory? category,
-    SmitheryServerSort? sort,
-    int? page,
-    int? totalPages,
+    ComposioToolkitSort? sort,
+    DirectorySource? source,
+    String? cursor,
     int? totalCount,
     bool? loading,
     bool? loadingMore,
     String? error,
     bool clearError = false,
     bool clearCategory = false,
+    bool clearCursor = false,
   }) => BrowseConnectorsState(
-    servers: servers ?? this.servers,
+    entries: entries ?? this.entries,
     query: query ?? this.query,
     // Same trap as `error` below, and as `archivedAt` before it: `?? this.x`
-    // cannot express "set this to null", so deselecting the pill would
-    // silently keep filtering by the category the user just turned off.
+    // cannot express "set this to null", so deselecting the pill would silently
+    // keep filtering by the category the user just turned off.
     category: clearCategory ? null : (category ?? this.category),
     sort: sort ?? this.sort,
-    page: page ?? this.page,
-    totalPages: totalPages ?? this.totalPages,
+    source: source ?? this.source,
+    // The end of the list is spelled `null`, so reaching it needs the same
+    // explicit flag for the same reason.
+    cursor: clearCursor ? null : (cursor ?? this.cursor),
     totalCount: totalCount ?? this.totalCount,
     loading: loading ?? this.loading,
     loadingMore: loadingMore ?? this.loadingMore,
-    // `?? this.error` cannot clear a field, which is the same trap `archivedAt`
-    // hit: without the flag a successful reload would keep showing the failure
-    // that preceded it.
     error: clearError ? null : (error ?? this.error),
   );
 }
 
-/// Paging over the public MCP directory.
+/// Paging over the connector directory.
+///
+/// **Composio is the source; Smithery is the fallback.** The app's half of that
+/// migration can ship before the backend's — see [_fetch] — so a build that
+/// meets a backend without the proxy route keeps listing connectors from the
+/// previous directory instead of showing an empty screen. Remove [_fetchSmithery]
+/// and its branch once the route is live everywhere.
 ///
 /// Deliberately not an `AsyncNotifier<List<…>>` like the other controllers on
 /// this screen. Those own a *whole* list that is re-read on every change; this
@@ -141,16 +149,11 @@ class BrowseConnectorsState {
 /// the user is reading. The screen states here are richer than `AsyncValue` can
 /// say, so the state object says them.
 class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
-  /// Rows per request.
-  ///
-  /// The registry caps browsing at **500 rows** whatever this is — 50 gives 10
-  /// pages, 24 gave 21, and page 11 (respectively 22) comes back as an empty
-  /// array either way. So this trades requests against latency, not against
-  /// reach: 50 is ten fetches to the ceiling instead of twenty-one, and the
-  /// scroll rarely catches up with the list. Measured 2026-07-31.
+  /// Rows per request. Composio allows up to 1,000; 50 fills several screens
+  /// without making the first paint wait on rows nobody has scrolled to.
   static const int pageSize = 50;
 
-  /// Counts every search so a slow answer to an abandoned query cannot land.
+  /// Counts every reload so a slow answer to an abandoned query cannot land.
   ///
   /// Typing "no" then "notion" fires two requests; without this the first can
   /// resolve last and leave the list showing results for a query the box no
@@ -159,90 +162,78 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
 
   /// Sort stated here rather than left to the constructor's default.
   ///
-  /// It *was* the default and the screen still opened on Relevance, which a
+  /// It *was* the default and the screen still opened on the wrong one, which a
   /// default buried in a parameter list is very good at hiding. Naming it at the
   /// one place someone looks for "what does this start as" costs a line.
   @override
   BrowseConnectorsState build() =>
-      const BrowseConnectorsState(sort: SmitheryServerSort.mostUsed);
+      const BrowseConnectorsState(sort: ComposioToolkitSort.mostUsed);
 
   /// Load (or reload) the first page for [query].
   Future<void> search(String query) async {
-    final trimmed = query.trim();
-    // Category survives a search for the same reason sort does: it is a
-    // standing narrowing of the directory, not part of what was typed, and
-    // clearing it on a keystroke would undo a choice the user can still see
-    // selected in the bar.
-    await _load(query: trimmed, category: state.category);
+    // Category survives a search: it is a standing narrowing of the directory,
+    // not part of what was typed, and clearing it on a keystroke would undo a
+    // choice the user can still see selected in the bar.
+    await _load(
+      query: query.trim(),
+      category: state.category,
+      sort: state.sort,
+    );
   }
 
   /// Narrow the directory to one subject, or to none.
-  ///
-  /// **Refetches, unlike [setSort].** Sorting reorders rows already in hand;
-  /// this changes which rows the registry is asked for, and the answer is not
-  /// derivable from what is loaded — a category's servers are spread across the
-  /// whole 4,000-row directory, not gathered in the 50 on screen.
   Future<void> setCategory(ConnectorCategory? category) async {
     if (category == state.category) return;
-    await _load(query: state.query, category: category);
+    await _load(query: state.query, category: category, sort: state.sort);
   }
 
-  /// The one path that replaces the list: both entry points above land here so
-  /// a search and a category change cannot drift apart in how they reset state.
+  /// Reorder the catalog.
+  ///
+  /// **Refetches, which the previous directory's sort did not.** Smithery had no
+  /// sort parameter — every spelling of one was measured and returned the
+  /// identical page — so ordering was done locally over whatever rows happened
+  /// to be loaded, which quietly answered "most used of the fifty on screen"
+  /// when the control asks "most used". Composio sorts the whole catalog, so the
+  /// honest implementation asks it again.
+  Future<void> setSort(ComposioToolkitSort sort) async {
+    if (sort == state.sort) return;
+    await _load(query: state.query, category: state.category, sort: sort);
+  }
+
+  /// The one path that replaces the list, so search, category and sort cannot
+  /// drift apart in how they reset state.
   Future<void> _load({
     required String query,
     required ConnectorCategory? category,
+    required ComposioToolkitSort sort,
   }) async {
     final generation = ++_generation;
-    // Sort survives — it is a view preference, not part of the query, and
-    // resetting it on every keystroke would fight the user.
     state = BrowseConnectorsState(
       query: query,
       category: category,
-      sort: state.sort,
+      sort: sort,
       loading: true,
     );
 
-    final (page, error) = await ref
-        .read(smitheryRegistryClientProvider)
-        // `searchTerms`, not `query`: the category's own words ride along here
-        // and nowhere else, so the search box keeps showing what was typed.
-        .servers(page: 1, pageSize: pageSize, query: state.searchTerms);
+    final result = await _fetch(search: state.searchTerms, sort: sort);
     if (generation != _generation) return;
 
-    if (page == null) {
-      state = state.copyWith(loading: false, error: error);
+    if (result.error != null) {
+      state = state.copyWith(loading: false, error: result.error);
       return;
     }
     state = state.copyWith(
-      servers: page.servers,
-      page: page.page,
-      totalPages: page.totalPages,
-      totalCount: page.totalCount,
+      entries: result.entries,
+      source: result.source,
+      cursor: result.cursor,
+      clearCursor: result.cursor == null,
+      totalCount: result.totalCount,
       loading: false,
       clearError: true,
     );
   }
 
-  /// Reorder what is already loaded. **No refetch**, because the registry has no
-  /// sort of its own to ask for.
-  void setSort(SmitheryServerSort sort) {
-    if (sort == state.sort) return;
-    state = state.copyWith(sort: sort);
-  }
-
-  /// Append the next page — and keep going until it is worth having appended.
-  ///
-  /// **The registry repeats itself, heavily.** Measured 2026-08-03 over ten
-  /// pages: 500 rows fetched, **208 unique** — 58% duplicates — and the new rows
-  /// per page decay 50, 50, 24, 18, 16, 12, 8, 10, 9, 11. One fetch per scroll
-  /// therefore stops adding anything a user can see long before the pages run
-  /// out, which is what "infinite scroll doesn't work" looked like.
-  ///
-  /// So this fetches until it has [_minimumNewRows] to show, or runs out of
-  /// pages, or hits [_maxFetchesPerScroll] — a cap, because the tail of this
-  /// directory can return a whole page of rows already on screen and a loop
-  /// without one would spend ten requests proving it.
+  /// Append the next page.
   Future<void> loadMore() async {
     final current = state;
     if (!current.hasMore || current.loading || current.loadingMore) return;
@@ -250,56 +241,132 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
     final generation = _generation;
     state = current.copyWith(loadingMore: true, clearError: true);
 
-    var added = 0;
-    for (var fetch = 0; fetch < _maxFetchesPerScroll; fetch++) {
-      if (!state.hasMore) break;
+    final result = await _fetch(
+      search: current.searchTerms,
+      sort: current.sort,
+      cursor: current.cursor,
+      source: current.source,
+    );
+    if (generation != _generation) return;
 
-      final (page, error) = await ref
-          .read(smitheryRegistryClientProvider)
-          .servers(
-            page: state.page + 1,
-            pageSize: pageSize,
-            // The same terms the first page was fetched with, category and
-            // all. Sending `query` alone would page out of the category the
-            // user is looking at and append rows from the whole directory.
-            query: state.searchTerms,
-          );
-      // Checked after every await, not once: this loop spans several round
-      // trips, and a search started midway through must not have pages of the
-      // old one appended underneath it.
-      if (generation != _generation) return;
-
-      if (page == null) {
-        state = state.copyWith(loadingMore: false, error: error);
-        return;
-      }
-
-      // Deduplicated on the way in. Pages are a snapshot of a directory that
-      // keeps being written to — and, measured, one that serves the same server
-      // on several pages regardless.
-      final seen = {for (final server in state.servers) server.qualifiedName};
-      final fresh = [
-        for (final server in page.servers)
-          if (seen.add(server.qualifiedName)) server,
-      ];
-      added += fresh.length;
-
-      state = state.copyWith(
-        servers: [...state.servers, ...fresh],
-        page: page.page,
-        totalPages: page.totalPages,
-        totalCount: page.totalCount,
-      );
-      if (added >= _minimumNewRows) break;
+    if (result.error != null) {
+      state = state.copyWith(loadingMore: false, error: result.error);
+      return;
     }
-    state = state.copyWith(loadingMore: false);
+
+    // Deduplicated on the way in. A directory is a snapshot of something that
+    // keeps being written to, and the previous one was measured serving the same
+    // row on several pages — 500 fetched for 208 unique. Composio's cursor
+    // paging should not repeat itself, but a list that grows by rows the user
+    // can already see is the kind of bug that reads as "paging is broken", and
+    // the guard costs one set.
+    final seen = {for (final entry in state.entries) entry.id};
+    final fresh = [
+      for (final entry in result.entries)
+        if (seen.add(entry.id)) entry,
+    ];
+
+    state = state.copyWith(
+      entries: [...state.entries, ...fresh],
+      cursor: result.cursor,
+      clearCursor: result.cursor == null,
+      totalCount: result.totalCount,
+      loadingMore: false,
+    );
   }
 
-  /// Enough new rows that the scroll visibly moved. Roughly two grid rows.
-  static const int _minimumNewRows = 6;
+  /// Ask the directory, falling back when the backend has no route yet.
+  ///
+  /// [source] pins the fallback decision for a *continuation*: once a list is
+  /// being served by Smithery, page two has to come from Smithery too — its
+  /// cursor means nothing to Composio, and a mixed list would page into rows the
+  /// first page was never filtered against.
+  Future<_DirectoryResult> _fetch({
+    required String search,
+    required ComposioToolkitSort sort,
+    String? cursor,
+    DirectorySource? source,
+  }) async {
+    if (source == DirectorySource.smithery) {
+      return _fetchSmithery(search: search, cursor: cursor);
+    }
 
-  /// The ceiling on requests one scroll may spend chasing them.
-  static const int _maxFetchesPerScroll = 3;
+    final (page, error) = await ref
+        .read(composioCatalogClientProvider)
+        .toolkits(search: search, limit: pageSize, cursor: cursor, sort: sort);
+    if (page != null) {
+      return _DirectoryResult(
+        entries: composioCatalogEntries(page.toolkits),
+        cursor: page.nextCursor,
+        totalCount: page.totalItems,
+        source: DirectorySource.composio,
+      );
+    }
+    // Two failures fall through, and only two: the backend having no such route
+    // yet, and there being no session to ask with. Everything else — a rate
+    // limit, a 500, a shape nobody understands — is Composio genuinely
+    // answering, and quietly serving another directory's rows instead would
+    // hide it.
+    //
+    // **The signed-out case is a regression guard, not a nicety.** Browsing
+    // needs no account today, because the directory it replaces is public. Left
+    // out, this migration would have met a signed-out user with an empty screen
+    // and a sign-in demand for something that had never required one.
+    final canFallBack =
+        ComposioCatalogClient.isNotDeployed(error) ||
+        ComposioCatalogClient.isNotSignedIn(error);
+    if (!canFallBack) return _DirectoryResult.failed(error);
+    return _fetchSmithery(search: search, cursor: cursor);
+  }
+
+  /// The previous directory, kept until the Composio route ships everywhere.
+  ///
+  /// Its rows stay `dcr` and keep their own address, because that is what they
+  /// are: these servers sign themselves in and the gateway has never heard of
+  /// them. Converting them into Composio-shaped rows would hand them to the
+  /// gateway path and every one of them would fail at the far end.
+  Future<_DirectoryResult> _fetchSmithery({
+    required String search,
+    String? cursor,
+  }) async {
+    // Smithery pages by number; the cursor carries it as text so the state has
+    // one paging field rather than two that must agree.
+    final page = int.tryParse(cursor ?? '1') ?? 1;
+    final (result, error) = await ref
+        .read(smitheryRegistryClientProvider)
+        .servers(page: page, pageSize: pageSize, query: search);
+    if (result == null) return _DirectoryResult.failed(error);
+
+    final next = result.page < result.totalPages ? '${result.page + 1}' : null;
+    return _DirectoryResult(
+      entries: smitheryCatalogEntries(result.servers),
+      cursor: next,
+      totalCount: result.totalCount,
+      source: DirectorySource.smithery,
+    );
+  }
+}
+
+/// One directory answer, whichever source gave it.
+class _DirectoryResult {
+  const _DirectoryResult({
+    required this.entries,
+    required this.cursor,
+    required this.totalCount,
+    required this.source,
+  }) : error = null;
+
+  const _DirectoryResult.failed(this.error)
+    : entries = const [],
+      cursor = null,
+      totalCount = 0,
+      source = DirectorySource.composio;
+
+  final List<ConnectorCatalogEntry> entries;
+  final String? cursor;
+  final int totalCount;
+  final DirectorySource source;
+  final String? error;
 }
 
 final browseConnectorsProvider =
@@ -309,19 +376,18 @@ final browseConnectorsProvider =
 
 /// The directory rows the Connectors screen offers, as catalog entries.
 ///
-/// **Never throws and never blocks the gateway's list.** A registry that is
+/// **Never throws and never blocks the rest of the list.** A directory that is
 /// down, rate-limiting or answering nonsense yields an empty list, and the
 /// screen is then exactly the screen it was before this existed. The alternative
-/// — letting a directory failure propagate — would take sixteen working gateway
-/// connectors offline over a third party's bad afternoon, which is the same
-/// trade the catalog has always made: an offer that cannot be fetched is a
-/// missing row, not a broken screen.
+/// — letting a directory failure propagate — would take working connectors
+/// offline over a third party's bad afternoon.
+///
 /// Synchronous on purpose. As a `FutureProvider` this mapped an already-loaded
 /// list through an `async` body, so every page and every sort flipped it to
 /// `AsyncLoading` and back — a whole extra round of rebuilds for a computation
 /// that never awaits anything. That churn is half of what made the list blink
-/// when it reached the bottom.
+/// when it reached the bottom. Now that the state holds entries directly there
+/// is nothing left to map at all.
 final directoryCatalogProvider = Provider<List<ConnectorCatalogEntry>>((ref) {
-  final state = ref.watch(browseConnectorsProvider);
-  return smitheryCatalogEntries(state.visibleServers);
+  return ref.watch(browseConnectorsProvider).entries;
 });

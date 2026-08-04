@@ -17,7 +17,7 @@ import '../logic/connector.dart';
 import '../logic/connector_category.dart';
 import '../logic/connectors_controller.dart';
 import '../logic/connectors_refresh.dart';
-import '../logic/smithery_server.dart';
+import '../logic/composio_toolkit.dart';
 import 'widgets/connector_details_dialog.dart';
 import 'widgets/connector_mark.dart';
 import 'widgets/add_mcp_dialog.dart';
@@ -252,14 +252,18 @@ class _FilterBar extends ConsumerWidget {
             // and knock the bar out of alignment.
             SizedBox(
               width: 150,
-              child: AppSelectField<SmitheryServerSort>(
+              child: AppSelectField<ComposioToolkitSort>(
                 label: 'Sort',
                 showLabel: false,
                 value: browse.sort,
                 options: [
-                  for (final option in SmitheryServerSort.values)
+                  for (final option in ComposioToolkitSort.values)
                     AppSelectOption(value: option, label: option.label),
                 ],
+                // Fires a refetch now, where it used to reorder rows already in
+                // hand: the directory sorts its whole catalog, so the answer is
+                // not derivable from the page on screen. The skeletons that
+                // follow are the same ones a search shows.
                 onChanged: notifier.setSort,
               ),
             ),
@@ -722,7 +726,7 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
       final browse = ref.read(browseConnectorsProvider);
       // Only once. This screen is rebuilt on every mutation, and re-searching
       // on each would throw away the user's paging and their place in the list.
-      if (browse.servers.isEmpty && !browse.loading && browse.error == null) {
+      if (browse.entries.isEmpty && !browse.loading && browse.error == null) {
         ref.read(browseConnectorsProvider.notifier).search('');
       }
     });

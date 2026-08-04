@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/composio_catalog_client.dart';
 import '../../../infrastructure/api/smithery_registry_client.dart';
+import 'composio_catalog.dart';
 import 'connector_catalog.dart';
 import 'smithery_catalog.dart';
 
@@ -24,26 +26,45 @@ import 'smithery_catalog.dart';
 /// One request per missing connector, and only for the missing ones — a machine
 /// whose connectors all rank highly issues none at all.
 class ConnectedCatalogLookup {
-  const ConnectedCatalogLookup(this._client);
+  const ConnectedCatalogLookup(this._composio, this._smithery);
 
-  final SmitheryRegistryClient _client;
+  final ComposioCatalogClient _composio;
+  final SmitheryRegistryClient _smithery;
 
-  /// The entry for [connectorId], or null when the registry has no such server.
+  /// The entry for [connectorId], or null when no directory knows it.
   ///
-  /// [connectorId] is the app's own id, which is the registry's `qualifiedName`
-  /// with `/` replaced by `-` (see `SmitheryServer.suggestedName`). The registry
-  /// has no lookup-by-name endpoint — every `/servers/<name>` variant answers
-  /// 404 — so this searches for the words in the id and picks the row whose
-  /// normalised name matches exactly. Anything less strict would attach one
-  /// server's logo to another's row.
+  /// **Composio answers this by name, which the previous directory could not.**
+  /// A Composio connector id *is* the toolkit slug, so this is a single lookup
+  /// with a definite answer. Smithery had no such endpoint — every
+  /// `/servers/<name>` variant answered 404 — so its branch below still has to
+  /// search for the words in the id and match exactly.
   Future<ConnectorCatalogEntry?> entryFor(String connectorId) async {
+    final id = connectorId.trim();
+    if (id.isEmpty) return null;
+
+    final (toolkit, error) = await _composio.toolkit(id);
+    if (toolkit != null) return composioCatalogEntry(toolkit);
+    // Only "cannot ask" falls through to the old directory — no route yet, or
+    // no session to ask with. A Composio that answered "no such toolkit" has
+    // answered, and putting the same name to a different registry would attach
+    // another service's brand to this row.
+    final canFallBack =
+        ComposioCatalogClient.isNotDeployed(error) ||
+        ComposioCatalogClient.isNotSignedIn(error);
+    if (!canFallBack) return null;
+
+    return _smitheryEntryFor(id);
+  }
+
+  /// The previous directory, kept while the Composio route ships.
+  Future<ConnectorCatalogEntry?> _smitheryEntryFor(String connectorId) async {
     // The id's separators are also its word boundaries, and the registry's
     // search is word-based: `developer-6vi7-tani` finds nothing, `developer
     // 6vi7 tani` finds it.
     final terms = connectorId.replaceAll('-', ' ').trim();
     if (terms.isEmpty) return null;
 
-    final (page, _) = await _client.servers(pageSize: 8, query: terms);
+    final (page, _) = await _smithery.servers(pageSize: 8, query: terms);
     if (page == null) return null;
 
     for (final server in page.servers) {
@@ -59,7 +80,10 @@ class ConnectedCatalogLookup {
 }
 
 final connectedCatalogLookupProvider = Provider<ConnectedCatalogLookup>(
-  (ref) => ConnectedCatalogLookup(ref.watch(smitheryRegistryClientProvider)),
+  (ref) => ConnectedCatalogLookup(
+    ref.watch(composioCatalogClientProvider),
+    ref.watch(smitheryRegistryClientProvider),
+  ),
 );
 
 /// Directory entries fetched for connected connectors the page never showed.
