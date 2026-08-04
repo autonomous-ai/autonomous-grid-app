@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/smithery_registry_client.dart';
+import 'connector_category.dart';
 import 'connector_catalog.dart';
 import 'smithery_catalog.dart';
 import 'smithery_server.dart';
@@ -17,6 +18,7 @@ class BrowseConnectorsState {
   const BrowseConnectorsState({
     this.servers = const [],
     this.query = '',
+    this.category,
     this.sort = SmitheryServerSort.mostUsed,
     this.page = 0,
     this.totalPages = 0,
@@ -40,7 +42,23 @@ class BrowseConnectorsState {
   /// The search this list answers — not what is in the box, which may have moved
   /// on. Load more sends *this*, so appending page 2 of an old search onto a new
   /// one is impossible.
+  ///
+  /// The user's words only. The category's own term is **not** folded in here:
+  /// this is what the search box shows, and rewriting it to `notion chat
+  /// messaging` would put words in the box the user never typed. The two are
+  /// combined at the moment of the request instead — see [searchTerms].
   final String query;
+
+  /// The subject pill in force, or null for the whole directory.
+  ///
+  /// Kept beside [query] rather than merged into it because they are undone
+  /// separately: clearing the search box must not clear the category, and
+  /// deselecting the category must not empty the box.
+  final ConnectorCategory? category;
+
+  /// What actually goes to the registry: the user's words and the category's,
+  /// in that order.
+  String get searchTerms => categorySearchTerms(category, query);
 
   /// The last page successfully appended. Zero means nothing has loaded.
   final int page;
@@ -85,6 +103,7 @@ class BrowseConnectorsState {
   BrowseConnectorsState copyWith({
     List<SmitheryServer>? servers,
     String? query,
+    ConnectorCategory? category,
     SmitheryServerSort? sort,
     int? page,
     int? totalPages,
@@ -93,9 +112,14 @@ class BrowseConnectorsState {
     bool? loadingMore,
     String? error,
     bool clearError = false,
+    bool clearCategory = false,
   }) => BrowseConnectorsState(
     servers: servers ?? this.servers,
     query: query ?? this.query,
+    // Same trap as `error` below, and as `archivedAt` before it: `?? this.x`
+    // cannot express "set this to null", so deselecting the pill would
+    // silently keep filtering by the category the user just turned off.
+    category: clearCategory ? null : (category ?? this.category),
     sort: sort ?? this.sort,
     page: page ?? this.page,
     totalPages: totalPages ?? this.totalPages,
@@ -144,19 +168,46 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
 
   /// Load (or reload) the first page for [query].
   Future<void> search(String query) async {
-    final generation = ++_generation;
     final trimmed = query.trim();
-    // Sort survives a search — it is a view preference, not part of the query,
-    // and resetting it on every keystroke would fight the user.
+    // Category survives a search for the same reason sort does: it is a
+    // standing narrowing of the directory, not part of what was typed, and
+    // clearing it on a keystroke would undo a choice the user can still see
+    // selected in the bar.
+    await _load(query: trimmed, category: state.category);
+  }
+
+  /// Narrow the directory to one subject, or to none.
+  ///
+  /// **Refetches, unlike [setSort].** Sorting reorders rows already in hand;
+  /// this changes which rows the registry is asked for, and the answer is not
+  /// derivable from what is loaded — a category's servers are spread across the
+  /// whole 4,000-row directory, not gathered in the 50 on screen.
+  Future<void> setCategory(ConnectorCategory? category) async {
+    if (category == state.category) return;
+    await _load(query: state.query, category: category);
+  }
+
+  /// The one path that replaces the list: both entry points above land here so
+  /// a search and a category change cannot drift apart in how they reset state.
+  Future<void> _load({
+    required String query,
+    required ConnectorCategory? category,
+  }) async {
+    final generation = ++_generation;
+    // Sort survives — it is a view preference, not part of the query, and
+    // resetting it on every keystroke would fight the user.
     state = BrowseConnectorsState(
-      query: trimmed,
+      query: query,
+      category: category,
       sort: state.sort,
       loading: true,
     );
 
     final (page, error) = await ref
         .read(smitheryRegistryClientProvider)
-        .servers(page: 1, pageSize: pageSize, query: trimmed);
+        // `searchTerms`, not `query`: the category's own words ride along here
+        // and nowhere else, so the search box keeps showing what was typed.
+        .servers(page: 1, pageSize: pageSize, query: state.searchTerms);
     if (generation != _generation) return;
 
     if (page == null) {
@@ -208,7 +259,10 @@ class BrowseConnectorsController extends Notifier<BrowseConnectorsState> {
           .servers(
             page: state.page + 1,
             pageSize: pageSize,
-            query: state.query,
+            // The same terms the first page was fetched with, category and
+            // all. Sending `query` alone would page out of the category the
+            // user is looking at and append rows from the whole directory.
+            query: state.searchTerms,
           );
       // Checked after every await, not once: this loop spans several round
       // trips, and a search started midway through must not have pages of the
