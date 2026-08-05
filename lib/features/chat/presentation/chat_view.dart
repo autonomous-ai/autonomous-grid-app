@@ -23,6 +23,7 @@ import '../../agents/presentation/agent_changes_bar.dart';
 import '../../agents/presentation/agent_permission_card.dart';
 import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
+import '../../agents/presentation/running_services_bar.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
@@ -669,6 +670,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         const PlanApproveBar(),
                         const AgentChangesBar(),
                         const GoalBar(),
+                        const RunningServicesBar(),
                         const QueuedFollowUps(),
                         if (slash != null)
                           PromptSlashMenu(query: slash, onPick: _insertPrompt)
