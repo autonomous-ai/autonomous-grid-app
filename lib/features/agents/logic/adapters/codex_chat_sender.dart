@@ -75,6 +75,9 @@ class CodexChatSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    // Codex has no permission channel at all — it never stops to ask, so
+    // there is nothing here to hold it to. See `agentSupportsApproval`.
+    AgentApprovalMode? approval,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');

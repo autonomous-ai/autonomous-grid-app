@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/composer_trigger.dart';
-import '../logic/agent_permissions.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
 ///
@@ -13,8 +11,22 @@ import '../logic/agent_permissions.dart';
 /// press Send": who answers, and what they're allowed to touch. The choice sticks
 /// until it's changed, and every menu line says plainly what it costs — including
 /// the one that stops asking altogether.
+///
+/// Told what to show and given somewhere to send a pick, rather than reaching for
+/// the state itself: what a pick means depends on the chat it was made in, and
+/// that is the chat feature's business, not this widget's.
 class ApprovalPicker extends ConsumerStatefulWidget {
-  const ApprovalPicker({super.key});
+  const ApprovalPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  /// The mode in force where this picker is shown.
+  final AgentApprovalMode value;
+
+  /// Called with the mode the user picked.
+  final ValueChanged<AgentApprovalMode> onChanged;
 
   @override
   ConsumerState<ApprovalPicker> createState() => _ApprovalPickerState();
@@ -36,7 +48,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
   final _menu = MenuController();
 
   void _select(AgentApprovalMode mode) {
-    ref.read(chatPrefsProvider.notifier).setApproval(mode);
+    widget.onChanged(mode);
     _menu.close();
   }
 
@@ -52,7 +64,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
   Widget build(BuildContext context) {
     // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
     AppTheme.watch(context);
-    final current = ref.watch(agentApprovalModeProvider);
+    final current = widget.value;
     return MenuAnchor(
       controller: _menu,
       // Hang the menu off the pill's top edge and let MenuAnchor measure it.

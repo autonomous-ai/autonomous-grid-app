@@ -17,6 +17,7 @@ class Conversation {
     this.projectId,
     this.titleLocked = false,
     this.archivedAt,
+    this.approval,
   });
 
   final String id;
@@ -55,6 +56,17 @@ class Conversation {
   /// and is independent of [updatedAt] (when it was last talked in).
   final DateTime? archivedAt;
 
+  /// How much the assistant may do without asking **in this chat**, or null when
+  /// the chat has never been told and follows the app's standing choice.
+  ///
+  /// Per chat, not per app, because the mode is a decision about one piece of
+  /// work: turning on full access to let the agent rebuild a project used to
+  /// leave *every* chat — including the next one, about something else
+  /// entirely — running without asking, with nothing on screen saying so. Null
+  /// rather than a default value so a chat saved before this existed keeps
+  /// following the app setting instead of freezing whatever it was that day.
+  final AgentApprovalMode? approval;
+
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -74,6 +86,10 @@ class Conversation {
     bool? titleLocked,
     DateTime? archivedAt,
     bool clearArchivedAt = false,
+    // Only ever *set*: a chat that has been given its own mode keeps it. Going
+    // back to "follow the app setting" isn't something the picker offers — every
+    // mode in it is a real choice.
+    AgentApprovalMode? approval,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -84,6 +100,7 @@ class Conversation {
     projectId: projectId ?? this.projectId,
     titleLocked: titleLocked ?? this.titleLocked,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
+    approval: approval ?? this.approval,
   );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +114,9 @@ class Conversation {
     // Written only when set, so a live chat's file is byte-identical to what
     // every build before archiving existed wrote.
     if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
+    // Same rule: absent means "follows the app setting", which is what every
+    // chat written before this field existed meant.
+    if (approval != null) 'approval': approval!.name,
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -129,6 +149,10 @@ class Conversation {
       // means live — the safe reading, since it keeps the chat visible rather
       // than hiding it in a screen the user hasn't learned about yet.
       archivedAt: _parseNullableDate(json['archivedAt']),
+      // An unknown name (a mode this build has dropped) reads as "not set" —
+      // following the app setting is the recoverable answer; guessing a mode
+      // would be guessing how much this chat may touch the computer.
+      approval: _approvalFrom(json['approval']),
       messages: [
         if (rawMessages is List)
           for (final m in rawMessages)
@@ -136,6 +160,16 @@ class Conversation {
       ],
     );
   }
+}
+
+/// The saved mode name, or null for "not set" — including a name no build of
+/// this app writes any more.
+AgentApprovalMode? _approvalFrom(Object? raw) {
+  if (raw is! String) return null;
+  for (final mode in AgentApprovalMode.values) {
+    if (mode.name == raw) return mode;
+  }
+  return null;
 }
 
 /// The placeholder title before a conversation has any user text.

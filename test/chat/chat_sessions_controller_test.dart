@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
@@ -53,6 +54,9 @@ class _FakeSender implements ChatSender {
   /// Whether each send was a Plan-mode planning turn, in call order.
   final planFirsts = <bool>[];
 
+  /// The permission level each send was made under, in call order.
+  final approvals = <AgentApprovalMode?>[];
+
   @override
   Stream<ChatSendUpdate> send({
     required NetworkCredential network,
@@ -65,6 +69,7 @@ class _FakeSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) {
     this.history = history;
     this.model = model;
@@ -72,6 +77,7 @@ class _FakeSender implements ChatSender {
     this.attachments = attachments;
     this.workdir = workdir;
     planFirsts.add(planFirst);
+    approvals.add(approval);
     return Stream.fromIterable(updates);
   }
 }
@@ -99,6 +105,7 @@ class _OpenEndedSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) => _controller.stream;
 }
 
@@ -127,6 +134,7 @@ class _PerChatSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) {
     final id = conversationId!;
     final controller = controllers[id] = StreamController<ChatSendUpdate>(
@@ -1367,6 +1375,99 @@ void main() {
 
       expect(h.container.read(chatSessionsProvider).awaitingPlan, isFalse);
       expect(h.agent.planFirsts, [false]);
+    });
+  });
+
+  group('how much the assistant may do belongs to the chat', () {
+    test('full access granted for one job does not follow the user into the '
+        'next chat', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      // The user's standing choice, set on a blank composer: ask me first.
+      chats.setApproval(AgentApprovalMode.ask);
+
+      // Chat one: the user hands the agent the keys to get a job done.
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'rebuild the project',
+      );
+      chats.setApproval(AgentApprovalMode.full);
+      final first = h.container.read(chatSessionsProvider).activeId!;
+
+      // Chat two, about something else entirely.
+      chats.newChat();
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'what does this file do?',
+      );
+      final second = h.container.read(chatSessionsProvider).activeId!;
+
+      expect(first, isNot(second));
+      // The second turn went out under the standing choice, not under the
+      // access the first chat was given.
+      expect(h.agent.approvals.last, AgentApprovalMode.ask);
+      // And going back to the first chat still shows what it was set to.
+      chats.select(first);
+      expect(
+        h.container.read(chatApprovalModeProvider),
+        AgentApprovalMode.full,
+      );
+    });
+
+    test(
+      'a chat that has never been told follows the app\'s standing choice',
+      () async {
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          updates: const [
+            ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+          ],
+        );
+        // Nothing open: the pick sets the standing choice rather than a chat.
+        h.container
+            .read(chatSessionsProvider.notifier)
+            .setApproval(AgentApprovalMode.readOnly);
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .send(network: _credential(), model: 'qwen', message: 'hi');
+
+        expect(h.agent.approvals.single, AgentApprovalMode.readOnly);
+        expect(
+          h.container.read(chatSessionsProvider).conversations.single.approval,
+          isNull,
+          reason: 'the chat follows the setting rather than freezing a copy',
+        );
+      },
+    );
+
+    test('the mode a chat was set to survives a restart — it decides what the '
+        'agent may do to the computer', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+        ],
+      );
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+      h.container
+          .read(chatSessionsProvider.notifier)
+          .setApproval(AgentApprovalMode.readOnly);
+
+      final reopened = (await h.store.loadAll()).single;
+      expect(reopened.approval, AgentApprovalMode.readOnly);
     });
   });
 }

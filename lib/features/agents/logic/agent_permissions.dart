@@ -4,16 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/hermes_permission_policy.dart';
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import 'agent_changes.dart';
 import 'agent_providers.dart';
-
-/// How much the agent may do without asking — the user's choice in the composer,
-/// remembered across launches. Every turn is sent with the mode showing on screen
-/// at the time, so changing it takes effect on the next message.
-final agentApprovalModeProvider = Provider<AgentApprovalMode>(
-  (ref) => ref.watch(chatPrefsProvider).approval,
-);
 
 /// How long the user gets to answer before the agent gives up on them.
 ///

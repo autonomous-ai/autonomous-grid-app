@@ -34,6 +34,7 @@ import '../../prompts/logic/prompt_slash.dart';
 import '../../prompts/presentation/prompt_dialog.dart';
 import '../../prompts/presentation/prompt_slash_menu.dart';
 import '../logic/active_workdir.dart';
+import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../logic/file_mention.dart';
@@ -690,7 +691,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           // Only the agent can touch this computer — a picture is made
                           // by the grid, so there'd be nothing to approve.
                           approvalPicker: agentMode
-                              ? const ApprovalPicker()
+                              ? ApprovalPicker(
+                                  value: ref.watch(chatApprovalModeProvider),
+                                  onChanged: ref
+                                      .read(chatSessionsProvider.notifier)
+                                      .setApproval,
+                                )
                               : null,
                           // Which agent answers, beside the model it runs — only
                           // when an agent is the one answering this turn.

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/media_event.dart';
+import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
@@ -112,6 +113,15 @@ abstract interface class ChatSender {
     /// the agent to lay out a plan and touch nothing. The agent sender honours
     /// it; the relay sender has no plan/act distinction and ignores it.
     bool planFirst,
+
+    /// How much the agent may do without asking on this turn — the *chat's*
+    /// mode, which is not the app's (see `chatApprovalModeProvider`). Passed in
+    /// rather than read from a provider because a turn can be dispatched into a
+    /// chat the user isn't looking at, and reading "the open chat's mode" there
+    /// would run it under a different chat's permissions. Null falls back to
+    /// the app's standing choice, for callers with no conversation at all (the
+    /// Playground); the relay sender ignores it, having no agent to constrain.
+    AgentApprovalMode? approval,
   });
 }
 
@@ -164,6 +174,8 @@ class DefaultChatSender implements ChatSender {
     // No plan/act distinction on a relay call — a chat/completions request just
     // answers.
     bool planFirst = false,
+    // The relay has no agent, so there are no permissions to constrain.
+    AgentApprovalMode? approval,
   }) {
     // The local smoke test and relay text both hit chat/completions; only the
     // base URL differs (the local engine has no `/relay/v1` prefix).

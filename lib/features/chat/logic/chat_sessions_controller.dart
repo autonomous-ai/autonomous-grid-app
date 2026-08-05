@@ -6,9 +6,9 @@ import '../../../core/text_preview.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/platform/desktop_notifier.dart';
 import '../../../infrastructure/platform/window_focus.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agents/logic/agent_changes.dart';
-import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
@@ -19,6 +19,7 @@ import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
+import 'chat_approval.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
 
@@ -368,6 +369,37 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Set how much the assistant may do without asking.
+  ///
+  /// Which of the two things this writes depends on where the user is standing,
+  /// and the split is the point of the feature:
+  ///
+  /// - In an open chat it changes **that chat only**. Granting full access to
+  ///   get one job done no longer leaves every other conversation — including
+  ///   tomorrow's, about something else — running without asking.
+  /// - On a blank composer there is no chat yet, so it sets the app's standing
+  ///   choice: the mode every chat that has never been told follows, and the
+  ///   one the chat about to be started will run under.
+  ///
+  /// Leaves `updatedAt` alone, like [setActiveModel]: changing what a chat may
+  /// do is not talking in it, and must not re-sort the sidebar.
+  void setApproval(AgentApprovalMode approval) {
+    final active = state.active;
+    if (active == null) {
+      ref.read(chatPrefsProvider.notifier).setApproval(approval);
+      return;
+    }
+    if (active.approval == approval) return;
+    final updated = active.copyWith(approval: approval);
+    _store.save(updated);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == updated.id) updated else c,
+      ],
+    );
+  }
+
   /// Give a conversation the name the user typed, replacing whatever was
   /// derived from its first message.
   ///
@@ -582,12 +614,20 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     // another chat generating in the background never stops this one.
     if (text.isEmpty || state.sending) return;
 
+    // What this chat lets the agent do — its own choice when it has one, else
+    // the app's standing one. Read once here so the turn runs under the mode
+    // that was on screen when Send was pressed, even if the user switches chats
+    // (or modes) while it streams.
+    final approval = approvalFor(
+      state.active,
+      ref.read(chatPrefsProvider).approval,
+    );
+
     // Plan mode's planning turn: only when the composer is set to Plan (unless
     // the caller forced it — the approve path forces it off) and the agent is
     // the one answering, since a relay/media turn has no plan/act split.
     final planTurn =
-        (planFirst ??
-            ref.read(agentApprovalModeProvider) == AgentApprovalMode.plan) &&
+        (planFirst ?? approval == AgentApprovalMode.plan) &&
         agentAnswersTurn(
           modality: modality,
           hasAttachments: attachments.isNotEmpty,
@@ -642,6 +682,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       // remember — one standing brief the agent reads on its first turn.
       instructions: project == null ? null : projectStandingBrief(project),
       planTurn: planTurn,
+      approval: approval,
       viaAgent: viaAgent,
       done: done,
     );
@@ -676,6 +717,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     required String? workdir,
     required String? instructions,
     required bool planTurn,
+    required AgentApprovalMode approval,
     required bool viaAgent,
     required Completer<void> done,
   }) {
@@ -715,6 +757,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       conversationId: id,
       // A planning turn runs read-only and asks the agent to lay out a plan.
       planFirst: planTurn,
+      // This chat's own permission level, not the app's — a turn dispatched
+      // into a background chat must run under that chat's rules.
+      approval: approval,
     );
 
     String? agentSessionId;
