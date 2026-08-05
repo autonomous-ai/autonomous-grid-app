@@ -6,12 +6,15 @@ import 'package:window_manager/window_manager.dart';
 
 import '../features/projects/logic/project_folder_status.dart';
 import '../features/provider_node/logic/provider_run_controller.dart';
+import '../infrastructure/platform/window_focus.dart';
 
 /// Watches the window's own life: every way the app can quit, so a running engine
 /// is stopped before the process exits — otherwise the detached `grid join` engine
 /// keeps serving on the relay with no app to manage or stop it — and its coming
-/// back to the front, so what the app believes about the user's folders is asked
-/// again rather than assumed.
+/// and going at the front, which answers two questions. What the app believes
+/// about the user's folders is asked again rather than assumed, and
+/// [windowFocusedProvider] knows whether anyone is watching — the difference
+/// between a finished reply that beeps and one that doesn't need to.
 ///
 /// Two exit paths must be covered, and only together do they catch a normal
 /// quit: the window's close button and the tray's "Quit" arrive via
@@ -70,7 +73,13 @@ class _WindowLifecycleScopeState extends ConsumerState<WindowLifecycleScope>
   }
 
   @override
-  void onWindowFocus() => revalidateProjectFolders(ref);
+  void onWindowFocus() {
+    _setFocused(focused: true);
+    revalidateProjectFolders(ref);
+  }
+
+  @override
+  void onWindowBlur() => _setFocused(focused: false);
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -78,8 +87,18 @@ class _WindowLifecycleScopeState extends ConsumerState<WindowLifecycleScope>
     // window fires [onWindowFocus], while ⌘-tabbing back to a hidden app arrives
     // as `resumed`. Re-asking is a handful of async stats, so being told twice
     // costs nothing and being told never costs a badge that lies all session.
-    if (state == AppLifecycleState.resumed) revalidateProjectFolders(ref);
+    if (state == AppLifecycleState.resumed) {
+      _setFocused(focused: true);
+      revalidateProjectFolders(ref);
+      return;
+    }
+    // Anything else — hidden, minimised, another app in front — means the user
+    // isn't watching, which is exactly when finished work deserves a banner.
+    _setFocused(focused: false);
   }
+
+  void _setFocused({required bool focused}) =>
+      ref.read(windowFocusedProvider.notifier).set(focused: focused);
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {

@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/text_preview.dart';
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/platform/desktop_notifier.dart';
+import '../../../infrastructure/platform/window_focus.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agents/logic/agent_changes.dart';
 import '../../agents/logic/agent_permissions.dart';
@@ -754,6 +757,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             // whatever the user is reading open.
             _commit(answered, phase: const SendIdle(), awaitingPlan: planTurn);
             _adoptAgentName(answered, agentSessionId);
+            _announceTurn(answered, body: firstLinePreview(reply.text));
           case ChatSendFailure(:final error, :final partial):
             // Keep what the assistant produced before it failed — its streamed
             // prose, the plan it laid out — instead of wiping the turn to a bare
@@ -772,32 +776,63 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               state = state
                   .withPhase(id, const SendIdle())
                   .withError(id, error);
-              break;
+            } else {
+              _commit(
+                current.copyWith(
+                  updatedAt: DateTime.now(),
+                  messages: [
+                    ...current.messages,
+                    // The part-answer is stamped too: a turn that died after
+                    // four minutes and one that died instantly are different
+                    // problems.
+                    kept.copyWith(
+                      model: model,
+                      took: clock.elapsed,
+                      firstToken: firstToken,
+                    ),
+                  ],
+                ),
+                phase: const SendIdle(),
+              );
+              // _commit clears the error; set it after so the line still shows
+              // above the kept reply.
+              state = state.withError(id, error);
             }
-            _commit(
-              current.copyWith(
-                updatedAt: DateTime.now(),
-                messages: [
-                  ...current.messages,
-                  // The part-answer is stamped too: a turn that died after four
-                  // minutes and one that died instantly are different problems.
-                  kept.copyWith(
-                    model: model,
-                    took: clock.elapsed,
-                    firstToken: firstToken,
-                  ),
-                ],
-              ),
-              phase: const SendIdle(),
-            );
-            // _commit clears the error; set it after so the line still shows
-            // above the kept reply.
-            state = state.withError(id, error);
+            _announceTurn(current, body: "Couldn't finish: $error");
         }
       },
       onDone: () => _finish(id),
       onError: (Object _) => _finish(id),
       cancelOnError: true,
+    );
+  }
+
+  /// Tell the desktop that [conversation] is done, unless the user is already
+  /// watching it happen.
+  ///
+  /// An agent turn can run for minutes, and the reason to leave the app during
+  /// one is that it doesn't need watching — so a reply that lands in silence is
+  /// a reply the user finds twenty minutes late. A turn that *failed* is
+  /// announced on the same terms: they are otherwise still waiting on an answer
+  /// that is never coming.
+  ///
+  /// [body] is already the one line to show (see [firstLinePreview]).
+  void _announceTurn(Conversation conversation, {required String body}) {
+    final worthIt = notificationIsWorthIt(
+      appFocused: ref.read(windowFocusedProvider),
+      userIsLookingAtIt: state.activeId == conversation.id,
+    );
+    if (!worthIt) return;
+    unawaited(
+      ref
+          .read(desktopNotifierProvider)
+          .show(
+            DesktopNotification(
+              title: conversation.title,
+              body: body,
+              opens: conversation.id,
+            ),
+          ),
     );
   }
 

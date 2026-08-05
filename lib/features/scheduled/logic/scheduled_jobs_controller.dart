@@ -10,6 +10,7 @@ import '../../projects/logic/project_tasks_store.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'task_delivery.dart';
+import 'task_inbox_store.dart';
 import 'task_model_fallback.dart';
 import 'task_power_controller.dart';
 
@@ -319,8 +320,10 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     final error = await _act((s) => s.remove(id));
     if (error != null) return error;
     // Drop the project link too, so a project's rail doesn't keep pointing at a
-    // task that's gone.
+    // task that's gone — and the headline of its last result, which would
+    // otherwise outlive the task in the store forever.
     ref.read(projectTasksProvider.notifier).unassign(id);
+    ref.read(taskInboxProvider.notifier).forget(id);
     if (ref.read(selectedJobIdProvider) == id) {
       ref.read(selectedJobIdProvider.notifier).select(null);
     }

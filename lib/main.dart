@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app/grid_app.dart';
+import 'app/notification_scope.dart';
 import 'app/single_instance.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
@@ -14,6 +15,7 @@ import 'features/skills/presentation/grid_skills_scope.dart';
 import 'infrastructure/logging/app_log.dart';
 import 'infrastructure/logging/http_log.dart';
 import 'infrastructure/logging/log_file.dart';
+import 'infrastructure/platform/desktop_notifier.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +77,17 @@ Future<void> main() async {
   await updater.init();
   updater.bindNativeMenu();
 
+  // Ask for notification permission once, here, rather than the first time a
+  // task finishes: the prompt then arrives while the user is looking at the app,
+  // not hours later on top of whatever they were doing. A machine that refuses
+  // keeps the no-op notifier, so nothing later calls into a dead plugin.
+  final notifier = SystemDesktopNotifier(log: appLog);
+  final canNotify = await notifier.initialize();
+  appLog.info(
+    'notify',
+    canNotify ? 'Notifications ready' : 'Notifications off',
+  );
+
   appLog.info('app', 'Launching UI');
   runApp(
     ProviderScope(
@@ -88,6 +101,7 @@ Future<void> main() async {
         // (`app_https-YYYYMMDD.log`), written the moment the request is issued.
         httpLogProvider.overrideWithValue(buildFileHttpLog()),
         appUpdaterServiceProvider.overrideWithValue(updater),
+        if (canNotify) desktopNotifierProvider.overrideWithValue(notifier),
       ],
       // Wraps the app rather than sitting inside it: connector tokens are
       // refreshed for the agent's sake, and the agent answers chats whether or
@@ -96,7 +110,7 @@ Future<void> main() async {
       // reason: tokens and skills are the agent's, and the agent answers chats
       // whether or not the screen that manages them was ever opened.
       child: const ConnectorRefreshScope(
-        child: GridSkillsScope(child: GridApp()),
+        child: GridSkillsScope(child: NotificationScope(child: GridApp())),
       ),
     ),
   );

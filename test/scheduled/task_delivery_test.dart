@@ -10,6 +10,7 @@ import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/features/projects/logic/project_tasks_store.dart';
 import 'package:grid_app/features/scheduled/logic/task_delivery.dart';
+import 'package:grid_app/features/scheduled/logic/task_inbox_store.dart';
 import 'package:grid_app/features/scheduled/logic/task_unread_store.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
@@ -106,10 +107,14 @@ void main() {
         taskDeliveryStoreProvider.overrideWithValue(
           TaskDeliveryStore(file: File('${tmp.path}/task_delivery.json')),
         ),
-        // The unread badge and the project links persist too — point them at the
-        // temp dir so a sweep never reads or writes the real `~/.grid`.
+        // The unread badge, the result headlines and the project links persist
+        // too — point them at the temp dir so a sweep never reads or writes the
+        // real `~/.grid`.
         taskUnreadStoreProvider.overrideWithValue(
           TaskUnreadStore(file: File('${tmp.path}/task_unread.json')),
+        ),
+        taskInboxStoreProvider.overrideWithValue(
+          TaskInboxStore(file: File('${tmp.path}/task_inbox.json')),
         ),
         projectTasksStoreProvider.overrideWithValue(
           ProjectTasksStore(file: File('${tmp.path}/project_tasks.json')),
@@ -309,6 +314,50 @@ void main() {
       expect(jobIdOfTaskConversation('mine'), isNull);
       expect(jobIdOfTaskConversation(null), isNull);
       expect(jobIdOfTaskConversation('task-'), isNull);
+    });
+  });
+
+  group('what the row says arrived', () {
+    test('a delivered run leaves the answer\'s own first line behind, so the '
+        'list says what it found rather than only that it ran', () async {
+      final h = harness(
+        FakeCron(
+          jobsJson: _jobsJson(),
+          outputs: {
+            'job-1': [
+              (
+                at: DateTime(2026, 7, 14, 8),
+                text: '## Response\n\n## Three PRs need review\n\nDetail…',
+              ),
+            ],
+          },
+        ),
+      );
+
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      final digest = h.container.read(taskInboxProvider)['job-1'];
+      expect(digest?.summary, 'Three PRs need review');
+      expect(digest?.at, DateTime(2026, 7, 14, 8));
+    });
+
+    test('the newest run is the one quoted — yesterday\'s headline would send '
+        'the user to read something they already have', () async {
+      final h = harness(
+        FakeCron(
+          jobsJson: _jobsJson(),
+          outputs: {
+            'job-1': [
+              (at: DateTime(2026, 7, 14, 8), text: '## Response\n\nYesterday'),
+              (at: DateTime(2026, 7, 15, 8), text: '## Response\n\nToday'),
+            ],
+          },
+        ),
+      );
+
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      expect(h.container.read(taskInboxProvider)['job-1']?.summary, 'Today');
     });
   });
 

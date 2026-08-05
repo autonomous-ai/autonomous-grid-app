@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../features/chat/logic/chat_sessions_controller.dart';
+import 'reveal_chat.dart';
 import 'shell_state.dart';
 
 /// Installs a macOS menu-bar (system tray) icon that reads like a Codex / ChatGPT
@@ -123,11 +125,7 @@ class _TrayScopeState extends ConsumerState<TrayScope> with TrayListener {
   }
 
   /// Open a saved chat: switch the shell to Chat, select it, raise the window.
-  void _openChat(String id) {
-    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-    ref.read(chatSessionsProvider.notifier).select(id);
-    _showWindow();
-  }
+  void _openChat(String id) => unawaited(revealChat(ref, id));
 
   /// Start a fresh chat and bring the window forward on it.
   void _newChat() {

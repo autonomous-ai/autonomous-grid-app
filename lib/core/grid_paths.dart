@@ -120,6 +120,10 @@ class GridPaths {
   /// overnight run isn't something to remember to go look for. App-owned.
   static File get taskUnreadFile => File('${home.path}/app/task_unread.json');
 
+  /// The opening line of each scheduled task's newest result, so the Scheduled
+  /// list can say what arrived rather than only that something did. App-owned.
+  static File get taskInboxFile => File('${home.path}/app/task_inbox.json');
+
   /// Working directory for the agent that answers chat. It runs read-only here
   /// so its file tools have a stable, app-owned root instead of pointing at the
   /// user's home. App-owned — the CLI never touches it.
