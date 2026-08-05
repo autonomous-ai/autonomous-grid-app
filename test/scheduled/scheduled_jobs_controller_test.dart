@@ -339,10 +339,10 @@ void main() {
           name: 'Weekly review',
           prompt: 'Summarise the week',
           schedule: const JobSchedule(
-            cadence: JobCadence.weekly,
+            cadence: JobCadence.chosenDays,
             hour: 16,
             minute: 0,
-            weekday: DateTime.friday,
+            days: {DateTime.friday},
           ),
         );
 

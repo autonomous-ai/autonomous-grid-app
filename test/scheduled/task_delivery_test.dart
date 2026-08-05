@@ -9,6 +9,7 @@ import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
+import 'package:grid_app/features/network/logic/network_models_provider.dart';
 import 'package:grid_app/features/projects/logic/project_tasks_store.dart';
 import 'package:grid_app/features/scheduled/logic/task_delivery.dart';
 import 'package:grid_app/features/scheduled/logic/task_inbox_store.dart';
@@ -120,6 +121,12 @@ void main() {
         projectTasksStoreProvider.overrideWithValue(
           ProjectTasksStore(file: File('${tmp.path}/project_tasks.json')),
         ),
+        // Before deciding whether a task's model has gone, the sweep asks what
+        // the grid serves. Left alone that reads the real `~/.grid` session and
+        // calls the relay — which made this file fail at random depending on
+        // whoever was logged in on the machine running it. Empty is what the
+        // fallback reads as "don't know", so it moves nothing.
+        networkModelsProvider.overrideWith((ref) async => const <String>[]),
       ],
     );
     addTearDown(container.dispose);

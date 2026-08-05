@@ -33,10 +33,10 @@ const kJobSuggestions = [
         'Turn the notes and documents in my folder into a short status update '
         'for the week: what got done, what is still open, what is blocked.',
     schedule: JobSchedule(
-      cadence: JobCadence.weekly,
+      cadence: JobCadence.chosenDays,
       hour: 16,
       minute: 0,
-      weekday: DateTime.friday,
+      days: {DateTime.friday},
     ),
   ),
   JobSuggestion(
