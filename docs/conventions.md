@@ -143,9 +143,10 @@ are **deliberate** — don't "fix" them back.
 - Commits: imperative summary. An AI agent adds its own `Co-Authored-By:` trailer —
   each tool's root pointer file says which.
 - **Branch off `main`, never commit straight to it.** Keep the diff scoped.
-- **Tracked docs:** this file, `CLAUDE.md`, `AGENTS.md`, `README.md`. The rest of
-  `docs/` is local-only working notes and stays gitignored — if a note becomes a rule,
-  move it here rather than leaving it on one machine.
+- **Tracked docs:** this file, `docs/style-guide-grid-app.md`, `CLAUDE.md`,
+  `AGENTS.md`, `README.md` — everything §§1–11 tells you to read before working. The
+  rest of `docs/` is local-only working notes and stays gitignored — if a note becomes
+  a rule, move it here rather than leaving it on one machine.
 
 ## 11. Accessibility
 
