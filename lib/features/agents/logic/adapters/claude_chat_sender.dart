@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/claude_exec_event.dart';
 import '../../../../infrastructure/cli/claude_exec_service.dart';
+import '../../../../infrastructure/cli/chrome_bridge_service.dart';
+import '../../../../infrastructure/cli/chrome_extension_probe.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/state/model_context_store.dart';
@@ -20,6 +22,7 @@ import '../agent_providers.dart';
 import '../agent_server_error.dart';
 import '../agent_session_slots.dart';
 import '../agent_turn_log.dart';
+import 'claude_browser.dart';
 import 'claude_tool.dart';
 import 'claude_turn_mcp_config.dart';
 import '../model_context_window.dart';
@@ -105,11 +108,19 @@ class ClaudeChatSender implements ChatSender {
     // until something knows — see [modelContextWindowProvider].
     final window = _ref.read(modelContextWindowProvider(model));
 
+    // Which browser this turn can reach, if any — decided per turn because the
+    // answer moves between two messages: the user installs the extension,
+    // restarts Chrome, or switches to a model the extension can't serve.
+    final browser = await _openBrowser(model);
+    final onExtension = browser.lane == ClaudeBrowserLane.extension;
+
     // Rewritten per turn, not cached: a connector signed in or disconnected
     // since the last message has to be in — or out of — this one. Null when the
     // write failed, which launches the turn on `~/.claude.json` rather than on
     // a path `claude` would reject. See [ClaudeTurnMcpConfig.write].
-    final mcpConfigPath = await ClaudeTurnMcpConfig().write();
+    final mcpConfigPath = await ClaudeTurnMcpConfig().write(
+      extra: browser.mcpExtra,
+    );
 
     yield* _runTurn(
       workdir: root,
@@ -118,16 +129,70 @@ class ClaudeChatSender implements ChatSender {
         turn.freshStart ? instructions : null,
       ),
       resumeSessionId: turn.resumeSessionId,
-      model: model,
-      environment: claudeCodeEnv(
-        network.relayBaseUrl,
-        network.relayApiKey,
-        [model],
-        compactWindow: window == null ? null : agentContextCeiling(window),
-      ),
+      // On the extension lane Claude Code runs against its own sign-in, where
+      // the relay's name for the seat (`claude:opus`) is not a model it knows.
+      model: onExtension ? claudeLocalModel(model) : model,
+      environment: onExtension
+          ? const {}
+          : claudeCodeEnv(
+              network.relayBaseUrl,
+              network.relayApiKey,
+              [model],
+              compactWindow: window == null
+                  ? null
+                  : agentContextCeiling(window),
+            ),
       planFirst: planFirst,
       slot: turn.slot,
       mcpConfigPath: mcpConfigPath,
+      chrome: onExtension,
+      dropEnvironment: onExtension ? kClaudeRelayEnvKeys : const {},
+    );
+  }
+
+  /// The browser lane this turn takes, with the fallback browser already started
+  /// if that is the lane — so the caller gets a lane it can act on rather than a
+  /// promise that may not hold.
+  ///
+  /// Every outcome is logged, including the ones that take no browser at all:
+  /// "the agent didn't use my browser" is the report this feature generates, and
+  /// the log is the only place that can answer it (§6).
+  Future<({ClaudeBrowserLane lane, Map<String, Object?> mcpExtra})>
+  _openBrowser(String model) async {
+    final log = _ref.read(appLogProvider);
+    final plan = planClaudeBrowser(
+      model: model,
+      extensionState: _ref.read(chromeExtensionProbeProvider).detect(),
+      cliSupportsChrome: await _ref.read(claudeSupportsChromeProvider.future),
+      cdpReady: _ref.read(chromeBridgeAvailableProvider),
+    );
+    if (plan.lane != ClaudeBrowserLane.cdp) {
+      log.info('agent', 'Browser lane ${plan.lane.name}: ${plan.reason}');
+      return (lane: plan.lane, mcpExtra: const <String, Object?>{});
+    }
+
+    final url = await _ref.read(chromeBridgeProvider).ensureRunning();
+    final npx = _ref.read(npxPathProvider);
+    if (url == null || npx == null) {
+      log.failure(
+        'agent',
+        "Browser lane none: the app's own browser wouldn't start "
+            '(${plan.reason})',
+      );
+      return (
+        lane: ClaudeBrowserLane.none,
+        mcpExtra: const <String, Object?>{},
+      );
+    }
+    log.info('agent', 'Browser lane cdp on $url: ${plan.reason}');
+    return (
+      lane: plan.lane,
+      mcpExtra: {
+        kChromeDevtoolsServerName: chromeDevtoolsEntry(
+          npxPath: npx,
+          browserUrl: url,
+        ),
+      },
     );
   }
 
@@ -145,6 +210,8 @@ class ClaudeChatSender implements ChatSender {
     required bool planFirst,
     required AgentSessionSlot slot,
     required String? mcpConfigPath,
+    required bool chrome,
+    required Set<String> dropEnvironment,
   }) {
     final activityLog = _ref.read(agentActivityProvider.notifier);
     final planLog = _ref.read(agentPlanProvider.notifier);
@@ -161,6 +228,7 @@ class ClaudeChatSender implements ChatSender {
             model: model,
             resumeSessionId: resumeSessionId,
             mcpConfigPath: mcpConfigPath,
+            chrome: chrome,
           ),
         ],
         workdir: workdir,
@@ -178,6 +246,8 @@ class ClaudeChatSender implements ChatSender {
           environment: environment,
           resumeSessionId: resumeSessionId,
           mcpConfigPath: mcpConfigPath,
+          chrome: chrome,
+          dropEnvironment: dropEnvironment,
         );
 
     final answer = StringBuffer();

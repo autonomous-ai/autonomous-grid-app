@@ -225,13 +225,30 @@ class ClaudeStreamParser {
 AgentActivityKind claudeToolKind(String name) => switch (name) {
   'Bash' || 'BashOutput' || 'KillShell' => AgentActivityKind.command,
   'WebSearch' || 'WebFetch' => AgentActivityKind.web,
+  _ when isBrowserTool(name) => AgentActivityKind.web,
   _ => AgentActivityKind.tool,
 };
+
+/// The MCP servers a browser lane hands the turn: the Claude in Chrome
+/// extension, and the app's own browser over the DevTools protocol.
+const List<String> kBrowserToolPrefixes = [
+  'mcp__claude-in-chrome__',
+  'mcp__chrome-devtools__',
+];
+
+/// Whether [name] is a call into a browser rather than into this computer.
+///
+/// The feed is the only place a user sees that an agent is driving their
+/// browser — there is no button that turned it on and none that shows it is
+/// running — so a browser step reading `mcp__claude-in-chrome__navigate_page`
+/// is a step nobody can act on.
+bool isBrowserTool(String name) => kBrowserToolPrefixes.any(name.startsWith);
 
 /// The one line the feed shows for a tool call — the thing the call is *about*,
 /// not the tool's name, wherever the input carries it. A row reading "Bash"
 /// eight times says nothing; the commands do.
 String claudeToolLabel(String name, Map<String, dynamic> input) {
+  if (isBrowserTool(name)) return browserToolLabel(name, input);
   final detail = switch (name) {
     'Bash' => input['command'],
     'WebSearch' => input['query'],
@@ -242,6 +259,30 @@ String claudeToolLabel(String name, Map<String, dynamic> input) {
   };
   final text = '${detail ?? ''}'.trim();
   return text.isEmpty ? name : '$name · $text';
+}
+
+/// One browser step, said the way the user would say it: "Browser · navigate
+/// page · example.com".
+///
+/// The server name is dropped rather than shown. Which of the two lanes drove
+/// the browser is a routing detail the log already carries; on screen it would
+/// only ask the user to learn the difference between two things that look
+/// identical from where they sit.
+String browserToolLabel(String name, Map<String, dynamic> input) {
+  final action = name.split('__').last.replaceAll('_', ' ').trim();
+  final detail =
+      input['url'] ??
+      input['query'] ??
+      input['text'] ??
+      input['value'] ??
+      input['selector'] ??
+      input['uid'];
+  final text = '${detail ?? ''}'.trim();
+  return [
+    'Browser',
+    if (action.isNotEmpty) action,
+    if (text.isNotEmpty) text,
+  ].join(' · ');
 }
 
 /// The last segment of a path — the feed has one line, and an absolute path

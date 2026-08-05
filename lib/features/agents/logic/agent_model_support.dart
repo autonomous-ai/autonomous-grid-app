@@ -73,10 +73,26 @@ String agentModelBlockedLabel(AgentTool tool) => 'Not for ${tool.name}';
 String agentModelBlockedReason(AgentTool tool) =>
     "${tool.name} can't answer with this model. Switch the assistant to use it.";
 
+/// Whether **everything** [model] names is a Claude Code seat (`claude:opus`) —
+/// the vendor's own CLI answering behind the relay, rather than a model a
+/// machine is serving.
+///
+/// The one question the browser lane turns on, and the reason it asks *every*
+/// rather than *any*: only when the whole selection is a seat is the brain
+/// behind the answer already Claude Code, so running it locally to reach the
+/// browser extension changes the route without changing who answers. One grid
+/// model in the list and the local run would quietly answer as somebody else.
+bool isClaudeSeatModel(String model) =>
+    _modelKinds(model).every((kind) => kind == kClaudeSeatKind);
+
 /// Whether [model] names any of [kinds] before its colon. Reads the comma-joined
 /// form (`qwen3, codex:gpt-5.5`) a multi-model selection carries too, so one
 /// foreign model in a list can't slip past.
-bool _namesKind(String model, Set<String> kinds) => model
+bool _namesKind(String model, Set<String> kinds) =>
+    _modelKinds(model).any(kinds.contains);
+
+/// The kind each name in [model] carries before its colon — `qwen3` for a plain
+/// grid model, `claude` / `codex` for a seat.
+Iterable<String> _modelKinds(String model) => model
     .split(',')
-    .map((name) => name.trim().toLowerCase().split(':').first)
-    .any(kinds.contains);
+    .map((name) => name.trim().toLowerCase().split(':').first);

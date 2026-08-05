@@ -45,8 +45,15 @@ abstract interface class ClaudeExecService {
   /// starts a fresh one. [workdir] is the folder the turn opens in, and
   /// [environment] carries the grid the answer comes from (see
   /// `claudeCodeEnv`). [mcpConfigPath] narrows the turn to the app's own
-  /// connectors; null leaves it reading `~/.claude.json`. Throws
+  /// connectors; null leaves it reading `~/.claude.json`. [chrome] hands the
+  /// turn the browser tools of the Claude in Chrome extension. Throws
   /// [ClaudeExecException] if the process won't start.
+  ///
+  /// [dropEnvironment] names variables the child must **not** inherit. Adding to
+  /// [environment] can't express that: the app's own process may already carry
+  /// an `ANTHROPIC_*` (a developer running from a terminal that exported one),
+  /// and a turn that has to reach Claude Code's own sign-in — the browser
+  /// extension refuses any other — needs them gone rather than overwritten.
   ClaudeExecRun run({
     required String workdir,
     required String prompt,
@@ -54,6 +61,8 @@ abstract interface class ClaudeExecService {
     required Map<String, String> environment,
     String? resumeSessionId,
     String? mcpConfigPath,
+    bool chrome = false,
+    Set<String> dropEnvironment = const {},
   });
 }
 
@@ -68,6 +77,12 @@ abstract interface class ClaudeExecService {
 /// is the widest grant in the app, so it is named here rather than buried in an
 /// argv string. `acceptEdits` is the one-word change that would take shell
 /// commands back out of it.
+///
+/// TODO(BE): a turn on the browser extension lane runs under this too, and the
+/// browser it drives is the user's own — every site they are signed in to,
+/// clicked and typed into with nobody asked first. Claude Code's site-level
+/// permissions (managed inside the extension) are the only gate left, and this
+/// app neither sets nor reads them.
 const String kClaudePermissionMode = 'bypassPermissions';
 
 // Removed 2026-08-04: `kClaudeToolSearchPrompt`, an `--append-system-prompt`
@@ -105,10 +120,15 @@ const String kClaudePermissionMode = 'bypassPermissions';
 ///   connectors. See [ClaudeTurnMcpConfig] for why, and why [mcpConfigPath] is
 ///   nullable: a path that doesn't exist aborts the turn outright, so a failed
 ///   write must drop **both** flags rather than pass a broken one.
+/// - `--chrome` adds the Claude in Chrome extension's browser tools. Off by
+///   default because it is only ever right for one lane: the flag costs context
+///   on every turn that carries it, and a turn holding the relay's credentials
+///   cannot use the extension at all (see [ClaudeBrowserLane]).
 List<String> claudeExecArgs({
   required String model,
   String? resumeSessionId,
   String? mcpConfigPath,
+  bool chrome = false,
 }) => [
   '-p',
   '--output-format',
@@ -119,6 +139,7 @@ List<String> claudeExecArgs({
   kClaudePermissionMode,
   '--model',
   model,
+  if (chrome) '--chrome',
   if (mcpConfigPath != null) ...[
     '--mcp-config',
     mcpConfigPath,
@@ -142,6 +163,8 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     required Map<String, String> environment,
     String? resumeSessionId,
     String? mcpConfigPath,
+    bool chrome = false,
+    Set<String> dropEnvironment = const {},
   }) => _ClaudeExecTurn(
     path: _path,
     workdir: workdir,
@@ -150,6 +173,8 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     environment: environment,
     resumeSessionId: resumeSessionId,
     mcpConfigPath: mcpConfigPath,
+    chrome: chrome,
+    dropEnvironment: dropEnvironment,
   ).start();
 }
 
@@ -162,6 +187,8 @@ class _ClaudeExecTurn {
     required this.environment,
     required this.resumeSessionId,
     required this.mcpConfigPath,
+    required this.chrome,
+    required this.dropEnvironment,
   });
 
   final String path;
@@ -171,6 +198,8 @@ class _ClaudeExecTurn {
   final Map<String, String> environment;
   final String? resumeSessionId;
   final String? mcpConfigPath;
+  final bool chrome;
+  final Set<String> dropEnvironment;
 
   final _events = StreamController<ClaudeExecEvent>();
   final _done = Completer<void>();
@@ -201,13 +230,14 @@ class _ClaudeExecTurn {
         model: model,
         resumeSessionId: resumeSessionId,
         mcpConfigPath: mcpConfigPath,
+        chrome: chrome,
       ),
       workingDirectory: workdir,
       environment: {
         ...Platform.environment,
         'PATH': HostEnvironment.path(),
         ...environment,
-      },
+      }..removeWhere((name, _) => dropEnvironment.contains(name)),
     ).then(_onStarted).catchError(_onStartError);
     return ClaudeExecRun(
       events: _events.stream,

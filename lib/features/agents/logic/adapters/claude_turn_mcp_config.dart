@@ -63,12 +63,18 @@ class ClaudeTurnMcpConfig {
   /// path would turn a crowded tool list into no answer at all. Returning null
   /// leaves the turn on `~/.claude.json`: the behaviour that shipped before this
   /// class existed, which is degraded but never silent.
-  Future<String?> write() async {
+  /// [extra] adds servers this turn needs that the user's config has never
+  /// heard of — the browser bridge, whose endpoint only exists once the app has
+  /// started it. They are written here and nowhere else: `~/.claude.json` is the
+  /// user's file, and an entry pointing at a port this app happens to be holding
+  /// would outlive the session that made it true.
+  Future<String?> write({Map<String, Object?> extra = const {}}) async {
     try {
       final entries = await _source.readRaw();
       final mine = <String, Object?>{
         for (final entry in entries.entries)
           if (_isOurs(entry.value)) entry.key: entry.value,
+        ...extra,
       };
       // An empty `mcpServers` is valid and was measured as such: the turn starts
       // clean with 27 built-in tools and no MCP. That is the honest rendering of
