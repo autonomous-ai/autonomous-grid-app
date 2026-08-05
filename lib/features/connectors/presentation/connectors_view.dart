@@ -88,8 +88,16 @@ enum _ConnectorFilter {
   /// connectors live under the Connected pill**. Tony chose this over keeping
   /// them on "All" and hiding them only once a category is picked — one rule
   /// beats a rule plus a special case.
+  /// **Whether Browse hides them now depends on the directory.** The rule above
+  /// was written against a four-thousand-row registry, where connected rows
+  /// really did crowd out the browsing. Against a curated twelve it hid a
+  /// quarter of the catalog and made the connected ones look absent rather than
+  /// done, which is what prompted the reversal (Tony, 2026-08-05). The
+  /// condition lives on the source so switching back restores the old
+  /// behaviour with it — see `ConnectorDirectorySource.hidesConnectedRows`.
   bool keeps(Connector connector) => switch (this) {
-    all => !connector.connected,
+    all =>
+      !connector.connected || !kConnectorDirectorySource.hidesConnectedRows,
     connected => connector.connected,
   };
 }
@@ -988,8 +996,14 @@ class _ConnectorsBody extends StatelessWidget {
         // Never on the Connected pill: that view *is* the list of connected
         // connectors, and a sidebar repeating it beside itself is the same
         // content twice.
+        // The same rule, applied once more: the sidebar exists to keep the
+        // connected connectors in view *while they are hidden from the list*.
+        // On a directory that leaves them in Browse they are already on screen,
+        // and a panel repeating the three cards beside them is the duplication
+        // this rule was written to avoid.
         final showSidebar =
             !showingConnected &&
+            kConnectorDirectorySource.hidesConnectedRows &&
             connected.isNotEmpty &&
             constraints.maxWidth >= _sidebarBreakpoint;
 

@@ -68,6 +68,21 @@ extension ConnectorDirectoryCapabilities on ConnectorDirectorySource {
   /// showing "0" reads as a verdict rather than as "not applicable".
   bool get hasPopularity => this == ConnectorDirectorySource.smithery;
 
+  /// Browsing would be crowded out by the rows already connected, so Browse
+  /// leaves them to the Connected pill.
+  ///
+  /// **True only because the directory is enormous.** On the public registry
+  /// seven connected rows measured 281px — 63% of the list area on a 700px
+  /// window — leaving about one card's worth of room for the four thousand the
+  /// user opened Browse to look through.
+  ///
+  /// A curated list of twelve has the opposite problem. Hiding the three that
+  /// are connected shows nine of twelve with nothing saying the others exist,
+  /// so the catalog reads as incomplete and the connected ones look missing
+  /// rather than done. There they stay in Browse, marked as connected, under
+  /// their own section heading.
+  bool get hidesConnectedRows => this == ConnectorDirectorySource.smithery;
+
   /// Browsing requires a signed-in Grid session.
   ///
   /// The gateway authenticates every call with the app's session Bearer;
