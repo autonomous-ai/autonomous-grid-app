@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import '../../agents/logic/agent_extensions.dart';
+import '../../agents/logic/agent_extensions_registry.dart';
 import '../../agents/logic/agent_skill.dart';
 import '../../agents/logic/skill_writer.dart';
 import 'public_skill_catalog.dart';

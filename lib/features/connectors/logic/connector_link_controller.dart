@@ -10,6 +10,7 @@ import '../../agent/logic/codex_tool.dart';
 import '../../agent/logic/hermes_tool.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_extensions.dart';
+import '../../agents/logic/agent_extensions_registry.dart';
 import '../../agents/logic/connector_token.dart';
 import '../../agents/logic/mcp_server.dart';
 import 'connector_catalog.dart';

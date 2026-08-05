@@ -9,6 +9,7 @@ import 'package:grid_app/infrastructure/cli/claude_plugin_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_extensions.dart';
+import 'package:grid_app/features/agents/logic/agent_extensions_registry.dart';
 import 'package:grid_app/features/agents/logic/mcp_server.dart';
 import 'package:grid_app/infrastructure/cli/hermes_plugin_service.dart';
 
