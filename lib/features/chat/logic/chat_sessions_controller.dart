@@ -37,6 +37,30 @@ export '../../playground/logic/chat_message.dart'
 /// open chat (compose a new one) while omitting it keeps the current one.
 const Object _keep = Object();
 
+/// A message the user typed while the chat was still answering the last one.
+///
+/// The composer used to simply drop it: [ChatSessionsController.send] returned
+/// early while a reply was in flight, so a follow-up thought had to be held in
+/// the user's head until the agent finished — which, for an agent turn, can be
+/// minutes. Everything the send needs is carried here so the queued turn goes
+/// out exactly as it would have, on the grid and model that were chosen at the
+/// time rather than whatever is selected when it finally runs.
+class QueuedTurn {
+  const QueuedTurn({
+    required this.network,
+    required this.model,
+    required this.text,
+    required this.modality,
+    required this.attachments,
+  });
+
+  final NetworkCredential network;
+  final String model;
+  final String text;
+  final PlaygroundModality modality;
+  final List<MediaAttachment> attachments;
+}
+
 /// The Chat tab's whole state: every saved conversation (newest first), which
 /// one is open, and the in-flight send state **per conversation**, so a reply
 /// can stream in one chat while the user starts or reads another. A null
@@ -58,6 +82,7 @@ class ChatSessionsState {
     this.errors = const {},
     this.awaitingPlanIds = const {},
     this.runningAgentId,
+    this.queued = const {},
     this.loading = false,
   });
 
@@ -87,6 +112,14 @@ class ChatSessionsState {
 
   /// The last turn's error per conversation id — absent/null means none.
   final Map<String, String?> errors;
+
+  /// What the user typed while a chat was still answering, per conversation id,
+  /// oldest first — sent one at a time as the chat frees up.
+  ///
+  /// Live state, not saved with the conversation: a queued follow-up is a
+  /// message that hasn't been sent, and quitting the app is as clear a "don't
+  /// send it" as pressing cancel.
+  final Map<String, List<QueuedTurn>> queued;
 
   /// Conversations whose last turn was Plan mode's planning turn and whose plan
   /// is waiting on the user: the chat shows an "approve & run" bar. Cleared the
@@ -137,6 +170,14 @@ class ChatSessionsState {
   bool awaitingPlanFor(String? id) =>
       id != null && awaitingPlanIds.contains(id);
 
+  /// What is waiting to be sent in the chat with [id], oldest first.
+  List<QueuedTurn> queuedFor(String? id) =>
+      (id == null ? null : queued[id]) ?? const [];
+
+  /// What is waiting to be sent in the **open** chat — what the composer shows
+  /// above itself, so a queued follow-up is visible rather than only remembered.
+  List<QueuedTurn> get queuedHere => queuedFor(activeId);
+
   /// The open conversation's send phase — what the on-screen transcript shows.
   SendPhase get phase => phaseFor(activeId);
 
@@ -159,6 +200,7 @@ class ChatSessionsState {
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
     Object? runningAgentId = _keep,
+    Map<String, List<QueuedTurn>>? queued,
     bool? loading,
   }) => ChatSessionsState(
     loading: loading ?? this.loading,
@@ -173,7 +215,20 @@ class ChatSessionsState {
     runningAgentId: identical(runningAgentId, _keep)
         ? this.runningAgentId
         : runningAgentId as String?,
+    queued: queued ?? this.queued,
   );
+
+  /// This state with [turns] waiting in the chat [id] — dropped from the map
+  /// when there's nothing left, so [queued] only holds chats with a backlog.
+  ChatSessionsState withQueue(String id, List<QueuedTurn> turns) {
+    final next = Map<String, List<QueuedTurn>>.from(queued);
+    if (turns.isEmpty) {
+      next.remove(id);
+    } else {
+      next[id] = List.unmodifiable(turns);
+    }
+    return copyWith(queued: Map.unmodifiable(next));
+  }
 
   /// This state with the chat [id]'s phase set — removed from the map when it
   /// goes idle, so [phases] only ever holds the chats actually working.
@@ -601,6 +656,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Send [message] in the open chat — or, when [into] names one, in that chat
+  /// without bringing it to the front (how a queued follow-up goes out).
+  ///
+  /// Typing while the open chat is still answering **queues** the message rather
+  /// than dropping it: an agent turn can run for minutes, and the follow-up
+  /// thought shouldn't have to be held in the user's head until it ends. The
+  /// queue drains one turn at a time as the chat frees up (see [_drainQueue]).
   Future<void> send({
     required NetworkCredential network,
     required String model,
@@ -608,20 +670,36 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     bool? planFirst,
+    String? into,
   }) async {
     final text = message.trim();
-    // Block only a re-send into the *open* chat while its own reply streams;
-    // another chat generating in the background never stops this one.
-    if (text.isEmpty || state.sending) return;
+    if (text.isEmpty) return;
+
+    if (into == null && state.sending) {
+      _enqueue(
+        QueuedTurn(
+          network: network,
+          model: model,
+          text: text,
+          modality: modality,
+          attachments: List.unmodifiable(attachments),
+        ),
+      );
+      return;
+    }
+
+    // The chat this turn lands in. A queued follow-up names it, because by the
+    // time it goes out the user may well be reading something else — and it
+    // must go where it was typed, not wherever they have moved to.
+    final target = into == null ? _activeOrNew(model) : _find(into);
+    // The chat was deleted while its follow-up waited. Nothing to send it to.
+    if (target == null) return;
 
     // What this chat lets the agent do — its own choice when it has one, else
     // the app's standing one. Read once here so the turn runs under the mode
     // that was on screen when Send was pressed, even if the user switches chats
     // (or modes) while it streams.
-    final approval = approvalFor(
-      state.active,
-      ref.read(chatPrefsProvider).approval,
-    );
+    final approval = approvalFor(target, ref.read(chatPrefsProvider).approval);
 
     // Plan mode's planning turn: only when the composer is set to Plan (unless
     // the caller forced it — the approve path forces it off) and the agent is
@@ -643,11 +721,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       attachments: attachments,
       outputsDir: ref.read(mediaOutputsDirProvider),
     );
-    final base = _activeOrNew(model);
-    final withUser = base.copyWith(
+    final withUser = target.copyWith(
       model: model,
       updatedAt: DateTime.now(),
-      messages: [...base.messages, userTurn],
+      messages: [...target.messages, userTurn],
     );
     // A chat is named once — from its first message, until the agent replaces
     // that with a name for what it's actually about. Re-deriving on every turn
@@ -655,8 +732,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final conversation = withUser.title == kNewConversationTitle
         ? withUser.copyWith(title: deriveConversationTitle(withUser.messages))
         : withUser;
-    // The send owns the open slot: make it active and clear any prior error.
-    _commit(conversation, phase: const SendBusy(), makeActive: true);
+    // The send owns the open slot: make it active and clear any prior error. A
+    // queued follow-up doesn't — it goes out into a chat the user may have left,
+    // and nothing the app sends on its own may pull them back to it.
+    _commit(conversation, phase: const SendBusy(), makeActive: into == null);
 
     final id = conversation.id;
     final done = _dones[id] = Completer<void>();
@@ -963,6 +1042,44 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Hold [turn] until the open chat has finished answering.
+  void _enqueue(QueuedTurn turn) {
+    final id = state.activeId;
+    if (id == null) return;
+    state = state.withQueue(id, [...state.queuedFor(id), turn]);
+  }
+
+  /// Drop the follow-up at [index] in the chat [id] — the user changed their
+  /// mind before it went out.
+  void cancelQueued(String id, int index) {
+    final waiting = [...state.queuedFor(id)];
+    if (index < 0 || index >= waiting.length) return;
+    waiting.removeAt(index);
+    state = state.withQueue(id, waiting);
+  }
+
+  /// Send the next follow-up waiting in the chat [id], if any.
+  ///
+  /// One at a time, and only once the turn before it has settled: the whole
+  /// point of the queue is that these are consecutive turns of one conversation,
+  /// so firing them together would have them race for the agent's session.
+  void _drainQueue(String id) {
+    final waiting = state.queuedFor(id);
+    if (waiting.isEmpty) return;
+    final next = waiting.first;
+    state = state.withQueue(id, waiting.sublist(1));
+    unawaited(
+      send(
+        network: next.network,
+        model: next.model,
+        message: next.text,
+        modality: next.modality,
+        attachments: next.attachments,
+        into: id,
+      ),
+    );
+  }
+
   /// Settle one conversation's send: drop its subscription and complete the
   /// future [send] returned (whether it finished on its own or was cancelled).
   void _finish(String id) {
@@ -970,14 +1087,23 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
+    _drainQueue(id);
   }
 
   /// Cancel one conversation's in-flight reply (if any) and settle it. Also
-  /// drops it from [_agentQueue] in case it was still waiting to dispatch.
+  /// drops it from [_agentQueue] in case it was still waiting to dispatch, and
+  /// from the follow-up queue: Stop means stop, so a message typed behind the
+  /// turn being abandoned is abandoned with it rather than firing a second later
+  /// as if nothing had happened. The composer shows what is waiting, so this is
+  /// something the user can see go.
   void _cancel(String id) {
     final sub = _subs.remove(id);
     sub?.cancel();
     _agentQueue.removeWhere((queued) => queued.id == id);
+    // Not while the controller is being torn down: `_cancelAll` runs from
+    // `ref.onDispose`, and Riverpod forbids touching state there. The queue is
+    // in-memory anyway, so a disposal takes it with it.
+    if (!_disposed) state = state.withQueue(id, const []);
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
@@ -986,8 +1112,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Free the agent's single turn slot when [id] held it, then start the next
   /// waiting agent turn. A no-op for a relay turn or a background chat that
   /// never held the slot.
+  ///
+  /// Silent during disposal: this is reached from `ref.onDispose` (via
+  /// [_cancelAll]) whenever the app is torn down with an agent turn in flight,
+  /// and Riverpod asserts on any state written there. There is also nothing left
+  /// to free — the whole controller is going.
   void _releaseAgentSlot(String id) {
-    if (state.runningAgentId != id) return;
+    if (_disposed || state.runningAgentId != id) return;
     state = state.copyWith(runningAgentId: null);
     _pumpAgentQueue();
   }

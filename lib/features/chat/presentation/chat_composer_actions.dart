@@ -95,6 +95,13 @@ class _Actions extends StatelessWidget {
               // AppControl.height the picker itself asks for.
               SizedBox(width: 140, child: modelPicker),
               const SizedBox(width: 8),
+              // Stop only gets its own button when Send has been taken over by
+              // a follow-up waiting to be queued; the rest of the time the one
+              // round button is both.
+              if (sending && canSend) ...[
+                _StopButton(onStop: onStop),
+                const SizedBox(width: 6),
+              ],
               _SendButton(
                 sending: sending,
                 canSend: canSend,
@@ -188,6 +195,11 @@ class _PromptsButton extends StatelessWidget {
 /// you reach for to end it, so it becomes Stop for as long as the turn runs.
 /// That the transcript already shows the work in flight is what frees this
 /// button to be an action instead of a progress light.
+///
+/// With one exception, which is the whole point of the follow-up queue: once
+/// there is something typed, this goes back to being Send — the message joins
+/// the queue instead of going out now — and Stop moves to its own button beside
+/// it. Both actions stay reachable; neither is hidden behind clearing the box.
 class _SendButton extends StatelessWidget {
   const _SendButton({
     required this.sending,
@@ -206,13 +218,16 @@ class _SendButton extends StatelessWidget {
     AppTheme.watch(
       context,
     ); // reads AppTheme.pick/AppPalette tokens — follow theme flips
+    final stops = sending && !canSend;
     return Tooltip(
-      message: sending ? 'Stop' : 'Send',
+      message: stops
+          ? 'Stop'
+          : (sending ? 'Send when this answer finishes' : 'Send'),
       child: SizedBox(
         width: 32,
         height: 32,
         child: FilledButton(
-          onPressed: sending ? onStop : (canSend ? onSend : null),
+          onPressed: stops ? onStop : (canSend ? onSend : null),
           style: FilledButton.styleFrom(
             shape: const CircleBorder(),
             padding: EdgeInsets.zero,
@@ -243,9 +258,45 @@ class _SendButton extends StatelessWidget {
             ),
           ),
           child: Icon(
-            sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
+            stops ? Icons.stop_rounded : Icons.arrow_upward_rounded,
             size: AppControl.iconSize,
-            semanticLabel: sending ? 'Stop' : 'Send',
+            semanticLabel: stops ? 'Stop' : 'Send',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Stop, as its own control — shown only while a turn is running *and* the
+/// composer holds a follow-up, since that is when [_SendButton] is busy being
+/// Send. Quieter than Send: ending a turn is the secondary action there.
+class _StopButton extends StatelessWidget {
+  const _StopButton({required this.onStop});
+
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Tooltip(
+      message: 'Stop',
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: OutlinedButton(
+          onPressed: onStop,
+          style: OutlinedButton.styleFrom(
+            shape: const CircleBorder(),
+            padding: EdgeInsets.zero,
+            splashFactory: NoSplash.splashFactory,
+            foregroundColor: AppPalette.textSecondary,
+            side: BorderSide(color: AppPalette.divider),
+          ),
+          child: const Icon(
+            Icons.stop_rounded,
+            size: AppControl.iconSize,
+            semanticLabel: 'Stop',
           ),
         ),
       ),

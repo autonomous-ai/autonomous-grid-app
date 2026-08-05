@@ -136,7 +136,11 @@ class ComposerSection extends StatelessWidget {
                   focusNode: focusNode,
                   minLines: 1,
                   maxLines: 6,
-                  enabled: !sending,
+                  // Deliberately *not* disabled while a turn runs: what the user
+                  // types now is queued behind it. Locking the box was what made
+                  // a follow-up thought something to hold in your head for the
+                  // minutes an agent turn can take.
+                  enabled: true,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
                   style: const TextStyle(fontSize: 15),

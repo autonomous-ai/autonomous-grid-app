@@ -1470,4 +1470,154 @@ void main() {
       expect(reopened.approval, AgentApprovalMode.readOnly);
     });
   });
+
+  group('a follow-up typed while the agent is still working', () {
+    test('is queued and sent when the turn finishes, instead of being '
+        'dropped', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+
+      // The user thinks of something else while the first answer streams.
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'second'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        h.container.read(chatSessionsProvider).queuedFor(id).single.text,
+        'second',
+      );
+      // Still one user turn: the follow-up has not gone out yet.
+      expect(_userTurns(h.container, id), ['first']);
+
+      sender.emit(
+        id,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.container.read(chatSessionsProvider).queuedFor(id), isEmpty);
+      expect(_userTurns(h.container, id), ['first', 'second']);
+    });
+
+    test('goes out in the chat it was typed in, even after the user has moved '
+        'to another one', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final first = h.container.read(chatSessionsProvider).activeId!;
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'second'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      // They wander off to start a different conversation.
+      chats.newChat();
+
+      sender.emit(
+        first,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(first);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(_userTurns(h.container, first), ['first', 'second']);
+      // And it did not drag them back: they are still on the new chat.
+      expect(h.container.read(chatSessionsProvider).activeId, isNull);
+    });
+
+    test(
+      'stopping the turn drops what was queued behind it — Stop means stop',
+      () async {
+        final sender = _PerChatSender();
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          updates: const [],
+          answering: sender,
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+
+        unawaited(
+          chats.send(network: _credential(), model: 'qwen', message: 'first'),
+        );
+        await Future<void>.delayed(Duration.zero);
+        final id = h.container.read(chatSessionsProvider).activeId!;
+        unawaited(
+          chats.send(network: _credential(), model: 'qwen', message: 'second'),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        chats.stop();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(h.container.read(chatSessionsProvider).queuedFor(id), isEmpty);
+        expect(_userTurns(h.container, id), ['first']);
+      },
+    );
+
+    test('can be taken back before it goes out', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'oops'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      chats.cancelQueued(id, 0);
+      sender.emit(
+        id,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(_userTurns(h.container, id), ['first']);
+    });
+  });
 }
+
+/// The user's own messages in the chat [id], in order — what actually got sent.
+List<String> _userTurns(ProviderContainer container, String id) => [
+  for (final m
+      in container
+          .read(chatSessionsProvider)
+          .conversations
+          .firstWhere((c) => c.id == id)
+          .messages)
+    if (m.role == ChatRole.user) m.text,
+];

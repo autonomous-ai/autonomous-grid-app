@@ -93,6 +93,5 @@ bool _namesKind(String model, Set<String> kinds) =>
 
 /// The kind each name in [model] carries before its colon — `qwen3` for a plain
 /// grid model, `claude` / `codex` for a seat.
-Iterable<String> _modelKinds(String model) => model
-    .split(',')
-    .map((name) => name.trim().toLowerCase().split(':').first);
+Iterable<String> _modelKinds(String model) =>
+    model.split(',').map((name) => name.trim().toLowerCase().split(':').first);

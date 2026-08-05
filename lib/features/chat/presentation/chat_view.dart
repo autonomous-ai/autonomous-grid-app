@@ -38,6 +38,7 @@ import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../logic/file_mention.dart';
+import 'queued_follow_ups.dart';
 import 'agent_handover_bar.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
@@ -547,9 +548,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final needsImage = modality == PlaygroundModality.video;
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
+    // "There is something to send", not "the chat is free": a turn already in
+    // flight no longer blocks Send, it queues what is typed behind it. The text
+    // check moved here from `_send` so the button and the Stop beside it agree
+    // with what pressing them would actually do.
     final canSend =
         !noModel &&
-        !sessions.sending &&
+        _message.text.trim().isNotEmpty &&
         (!needsImage || _attachments.isNotEmpty);
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
     // The "agent is working" feed and the permission card read one shared,
@@ -662,6 +667,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         const AgentHandoverBar(),
                         const PlanApproveBar(),
                         const AgentChangesBar(),
+                        const QueuedFollowUps(),
                         if (slash != null)
                           PromptSlashMenu(query: slash, onPick: _insertPrompt)
                         else if (mention != null)
