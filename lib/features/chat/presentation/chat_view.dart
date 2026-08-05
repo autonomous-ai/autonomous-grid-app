@@ -34,6 +34,7 @@ import '../../playground/presentation/no_model_yet.dart';
 import '../../prompts/logic/prompt_slash.dart';
 import '../../prompts/presentation/prompt_dialog.dart';
 import '../../prompts/presentation/prompt_slash_menu.dart';
+import '../../skills/presentation/save_skill_bar.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
@@ -671,6 +672,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         const AgentChangesBar(),
                         const GoalBar(),
                         const RunningServicesBar(),
+                        const SaveSkillBar(),
                         const QueuedFollowUps(),
                         if (slash != null)
                           PromptSlashMenu(query: slash, onPick: _insertPrompt)

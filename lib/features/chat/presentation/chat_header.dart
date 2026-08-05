@@ -12,6 +12,8 @@ import '../../projects/logic/project.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import '../../auth/logic/session_controller.dart';
+import '../../skills/logic/skill_proposal.dart';
 import 'goal_dialog.dart';
 import 'workspace_files_dialog.dart';
 
@@ -202,6 +204,22 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
         );
   }
 
+  /// Ask the assistant to turn this conversation into a reusable skill. The
+  /// draft comes back in the transcript, where the user can read it before the
+  /// bar above the composer offers to keep it.
+  Future<void> _makeSkill() {
+    _menu.close();
+    final network = ref.read(selectedNetworkProvider);
+    if (network == null) return Future<void>.value();
+    return ref
+        .read(chatSessionsProvider.notifier)
+        .send(
+          network: network,
+          model: _chat.model,
+          message: kSkillFromChatPrompt,
+        );
+  }
+
   Future<void> _copy() async {
     _menu.close();
     await Clipboard.setData(ClipboardData(text: transcriptText(_chat)));
@@ -274,6 +292,7 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
           pinned: _chat.pinned,
           hasGoal: _chat.goal != null,
           onSetGoal: _setGoal,
+          onMakeSkill: _makeSkill,
           onRename: _rename,
           onTogglePin: _togglePin,
           onArchive: _archive,
@@ -362,6 +381,7 @@ class _ChatMenuContent extends StatelessWidget {
     required this.pinned,
     required this.hasGoal,
     required this.onSetGoal,
+    required this.onMakeSkill,
     required this.onRename,
     required this.onTogglePin,
     required this.onArchive,
@@ -377,6 +397,9 @@ class _ChatMenuContent extends StatelessWidget {
   final bool hasGoal;
 
   final VoidCallback onSetGoal;
+
+  /// Ask for a skill drafted from this conversation.
+  final VoidCallback onMakeSkill;
 
   final VoidCallback onTogglePin;
   final VoidCallback onRename;
@@ -397,6 +420,11 @@ class _ChatMenuContent extends StatelessWidget {
             icon: LucideIcons.pencilLine300,
             label: 'Rename chat',
             onPressed: onRename,
+          ),
+          _ChatMenuItem(
+            icon: LucideIcons.sparkles300,
+            label: 'Turn this into a skill…',
+            onPressed: onMakeSkill,
           ),
           _ChatMenuItem(
             icon: LucideIcons.flag300,
