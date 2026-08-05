@@ -145,12 +145,16 @@ List<Connector> buildConnectors({
             ? ConnectorKind.catalog
             : ConnectorKind.customMcp,
         name: byCode[server.name]?.label ?? capitalizeFirst(server.name),
-        description: _describe(byCode[server.name], server),
+        description: _describe(
+          byCode[server.name],
+          server,
+          tokens[server.name],
+        ),
         // The catalog's own mark first — it is the one the gateway chose, and
         // the only one guaranteed to be the service's real logo. A server the
         // user typed has no catalog entry at all, so its icon is derived from
         // the host it points at (and skipped entirely for private hosts).
-        imageUrl: _markFor(byCode[server.name], server),
+        imageUrl: _markFor(byCode[server.name], server, tokens[server.name]),
         status: ConnectorStatus.connected,
         server: server,
         catalogEntry: byCode[server.name],
@@ -219,23 +223,56 @@ String capitalizeFirst(String value) {
 /// The address stays the answer for a server the user typed in: there is no
 /// blurb for one of those, and the address is the only thing distinguishing two
 /// hand-added servers from each other.
-/// Deliberately not "blurb, or else the address": a catalog connector with an
-/// empty blurb falls through to *no description at all*, not to its URL. Those
-/// are the rows whose URL is the bridge, so the fallback would reintroduce the
-/// loopback line for exactly the connectors it was removed from.
 ///
-/// **The address is also suppressed when it points at this app.** Having no
-/// catalog entry is not proof the row is hand-written: the catalog is a page of
-/// *search results*, so picking a category the connector does not match drops
-/// its entry and this fell straight through to
-/// `http://127.0.0.1:61755/c/gmail/mcp` on a signed-in Gmail — measured
-/// 2026-08-04 with the Finance pill selected. Asking the URL is what
-/// distinguishes the two cases; the transport cannot, because MCP-over-bridge
-/// (D32) looks exactly like a real MCP server from there.
-String _describe(ConnectorCatalogEntry? entry, McpServer server) {
-  if (entry != null) return entry.description;
+/// **The address is suppressed when it points at this app.** Having no catalog
+/// entry is not proof the row is hand-written: the catalog is a page of *search
+/// results*, so picking a category the connector does not match drops its entry
+/// and this fell straight through to `http://127.0.0.1:61755/c/gmail/mcp` on a
+/// signed-in Gmail — measured 2026-08-04 with the Finance pill selected. Asking
+/// the URL is what distinguishes the two cases; the transport cannot, because
+/// MCP-over-bridge (D32) looks exactly like a real MCP server from there.
+///
+/// An empty blurb on a real catalog entry takes the same fallback as a missing
+/// one. It used to be excluded — "no description at all, not the URL" — and the
+/// reason given was that those rows' URL *is* the bridge, so falling back would
+/// put the loopback line back on screen. [_providerAddress] is what dissolved
+/// that: the fallback now resolves to the provider's own address, so an empty
+/// blurb costs the row its sentence for no gain.
+String _describe(
+  ConnectorCatalogEntry? entry,
+  McpServer server,
+  ConnectorToken? token,
+) {
+  final blurb = entry?.description ?? '';
+  if (blurb.isNotEmpty) return blurb;
+  final address = _providerAddress(server, token);
+  return isBridgeAddress(address) ? '' : address;
+}
+
+/// The address that says something about this server: the provider's own, not
+/// the loopback bridge standing in front of it.
+///
+/// A connector signed in from the app reaches the agent through
+/// `http://127.0.0.1:<port>/c/<name>/mcp`, so the credential can be attached on
+/// the way past — and that is the address the agent's config carries. It
+/// describes nothing: the port changes between launches and the path is this
+/// app's own invention, which is why [isBridgeAddress] exists to suppress it.
+///
+/// The provider's real URL was never lost, though. It sits in the credential
+/// this machine holds, and reaching for it here is the difference between a
+/// blank line under a name and `https://mcp.neon.tech/mcp` — measured on a
+/// DCR-connected Neon, a connector the gateway catalog has never heard of, so
+/// the bridge address was the only string the row had and it was rightly
+/// thrown away.
+///
+/// Falls back to the bridge address when there is no credential to ask: every
+/// caller suppresses it exactly as before, so a row with nothing to say still
+/// says nothing rather than naming a loopback port.
+String _providerAddress(McpServer server, ConnectorToken? token) {
   final summary = mcpServerSummary(server);
-  return isBridgeAddress(summary) ? '' : summary;
+  if (!isBridgeAddress(summary)) return summary;
+  final direct = token?.mcpEntry?.url ?? '';
+  return direct.isEmpty ? summary : direct;
 }
 
 /// Whether [text] is one of this app's own loopback bridge addresses.
@@ -262,11 +299,21 @@ bool isBridgeAddress(String text) {
 ///
 /// Only HTTP servers get a derived mark. A stdio server is a local command with
 /// no host to ask about — `npx` has no logo — so those keep the transport glyph.
-String _markFor(ConnectorCatalogEntry? entry, McpServer server) {
+///
+/// Derived from [_providerAddress] rather than the configured URL, for the same
+/// reason the description is: a signed-in connector's config points at this
+/// app's loopback bridge, and `faviconUrl` refuses every literal IP — correctly,
+/// since 127.0.0.1 has no brand. So these rows drew the grey glyph while the
+/// host that *does* have a logo sat unread in the credential beside them.
+String _markFor(
+  ConnectorCatalogEntry? entry,
+  McpServer server,
+  ConnectorToken? token,
+) {
   final fromCatalog = entry?.imageUrl ?? '';
   if (fromCatalog.isNotEmpty) return fromCatalog;
   return switch (server.transport) {
-    McpHttp(:final url) => faviconUrl(url),
+    McpHttp() => faviconUrl(_providerAddress(server, token)),
     McpStdio() => '',
   };
 }
