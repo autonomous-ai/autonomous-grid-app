@@ -128,6 +128,15 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
   bool _saving = false;
 
+  /// The browser is open and the app is parked on the loopback callback.
+  ///
+  /// Tracked apart from [_saving] because the two are nothing alike in length.
+  /// Saving is a file write and locking the dialog for it is invisible; a
+  /// sign-in waits **five minutes** for a callback that never arrives once the
+  /// user has closed the tab, and locking the dialog for *that* is the bug this
+  /// flag exists to end.
+  bool _signingIn = false;
+
   /// Watched so the URL's error waits for the user to leave the field. Reddening
   /// on the first keystroke — while `h` is not yet `https` — is a field that
   /// fights whoever is typing in it.
@@ -411,14 +420,28 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     ref
         .read(appLogProvider)
         .info('connectors', 'Connect pressed for "$name" — running path A');
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _signingIn = true;
+    });
 
     final error = await ref
         .read(connectorLinkControllerProvider.notifier)
         .connectDirect(connector: name, mcpUrl: _url.text.trim(), probe: probe);
 
-    if (!mounted) return;
-    setState(() => _saving = false);
+    // `!_signingIn` as well as `!mounted`, and the second test is the load
+    // bearing one. Closing the dialog pops the route immediately but disposes
+    // this state only once the route has animated out, so for ~200ms after the
+    // user leaves, `mounted` is still true — long enough for the aborted
+    // `connectDirect` to return here and run `navigator.pop()` a **second**
+    // time, taking whatever route is now on top with it. [_abortSignIn] clears
+    // the flag, which is what makes "the user already let themselves out"
+    // answerable.
+    if (!mounted || !_signingIn) return;
+    setState(() {
+      _saving = false;
+      _signingIn = false;
+    });
     // The row explains cancels and timeouts itself, so a null here is not
     // necessarily success — but it is always "nothing more for this dialog to
     // say", and staying open would leave the user with a form they already used.
@@ -428,11 +451,46 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
     }
   }
 
+  /// Stop waiting for a callback that isn't coming.
+  ///
+  /// Called from [PopScope] rather than from the buttons, so it covers *every*
+  /// way out of this dialog — the ✕, Cancel, Esc, a tap on the barrier — with
+  /// one line each of them cannot forget. Closing the dialog while the listener
+  /// stayed bound was its own quieter bug: the port held for the rest of the
+  /// five minutes, and the next Connect had to bind a different one, which some
+  /// authorization servers refuse because the `redirect_uri` no longer matches
+  /// the registration.
+  ///
+  /// [ConnectorLinkController.cancel] is what actually ends it — it aborts the
+  /// loopback wait, so `connectDirect` returns at once instead of on the
+  /// timeout.
+  void _abortSignIn() {
+    if (!_signingIn) return;
+    _signingIn = false;
+    ref.read(connectorLinkControllerProvider.notifier).cancel();
+    ref
+        .read(appLogProvider)
+        .info('connectors', 'Sign-in dialog closed — abandoning the wait');
+  }
+
   @override
   Widget build(BuildContext context) {
     // Dialog/overlay content: watch brightness so tokens re-color on theme flip.
     AppTheme.watch(context);
     final theme = Theme.of(context);
+    // The dialog always closes; what this hooks is the *aftermath*. Blocking
+    // the pop and asking "are you sure" would be the wrong shape — the user has
+    // already decided, and the thing to clean up is the listener, not their
+    // mind.
+    return PopScope<void>(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _abortSignIn();
+      },
+      child: _dialog(theme),
+    );
+  }
+
+  Widget _dialog(ThemeData theme) {
     return AlertDialog(
       backgroundColor: AppGlass.surfaceFill,
       surfaceTintColor: Colors.transparent,
@@ -460,7 +518,13 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
                 icon: Icons.close,
                 size: 18,
                 tooltip: 'Close',
-                onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                // Locked only for the file write. A sign-in keeps its ✕: it is
+                // the button anyone reaches for after closing the browser tab,
+                // and disabling it was what turned "I changed my mind" into a
+                // five-minute wait with no way out.
+                onPressed: _saving && !_signingIn
+                    ? null
+                    : () => Navigator.of(context).pop(),
               ),
             ],
           ),
@@ -749,12 +813,22 @@ class _McpDialogState extends ConsumerState<_McpDialog> {
 
     if (_stage == _Stage.found) {
       return [
-        TextButton(
-          onPressed: _saving
-              ? null
-              : () => setState(() => _stage = _Stage.details),
-          child: const Text('Back'),
-        ),
+        // While the browser is open the left button stops being "Back" and
+        // becomes the way out. Back would be wrong there — there is a sign-in
+        // in flight, and returning to the form would leave it running behind a
+        // screen that no longer mentions it.
+        if (_signingIn)
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          )
+        else
+          TextButton(
+            onPressed: _saving
+                ? null
+                : () => setState(() => _stage = _Stage.details),
+            child: const Text('Back'),
+          ),
         const SizedBox(width: 4),
         if (_probe?.kind == McpAuthKind.unreachable)
           // Nothing answered, so there is nothing to connect to — but the user
