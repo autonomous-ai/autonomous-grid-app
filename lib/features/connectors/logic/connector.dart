@@ -113,7 +113,30 @@ List<Connector> buildConnectors({
   required List<ConnectorCatalogEntry> catalog,
   Map<String, ConnectorToken> tokens = const {},
 }) {
-  final byCode = {for (final entry in catalog) entry.code: entry};
+  // **A code is not proof that two things are the same connector.**
+  // `github` names a row in Autonomous's curated list *and* a server on the
+  // public registry, and the two are different addresses with different
+  // credentials. Measured on a real machine 2026-08-05: a `github` token
+  // obtained by self-registration against `server.smithery.ai` sat alongside a
+  // curated `github` row that signs in through the gateway. Joined on the code
+  // alone, that row wore the gateway's logo and description while running on a
+  // token the gateway never issued — and its Disconnect would have asked the
+  // gateway to revoke a credential it had never heard of.
+  //
+  // The test is not "is this token self-registered" but "do these two disagree
+  // about who signs in", which reads the same whichever directory is switched
+  // on: a self-registered credential under a row that says the gateway brokers
+  // it cannot be describing the same server.
+  final disowned = {
+    for (final entry in catalog)
+      if (entry.authMethod == ConnectorAuthMethod.app &&
+          tokens[entry.code]?.source == ConnectorTokenSource.dcr)
+        entry.code,
+  };
+  final byCode = {
+    for (final entry in catalog)
+      if (!disowned.contains(entry.code)) entry.code: entry,
+  };
   final connected = <Connector>[
     for (final server in servers)
       Connector(
@@ -137,7 +160,12 @@ List<Connector> buildConnectors({
   final taken = {for (final server in servers) server.name};
   final offered = <Connector>[
     for (final entry in catalog)
-      if (!taken.contains(entry.code))
+      // `disowned` as well as `taken`: in the seconds between a credential
+      // landing and its projection reaching the agent's config there is no
+      // server to make the code taken, and offering the row then would attach
+      // the local token to a catalog entry that does not describe it — the
+      // same mix-up as above, arriving through the other list.
+      if (!taken.contains(entry.code) && !disowned.contains(entry.code))
         Connector(
           id: entry.code,
           kind: ConnectorKind.catalog,

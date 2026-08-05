@@ -17,7 +17,7 @@ import '../../logic/browse_connectors_controller.dart';
 import '../../logic/connector_link_controller.dart';
 import '../../logic/connectors_controller.dart';
 import '../../logic/mcp_auth_probe.dart';
-import '../../logic/smithery_server.dart';
+import '../../logic/connector_catalog.dart';
 import 'add_mcp_dialog.dart';
 import 'connector_mark.dart';
 
@@ -195,7 +195,7 @@ class _Body extends ConsumerWidget {
     // layout must not jump when it lands.
     if (state.loading) return const _LoadingRows();
 
-    if (state.error != null && state.servers.isEmpty) {
+    if (state.error != null && state.entries.isEmpty) {
       return ErrorBox(message: state.error!);
     }
 
@@ -229,11 +229,11 @@ class _Body extends ConsumerWidget {
       // One past the rows: the footer carries Load more, the appending spinner,
       // and the "that's everything" line — all three are about the list as a
       // whole and none belongs on a row.
-      itemCount: state.servers.length + 1,
+      itemCount: state.entries.length + 1,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
-        if (index == state.servers.length) return _Footer(state: state);
-        final server = state.servers[index];
+        if (index == state.entries.length) return _Footer(state: state);
+        final server = state.entries[index];
         return _ServerRow(
           server: server,
           connected: configured.contains(server.mcpUrl),
@@ -247,7 +247,7 @@ class _Body extends ConsumerWidget {
 class _ServerRow extends ConsumerStatefulWidget {
   const _ServerRow({required this.server, required this.connected});
 
-  final SmitheryServer server;
+  final ConnectorCatalogEntry server;
   final bool connected;
 
   @override
@@ -264,7 +264,7 @@ class _ServerRowState extends ConsumerState<_ServerRow> {
   /// through the gateway. Suffixing rather than overwriting, because the entry
   /// that exists is working and the user did not ask for it to be replaced.
   String _freeName(Set<String> taken) {
-    final base = widget.server.suggestedName;
+    final base = widget.server.code;
     if (!taken.contains(base)) return base;
     for (var n = 2; n < 100; n++) {
       if (!taken.contains('$base-$n')) return '$base-$n';
@@ -297,16 +297,16 @@ class _ServerRowState extends ConsumerState<_ServerRow> {
       navigator.pop();
       final reason = switch (probe.kind) {
         McpAuthKind.unreachable =>
-          "${server.displayName} didn't answer. Its address is filled in — try "
+          "${server.label} didn't answer. Its address is filled in — try "
               'again from here.',
         _ =>
-          '${server.displayName} needs a token you provide. Its address is '
+          '${server.label} needs a token you provide. Its address is '
               'filled in.',
       };
       toast?.show(ToastSpec(message: reason, severity: ToastSeverity.info));
       await showAddMcpDialog(
         context,
-        initialName: server.suggestedName,
+        initialName: server.code,
         initialUrl: server.mcpUrl,
       );
       return;
@@ -331,7 +331,7 @@ class _ServerRowState extends ConsumerState<_ServerRow> {
       error != null
           ? ToastSpec(message: error, severity: ToastSeverity.error)
           : ToastSpec(
-              message: '${server.displayName} is connected.',
+              message: '${server.label} is connected.',
               severity: ToastSeverity.success,
             ),
     );
@@ -343,7 +343,7 @@ class _ServerRowState extends ConsumerState<_ServerRow> {
     final theme = Theme.of(context);
     final server = widget.server;
     final link = ref.watch(connectorLinkControllerProvider);
-    final waiting = link.isPending(server.suggestedName);
+    final waiting = link.isPending(server.code);
 
     return ExtensionTileSurface(
       // The rows sit on a raised dialog, not on the page — without this they
@@ -353,7 +353,7 @@ class _ServerRowState extends ConsumerState<_ServerRow> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ConnectorMark(
-            imageUrl: server.iconUrl,
+            imageUrl: server.imageUrl,
             fallbackIcon: Icons.link_rounded,
           ),
           const SizedBox(width: 12),
@@ -366,7 +366,7 @@ class _ServerRowState extends ConsumerState<_ServerRow> {
                 // nothing — and a badge that never varies is read as decoration
                 // the first time and as noise every time after.
                 Text(
-                  server.displayName,
+                  server.label,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall,
                 ),
@@ -460,7 +460,7 @@ class _Footer extends StatelessWidget {
     // than replacing the list: the pages already loaded are still good, and
     // throwing them away to report that the *next* one failed loses more than
     // it explains.
-    if (state.error != null && state.servers.isNotEmpty) {
+    if (state.error != null && state.entries.isNotEmpty) {
       return Padding(
         padding: const EdgeInsets.only(top: 8),
         child: ErrorBox(message: state.error!),
@@ -482,7 +482,7 @@ class _Footer extends StatelessWidget {
             // long before `totalCount`, so this says how many are *on screen*
             // out of how many matched, and never claims the rest are reachable.
             Text(
-              '${state.servers.length} of ${state.totalCount} matches',
+              '${state.entries.length} of ${state.totalCount} matches',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: AppPalette.textFaint,
               ),
@@ -505,15 +505,15 @@ class _Footer extends StatelessWidget {
     // 3,999" at row 500 would be a straight lie, and "End of results" alone
     // would read as a bug to anyone who saw the count. So the capped ending says
     // what happened and what to do about it.
-    final capped = state.servers.length < state.totalCount;
+    final capped = state.entries.length < state.totalCount;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: Text(
           capped
-              ? '${state.servers.length} of ${state.totalCount} matches — '
+              ? '${state.entries.length} of ${state.totalCount} matches — '
                     'search to narrow it down'
-              : 'All ${state.servers.length} servers',
+              : 'All ${state.entries.length} servers',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall?.copyWith(
             color: AppPalette.textFaint,

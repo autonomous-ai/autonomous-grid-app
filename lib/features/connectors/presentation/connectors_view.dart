@@ -15,6 +15,7 @@ import '../../agents/presentation/extension_screen.dart';
 import '../logic/browse_connectors_controller.dart';
 import '../logic/connector.dart';
 import '../logic/connector_category.dart';
+import '../logic/connector_directory_source.dart';
 import '../logic/connectors_controller.dart';
 import '../logic/connectors_refresh.dart';
 import '../logic/smithery_server.dart';
@@ -202,7 +203,13 @@ class _FilterBar extends ConsumerWidget {
         // Categories narrow the *directory*, so they go where the directory
         // does: hidden on Connected, which lists what this computer already
         // holds and never pages the registry at all.
-        if (filter != _ConnectorFilter.connected) ...[
+        //
+        // Hidden too on a directory that does not search remotely. A category
+        // is a set of extra search words sent with the request; against a flat
+        // list that ignores the query it would be ten pills that visibly do
+        // nothing.
+        if (filter != _ConnectorFilter.connected &&
+            kConnectorDirectorySource.searchesRemotely) ...[
           const SizedBox(height: 8),
           _CategoryRow(
             selected: browse.category,
@@ -240,7 +247,12 @@ class _FilterBar extends ConsumerWidget {
           // broke paging: every Smithery-managed server is on page one, so
           // scrolling fetched more and the list never grew. Ordering carries the
           // quality signal instead — see `visibleServers`.
-          if (filter != _ConnectorFilter.connected) ...[
+          // Sorting needs something to sort by. The gateway publishes no usage
+          // count, so all three orders would collapse to two — its own curated
+          // order, and alphabetical — with "Most used" silently doing nothing.
+          // A control that cannot change the list is worse than no control.
+          if (filter != _ConnectorFilter.connected &&
+              kConnectorDirectorySource.hasPopularity) ...[
             const SizedBox(width: 4),
             _BarDivider(),
             const SizedBox(width: 12),
@@ -698,6 +710,19 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
   }
 
   void _onQueryChanged(String query) {
+    // **Nothing to debounce when nothing is sent.** A local filter over rows
+    // already in memory is instant, so holding the keystroke back for 350ms
+    // would be latency invented for its own sake — and the skeletons that
+    // `_typing` exists to show would flash over a list that never left.
+    //
+    // No rebuild is scheduled here: `ExtensionScreen` already `setState`s its
+    // own `_query` before calling this, and `matches` reads that during build.
+    if (!kConnectorDirectorySource.searchesRemotely) {
+      _debounce?.cancel();
+      if (_typing) setState(() => _typing = false);
+      return;
+    }
+
     _debounce?.cancel();
     if (!_typing) setState(() => _typing = true);
     _debounce = Timer(const Duration(milliseconds: 350), () {
@@ -722,7 +747,7 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
       final browse = ref.read(browseConnectorsProvider);
       // Only once. This screen is rebuilt on every mutation, and re-searching
       // on each would throw away the user's paging and their place in the list.
-      if (browse.servers.isEmpty && !browse.loading && browse.error == null) {
+      if (browse.entries.isEmpty && !browse.loading && browse.error == null) {
         ref.read(browseConnectorsProvider.notifier).search('');
       }
     });
@@ -805,10 +830,16 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
         //
         // `matches` answers true for every row while the box is empty, so this
         // reads the same when nobody is searching.
+        //
+        // **The exemption is only right for a directory that searched.** On a
+        // flat source nothing was sent anywhere, so exempting catalog rows
+        // would exempt the entire list and the search box would do nothing at
+        // all. There, `matches` is the whole search.
+        final exemptDirectoryRows = kConnectorDirectorySource.searchesRemotely;
         List<Connector> visible(List<Connector> all) => [
           for (final connector in all)
             if (_filter.keeps(connector) &&
-                (connector.catalogEntry != null ||
+                ((exemptDirectoryRows && connector.catalogEntry != null) ||
                     matches(connector.name, connector.description)))
               connector,
         ];
@@ -839,6 +870,12 @@ class _ConnectorsViewState extends ConsumerState<ConnectorsView> {
           // has to have.
           AsyncValue(:final value?) => _ConnectorsBody(
             rows: visible(value),
+            // Only the directory's own failure, and only it: the rest of this
+            // screen is built from local facts — the agent's config and the
+            // token store — which keep working when a directory does not.
+            directoryError: ref.watch(
+              browseConnectorsProvider.select((s) => s.error),
+            ),
             // Straight off the full list, not off `visible` — which drops every
             // connected row by design, so filtering it here would always be
             // empty. Untouched by the search box and the category pills too:
@@ -891,6 +928,7 @@ class _ConnectorsBody extends StatelessWidget {
     required this.searching,
     required this.showingConnected,
     required this.showDirectoryTail,
+    required this.directoryError,
     required this.onLoadMore,
   });
 
@@ -913,6 +951,16 @@ class _ConnectorsBody extends StatelessWidget {
   final bool showingConnected;
 
   final bool showDirectoryTail;
+
+  /// Why the directory has nothing to offer, when that is the reason.
+  ///
+  /// Rendered only when there are no rows at all. With rows on screen the
+  /// failure is a footnote — `_DirectoryTail` says it there — but with none it
+  /// is the whole story, and the generic "No connectors yet" empty state would
+  /// be answering a question the user did not ask. The sentence that matters
+  /// most here is the gateway's "Not signed in.": browsing this directory needs
+  /// a session, and that is something the reader can act on.
+  final String? directoryError;
 
   /// Fetch the directory's next page. Safe to call repeatedly — see
   /// `ExtensionGrid.onReachedEnd`.
@@ -964,6 +1012,14 @@ class _ConnectorsBody extends StatelessWidget {
   }
 
   Widget _list() {
+    // Checked before the grid, not inside it: with nothing to draw and a reason
+    // to hand, the reason *is* the screen. `ConnectorList` would otherwise show
+    // "No connectors yet — connect one", which invites the user to fix
+    // something that isn't broken.
+    final failure = directoryError;
+    if (rows.isEmpty && !searching && failure != null) {
+      return ErrorBox(message: failure);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
