@@ -5,7 +5,10 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../../core/text_preview.dart';
 import '../../../infrastructure/cli/hermes_cron_service.dart';
+import '../../../infrastructure/platform/desktop_notifier.dart';
+import '../../../infrastructure/platform/window_focus.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../network/logic/network_models_provider.dart';
 import '../../projects/logic/project_tasks_store.dart';
@@ -13,6 +16,7 @@ import 'cron_output.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'scheduled_jobs_controller.dart';
+import 'task_inbox_store.dart';
 import 'task_model_fallback.dart';
 import 'task_unread_store.dart';
 
@@ -162,8 +166,17 @@ class TaskDeliveryController extends Notifier<List<String>> {
         }
         final last = await _deliver(job, cron, delivered[job.id], projectId);
         if (last == null) continue;
-        delivered[job.id] = last;
+        delivered[job.id] = last.at;
         arrived.add(job.id);
+        // Two ways to find out what arrived without opening it: the row in the
+        // Scheduled list, and a banner if the user is elsewhere.
+        ref
+            .read(taskInboxProvider.notifier)
+            .record(
+              job.id,
+              TaskResultDigest(summary: last.summary, at: last.at),
+            );
+        _announce(job, last.summary);
       }
 
       // A task whose model has stopped working goes to the grid's router rather
@@ -199,9 +212,9 @@ class TaskDeliveryController extends Notifier<List<String>> {
   Set<String> _served() => ref.read(servedModelIdsProvider).toSet();
 
   /// Deliver [job]'s results newer than [since] into its chat, homing it under
-  /// [projectId] when the task belongs to a project. Returns the time of the
-  /// newest one delivered, or null when there was nothing new.
-  Future<DateTime?> _deliver(
+  /// [projectId] when the task belongs to a project. Returns when the newest one
+  /// ran and the line it opens with, or null when there was nothing new.
+  Future<({DateTime at, String summary})?> _deliver(
     ScheduledJob job,
     HermesCronService cron,
     DateTime? since,
@@ -224,7 +237,38 @@ class TaskDeliveryController extends Notifier<List<String>> {
         projectId: projectId,
       );
     }
-    return fresh.last.at;
+    final last = fresh.last;
+    return (at: last.at, summary: firstLinePreview(cronOutputBody(last.text)));
+  }
+
+  /// Tell the desktop a task has an answer waiting.
+  ///
+  /// This is the whole point of a scheduled task: it ran at 3am and the app was
+  /// behind another window, so the badge in a sidebar nobody is looking at is
+  /// not delivery. Suppressed only when the user is already reading that task's
+  /// chat with the window in front — see [notificationIsWorthIt].
+  void _announce(ScheduledJob job, String summary) {
+    final chatId = taskConversationId(job.id);
+    final worthIt = notificationIsWorthIt(
+      appFocused: ref.read(windowFocusedProvider),
+      userIsLookingAtIt: ref.read(chatSessionsProvider).activeId == chatId,
+    );
+    if (!worthIt) return;
+    unawaited(
+      ref
+          .read(desktopNotifierProvider)
+          .show(
+            DesktopNotification(
+              title: job.name,
+              // The answer's own first line, not "the task finished" — the
+              // second tells the user nothing they didn't already schedule.
+              body: summary.isEmpty
+                  ? 'Finished with nothing to report.'
+                  : summary,
+              opens: chatId,
+            ),
+          ),
+    );
   }
 
   void _stop() {

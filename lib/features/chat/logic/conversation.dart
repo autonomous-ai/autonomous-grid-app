@@ -1,4 +1,5 @@
 import '../../../infrastructure/cli/agent_event.dart';
+import 'chat_goal.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/message_media.dart';
 
@@ -17,6 +18,9 @@ class Conversation {
     this.projectId,
     this.titleLocked = false,
     this.archivedAt,
+    this.approval,
+    this.pinned = false,
+    this.goal,
   });
 
   final String id;
@@ -55,6 +59,30 @@ class Conversation {
   /// and is independent of [updatedAt] (when it was last talked in).
   final DateTime? archivedAt;
 
+  /// How much the assistant may do without asking **in this chat**, or null when
+  /// the chat has never been told and follows the app's standing choice.
+  ///
+  /// Per chat, not per app, because the mode is a decision about one piece of
+  /// work: turning on full access to let the agent rebuild a project used to
+  /// leave *every* chat — including the next one, about something else
+  /// entirely — running without asking, with nothing on screen saying so. Null
+  /// rather than a default value so a chat saved before this existed keeps
+  /// following the app setting instead of freezing whatever it was that day.
+  final AgentApprovalMode? approval;
+
+  /// The user pinned this chat to the top of the sidebar.
+  ///
+  /// The rail is ordered by when a chat was last talked in, which is right for
+  /// finding what you were just doing and wrong for the two or three
+  /// conversations you keep coming back to — those slide down a little further
+  /// every day until they're behind a "Show more". A pin takes one out of that
+  /// order without changing what the order means.
+  final bool pinned;
+
+  /// The objective this chat is working toward on its own, or null for an
+  /// ordinary back-and-forth. See [ChatGoal].
+  final ChatGoal? goal;
+
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -74,6 +102,15 @@ class Conversation {
     bool? titleLocked,
     DateTime? archivedAt,
     bool clearArchivedAt = false,
+    // Only ever *set*: a chat that has been given its own mode keeps it. Going
+    // back to "follow the app setting" isn't something the picker offers — every
+    // mode in it is a real choice.
+    AgentApprovalMode? approval,
+    bool? pinned,
+    ChatGoal? goal,
+    // A goal is *removed*, not merely changed, when the user drops it — which
+    // the `?? this` idiom can't say.
+    bool clearGoal = false,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -84,6 +121,9 @@ class Conversation {
     projectId: projectId ?? this.projectId,
     titleLocked: titleLocked ?? this.titleLocked,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
+    approval: approval ?? this.approval,
+    pinned: pinned ?? this.pinned,
+    goal: clearGoal ? null : (goal ?? this.goal),
   );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +137,13 @@ class Conversation {
     // Written only when set, so a live chat's file is byte-identical to what
     // every build before archiving existed wrote.
     if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
+    // Same rule: absent means "follows the app setting", which is what every
+    // chat written before this field existed meant.
+    if (approval != null) 'approval': approval!.name,
+    // Written only when set, like the two above, so an unpinned chat's file is
+    // byte-identical to what every build before pinning existed wrote.
+    if (pinned) 'pinned': true,
+    if (goal != null) 'goal': goal!.toJson(),
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -129,6 +176,14 @@ class Conversation {
       // means live — the safe reading, since it keeps the chat visible rather
       // than hiding it in a screen the user hasn't learned about yet.
       archivedAt: _parseNullableDate(json['archivedAt']),
+      // An unknown name (a mode this build has dropped) reads as "not set" —
+      // following the app setting is the recoverable answer; guessing a mode
+      // would be guessing how much this chat may touch the computer.
+      approval: _approvalFrom(json['approval']),
+      // Absent — every chat saved before this field existed — means unpinned,
+      // which is what they all were.
+      pinned: json['pinned'] == true,
+      goal: ChatGoal.fromJson(json['goal']),
       messages: [
         if (rawMessages is List)
           for (final m in rawMessages)
@@ -136,6 +191,16 @@ class Conversation {
       ],
     );
   }
+}
+
+/// The saved mode name, or null for "not set" — including a name no build of
+/// this app writes any more.
+AgentApprovalMode? _approvalFrom(Object? raw) {
+  if (raw is! String) return null;
+  for (final mode in AgentApprovalMode.values) {
+    if (mode.name == raw) return mode;
+  }
+  return null;
 }
 
 /// The placeholder title before a conversation has any user text.
@@ -148,8 +213,13 @@ const String kNewConversationTitle = 'New chat';
 /// sidebar can derive it from the conversation list alone and subscribe to just
 /// that slice instead of the whole state.
 List<Conversation> liveConversations(List<Conversation> all) => [
+  // Pinned first, each group keeping the order it came in (newest talked-in
+  // first). Done here rather than in each surface so the rail, the tray menu and
+  // ⌘K can't drift into three different answers to "which chats matter".
   for (final c in all)
-    if (!c.isArchived) c,
+    if (!c.isArchived && c.pinned) c,
+  for (final c in all)
+    if (!c.isArchived && !c.pinned) c,
 ];
 
 /// How many of [all] are live chats inside the project [projectId] — the count

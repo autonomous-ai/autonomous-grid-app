@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/chat/logic/chat_approval.dart';
+import 'package:grid_app/features/chat/logic/chat_goal.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
@@ -53,6 +55,9 @@ class _FakeSender implements ChatSender {
   /// Whether each send was a Plan-mode planning turn, in call order.
   final planFirsts = <bool>[];
 
+  /// The permission level each send was made under, in call order.
+  final approvals = <AgentApprovalMode?>[];
+
   @override
   Stream<ChatSendUpdate> send({
     required NetworkCredential network,
@@ -65,6 +70,7 @@ class _FakeSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) {
     this.history = history;
     this.model = model;
@@ -72,6 +78,7 @@ class _FakeSender implements ChatSender {
     this.attachments = attachments;
     this.workdir = workdir;
     planFirsts.add(planFirst);
+    approvals.add(approval);
     return Stream.fromIterable(updates);
   }
 }
@@ -99,6 +106,7 @@ class _OpenEndedSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) => _controller.stream;
 }
 
@@ -127,6 +135,7 @@ class _PerChatSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) {
     final id = conversationId!;
     final controller = controllers[id] = StreamController<ChatSendUpdate>(
@@ -1369,4 +1378,395 @@ void main() {
       expect(h.agent.planFirsts, [false]);
     });
   });
+
+  group('how much the assistant may do belongs to the chat', () {
+    test('full access granted for one job does not follow the user into the '
+        'next chat', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      // The user's standing choice, set on a blank composer: ask me first.
+      chats.setApproval(AgentApprovalMode.ask);
+
+      // Chat one: the user hands the agent the keys to get a job done.
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'rebuild the project',
+      );
+      chats.setApproval(AgentApprovalMode.full);
+      final first = h.container.read(chatSessionsProvider).activeId!;
+
+      // Chat two, about something else entirely.
+      chats.newChat();
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'what does this file do?',
+      );
+      final second = h.container.read(chatSessionsProvider).activeId!;
+
+      expect(first, isNot(second));
+      // The second turn went out under the standing choice, not under the
+      // access the first chat was given.
+      expect(h.agent.approvals.last, AgentApprovalMode.ask);
+      // And going back to the first chat still shows what it was set to.
+      chats.select(first);
+      expect(
+        h.container.read(chatApprovalModeProvider),
+        AgentApprovalMode.full,
+      );
+    });
+
+    test(
+      'a chat that has never been told follows the app\'s standing choice',
+      () async {
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          updates: const [
+            ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+          ],
+        );
+        // Nothing open: the pick sets the standing choice rather than a chat.
+        h.container
+            .read(chatSessionsProvider.notifier)
+            .setApproval(AgentApprovalMode.readOnly);
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .send(network: _credential(), model: 'qwen', message: 'hi');
+
+        expect(h.agent.approvals.single, AgentApprovalMode.readOnly);
+        expect(
+          h.container.read(chatSessionsProvider).conversations.single.approval,
+          isNull,
+          reason: 'the chat follows the setting rather than freezing a copy',
+        );
+      },
+    );
+
+    test('the mode a chat was set to survives a restart — it decides what the '
+        'agent may do to the computer', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+        ],
+      );
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+      h.container
+          .read(chatSessionsProvider.notifier)
+          .setApproval(AgentApprovalMode.readOnly);
+
+      final reopened = (await h.store.loadAll()).single;
+      expect(reopened.approval, AgentApprovalMode.readOnly);
+    });
+  });
+
+  group('a follow-up typed while the agent is still working', () {
+    test('is queued and sent when the turn finishes, instead of being '
+        'dropped', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+
+      // The user thinks of something else while the first answer streams.
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'second'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        h.container.read(chatSessionsProvider).queuedFor(id).single.text,
+        'second',
+      );
+      // Still one user turn: the follow-up has not gone out yet.
+      expect(_userTurns(h.container, id), ['first']);
+
+      sender.emit(
+        id,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.container.read(chatSessionsProvider).queuedFor(id), isEmpty);
+      expect(_userTurns(h.container, id), ['first', 'second']);
+    });
+
+    test('goes out in the chat it was typed in, even after the user has moved '
+        'to another one', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final first = h.container.read(chatSessionsProvider).activeId!;
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'second'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      // They wander off to start a different conversation.
+      chats.newChat();
+
+      sender.emit(
+        first,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(first);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(_userTurns(h.container, first), ['first', 'second']);
+      // And it did not drag them back: they are still on the new chat.
+      expect(h.container.read(chatSessionsProvider).activeId, isNull);
+    });
+
+    test(
+      'stopping the turn drops what was queued behind it — Stop means stop',
+      () async {
+        final sender = _PerChatSender();
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          updates: const [],
+          answering: sender,
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+
+        unawaited(
+          chats.send(network: _credential(), model: 'qwen', message: 'first'),
+        );
+        await Future<void>.delayed(Duration.zero);
+        final id = h.container.read(chatSessionsProvider).activeId!;
+        unawaited(
+          chats.send(network: _credential(), model: 'qwen', message: 'second'),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        chats.stop();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(h.container.read(chatSessionsProvider).queuedFor(id), isEmpty);
+        expect(_userTurns(h.container, id), ['first']);
+      },
+    );
+
+    test('can be taken back before it goes out', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'oops'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      chats.cancelQueued(id, 0);
+      sender.emit(
+        id,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(_userTurns(h.container, id), ['first']);
+    });
+  });
+
+  group('a goal the assistant works on by itself', () {
+    /// Let every queued continuation land — the loop hands the next turn off
+    /// with `unawaited`, so a single await would only see the first one.
+    Future<void> settle() async {
+      for (var i = 0; i < 50; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    test(
+      'keeps sending turns until it runs out of the budget it was given',
+      () async {
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          updates: const [
+            ChatSendSuccess(
+              ChatMessage(
+                role: ChatRole.assistant,
+                text: 'Still working on it.',
+              ),
+            ),
+          ],
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+        await chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'start here',
+        );
+
+        await chats.startGoal(
+          objective: 'Get the tests passing',
+          maxTurns: 3,
+          maxMinutes: 60,
+        );
+        await settle();
+
+        final chat = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single;
+        expect(chat.goal?.status, GoalStatus.spent);
+        expect(chat.goal?.turnsUsed, 3);
+        // Three goal turns on top of the one the user typed.
+        expect(_userTurns(h.container, chat.id), hasLength(4));
+      },
+    );
+
+    test('stops the moment the assistant says the goal is met', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(
+            ChatMessage(
+              role: ChatRole.assistant,
+              text: 'All green.\nGOAL COMPLETE',
+            ),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      await chats.startGoal(
+        objective: 'Get the tests passing',
+        maxTurns: 10,
+        maxMinutes: 60,
+      );
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.goal?.status, GoalStatus.done);
+      expect(chat.goal?.turnsUsed, 1);
+      expect(_userTurns(h.container, chat.id), hasLength(2));
+    });
+
+    test('a failed turn blocks it rather than retrying the same failure ten '
+        'times', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [ChatSendFailure('The assistant could not start.')],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      await chats.startGoal(
+        objective: 'Get the tests passing',
+        maxTurns: 10,
+        maxMinutes: 60,
+      );
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.goal?.status, GoalStatus.blocked);
+      expect(chat.goal?.note, 'The assistant could not start.');
+      expect(chat.goal?.turnsUsed, 1);
+    });
+
+    test('pausing mid-turn stops the loop, and the goal keeps everything it '
+        'had', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'hi'),
+      );
+      await settle();
+      final id = h.container.read(chatSessionsProvider).activeId!;
+      sender.emit(
+        id,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'k')),
+      );
+      await sender.close(id);
+      await settle();
+
+      unawaited(
+        chats.startGoal(
+          objective: 'Get the tests passing',
+          maxTurns: 10,
+          maxMinutes: 60,
+        ),
+      );
+      await settle();
+      // The goal's first turn is in flight; the user changes their mind.
+      chats.pauseGoal();
+      sender.emit(
+        id,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(id);
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.goal?.status, GoalStatus.paused);
+      expect(chat.goal?.objective, 'Get the tests passing');
+      // One goal turn went out before the pause, and no more after it.
+      expect(_userTurns(h.container, chat.id), hasLength(2));
+    });
+  });
 }
+
+/// The user's own messages in the chat [id], in order — what actually got sent.
+List<String> _userTurns(ProviderContainer container, String id) => [
+  for (final m
+      in container
+          .read(chatSessionsProvider)
+          .conversations
+          .firstWhere((c) => c.id == id)
+          .messages)
+    if (m.role == ChatRole.user) m.text,
+];

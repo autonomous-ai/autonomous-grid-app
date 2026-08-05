@@ -6,7 +6,9 @@ import 'package:markdown/markdown.dart' as md;
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/code_text_scope.dart';
+import '../logic/chart_spec.dart';
 import 'code_highlight.dart';
+import 'message_chart.dart';
 
 /// The code block and table renderers a chat turn uses, replacing the defaults
 /// that ship with `flutter_markdown_plus`.
@@ -274,6 +276,16 @@ class CodeBlockBuilder extends MarkdownElementBuilder {
     final language = classes.startsWith('language-')
         ? classes.substring('language-'.length)
         : '';
+
+    // A ```chart block is data, not code: draw it. Only once the fence has
+    // closed — half a JSON object parses as nothing, and a chart flickering in
+    // and out as it streams is worse than the code block it grew from.
+    if (language == 'chart' && !openFence) {
+      final spec = ChartSpec.parse(text);
+      // Unparseable stays a code block on purpose: showing what actually
+      // arrived beats replacing the assistant's output with "invalid chart".
+      if (spec != null) return MessageChart(spec: spec);
+    }
 
     return MarkdownCodeBlock(
       language: language,

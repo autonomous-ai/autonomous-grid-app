@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
+import 'grid_chart_skill.dart';
 import 'grid_host_skill.dart';
+import 'grid_research_skill.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
 import 'adapters/hermes_shared_skills.dart';
@@ -61,6 +63,23 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // Starting a dev server is the same job for every agent, and each runs its
   // commands in a session the runner tears down at the end of a tool call — so
   // each needs the supervisor route or it reports a dead server as running.
+  // The chat can draw a chart from a fenced block, and no agent would ever emit
+  // one unless something told it the block exists — a capability nobody knows
+  // about is a capability that never fires.
+  // The method behind a researched answer. `grid-web` gave every agent the
+  // tools; on its own an agent still does one search, one page, one confident
+  // paragraph — which is how a wrong answer gets written in a trustworthy
+  // voice.
+  BuiltinGridSkill(
+    name: kGridResearchSkillName,
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    build: gridResearchSkillFiles,
+  ),
+  BuiltinGridSkill(
+    name: kGridChartSkillName,
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    build: gridChartSkillFiles,
+  ),
   BuiltinGridSkill(
     name: kGridServeSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},

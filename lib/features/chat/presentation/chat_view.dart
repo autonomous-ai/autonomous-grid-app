@@ -23,6 +23,7 @@ import '../../agents/presentation/agent_changes_bar.dart';
 import '../../agents/presentation/agent_permission_card.dart';
 import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
+import '../../agents/presentation/running_services_bar.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
@@ -33,10 +34,14 @@ import '../../playground/presentation/no_model_yet.dart';
 import '../../prompts/logic/prompt_slash.dart';
 import '../../prompts/presentation/prompt_dialog.dart';
 import '../../prompts/presentation/prompt_slash_menu.dart';
+import '../../skills/presentation/save_skill_bar.dart';
 import '../logic/active_workdir.dart';
+import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../logic/file_mention.dart';
+import 'goal_bar.dart';
+import 'queued_follow_ups.dart';
 import 'agent_handover_bar.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
@@ -546,9 +551,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final needsImage = modality == PlaygroundModality.video;
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
+    // "There is something to send", not "the chat is free": a turn already in
+    // flight no longer blocks Send, it queues what is typed behind it. The text
+    // check moved here from `_send` so the button and the Stop beside it agree
+    // with what pressing them would actually do.
     final canSend =
         !noModel &&
-        !sessions.sending &&
+        _message.text.trim().isNotEmpty &&
         (!needsImage || _attachments.isNotEmpty);
     final messages = sessions.active?.messages ?? const <ChatMessage>[];
     // The "agent is working" feed and the permission card read one shared,
@@ -661,6 +670,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         const AgentHandoverBar(),
                         const PlanApproveBar(),
                         const AgentChangesBar(),
+                        const GoalBar(),
+                        const RunningServicesBar(),
+                        const SaveSkillBar(),
+                        const QueuedFollowUps(),
                         if (slash != null)
                           PromptSlashMenu(query: slash, onPick: _insertPrompt)
                         else if (mention != null)
@@ -690,7 +703,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           // Only the agent can touch this computer — a picture is made
                           // by the grid, so there'd be nothing to approve.
                           approvalPicker: agentMode
-                              ? const ApprovalPicker()
+                              ? ApprovalPicker(
+                                  value: ref.watch(chatApprovalModeProvider),
+                                  onChanged: ref
+                                      .read(chatSessionsProvider.notifier)
+                                      .setApproval,
+                                )
                               : null,
                           // Which agent answers, beside the model it runs — only
                           // when an agent is the one answering this turn.

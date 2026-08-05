@@ -424,9 +424,14 @@ class _ChatRow extends ConsumerWidget {
         label: chat.title,
         selected: selected,
         // Muted-accent so it reads as "new" without competing with the selected
-        // row's bright rail; hidden the instant the chat is opened (read).
+        // row's bright rail; hidden the instant the chat is opened (read). A
+        // pinned chat marks itself when there's nothing more urgent to say —
+        // otherwise the top of the rail is a group with no explanation for why
+        // those rows are there.
         badge: unread
             ? const StatusDot(color: AppPalette.accent, size: 7)
+            : chat.pinned
+            ? Icon(LucideIcons.pin300, size: 11, color: AppPalette.textFaint)
             : null,
         onTap: () {
           controller.select(chat.id);

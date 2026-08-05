@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../playground/presentation/message_plan.dart';
 import '../../playground/presentation/message_sources.dart';
 import '../logic/agent_providers.dart';
+import '../logic/agent_step_label.dart';
 
 /// The "agent is working" bubble shown in the chat while the agent is answering
 /// but before it has streamed any text.
@@ -59,6 +61,11 @@ class AgentActivityFeed extends ConsumerWidget {
     final steps = ref.watch(agentActivityProvider);
     final sources = ref.watch(agentSourcesProvider);
     final plan = ref.watch(agentPlanProvider);
+    // How much of the working-out to show. At [AgentDetailMode.answer] the feed
+    // is only the "Thinking…" line and whatever the answer cites — the user
+    // asked not to be shown the machinery.
+    final detail = ref.watch(chatPrefsProvider.select((p) => p.detail));
+    final showSteps = detail != AgentDetailMode.answer;
     // This feed only exists during an in-flight turn, so when nothing is
     // actively running the model is composing its next step. Show that, with a
     // live count, so a long pause reads as work rather than a stall.
@@ -66,8 +73,9 @@ class AgentActivityFeed extends ConsumerWidget {
       (step) => step.status != AgentActivityStatus.running,
     );
     final sections = <Widget>[
-      if (plan.isNotEmpty) MessagePlan(entries: plan),
-      if (steps.isNotEmpty) _StepList(steps: steps),
+      if (showSteps && plan.isNotEmpty) MessagePlan(entries: plan),
+      if (showSteps && steps.isNotEmpty)
+        _StepList(steps: steps, detail: detail),
       if (thinking)
         // Reset the elapsed count each time the step list changes, so it reads
         // as time since the last action, not since the turn began.
@@ -96,9 +104,10 @@ class AgentActivityFeed extends ConsumerWidget {
 /// (which starts empty) gets a fresh, default view rather than inheriting the
 /// last one's.
 class _StepList extends StatefulWidget {
-  const _StepList({required this.steps});
+  const _StepList({required this.steps, required this.detail});
 
   final List<AgentActivity> steps;
+  final AgentDetailMode detail;
 
   @override
   State<_StepList> createState() => _StepListState();
@@ -112,7 +121,9 @@ class _StepListState extends State<_StepList> {
   @override
   Widget build(BuildContext context) {
     final steps = widget.steps;
-    if (steps.length <= kFoldedStepLimit) return _StepColumn(steps: steps);
+    if (steps.length <= kFoldedStepLimit) {
+      return _StepColumn(steps: steps, detail: widget.detail);
+    }
 
     final expanded = _expanded ?? false;
     final shown = expanded ? steps : foldedActivitySteps(steps);
@@ -126,7 +137,7 @@ class _StepListState extends State<_StepList> {
           expanded: expanded,
           onTap: () => setState(() => _expanded = !expanded),
         ),
-        _StepColumn(steps: shown),
+        _StepColumn(steps: shown, detail: widget.detail),
       ],
     );
   }
@@ -135,15 +146,16 @@ class _StepListState extends State<_StepList> {
 /// A plain column of step rows — the shape shared by the short-run view and the
 /// expanded long-run view.
 class _StepColumn extends StatelessWidget {
-  const _StepColumn({required this.steps});
+  const _StepColumn({required this.steps, required this.detail});
 
   final List<AgentActivity> steps;
+  final AgentDetailMode detail;
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisSize: MainAxisSize.min,
-    children: [for (final step in steps) _StepRow(step: step)],
+    children: [for (final step in steps) _StepRow(step: step, detail: detail)],
   );
 }
 
@@ -272,9 +284,10 @@ class _ThinkingRowState extends State<_ThinkingRow> {
 
 /// One line in the feed: a status indicator, a kind icon, and the step label.
 class _StepRow extends StatelessWidget {
-  const _StepRow({required this.step});
+  const _StepRow({required this.step, required this.detail});
 
   final AgentActivity step;
+  final AgentDetailMode detail;
 
   @override
   Widget build(BuildContext context) {
@@ -295,7 +308,7 @@ class _StepRow extends StatelessWidget {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              step.label,
+              agentStepLabel(step, detail),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(

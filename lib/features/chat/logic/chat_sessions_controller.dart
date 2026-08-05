@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/text_preview.dart';
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/platform/desktop_notifier.dart';
+import '../../../infrastructure/platform/window_focus.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agents/logic/agent_changes.dart';
-import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
@@ -16,6 +19,8 @@ import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
+import 'chat_approval.dart';
+import 'chat_goal.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
 
@@ -32,6 +37,30 @@ export '../../playground/logic/chat_message.dart'
 /// Sentinel for [ChatSessionsState.copyWith] so `activeId: null` can clear the
 /// open chat (compose a new one) while omitting it keeps the current one.
 const Object _keep = Object();
+
+/// A message the user typed while the chat was still answering the last one.
+///
+/// The composer used to simply drop it: [ChatSessionsController.send] returned
+/// early while a reply was in flight, so a follow-up thought had to be held in
+/// the user's head until the agent finished — which, for an agent turn, can be
+/// minutes. Everything the send needs is carried here so the queued turn goes
+/// out exactly as it would have, on the grid and model that were chosen at the
+/// time rather than whatever is selected when it finally runs.
+class QueuedTurn {
+  const QueuedTurn({
+    required this.network,
+    required this.model,
+    required this.text,
+    required this.modality,
+    required this.attachments,
+  });
+
+  final NetworkCredential network;
+  final String model;
+  final String text;
+  final PlaygroundModality modality;
+  final List<MediaAttachment> attachments;
+}
 
 /// The Chat tab's whole state: every saved conversation (newest first), which
 /// one is open, and the in-flight send state **per conversation**, so a reply
@@ -54,6 +83,7 @@ class ChatSessionsState {
     this.errors = const {},
     this.awaitingPlanIds = const {},
     this.runningAgentId,
+    this.queued = const {},
     this.loading = false,
   });
 
@@ -83,6 +113,14 @@ class ChatSessionsState {
 
   /// The last turn's error per conversation id — absent/null means none.
   final Map<String, String?> errors;
+
+  /// What the user typed while a chat was still answering, per conversation id,
+  /// oldest first — sent one at a time as the chat frees up.
+  ///
+  /// Live state, not saved with the conversation: a queued follow-up is a
+  /// message that hasn't been sent, and quitting the app is as clear a "don't
+  /// send it" as pressing cancel.
+  final Map<String, List<QueuedTurn>> queued;
 
   /// Conversations whose last turn was Plan mode's planning turn and whose plan
   /// is waiting on the user: the chat shows an "approve & run" bar. Cleared the
@@ -133,6 +171,14 @@ class ChatSessionsState {
   bool awaitingPlanFor(String? id) =>
       id != null && awaitingPlanIds.contains(id);
 
+  /// What is waiting to be sent in the chat with [id], oldest first.
+  List<QueuedTurn> queuedFor(String? id) =>
+      (id == null ? null : queued[id]) ?? const [];
+
+  /// What is waiting to be sent in the **open** chat — what the composer shows
+  /// above itself, so a queued follow-up is visible rather than only remembered.
+  List<QueuedTurn> get queuedHere => queuedFor(activeId);
+
   /// The open conversation's send phase — what the on-screen transcript shows.
   SendPhase get phase => phaseFor(activeId);
 
@@ -155,6 +201,7 @@ class ChatSessionsState {
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
     Object? runningAgentId = _keep,
+    Map<String, List<QueuedTurn>>? queued,
     bool? loading,
   }) => ChatSessionsState(
     loading: loading ?? this.loading,
@@ -169,7 +216,20 @@ class ChatSessionsState {
     runningAgentId: identical(runningAgentId, _keep)
         ? this.runningAgentId
         : runningAgentId as String?,
+    queued: queued ?? this.queued,
   );
+
+  /// This state with [turns] waiting in the chat [id] — dropped from the map
+  /// when there's nothing left, so [queued] only holds chats with a backlog.
+  ChatSessionsState withQueue(String id, List<QueuedTurn> turns) {
+    final next = Map<String, List<QueuedTurn>>.from(queued);
+    if (turns.isEmpty) {
+      next.remove(id);
+    } else {
+      next[id] = List.unmodifiable(turns);
+    }
+    return copyWith(queued: Map.unmodifiable(next));
+  }
 
   /// This state with the chat [id]'s phase set — removed from the map when it
   /// goes idle, so [phases] only ever holds the chats actually working.
@@ -245,6 +305,12 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Naming a chat outlives the send it started in (the agent writes the name
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
+
+  /// How the last turn of each chat ended, so [_finish] can move that chat's
+  /// goal on without the update stream having to carry it there. Written as the
+  /// turn lands, read and dropped as it settles; absent means the turn was
+  /// stopped rather than finished.
+  final Map<String, ({String? reply, String? failure})> _lastTurn = {};
 
   /// Agent turns waiting for the slot, oldest first. The chat holding the slot
   /// is [ChatSessionsState.runningAgentId]; the local agent has one live session
@@ -361,6 +427,55 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       conversations: [
         for (final c in state.conversations)
           if (c.id == updated.id) updated else c,
+      ],
+    );
+  }
+
+  /// Set how much the assistant may do without asking.
+  ///
+  /// Which of the two things this writes depends on where the user is standing,
+  /// and the split is the point of the feature:
+  ///
+  /// - In an open chat it changes **that chat only**. Granting full access to
+  ///   get one job done no longer leaves every other conversation — including
+  ///   tomorrow's, about something else — running without asking.
+  /// - On a blank composer there is no chat yet, so it sets the app's standing
+  ///   choice: the mode every chat that has never been told follows, and the
+  ///   one the chat about to be started will run under.
+  ///
+  /// Leaves `updatedAt` alone, like [setActiveModel]: changing what a chat may
+  /// do is not talking in it, and must not re-sort the sidebar.
+  void setApproval(AgentApprovalMode approval) {
+    final active = state.active;
+    if (active == null) {
+      ref.read(chatPrefsProvider.notifier).setApproval(approval);
+      return;
+    }
+    if (active.approval == approval) return;
+    final updated = active.copyWith(approval: approval);
+    _store.save(updated);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == updated.id) updated else c,
+      ],
+    );
+  }
+
+  /// Pin [id] to the top of the sidebar, or let it back into the ordinary order.
+  ///
+  /// Leaves `updatedAt` alone for the usual reason: pinning a chat is not
+  /// talking in it, and it must not jump the chat's position *within* its group
+  /// as a side effect of being pinned.
+  void togglePinned(String id) {
+    final chat = _find(id);
+    if (chat == null) return;
+    final pinned = chat.copyWith(pinned: !chat.pinned);
+    _store.save(pinned);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == id) pinned else c,
       ],
     );
   }
@@ -566,6 +681,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Send [message] in the open chat — or, when [into] names one, in that chat
+  /// without bringing it to the front (how a queued follow-up goes out).
+  ///
+  /// Typing while the open chat is still answering **queues** the message rather
+  /// than dropping it: an agent turn can run for minutes, and the follow-up
+  /// thought shouldn't have to be held in the user's head until it ends. The
+  /// queue drains one turn at a time as the chat frees up (see [_drainQueue]).
   Future<void> send({
     required NetworkCredential network,
     required String model,
@@ -573,18 +695,42 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     bool? planFirst,
+    String? into,
   }) async {
     final text = message.trim();
-    // Block only a re-send into the *open* chat while its own reply streams;
-    // another chat generating in the background never stops this one.
-    if (text.isEmpty || state.sending) return;
+    if (text.isEmpty) return;
+
+    if (into == null && state.sending) {
+      _enqueue(
+        QueuedTurn(
+          network: network,
+          model: model,
+          text: text,
+          modality: modality,
+          attachments: List.unmodifiable(attachments),
+        ),
+      );
+      return;
+    }
+
+    // The chat this turn lands in. A queued follow-up names it, because by the
+    // time it goes out the user may well be reading something else — and it
+    // must go where it was typed, not wherever they have moved to.
+    final target = into == null ? _activeOrNew(model) : _find(into);
+    // The chat was deleted while its follow-up waited. Nothing to send it to.
+    if (target == null) return;
+
+    // What this chat lets the agent do — its own choice when it has one, else
+    // the app's standing one. Read once here so the turn runs under the mode
+    // that was on screen when Send was pressed, even if the user switches chats
+    // (or modes) while it streams.
+    final approval = approvalFor(target, ref.read(chatPrefsProvider).approval);
 
     // Plan mode's planning turn: only when the composer is set to Plan (unless
     // the caller forced it — the approve path forces it off) and the agent is
     // the one answering, since a relay/media turn has no plan/act split.
     final planTurn =
-        (planFirst ??
-            ref.read(agentApprovalModeProvider) == AgentApprovalMode.plan) &&
+        (planFirst ?? approval == AgentApprovalMode.plan) &&
         agentAnswersTurn(
           modality: modality,
           hasAttachments: attachments.isNotEmpty,
@@ -600,11 +746,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       attachments: attachments,
       outputsDir: ref.read(mediaOutputsDirProvider),
     );
-    final base = _activeOrNew(model);
-    final withUser = base.copyWith(
+    final withUser = target.copyWith(
       model: model,
       updatedAt: DateTime.now(),
-      messages: [...base.messages, userTurn],
+      messages: [...target.messages, userTurn],
     );
     // A chat is named once — from its first message, until the agent replaces
     // that with a name for what it's actually about. Re-deriving on every turn
@@ -612,8 +757,10 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final conversation = withUser.title == kNewConversationTitle
         ? withUser.copyWith(title: deriveConversationTitle(withUser.messages))
         : withUser;
-    // The send owns the open slot: make it active and clear any prior error.
-    _commit(conversation, phase: const SendBusy(), makeActive: true);
+    // The send owns the open slot: make it active and clear any prior error. A
+    // queued follow-up doesn't — it goes out into a chat the user may have left,
+    // and nothing the app sends on its own may pull them back to it.
+    _commit(conversation, phase: const SendBusy(), makeActive: into == null);
 
     final id = conversation.id;
     final done = _dones[id] = Completer<void>();
@@ -639,6 +786,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       // remember — one standing brief the agent reads on its first turn.
       instructions: project == null ? null : projectStandingBrief(project),
       planTurn: planTurn,
+      approval: approval,
       viaAgent: viaAgent,
       done: done,
     );
@@ -673,6 +821,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     required String? workdir,
     required String? instructions,
     required bool planTurn,
+    required AgentApprovalMode approval,
     required bool viaAgent,
     required Completer<void> done,
   }) {
@@ -712,6 +861,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
       conversationId: id,
       // A planning turn runs read-only and asks the agent to lay out a plan.
       planFirst: planTurn,
+      // This chat's own permission level, not the app's — a turn dispatched
+      // into a background chat must run under that chat's rules.
+      approval: approval,
     );
 
     String? agentSessionId;
@@ -754,6 +906,8 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             // whatever the user is reading open.
             _commit(answered, phase: const SendIdle(), awaitingPlan: planTurn);
             _adoptAgentName(answered, agentSessionId);
+            _announceTurn(answered, body: firstLinePreview(reply.text));
+            _lastTurn[id] = (reply: reply.text, failure: null);
           case ChatSendFailure(:final error, :final partial):
             // Keep what the assistant produced before it failed — its streamed
             // prose, the plan it laid out — instead of wiping the turn to a bare
@@ -772,32 +926,64 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               state = state
                   .withPhase(id, const SendIdle())
                   .withError(id, error);
-              break;
+            } else {
+              _commit(
+                current.copyWith(
+                  updatedAt: DateTime.now(),
+                  messages: [
+                    ...current.messages,
+                    // The part-answer is stamped too: a turn that died after
+                    // four minutes and one that died instantly are different
+                    // problems.
+                    kept.copyWith(
+                      model: model,
+                      took: clock.elapsed,
+                      firstToken: firstToken,
+                    ),
+                  ],
+                ),
+                phase: const SendIdle(),
+              );
+              // _commit clears the error; set it after so the line still shows
+              // above the kept reply.
+              state = state.withError(id, error);
             }
-            _commit(
-              current.copyWith(
-                updatedAt: DateTime.now(),
-                messages: [
-                  ...current.messages,
-                  // The part-answer is stamped too: a turn that died after four
-                  // minutes and one that died instantly are different problems.
-                  kept.copyWith(
-                    model: model,
-                    took: clock.elapsed,
-                    firstToken: firstToken,
-                  ),
-                ],
-              ),
-              phase: const SendIdle(),
-            );
-            // _commit clears the error; set it after so the line still shows
-            // above the kept reply.
-            state = state.withError(id, error);
+            _announceTurn(current, body: "Couldn't finish: $error");
+            _lastTurn[id] = (reply: null, failure: error);
         }
       },
       onDone: () => _finish(id),
       onError: (Object _) => _finish(id),
       cancelOnError: true,
+    );
+  }
+
+  /// Tell the desktop that [conversation] is done, unless the user is already
+  /// watching it happen.
+  ///
+  /// An agent turn can run for minutes, and the reason to leave the app during
+  /// one is that it doesn't need watching — so a reply that lands in silence is
+  /// a reply the user finds twenty minutes late. A turn that *failed* is
+  /// announced on the same terms: they are otherwise still waiting on an answer
+  /// that is never coming.
+  ///
+  /// [body] is already the one line to show (see [firstLinePreview]).
+  void _announceTurn(Conversation conversation, {required String body}) {
+    final worthIt = notificationIsWorthIt(
+      appFocused: ref.read(windowFocusedProvider),
+      userIsLookingAtIt: state.activeId == conversation.id,
+    );
+    if (!worthIt) return;
+    unawaited(
+      ref
+          .read(desktopNotifierProvider)
+          .show(
+            DesktopNotification(
+              title: conversation.title,
+              body: body,
+              opens: conversation.id,
+            ),
+          ),
     );
   }
 
@@ -883,6 +1069,185 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Hold [turn] until the open chat has finished answering.
+  void _enqueue(QueuedTurn turn) {
+    final id = state.activeId;
+    if (id == null) return;
+    state = state.withQueue(id, [...state.queuedFor(id), turn]);
+  }
+
+  /// Drop the follow-up at [index] in the chat [id] — the user changed their
+  /// mind before it went out.
+  void cancelQueued(String id, int index) {
+    final waiting = [...state.queuedFor(id)];
+    if (index < 0 || index >= waiting.length) return;
+    waiting.removeAt(index);
+    state = state.withQueue(id, waiting);
+  }
+
+  /// Send the next follow-up waiting in the chat [id], if any.
+  ///
+  /// One at a time, and only once the turn before it has settled: the whole
+  /// point of the queue is that these are consecutive turns of one conversation,
+  /// so firing them together would have them race for the agent's session.
+  bool _drainQueue(String id) {
+    final waiting = state.queuedFor(id);
+    if (waiting.isEmpty) return false;
+    final next = waiting.first;
+    state = state.withQueue(id, waiting.sublist(1));
+    unawaited(
+      send(
+        network: next.network,
+        model: next.model,
+        message: next.text,
+        modality: next.modality,
+        attachments: next.attachments,
+        into: id,
+      ),
+    );
+    return true;
+  }
+
+  /// Set what the open chat should work toward on its own, and start it.
+  ///
+  /// The first turn goes out immediately — a goal that sits there until you type
+  /// something is just a note to yourself.
+  Future<void> startGoal({
+    required String objective,
+    required int maxTurns,
+    required int maxMinutes,
+  }) async {
+    final trimmed = objective.trim();
+    final active = state.active;
+    if (trimmed.isEmpty || active == null) return;
+    _saveGoal(
+      active.id,
+      ChatGoal(
+        objective: trimmed,
+        status: GoalStatus.active,
+        startedAt: DateTime.now(),
+        maxTurns: maxTurns,
+        maxMinutes: maxMinutes,
+      ),
+    );
+    await _sendGoalTurn(active.id);
+  }
+
+  /// Stop working on the open chat's goal, keeping it and its budget so
+  /// [resumeGoal] can pick it up.
+  void pauseGoal() {
+    final goal = state.active?.goal;
+    final id = state.activeId;
+    if (id == null || goal == null || !goal.isRunning) return;
+    _saveGoal(id, goal.copyWith(status: GoalStatus.paused, clearNote: true));
+  }
+
+  /// Start it again — from a pause, or with the budget it was stopped by topped
+  /// back up when it ran out.
+  Future<void> resumeGoal() async {
+    final id = state.activeId;
+    final goal = state.active?.goal;
+    if (id == null || goal == null || goal.isRunning) return;
+    // A goal that ran out of budget can't simply be flipped back to active: it
+    // would stop again on the very next turn. Resuming grants a fresh budget
+    // from now — the user asking for more is the whole meaning of the button.
+    _saveGoal(
+      id,
+      ChatGoal(
+        objective: goal.objective,
+        status: GoalStatus.active,
+        startedAt: DateTime.now(),
+        maxTurns: goal.maxTurns,
+        maxMinutes: goal.maxMinutes,
+      ),
+    );
+    await _sendGoalTurn(id);
+  }
+
+  /// Drop the goal entirely. The transcript stays; the chat goes back to being
+  /// an ordinary conversation.
+  void dropGoal() {
+    final id = state.activeId;
+    final chat = _find(id ?? '');
+    if (chat == null || chat.goal == null) return;
+    final cleared = chat.copyWith(clearGoal: true);
+    _store.save(cleared);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == cleared.id) cleared else c,
+      ],
+    );
+  }
+
+  /// Move the chat [id]'s goal on now that a turn has ended, and start the next
+  /// one if it is still running.
+  ///
+  /// [outcome] is what that turn produced; null when the turn was stopped or
+  /// cancelled, which counts as neither progress nor failure — the goal simply
+  /// pauses, because a user pressing Stop has said what they want.
+  void _advanceGoal(String id, ({String? reply, String? failure})? outcome) {
+    final goal = _find(id)?.goal;
+    if (goal == null || !goal.isRunning || _disposed) return;
+    if (outcome == null) {
+      _saveGoal(id, goal.copyWith(status: GoalStatus.paused));
+      return;
+    }
+    final next = advanceGoal(
+      goal,
+      reply: outcome.reply,
+      failure: outcome.failure,
+      now: DateTime.now(),
+    );
+    _saveGoal(id, next);
+    if (next.isRunning) unawaited(_sendGoalTurn(id));
+  }
+
+  /// Send the goal's next turn into the chat [id].
+  Future<void> _sendGoalTurn(String id) async {
+    final chat = _find(id);
+    final goal = chat?.goal;
+    final network = ref.read(selectedNetworkProvider);
+    if (chat == null || goal == null || !goal.isRunning) return;
+    // No grid to send to. Say so on the goal rather than looping on a send that
+    // returns immediately — an invisible spin is worse than a stop with a
+    // reason.
+    if (network == null) {
+      _saveGoal(
+        id,
+        goal.copyWith(
+          status: GoalStatus.blocked,
+          note: 'No grid is selected, so there is nothing to ask.',
+        ),
+      );
+      return;
+    }
+    await send(
+      network: network,
+      model: chat.model,
+      message: goalContinuationPrompt(goal.objective),
+      // Never a planning turn: a goal's whole point is that it acts between
+      // check-ins, and plan mode would stop for approval on every step.
+      planFirst: false,
+      into: id,
+    );
+  }
+
+  /// Persist [goal] onto the chat [id] and publish it. Leaves `updatedAt` alone:
+  /// the turns the goal sends move the chat in the sidebar on their own.
+  void _saveGoal(String id, ChatGoal goal) {
+    final chat = _find(id);
+    if (chat == null) return;
+    final updated = chat.copyWith(goal: goal);
+    _store.save(updated);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == id) updated else c,
+      ],
+    );
+  }
+
   /// Settle one conversation's send: drop its subscription and complete the
   /// future [send] returned (whether it finished on its own or was cancelled).
   void _finish(String id) {
@@ -890,14 +1255,27 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
+    // The user's own words first: a follow-up they typed outranks the goal's
+    // next step, and the goal picks up again once the queue is empty.
+    final outcome = _lastTurn.remove(id);
+    if (_drainQueue(id)) return;
+    _advanceGoal(id, outcome);
   }
 
   /// Cancel one conversation's in-flight reply (if any) and settle it. Also
-  /// drops it from [_agentQueue] in case it was still waiting to dispatch.
+  /// drops it from [_agentQueue] in case it was still waiting to dispatch, and
+  /// from the follow-up queue: Stop means stop, so a message typed behind the
+  /// turn being abandoned is abandoned with it rather than firing a second later
+  /// as if nothing had happened. The composer shows what is waiting, so this is
+  /// something the user can see go.
   void _cancel(String id) {
     final sub = _subs.remove(id);
     sub?.cancel();
     _agentQueue.removeWhere((queued) => queued.id == id);
+    // Not while the controller is being torn down: `_cancelAll` runs from
+    // `ref.onDispose`, and Riverpod forbids touching state there. The queue is
+    // in-memory anyway, so a disposal takes it with it.
+    if (!_disposed) state = state.withQueue(id, const []);
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
@@ -906,8 +1284,13 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Free the agent's single turn slot when [id] held it, then start the next
   /// waiting agent turn. A no-op for a relay turn or a background chat that
   /// never held the slot.
+  ///
+  /// Silent during disposal: this is reached from `ref.onDispose` (via
+  /// [_cancelAll]) whenever the app is torn down with an agent turn in flight,
+  /// and Riverpod asserts on any state written there. There is also nothing left
+  /// to free — the whole controller is going.
   void _releaseAgentSlot(String id) {
-    if (state.runningAgentId != id) return;
+    if (_disposed || state.runningAgentId != id) return;
     state = state.copyWith(runningAgentId: null);
     _pumpAgentQueue();
   }

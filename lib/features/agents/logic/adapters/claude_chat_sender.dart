@@ -74,6 +74,9 @@ class ClaudeChatSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    // Claude Code is driven one-shot per turn; the app has no channel to
+    // answer a permission prompt on, so nothing here can constrain it.
+    AgentApprovalMode? approval,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');

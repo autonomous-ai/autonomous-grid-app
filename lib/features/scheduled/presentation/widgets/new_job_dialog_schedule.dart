@@ -82,13 +82,17 @@ class _CadenceRow extends StatelessWidget {
   }
 }
 
+/// Which days the task runs on — several, not one.
+///
+/// The last day on can't be turned off: a schedule with no days would be a task
+/// that never runs, saved as if it would.
 class _WeekdayRow extends StatelessWidget {
-  const _WeekdayRow({required this.weekday, required this.onChanged});
+  const _WeekdayRow({required this.days, required this.onChanged});
 
-  final int weekday;
-  final ValueChanged<int> onChanged;
+  final Set<int> days;
+  final ValueChanged<Set<int>> onChanged;
 
-  static const _days = {
+  static const _labels = {
     DateTime.monday: 'Mon',
     DateTime.tuesday: 'Tue',
     DateTime.wednesday: 'Wed',
@@ -98,6 +102,13 @@ class _WeekdayRow extends StatelessWidget {
     DateTime.sunday: 'Sun',
   };
 
+  /// [days] with [day] flipped — unless it is the only one left on.
+  Set<int> _toggled(int day) {
+    if (!days.contains(day)) return {...days, day};
+    if (days.length == 1) return days;
+    return {...days}..remove(day);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Align(
@@ -106,11 +117,11 @@ class _WeekdayRow extends StatelessWidget {
         spacing: 6,
         runSpacing: 6,
         children: [
-          for (final entry in _days.entries)
+          for (final entry in _labels.entries)
             ScheduledPillChoice(
               label: Text(entry.value),
-              selected: entry.key == weekday,
-              onTap: () => onChanged(entry.key),
+              selected: days.contains(entry.key),
+              onTap: () => onChanged(_toggled(entry.key)),
             ),
         ],
       ),

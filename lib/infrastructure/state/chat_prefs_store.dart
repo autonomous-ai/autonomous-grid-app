@@ -17,6 +17,7 @@ class ChatPrefs {
     this.networkId,
     this.model,
     this.approval = AgentApprovalMode.full,
+    this.detail = AgentDetailMode.stepsCommands,
     this.themeMode = ThemeMode.light,
     this.chatAgent = defaultChatAgent,
     this.uiFontFamily,
@@ -68,6 +69,12 @@ class ChatPrefs {
   /// commands and change files without stopping to ask.
   final AgentApprovalMode approval;
 
+  /// How much of the agent's working-out a chat shows. Defaults to the fullest
+  /// view, which is what the app showed before the setting existed — a user who
+  /// never opens Appearance sees exactly what they saw yesterday, and the two
+  /// quieter levels are there for the ones who want them.
+  final AgentDetailMode detail;
+
   /// The Light/Dark/System choice. Defaults to [ThemeMode.light] — the app ships
   /// light, and a user who never touched it stays there.
   final ThemeMode themeMode;
@@ -101,6 +108,7 @@ class ChatPrefs {
     String? networkId,
     String? model,
     AgentApprovalMode? approval,
+    AgentDetailMode? detail,
     ThemeMode? themeMode,
     String? chatAgent,
     String? uiFontFamily,
@@ -113,6 +121,7 @@ class ChatPrefs {
     networkId: networkId ?? this.networkId,
     model: model ?? this.model,
     approval: approval ?? this.approval,
+    detail: detail ?? this.detail,
     themeMode: themeMode ?? this.themeMode,
     chatAgent: chatAgent ?? this.chatAgent,
     // The `?? this.x` idiom can't express "back to the system font" — passing
@@ -133,6 +142,7 @@ class ChatPrefs {
     networkId: json['networkId'] as String?,
     model: json['model'] as String?,
     approval: _approvalFrom(json['approval']),
+    detail: _detailFrom(json['detail']),
     themeMode: _themeModeFrom(json['themeMode']),
     chatAgent: json['chatAgent'] as String? ?? defaultChatAgent,
     uiFontFamily: _familyFrom(json['uiFontFamily']),
@@ -155,6 +165,7 @@ class ChatPrefs {
     'networkId': networkId,
     'model': model,
     'approval': approval.name,
+    'detail': detail.name,
     'themeMode': themeMode.name,
     'chatAgent': chatAgent,
     'uiFontFamily': uiFontFamily,
@@ -192,6 +203,15 @@ class ChatPrefs {
   /// A missing or unrecognised value in an existing file reads as "ask" — not
   /// the Full a brand-new install ([ChatPrefs.empty]) starts on: a hand-edited
   /// or corrupt file must never quietly hand the agent more than was granted.
+  /// An unknown name (a level this build has dropped) falls back to the
+  /// default rather than hiding the feed.
+  static AgentDetailMode _detailFrom(Object? raw) {
+    for (final mode in AgentDetailMode.values) {
+      if (mode.name == raw) return mode;
+    }
+    return AgentDetailMode.stepsCommands;
+  }
+
   static AgentApprovalMode _approvalFrom(Object? raw) {
     for (final mode in AgentApprovalMode.values) {
       if (mode.name == raw) return mode;
@@ -214,6 +234,7 @@ class ChatPrefs {
       other.networkId == networkId &&
       other.model == model &&
       other.approval == approval &&
+      other.detail == detail &&
       other.themeMode == themeMode &&
       other.chatAgent == chatAgent &&
       other.uiFontFamily == uiFontFamily &&
@@ -226,6 +247,7 @@ class ChatPrefs {
     networkId,
     model,
     approval,
+    detail,
     themeMode,
     chatAgent,
     uiFontFamily,
@@ -327,6 +349,9 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
 
   void setApproval(AgentApprovalMode approval) =>
       _update(state.copyWith(approval: approval));
+
+  void setDetail(AgentDetailMode detail) =>
+      _update(state.copyWith(detail: detail));
 
   void setChatAgent(String id) => _update(state.copyWith(chatAgent: id));
 

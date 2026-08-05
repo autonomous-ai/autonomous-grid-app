@@ -32,6 +32,14 @@ class _JobRowState extends ConsumerState<_JobRow> {
     // so the list itself says something arrived — you don't have to open it. The
     // flag is persisted and clears when the chat is read, not on app restart.
     final hasNew = ref.watch(taskUnreadProvider).contains(widget.job.id);
+    // What that result actually said. Only read when there's an unread one: the
+    // headline answers "is this worth opening?", which a task you've already
+    // read isn't asking.
+    final headline = hasNew
+        ? ref.watch(
+            taskInboxProvider.select((all) => all[widget.job.id]?.summary),
+          )
+        : null;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -88,6 +96,7 @@ class _JobRowState extends ConsumerState<_JobRow> {
                         job: widget.job,
                         status: status,
                         hasNew: hasNew,
+                        headline: headline,
                         theme: theme,
                       ),
                     ),
@@ -107,12 +116,18 @@ class _JobRowText extends StatelessWidget {
     required this.job,
     required this.status,
     required this.hasNew,
+    required this.headline,
     required this.theme,
   });
 
   final ScheduledJob job;
   final JobStatus status;
   final bool hasNew;
+
+  /// The opening line of the unread result, when there is one to quote. Null on
+  /// a task with nothing new, and empty for a run that produced no answer.
+  final String? headline;
+
   final ThemeData theme;
 
   @override
@@ -161,8 +176,9 @@ class _JobRowText extends StatelessWidget {
             height: 1.15,
           ),
         ),
-        // A live second line the schedule alone can't give: when it fires next,
-        // or how the last run went. Only shown when there's something true to say.
+        // A live second line the schedule alone can't give: what the unread
+        // result says, or when it fires next, or how the last run went. Only
+        // shown when there's something true to say.
         if (_liveLine(now) case final line?) ...[
           const SizedBox(height: 2),
           Text(
@@ -170,9 +186,15 @@ class _JobRowText extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: AppPalette.textFaint,
+              // The quoted result is the reason to open the row, so it reads a
+              // step brighter than the timing lines it replaces.
+              color: _quotesResult
+                  ? AppPalette.textSecondary
+                  : AppPalette.textFaint,
               height: 1.15,
-              fontFeatures: const [FontFeature.tabularFigures()],
+              fontFeatures: _quotesResult
+                  ? null
+                  : const [FontFeature.tabularFigures()],
             ),
           ),
         ],
@@ -180,10 +202,16 @@ class _JobRowText extends StatelessWidget {
     );
   }
 
-  /// The one live fact worth a line: a paused task says nothing extra; a failed
+  /// Whether the second line is the answer itself rather than a time — prose
+  /// wants neither the tabular figures nor the faint colour a clock does.
+  bool get _quotesResult => hasNew && (headline?.isNotEmpty ?? false);
+
+  /// The one live fact worth a line: an unread result leads with what it found
+  /// (the reason to open it at all); a paused task says nothing extra; a failed
   /// or blocked one leads with the failure (a blocked task's "next run" is a lie
   /// — it won't run); otherwise show when it runs next.
   String? _liveLine(DateTime now) {
+    if (_quotesResult) return headline;
     if (status == JobStatus.paused) return null;
     if (status == JobStatus.lastRunFailed || status == JobStatus.blocked) {
       return jobLastRunLine(job, now);

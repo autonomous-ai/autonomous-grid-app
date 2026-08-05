@@ -74,7 +74,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   late final TextEditingController _prompt;
   late JobCadence _cadence;
   late TimeOfDay _time;
-  late int _weekday;
+  late Set<int> _days;
   bool _saving = false;
 
   /// The model the task is pinned to. Null until the grid's list has landed —
@@ -103,7 +103,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     _picked = job?.model;
     _cadence = schedule.cadence;
     _time = TimeOfDay(hour: schedule.hour, minute: schedule.minute);
-    _weekday = schedule.weekday;
+    _days = schedule.days;
     if (job != null && stored == null) _foreignSchedule = job.cron;
   }
 
@@ -118,7 +118,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     cadence: _cadence,
     hour: _time.hour,
     minute: _time.minute,
-    weekday: _weekday,
+    days: _days,
   );
 
   /// Where the task will run, as a phrase [_WhatItMayDo] drops into its
@@ -173,7 +173,7 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
         hour: example.schedule.hour,
         minute: example.schedule.minute,
       );
-      _weekday = example.schedule.weekday;
+      _days = example.schedule.days;
     });
   }
 
@@ -319,11 +319,11 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                   cadence: _cadence,
                   onChanged: (value) => setState(() => _cadence = value),
                 ),
-                if (_cadence == JobCadence.weekly) ...[
+                if (_cadence == JobCadence.chosenDays) ...[
                   const SizedBox(height: 10),
                   _WeekdayRow(
-                    weekday: _weekday,
-                    onChanged: (value) => setState(() => _weekday = value),
+                    days: _days,
+                    onChanged: (value) => setState(() => _days = value),
                   ),
                 ],
                 // An interval cadence repeats through the day — there's no one

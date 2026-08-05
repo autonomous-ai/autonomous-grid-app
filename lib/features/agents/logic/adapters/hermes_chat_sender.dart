@@ -6,6 +6,7 @@ import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/cli/hermes_acp_service.dart';
 import '../../../../infrastructure/cli/hermes_acp_setup.dart';
+import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
@@ -125,6 +126,7 @@ class HermesChatSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
@@ -184,12 +186,13 @@ class HermesChatSender implements ChatSender {
       return;
     }
 
-    // This turn runs under whatever the user has the composer set to *now* —
-    // switching the mode takes effect on the next message, not the next session.
-    // Plan mode has two shapes: the planning turn is forced read-only (it must
-    // touch nothing), and the execute turn that follows an approval carries out
-    // the plan asking per action — so `plan` maps to `ask` there.
-    final mode = _ref.read(agentApprovalModeProvider);
+    // This turn runs under the mode its *chat* was set to when Send was pressed
+    // — switching the mode takes effect on the next message, not the next
+    // session, and another chat's mode never reaches this one. Plan mode has two
+    // shapes: the planning turn is forced read-only (it must touch nothing), and
+    // the execute turn that follows an approval carries out the plan asking per
+    // action — so `plan` maps to `ask` there.
+    final mode = approval ?? _ref.read(chatPrefsProvider).approval;
     session.approvalMode = planFirst
         ? AgentApprovalMode.readOnly
         : (mode == AgentApprovalMode.plan ? AgentApprovalMode.ask : mode);

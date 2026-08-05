@@ -8,7 +8,10 @@ publish_to: 'none'
 version: 0.2.0+1
 
 environment:
-  sdk: ^3.9.2
+  # Raised from ^3.9.2 by flutter_local_notifications, which needs ^3.10.0. The
+  # floor was already effectively this — declaring it makes a too-old SDK fail
+  # with the reason rather than with a resolver riddle.
+  sdk: ^3.10.0
 
 dependencies:
   archive: ^4.0.7
@@ -19,6 +22,7 @@ dependencies:
   file_selector: ^1.0.3
   flutter:
     sdk: flutter
+  flutter_local_notifications: ^22.2.0
   flutter_markdown_plus: ^1.0.12
   flutter_riverpod: ^3.3.2
   flutter_svg: ^2.3.0

@@ -21,24 +21,47 @@ void main() {
       expect(schedule.toSchedule(), '0 8 * * 1-5');
     });
 
-    test('weekly on a Friday', () {
+    test('one chosen day — a Friday', () {
       const schedule = JobSchedule(
-        cadence: JobCadence.weekly,
+        cadence: JobCadence.chosenDays,
         hour: 16,
         minute: 0,
-        weekday: DateTime.friday,
+        days: {DateTime.friday},
       );
       expect(schedule.toSchedule(), '0 16 * * 5');
     });
 
     test('a Sunday is cron day 0, not Dart day 7', () {
       const schedule = JobSchedule(
-        cadence: JobCadence.weekly,
+        cadence: JobCadence.chosenDays,
         hour: 7,
         minute: 15,
-        weekday: DateTime.sunday,
+        days: {DateTime.sunday},
       );
       expect(schedule.toSchedule(), '15 7 * * 0');
+    });
+
+    test('several chosen days become one cron line, in week order — this is '
+        'what nobody could express before, short of hand-writing the cron', () {
+      const schedule = JobSchedule(
+        cadence: JobCadence.chosenDays,
+        hour: 8,
+        minute: 0,
+        days: {DateTime.friday, DateTime.monday, DateTime.wednesday},
+      );
+      expect(schedule.toSchedule(), '0 8 * * 1,3,5');
+      expect(schedule.describe(), 'Every Mon, Wed & Fri at 08:00');
+    });
+
+    test('a chosen Sunday still lands on cron day 0 among the others', () {
+      const schedule = JobSchedule(
+        cadence: JobCadence.chosenDays,
+        hour: 9,
+        minute: 0,
+        days: {DateTime.sunday, DateTime.saturday},
+      );
+      expect(schedule.toSchedule(), '0 9 * * 0,6');
+      expect(schedule.describe(), 'Every Sat & Sun at 09:00');
     });
 
     test('an interval cadence is an `every Nm`, not a cron line — and ignores '
@@ -73,10 +96,10 @@ void main() {
       );
       expect(
         const JobSchedule(
-          cadence: JobCadence.weekly,
+          cadence: JobCadence.chosenDays,
           hour: 16,
           minute: 0,
-          weekday: DateTime.friday,
+          days: {DateTime.friday},
         ).describe(),
         'Every Friday at 16:00',
       );
@@ -104,10 +127,10 @@ void main() {
         JobSchedule(cadence: JobCadence.everyDay, hour: 9, minute: 0),
         JobSchedule(cadence: JobCadence.weekdays, hour: 8, minute: 30),
         JobSchedule(
-          cadence: JobCadence.weekly,
+          cadence: JobCadence.chosenDays,
           hour: 16,
           minute: 0,
-          weekday: DateTime.sunday,
+          days: {DateTime.sunday},
         ),
         JobSchedule(cadence: JobCadence.every30Min),
         JobSchedule(cadence: JobCadence.hourly),
@@ -133,6 +156,24 @@ void main() {
       expect(parseJobSchedule('every 45m'), isNull);
       expect(parseJobSchedule('nonsense'), isNull);
     });
+  });
+
+  group('a cron line the app did not write', () {
+    test('a day list reads back as the days it names', () {
+      final parsed = parseJobSchedule('30 7 * * 2,4');
+      expect(parsed?.cadence, JobCadence.chosenDays);
+      expect(parsed?.days, {DateTime.tuesday, DateTime.thursday});
+      expect(parsed?.describe(), 'Every Tue & Thu at 07:30');
+    });
+
+    test(
+      'a range or a step is left as the expression it is, not guessed at',
+      () {
+        expect(parseJobSchedule('0 8 * * 1-3'), isNull);
+        expect(parseJobSchedule('0 8 * * */2'), isNull);
+        expect(describeJobSchedule('0 8 * * */2'), '0 8 * * */2');
+      },
+    );
   });
 
   group('describeJobSchedule', () {

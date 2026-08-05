@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/features/playground/logic/chat_controller.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
@@ -133,6 +134,7 @@ class _OpenStreamSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
+    AgentApprovalMode? approval,
   }) => controller.stream;
 }
 
