@@ -6,6 +6,7 @@ import '../../../shared/theme/theme_mode_labels.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../network/presentation/grid_overview_widgets.dart';
+import 'detail_mode_section.dart';
 import 'theme_preview_tile.dart';
 import 'typography_section.dart';
 
@@ -32,8 +33,9 @@ class AppearanceView extends ConsumerWidget {
     return SectionScaffold(
       title: 'Appearance',
       subtitle:
-          'Choose how Grid looks on this Mac — theme and type. '
-          'System follows your macOS setting.',
+          'Choose how Grid looks on this Mac — theme, type, and how much of '
+          'the assistant’s working-out you want to see. System follows your '
+          'macOS setting.',
       // A SingleChildScrollView over a Column, never a ListView: the type
       // settings pushed this past a screenful, but a lazy list keeps the
       // children it has already built across a rebuild — which is one of the two
@@ -77,6 +79,8 @@ class AppearanceView extends ConsumerWidget {
             // sections that are each visibly grouped just adds a line.
             const SizedBox(height: 26),
             const TypographySection(),
+            const SizedBox(height: 26),
+            const DetailModeSection(),
           ],
         ),
       ),

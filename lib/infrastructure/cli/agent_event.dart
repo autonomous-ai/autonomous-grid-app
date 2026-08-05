@@ -280,6 +280,23 @@ enum AgentApprovalMode {
   full,
 }
 
+/// How much of the agent's working-out the chat shows while it answers.
+///
+/// A live feed of shell commands is exactly what one user wants and noise to the
+/// next: the app is built for people who don't read shell (§5), but the people
+/// debugging it need the command that failed. One setting, three honest levels.
+enum AgentDetailMode {
+  /// Just that it is working. No step list — the "Thinking…" line and the answer.
+  answer,
+
+  /// What it is doing, in words: "Ran a command", the name of the tool. Enough
+  /// to follow along without reading anyone's shell.
+  steps,
+
+  /// The steps with the command lines themselves — what actually ran.
+  stepsCommands,
+}
+
 /// What the agent wants permission for.
 enum AgentPermissionKind {
   /// Run a command on this computer.
