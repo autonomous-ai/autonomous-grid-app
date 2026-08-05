@@ -7,6 +7,7 @@ import '../../../core/app_environment.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../messaging/presentation/remote_reach_row.dart';
 import '../../models/logic/engine_setup_controller.dart';
 import '../../network/presentation/enable_provider_card.dart';
 import '../../network/presentation/sharing_locked_view.dart';
@@ -95,6 +96,10 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
         GridScopeBar(network: network),
         const SizedBox(height: 16),
       ],
+      // What this computer does while nobody is at it. The setup for it lives
+      // on a developer-gated screen, but whether a bot is answering here is not
+      // a developer's fact — it is the machine's.
+      const RemoteReachRow(),
     ];
 
     // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
