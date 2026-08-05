@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
+import '../../../shared/layouts/widgets/sidebar_show_more.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
@@ -44,6 +45,19 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
   // scroll behaviour mounts a *second*, uncontrolled bar over the top.
   final _scrollController = ScrollController();
 
+  // How many pages of each section the user has opened. Held here rather than
+  // in the sections themselves so the rail is one scrollable thing again after
+  // a click, and so both counts survive the rebuild every streamed token causes
+  // upstream. They only ever grow: having asked to see more chats, you don't
+  // expect the list to fold back up because one of them finished replying.
+  int _projectPages = 1;
+  int _loosePages = 1;
+
+  // Whether the loose-chat section is unfolded. A project row folds the chats
+  // under it, so the one group in the rail that *couldn't* fold read as an
+  // oversight — and it's the group most likely to be hundreds of rows long.
+  bool _chatsOpen = true;
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -73,6 +87,14 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
         if (c.projectId == null || !projects.any((p) => p.id == c.projectId)) c,
     ];
 
+    // A long rail is a rail you scroll instead of read, so each section opens
+    // with one page and hands the rest to a "Show more" row. Both counts are
+    // clamped to their list, so the row is built only while something is
+    // genuinely hidden — the last page never leaves a button behind that reveals
+    // nothing.
+    final shownProjects = sidebarPageCount(_projectPages, projects.length);
+    final shownLoose = sidebarPageCount(_loosePages, loose.length);
+
     return Scrollbar(
       controller: _scrollController,
       child: CustomScrollView(
@@ -90,8 +112,8 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
                 ),
                 if (projects.isEmpty)
                   const _AddFirstProjectHint()
-                else
-                  for (final project in projects)
+                else ...[
+                  for (final project in projects.take(shownProjects))
                     _ProjectGroup(
                       project: project,
                       chats: [
@@ -99,10 +121,24 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
                           if (c.projectId == project.id) c,
                       ],
                     ),
-                const SidebarSectionLabel(label: 'Chats'),
+                  // Out at the rail's edge, not indented like the chats just
+                  // above it: this reveals more *projects*, and a row sharing
+                  // the last project's indent would read as belonging to that
+                  // project's chats.
+                  if (shownProjects < projects.length)
+                    SidebarShowMore(
+                      remaining: projects.length - shownProjects,
+                      onTap: () => setState(() => _projectPages++),
+                    ),
+                ],
+                SidebarSectionLabel(
+                  label: 'Chats',
+                  collapsed: !_chatsOpen,
+                  onToggle: () => setState(() => _chatsOpen = !_chatsOpen),
+                ),
                 // Nothing yet, and nothing to say about it — the history is
                 // still being read, and "there are none" would be a guess.
-                if (loose.isEmpty && loading)
+                if (!_chatsOpen || (loose.isEmpty && loading))
                   const SizedBox.shrink()
                 else if (loose.isEmpty)
                   const _Hint(
@@ -119,12 +155,27 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
           // sits in the same column, whether or not it belongs to a project: the
           // "Chats" and "Projects" labels stay at the outer edge, their contents
           // line up one step in.
+          //
+          // The "Show more" row is the last item of the same builder rather than
+          // a sliver of its own: as one more index it stays glued to the bottom
+          // of the chats however many pages are open, and costs nothing on the
+          // common case where the whole section fits.
+          // Folded away, the section builds nothing at all: this is the one list
+          // that can be hundreds of rows, so "collapsed" has to mean gone, not
+          // hidden behind a zero height.
           SliverPadding(
             padding: _railPadding,
             sliver: SliverList.builder(
-              itemCount: loose.length,
-              itemBuilder: (_, index) =>
-                  _ChatRow(chat: loose[index], indented: true),
+              itemCount: !_chatsOpen
+                  ? 0
+                  : shownLoose + (shownLoose < loose.length ? 1 : 0),
+              itemBuilder: (_, index) => index == shownLoose
+                  ? SidebarShowMore(
+                      remaining: loose.length - shownLoose,
+                      indented: true,
+                      onTap: () => setState(() => _loosePages++),
+                    )
+                  : _ChatRow(chat: loose[index], indented: true),
             ),
           ),
         ],
@@ -200,6 +251,10 @@ class _ProjectGroup extends ConsumerStatefulWidget {
 class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
   bool _open = true;
 
+  // How many pages of this project's chats have been opened. Per group, so
+  // paging one busy project open doesn't unfold every other project too.
+  int _pages = 1;
+
   void _newChatHere() {
     ref
         .read(chatSessionsProvider.notifier)
@@ -213,6 +268,8 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
     AppTheme.watch(context);
     final open = _open;
     final missing = watchProjectMissing(ref, widget.project);
+    final chats = widget.chats;
+    final shown = sidebarPageCount(_pages, chats.length);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -264,20 +321,28 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (widget.chats.isEmpty)
+                    if (chats.isEmpty)
                       const _RevealItem(
                         index: 0,
                         child: _Hint(text: 'No chats yet', indented: true),
                       )
-                    else
-                      for (var i = 0; i < widget.chats.length; i++)
+                    else ...[
+                      for (var i = 0; i < shown; i++)
                         _RevealItem(
-                          index: i,
-                          child: _ChatRow(
-                            chat: widget.chats[i],
-                            indented: true,
-                          ),
+                          // Staggered within its page, not within the whole
+                          // list: a page revealed later arrives as its own wave,
+                          // and the stagger never runs off the end of the curve
+                          // table on a project with a hundred chats.
+                          index: i % kSidebarPageSize,
+                          child: _ChatRow(chat: chats[i], indented: true),
                         ),
+                      if (shown < chats.length)
+                        SidebarShowMore(
+                          remaining: chats.length - shown,
+                          indented: true,
+                          onTap: () => setState(() => _pages++),
+                        ),
+                    ],
                   ],
                 )
               : const SizedBox(width: double.infinity),

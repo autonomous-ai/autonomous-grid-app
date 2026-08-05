@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../theme/app_theme.dart';
 
@@ -377,24 +378,108 @@ class _SelectionRail extends StatelessWidget {
 }
 
 /// A quiet section label above a group of [SidebarItem]s ("Chats", "Workspace").
-class SidebarSectionLabel extends StatelessWidget {
-  const SidebarSectionLabel({super.key, required this.label});
+///
+/// Pass [onToggle] to make the section foldable: the label then carries a
+/// chevron and the whole header becomes the hit target, the way a project row
+/// folds the chats under it. A project is a group you can put away, and a
+/// section of loose chats is no different — leaving one of them permanently
+/// open was the odd one out in the rail.
+class SidebarSectionLabel extends StatefulWidget {
+  const SidebarSectionLabel({
+    super.key,
+    required this.label,
+    this.collapsed = false,
+    this.onToggle,
+  });
 
   final String label;
+
+  /// Which way the chevron points. Ignored without [onToggle].
+  final bool collapsed;
+
+  /// Folds/unfolds the section. Null leaves the label as plain chrome.
+  final VoidCallback? onToggle;
+
+  @override
+  State<SidebarSectionLabel> createState() => _SidebarSectionLabelState();
+}
+
+class _SidebarSectionLabelState extends State<SidebarSectionLabel> {
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
 
   @override
   Widget build(BuildContext context) {
     // Same reason as the row above: const chrome reading a token.
     AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 17, 10, 7),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: AppPalette.textFaint,
-          fontSize: 11.2,
-          fontWeight: AppFont.medium,
-          letterSpacing: 0,
+    final foldable = widget.onToggle != null;
+    final hot = foldable && _hovered;
+    // The label lifts out of the hint ink under the pointer, like every other
+    // interactive thing in the rail — a header you can click must not sit at the
+    // same tint as one you can't.
+    final ink = hot ? AppPalette.textPrimary : AppPalette.textFaint;
+
+    // 10 + 26 + 3 is the same 39px the plain label occupied (17/7 around an
+    // ~15px line), and the inner 10px inset keeps its left edge in the column
+    // the other section labels share — so gaining a fold costs the rail no
+    // rhythm. The text rides ~1.5px higher inside that box, which is what
+    // centring it against the chevron buys.
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(0, 10, 0, 3),
+      child: Container(
+        height: 26,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: hot ? AppSurface.hoverFill : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: ink,
+                  fontSize: 11.2,
+                  fontWeight: AppFont.medium,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
+            if (foldable)
+              // One glyph rotated rather than two swapped: the quarter turn is
+              // what shows the fold happening, and a swap would just blink.
+              AnimatedRotation(
+                turns: widget.collapsed ? -0.25 : 0,
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                child: Icon(LucideIcons.chevronDown300, size: 14, color: ink),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (!foldable) return header;
+
+    return Semantics(
+      button: true,
+      label: '${widget.collapsed ? 'Expand' : 'Collapse'} ${widget.label}',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onToggle,
+          child: header,
         ),
       ),
     );
