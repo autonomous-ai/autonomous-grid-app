@@ -652,15 +652,29 @@ class _CatalogAction extends StatelessWidget {
           child: const Text('Disconnect'),
         );
       }
-      // One control, not two. The ⓘ that used to sit here opened the detail —
-      // which the whole card now does, so keeping it would put two affordances
-      // for the same thing on every signed-in card.
-      return AppIconButton(
-        icon: Icons.close_rounded,
-        size: 16,
-        tooltip: 'Remove',
-        destructive: true,
-        onPressed: onDisconnect,
+      // **A state, then the action on it.** This was a lone ✕, and a ✕ is the
+      // same glyph the app uses to dismiss things — on a card whose only
+      // difference from its neighbours is a small "Signed in" tag, the corner
+      // read as "add" or "close" depending on which you expected, and never as
+      // "this one is done". The tick answers what the card *is*; the unlink
+      // icon is the only thing to press.
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _ConnectedMark(),
+          const SizedBox(width: 2),
+          AppIconButton(
+            icon: Icons.link_off_rounded,
+            size: 16,
+            // The word the rest of the app uses for this, and the word the
+            // confirm dialog it opens uses. "Remove" was borrowed from the
+            // hand-added card next to it, where it is right and here is not:
+            // nothing is being deleted, a sign-in is being undone.
+            tooltip: 'Disconnect',
+            destructive: true,
+            onPressed: onDisconnect,
+          ),
+        ],
       );
     }
 
@@ -738,6 +752,40 @@ class _CancelButtonState extends State<_CancelButton> {
                   : AppPalette.textSecondary,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "This one is connected" — a state, not a button.
+///
+/// Deliberately inert, and sized to the buttons it sits beside so the corner of
+/// a connected card lines up with the corner of every other card. Making it
+/// pressable would be a third route to the detail the whole card already opens.
+///
+/// It is not redundant with the "Signed in" tag: the tag is a word in the name
+/// row, read left to right, while this is where the eye goes when scanning a
+/// grid for *which* cards are done — the same place the `+` sits on the ones
+/// that are not.
+class _ConnectedMark extends StatelessWidget {
+  const _ConnectedMark();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads AppPalette tokens.
+    return Tooltip(
+      message: 'Connected',
+      waitDuration: const Duration(milliseconds: 500),
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: Icon(
+          Icons.check_circle_rounded,
+          size: 17,
+          // The same green the sidebar's running dots use, so "on" means one
+          // colour across this screen.
+          color: AppPalette.online,
         ),
       ),
     );
@@ -1009,13 +1057,31 @@ class _McpCardState extends ConsumerState<_McpCard> {
                 // already carries it (`Signed in` / `No sign-in`), and the
                 // confirm dialog states the consequence in full. Saying it
                 // twice bought nothing and cost the grid its evenness.
-                AppIconButton(
-                  icon: Icons.close_rounded,
-                  size: 16,
-                  tooltip: 'Remove',
-                  destructive: true,
-                  onPressed: _isLinkedConnector ? _disconnect : _delete,
-                ),
+                // **Two words, because they are two different things.** A
+                // signed-in card is undoing a sign-in — nothing is deleted, and
+                // reconnecting is a click. A hand-added one is dropping a
+                // config entry the user typed, which only they can retype. The
+                // paragraph above is still right that the *card* need not shout
+                // the difference; the tooltip and the glyph are where it costs
+                // nothing to be exact.
+                if (_isLinkedConnector) ...[
+                  const _ConnectedMark(),
+                  const SizedBox(width: 2),
+                  AppIconButton(
+                    icon: Icons.link_off_rounded,
+                    size: 16,
+                    tooltip: 'Disconnect',
+                    destructive: true,
+                    onPressed: _disconnect,
+                  ),
+                ] else
+                  AppIconButton(
+                    icon: Icons.close_rounded,
+                    size: 16,
+                    tooltip: 'Remove',
+                    destructive: true,
+                    onPressed: _delete,
+                  ),
               ],
             ),
     );
