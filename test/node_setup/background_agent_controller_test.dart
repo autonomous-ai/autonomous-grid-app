@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
-import 'package:grid_app/features/agent/logic/claude_tool.dart';
-import 'package:grid_app/features/agent/logic/codex_tool.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/background_agent_controller.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';

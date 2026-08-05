@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_session_service.dart';
-import 'hermes_tool.dart';
+import 'adapters/hermes_tool.dart';
 
 /// The seam onto Hermes's session store, or null when the agent isn't installed
 /// (that computer's chats are answered by the grid's API, which names nothing).

@@ -6,7 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agents/logic/adapters/hermes_tool.dart';
 import '../logic/cron_output.dart';
 import '../logic/job_schedule.dart';
 import '../logic/scheduled_job.dart';

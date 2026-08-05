@@ -1,10 +1,10 @@
 import 'dart:io';
 
-import '../../../core/grid_paths.dart';
-import '../../agents/logic/connector_runtime.dart';
-import '../../agents/logic/connector_token.dart';
-import '../../agents/logic/marked_map_projection.dart';
-import '../../agents/logic/rest_entry.dart';
+import '../../../../core/grid_paths.dart';
+import '../connector_runtime.dart';
+import '../connector_token.dart';
+import '../marked_map_projection.dart';
+import '../rest_entry.dart';
 import 'codex_mcp_config.dart';
 
 /// Projects the app's connectors into `~/.codex/config.toml`.

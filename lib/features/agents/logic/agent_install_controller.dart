@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../agent/logic/agent_server_error.dart';
-import '../../agent/logic/hermes_tool.dart';
+import 'agent_server_error.dart';
+import 'adapters/hermes_tool.dart';
 import 'agent_catalog.dart';
 import 'agent_installer.dart';
 import 'agent_status.dart';

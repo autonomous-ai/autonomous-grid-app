@@ -7,7 +7,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../agent/logic/agent_providers.dart';
+import '../../agents/logic/agent_providers.dart';
 import '../../projects/logic/project.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_sessions_controller.dart';

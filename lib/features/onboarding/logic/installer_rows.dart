@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/logic/session_controller.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agents/logic/adapters/hermes_tool.dart';
 import '../../network/logic/grid_sync_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../node_setup/logic/node_setup_plan.dart';

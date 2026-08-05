@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 
 /// The status a folded run shows in one line, so the summary spins while work is

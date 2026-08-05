@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_grid_link.dart';
-import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_grid_link.dart';
+import 'package:grid_app/features/agents/logic/agent_skill_installer.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/messaging/logic/messaging_controller.dart';
 import 'package:grid_app/features/messaging/logic/messaging_platform.dart';

@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/grid_paths.dart';
-import '../../../shared/skills/agent_skill_home.dart';
-import '../../agents/logic/agent_skill.dart';
+import '../../../../core/grid_paths.dart';
+import '../../../../shared/skills/agent_skill_home.dart';
+import '../agent_skill.dart';
 
 /// Finds the skills in one [SkillSource], walking its folder for `SKILL.md`
 /// files. Pure filesystem reads — nothing is written here, so opening the

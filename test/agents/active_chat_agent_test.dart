@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/claude_chat_sender.dart';
-import 'package:grid_app/features/agent/logic/claude_tool.dart';
-import 'package:grid_app/features/agent/logic/codex_chat_sender.dart';
-import 'package:grid_app/features/agent/logic/codex_tool.dart';
-import 'package:grid_app/features/agent/logic/hermes_chat_sender.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
+import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
+import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_grid_support.dart';

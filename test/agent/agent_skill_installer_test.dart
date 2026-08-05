@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_skill_installer.dart';
+import 'package:grid_app/features/agents/logic/agent_skill_installer.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/shared/skills/agent_skill_home.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_mcp_config.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_mcp_config.dart';
 import 'package:grid_app/features/agents/logic/mcp_server.dart';
 
 void main() {

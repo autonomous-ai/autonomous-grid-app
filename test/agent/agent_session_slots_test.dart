@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
-import 'package:grid_app/features/agent/logic/agent_session_slots.dart';
+import 'package:grid_app/features/agents/logic/agent_providers.dart';
+import 'package:grid_app/features/agents/logic/agent_session_slots.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 
 List<ChatMessage> _history(int turns) => [

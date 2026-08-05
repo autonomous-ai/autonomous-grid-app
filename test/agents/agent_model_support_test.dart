@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_grid_link.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_grid_link.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_model_support.dart';

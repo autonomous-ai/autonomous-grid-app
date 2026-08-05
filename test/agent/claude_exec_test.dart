@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/claude_chat_sender.dart';
+import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_service.dart';

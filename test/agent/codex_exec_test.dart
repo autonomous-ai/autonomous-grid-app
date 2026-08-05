@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/codex_chat_sender.dart';
+import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/agent_version_service.dart';

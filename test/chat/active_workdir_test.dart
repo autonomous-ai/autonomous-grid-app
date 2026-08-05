@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/chat/logic/active_workdir.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';

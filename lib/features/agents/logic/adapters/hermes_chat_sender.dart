@@ -2,22 +2,22 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/command_log.dart';
-import '../../../infrastructure/logging/app_log.dart';
-import '../../../infrastructure/cli/hermes_acp_service.dart';
-import '../../../infrastructure/cli/hermes_acp_setup.dart';
-import '../../../infrastructure/state/models/network_credential.dart';
-import '../../playground/logic/chat_message.dart';
-import '../../playground/logic/chat_sender.dart';
-import '../../playground/logic/playground_request.dart';
-import '../../../infrastructure/cli/agent_event.dart';
-import 'agent_changes.dart';
-import 'agent_server_error.dart';
-import 'agent_permissions.dart';
-import 'agent_prompt.dart';
+import '../../../../infrastructure/cli/command_log.dart';
+import '../../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/cli/hermes_acp_service.dart';
+import '../../../../infrastructure/cli/hermes_acp_setup.dart';
+import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../playground/logic/chat_message.dart';
+import '../../../playground/logic/chat_sender.dart';
+import '../../../playground/logic/playground_request.dart';
+import '../../../../infrastructure/cli/agent_event.dart';
+import '../agent_changes.dart';
+import '../agent_server_error.dart';
+import '../agent_permissions.dart';
+import '../agent_prompt.dart';
 import 'hermes_grid_link.dart';
 import 'hermes_tool.dart';
-import 'agent_providers.dart';
+import '../agent_providers.dart';
 
 /// The hermes ACP seam, or null when hermes is absent.
 ///

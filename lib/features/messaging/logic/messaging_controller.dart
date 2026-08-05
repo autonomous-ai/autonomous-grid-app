@@ -2,8 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_gateway_service.dart';
 import '../../../infrastructure/cli/hermes_platform_policy.dart';
-import '../../agent/logic/hermes_grid_link.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agents/logic/adapters/hermes_grid_link.dart';
+import '../../agents/logic/adapters/hermes_tool.dart';
 import 'messaging_platform.dart';
 import 'messaging_state.dart';
 

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../../../core/grid_paths.dart';
-import '../../agents/logic/mcp_server.dart';
+import '../../../../core/grid_paths.dart';
+import '../mcp_server.dart';
 
 /// Reads and writes the user-scope MCP servers in `~/.claude.json`.
 ///

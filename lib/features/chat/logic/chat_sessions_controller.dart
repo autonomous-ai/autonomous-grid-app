@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../agent/logic/agent_changes.dart';
-import '../../agent/logic/agent_permissions.dart';
-import '../../agent/logic/agent_routing.dart';
-import '../../agent/logic/agent_session_title.dart';
+import '../../agents/logic/agent_changes.dart';
+import '../../agents/logic/agent_permissions.dart';
+import '../../agents/logic/agent_routing.dart';
+import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../auth/logic/session_controller.dart';

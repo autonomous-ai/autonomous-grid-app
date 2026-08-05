@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../agent/logic/agent_skill_installer.dart';
+import '../../agents/logic/agent_skill_installer.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_status.dart';
 

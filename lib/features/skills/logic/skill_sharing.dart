@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../shared/skills/agent_skill_home.dart';
-import '../../agent/logic/hermes_skill_scanner.dart';
+import '../../agents/logic/adapters/hermes_skill_scanner.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_skill.dart';
 

@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_changes.dart';
+import 'package:grid_app/features/agents/logic/agent_changes.dart';
 
 /// The bar summarising the agent's edits is a transient notice, not a fixture:
 /// these pin the ways it should leave the screen — a hand dismiss, the auto-hide

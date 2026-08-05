@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
-import '../../features/agent/logic/hermes_tool.dart';
+import '../../features/agents/logic/adapters/hermes_tool.dart';
 import 'hermes_cron_rearm.dart';
 import 'host_environment.dart';
 

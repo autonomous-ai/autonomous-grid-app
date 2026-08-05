@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../agent/logic/agent_providers.dart';
+import '../../agents/logic/agent_providers.dart';
 import '../../projects/logic/project.dart';
 import 'chat_sessions_controller.dart';
 

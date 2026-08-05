@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_version_service.dart';
-import '../../agent/logic/claude_tool.dart';
-import '../../agent/logic/codex_tool.dart';
-import '../../agent/logic/hermes_tool.dart';
+import 'adapters/claude_tool.dart';
+import 'adapters/codex_tool.dart';
+import 'adapters/hermes_tool.dart';
 import 'agent_catalog.dart';
 
 /// Whether [tool] is installed on this computer, keyed by the agent so a row

@@ -1,4 +1,4 @@
-import '../../../infrastructure/cli/hermes_config_file.dart';
+import '../../../../infrastructure/cli/hermes_config_file.dart';
 
 /// The entry the app used to add to Hermes's `skills.external_dirs`, pointing
 /// it at `~/.grid/skills`.

@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
-import 'package:grid_app/features/agent/logic/agent_server_error.dart';
-import 'package:grid_app/features/agent/logic/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/agent_server_error.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_install_controller.dart';
 import 'package:grid_app/infrastructure/cli/agent_spec_installer.dart';
 import 'package:grid_app/infrastructure/cli/claude_installer.dart';

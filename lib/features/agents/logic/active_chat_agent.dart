@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
-import '../../agent/logic/claude_chat_sender.dart';
-import '../../agent/logic/codex_chat_sender.dart';
-import '../../agent/logic/hermes_chat_sender.dart';
+import 'adapters/claude_chat_sender.dart';
+import 'adapters/codex_chat_sender.dart';
+import 'adapters/hermes_chat_sender.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_models.dart';
 import 'agent_catalog.dart';

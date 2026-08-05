@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/hermes_acp_setup.dart';
-import '../../../infrastructure/cli/host_environment.dart';
-import '../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/cli/hermes_acp_setup.dart';
+import '../../../../infrastructure/cli/host_environment.dart';
+import '../../../../infrastructure/logging/app_log.dart';
 
 /// The agent that answers chat: Hermes, an agent loop the app spawns and streams
 /// into the conversation. The app installs it — a `uv` tool on a private

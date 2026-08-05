@@ -3,21 +3,21 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/agent_event.dart';
-import '../../../infrastructure/cli/codex_exec_service.dart';
-import '../../../infrastructure/cli/command_log.dart';
-import '../../../infrastructure/logging/app_log.dart';
-import '../../../infrastructure/state/models/network_credential.dart';
-import '../../network/logic/app_guide_snippets.dart';
-import '../../playground/logic/chat_message.dart';
-import '../../playground/logic/chat_sender.dart';
-import '../../playground/logic/playground_request.dart';
-import 'agent_changes.dart';
-import 'agent_prompt.dart';
-import 'agent_session_slots.dart';
-import 'agent_turn_log.dart';
-import 'agent_server_error.dart';
-import 'agent_providers.dart';
+import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/codex_exec_service.dart';
+import '../../../../infrastructure/cli/command_log.dart';
+import '../../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../network/logic/app_guide_snippets.dart';
+import '../../../playground/logic/chat_message.dart';
+import '../../../playground/logic/chat_sender.dart';
+import '../../../playground/logic/playground_request.dart';
+import '../agent_changes.dart';
+import '../agent_prompt.dart';
+import '../agent_session_slots.dart';
+import '../agent_turn_log.dart';
+import '../agent_server_error.dart';
+import '../agent_providers.dart';
 import 'codex_tool.dart';
 
 /// The Codex exec seam, or null when Codex is absent.

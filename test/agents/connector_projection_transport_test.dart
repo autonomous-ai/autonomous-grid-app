@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/claude_connector_servers.dart';
-import 'package:grid_app/features/agent/logic/codex_connector_servers.dart';
-import 'package:grid_app/features/agent/logic/hermes_connector_servers.dart';
+import 'package:grid_app/features/agents/logic/adapters/claude_connector_servers.dart';
+import 'package:grid_app/features/agents/logic/adapters/codex_connector_servers.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_connector_servers.dart';
 import 'package:grid_app/features/agents/logic/connector_token.dart';
 
 /// Every agent gets every connector, and none of them gets a credential.

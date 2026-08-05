@@ -4,11 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../shared/skills/agent_skill_home.dart';
-import '../../agents/logic/agent_catalog.dart';
+import 'agent_catalog.dart';
 import 'grid_host_skill.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
-import 'hermes_shared_skills.dart';
+import 'adapters/hermes_shared_skills.dart';
 
 /// One skill the app installs for its agents, and which agents get it.
 ///

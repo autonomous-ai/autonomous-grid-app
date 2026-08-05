@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_connector_servers.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_connector_servers.dart';
 import 'package:grid_app/features/agents/logic/connector_token.dart';
 
 /// The half of the connector projection that writes `~/.hermes/config.yaml`.

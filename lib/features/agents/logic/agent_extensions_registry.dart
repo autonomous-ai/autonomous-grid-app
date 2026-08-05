@@ -12,9 +12,9 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../agent/logic/claude_extensions.dart';
-import '../../agent/logic/codex_extensions.dart';
-import '../../agent/logic/hermes_extensions.dart';
+import 'adapters/claude_extensions.dart';
+import 'adapters/codex_extensions.dart';
+import 'adapters/hermes_extensions.dart';
 import 'agent_catalog.dart';
 import 'agent_extensions.dart';
 

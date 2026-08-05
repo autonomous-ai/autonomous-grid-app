@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import '../../agents/logic/connector_runtime.dart';
-import '../../agents/logic/connector_token.dart';
-import '../../agents/logic/marked_map_projection.dart';
-import '../../agents/logic/rest_entry.dart';
+import '../connector_runtime.dart';
+import '../connector_token.dart';
+import '../marked_map_projection.dart';
+import '../rest_entry.dart';
 import 'claude_mcp_config.dart';
 
 /// Projects the app's connectors into the user scope of `~/.claude.json`.

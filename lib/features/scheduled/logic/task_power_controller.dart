@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_task_policy.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../../agents/logic/adapters/hermes_tool.dart';
 
 /// The seam onto Hermes's own scheduler settings, or null when there's no agent
 /// on this computer to schedule anything on.

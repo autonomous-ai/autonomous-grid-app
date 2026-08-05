@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/extension_toolbar.dart';
 import '../../../shared/widgets/section_scaffold.dart';
-import '../../agent/logic/hermes_tool.dart';
+import '../logic/adapters/hermes_tool.dart';
 import 'no_agent_view.dart';
 
 /// The frame the three extension screens (Skills, Connectors, Plugins) share:

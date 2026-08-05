@@ -2,18 +2,18 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/hermes_config_file.dart';
-import '../../../infrastructure/cli/hermes_cron_rearm.dart';
-import '../../../infrastructure/cli/hermes_cron_service.dart';
-import '../../../infrastructure/logging/app_log.dart';
-import '../../../infrastructure/state/chat_prefs_store.dart';
-import '../../../infrastructure/state/models/network_credential.dart';
-import '../../auth/logic/session_controller.dart';
-import '../../network/logic/client_app_configurator.dart';
-import '../../network/logic/client_app_detector.dart';
-import '../../network/logic/network_models_provider.dart';
-import '../../agents/logic/agent_catalog.dart';
-import '../../agents/logic/agent_model_support.dart';
+import '../../../../infrastructure/cli/hermes_config_file.dart';
+import '../../../../infrastructure/cli/hermes_cron_rearm.dart';
+import '../../../../infrastructure/cli/hermes_cron_service.dart';
+import '../../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/state/chat_prefs_store.dart';
+import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../auth/logic/session_controller.dart';
+import '../../../network/logic/client_app_configurator.dart';
+import '../../../network/logic/client_app_detector.dart';
+import '../../../network/logic/network_models_provider.dart';
+import '../agent_catalog.dart';
+import '../agent_model_support.dart';
 import 'hermes_tool.dart';
 
 /// The line shown instead of pointing Hermes at a model it can't serve — see

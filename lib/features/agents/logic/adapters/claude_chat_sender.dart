@@ -3,26 +3,26 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/agent_event.dart';
-import '../../../infrastructure/cli/claude_exec_event.dart';
-import '../../../infrastructure/cli/claude_exec_service.dart';
-import '../../../infrastructure/cli/command_log.dart';
-import '../../../infrastructure/logging/app_log.dart';
-import '../../../infrastructure/state/model_context_store.dart';
-import '../../../infrastructure/state/models/network_credential.dart';
-import '../../network/logic/app_guide_snippets.dart';
-import '../../playground/logic/chat_message.dart';
-import '../../playground/logic/chat_sender.dart';
-import '../../playground/logic/playground_request.dart';
-import 'agent_changes.dart';
-import 'agent_prompt.dart';
-import 'agent_providers.dart';
-import 'agent_server_error.dart';
-import 'agent_session_slots.dart';
-import 'agent_turn_log.dart';
+import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/claude_exec_event.dart';
+import '../../../../infrastructure/cli/claude_exec_service.dart';
+import '../../../../infrastructure/cli/command_log.dart';
+import '../../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/state/model_context_store.dart';
+import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../network/logic/app_guide_snippets.dart';
+import '../../../playground/logic/chat_message.dart';
+import '../../../playground/logic/chat_sender.dart';
+import '../../../playground/logic/playground_request.dart';
+import '../agent_changes.dart';
+import '../agent_prompt.dart';
+import '../agent_providers.dart';
+import '../agent_server_error.dart';
+import '../agent_session_slots.dart';
+import '../agent_turn_log.dart';
 import 'claude_tool.dart';
 import 'claude_turn_mcp_config.dart';
-import 'model_context_window.dart';
+import '../model_context_window.dart';
 
 /// The Claude Code exec seam, or null when Claude Code is absent.
 final claudeExecServiceProvider = Provider<ClaudeExecService?>((ref) {

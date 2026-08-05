@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../agent/logic/agent_providers.dart';
+import '../../agents/logic/agent_providers.dart';
 
 /// One thing sitting in the assistant's folder — a file it can read, or a folder
 /// of them.

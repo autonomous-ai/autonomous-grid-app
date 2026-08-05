@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/grid_paths.dart';
-import '../../agents/logic/connector_token.dart';
+import '../../../../core/grid_paths.dart';
+import '../connector_token.dart';
 
 /// Writes the app's connector tokens into the files Hermes reads them from.
 ///

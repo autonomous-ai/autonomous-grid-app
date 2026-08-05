@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:yaml_edit/yaml_edit.dart';
 
-import '../../../core/grid_paths.dart';
-import '../../agents/logic/mcp_server.dart';
+import '../../../../core/grid_paths.dart';
+import '../mcp_server.dart';
 
 /// Reads and writes the MCP servers in `~/.hermes/config.yaml`.
 ///

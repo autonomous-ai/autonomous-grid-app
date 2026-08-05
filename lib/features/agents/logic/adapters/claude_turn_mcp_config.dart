@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../../../core/grid_paths.dart';
+import '../../../../core/grid_paths.dart';
 import 'claude_connector_servers.dart';
 import 'claude_mcp_config.dart';
 

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/agent_version_service.dart';
-import '../../../infrastructure/cli/host_environment.dart';
+import '../../../../infrastructure/cli/agent_version_service.dart';
+import '../../../../infrastructure/cli/host_environment.dart';
 
 /// Codex — OpenAI's coding agent, run as a chat agent the app drives over
 /// `codex exec --json`. The app installs it — a pinned, hash-verified release

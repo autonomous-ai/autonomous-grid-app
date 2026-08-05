@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/layouts/shell_state.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/status_dot.dart';
-import '../../../agent/logic/hermes_tool.dart';
+import '../../../agents/logic/adapters/hermes_tool.dart';
 import '../../../scheduled/logic/scheduled_job.dart';
 import '../../../scheduled/logic/scheduled_jobs_controller.dart';
 import '../../../scheduled/presentation/widgets/new_job_dialog.dart';

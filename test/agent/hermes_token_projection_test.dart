@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_token_projection.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_token_projection.dart';
 import 'package:grid_app/features/agents/logic/connector_token.dart';
 
 void main() {

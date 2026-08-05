@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/agent_providers.dart';
+import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 
 /// What a long run shows while it is folded — the summary has to stay a summary,

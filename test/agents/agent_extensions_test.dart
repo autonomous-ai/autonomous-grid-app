@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/claude_extensions.dart';
-import 'package:grid_app/features/agent/logic/hermes_extensions.dart';
-import 'package:grid_app/features/agent/logic/hermes_mcp_config.dart';
+import 'package:grid_app/features/agents/logic/adapters/claude_extensions.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_extensions.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_mcp_config.dart';
 import 'package:grid_app/infrastructure/cli/claude_plugin_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agent/logic/hermes_skill_scanner.dart';
+import 'package:grid_app/features/agents/logic/adapters/hermes_skill_scanner.dart';
 import 'package:grid_app/features/agents/logic/agent_skill.dart';
 import 'package:grid_app/features/skills/logic/skill_author.dart';
 import 'package:grid_app/shared/skills/agent_skill_home.dart';
