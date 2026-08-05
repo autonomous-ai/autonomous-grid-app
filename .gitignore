@@ -47,10 +47,16 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .claude
-docs/
-CLAUDE.md
 .codex/
-AGENTS.md
 .dart_home
 fetch_vnexpress.py
 macos/Podfile.lock
+
+# The knowledge-graph index: 250MB, rebuildable with `npx gitnexus analyze`.
+/.gitnexus/
+
+# docs/ is local working notes, except the files every clone needs. A note that
+# becomes a rule moves into conventions.md rather than staying on one machine.
+docs/*
+!docs/conventions.md
+!docs/architecture.md
