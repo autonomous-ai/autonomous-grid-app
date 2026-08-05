@@ -59,4 +59,5 @@ macos/Podfile.lock
 # becomes a rule moves into conventions.md rather than staying on one machine.
 docs/*
 !docs/conventions.md
+!docs/style-guide-grid-app.md
 !docs/architecture.md
