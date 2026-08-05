@@ -119,6 +119,32 @@ void main() {
     );
   });
 
+  group('reading the servers a turn opened with', () {
+    test('a pending browser server is caught, because a turn can carry '
+        '--chrome and still hold no browser tools', () {
+      final statuses = claudeServerStatuses(const [
+        {'name': 'claude-in-chrome', 'status': 'pending'},
+        {'name': 'gitnexus', 'status': 'connected'},
+      ]);
+      expect(statuses[kClaudeInChromeServer], 'pending');
+    });
+
+    test('an entry with no name is skipped rather than fatal — the stream '
+        'shifts between releases', () {
+      expect(
+        claudeServerStatuses(const [
+          {'status': 'connected'},
+          {'name': 'claude-in-chrome', 'status': 'connected'},
+        ]),
+        {kClaudeInChromeServer: 'connected'},
+      );
+    });
+
+    test('a shape the parser does not know yields nothing at all', () {
+      expect(claudeServerStatuses('not a list'), isEmpty);
+    });
+  });
+
   group('what the activity feed says about a browser step', () {
     test('reads as a browser action, not as an MCP tool name', () {
       expect(

@@ -150,6 +150,26 @@ class ClaudeChatSender implements ChatSender {
     );
   }
 
+  /// Say so when a turn that asked for the browser didn't get it.
+  ///
+  /// The extension is an MCP server like any other, and the tool list closes on
+  /// whatever answered by then: a turn can carry `--chrome`, report the lane in
+  /// the log, and still hold no browser tools at all — measured here at 27 tools
+  /// against 49 once the server connected. Without this line the only symptom is
+  /// an agent that talks about the browser and never opens it.
+  void _checkBrowserServer(Map<String, String> statuses) {
+    final status = statuses[kClaudeInChromeServer];
+    if (status == 'connected') return;
+    _ref
+        .read(appLogProvider)
+        .failure(
+          'agent',
+          'Browser lane extension: the turn started with --chrome but '
+              '$kClaudeInChromeServer is ${status ?? 'absent'} — this turn has '
+              'no browser tools',
+        );
+  }
+
   /// The browser lane this turn takes, with the fallback browser already started
   /// if that is the lane — so the caller gets a lane it can act on rather than a
   /// promise that may not hold.
@@ -267,6 +287,8 @@ class ClaudeChatSender implements ChatSender {
         switch (event) {
           case ClaudeSessionStarted(:final sessionId):
             slot.sessionId = sessionId;
+          case ClaudeServersAnnounced(:final statuses):
+            if (chrome) _checkBrowserServer(statuses);
           case ClaudeActivityEvent(:final activity):
             if (isAgentWork(activity)) workedAtAll = true;
             activityLog.upsert(activity);

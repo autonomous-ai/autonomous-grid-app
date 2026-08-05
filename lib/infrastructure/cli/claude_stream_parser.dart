@@ -63,9 +63,11 @@ class ClaudeStreamParser {
   List<ClaudeExecEvent> _readSystem(Map<String, dynamic> event) {
     if (event['subtype'] != 'init') return const [];
     final id = event['session_id'];
-    return id is String && id.isNotEmpty
-        ? [ClaudeSessionStarted(id)]
-        : const [];
+    final servers = claudeServerStatuses(event['mcp_servers']);
+    return [
+      if (id is String && id.isNotEmpty) ClaudeSessionStarted(id),
+      if (servers.isNotEmpty) ClaudeServersAnnounced(servers),
+    ];
   }
 
   /// A vendor SSE event, forwarded verbatim by the CLI. Only the answer's text
@@ -216,6 +218,19 @@ class ClaudeStreamParser {
     ..._completed,
     if (_partial.isNotEmpty) _partial.toString(),
   ].join('\n\n');
+}
+
+/// The `mcp_servers` array of an `init` line, read as name → status.
+///
+/// Lenient like the rest of the parser: an entry without a name is skipped
+/// rather than fatal, and an unknown shape yields nothing at all.
+Map<String, String> claudeServerStatuses(Object? node) {
+  if (node is! List) return const {};
+  return {
+    for (final entry in node)
+      if (entry is Map && entry['name'] is String)
+        '${entry['name']}': '${entry['status'] ?? 'unknown'}',
+  };
 }
 
 /// Which icon a tool call gets in the activity feed. Claude names its tools, so

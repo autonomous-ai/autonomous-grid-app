@@ -20,6 +20,23 @@ class ClaudeSessionStarted extends ClaudeExecEvent {
   final String sessionId;
 }
 
+/// Which MCP servers the turn opened with, and whether each one had finished
+/// its handshake by the time the tool list closed.
+///
+/// Measured, not theoretical: with the user's own `~/.claude.json` loaded (14
+/// servers) the browser server was still `pending` at that moment and the turn
+/// ran with 27 tools and no browser; narrowed to the app's own config it came up
+/// `connected` and the turn carried 49. A browser lane that quietly lost its
+/// tools looks exactly like a model that chose not to browse, so the sender
+/// reads this and says so in the log.
+class ClaudeServersAnnounced extends ClaudeExecEvent {
+  const ClaudeServersAnnounced(this.statuses);
+
+  /// Server name → the status the CLI reported (`connected`, `pending`,
+  /// `failed`, `needs-auth`).
+  final Map<String, String> statuses;
+}
+
 /// A command, look-up, file edit or thought Claude produced while answering.
 class ClaudeActivityEvent extends ClaudeExecEvent {
   const ClaudeActivityEvent(this.activity);

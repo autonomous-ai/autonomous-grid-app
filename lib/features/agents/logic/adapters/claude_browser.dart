@@ -129,6 +129,11 @@ final Set<String> kClaudeRelayEnvKeys = {
 /// tools reach the turn with (`mcp__chrome-devtools__navigate_page`).
 const String kChromeDevtoolsServerName = 'chrome-devtools';
 
+/// What Claude Code calls the extension's server in the `init` line it opens a
+/// turn with. Measured on 2.1.183, not guessed — it is the name the app watches
+/// for to know the browser tools actually arrived.
+const String kClaudeInChromeServer = 'claude-in-chrome';
+
 /// The MCP entry that hands a turn the app's own browser: the published server,
 /// pointed at a DevTools endpoint that is already up.
 ///
