@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/logging/app_log.dart';
 import '../../agents/logic/agent_extensions.dart';
+import '../../agents/logic/agent_extensions_registry.dart';
 import '../../agents/logic/mcp_server.dart';
 import 'connected_catalog_lookup.dart';
 import 'connector.dart';

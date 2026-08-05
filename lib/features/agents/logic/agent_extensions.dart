@@ -1,9 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../../shared/skills/agent_skill_home.dart';
-import '../../agent/logic/claude_extensions.dart';
-import '../../agent/logic/codex_extensions.dart';
-import '../../agent/logic/hermes_extensions.dart';
 import 'agent_catalog.dart';
 import 'agent_plugin.dart';
 import 'agent_skill.dart';
@@ -129,36 +124,4 @@ class AgentExtensionException implements Exception {
 
   @override
   String toString() => message;
-}
-
-/// The extension adapter for [tool], or null when that agent has none yet.
-///
-/// Exhaustive over [AgentTool], so wiring a new agent's adapter is a compile
-/// error here rather than a silent gap in the screens.
-final agentExtensionsProvider = Provider.family<AgentExtensions?, AgentTool>((
-  ref,
-  tool,
-) {
-  return switch (tool) {
-    AgentTool.hermes => ref.watch(hermesExtensionsProvider),
-    AgentTool.codex => ref.watch(codexExtensionsProvider),
-    AgentTool.claude => ref.watch(claudeExtensionsProvider),
-  };
-});
-
-/// Which agent the Skills/Connectors/Plugins screens are scoped to.
-///
-/// Always Hermes today; the notifier exists so those screens are already
-/// written against "the selected agent" and a future agent switcher is a UI
-/// change, not a plumbing one.
-final extensionAgentProvider =
-    NotifierProvider<ExtensionAgentNotifier, AgentTool>(
-      ExtensionAgentNotifier.new,
-    );
-
-class ExtensionAgentNotifier extends Notifier<AgentTool> {
-  @override
-  AgentTool build() => AgentTool.hermes;
-
-  void select(AgentTool tool) => state = tool;
 }

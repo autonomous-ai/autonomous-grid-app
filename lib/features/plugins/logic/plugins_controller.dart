@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../agents/logic/agent_extensions.dart';
+import '../../agents/logic/agent_extensions_registry.dart';
 import '../../agents/logic/agent_plugin.dart';
 
 /// The plugins the selected agent knows about, read straight from its plugins
