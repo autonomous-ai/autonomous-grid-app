@@ -12,6 +12,7 @@ import '../../projects/logic/project.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import 'goal_dialog.dart';
 import 'workspace_files_dialog.dart';
 
 const _menuWidth = 208.0;
@@ -187,6 +188,20 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
     ref.read(chatSessionsProvider.notifier).togglePinned(_chat.id);
   }
 
+  /// Ask what the assistant should work toward on its own, then start it.
+  Future<void> _setGoal() async {
+    _menu.close();
+    final request = await showGoalDialog(context);
+    if (request == null || !mounted) return;
+    await ref
+        .read(chatSessionsProvider.notifier)
+        .startGoal(
+          objective: request.objective,
+          maxTurns: request.maxTurns,
+          maxMinutes: request.maxMinutes,
+        );
+  }
+
   Future<void> _copy() async {
     _menu.close();
     await Clipboard.setData(ClipboardData(text: transcriptText(_chat)));
@@ -257,6 +272,8 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
       menuChildren: [
         _ChatMenuContent(
           pinned: _chat.pinned,
+          hasGoal: _chat.goal != null,
+          onSetGoal: _setGoal,
           onRename: _rename,
           onTogglePin: _togglePin,
           onArchive: _archive,
@@ -343,6 +360,8 @@ class _HeaderHoverButtonState extends State<_HeaderHoverButton> {
 class _ChatMenuContent extends StatelessWidget {
   const _ChatMenuContent({
     required this.pinned,
+    required this.hasGoal,
+    required this.onSetGoal,
     required this.onRename,
     required this.onTogglePin,
     required this.onArchive,
@@ -352,6 +371,12 @@ class _ChatMenuContent extends StatelessWidget {
 
   /// Whether this chat is already pinned — the row says which way it goes.
   final bool pinned;
+
+  /// Whether it already has a goal, so the row offers to replace it rather than
+  /// pretending the one running isn't there.
+  final bool hasGoal;
+
+  final VoidCallback onSetGoal;
 
   final VoidCallback onTogglePin;
   final VoidCallback onRename;
@@ -372,6 +397,11 @@ class _ChatMenuContent extends StatelessWidget {
             icon: LucideIcons.pencilLine300,
             label: 'Rename chat',
             onPressed: onRename,
+          ),
+          _ChatMenuItem(
+            icon: LucideIcons.flag300,
+            label: hasGoal ? 'Replace the goal…' : 'Set a goal…',
+            onPressed: onSetGoal,
           ),
           _ChatMenuItem(
             icon: pinned ? LucideIcons.pinOff300 : LucideIcons.pin300,

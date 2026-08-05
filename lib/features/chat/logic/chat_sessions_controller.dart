@@ -20,6 +20,7 @@ import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
 import 'chat_approval.dart';
+import 'chat_goal.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
 
@@ -304,6 +305,12 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// Naming a chat outlives the send it started in (the agent writes the name
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
+
+  /// How the last turn of each chat ended, so [_finish] can move that chat's
+  /// goal on without the update stream having to carry it there. Written as the
+  /// turn lands, read and dropped as it settles; absent means the turn was
+  /// stopped rather than finished.
+  final Map<String, ({String? reply, String? failure})> _lastTurn = {};
 
   /// Agent turns waiting for the slot, oldest first. The chat holding the slot
   /// is [ChatSessionsState.runningAgentId]; the local agent has one live session
@@ -900,6 +907,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
             _commit(answered, phase: const SendIdle(), awaitingPlan: planTurn);
             _adoptAgentName(answered, agentSessionId);
             _announceTurn(answered, body: firstLinePreview(reply.text));
+            _lastTurn[id] = (reply: reply.text, failure: null);
           case ChatSendFailure(:final error, :final partial):
             // Keep what the assistant produced before it failed — its streamed
             // prose, the plan it laid out — instead of wiping the turn to a bare
@@ -941,6 +949,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
               state = state.withError(id, error);
             }
             _announceTurn(current, body: "Couldn't finish: $error");
+            _lastTurn[id] = (reply: null, failure: error);
         }
       },
       onDone: () => _finish(id),
@@ -1081,9 +1090,9 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
   /// One at a time, and only once the turn before it has settled: the whole
   /// point of the queue is that these are consecutive turns of one conversation,
   /// so firing them together would have them race for the agent's session.
-  void _drainQueue(String id) {
+  bool _drainQueue(String id) {
     final waiting = state.queuedFor(id);
-    if (waiting.isEmpty) return;
+    if (waiting.isEmpty) return false;
     final next = waiting.first;
     state = state.withQueue(id, waiting.sublist(1));
     unawaited(
@@ -1096,6 +1105,147 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         into: id,
       ),
     );
+    return true;
+  }
+
+  /// Set what the open chat should work toward on its own, and start it.
+  ///
+  /// The first turn goes out immediately — a goal that sits there until you type
+  /// something is just a note to yourself.
+  Future<void> startGoal({
+    required String objective,
+    required int maxTurns,
+    required int maxMinutes,
+  }) async {
+    final trimmed = objective.trim();
+    final active = state.active;
+    if (trimmed.isEmpty || active == null) return;
+    _saveGoal(
+      active.id,
+      ChatGoal(
+        objective: trimmed,
+        status: GoalStatus.active,
+        startedAt: DateTime.now(),
+        maxTurns: maxTurns,
+        maxMinutes: maxMinutes,
+      ),
+    );
+    await _sendGoalTurn(active.id);
+  }
+
+  /// Stop working on the open chat's goal, keeping it and its budget so
+  /// [resumeGoal] can pick it up.
+  void pauseGoal() {
+    final goal = state.active?.goal;
+    final id = state.activeId;
+    if (id == null || goal == null || !goal.isRunning) return;
+    _saveGoal(id, goal.copyWith(status: GoalStatus.paused, clearNote: true));
+  }
+
+  /// Start it again — from a pause, or with the budget it was stopped by topped
+  /// back up when it ran out.
+  Future<void> resumeGoal() async {
+    final id = state.activeId;
+    final goal = state.active?.goal;
+    if (id == null || goal == null || goal.isRunning) return;
+    // A goal that ran out of budget can't simply be flipped back to active: it
+    // would stop again on the very next turn. Resuming grants a fresh budget
+    // from now — the user asking for more is the whole meaning of the button.
+    _saveGoal(
+      id,
+      ChatGoal(
+        objective: goal.objective,
+        status: GoalStatus.active,
+        startedAt: DateTime.now(),
+        maxTurns: goal.maxTurns,
+        maxMinutes: goal.maxMinutes,
+      ),
+    );
+    await _sendGoalTurn(id);
+  }
+
+  /// Drop the goal entirely. The transcript stays; the chat goes back to being
+  /// an ordinary conversation.
+  void dropGoal() {
+    final id = state.activeId;
+    final chat = _find(id ?? '');
+    if (chat == null || chat.goal == null) return;
+    final cleared = chat.copyWith(clearGoal: true);
+    _store.save(cleared);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == cleared.id) cleared else c,
+      ],
+    );
+  }
+
+  /// Move the chat [id]'s goal on now that a turn has ended, and start the next
+  /// one if it is still running.
+  ///
+  /// [outcome] is what that turn produced; null when the turn was stopped or
+  /// cancelled, which counts as neither progress nor failure — the goal simply
+  /// pauses, because a user pressing Stop has said what they want.
+  void _advanceGoal(String id, ({String? reply, String? failure})? outcome) {
+    final goal = _find(id)?.goal;
+    if (goal == null || !goal.isRunning || _disposed) return;
+    if (outcome == null) {
+      _saveGoal(id, goal.copyWith(status: GoalStatus.paused));
+      return;
+    }
+    final next = advanceGoal(
+      goal,
+      reply: outcome.reply,
+      failure: outcome.failure,
+      now: DateTime.now(),
+    );
+    _saveGoal(id, next);
+    if (next.isRunning) unawaited(_sendGoalTurn(id));
+  }
+
+  /// Send the goal's next turn into the chat [id].
+  Future<void> _sendGoalTurn(String id) async {
+    final chat = _find(id);
+    final goal = chat?.goal;
+    final network = ref.read(selectedNetworkProvider);
+    if (chat == null || goal == null || !goal.isRunning) return;
+    // No grid to send to. Say so on the goal rather than looping on a send that
+    // returns immediately — an invisible spin is worse than a stop with a
+    // reason.
+    if (network == null) {
+      _saveGoal(
+        id,
+        goal.copyWith(
+          status: GoalStatus.blocked,
+          note: 'No grid is selected, so there is nothing to ask.',
+        ),
+      );
+      return;
+    }
+    await send(
+      network: network,
+      model: chat.model,
+      message: goalContinuationPrompt(goal.objective),
+      // Never a planning turn: a goal's whole point is that it acts between
+      // check-ins, and plan mode would stop for approval on every step.
+      planFirst: false,
+      into: id,
+    );
+  }
+
+  /// Persist [goal] onto the chat [id] and publish it. Leaves `updatedAt` alone:
+  /// the turns the goal sends move the chat in the sidebar on their own.
+  void _saveGoal(String id, ChatGoal goal) {
+    final chat = _find(id);
+    if (chat == null) return;
+    final updated = chat.copyWith(goal: goal);
+    _store.save(updated);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == id) updated else c,
+      ],
+    );
   }
 
   /// Settle one conversation's send: drop its subscription and complete the
@@ -1105,7 +1255,11 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
-    _drainQueue(id);
+    // The user's own words first: a follow-up they typed outranks the goal's
+    // next step, and the goal picks up again once the queue is empty.
+    final outcome = _lastTurn.remove(id);
+    if (_drainQueue(id)) return;
+    _advanceGoal(id, outcome);
   }
 
   /// Cancel one conversation's in-flight reply (if any) and settle it. Also

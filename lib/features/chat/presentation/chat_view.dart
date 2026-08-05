@@ -38,6 +38,7 @@ import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../logic/file_mention.dart';
+import 'goal_bar.dart';
 import 'queued_follow_ups.dart';
 import 'agent_handover_bar.dart';
 import 'file_mention_menu.dart';
@@ -667,6 +668,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         const AgentHandoverBar(),
                         const PlanApproveBar(),
                         const AgentChangesBar(),
+                        const GoalBar(),
                         const QueuedFollowUps(),
                         if (slash != null)
                           PromptSlashMenu(query: slash, onPick: _insertPrompt)
