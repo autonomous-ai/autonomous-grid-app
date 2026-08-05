@@ -18,6 +18,7 @@ class Conversation {
     this.titleLocked = false,
     this.archivedAt,
     this.approval,
+    this.pinned = false,
   });
 
   final String id;
@@ -67,6 +68,15 @@ class Conversation {
   /// following the app setting instead of freezing whatever it was that day.
   final AgentApprovalMode? approval;
 
+  /// The user pinned this chat to the top of the sidebar.
+  ///
+  /// The rail is ordered by when a chat was last talked in, which is right for
+  /// finding what you were just doing and wrong for the two or three
+  /// conversations you keep coming back to — those slide down a little further
+  /// every day until they're behind a "Show more". A pin takes one out of that
+  /// order without changing what the order means.
+  final bool pinned;
+
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -90,6 +100,7 @@ class Conversation {
     // back to "follow the app setting" isn't something the picker offers — every
     // mode in it is a real choice.
     AgentApprovalMode? approval,
+    bool? pinned,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -101,6 +112,7 @@ class Conversation {
     titleLocked: titleLocked ?? this.titleLocked,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
     approval: approval ?? this.approval,
+    pinned: pinned ?? this.pinned,
   );
 
   Map<String, dynamic> toJson() => {
@@ -117,6 +129,9 @@ class Conversation {
     // Same rule: absent means "follows the app setting", which is what every
     // chat written before this field existed meant.
     if (approval != null) 'approval': approval!.name,
+    // Written only when set, like the two above, so an unpinned chat's file is
+    // byte-identical to what every build before pinning existed wrote.
+    if (pinned) 'pinned': true,
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -153,6 +168,9 @@ class Conversation {
       // following the app setting is the recoverable answer; guessing a mode
       // would be guessing how much this chat may touch the computer.
       approval: _approvalFrom(json['approval']),
+      // Absent — every chat saved before this field existed — means unpinned,
+      // which is what they all were.
+      pinned: json['pinned'] == true,
       messages: [
         if (rawMessages is List)
           for (final m in rawMessages)
@@ -182,8 +200,13 @@ const String kNewConversationTitle = 'New chat';
 /// sidebar can derive it from the conversation list alone and subscribe to just
 /// that slice instead of the whole state.
 List<Conversation> liveConversations(List<Conversation> all) => [
+  // Pinned first, each group keeping the order it came in (newest talked-in
+  // first). Done here rather than in each surface so the rail, the tray menu and
+  // ⌘K can't drift into three different answers to "which chats matter".
   for (final c in all)
-    if (!c.isArchived) c,
+    if (!c.isArchived && c.pinned) c,
+  for (final c in all)
+    if (!c.isArchived && !c.pinned) c,
 ];
 
 /// How many of [all] are live chats inside the project [projectId] — the count

@@ -455,6 +455,24 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// Pin [id] to the top of the sidebar, or let it back into the ordinary order.
+  ///
+  /// Leaves `updatedAt` alone for the usual reason: pinning a chat is not
+  /// talking in it, and it must not jump the chat's position *within* its group
+  /// as a side effect of being pinned.
+  void togglePinned(String id) {
+    final chat = _find(id);
+    if (chat == null) return;
+    final pinned = chat.copyWith(pinned: !chat.pinned);
+    _store.save(pinned);
+    state = state.copyWith(
+      conversations: [
+        for (final c in state.conversations)
+          if (c.id == id) pinned else c,
+      ],
+    );
+  }
+
   /// Give a conversation the name the user typed, replacing whatever was
   /// derived from its first message.
   ///

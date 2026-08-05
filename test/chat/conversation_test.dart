@@ -308,4 +308,48 @@ void main() {
       expect(liveChatCountIn(all, 'unknown'), 0);
     });
   });
+
+  group('a pinned chat', () {
+    Conversation chat(String id, {bool pinned = false, DateTime? at}) =>
+        Conversation(
+          id: id,
+          title: id,
+          model: 'm',
+          createdAt: DateTime(2026),
+          updatedAt: at ?? DateTime(2026),
+          pinned: pinned,
+        );
+
+    test('leads the working history, so the two chats you keep coming back to '
+        'stop sliding down the rail', () {
+      final ordered = liveConversations([
+        chat('newest', at: DateTime(2026, 8, 5)),
+        chat('kept', pinned: true, at: DateTime(2026, 1, 1)),
+        chat('older', at: DateTime(2026, 7, 1)),
+      ]);
+
+      expect([for (final c in ordered) c.id], ['kept', 'newest', 'older']);
+    });
+
+    test('keeps its place within the pinned group — pinning is not a sort', () {
+      final ordered = liveConversations([
+        chat('a', pinned: true, at: DateTime(2026, 8, 5)),
+        chat('b', pinned: true, at: DateTime(2026, 8, 4)),
+      ]);
+
+      expect([for (final c in ordered) c.id], ['a', 'b']);
+    });
+
+    test('survives a restart, and an unpinned chat writes no field at all', () {
+      final pinned = chat('p', pinned: true);
+      expect(pinned.toJson()['pinned'], isTrue);
+      expect(chat('u').toJson().containsKey('pinned'), isFalse);
+
+      final read = Conversation.fromJson(pinned.toJson());
+      expect(read.pinned, isTrue);
+      // A file from before pinning existed reads as unpinned rather than
+      // throwing.
+      expect(Conversation.fromJson(chat('u').toJson()).pinned, isFalse);
+    });
+  });
 }

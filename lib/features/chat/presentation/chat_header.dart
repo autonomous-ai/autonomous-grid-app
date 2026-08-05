@@ -180,6 +180,13 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
     ref.read(chatSessionsProvider.notifier).renameConversation(_chat.id, title);
   }
 
+  /// Pin or unpin without a toast: the row jumping to the top of the rail (or
+  /// dropping back into date order) is the confirmation, and it is instant.
+  void _togglePin() {
+    _menu.close();
+    ref.read(chatSessionsProvider.notifier).togglePinned(_chat.id);
+  }
+
   Future<void> _copy() async {
     _menu.close();
     await Clipboard.setData(ClipboardData(text: transcriptText(_chat)));
@@ -249,7 +256,9 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
       ),
       menuChildren: [
         _ChatMenuContent(
+          pinned: _chat.pinned,
           onRename: _rename,
+          onTogglePin: _togglePin,
           onArchive: _archive,
           onCopy: _copy,
           onDelete: _delete,
@@ -333,12 +342,18 @@ class _HeaderHoverButtonState extends State<_HeaderHoverButton> {
 /// header, so it depends on the brightness directly rather than inheriting it.
 class _ChatMenuContent extends StatelessWidget {
   const _ChatMenuContent({
+    required this.pinned,
     required this.onRename,
+    required this.onTogglePin,
     required this.onArchive,
     required this.onCopy,
     required this.onDelete,
   });
 
+  /// Whether this chat is already pinned — the row says which way it goes.
+  final bool pinned;
+
+  final VoidCallback onTogglePin;
   final VoidCallback onRename;
   final VoidCallback onArchive;
   final VoidCallback onCopy;
@@ -357,6 +372,11 @@ class _ChatMenuContent extends StatelessWidget {
             icon: LucideIcons.pencilLine300,
             label: 'Rename chat',
             onPressed: onRename,
+          ),
+          _ChatMenuItem(
+            icon: pinned ? LucideIcons.pinOff300 : LucideIcons.pin300,
+            label: pinned ? 'Unpin from top' : 'Pin to top',
+            onPressed: onTogglePin,
           ),
           _ChatMenuItem(
             icon: LucideIcons.archive300,
