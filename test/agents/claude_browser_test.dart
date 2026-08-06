@@ -11,11 +11,13 @@ ClaudeBrowserPlan planWith({
   ChromeExtensionState extensionState = ChromeExtensionState.ready,
   bool cliSupportsChrome = true,
   bool cdpReady = true,
+  bool cdpAllowed = true,
 }) => planClaudeBrowser(
   model: model,
   extensionState: extensionState,
   cliSupportsChrome: cliSupportsChrome,
   cdpReady: cdpReady,
+  cdpAllowed: cdpAllowed,
 );
 
 void main() {
@@ -54,6 +56,21 @@ void main() {
       );
       expect(plan.lane, ClaudeBrowserLane.none);
       expect(plan.reason, contains('extension'));
+    });
+
+    test('with the browser switch off, a machine that could run the fallback '
+        'still takes no lane — nothing opens a window because somebody sent a '
+        'message', () {
+      final plan = planWith(model: 'qwen3-coder-30b', cdpAllowed: false);
+      expect(plan.lane, ClaudeBrowserLane.none);
+      // The reason has to name the switch, or the log says "no browser" and
+      // leaves the user hunting for a setting they were never told about.
+      expect(plan.reason, contains('Agents'));
+    });
+
+    test('the switch does not shut the extension lane: that browser is one the '
+        'user opened themselves', () {
+      expect(planWith(cdpAllowed: false).lane, ClaudeBrowserLane.extension);
     });
 
     test('a multi-model selection with one foreign model stays off the '

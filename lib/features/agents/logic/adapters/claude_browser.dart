@@ -41,11 +41,18 @@ typedef ClaudeBrowserPlan = ({ClaudeBrowserLane lane, String reason});
 ///
 /// The extension is preferred wherever it is open, because it is the browser the
 /// user actually meant: their tabs, their sessions, their logins.
+///
+/// [cdpAllowed] is the user's own switch. Off — the default — the fallback lane
+/// is not taken even on a machine that could run it: that lane *starts a browser
+/// window*, and doing that because somebody typed a message is the behaviour
+/// this switch exists to stop. The extension lane is not gated by it (see
+/// `ChatPrefs.agentBrowser`).
 ClaudeBrowserPlan planClaudeBrowser({
   required String model,
   required ChromeExtensionState extensionState,
   required bool cliSupportsChrome,
   required bool cdpReady,
+  required bool cdpAllowed,
 }) {
   final seat = isClaudeSeatModel(model);
   final connected = extensionState == ChromeExtensionState.ready;
@@ -53,6 +60,13 @@ ClaudeBrowserPlan planClaudeBrowser({
     return (
       lane: ClaudeBrowserLane.extension,
       reason: 'Claude seat model and the Chrome extension is connected',
+    );
+  }
+  if (!cdpAllowed) {
+    return (
+      lane: ClaudeBrowserLane.none,
+      reason: 'the assistant is not allowed to open a browser (Agents ▸ Claude '
+          'Code ▸ Let it open a browser)',
     );
   }
   if (cdpReady) {
