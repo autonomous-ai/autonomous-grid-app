@@ -45,6 +45,7 @@ enum ShellSection {
     'Projects',
     thinIcon: LucideIcons.folderOpen300,
   ),
+  git(LucideIcons.gitBranch, 'Git', thinIcon: LucideIcons.gitBranch300),
   messages(
     LucideIcons.send,
     'Messages',
@@ -156,6 +157,12 @@ const kSettingsGroups = [
     ShellSection.connectors,
     ShellSection.plugins,
   ]),
+  // The toolchain the assistant writes code with, as opposed to what it may
+  // call (Customize, above). One row today; it is its own group because Git is
+  // the first of a set that belongs together — branch switching, a worktree per
+  // parallel agent, reviewing a project's diff — and filing the first one under
+  // "Personal" would mean moving it the moment the second arrives.
+  SettingsGroup('Coding', [ShellSection.git]),
   SettingsGroup('Integrations', [
     // dev only for now, so this whole group is invisible in a shipped build.
     ShellSection.messages,
