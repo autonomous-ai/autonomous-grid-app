@@ -66,11 +66,14 @@ bool notificationIsWorthIt({
 
 /// Does nothing, and says so honestly by never emitting a click.
 ///
-/// The default everywhere, replaced in `main` once the real one has initialized:
-/// a test, and any code path that runs before the platform plugin is ready, gets
-/// silence instead of a channel error.
+/// The default everywhere, replaced in `main` by the real one: a test, and any
+/// code path that runs before the platform plugin is there, gets silence instead
+/// of a channel error.
 class NoopDesktopNotifier implements DesktopNotifier {
   const NoopDesktopNotifier();
+
+  @override
+  Future<void> ensurePermission() async {}
 
   @override
   Future<void> show(DesktopNotification notification) async {}
@@ -89,11 +92,19 @@ class SystemDesktopNotifier implements DesktopNotifier {
   SystemDesktopNotifier({
     FlutterLocalNotificationsPlugin? plugin,
     AppLog log = const NoopAppLog(),
+    Duration permissionWait = const Duration(seconds: 30),
   }) : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
-       _log = log;
+       _log = log,
+       _permissionWait = permissionWait;
 
   final FlutterLocalNotificationsPlugin _plugin;
   final AppLog _log;
+
+  /// How long a *caller* waits on the permission dialog before carrying on. The
+  /// answer still lands whenever the user gives it — this only stops a banner
+  /// (and the delivery behind it) from queueing on a dialog nobody looked at.
+  final Duration _permissionWait;
+
   final _opened = StreamController<String>.broadcast();
 
   /// Each notification needs its own id or the next one replaces the last — two
@@ -101,13 +112,24 @@ class SystemDesktopNotifier implements DesktopNotifier {
   int _nextId = 0;
   bool _ready = false;
 
+  /// The one in-flight (or finished) permission request, so a second caller
+  /// joins the first ask instead of raising a second system dialog.
+  Future<void>? _asking;
+
   @override
   Stream<String> get opened => _opened.stream;
 
-  /// Ask the OS for permission and wire the click handler. Returns whether the
-  /// notifier is usable — false when the platform refused, which is the caller's
-  /// cue to keep the [NoopDesktopNotifier] rather than call into a dead plugin.
-  Future<bool> initialize() async {
+  @override
+  Future<void> ensurePermission() => _asking ??= _requestPermission().timeout(
+    _permissionWait,
+    onTimeout: () =>
+        _log.info('notify', 'Notification prompt still unanswered'),
+  );
+
+  /// Ask the OS for permission and wire the click handler. Leaves [_ready]
+  /// false when the platform refused, which is what keeps [show] from calling
+  /// into a plugin that will never deliver.
+  Future<void> _requestPermission() async {
     try {
       final ok = await _plugin.initialize(
         settings: const InitializationSettings(
@@ -135,11 +157,18 @@ class SystemDesktopNotifier implements DesktopNotifier {
       );
       _ready = false;
     }
-    return _ready;
+    // The one line in the timeline that says whether this run can notify at
+    // all. It belongs here, not at the call site: nothing awaits the ask any
+    // more, so the call site has no answer to log.
+    _log.info('notify', _ready ? 'Notifications ready' : 'Notifications off');
   }
 
   @override
   Future<void> show(DesktopNotification notification) async {
+    // A result that lands while the permission dialog is still up waits for the
+    // answer rather than being dropped — and asks, on the off chance nothing
+    // has yet.
+    await ensurePermission();
     if (!_ready) return;
     try {
       await _plugin.show(
@@ -182,9 +211,8 @@ const String _kBundleId = 'ai.autonomous.grid';
 const String _kWindowsActivationGuid = '8a4c1f6e-2b7d-4a19-9c33-5e0f7d1b6a24';
 
 /// The app's notifier. [NoopDesktopNotifier] by default and overridden in `main`
-/// with a [SystemDesktopNotifier] that initialized — the same shape as
-/// [appLogProvider], and for the same reason: nothing under test should reach a
-/// platform channel.
+/// with a [SystemDesktopNotifier] — the same shape as [appLogProvider], and for
+/// the same reason: nothing under test should reach a platform channel.
 final desktopNotifierProvider = Provider<DesktopNotifier>(
   (ref) => const NoopDesktopNotifier(),
 );

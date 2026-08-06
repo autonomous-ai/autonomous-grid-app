@@ -13,6 +13,7 @@ import '../../features/node_setup/logic/background_model_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
 import '../../features/scheduled/logic/task_conversation_id.dart';
 import '../../features/scheduled/logic/task_unread_store.dart';
+import '../../infrastructure/platform/desktop_notifier.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
 import 'shell_state.dart';
@@ -74,6 +75,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // reached once first-run setup is done or skipped, so Sparkle's "restart
       // to update" prompt can't land on top of a model download.
       unawaited(ref.read(appUpdaterServiceProvider).checkInBackground());
+      // The OS notification prompt, for the same two reasons: it must not land
+      // during first-run setup, and asking for it in `main` held back the first
+      // frame — the macOS dialog doesn't return until the user answers, so the
+      // window sat black behind it. Here the app is drawn and the prompt makes
+      // sense: the user is looking at the thing asking.
+      unawaited(ref.read(desktopNotifierProvider).ensurePermission());
     });
   }
 
