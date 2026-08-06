@@ -12,6 +12,7 @@ import '../logic/agent_catalog.dart';
 import '../logic/agent_grid_support.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_status.dart';
+import 'agent_browser_row.dart';
 
 /// The assistants this computer can run, one of which answers your chats.
 ///
@@ -179,6 +180,11 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                     _Action(tool: tool, installed: installed),
                   ],
                 ),
+                // Only on the agent that can drive one, and only while it is the
+                // one answering: the card is a tap target for switching agents,
+                // and the active card is the one that isn't.
+                if (tool == AgentTool.claude && isActive)
+                  const AgentBrowserRow(),
                 _Error(tool: tool),
               ],
             ),
