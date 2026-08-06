@@ -77,16 +77,13 @@ Future<void> main() async {
   await updater.init();
   updater.bindNativeMenu();
 
-  // Ask for notification permission once, here, rather than the first time a
-  // task finishes: the prompt then arrives while the user is looking at the app,
-  // not hours later on top of whatever they were doing. A machine that refuses
-  // keeps the no-op notifier, so nothing later calls into a dead plugin.
+  // Built here so the whole app shares one notifier, but *not* asked for
+  // permission here: `ensurePermission` doesn't return until the user answers
+  // the OS dialog, and the window is already on screen (above) with no frame to
+  // paint until `runApp` — awaiting the answer showed a black, unclosable window
+  // for as long as the prompt stood. The shell asks instead, after the first
+  // frame (HomeShell.initState), like the launch update check.
   final notifier = SystemDesktopNotifier(log: appLog);
-  final canNotify = await notifier.initialize();
-  appLog.info(
-    'notify',
-    canNotify ? 'Notifications ready' : 'Notifications off',
-  );
 
   appLog.info('app', 'Launching UI');
   runApp(
@@ -101,7 +98,9 @@ Future<void> main() async {
         // (`app_https-YYYYMMDD.log`), written the moment the request is issued.
         httpLogProvider.overrideWithValue(buildFileHttpLog()),
         appUpdaterServiceProvider.overrideWithValue(updater),
-        if (canNotify) desktopNotifierProvider.overrideWithValue(notifier),
+        // Unconditional: whether this machine allows notifications is the
+        // notifier's own business now, and `show` is a no-op until it knows.
+        desktopNotifierProvider.overrideWithValue(notifier),
       ],
       // Wraps the app rather than sitting inside it: connector tokens are
       // refreshed for the agent's sake, and the agent answers chats whether or
