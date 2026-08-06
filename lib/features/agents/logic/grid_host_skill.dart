@@ -56,15 +56,30 @@ command -v <tool> >/dev/null || echo "<tool> is missing"
 | You want | Not here | Do this |
 |---|---|---|
 | A time limit on a command | `timeout`, `gtimeout` | the `$kGridServeSkillName` skill's `run` — it bounds the command and hands you the log |
-| GitHub (PRs, issues, releases) | `gh` | `git` for anything local; for the API, `curl` with the user's token — ask for one if there is none |
+| GitHub (PRs, issues, releases) | `gh` | `git` for anything local — check it first, see below; for the API, `curl` with the user's token — ask for one if there is none |
 | Fast recursive search | `rg` (ripgrep) | `grep -rn --include="*.dart" "<pattern>" <dir>` |
 | Detach a process | `setsid`, `tmux` | the `$kGridServeSkillName` skill (`screen` exists, but let the skill drive it) |
 | Run Python, or a Python package | a dependable system `python3` | `"$uvPath" run --no-project python3 …`, and `--with <pkg>` for a dependency — nothing is installed globally |
 
 ## What is here
-`git`, `curl`, `jq`, `lsof`, `screen`, `launchctl`, `zsh`, `perl`, `sed`, `awk`,
-Homebrew (Apple Silicon, `/opt/homebrew/bin/brew`), and the grid CLI's pinned
-`uv` at `$uvPath`.
+The one thing that is certain is the grid CLI's pinned `uv` at `$uvPath` — Grid
+installs it, so it is always there.
+
+`curl`, `lsof`, `screen`, `launchctl`, `zsh`, `perl`, `sed` and `awk` ship with
+macOS. `git`, `jq` and Homebrew (`/opt/homebrew/bin/brew` on Apple Silicon)
+usually exist but are **not** guaranteed — the rule above applies to them, and to
+anything else you are about to reach for:
+
+```
+command -v git >/dev/null || echo "git is missing"
+```
+
+**`git` in particular**: on a Mac, `/usr/bin/git` exists even when Git does not.
+It is a stub that asks to install Apple's developer tools, so `ls /usr/bin/git`
+and `command -v git` both succeed on a machine where Git cannot run — and running
+it can pop an installer dialog in the user's face. The only check that means
+anything is `git --version`. If that fails, say so and stop; do not try to
+install Git yourself (see below).
 
 `node`, `npm`, `npx` and `pnpm` come from **nvm** (`~/.nvm/versions/node/<v>/bin`)
 — they exist only while that folder is on `PATH`. So:

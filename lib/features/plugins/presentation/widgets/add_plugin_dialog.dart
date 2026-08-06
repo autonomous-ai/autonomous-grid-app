@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../infrastructure/cli/git_probe.dart';
+import '../../../../infrastructure/cli/git_providers.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/git_missing_notice.dart';
 import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../logic/plugins_controller.dart';
@@ -57,6 +60,13 @@ class _AddPluginDialogState extends ConsumerState<_AddPluginDialog> {
   Widget build(BuildContext context) {
     // Dialog/overlay content: watch brightness so tokens re-color on theme flip.
     AppTheme.watch(context);
+    // Installing a plugin clones a repository, so this needs Git. The app fetches
+    // one in the background, so most of the time this has already resolved by
+    // the time anyone opens this dialog — say so rather than letting Install fail
+    // with git's own words.
+    final git = ref.watch(gitStatusProvider);
+    final gitReady = git.value is GitReady;
+    final gitChecking = git.isLoading;
     return AlertDialog(
       title: const Text('Add a plugin'),
       content: SizedBox(
@@ -65,6 +75,14 @@ class _AddPluginDialogState extends ConsumerState<_AddPluginDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (!gitReady && !gitChecking) ...[
+              const GitMissingNotice(
+                message:
+                    'Adding a plugin needs Git, and this computer has none '
+                    'the assistant can use.',
+              ),
+              const SizedBox(height: 14),
+            ],
             // LabeledField, not a bare TextField with `labelText`: floating
             // labels are off-system (label sits above the field, rule 2).
             LabeledField(
@@ -96,7 +114,7 @@ class _AddPluginDialogState extends ConsumerState<_AddPluginDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _identifier.text.trim().isEmpty || _installing
+          onPressed: _identifier.text.trim().isEmpty || _installing || !gitReady
               ? null
               : _install,
           child: Text(_installing ? 'Installing…' : 'Install'),

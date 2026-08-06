@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
+import '../../features/git/logic/background_git_installer.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
 import '../../features/node_setup/logic/background_model_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
@@ -55,6 +56,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // the catalog never sees the first-run installer again, so top it up here
       // rather than leaving a row the user can only look at.
       unawaited(ref.read(backgroundAgentInstallerProvider).startIfNeeded());
+      // Git is the one tool the assistants borrow rather than bring: pulling a
+      // plugin from a repository shells out to it, and on Windows Hermes runs
+      // every command through the shell that ships with it. Same treatment as
+      // the assistants — adopt the user's own if they have one, quietly fetch
+      // ours if they don't, and never make anyone wait for it.
+      unawaited(ref.read(backgroundGitInstallerProvider).startIfNeeded());
       // Scheduled tasks run whether the app is open or not, and Hermes just
       // leaves the result in a file. Start looking for those results, so they
       // land in Chat instead of sitting somewhere the user never looks.

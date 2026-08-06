@@ -54,6 +54,7 @@ class HostEnvironment {
       ...Platform.environment,
       'PATH': path(),
       'HERMES_HOME': hermesHome,
+      ...gitEnvironment(),
     };
     // Fill it in, never override: a user who set this chose their own bash, and
     // Hermes probes ours anyway before trusting it.
@@ -66,6 +67,57 @@ class HostEnvironment {
 
   /// Hermes's own escape hatch for "use this bash".
   static const _gitBashVar = 'HERMES_GIT_BASH_PATH';
+
+  /// The `bin` of the Git the app unpacked, once it is the one in use — or null
+  /// whenever this computer has a Git of its own.
+  ///
+  /// **Only ever set when the machine had no usable Git.** That is what makes it
+  /// safe for [_buildPath] to put it first: Git carries the user's own
+  /// configuration — their credential helper, `http.proxy`, `sslCAInfo` — and a
+  /// copy of ours in front of theirs would take all of it away and break cloning
+  /// a private repository. Ours is meant to fill a gap, never to win a contest.
+  static String? _gridGitBin;
+
+  /// Adopt (or drop) the Git the app installed, after a probe has decided which
+  /// Git this computer will use. Clears everything derived from it — [path] is
+  /// memoised, and [gitBash] is memoised behind a "already probed" flag that
+  /// otherwise survives the install that was supposed to fix it.
+  static void adoptGridGit(String? binDir) {
+    _gridGitBin = binDir;
+    _cachedPath = null;
+    resetGitBash();
+  }
+
+  /// Forget the cached Git Bash lookup.
+  ///
+  /// [gitBash] answers once per session and remembers even a `null`, and
+  /// [hermesEnvironment] — the environment behind every `hermes` spawn — reads
+  /// it. Installing Git without calling this leaves every later spawn missing
+  /// `HERMES_GIT_BASH_PATH`, so the install appears to have done nothing until
+  /// the app is restarted.
+  static void resetGitBash() {
+    _cachedGitBash = null;
+    _gitBashProbed = false;
+  }
+
+  /// The environment a spawned process needs to use the Git the app unpacked,
+  /// or empty when this computer is using its own.
+  ///
+  /// The build is relocatable through its environment rather than in the binary:
+  /// without `GIT_EXEC_PATH` it cannot find `git-remote-https`, and `git clone`
+  /// over HTTPS dies with `'remote-https' is not a git command` — measured, not
+  /// assumed. `GIT_CONFIG_SYSTEM` and `GIT_TEMPLATE_DIR` are set for the same
+  /// reason: their defaults are compiled-in paths that don't exist here.
+  static Map<String, String> gitEnvironment() {
+    final bin = _gridGitBin;
+    if (bin == null) return const {};
+    final root = File(bin).parent.path;
+    return {
+      'GIT_EXEC_PATH': '$root/libexec/git-core',
+      'GIT_CONFIG_SYSTEM': '$root/etc/gitconfig',
+      'GIT_TEMPLATE_DIR': '$root/share/git-core/templates',
+    };
+  }
 
   /// The Git Bash Hermes should run terminal commands through on Windows, or
   /// null off Windows and when Git isn't installed.
@@ -139,6 +191,14 @@ class HostEnvironment {
     // Grid's own tools (llama-server, hermes) — installed by the CLI, so they
     // are found without Homebrew and without the user's shell.
     add(GridPaths.binDir.path);
+
+    // The Git the app unpacked, which is non-null only when this machine had
+    // none of its own ([_gridGitBin]). It has to sit ahead of the system dirs
+    // below rather than at the end: on macOS `/usr/bin/git` is always present as
+    // a Command Line Tools stub, so a Git added after `/usr/bin` would never be
+    // the one found.
+    final gitBin = _gridGitBin;
+    if (gitBin != null) add(gitBin);
 
     // `GridPaths.userHome`, not `$HOME`: a Windows GUI process has no `HOME` at
     // all, so reading it directly dropped `.local/bin` — where `grid` itself

@@ -174,6 +174,14 @@ class GridPaths {
   /// Grid installed and a directory removal uninstalls it.
   static Directory get toolsDir => Directory('${home.path}/tools');
 
+  /// Where the app unpacks its own Git when this computer has none.
+  ///
+  /// A whole tree rather than a single binary in [binDir]: Git needs its
+  /// `libexec/git-core` helpers beside it (without them `git clone` over HTTPS
+  /// fails with `'remote-https' is not a git command`), so it is unpacked whole
+  /// and reached through [HostEnvironment.gitEnvironment].
+  static Directory get gitDir => Directory('${toolsDir.path}/git');
+
   /// Where `uv` downloads the private CPython those tools run on (mirrors the
   /// CLI's `paths.python_dir()`). Under `~/.grid` for the same reason.
   static Directory get pythonDir => Directory('${home.path}/python');
