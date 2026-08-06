@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
-import '../../../shared/widgets/send_on_enter.dart';
+import '../../../shared/widgets/composer_keys.dart';
 
 /// The message composer — a multiline field plus a circular send button that
 /// spins while a request is in flight. [canSend] gates both Enter-to-send and
@@ -16,6 +16,7 @@ class ChatInputBar extends StatelessWidget {
     required this.canSend,
     required this.hint,
     required this.onSend,
+    this.onPaste,
     this.prefix,
   });
 
@@ -24,6 +25,10 @@ class ChatInputBar extends StatelessWidget {
   final bool canSend;
   final String hint;
   final VoidCallback onSend;
+
+  /// Takes over ⌘V / Ctrl+V — how a pasted screenshot becomes an attachment
+  /// instead of an empty keystroke. Null leaves paste to the field.
+  final VoidCallback? onPaste;
 
   /// Optional leading action inside the field (e.g. the Chat composer's "+"
   /// image-attach button). Null in the Playground, which attaches via its bar.
@@ -35,9 +40,10 @@ class ChatInputBar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
-          child: SendOnEnter(
+          child: ComposerKeys(
             canSend: canSend,
             onSend: onSend,
+            onPaste: onPaste,
             builder: (context, focusNode) => TextField(
               controller: controller,
               focusNode: focusNode,

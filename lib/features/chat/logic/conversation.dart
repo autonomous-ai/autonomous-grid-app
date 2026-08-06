@@ -295,6 +295,11 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   'media': [
     for (final m in message.media) {'path': m.path, 'kind': m.kind.name},
   ],
+  // Written whole, extracted text included: a reopened chat has to show what
+  // was actually sent, and re-reading the file would answer for how it looks
+  // today rather than for the version the reply was about.
+  if (message.files.isNotEmpty)
+    'files': [for (final f in message.files) f.toJson()],
   if (message.sources.isNotEmpty)
     'sources': [for (final s in message.sources) s.toJson()],
   if (message.plan.isNotEmpty)
@@ -309,6 +314,7 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
   final rawMedia = json['media'];
+  final rawFiles = json['files'];
   final rawSources = json['sources'];
   final rawPlan = json['plan'];
   return ChatMessage(
@@ -321,6 +327,10 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
         for (final m in rawMedia)
           if (m is Map<String, dynamic> && m['path'] is String)
             ChatMedia(path: m['path'] as String, kind: _parseKind(m['kind'])),
+    ],
+    files: [
+      if (rawFiles is List)
+        for (final f in rawFiles) ?ChatFile.fromJson(f),
     ],
     sources: [
       if (rawSources is List)

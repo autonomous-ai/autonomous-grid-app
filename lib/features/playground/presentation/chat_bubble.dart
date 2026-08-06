@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../logic/chat_message.dart';
+import 'file_chip.dart';
 import 'message_content.dart';
 import 'message_plan.dart';
 import 'message_sources.dart';
@@ -90,10 +91,23 @@ class ChatBubble extends StatelessWidget {
           borderRadius: radius,
           boxShadow: AppGlass.cardShadow,
         ),
-        child: MessageContent(
-          text: message.text,
-          media: message.media,
-          color: AppPalette.textPrimary,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The documents this turn carried, above the sentence that came with
+            // them — the same chips the composer showed before Send, so what was
+            // sent is still visible afterwards (and still openable).
+            if (message.files.isNotEmpty) ...[
+              FileChips(files: message.files),
+              const SizedBox(height: 8),
+            ],
+            MessageContent(
+              text: message.text,
+              media: message.media,
+              color: AppPalette.textPrimary,
+            ),
+          ],
         ),
       ),
     );

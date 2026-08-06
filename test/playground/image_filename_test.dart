@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/playground/presentation/attachment_bar.dart';
+import 'package:grid_app/features/playground/logic/playground_request.dart';
 
 void main() {
   group('isImageFilename', () {

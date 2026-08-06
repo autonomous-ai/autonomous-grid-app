@@ -53,6 +53,7 @@ class QueuedTurn {
     required this.text,
     required this.modality,
     required this.attachments,
+    this.files = const [],
   });
 
   final NetworkCredential network;
@@ -60,6 +61,10 @@ class QueuedTurn {
   final String text;
   final PlaygroundModality modality;
   final List<MediaAttachment> attachments;
+
+  /// The documents attached to the queued message — carried with it so a file
+  /// picked now still goes out with the sentence it belonged to.
+  final List<ChatFile> files;
 }
 
 /// The Chat tab's whole state: every saved conversation (newest first), which
@@ -694,6 +699,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     required String message,
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
+    List<ChatFile> files = const [],
     bool? planFirst,
     String? into,
   }) async {
@@ -708,6 +714,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
           text: text,
           modality: modality,
           attachments: List.unmodifiable(attachments),
+          files: List.unmodifiable(files),
         ),
       );
       return;
@@ -744,6 +751,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
     final userTurn = await buildUserTurn(
       text: text,
       attachments: attachments,
+      files: files,
       outputsDir: ref.read(mediaOutputsDirProvider),
     );
     final withUser = target.copyWith(
@@ -1102,6 +1110,7 @@ class ChatSessionsController extends Notifier<ChatSessionsState> {
         message: next.text,
         modality: next.modality,
         attachments: next.attachments,
+        files: next.files,
         into: id,
       ),
     );

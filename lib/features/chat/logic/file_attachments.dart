@@ -1,0 +1,195 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
+
+import '../../../infrastructure/platform/native_documents.dart';
+import '../../playground/logic/chat_file.dart';
+import '../../playground/logic/playground_request.dart';
+import 'document_text.dart';
+
+/// How many documents one message may carry.
+///
+/// A limit for the model's sake, not the app's: each file spends prompt space
+/// the conversation itself needs, and a message that arrives as five documents
+/// and one line of text is already asking a lot of an answer.
+const int maxChatFiles = 5;
+
+/// The largest file the app will read into memory to pull text out of.
+///
+/// Past this it is attached by path alone. Reading a 200 MB export to send the
+/// first twenty thousand characters of it would freeze the window for what a
+/// single line of the file could have said.
+const int kMaxReadableFileBytes = 25 * 1024 * 1024;
+
+/// What one drop, paste or pick turned into.
+class ComposerAttachments {
+  const ComposerAttachments({
+    this.images = const [],
+    this.files = const [],
+    this.paths = const [],
+    this.overflow = const [],
+  });
+
+  /// Pictures, for a model that can see.
+  final List<MediaAttachment> images;
+
+  /// Documents, read where the app could read them.
+  final List<ChatFile> files;
+
+  /// What couldn't be attached but can still be pointed at — a folder, a file
+  /// the app can't open. These go into the message as text, so the assistant
+  /// hears about them rather than the drop doing nothing.
+  final List<String> paths;
+
+  /// Names left behind because the message is already carrying its limit. Kept
+  /// apart from [paths]: the user asked for a file, not for its path in their
+  /// sentence, so the composer says what happened instead.
+  final List<String> overflow;
+}
+
+/// Turns dropped, pasted or picked [paths] into what the composer holds:
+/// pictures as attachments, documents as [ChatFile]s with their text read out,
+/// and anything that fits neither as a path to mention.
+///
+/// [imageBudget] and [fileBudget] are the slots still free on this message.
+Future<ComposerAttachments> readAttachments(
+  Iterable<String> paths, {
+  required int imageBudget,
+  required int fileBudget,
+}) async {
+  final images = <MediaAttachment>[];
+  final files = <ChatFile>[];
+  final mentioned = <String>[];
+  final overflow = <String>[];
+
+  for (final path in paths) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) continue;
+    if (await FileSystemEntity.isDirectory(trimmed)) {
+      mentioned.add(trimmed);
+      continue;
+    }
+
+    if (isImageFilename(trimmed)) {
+      if (images.length >= imageBudget) {
+        overflow.add(fileNameOf(trimmed));
+        continue;
+      }
+      final image = await _readImage(trimmed);
+      // Unreadable (a sandbox denial, a file that moved between the drop and
+      // the read): the path is still real, so point at it rather than lose it.
+      if (image == null) {
+        mentioned.add(trimmed);
+        continue;
+      }
+      images.add(image);
+      continue;
+    }
+
+    if (files.length >= fileBudget) {
+      overflow.add(fileNameOf(trimmed));
+      continue;
+    }
+    final file = await readChatFile(trimmed);
+    if (file == null) {
+      mentioned.add(trimmed);
+      continue;
+    }
+    files.add(file);
+  }
+
+  return ComposerAttachments(
+    images: images,
+    files: files,
+    paths: mentioned,
+    overflow: overflow,
+  );
+}
+
+/// What to tell the user when [overflow] files didn't fit on the message.
+///
+/// Names the first one so it's clear *which* was left behind, and says the limit
+/// so the next attempt isn't the same surprise. Empty when nothing overflowed.
+String? attachmentOverflowMessage(List<String> overflow) {
+  if (overflow.isEmpty) return null;
+  final rest = overflow.length - 1;
+  final what = rest == 0
+      ? '“${overflow.first}” wasn’t added'
+      : '“${overflow.first}” and $rest more weren’t added';
+  return '$what — a message holds up to $maxChatImages images '
+      'and $maxChatFiles files.';
+}
+
+/// Opens the system picker for everything a message can carry — pictures and
+/// documents in one list, because "attach a file" is one thought.
+///
+/// Returns the chosen paths (empty when the user cancelled) for
+/// [readAttachments] to sort out, so the picker, a drop and a paste all land in
+/// the same place.
+Future<List<String>> pickAttachmentPaths() async {
+  final files = await openFiles(
+    acceptedTypeGroups: const [
+      XTypeGroup(
+        label: 'Pictures and documents',
+        extensions: [...kImageExtensions, ...kDocumentExtensions],
+      ),
+    ],
+  );
+  return [for (final file in files) file.path];
+}
+
+/// Reads the file at [path] into a [ChatFile], with its text where the app can
+/// get it. Null when there is no readable file there at all — deleted between
+/// the drop and the read, or denied by the sandbox.
+///
+/// A file whose *text* can't be read still comes back: the path is real, the
+/// chip names it, and an agent with file tools may open what the app couldn't.
+Future<ChatFile?> readChatFile(String path) async {
+  final file = File(path);
+  final int size;
+  try {
+    size = await file.length();
+  } on FileSystemException {
+    return null;
+  }
+
+  final name = fileNameOf(path);
+  final extracted = await _extract(file, name, size);
+  return ChatFile(
+    path: path,
+    name: name,
+    sizeBytes: size,
+    text: extracted?.text,
+    truncated: extracted?.truncated ?? false,
+  );
+}
+
+/// The text inside a file, from whichever reader knows the format — the
+/// operating system for PDF, the pure extractor for everything else.
+Future<DocumentText?> _extract(File file, String name, int size) async {
+  // A 400-page contract goes through the same tidy-and-cap as a Word file, so
+  // one attachment can't eat the whole prompt just because macOS read it whole.
+  if (fileExtensionOf(name) == 'pdf') {
+    final text = await NativeDocuments.pdfText(file.path);
+    return text == null ? null : tidyAndCap(text);
+  }
+  if (size > kMaxReadableFileBytes) return null;
+  try {
+    return extractDocumentText(name, await file.readAsBytes());
+  } on FileSystemException {
+    return null;
+  }
+}
+
+Future<MediaAttachment?> _readImage(String path) async {
+  final file = File(path);
+  try {
+    if (await file.length() > kMaxReadableFileBytes) return null;
+    return MediaAttachment(
+      filename: fileNameOf(path),
+      bytes: await file.readAsBytes(),
+    );
+  } on FileSystemException {
+    return null;
+  }
+}

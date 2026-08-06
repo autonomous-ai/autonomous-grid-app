@@ -18,6 +18,10 @@ class MainFlutterWindow: NSWindow {
     (NSApp.delegate as? AppDelegate)?
       .setUpFontsChannel(messenger: flutterViewController.engine.binaryMessenger)
 
+    // Let the composer read the text out of an attached PDF.
+    (NSApp.delegate as? AppDelegate)?
+      .setUpDocumentsChannel(messenger: flutterViewController.engine.binaryMessenger)
+
     super.awakeFromNib()
   }
 }

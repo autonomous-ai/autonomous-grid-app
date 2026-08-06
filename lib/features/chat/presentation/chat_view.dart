@@ -5,11 +5,14 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/composer_text.dart';
+import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
 import '../../agents/logic/agent_changes.dart';
 import '../../agents/logic/agent_permissions.dart';
@@ -25,10 +28,10 @@ import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
 import '../../agents/presentation/running_services_bar.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
-import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/chat_bubble.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../prompts/logic/prompt_slash.dart';
@@ -39,6 +42,7 @@ import '../logic/active_workdir.dart';
 import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
 import 'goal_bar.dart';
 import 'queued_follow_ups.dart';
@@ -98,6 +102,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   final _message = TextEditingController();
   final _scroll = ScrollController();
   final List<MediaAttachment> _attachments = [];
+
+  /// The documents riding on the next message — read at attach time, so what
+  /// goes out is what the file said when the user pointed at it.
+  final List<ChatFile> _files = [];
 
   /// The `conversationId|gridId` the model field was last synced to, so switching
   /// chats restores that chat's model and switching grids drops to the new grid's
@@ -330,50 +338,114 @@ class _ChatViewState extends ConsumerState<ChatView> {
           message: message,
           modality: modality,
           attachments: List.of(_attachments),
+          files: List.of(_files),
         );
     _message.clear();
-    if (_attachments.isNotEmpty) setState(_attachments.clear);
-  }
-
-  /// Pick an image to attach to the next message (vision input). Capped at
-  /// [maxChatImages]; a cancelled picker is a no-op.
-  Future<void> _pickImage() async {
-    if (_attachments.length >= maxChatImages) return;
-    final attachment = await pickImageAttachment();
-    if (attachment != null && mounted) {
-      setState(() => _attachments.add(attachment));
+    if (_attachments.isNotEmpty || _files.isNotEmpty) {
+      setState(() {
+        _attachments.clear();
+        _files.clear();
+      });
     }
   }
 
-  /// Handle a drag-and-drop onto the chat: an image becomes an attachment — a
-  /// thumbnail in the composer, what a vision turn needs — while anything else
-  /// is mentioned by its path, the way to point the agent at a project file.
+  /// Attach whatever the user picks — pictures and documents in one list, since
+  /// the button says "attach a file" and not "attach a picture". A cancelled
+  /// picker is a no-op.
+  Future<void> _attachFile() async {
+    final paths = await pickAttachmentPaths();
+    if (paths.isNotEmpty) await _attachPaths(paths);
+  }
+
+  /// ⌘V / Ctrl+V in the composer, on everything the clipboard might hold.
   ///
-  /// Dropping an image used to paste its raw `/var/folders/…` path as text: a
-  /// wall of characters no model could see. An image the app can't read (a
-  /// sandbox denial, a promise file with no path) still falls back to the path
-  /// rather than vanishing.
-  Future<void> _addDroppedFiles(List<DropItem> files) async {
-    final paths = <String>[];
-    for (final file in files) {
-      if (!isImageFilename(file.path)) {
-        paths.add(file.path);
-        continue;
-      }
-      if (_attachments.length >= maxChatImages) continue;
-      try {
-        final bytes = await file.readAsBytes();
-        if (!mounted) return;
+  /// A screenshot is the reason this exists: taking one and pressing paste is
+  /// how people show an assistant what they're looking at, and until now the
+  /// keystroke did nothing at all — Flutter's own clipboard reads text and
+  /// nothing else. Copied files land the same way a drop does, and plain text is
+  /// inserted where the cursor is, exactly as the field would have.
+  Future<void> _paste() async {
+    final paste = await readClipboardPaste();
+    if (!mounted) return;
+    switch (paste) {
+      case PastedImage(:final bytes, :final filename):
+        if (_attachments.length >= maxChatImages) {
+          _sayOverflow([filename]);
+          return;
+        }
         setState(
           () => _attachments.add(
-            MediaAttachment(filename: file.name, bytes: bytes),
+            MediaAttachment(filename: filename, bytes: bytes),
           ),
         );
-      } on Object {
-        paths.add(file.path);
-      }
+      case PastedFiles(:final paths):
+        await _attachPaths(paths);
+      case PastedText(:final text):
+        _insertIntoMessage(text);
+      case PastedNothing():
+        break;
     }
-    if (paths.isNotEmpty) _insertPaths(paths);
+  }
+
+  /// Handle a drag-and-drop onto the chat — the same sorting as the picker and
+  /// the clipboard, since a file is a file however it arrived.
+  ///
+  /// Anything dragged out of a browser rather than off the desk arrives as a
+  /// promise with no path on disk; those are read straight from the drop, so an
+  /// image dragged from a web page still attaches instead of vanishing.
+  Future<void> _addDroppedFiles(List<DropItem> items) async {
+    final onDisk = [
+      for (final item in items)
+        if (item.path.trim().isNotEmpty) item.path,
+    ];
+    if (onDisk.isNotEmpty) await _attachPaths(onDisk);
+
+    for (final item in items) {
+      if (item.path.trim().isNotEmpty) continue;
+      if (!isImageFilename(item.name)) continue;
+      if (_attachments.length >= maxChatImages) continue;
+      final bytes = await item.readAsBytes();
+      if (!mounted) return;
+      setState(
+        () => _attachments.add(
+          MediaAttachment(filename: item.name, bytes: bytes),
+        ),
+      );
+    }
+  }
+
+  /// Sort [paths] into what the message can carry: pictures as thumbnails,
+  /// documents as chips with their text read out, and anything the app can't
+  /// open (a folder, a file it was refused) mentioned by path so the assistant
+  /// still hears about it.
+  Future<void> _attachPaths(Iterable<String> paths) async {
+    final added = await readAttachments(
+      paths,
+      imageBudget: maxChatImages - _attachments.length,
+      fileBudget: maxChatFiles - _files.length,
+    );
+    if (!mounted) return;
+    if (added.images.isNotEmpty || added.files.isNotEmpty) {
+      setState(() {
+        _attachments.addAll(added.images);
+        _files.addAll(added.files);
+      });
+    }
+    if (added.paths.isNotEmpty) {
+      _insertIntoMessage(pathsForMessage(added.paths));
+    }
+    _sayOverflow(added.overflow);
+  }
+
+  /// Say what didn't fit. Silence here is what made an attach that quietly did
+  /// nothing look like a bug in the app.
+  void _sayOverflow(List<String> overflow) {
+    final message = attachmentOverflowMessage(overflow);
+    if (message == null) return;
+    ToastScope.show(
+      context,
+      ToastSpec(message: message, severity: ToastSeverity.warning),
+    );
   }
 
   /// Drop a starter's prompt into the composer, ready to edit or send.
@@ -412,20 +484,22 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = TextSelection.collapsed(offset: result.cursor);
   }
 
-  /// Drop file paths into the message where the cursor is (or at the end) — how
-  /// files dragged in from Finder reach the agent. Reads absolute paths, so a
-  /// file outside the chat's folder rests on the agent's own file access.
-  void _insertPaths(List<String> paths) {
-    final tokens = [
-      for (final path in paths)
-        if (path.trim().isNotEmpty) path.trim(),
-    ];
-    if (tokens.isEmpty) return;
-    final cursor = _message.selection.baseOffset;
-    final at = cursor < 0 ? _message.text.length : cursor;
-    final insert = '${tokens.join(' ')} ';
-    _message.text = _message.text.replaceRange(at, at, insert);
-    _message.selection = TextSelection.collapsed(offset: at + insert.length);
+  /// Drop text into the message where the cursor is (or at the end): pasted
+  /// text, and the paths of files dragged in from Finder that couldn't be
+  /// attached. Paths are absolute, so a file outside the chat's folder rests on
+  /// the agent's own file access.
+  void _insertIntoMessage(String insert) {
+    // `start`/`end`, not base/extent: a selection dragged right-to-left has its
+    // base *after* its extent, and pasting over it must still replace it.
+    final selection = _message.selection;
+    final result = insertIntoField(
+      _message.text,
+      start: selection.start,
+      end: selection.end,
+      insert: insert,
+    );
+    _message.text = result.text;
+    _message.selection = TextSelection.collapsed(offset: result.cursor);
   }
 
   void _scrollToBottom({bool animated = false}) {
@@ -685,6 +759,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         ComposerSection(
                           messageController: _message,
                           attachments: _attachments,
+                          files: _files,
                           modality: modality,
                           needsImage: needsImage,
                           sending: sessions.sending,
@@ -719,9 +794,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           ),
                           onAddAttachment: (a) =>
                               setState(() => _attachments.add(a)),
-                          onPickImage: _pickImage,
+                          onAttachFile: () => unawaited(_attachFile()),
+                          onPaste: () => unawaited(_paste()),
                           onRemoveAttachment: (i) =>
                               setState(() => _attachments.removeAt(i)),
+                          onRemoveFile: (i) =>
+                              setState(() => _files.removeAt(i)),
                           onOpenPrompts: _promptsButton,
                           promptsSaveInput: _message.text.trim().isNotEmpty,
                           onSend: () => _send(modality),

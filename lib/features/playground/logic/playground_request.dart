@@ -35,6 +35,29 @@ enum MediaOperation {
   final String capability;
 }
 
+/// The image file types the app accepts as attachments. The picker's filter, the
+/// composer's drag-and-drop sorter and the paste handler share this list so the
+/// three never drift.
+const List<String> kImageExtensions = [
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+  'bmp',
+];
+
+/// Whether [name] — a filename or a path — ends in one of [kImageExtensions], so
+/// a dropped image is attached as a picture rather than mentioned by path.
+bool isImageFilename(String name) {
+  final dot = name.lastIndexOf('.');
+  return dot >= 0 &&
+      kImageExtensions.contains(name.substring(dot + 1).toLowerCase());
+}
+
+/// How many pictures one message may carry to a vision model.
+const int maxChatImages = 4;
+
 /// An image the user attached for an edit / image-to-video request. Held in
 /// memory as raw bytes until it's encoded into a request payload.
 class MediaAttachment {
