@@ -8,9 +8,9 @@ import '../../core/grid_paths.dart';
 /// How much context each model turned out to have, in tokens, keyed by the model
 /// id the app sends.
 ///
-/// Learned, not configured: the relay advertises no context length (every
-/// model's `context_length` comes back null — `TODO(BE)`), so the only machine
-/// that knows is the one serving, and the only time it says so is when it
+/// Learned, not configured: the relay carries a `context_length` for some models
+/// and `null` for the rest (`TODO(BE)`), and where it says nothing the only
+/// machine that knows is the one serving — which says so only when it
 /// refuses a turn for being too long. Remembering that refusal is what keeps the
 /// next conversation from walking into it — including after a restart, which is
 /// why this is a file and not a field.

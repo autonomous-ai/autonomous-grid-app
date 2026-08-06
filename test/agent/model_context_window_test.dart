@@ -131,7 +131,8 @@ void main() {
 
   group('modelContextWindowProvider', () {
     /// A grid serving one model, advertising [advertised] for it (null being
-    /// what every grid says today), with [learned] already in the store.
+    /// what a grid still says for most of them), with [learned] already in the
+    /// store.
     Future<ProviderContainer> gridServing({
       int? advertised,
       Map<String, int> learned = const {},
@@ -192,8 +193,8 @@ void main() {
       );
     });
 
-    test('a grid that advertises nothing — every grid, today — still runs on '
-        'what its engine taught', () async {
+    test('a model the grid advertises nothing for still runs on what its '
+        'engine taught', () async {
       final container = await gridServing(
         learned: {'qwen3.6-27b-office': 96000},
       );
@@ -203,13 +204,33 @@ void main() {
       );
     });
 
-    test("a model nothing is known about gets no ceiling: Claude Code's own "
-        'default beats a made-up number', () async {
+    test('a model nothing is known about runs on the assumption rather than on '
+        "Claude Code's idea of an Anthropic model", () async {
       final container = await gridServing();
       expect(
         container.read(modelContextWindowProvider('qwen3.6-27b-office')),
-        isNull,
+        kAssumedContextWindow,
       );
+    });
+
+    test('the assumption is a fallback, not a floor: a real figure wins even '
+        'when it is smaller', () async {
+      final advertised = await gridServing(advertised: 8192);
+      expect(
+        advertised.read(modelContextWindowProvider('qwen3.6-27b-office')),
+        8192,
+      );
+
+      final learned = await gridServing(learned: {'qwen3.6-27b-office': 8192});
+      expect(
+        learned.read(modelContextWindowProvider('qwen3.6-27b-office')),
+        8192,
+      );
+    });
+
+    test('the assumption leaves an engine room for its own reply, like any '
+        'other window', () {
+      expect(agentContextCeiling(kAssumedContextWindow), 26214);
     });
   });
 }

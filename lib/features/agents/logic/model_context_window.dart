@@ -30,12 +30,13 @@ bool isContextOverflow(String raw) {
 /// The context window an engine reported when it refused a turn, or null when
 /// the refusal named no number.
 ///
-/// This is the app's only source for the figure. The relay advertises none —
-/// `/v1/models` has no such field and `/grid/overview` returns
-/// `context_length: null` for every model (`TODO(BE)`) — so a window is either
-/// learned here or unknown, and an unknown one is left unset rather than
-/// guessed: a guess too low compacts a chat that had room, and one too high
-/// fails exactly the way this exists to prevent.
+/// The most reliable of the three sources, because it is the machine that is
+/// actually serving saying what it actually has. The relay now carries the
+/// figure too, but sparsely: measured 2026-08-06 on the office grid,
+/// `/grid/overview` gives `context_length: 128000` for one model of three and
+/// `null` for the rest, and `/v1/models` has grown a `context_window` field that
+/// is null on every model so far (`TODO(BE)`). What neither source covers falls
+/// back on [kAssumedContextWindow].
 int? contextWindowFromError(String raw) {
   for (final pattern in _windowPatterns) {
     final match = pattern.firstMatch(raw);
@@ -60,14 +61,33 @@ const int _ceilingDenominator = 5;
 int agentContextCeiling(int engineWindow) =>
     engineWindow * _ceilingNumerator ~/ _ceilingDenominator;
 
-/// The window to run [model] against, or null while nothing is known about it.
+/// What to run a model against when no source has named its window.
 ///
-/// Two sources, smaller wins. The grid's own answer comes first in principle —
-/// it is the one that needs no failure to arrive — but today it is always null,
-/// so in practice this reads what an engine taught the app. Smaller rather than
-/// newer because one model id can be served by several machines (the office qwen
-/// is served by two) and only the smallest window is safe for all of them.
-final modelContextWindowProvider = Provider.autoDispose.family<int?, String>((
+/// The three sources can all be missing at once: the grid advertises a figure
+/// for some models and `null` for the rest, and an engine only names its window
+/// by refusing a turn, which has not happened yet on a model nobody has pushed.
+/// Leaving it unset there sounds like the humble choice and isn't — it hands the
+/// decision to Claude Code, which sizes its window from the model it *thinks* it
+/// is talking to (Anthropic's, 200k and up). So "no ceiling" was in practice a
+/// 200k guess made by the component with the least information.
+///
+/// 32k instead, and deliberately low, because the two ways to be wrong are not
+/// symmetric. Too high and the turn dies at the engine: the user loses the
+/// answer and the session, and llama.cpp's own refusal carries no number for the
+/// app to learn from (see [_windowPatterns]), so it can happen again on the next
+/// long chat. Too low and the conversation summarizes earlier than it had to —
+/// it costs fidelity and nothing else. Any model a real figure exists for never
+/// comes near this number.
+const int kAssumedContextWindow = 32768;
+
+/// The window to run [model] against: what the grid advertises, what an engine
+/// taught, or [kAssumedContextWindow] when neither has said anything.
+///
+/// Between the two real sources the smaller wins — not the newer — because one
+/// model id can be served by several machines (the office qwen is served by two)
+/// and only the smallest window is safe for all of them. The assumption is not
+/// in that comparison: it is what's left when there is nothing to compare.
+final modelContextWindowProvider = Provider.autoDispose.family<int, String>((
   ref,
   model,
 ) {
@@ -78,6 +98,6 @@ final modelContextWindowProvider = Provider.autoDispose.family<int?, String>((
         if (served.contextLength case final int tokens when tokens > 0) tokens,
   ];
   final known = [...advertised, ?ref.watch(learnedModelContextProvider)[key]];
-  if (known.isEmpty) return null;
+  if (known.isEmpty) return kAssumedContextWindow;
   return known.reduce((a, b) => a < b ? a : b);
 });
