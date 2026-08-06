@@ -16,8 +16,8 @@ One source now; this file carries only what is genuinely different for a non-Cla
   is not on the default `PATH` here:
   `export PATH="$HOME/WorkPlace/Flutter/flutter/bin:$PATH"`.
 - **Gate before "done":** `flutter analyze lib test` → 0 issues, plus the relevant
-  `flutter test test/<area>`. Two failures pre-date any change of yours
-  (`provider_run_controller_test`, `sidebar_item_test`) — report them, don't chase them.
+  `flutter test test/<area>`. Both bars are clear on `main` (measured 2026-08-06), so a
+  failure you see is yours to fix rather than a known one to report around.
 - **No new widget/UI tests.** Logic only (§8).
 - **Never commit straight to `main`:** branch → commit → merge → push.
 
