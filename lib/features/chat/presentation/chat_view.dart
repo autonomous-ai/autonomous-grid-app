@@ -146,7 +146,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _model.addListener(_onModelChanged);
     // The slash menu and the prompts button both track what's typed, so rebuild
     // as the message changes.
-    _message.addListener(_onMessageChanged);
     _scroll.addListener(_onScroll);
     // Reopening the section rebuilds this view; land on the latest turn rather
     // than stranding the user at the top of the transcript.
@@ -156,16 +155,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
   @override
   void dispose() {
     _model.removeListener(_onModelChanged);
-    _message.removeListener(_onMessageChanged);
     _scroll.removeListener(_onScroll);
     _model.dispose();
     _message.dispose();
     _scroll.dispose();
     super.dispose();
-  }
-
-  void _onMessageChanged() {
-    if (mounted) setState(() {});
   }
 
   void _onScroll() {
@@ -560,14 +554,26 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   @override
   Widget build(BuildContext context) {
-    final sessions = ref.watch(chatSessionsProvider);
+    // Watched field by field, not as one object. The state changes on **every
+    // streamed token** (the phase carries the growing answer), and a whole-state
+    // watch rebuilt this entire tree — composer, pickers, menus and all — 122
+    // times for a 120-token reply where these selects fire twice. What genuinely
+    // moves per token is the in-flight bubble, and it watches for itself (see
+    // [_TrailingBubble]).
+    final active = ref.watch(chatSessionsProvider.select((s) => s.active));
+    final activeId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
+    final sending = ref.watch(chatSessionsProvider.select((s) => s.sending));
+    final error = ref.watch(chatSessionsProvider.select((s) => s.error));
+    final openProjectId = ref.watch(
+      chatSessionsProvider.select((s) => s.openProjectId),
+    );
     final options = ref.watch(playgroundModelsProvider);
     // Still resolving means waiting on the *first* answer from either source —
     // see [playgroundModelsResolvingProvider] for why a later poll must not
     // count.
     final loadingModels = ref.watch(playgroundModelsResolvingProvider);
 
-    _syncModelField(sessions.active, options, widget.network.networkId);
+    _syncModelField(active, options, widget.network.networkId);
 
     // The undo bar speaks for the chat on screen, so tell it which one that is.
     // The snapshots themselves are kept per conversation and outlive the switch:
@@ -575,10 +581,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // that asked for them, and they're waiting there on the way back. Deferred
     // because writing a provider during build would throw, and only when the
     // answer moved — this build runs on every keystroke and streamed token.
-    if (ref.read(agentChangesScopeProvider) != sessions.activeId) {
+    if (ref.read(agentChangesScopeProvider) != activeId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        ref.read(agentChangesScopeProvider.notifier).show(sessions.activeId);
+        ref.read(agentChangesScopeProvider.notifier).show(activeId);
       });
     }
 
@@ -625,28 +631,23 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final needsImage = modality == PlaygroundModality.video;
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
-    // "There is something to send", not "the chat is free": a turn already in
-    // flight no longer blocks Send, it queues what is typed behind it. The text
-    // check moved here from `_send` so the button and the Stop beside it agree
-    // with what pressing them would actually do.
-    final canSend =
-        !noModel &&
-        _message.text.trim().isNotEmpty &&
-        (!needsImage || _attachments.isNotEmpty);
-    final messages = sessions.active?.messages ?? const <ChatMessage>[];
+    final messages = active?.messages ?? const <ChatMessage>[];
     // The "agent is working" feed and the permission card read one shared,
     // app-wide state, but only the chat whose agent turn is actually running
     // owns it — an agent chat still queued behind another must show its own
     // waiting cue, not borrow the running chat's steps (or its permission).
-    final thisChatIsRunning =
-        sessions.activeId != null &&
-        sessions.activeId == sessions.runningAgentId;
-    final trailing = _trailingBubble(
-      sessions.phase,
-      agentMode,
-      thisChatIsRunning,
+    final thisChatIsRunning = ref.watch(
+      chatSessionsProvider.select(
+        (s) => s.activeId != null && s.activeId == s.runningAgentId,
+      ),
     );
-    final isNewChat = messages.isEmpty && !sessions.sending;
+    // *Whether* there is an in-flight bubble, not what it says: this answers
+    // once when the turn starts and once when it ends, while the bubble's own
+    // contents change with every token.
+    final hasTrailing = ref.watch(
+      chatSessionsProvider.select((s) => _bubbleShows(s.phase, agentMode)),
+    );
+    final isNewChat = messages.isEmpty && !sending;
 
     // The header naming this conversation lives in the top bar, so it shares
     // one row with the grid pill instead of sitting in a strip of its own.
@@ -672,14 +673,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final permission = thisChatIsRunning
         ? ref.watch(agentPermissionProvider)
         : null;
-    // A leading "/" (with no space yet) opens the saved-prompt menu; an "@"
-    // token opens the file menu. Only one shows at a time, prompts first.
-    final slash = sessions.sending ? null : slashQuery(_message.text);
-    final cursor = _message.selection.baseOffset;
-    final mention = (sessions.sending || slash != null || cursor < 0)
-        ? null
-        : activeMention(_message.text, cursor);
-
+    // Read here, not down in the composer's builder: that builder runs when the
+    // text controller notifies, which is outside this widget's own build, and
+    // `ref.watch` may only be called during it.
+    final workdir = ref.watch(activeChatWorkdirProvider);
+    final approval = ref.watch(chatApprovalModeProvider);
     return DropTarget(
       onDragEntered: (_) => setState(() => _dragging = true),
       onDragExited: (_) => setState(() => _dragging = false),
@@ -707,14 +705,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         // its empty state reads "…in <project>?" rather than the
                         // same blank greeting a loose chat shows.
                         projectName: ref
-                            .watch(projectByIdProvider(sessions.openProjectId))
+                            .watch(projectByIdProvider(openProjectId))
                             ?.name,
                         onPick: _useStarter,
                       )
                     : _Transcript(
                         scroll: _scroll,
                         messages: messages,
-                        trailing: trailing,
+                        trailing: hasTrailing
+                            ? _TrailingBubble(agentMode: agentMode)
+                            : null,
                         atBottom: _atBottom,
                         onJumpToLatest: () => _scrollToBottom(animated: true),
                       ),
@@ -737,76 +737,111 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   constraints: const BoxConstraints(maxWidth: _composerWidth),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const AgentHandoverBar(),
-                        const PlanApproveBar(),
-                        const AgentChangesBar(),
-                        const GoalBar(),
-                        const RunningServicesBar(),
-                        const SaveSkillBar(),
-                        const QueuedFollowUps(),
-                        if (slash != null)
-                          PromptSlashMenu(query: slash, onPick: _insertPrompt)
-                        else if (mention != null)
-                          FileMentionMenu(
-                            workdir: ref.watch(activeChatWorkdirProvider),
-                            query: mention.query,
-                            onPick: _insertMention,
-                          ),
-                        ComposerSection(
-                          messageController: _message,
-                          attachments: _attachments,
-                          files: _files,
-                          modality: modality,
-                          needsImage: needsImage,
-                          sending: sessions.sending,
-                          canSend: canSend,
-                          error: sessions.error,
-                          // Any turn the agent couldn't finish gets the way out
-                          // offered beside it. Keying this to one known message
-                          // meant the failure people actually hit (a 503 from
-                          // the grid) arrived with no button at all — and the
-                          // message is the wrong thing to hang it on anyway:
-                          // what makes the swap worth offering is that an agent
-                          // failed, not which sentence it failed with.
-                          errorAction: agentMode
-                              ? const SwitchAgentButton()
-                              : null,
-                          // Only the agent can touch this computer — a picture is made
-                          // by the grid, so there'd be nothing to approve.
-                          approvalPicker: agentMode
-                              ? ApprovalPicker(
-                                  value: ref.watch(chatApprovalModeProvider),
-                                  onChanged: ref
-                                      .read(chatSessionsProvider.notifier)
-                                      .setApproval,
-                                )
-                              : null,
-                          // Which agent answers, beside the model it runs — only
-                          // when an agent is the one answering this turn.
-                          agentPicker: agentMode ? const AgentPicker() : null,
-                          modelPicker: GridModelPicker(
-                            currentModelId: _model.text,
-                            onSelect: _pickGridModel,
-                          ),
-                          onAddAttachment: (a) =>
-                              setState(() => _attachments.add(a)),
-                          onAttachFile: () => unawaited(_attachFile()),
-                          onPaste: () => unawaited(_paste()),
-                          onRemoveAttachment: (i) =>
-                              setState(() => _attachments.removeAt(i)),
-                          onRemoveFile: (i) =>
-                              setState(() => _files.removeAt(i)),
-                          onOpenPrompts: _promptsButton,
-                          promptsSaveInput: _message.text.trim().isNotEmpty,
-                          onSend: () => _send(modality),
-                          onStop: () =>
-                              ref.read(chatSessionsProvider.notifier).stop(),
-                        ),
-                      ],
+                    // Everything that answers to what is being typed lives under
+                    // here, so a keystroke rebuilds the composer and not the
+                    // transcript above it. The controller is the listenable —
+                    // it notifies on text *and* caret moves, which is what the
+                    // `@`-mention menu reads.
+                    child: ListenableBuilder(
+                      listenable: _message,
+                      builder: (context, _) {
+                        // "There is something to send", not "the chat is free":
+                        // a turn already in flight no longer blocks Send, it
+                        // queues what is typed behind it. The text check lives
+                        // here rather than in `_send` so the button and the Stop
+                        // beside it agree with what pressing them would do.
+                        final canSend =
+                            !noModel &&
+                            _message.text.trim().isNotEmpty &&
+                            (!needsImage || _attachments.isNotEmpty);
+                        // A leading "/" (with no space yet) opens the
+                        // saved-prompt menu; an "@" token opens the file menu.
+                        // Only one shows at a time, prompts first.
+                        final slash = sending
+                            ? null
+                            : slashQuery(_message.text);
+                        final cursor = _message.selection.baseOffset;
+                        final mention = (sending || slash != null || cursor < 0)
+                            ? null
+                            : activeMention(_message.text, cursor);
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const AgentHandoverBar(),
+                            const PlanApproveBar(),
+                            const AgentChangesBar(),
+                            const GoalBar(),
+                            const RunningServicesBar(),
+                            const SaveSkillBar(),
+                            const QueuedFollowUps(),
+                            if (slash != null)
+                              PromptSlashMenu(
+                                query: slash,
+                                onPick: _insertPrompt,
+                              )
+                            else if (mention != null)
+                              FileMentionMenu(
+                                workdir: workdir,
+                                query: mention.query,
+                                onPick: _insertMention,
+                              ),
+                            ComposerSection(
+                              messageController: _message,
+                              attachments: _attachments,
+                              files: _files,
+                              modality: modality,
+                              needsImage: needsImage,
+                              sending: sending,
+                              canSend: canSend,
+                              error: error,
+                              // Any turn the agent couldn't finish gets the way out
+                              // offered beside it. Keying this to one known message
+                              // meant the failure people actually hit (a 503 from
+                              // the grid) arrived with no button at all — and the
+                              // message is the wrong thing to hang it on anyway:
+                              // what makes the swap worth offering is that an agent
+                              // failed, not which sentence it failed with.
+                              errorAction: agentMode
+                                  ? const SwitchAgentButton()
+                                  : null,
+                              // Only the agent can touch this computer — a picture is made
+                              // by the grid, so there'd be nothing to approve.
+                              approvalPicker: agentMode
+                                  ? ApprovalPicker(
+                                      value: approval,
+                                      onChanged: ref
+                                          .read(chatSessionsProvider.notifier)
+                                          .setApproval,
+                                    )
+                                  : null,
+                              // Which agent answers, beside the model it runs — only
+                              // when an agent is the one answering this turn.
+                              agentPicker: agentMode
+                                  ? const AgentPicker()
+                                  : null,
+                              modelPicker: GridModelPicker(
+                                currentModelId: _model.text,
+                                onSelect: _pickGridModel,
+                              ),
+                              onAddAttachment: (a) =>
+                                  setState(() => _attachments.add(a)),
+                              onAttachFile: () => unawaited(_attachFile()),
+                              onPaste: () => unawaited(_paste()),
+                              onRemoveAttachment: (i) =>
+                                  setState(() => _attachments.removeAt(i)),
+                              onRemoveFile: (i) =>
+                                  setState(() => _files.removeAt(i)),
+                              onOpenPrompts: _promptsButton,
+                              promptsSaveInput: _message.text.trim().isNotEmpty,
+                              onSend: () => _send(modality),
+                              onStop: () => ref
+                                  .read(chatSessionsProvider.notifier)
+                                  .stop(),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -819,26 +854,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     );
   }
 
-  /// The bubble appended after the transcript for the in-flight turn: the media
-  /// progress bar while a generation streams, the answer growing live as it
-  /// streams in, or a spinner while the agent works before its first token.
-  /// The bubble after the transcript for the in-flight turn. [running] is whether
-  /// this chat holds the agent's live turn: only then does the working bubble
-  /// (which reads the shared activity feed) belong to it — an agent chat still
-  /// queued behind another shows a plain waiting cue instead.
-  Widget? _trailingBubble(SendPhase phase, bool agentMode, bool running) =>
-      switch (phase) {
-        SendGenerating g => GeneratingBubble(phase: g),
-        SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
-          text: text,
-          showActivity: agentMode,
-        ),
-        SendStreaming() => const AgentWorkingBubble(),
-        SendBusy() when agentMode && running => const AgentWorkingBubble(),
-        SendBusy() when agentMode => const _QueuedBubble(),
-        _ => null,
-      };
-
   double _permissionCardHeight(BuildContext context) {
     final height = MediaQuery.sizeOf(context).height * 0.42;
     return height.clamp(240.0, 380.0);
@@ -850,6 +865,57 @@ class _ChatViewState extends ConsumerState<ChatView> {
     PlaygroundModality.video => 'Attach an image, then describe the motion',
     PlaygroundModality.text => 'What should we create?',
   };
+}
+
+/// Whether the in-flight turn draws a bubble after the transcript at all.
+///
+/// Split from [_TrailingBubble] because the two answers move at completely
+/// different rates: *whether* there is a bubble changes once when the turn
+/// starts and once when it ends, while *what it says* changes with every
+/// streamed token. Keeping them apart is what stops the screen around the
+/// transcript rebuilding 122 times for a 120-token reply.
+bool _bubbleShows(SendPhase phase, bool agentMode) => switch (phase) {
+  SendGenerating() || SendStreaming() => true,
+  SendBusy() => agentMode,
+  _ => false,
+};
+
+/// The bubble appended after the transcript for the in-flight turn: the media
+/// progress bar while a generation streams, the answer growing live as it
+/// streams in, or a spinner while the agent works before its first token.
+///
+/// Watches the phase itself so the growing text rebuilds this bubble and
+/// nothing else. [running] is whether this chat holds the agent's live turn:
+/// only then does the working bubble (which reads the shared activity feed)
+/// belong to it — an agent chat still queued behind another shows a plain
+/// waiting cue instead.
+class _TrailingBubble extends ConsumerWidget {
+  const _TrailingBubble({required this.agentMode});
+
+  /// Whether an agent is answering this turn — a media turn bypasses it, so the
+  /// bubble shows progress rather than "the agent is working".
+  final bool agentMode;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final phase = ref.watch(chatSessionsProvider.select((s) => s.phase));
+    final running = ref.watch(
+      chatSessionsProvider.select(
+        (s) => s.activeId != null && s.activeId == s.runningAgentId,
+      ),
+    );
+    return switch (phase) {
+      SendGenerating g => GeneratingBubble(phase: g),
+      SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
+        text: text,
+        showActivity: agentMode,
+      ),
+      SendStreaming() => const AgentWorkingBubble(),
+      SendBusy() when agentMode && running => const AgentWorkingBubble(),
+      SendBusy() when agentMode => const _QueuedBubble(),
+      _ => const SizedBox.shrink(),
+    };
+  }
 }
 
 /// The reply as it streams in: the partial text, exactly as [ChatBubble] draws
