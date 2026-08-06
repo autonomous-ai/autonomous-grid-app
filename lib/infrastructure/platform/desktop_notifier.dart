@@ -29,6 +29,16 @@ class DesktopNotification {
 /// controller under test gets [NoopDesktopNotifier] (or a fake that records)
 /// rather than a platform channel that isn't there.
 abstract interface class DesktopNotifier {
+  /// Ask the OS for permission to post notifications, once per run.
+  ///
+  /// Deliberately separate from construction, and called from the app shell
+  /// rather than from `main`: on macOS the underlying `requestAuthorization`
+  /// does not return until the user answers the system dialog, so whatever
+  /// awaits it waits as long as that dialog stands. Awaiting it before
+  /// `runApp` left the window — already on screen — black for exactly that
+  /// long. Safe to call more than once; only the first call asks.
+  Future<void> ensurePermission();
+
   /// Show [notification]. Best-effort: a machine where notifications are denied
   /// or unsupported must not turn a delivered result into an error.
   Future<void> show(DesktopNotification notification);
