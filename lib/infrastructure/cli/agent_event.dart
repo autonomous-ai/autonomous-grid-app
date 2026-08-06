@@ -213,6 +213,33 @@ bool agentTurnStalled({
 }) =>
     !planFirst && agentPlanUnfinished(plan) && (!endedCleanly || !workedAtAll);
 
+/// Whether the turn stopped because it ran out of room, not because it was done.
+///
+/// Hermes caps a turn at `agent.max_turns` model round-trips. At the cap it
+/// tells the model "You've reached the maximum number of tool-calling iterations
+/// allowed" and asks it to summarise — then reports the turn over as a plain
+/// `end_turn`, the same word a finished turn gets. So a five-step plan abandoned
+/// at step three reached the chat looking exactly like completed work, and the
+/// user was left with "why does it keep stopping halfway?" and nothing to read.
+///
+/// Two facts, because neither is enough alone:
+///
+/// - [toolCalls] against [budget] — the app counts *tool calls* while Hermes
+///   counts *round-trips*, and one round-trip can carry several calls. So a
+///   count at or past the budget makes the cap likely, never certain.
+/// - [plan] unfinished — the symptom the user is actually looking at. Requiring
+///   it is what keeps the looser count above from stamping "ran out of room" on
+///   a turn that did the work and simply used a lot of tools.
+///
+/// The pair is deliberately conservative: it can stay quiet about a capped turn
+/// that ticked every box, which costs nothing, rather than tell a user their
+/// finished work was cut short.
+bool agentSpentToolBudget({
+  required int toolCalls,
+  required int budget,
+  required List<AgentPlanEntry> plan,
+}) => budget > 0 && toolCalls >= budget && agentPlanUnfinished(plan);
+
 /// Whether an activity row is the agent *doing* something — running a command,
 /// calling a tool, looking something up — rather than thinking about it. The
 /// stall check above counts work, and a model's own reasoning isn't work.

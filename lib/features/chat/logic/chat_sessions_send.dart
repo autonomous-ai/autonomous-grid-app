@@ -214,7 +214,7 @@ mixin _ChatSend on _ChatSessions {
             state = state.withPhase(id, SendStreaming(text));
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
-          case ChatSendSuccess(:final reply):
+          case ChatSendSuccess(:final reply, :final outOfSteps):
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
               // Stamp the reply with the model that answered, so the transcript
@@ -232,7 +232,15 @@ mixin _ChatSend on _ChatSessions {
             // "approve & run" bar for this chat. Any other reply leaves it dark.
             // Does not steal focus: a reply landing in a background chat leaves
             // whatever the user is reading open.
-            _commit(answered, phase: const SendIdle(), awaitingPlan: planTurn);
+            // An agent that ran out of tool calls mid-plan lights the "carry on"
+            // bar instead of leaving the user to wonder why it halted three
+            // steps in — the reply above is a summary it was told to write.
+            _commit(
+              answered,
+              phase: const SendIdle(),
+              awaitingPlan: planTurn,
+              outOfSteps: outOfSteps,
+            );
             _adoptAgentName(answered, agentSessionId);
             _announceTurn(answered, body: firstLinePreview(reply.text));
             _lastTurn[id] = (reply: reply.text, failure: null);

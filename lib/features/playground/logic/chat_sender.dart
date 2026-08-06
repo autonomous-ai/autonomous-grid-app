@@ -56,8 +56,15 @@ class ChatSendAgentSession extends ChatSendUpdate {
 /// The request finished; [reply] is the assistant turn to append (text for
 /// chat, media for a generation).
 class ChatSendSuccess extends ChatSendUpdate {
-  const ChatSendSuccess(this.reply);
+  const ChatSendSuccess(this.reply, {this.outOfSteps = false});
   final ChatMessage reply;
+
+  /// The agent stopped because it used up the tool calls one turn is allowed,
+  /// with its plan still unfinished — not because the work was done (see
+  /// [agentSpentToolBudget]). A success, because the answer it summarised is a
+  /// real answer; flagged, because the chat has to offer to carry on rather than
+  /// leave the user to guess why it halted mid-plan.
+  final bool outOfSteps;
 }
 
 /// The request failed; [error] is a plain-language line safe to show the user.

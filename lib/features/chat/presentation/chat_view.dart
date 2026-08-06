@@ -54,6 +54,7 @@ import 'chat_header.dart';
 import 'chat_minimap.dart';
 import 'chat_starters.dart';
 import 'grid_model_picker.dart';
+import 'out_of_steps_bar.dart';
 import 'plan_approve_bar.dart';
 
 /// How close to the end (px) still counts as "at the bottom" — within this, new
@@ -771,6 +772,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           children: [
                             const AgentHandoverBar(),
                             const PlanApproveBar(),
+                            // Above the changes bar: "it stopped early" is the
+                            // more urgent of the two, and the files it did
+                            // change are still there to review afterwards.
+                            const OutOfStepsBar(),
                             const AgentChangesBar(),
                             const GoalBar(),
                             const RunningServicesBar(),

@@ -69,6 +69,30 @@ class HermesConfigFile {
   }
 }
 
+/// How many tool calls Hermes may make inside one turn before it stops.
+///
+/// Hermes's own default, written into the config on purpose: at the cap it
+/// doesn't fail or say anything over ACP — it quietly injects "You've reached
+/// the maximum number of tool-calling iterations allowed", makes the model
+/// summarise, and returns `stopReason: end_turn` like any finished turn
+/// (`acp_adapter/server.py` has no other reason to give). A turn that stopped
+/// three steps into a five-step plan then looked exactly like one that was
+/// done. Writing the number here makes it *ours*: the app counts the turn's
+/// tool calls against it and can say what happened (see [agentSpentToolBudget]).
+///
+/// Left at Hermes's 90 rather than raised — a bigger budget is a longer, more
+/// expensive turn, and that is the user's call to make, not a default to change
+/// behind them.
+const int kHermesToolCallBudget = 90;
+
+/// Pin `agent.max_turns` so the app and Hermes agree on the same budget.
+void ensureToolCallBudget(YamlEditor editor) {
+  HermesConfigFile.upsert(editor, [
+    'agent',
+    'max_turns',
+  ], kHermesToolCallBudget);
+}
+
 /// The toolsets that read and answer but can't act on this computer.
 ///
 /// Hermes bundles `read_file` and `write_file` into one `file` toolset, so a

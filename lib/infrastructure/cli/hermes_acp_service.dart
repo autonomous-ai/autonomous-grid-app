@@ -64,7 +64,14 @@ class HermesAcpPlan extends HermesAcpEvent {
 /// step left unticked on a turn the agent ended itself is its own sloppy
 /// bookkeeping, not work it abandoned (see [agentTurnStalled]).
 class HermesAcpTurnEnded extends HermesAcpEvent {
-  const HermesAcpTurnEnded(this.stopReason, {this.error});
+  const HermesAcpTurnEnded(this.stopReason, {this.toolCalls = 0, this.error});
+
+  /// How many tools the turn called. Hermes caps a turn by its own count of
+  /// model round-trips ([kHermesToolCallBudget]) and reports hitting that cap as
+  /// an ordinary `end_turn`, so this is the only number the app has to tell a
+  /// turn that finished from one that ran out of room — see
+  /// [agentSpentToolBudget] for what it may and may not conclude from it.
+  final int toolCalls;
 
   /// Hermes's own words when the turn ended in a JSON-RPC *error* rather than a
   /// stop reason — null on every ordinary turn.
@@ -441,7 +448,17 @@ class _HermesAcpSession implements HermesAcpSession {
     if (events == null || events.isClosed) return;
     final result = message['result'];
     final reason = result is Map ? _str(result['stopReason']) : '';
-    events.add(HermesAcpTurnEnded(reason, error: error));
+    // Both numbers, every turn: without them "why did it stop there?" could only
+    // be answered by opening Hermes's own SQLite, which is where that question
+    // was answered the first time it was asked (§6).
+    _log.info(
+      'agent',
+      'Hermes turn ended: ${reason.isEmpty ? 'no stop reason' : reason} '
+          'after ${_tools.length} tool call(s)',
+    );
+    events.add(
+      HermesAcpTurnEnded(reason, toolCalls: _tools.length, error: error),
+    );
   }
 
   /// A JSON-RPC error as one readable line, or null when [message] carries none.
