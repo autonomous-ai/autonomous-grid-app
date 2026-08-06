@@ -699,6 +699,16 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       thumbVisibility: WidgetStateProperty.all(false),
       interactive: true,
     ),
+    // Material opens a tooltip the instant the pointer enters. In a transcript
+    // that scrolls under a still pointer that means tooltips popping open on
+    // rows flying past — and worse: a tooltip shown mid-scroll gets its overlay
+    // hit-tested before it has been laid out, which throws inside the mouse
+    // tracker and then re-throws every frame after (see ErrorBurstFilter). A
+    // delay is the fix for both, set once here rather than at the nine call
+    // sites that each reached for their own number.
+    tooltipTheme: const TooltipThemeData(
+      waitDuration: Duration(milliseconds: 500),
+    ),
     splashFactory: InkRipple.splashFactory,
     textTheme: textTheme,
     primaryTextTheme: textTheme,

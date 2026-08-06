@@ -13,6 +13,7 @@ import 'features/app_update/logic/app_updater_service.dart';
 import 'features/connectors/presentation/connector_refresh_scope.dart';
 import 'features/skills/presentation/grid_skills_scope.dart';
 import 'infrastructure/logging/app_log.dart';
+import 'infrastructure/logging/error_burst_filter.dart';
 import 'infrastructure/logging/http_log.dart';
 import 'infrastructure/logging/log_file.dart';
 import 'infrastructure/platform/desktop_notifier.dart';
@@ -119,19 +120,33 @@ Future<void> main() async {
 /// [appLog] so a shipped build leaves a stack trace on disk instead of only in
 /// a console no one is watching. The framework's default console presentation is
 /// preserved for local development.
+///
+/// Repeats are collapsed by [ErrorBurstFilter]: an error thrown from a frame is
+/// thrown again by every frame after it, and writing each copy — an fsync per
+/// stack trace, on the UI isolate — is what turns a broken frame into a frozen
+/// app rather than a janky one.
 void _installErrorHandlers(AppLog appLog) {
+  final bursts = ErrorBurstFilter();
   final priorOnError = FlutterError.onError;
   FlutterError.onError = (details) {
     priorOnError?.call(details);
+    final line = bursts.admit(details.exceptionAsString());
+    if (line == null) return;
     appLog.failure(
       'flutter',
-      details.exceptionAsString(),
+      line,
       error: details.exception,
       stackTrace: details.stack,
     );
   };
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
-    appLog.failure('app', 'Uncaught error', error: error, stackTrace: stack);
+    // Keyed on the error itself, not on the sentence below it: every uncaught
+    // error shares that sentence, and one repeating failure must not silence
+    // the next unrelated one.
+    final line = bursts.admit('$error');
+    if (line != null) {
+      appLog.failure('app', 'Uncaught error: $line', stackTrace: stack);
+    }
     return true;
   };
 }

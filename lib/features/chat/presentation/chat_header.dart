@@ -341,7 +341,6 @@ class _HeaderHoverButtonState extends State<_HeaderHoverButton> {
       label: widget.semanticsLabel,
       child: Tooltip(
         message: widget.tooltip,
-        waitDuration: const Duration(milliseconds: 600),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),

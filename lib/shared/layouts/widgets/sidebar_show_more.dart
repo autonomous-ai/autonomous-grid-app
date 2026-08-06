@@ -85,7 +85,6 @@ class _SidebarShowMoreState extends State<SidebarShowMore> {
         label: 'Show more',
         child: Tooltip(
           message: '${widget.remaining} more',
-          waitDuration: const Duration(milliseconds: 600),
           child: MouseRegion(
             cursor: SystemMouseCursors.click,
             onEnter: (_) => _setHovered(true),
