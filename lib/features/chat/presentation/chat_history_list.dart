@@ -509,7 +509,6 @@ class _ArchiveButtonState extends State<_ArchiveButton> {
       label: 'Archive chat',
       child: Tooltip(
         message: 'Archive chat',
-        waitDuration: const Duration(milliseconds: 600),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),

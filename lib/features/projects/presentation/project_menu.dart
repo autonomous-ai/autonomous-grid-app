@@ -328,7 +328,6 @@ class _MenuTriggerState extends State<_MenuTrigger> {
       label: 'Project options',
       child: Tooltip(
         message: 'Project options',
-        waitDuration: const Duration(milliseconds: 600),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),

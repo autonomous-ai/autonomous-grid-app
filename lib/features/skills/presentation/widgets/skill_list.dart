@@ -287,7 +287,6 @@ class _SkillInfo extends ConsumerWidget {
             constraints: const BoxConstraints(maxWidth: _kDescriptionWidth),
             child: Tooltip(
               message: skill.description,
-              waitDuration: const Duration(milliseconds: 600),
               child: Text(
                 skill.description,
                 maxLines: 1,

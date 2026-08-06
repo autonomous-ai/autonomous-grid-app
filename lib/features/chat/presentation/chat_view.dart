@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/composer_text.dart';
@@ -1220,23 +1221,52 @@ class _TranscriptState extends State<_Transcript> {
     );
   }
 
+  /// Take any open tooltip down the moment the transcript starts moving.
+  ///
+  /// A tooltip has no idea the thing it points at is scrolling away — it stays
+  /// pinned where it opened, over rows it no longer describes. And one left open
+  /// across a scroll is how the app froze on 2026-08-06: Flutter hit-tests the
+  /// tooltip's overlay before that overlay has been laid out, which throws inside
+  /// the mouse tracker's own update and then re-throws on every frame after.
+  ///
+  /// Returns false — the notification is still the scrollbar's business too.
+  bool _dismissTooltips(ScrollStartNotification _) {
+    // A scroll can begin *during* layout (new content dimensions handing the
+    // position to a ballistic activity), and dismissing rebuilds the tooltip's
+    // state — which that phase forbids. Wait out the frame when we're in one.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => Tooltip.dismissAllToolTips(),
+      );
+      return false;
+    }
+    Tooltip.dismissAllToolTips();
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final count = widget.messages.length + (widget.trailing != null ? 1 : 0);
     return Stack(
       children: [
-        ListView.builder(
-          controller: widget.scroll,
-          // No horizontal padding: the list spans the pane so its scrollbar sits
-          // on the window edge. The column below insets its own content.
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          itemCount: count,
-          itemBuilder: (context, i) => i < widget.messages.length
-              ? _turn(widget.messages[i])
-              // Not cached: the in-flight bubble is what changes on every
-              // streamed token, which is the whole reason the turns above it
-              // must not.
-              : _TurnColumn(child: widget.trailing ?? const SizedBox.shrink()),
+        NotificationListener<ScrollStartNotification>(
+          onNotification: _dismissTooltips,
+          child: ListView.builder(
+            controller: widget.scroll,
+            // No horizontal padding: the list spans the pane so its scrollbar
+            // sits on the window edge. The column below insets its own content.
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            itemCount: count,
+            itemBuilder: (context, i) => i < widget.messages.length
+                ? _turn(widget.messages[i])
+                // Not cached: the in-flight bubble is what changes on every
+                // streamed token, which is the whole reason the turns above it
+                // must not.
+                : _TurnColumn(
+                    child: widget.trailing ?? const SizedBox.shrink(),
+                  ),
+          ),
         ),
         // The rail hugs the pane's left edge, clear of the centred column. It
         // shows only once the conversation is long enough to be worth navigating.
