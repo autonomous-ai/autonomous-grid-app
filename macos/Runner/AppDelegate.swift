@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import PDFKit
 
 @main
 class AppDelegate: FlutterAppDelegate {
@@ -13,6 +14,11 @@ class AppDelegate: FlutterAppDelegate {
   /// app guessed at. Flutter calls in on this one; the updater channel above
   /// goes the other way.
   private var fontsChannel: FlutterMethodChannel?
+
+  /// Reads the text out of a PDF the user attached to a message. PDF is not a
+  /// format Dart can read, and macOS already ships a reader — so the app asks
+  /// this one rather than shipping a parser of its own.
+  private var documentsChannel: FlutterMethodChannel?
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return true
@@ -45,6 +51,37 @@ class AppDelegate: FlutterAppDelegate {
       }
     }
     fontsChannel = channel
+  }
+
+  /// Opens the channel the composer reads attached PDFs through.
+  func setUpDocumentsChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "grid/documents", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "pdfText":
+        guard let args = call.arguments as? [String: Any],
+              let path = args["path"] as? String else {
+          result(FlutterError(code: "bad_args", message: "pdfText needs a path", details: nil))
+          return
+        }
+        result(Self.pdfText(at: path))
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    documentsChannel = channel
+  }
+
+  /// The text layer of the PDF at `path`, or nil when there isn't one.
+  ///
+  /// nil is a real answer, not an error: a scanned contract is a stack of
+  /// pictures with no text in it, and the app tells the user that rather than
+  /// sending an empty document to a model as if it had been read.
+  private static func pdfText(at path: String) -> String? {
+    guard let document = PDFDocument(url: URL(fileURLWithPath: path)) else { return nil }
+    guard let text = document.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !text.isEmpty else { return nil }
+    return text
   }
 
   /// The font families a user could reasonably pick, split by what they are for.

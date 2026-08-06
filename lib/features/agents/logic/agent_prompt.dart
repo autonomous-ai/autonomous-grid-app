@@ -25,7 +25,8 @@ String buildAgentPrompt(
   int budget = kAgentTranscriptBudget,
 }) {
   if (unseen.isEmpty) return '';
-  final latest = unseen.last.text.trim();
+  // The new message and whatever the user attached to it, as one request.
+  final latest = messageForModel(unseen.last).trim();
   final prior = [
     for (final message in unseen.take(unseen.length - 1))
       if (_renderTurn(message) case final turn when turn.isNotEmpty) turn,
@@ -53,12 +54,15 @@ String buildAgentPrompt(
 /// Media is named rather than skipped. A message can carry a picture and no text
 /// at all, and dropping those left the agent unaware a picture had ever been
 /// exchanged. The path is real and on this machine, so an agent with file tools
-/// can go and look at it.
+/// can go and look at it. Attached documents come through [messageForModel],
+/// which carries their text *and* their path — the text so the agent needn't
+/// spend a tool call on it, the path so it can open the original.
 ///
 /// Empty (and dropped by the caller) only when the turn holds nothing at all.
 String _renderTurn(ChatMessage message) {
+  final text = messageForModel(message).trim();
   final body = [
-    if (message.text.trim().isNotEmpty) _fence(message.text.trim()),
+    if (text.isNotEmpty) _fence(text),
     for (final media in message.media)
       '[${media.kind.name} attached: ${media.path}]',
   ].join('\n');

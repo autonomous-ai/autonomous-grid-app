@@ -28,7 +28,7 @@ class _Actions extends StatelessWidget {
     required this.approvalPicker,
     this.agentPicker,
     required this.modelPicker,
-    required this.onPickImage,
+    required this.onAttachFile,
     required this.onOpenPrompts,
     required this.promptsSaveInput,
     required this.onSend,
@@ -48,7 +48,7 @@ class _Actions extends StatelessWidget {
   /// no agent answers (a picture goes to the grid).
   final Widget? agentPicker;
   final Widget modelPicker;
-  final VoidCallback onPickImage;
+  final VoidCallback onAttachFile;
   final VoidCallback onOpenPrompts;
   final bool promptsSaveInput;
   final VoidCallback onSend;
@@ -63,7 +63,7 @@ class _Actions extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
       child: Row(
         children: [
-          _AttachButton(canAttach: canAttach, onPickImage: onPickImage),
+          _AttachButton(canAttach: canAttach, onAttach: onAttachFile),
           _PromptsButton(
             enabled: !sending,
             savesInput: promptsSaveInput,
@@ -117,10 +117,10 @@ class _Actions extends StatelessWidget {
 }
 
 class _AttachButton extends StatelessWidget {
-  const _AttachButton({required this.canAttach, required this.onPickImage});
+  const _AttachButton({required this.canAttach, required this.onAttach});
 
   final bool canAttach;
-  final VoidCallback onPickImage;
+  final VoidCallback onAttach;
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +131,11 @@ class _AttachButton extends StatelessWidget {
       width: 32,
       height: 32,
       child: IconButton(
-        tooltip: canAttach ? 'Attach image' : 'Up to $maxChatImages images',
+        // What it takes, in the words of the person attaching it: pictures and
+        // office files, or a paste of either.
+        tooltip: canAttach
+            ? 'Attach a picture or a document'
+            : 'Up to $maxChatImages pictures and $maxChatFiles files',
         iconSize: AppControl.iconSize,
         visualDensity: VisualDensity.compact,
         color: AppPalette.textSecondary,
@@ -141,7 +145,7 @@ class _AttachButton extends StatelessWidget {
         // whole response.
         style: _noSplash,
         icon: const Icon(Icons.add_rounded),
-        onPressed: canAttach ? onPickImage : null,
+        onPressed: canAttach ? onAttach : null,
       ),
     );
   }

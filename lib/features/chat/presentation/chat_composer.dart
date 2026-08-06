@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/composer_keys.dart';
 import '../../../shared/widgets/liquid_glass.dart';
-import '../../../shared/widgets/send_on_enter.dart';
+import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/attachment_bar.dart';
+import '../../playground/presentation/file_chip.dart';
+import '../logic/file_attachments.dart';
 
 part 'chat_composer_actions.dart';
 part 'chat_composer_context.dart';
-
-/// Max images per vision chat message.
-const int maxChatImages = 4;
 
 /// The composer: one rounded card holding everything a message needs — what's
 /// attached, what you're typing, which model answers, and Send.
@@ -23,6 +23,7 @@ class ComposerSection extends StatelessWidget {
     super.key,
     required this.messageController,
     required this.attachments,
+    required this.files,
     required this.modality,
     required this.needsImage,
     required this.sending,
@@ -33,8 +34,10 @@ class ComposerSection extends StatelessWidget {
     this.agentPicker,
     required this.modelPicker,
     required this.onAddAttachment,
-    required this.onPickImage,
+    required this.onAttachFile,
+    required this.onPaste,
     required this.onRemoveAttachment,
+    required this.onRemoveFile,
     required this.onOpenPrompts,
     required this.promptsSaveInput,
     required this.onSend,
@@ -43,6 +46,10 @@ class ComposerSection extends StatelessWidget {
 
   final TextEditingController messageController;
   final List<MediaAttachment> attachments;
+
+  /// The documents on this message — a report, a spreadsheet — shown as chips
+  /// above the field so what will be sent is visible before Send.
+  final List<ChatFile> files;
   final PlaygroundModality modality;
   final bool needsImage;
   final bool sending;
@@ -64,8 +71,16 @@ class ComposerSection extends StatelessWidget {
   final Widget? agentPicker;
   final Widget modelPicker;
   final ValueChanged<MediaAttachment> onAddAttachment;
-  final VoidCallback onPickImage;
+
+  /// Opens the file picker — pictures and documents in one list, since "attach"
+  /// is one thought for the person doing it.
+  final VoidCallback onAttachFile;
+
+  /// Takes over ⌘V / Ctrl+V so a screenshot lands as an attachment. See
+  /// [ComposerKeys].
+  final VoidCallback onPaste;
   final ValueChanged<int> onRemoveAttachment;
+  final ValueChanged<int> onRemoveFile;
 
   /// Opens the saved-prompt menu, or — when there's already text — saves it as a
   /// new prompt. [promptsSaveInput] says which, so the button's icon and tooltip
@@ -124,13 +139,16 @@ class ComposerSection extends StatelessWidget {
               _Attachments(
                 isText: _isText,
                 attachments: attachments,
+                files: files,
                 needsImage: needsImage,
                 onAdd: onAddAttachment,
                 onRemoveAt: onRemoveAttachment,
+                onRemoveFileAt: onRemoveFile,
               ),
-              SendOnEnter(
+              ComposerKeys(
                 canSend: canSend,
                 onSend: onSend,
+                onPaste: onPaste,
                 builder: (context, focusNode) => TextField(
                   controller: messageController,
                   focusNode: focusNode,
@@ -156,14 +174,18 @@ class ComposerSection extends StatelessWidget {
                 ),
               ),
               _Actions(
+                // Room for either kind: the one button attaches both, so it
+                // stays live until the message is full of pictures *and* files.
                 canAttach:
-                    _isText && !sending && attachments.length < maxChatImages,
+                    _isText &&
+                    (attachments.length < maxChatImages ||
+                        files.length < maxChatFiles),
                 sending: sending,
                 canSend: canSend,
                 approvalPicker: approvalPicker,
                 agentPicker: agentPicker,
                 modelPicker: modelPicker,
-                onPickImage: onPickImage,
+                onAttachFile: onAttachFile,
                 onOpenPrompts: onOpenPrompts,
                 promptsSaveInput: promptsSaveInput,
                 onSend: onSend,

@@ -192,9 +192,11 @@ List<Map<String, dynamic>> buildResponsesInput(
   final items = <Map<String, dynamic>>[];
   for (final m in history) {
     final isUser = m.role == ChatRole.user;
+    // The turn plus the text of any files attached to it — see [messageForModel].
+    final text = messageForModel(m);
     final parts = <Map<String, dynamic>>[
-      if (m.text.isNotEmpty)
-        {'type': isUser ? 'input_text' : 'output_text', 'text': m.text},
+      if (text.isNotEmpty)
+        {'type': isUser ? 'input_text' : 'output_text', 'text': text},
       if (isUser)
         for (final md in m.media)
           if (md.kind == MediaKind.image)

@@ -138,18 +138,28 @@ final chatSenderProvider = Provider<ChatSender>(
 /// text (vision) chat [DefaultChatSender] also re-encodes them into the request;
 /// for media generation the images ride in the media payload instead, so here
 /// they're display-only.
+///
+/// Attached [files] ride along as they are: they were read when the user
+/// attached them, and they stay beside the text rather than inside it so the
+/// bubble shows a chip where the model gets the document (see [messageForModel]).
 Future<ChatMessage> buildUserTurn({
   required String text,
   required List<MediaAttachment> attachments,
   required Directory outputsDir,
+  List<ChatFile> files = const [],
 }) async {
   if (attachments.isEmpty) {
-    return ChatMessage(role: ChatRole.user, text: text);
+    return ChatMessage(role: ChatRole.user, text: text, files: files);
   }
   final media = await saveMediaOutputs([
     for (final a in attachments) a.toMediaFile(),
   ], outputsDir);
-  return ChatMessage(role: ChatRole.user, text: text, media: media);
+  return ChatMessage(
+    role: ChatRole.user,
+    text: text,
+    media: media,
+    files: files,
+  );
 }
 
 /// The real [ChatSender], driving the HTTP chat/media transports.
@@ -418,6 +428,10 @@ class DefaultChatSender implements ChatSender {
     ];
     for (final m in history) {
       final role = m.role == ChatRole.user ? 'user' : 'assistant';
+      // What the model reads is the turn *plus its documents* — the relay has no
+      // filesystem, so a file's text reaching it here is the only way an
+      // attachment means anything to a plain model.
+      final text = messageForModel(m);
       final images = m.role == ChatRole.user
           ? [
               for (final md in m.media)
@@ -426,12 +440,12 @@ class DefaultChatSender implements ChatSender {
           : const <ChatMedia>[];
 
       if (images.isEmpty) {
-        if (m.text.isNotEmpty) messages.add({'role': role, 'content': m.text});
+        if (text.isNotEmpty) messages.add({'role': role, 'content': text});
         continue;
       }
 
       final content = <Map<String, dynamic>>[
-        if (m.text.isNotEmpty) {'type': 'text', 'text': m.text},
+        if (text.isNotEmpty) {'type': 'text', 'text': text},
         for (final img in images)
           if (_imageDataUri(img.path) case final uri?)
             {

@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/composer_text.dart';
+import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -121,6 +126,73 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     if (_attachments.isNotEmpty) setState(_attachments.clear);
   }
 
+  /// How many pictures this mode takes: one to animate, three to edit, and a
+  /// vision chat's own limit for a plain message.
+  int _imageLimit(PlaygroundModality modality) => switch (modality) {
+    PlaygroundModality.video => 1,
+    PlaygroundModality.image => 3,
+    PlaygroundModality.text => maxChatImages,
+  };
+
+  /// ⌘V / Ctrl+V: a screenshot becomes an attachment, copied images become
+  /// attachments, and anything else lands as text — the same paste the Chat tab
+  /// does, since this dialog is where most people first try a model.
+  Future<void> _paste() async {
+    final paste = await readClipboardPaste();
+    if (!mounted) return;
+    final modality = _modalityFor(ref.read(playgroundModelsProvider));
+    switch (paste) {
+      case PastedImage(:final bytes, :final filename):
+        _attachImage(
+          MediaAttachment(filename: filename, bytes: bytes),
+          modality,
+        );
+      case PastedFiles(:final paths):
+        await _attachImageFiles(paths, modality);
+      case PastedText(:final text):
+        _insertText(text);
+      case PastedNothing():
+        break;
+    }
+  }
+
+  /// Attaches the images among [paths]. The dialog is a model smoke test with no
+  /// agent behind it, so a document has nothing here that could read it — those
+  /// belong in the Chat tab, which says so rather than taking the file and
+  /// quietly ignoring it.
+  Future<void> _attachImageFiles(
+    List<String> paths,
+    PlaygroundModality modality,
+  ) async {
+    for (final path in paths) {
+      if (!isImageFilename(path)) continue;
+      final bytes = await File(path).readAsBytes();
+      if (!mounted) return;
+      _attachImage(
+        MediaAttachment(filename: fileNameOf(path), bytes: bytes),
+        modality,
+      );
+    }
+  }
+
+  void _attachImage(MediaAttachment image, PlaygroundModality modality) {
+    if (_attachments.length >= _imageLimit(modality)) return;
+    setState(() => _attachments.add(image));
+  }
+
+  /// Drops pasted text in at the cursor, exactly where the field would have.
+  void _insertText(String insert) {
+    final selection = _message.selection;
+    final result = insertIntoField(
+      _message.text,
+      start: selection.start,
+      end: selection.end,
+      insert: insert,
+    );
+    _message.text = result.text;
+    _message.selection = TextSelection.collapsed(offset: result.cursor);
+  }
+
   void _scrollToBottom() {
     if (!_scroll.hasClients) return;
     _scroll.jumpTo(_scroll.position.maxScrollExtent);
@@ -215,11 +287,19 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
           networkName: network.name,
         ),
         const SizedBox(height: 12),
-        if (!useLocal && modality != PlaygroundModality.text) ...[
+        // The bar is for the media modes — but it also appears the moment a
+        // picture is pasted into a plain chat, so a screenshot has somewhere to
+        // land instead of riding along invisibly.
+        if (!useLocal &&
+            (modality != PlaygroundModality.text ||
+                _attachments.isNotEmpty)) ...[
           AttachmentBar(
             attachments: _attachments,
-            maxCount: needsImage ? 1 : 3,
-            hint: needsImage
+            maxCount: _imageLimit(modality),
+            showAddTile: modality != PlaygroundModality.text,
+            hint: modality == PlaygroundModality.text
+                ? null
+                : needsImage
                 ? 'Video needs a starting image to animate.'
                 : 'Optional: attach up to 3 images to edit instead of generate.',
             onAdd: (a) => setState(() => _attachments.add(a)),
@@ -264,6 +344,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
           canSend: canSend,
           hint: _inputHint(modality),
           onSend: () => _send(network),
+          onPaste: () => unawaited(_paste()),
         ),
       ],
     );

@@ -1,5 +1,8 @@
 import '../../../infrastructure/cli/agent_event.dart';
+import 'chat_file.dart';
 import 'message_media.dart';
+
+export 'chat_file.dart';
 
 /// Who authored a transcript message.
 enum ChatRole { user, assistant }
@@ -21,6 +24,7 @@ class ChatMessage {
     required this.role,
     this.text = '',
     this.media = const [],
+    this.files = const [],
     this.sources = const [],
     this.plan = const [],
     this.model,
@@ -31,6 +35,11 @@ class ChatMessage {
   final ChatRole role;
   final String text;
   final List<ChatMedia> media;
+
+  /// Documents the user attached to this turn — a report, a spreadsheet, a
+  /// contract. Kept apart from [text] so the bubble shows them as files while the
+  /// model reads their content (see [messageForModel]). Empty on assistant turns.
+  final List<ChatFile> files;
 
   /// Web pages an agent turn cited while answering — shown as clickable sources
   /// under the reply. Empty for user turns and for answers built without the
@@ -72,6 +81,7 @@ class ChatMessage {
     ChatRole? role,
     String? text,
     List<ChatMedia>? media,
+    List<ChatFile>? files,
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
     String? model,
@@ -81,12 +91,29 @@ class ChatMessage {
     role: role ?? this.role,
     text: text ?? this.text,
     media: media ?? this.media,
+    files: files ?? this.files,
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
     model: model ?? this.model,
     took: took ?? this.took,
     firstToken: firstToken ?? this.firstToken,
   );
+}
+
+/// The turn as a model reads it: what the user typed, followed by the text of
+/// any files they attached.
+///
+/// The two are joined only here, on the way out — the transcript keeps them
+/// apart so the user's bubble stays the sentence they wrote with the files named
+/// beside it, rather than the sentence buried under a spreadsheet. Every path
+/// that sends a turn goes through this (relay chat, Responses, the agent
+/// prompt), so a file attached in the composer reaches whoever answers.
+String messageForModel(ChatMessage message) {
+  if (message.files.isEmpty) return message.text;
+  return [
+    if (message.text.trim().isNotEmpty) message.text.trim(),
+    for (final file in message.files) file.promptBlock,
+  ].join('\n\n');
 }
 
 /// How long a reply took, in the shortest form that stays honest: `840ms`,
