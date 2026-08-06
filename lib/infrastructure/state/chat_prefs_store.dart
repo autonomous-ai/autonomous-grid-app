@@ -20,6 +20,7 @@ class ChatPrefs {
     this.detail = AgentDetailMode.stepsCommands,
     this.themeMode = ThemeMode.light,
     this.chatAgent = defaultChatAgent,
+    this.agentBrowser = false,
     this.uiFontFamily,
     this.codeFontFamily,
     this.uiFontSize = defaultUiFontSize,
@@ -84,6 +85,19 @@ class ChatPrefs {
   /// no-longer-installed id falls back to whatever is installed.
   final String chatAgent;
 
+  /// Whether an agent may drive a browser this app opens for it.
+  ///
+  /// **Off by default, and it has to be.** Saying yes means a Chrome window
+  /// starts on this computer — a separate profile with none of the user's tabs
+  /// or logins — and it stays up until the app closes. A person typing a
+  /// question into a chat box has not asked for that, and an app that opens a
+  /// browser unbidden reads as one that has been taken over.
+  ///
+  /// It does not gate the extension lane: that one drives a Chrome the user
+  /// installed an extension into and started themselves, which is a yes they
+  /// have already given.
+  final bool agentBrowser;
+
   /// The family the UI is set in, or null for the system font.
   ///
   /// Null is a real value here, not a missing one: it means "whatever this Mac's
@@ -111,6 +125,7 @@ class ChatPrefs {
     AgentDetailMode? detail,
     ThemeMode? themeMode,
     String? chatAgent,
+    bool? agentBrowser,
     String? uiFontFamily,
     String? codeFontFamily,
     double? uiFontSize,
@@ -124,6 +139,7 @@ class ChatPrefs {
     detail: detail ?? this.detail,
     themeMode: themeMode ?? this.themeMode,
     chatAgent: chatAgent ?? this.chatAgent,
+    agentBrowser: agentBrowser ?? this.agentBrowser,
     // The `?? this.x` idiom can't express "back to the system font" — passing
     // null reads as "leave it alone" — so going back to the default needs a flag
     // of its own. Same shape as `clearArchivedAt` on Conversation, and for the
@@ -145,6 +161,9 @@ class ChatPrefs {
     detail: _detailFrom(json['detail']),
     themeMode: _themeModeFrom(json['themeMode']),
     chatAgent: json['chatAgent'] as String? ?? defaultChatAgent,
+    // Anything but a stored `true` reads as off: a corrupt or hand-edited file
+    // must never be what turns a browser on.
+    agentBrowser: json['agentBrowser'] == true,
     uiFontFamily: _familyFrom(json['uiFontFamily']),
     codeFontFamily: _familyFrom(json['codeFontFamily']),
     uiFontSize: _sizeFrom(
@@ -168,6 +187,7 @@ class ChatPrefs {
     'detail': detail.name,
     'themeMode': themeMode.name,
     'chatAgent': chatAgent,
+    'agentBrowser': agentBrowser,
     'uiFontFamily': uiFontFamily,
     'codeFontFamily': codeFontFamily,
     'uiFontSize': uiFontSize,
@@ -237,6 +257,7 @@ class ChatPrefs {
       other.detail == detail &&
       other.themeMode == themeMode &&
       other.chatAgent == chatAgent &&
+      other.agentBrowser == agentBrowser &&
       other.uiFontFamily == uiFontFamily &&
       other.codeFontFamily == codeFontFamily &&
       other.uiFontSize == uiFontSize &&
@@ -250,6 +271,7 @@ class ChatPrefs {
     detail,
     themeMode,
     chatAgent,
+    agentBrowser,
     uiFontFamily,
     codeFontFamily,
     uiFontSize,
@@ -354,6 +376,9 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
       _update(state.copyWith(detail: detail));
 
   void setChatAgent(String id) => _update(state.copyWith(chatAgent: id));
+
+  void setAgentBrowser(bool allowed) =>
+      _update(state.copyWith(agentBrowser: allowed));
 
   void setThemeMode(ThemeMode mode) => _update(state.copyWith(themeMode: mode));
 

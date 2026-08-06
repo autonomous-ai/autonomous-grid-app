@@ -10,6 +10,7 @@ import '../../../../infrastructure/cli/chrome_bridge_service.dart';
 import '../../../../infrastructure/cli/chrome_extension_probe.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/model_context_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../network/logic/app_guide_snippets.dart';
@@ -107,8 +108,9 @@ class ClaudeChatSender implements ChatSender {
     );
     final prompt = planFirst ? withPlanPreamble(turn.text) : turn.text;
 
-    // How much of the model Claude Code may fill before it summarizes. Null
-    // until something knows — see [modelContextWindowProvider].
+    // How much of the model Claude Code may fill before it summarizes — what
+    // the grid advertises, what an engine taught, or the assumption the app
+    // falls back on. See [modelContextWindowProvider].
     final window = _ref.read(modelContextWindowProvider(model));
 
     // Which browser this turn can reach, if any — decided per turn because the
@@ -141,9 +143,7 @@ class ClaudeChatSender implements ChatSender {
               network.relayBaseUrl,
               network.relayApiKey,
               [model],
-              compactWindow: window == null
-                  ? null
-                  : agentContextCeiling(window),
+              compactWindow: agentContextCeiling(window),
             ),
       planFirst: planFirst,
       slot: turn.slot,
@@ -188,6 +188,7 @@ class ClaudeChatSender implements ChatSender {
       extensionState: _ref.read(chromeExtensionProbeProvider).detect(),
       cliSupportsChrome: await _ref.read(claudeSupportsChromeProvider.future),
       cdpReady: _ref.read(chromeBridgeAvailableProvider),
+      cdpAllowed: _ref.read(chatPrefsProvider).agentBrowser,
     );
     if (plan.lane != ClaudeBrowserLane.cdp) {
       log.info('agent', 'Browser lane ${plan.lane.name}: ${plan.reason}');

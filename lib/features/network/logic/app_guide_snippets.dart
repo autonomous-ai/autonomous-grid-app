@@ -273,9 +273,12 @@ String claudeTierModel(String tier, List<String> models) => models.firstWhere(
 /// steps end in a connection error.
 ///
 /// [compactWindow] is how much context the model can be filled with before
-/// Claude Code has to make room (see [kClaudeCompactWindowEnv]); omitted — as
-/// the guide and the "Set up for me" merge do — when nothing is known about the
-/// model, since Claude Code's own default is the better guess of the two.
+/// Claude Code has to make room (see [kClaudeCompactWindowEnv]). Omitted by the
+/// guide and the "Set up for me" merge, which configure a terminal rather than a
+/// turn and so have no one model to size: the user may `/model` their way onto
+/// anything the grid serves. A chat turn always sends one — see
+/// `modelContextWindowProvider`, which falls back on `kAssumedContextWindow`
+/// rather than leaving the number to Claude Code's idea of an Anthropic model.
 Map<String, String> claudeCodeEnv(
   String base,
   String key,

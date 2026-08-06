@@ -6,10 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/grid_paths.dart';
 import 'host_environment.dart';
 
-/// The DevTools port the app's own browser listens on. Chrome's default, so a
-/// browser the user already started with `--remote-debugging-port` is picked up
-/// instead of a second one being launched beside it.
-const int kChromeBridgePort = 9222;
+/// The DevTools port the app's own browser listens on.
+///
+/// Deliberately **not** Chrome's default 9222. On that port the bridge would
+/// find any browser the user had already started with `--remote-debugging-port`
+/// — often their real profile, opened for their own debugging — and quietly
+/// hand the agent every session they are signed in to. The app's browser is the
+/// app's: its own port, its own profile, nothing borrowed.
+const int kChromeBridgePort = 9333;
 
 /// The npm package that turns a DevTools endpoint into MCP browser tools.
 const String kChromeDevtoolsMcpPackage = 'chrome-devtools-mcp@latest';
@@ -112,8 +116,9 @@ class ChromeBridge {
 
   String get url => 'http://127.0.0.1:$port';
 
-  /// Stop the browser this bridge started. A browser that was already listening
-  /// when [ensureRunning] was called belongs to the user and is left alone.
+  /// Stop the browser this bridge started — when the app closes, and the moment
+  /// the user turns the browser off. A process that was already listening on
+  /// [port] was not started here and is left alone.
   void dispose() {
     _process?.kill();
     _process = null;
