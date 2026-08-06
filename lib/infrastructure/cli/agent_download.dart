@@ -23,7 +23,17 @@ const Duration kDownloadTimeout = Duration(minutes: 10);
 /// bounce to a CDN). Throws [AgentDownloadException] on anything but 200, and
 /// on a transfer that outstays [kDownloadTimeout] — a stalled connection would
 /// otherwise leave an install spinning with nothing behind it.
-Future<File> downloadToFile(Uri url, Directory dir) async {
+///
+/// [onProgress] is called as bytes land, with the total when the server sent a
+/// `Content-Length` and null when it didn't. It fires per chunk — thousands of
+/// times on a 60 MB archive — so a caller that puts it on screen has to throttle
+/// it. Without this the only honest thing an installer could show for a minute
+/// was a spinner, which reads the same whether it is downloading or hung.
+Future<File> downloadToFile(
+  Uri url,
+  Directory dir, {
+  void Function(int received, int? total)? onProgress,
+}) async {
   final dest = File('${dir.path}/${_basename(url.path)}');
   final client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 30)
@@ -39,8 +49,19 @@ Future<File> downloadToFile(Uri url, Directory dir) async {
         'Download failed (${response.statusCode}): $url',
       );
     }
+    // -1 when the server didn't say; passed on as null rather than as a total
+    // of -1, so a caller can't accidentally render "24 of -1 MB".
+    final total = response.contentLength < 0 ? null : response.contentLength;
+    var received = 0;
     final sink = dest.openWrite();
-    await response.pipe(sink).timeout(kDownloadTimeout);
+    final body = onProgress == null
+        ? response
+        : response.map((chunk) {
+            received += chunk.length;
+            onProgress(received, total);
+            return chunk;
+          });
+    await body.pipe(sink).timeout(kDownloadTimeout);
     return dest;
   } on AgentDownloadException {
     rethrow;

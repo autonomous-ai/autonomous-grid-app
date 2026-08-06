@@ -75,10 +75,13 @@ class GitInstallController extends Notifier<GitInstallState> {
     state = const GitInstallRunning('Downloading Git…');
     try {
       await installer.install(
-        onLog: (line) {
+        onStep: (line) {
           log.info('git', line);
           state = GitInstallRunning(line);
         },
+        // Screen only. Sixty "Downloading — N of 61 MB" lines in the log would
+        // bury the three that say what actually happened.
+        onProgress: (line) => state = GitInstallRunning(line),
       );
     } on GitInstallException catch (error) {
       // The raw failure is already in the log above the humanised one (§6).
