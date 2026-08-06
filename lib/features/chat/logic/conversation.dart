@@ -331,3 +331,16 @@ DateTime? _parseNullableDate(Object? raw) =>
     raw is String ? DateTime.tryParse(raw) : null;
 
 final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0);
+
+/// The approval mode [conversation] runs under, given the app's standing
+/// [fallback].
+///
+/// Pure, and the one place the fallback rule lives: `chatApprovalModeProvider`
+/// answers for the open chat, while a turn dispatched into a background chat
+/// has to ask about that chat instead. It lives here rather than beside that
+/// provider because the provider reads the chat controller, and the controller
+/// needs this — a rule about a conversation belongs with the conversation.
+AgentApprovalMode approvalFor(
+  Conversation? conversation,
+  AgentApprovalMode fallback,
+) => conversation?.approval ?? fallback;

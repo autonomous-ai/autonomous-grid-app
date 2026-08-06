@@ -13,7 +13,7 @@ import '../../projects/logic/project.dart';
 import '../../projects/logic/project_folder_status.dart';
 import '../../projects/presentation/create_project_dialog.dart';
 import '../../projects/presentation/project_menu.dart';
-import '../../scheduled/logic/task_delivery.dart';
+import '../../scheduled/logic/task_conversation_id.dart';
 import '../../scheduled/logic/task_unread_store.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';

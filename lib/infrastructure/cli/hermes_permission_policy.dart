@@ -15,15 +15,6 @@ import 'agent_event.dart';
 /// so, and if there's nobody to ask (no chat listening), the answer is still no.
 const safeToolKinds = {'read', 'search', 'fetch', 'think'};
 
-/// Hermes's own id for "allow every time in this session" — the widest grant the
-/// app hands out. `allow_always` (which Hermes persists to its config, forever,
-/// with no way to take it back from this app) is deliberately never chosen.
-const String kAllowForChatOption = 'allow_session';
-
-/// One choice the agent offered for a permission request: its stable id and the
-/// ACP kind hint (`allow_once` / `allow_always` / `reject_once` / `reject_always`).
-typedef HermesPermissionOption = ({String optionId, String kind});
-
 /// What to do with a permission request the agent raised.
 sealed class HermesPermissionDecision {
   const HermesPermissionDecision();

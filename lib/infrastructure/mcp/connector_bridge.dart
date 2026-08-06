@@ -35,7 +35,6 @@ class ConnectorBridge {
   ConnectorBridge({
     required this.readTokens,
     required this.restEntryFor,
-    this.refreshToken,
     RestInvoker? invoker,
     McpProxy? proxy,
     Directory? home,
@@ -72,7 +71,17 @@ class ConnectorBridge {
   ///
   /// Null means "nobody wired renewal up": the call still goes out with what
   /// the store holds, which is exactly the old behaviour.
-  final Future<String?> Function(String connector)? refreshToken;
+  /// How a dead credential is renewed, wired by whoever starts the bridge
+  /// (`ConnectorRefreshScope`) rather than passed in here.
+  ///
+  /// Not a constructor argument because the half that knows how to renew — a
+  /// self-registered token goes back to its provider, a gateway one to the
+  /// gateway, and a renewed token has to be re-projected into every agent —
+  /// is the connector link controller, and every agent adapter reads this
+  /// bridge for its endpoint. Taking that controller here would close a loop
+  /// through the whole agents feature. Null until wired, which the renewal
+  /// path already reports as "could not renew" rather than crashing.
+  Future<String?> Function(String connector)? refreshToken;
 
   final RestInvoker _invoker;
   final McpProxy _proxyClient;

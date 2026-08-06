@@ -19,7 +19,6 @@ import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
-import 'chat_approval.dart';
 import 'chat_goal.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';

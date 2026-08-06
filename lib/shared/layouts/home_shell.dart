@@ -10,6 +10,7 @@ import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
 import '../../features/node_setup/logic/background_model_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
+import '../../features/scheduled/logic/task_conversation_id.dart';
 import '../../features/scheduled/logic/task_unread_store.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';

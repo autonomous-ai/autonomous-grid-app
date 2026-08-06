@@ -12,6 +12,7 @@ import '../../agents/logic/adapters/hermes_tool.dart';
 import '../logic/cron_output.dart';
 import '../logic/job_schedule.dart';
 import '../logic/scheduled_job.dart';
+import '../logic/scheduled_job_outputs.dart';
 import '../logic/scheduled_jobs_controller.dart';
 import 'widgets/job_detail.dart';
 import 'widgets/job_list.dart';
