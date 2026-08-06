@@ -206,6 +206,10 @@ class ClientAppConfigurator {
       // The app's chat is the one gate over what the agent runs — so Hermes must
       // not auto-approve dangerous commands behind it (see [ensureManualApprovals]).
       ensureManualApprovals(editor);
+      // Write the per-turn tool-call budget rather than inheriting it silently:
+      // Hermes stops a turn at this number without telling anyone, and the chat
+      // can only explain that to the user if it knows the number.
+      ensureToolCallBudget(editor);
       await _backupThenWrite(config, editor.toString().trimRight());
 
       // Also drop the pair into `.env` as a fallback for other tools that read

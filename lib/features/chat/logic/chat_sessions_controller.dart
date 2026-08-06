@@ -139,6 +139,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     Conversation conversation, {
     required SendPhase phase,
     bool awaitingPlan = false,
+    bool outOfSteps = false,
     bool makeActive = false,
   }) {
     // Talking in a chat un-files it. Reaching an archived chat takes opening it
@@ -161,7 +162,8 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
         )
         .withPhase(saved.id, phase)
         .withError(saved.id, null)
-        .withAwaitingPlan(saved.id, awaitingPlan);
+        .withAwaitingPlan(saved.id, awaitingPlan)
+        .withOutOfSteps(saved.id, outOfSteps);
   }
 
   /// Send a turn — implemented by [_ChatSend], called by the queue, the goal
@@ -525,6 +527,32 @@ class ChatSessionsController extends _ChatSessions
       message: 'The plan looks good — go ahead and carry it out.',
       planFirst: false,
     );
+  }
+
+  /// Send the agent back in where it ran out of room.
+  ///
+  /// The assistant didn't stop because it was finished — it used every tool call
+  /// one turn is allowed and Hermes made it summarise. Carrying on is a fresh
+  /// turn with a fresh budget, and the agent keeps the conversation, so the
+  /// message only has to point it at the work it named itself.
+  Future<void> continueTurn() {
+    if (!state.outOfSteps || state.sending) return Future.value();
+    final network = ref.read(selectedNetworkProvider);
+    final active = state.active;
+    if (network == null || active == null) return Future.value();
+    return send(
+      network: network,
+      model: active.model,
+      message: 'Carry on from where you stopped — finish the steps still open.',
+    );
+  }
+
+  /// Wave away the "carry on" bar without sending anything — the work stopping
+  /// short may be fine, and the user may simply want to say something else.
+  void dismissOutOfSteps() {
+    final id = state.activeId;
+    if (id == null || !state.outOfStepsFor(id)) return;
+    state = state.withOutOfSteps(id, false);
   }
 
   /// Dismiss the proposed plan without running it — the plan stays in the

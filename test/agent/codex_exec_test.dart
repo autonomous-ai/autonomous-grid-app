@@ -622,6 +622,57 @@ void main() {
     });
   });
 
+  group('agentSpentToolBudget — stopped for want of room, not of work', () {
+    AgentPlanEntry step(String content, AgentPlanStatus status) =>
+        AgentPlanEntry(content: content, status: status);
+
+    final unfinished = [
+      step('Idempotency for the webhook', AgentPlanStatus.done),
+      step('Update the architecture doc', AgentPlanStatus.active),
+      step('Verify and commit', AgentPlanStatus.pending),
+    ];
+
+    test('a turn that used every call it had and left steps open ran out of '
+        'room — the case a user reads as "it keeps stopping halfway"', () {
+      // The 2026-08-06 turn: 95 tool calls against a budget of 90, plan at 3/5,
+      // and the agent's runtime called it a clean end_turn like any other.
+      expect(
+        agentSpentToolBudget(toolCalls: 95, budget: 90, plan: unfinished),
+        isTrue,
+      );
+    });
+
+    test('a turn still inside its budget stopped for some other reason, and '
+        'must not be explained away by this one', () {
+      expect(
+        agentSpentToolBudget(toolCalls: 12, budget: 90, plan: unfinished),
+        isFalse,
+      );
+    });
+
+    test('a finished plan is never reported as cut short, however many tools it '
+        'took to get there', () {
+      final done = [
+        step('Idempotency for the webhook', AgentPlanStatus.done),
+        step('Verify and commit', AgentPlanStatus.done),
+      ];
+      // The count is tool calls while the budget counts model round-trips, so a
+      // busy finished turn can pass the number without ever hitting the cap.
+      expect(
+        agentSpentToolBudget(toolCalls: 200, budget: 90, plan: done),
+        isFalse,
+      );
+    });
+
+    test('no budget means no verdict — an agent with no cap can never hit '
+        'one', () {
+      expect(
+        agentSpentToolBudget(toolCalls: 95, budget: 0, plan: unfinished),
+        isFalse,
+      );
+    });
+  });
+
   group('isAgentWork — thinking about the step is not doing it', () {
     AgentActivity activity(AgentActivityKind kind) => AgentActivity(
       id: 'a1',

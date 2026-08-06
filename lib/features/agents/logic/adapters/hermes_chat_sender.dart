@@ -6,6 +6,7 @@ import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/cli/hermes_acp_service.dart';
 import '../../../../infrastructure/cli/hermes_acp_setup.dart';
+import '../../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../playground/logic/chat_message.dart';
@@ -312,6 +313,9 @@ class HermesChatSender implements ChatSender {
     // is reset by a plan revision: an agent ticks its boxes on the way out.
     var endedCleanly = false;
     var workedAtAll = false;
+    // How many tools the turn called, read off its ending — the one number that
+    // separates an agent that finished from one Hermes cut off at its budget.
+    var turnCalls = 0;
     // Hermes's own words when the turn ends in an error rather than an answer —
     // null on an ordinary turn. Held here because it arrives with the turn's end
     // and is read once the stream closes.
@@ -394,8 +398,13 @@ class HermesChatSender implements ChatSender {
             armIdle();
             answer.write(text);
             updates.add(ChatSendStreaming(answer.toString()));
-          case HermesAcpTurnEnded(endedCleanly: final clean, :final error):
+          case HermesAcpTurnEnded(
+            endedCleanly: final clean,
+            :final toolCalls,
+            :final error,
+          ):
             endedCleanly = clean;
+            turnCalls = toolCalls;
             turnError = error;
         }
       },
@@ -424,6 +433,23 @@ class HermesChatSender implements ChatSender {
         // app can't see, and calling a finished answer a failure on the strength
         // of an unticked box put an error over turns that had answered (§5).
         final plan = _ref.read(agentPlanProvider);
+        // Ran out of room rather than out of work. Recorded with the numbers
+        // behind the verdict, because the line the user reads carries neither.
+        final outOfSteps = agentSpentToolBudget(
+          toolCalls: turnCalls,
+          budget: kHermesToolCallBudget,
+          plan: plan,
+        );
+        if (outOfSteps) {
+          _ref
+              .read(appLogProvider)
+              .warn(
+                'agent',
+                'turn hit its tool-call budget ($turnCalls call(s), budget '
+                    '$kHermesToolCallBudget) with its plan unfinished — Hermes '
+                    'made it summarize',
+              );
+        }
         if (agentTurnStalled(
           plan: plan,
           endedCleanly: endedCleanly,
@@ -476,6 +502,11 @@ class HermesChatSender implements ChatSender {
                     sources: _ref.read(agentSourcesProvider),
                     plan: plan,
                   ),
+                  // Hermes reports a turn it capped as an ordinary end_turn, so
+                  // this is the only place the chat can learn the answer above
+                  // is a summary written under protest rather than the finished
+                  // work (see [agentSpentToolBudget]).
+                  outOfSteps: outOfSteps,
                 ),
         );
         await updates.close();

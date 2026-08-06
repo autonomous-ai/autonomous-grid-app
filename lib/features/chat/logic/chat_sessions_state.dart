@@ -66,6 +66,7 @@ class ChatSessionsState {
     this.phases = const {},
     this.errors = const {},
     this.awaitingPlanIds = const {},
+    this.outOfStepsIds = const {},
     this.runningAgentId,
     this.queued = const {},
     this.loading = false,
@@ -112,6 +113,12 @@ class ChatSessionsState {
   /// dismissing) — it's live interaction state, not saved with the conversation.
   final Set<String> awaitingPlanIds;
 
+  /// Conversations whose last turn ran out of the tool calls one turn is allowed
+  /// while its plan was still unfinished ([agentSpentToolBudget]): the chat shows
+  /// a "carry on" bar. Live interaction state like [awaitingPlanIds] — cleared by
+  /// the next commit in that chat, and never saved with the conversation.
+  final Set<String> outOfStepsIds;
+
   /// The open conversation, or null while composing a new one.
   Conversation? get active {
     final id = activeId;
@@ -155,6 +162,9 @@ class ChatSessionsState {
   bool awaitingPlanFor(String? id) =>
       id != null && awaitingPlanIds.contains(id);
 
+  /// Whether the chat with [id] stopped last turn for want of tool calls.
+  bool outOfStepsFor(String? id) => id != null && outOfStepsIds.contains(id);
+
   /// What is waiting to be sent in the chat with [id], oldest first.
   List<QueuedTurn> queuedFor(String? id) =>
       (id == null ? null : queued[id]) ?? const [];
@@ -177,6 +187,9 @@ class ChatSessionsState {
   /// Whether the open conversation has a plan waiting on approval.
   bool get awaitingPlan => awaitingPlanFor(activeId);
 
+  /// Whether the open conversation's last turn ran out of room mid-plan.
+  bool get outOfSteps => outOfStepsFor(activeId);
+
   ChatSessionsState copyWith({
     List<Conversation>? conversations,
     Object? activeId = _keep,
@@ -184,6 +197,7 @@ class ChatSessionsState {
     Map<String, SendPhase>? phases,
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
+    Set<String>? outOfStepsIds,
     Object? runningAgentId = _keep,
     Map<String, List<QueuedTurn>>? queued,
     bool? loading,
@@ -197,6 +211,7 @@ class ChatSessionsState {
     phases: phases ?? this.phases,
     errors: errors ?? this.errors,
     awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
+    outOfStepsIds: outOfStepsIds ?? this.outOfStepsIds,
     runningAgentId: identical(runningAgentId, _keep)
         ? this.runningAgentId
         : runningAgentId as String?,
@@ -249,8 +264,19 @@ class ChatSessionsState {
     return copyWith(awaitingPlanIds: next);
   }
 
-  /// Drop every trace of the chats in [ids] — their in-flight phase, error and
-  /// plan flag — for when they're deleted.
+  /// This state with the chat [id]'s out-of-steps flag set or cleared.
+  ChatSessionsState withOutOfSteps(String id, bool outOfSteps) {
+    final next = Set<String>.from(outOfStepsIds);
+    if (outOfSteps) {
+      next.add(id);
+    } else {
+      next.remove(id);
+    }
+    return copyWith(outOfStepsIds: next);
+  }
+
+  /// Drop every trace of the chats in [ids] — their in-flight phase, error, plan
+  /// flag and out-of-steps flag — for when they're deleted.
   ChatSessionsState withoutInFlight(Set<String> ids) => copyWith(
     phases: {
       for (final e in phases.entries)
@@ -262,6 +288,10 @@ class ChatSessionsState {
     },
     awaitingPlanIds: {
       for (final id in awaitingPlanIds)
+        if (!ids.contains(id)) id,
+    },
+    outOfStepsIds: {
+      for (final id in outOfStepsIds)
         if (!ids.contains(id)) id,
     },
   );

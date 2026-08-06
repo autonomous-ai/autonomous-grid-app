@@ -83,6 +83,40 @@ class _FakeSender implements ChatSender {
   }
 }
 
+/// A sender whose turns differ: one canned reply per call, in order, with the
+/// last repeating once the script runs out.
+///
+/// [_FakeSender] replays the same updates for every turn, which can't express
+/// "it ran out of room, then carried on and finished" — the sequence the carry-on
+/// bar exists for.
+class _ScriptedSender implements ChatSender {
+  _ScriptedSender(this.turns);
+
+  final List<List<ChatSendUpdate>> turns;
+
+  /// How many turns were actually asked for.
+  int calls = 0;
+
+  @override
+  Stream<ChatSendUpdate> send({
+    required NetworkCredential network,
+    required String model,
+    required List<ChatMessage> history,
+    PlaygroundModality modality = PlaygroundModality.text,
+    List<MediaAttachment> attachments = const [],
+    String? localBaseUrl,
+    String? workdir,
+    String? conversationId,
+    String? instructions,
+    bool planFirst = false,
+    AgentApprovalMode? approval,
+  }) {
+    final turn = turns[calls.clamp(0, turns.length - 1)];
+    calls++;
+    return Stream.fromIterable(turn);
+  }
+}
+
 /// A reply that streams and then just keeps going — what Stop exists for. The
 /// test drives it chunk by chunk, and [cancelled] records that stopping really
 /// tore the turn down instead of leaving it running behind the UI.
@@ -1376,6 +1410,108 @@ void main() {
 
       expect(h.container.read(chatSessionsProvider).awaitingPlan, isFalse);
       expect(h.agent.planFirsts, [false]);
+    });
+  });
+
+  group('a turn that ran out of tool calls', () {
+    ({ProviderContainer container, _FakeSender agent}) cappedHarness() {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'Got three of five.'),
+            outOfSteps: true,
+          ),
+        ],
+      );
+      return (container: h.container, agent: h.agent);
+    }
+
+    test(
+      'is offered a way on rather than passed off as finished work',
+      () async {
+        final h = cappedHarness();
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .send(network: _credential(), model: 'qwen', message: 'do the lot');
+
+        expect(h.container.read(chatSessionsProvider).outOfSteps, isTrue);
+      },
+    );
+
+    test('carrying on spends a fresh turn, and the offer goes away when that '
+        'turn finishes the work', () async {
+      final scripted = _ScriptedSender([
+        const [
+          ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'Got three of five.'),
+            outOfSteps: true,
+          ),
+        ],
+        const [
+          ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'Finished the rest.'),
+          ),
+        ],
+      ]);
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: scripted,
+      );
+      final controller = h.container.read(chatSessionsProvider.notifier);
+
+      await controller.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'do the lot',
+      );
+      await controller.continueTurn();
+
+      // A second turn really went out — a fresh budget is the whole point — and
+      // its ordinary reply leaves nothing to carry on from.
+      expect(scripted.calls, 2);
+      expect(h.container.read(chatSessionsProvider).outOfSteps, isFalse);
+    });
+
+    test(
+      'waving the offer away sends nothing — stopping short may be fine',
+      () async {
+        final h = cappedHarness();
+        final controller = h.container.read(chatSessionsProvider.notifier);
+
+        await controller.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'do the lot',
+        );
+        controller.dismissOutOfSteps();
+
+        expect(h.container.read(chatSessionsProvider).outOfSteps, isFalse);
+        expect(h.agent.planFirsts, [false]);
+      },
+    );
+
+    test('an ordinary reply leaves the offer dark, so it means something when '
+        'it does appear', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [
+          ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'All done.'),
+          ),
+        ],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'do the lot');
+
+      expect(h.container.read(chatSessionsProvider).outOfSteps, isFalse);
     });
   });
 
