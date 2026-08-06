@@ -2,6 +2,9 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/git_providers.dart';
+import '../../../infrastructure/cli/git_repo.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../logic/project.dart';
@@ -35,6 +38,17 @@ class _CreateProjectDialogState extends ConsumerState<_CreateProjectDialog> {
   /// the fuller "name it, rule it, confirm the folder" step.
   String? _folder;
 
+  /// What Git makes of [_folder], or null while that's still being asked. The
+  /// dialog says what it is about to do to the folder *before* the user commits
+  /// to it — starting a repository writes to their disk, which is the one thing
+  /// creating a project otherwise never does.
+  GitFolder? _git;
+
+  /// True while [_create] is working. `git init` takes milliseconds, so this is
+  /// not about a spinner: it stops a second Create landing on a folder the
+  /// first one is already initialising.
+  bool _creating = false;
+
   @override
   void initState() {
     super.initState();
@@ -52,30 +66,65 @@ class _CreateProjectDialogState extends ConsumerState<_CreateProjectDialog> {
 
   void _onChanged() => setState(() {});
 
-  bool get _canCreate => _folder != null && _name.text.trim().isNotEmpty;
+  bool get _canCreate =>
+      _folder != null && _name.text.trim().isNotEmpty && !_creating;
 
   Future<void> _pickFolder() async {
     final path = await getDirectoryPath(confirmButtonText: 'Use folder');
     if (path == null || !mounted) return;
     setState(() {
       _folder = path;
+      _git = null;
       // Seed the name from the folder only when the user hasn't named it yet, so
       // a title they already typed is never overwritten.
       if (_name.text.trim().isEmpty) _name.text = folderName(path);
     });
+
+    // Asked after the folder is on screen, not before: the answer needs a
+    // process, and a folder on a slow share must not hold up showing the folder
+    // the user just chose.
+    final git = await ref.read(gitRepoServiceProvider).inspect(path);
+    // They may have swapped folders while this was out; only the current one's
+    // answer is worth anything.
+    if (!mounted || _folder != path) return;
+    setState(() => _git = git);
   }
 
-  void _clearFolder() => setState(() => _folder = null);
+  void _clearFolder() => setState(() {
+    _folder = null;
+    _git = null;
+  });
 
-  void _create() {
+  Future<void> _create() async {
     if (!_canCreate) return;
+    setState(() => _creating = true);
+    final path = _folder!;
+
+    // Normally answered while the user was still typing a name. Waited on here
+    // rather than read straight off [_git], because a folder slow enough to
+    // still be unanswered is exactly the one that would otherwise be created
+    // with no repository and no line saying why.
+    final git = _git ?? await ref.read(gitRepoServiceProvider).inspect(path);
+
+    // A repository only where there is none. Best-effort by contract: a project
+    // is a folder the assistant reads, and it reads it whether or not Git ever
+    // got started — so a failure is logged and the project is created anyway.
+    //
+    // Nothing is announced either way. Creating a project already ends in the
+    // project appearing, and the dialog said in advance what this would do to
+    // the folder — a toast on top of a promise already kept is noise on the one
+    // action the user is watching.
+    if (git is GitUntracked) {
+      final failure = await ref.read(gitRepoServiceProvider).init(path);
+      if (failure != null) {
+        ref.read(appLogProvider).warn('git', "Couldn't init $path: $failure");
+      }
+    }
+    if (!mounted) return;
+
     final project = ref
         .read(projectsProvider.notifier)
-        .create(
-          path: _folder!,
-          name: _name.text,
-          instructions: _instructions.text,
-        );
+        .create(path: path, name: _name.text, instructions: _instructions.text);
     Navigator.of(context).pop(project);
   }
 
@@ -121,6 +170,7 @@ class _CreateProjectDialogState extends ConsumerState<_CreateProjectDialog> {
                   name: _name,
                   instructions: _instructions,
                   folder: _folder!,
+                  git: _git,
                   onChangeFolder: _pickFolder,
                   onClearFolder: _clearFolder,
                 ),
@@ -205,6 +255,7 @@ class _FolderStep extends StatelessWidget {
     required this.name,
     required this.instructions,
     required this.folder,
+    required this.git,
     required this.onChangeFolder,
     required this.onClearFolder,
   });
@@ -212,6 +263,10 @@ class _FolderStep extends StatelessWidget {
   final TextEditingController name;
   final TextEditingController instructions;
   final String folder;
+
+  /// What Git makes of [folder], or null while that's still being asked.
+  final GitFolder? git;
+
   final VoidCallback onChangeFolder;
   final VoidCallback onClearFolder;
 
@@ -243,6 +298,7 @@ class _FolderStep extends StatelessWidget {
           onChange: onChangeFolder,
           onClear: onClearFolder,
         ),
+        _GitNote(folder: folder, git: git),
         const SizedBox(height: 14),
         const _LocalNote(),
       ],
@@ -310,6 +366,69 @@ class _FolderRow extends StatelessWidget {
         const SizedBox(width: 8),
         TextButton(onPressed: onChange, child: const Text('Change')),
       ],
+    );
+  }
+}
+
+/// What creating this project will do to the chosen folder, before it's done.
+///
+/// Starting a Git repository writes to the user's own disk, which is the one
+/// thing creating a project otherwise never does — so it's said in advance
+/// rather than reported afterwards. Silent until the answer is in, and silent
+/// when there's no Git to ask with: a promise the app can't keep is worse than
+/// no line at all.
+class _GitNote extends StatelessWidget {
+  const _GitNote({required this.folder, required this.git});
+
+  final String folder;
+  final GitFolder? git;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final line = switch (git) {
+      // Already theirs — nothing to do, and saying so is what stops a user
+      // wondering whether the app is about to touch their history.
+      GitTracked(:final root) when root == folder =>
+        "Already a Git repository — Grid will use the one that's here.",
+      // The folder is *inside* someone else's repository. Worth naming: every
+      // `git` command run here answers for that whole repository, not for the
+      // folder they picked.
+      GitTracked(:final root) =>
+        'Inside the Git repository at $root — Grid will use that one.',
+      GitUntracked() =>
+        'Not a Git repository yet — Grid will start one here, so work in this '
+            'folder can be tracked and rolled back.',
+      GitFolderUnknown() || null => null,
+    };
+    if (line == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, left: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Neutral, like the lock below it: starting a repository is a normal
+          // part of setting a project up, and a warning colour would read as
+          // "something is wrong with this folder".
+          Icon(
+            Icons.account_tree_outlined,
+            size: 15,
+            color: AppPalette.textSecondary,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              line,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.4,
+                color: AppPalette.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
