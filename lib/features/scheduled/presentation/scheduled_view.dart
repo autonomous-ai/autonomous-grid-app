@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,11 +25,32 @@ import 'widgets/task_power_bar.dart';
 /// The tasks are Hermes's own scheduled jobs — the app writes them through
 /// `hermes cron` and reads them back from its store, so it never keeps a second
 /// list that could drift from what actually runs.
-class ScheduledView extends ConsumerWidget {
+///
+/// Stateful for one reason: it re-reads that store on the way in. The assistant
+/// creates tasks mid-conversation when asked, so "it said it saved one" and
+/// "it isn't in this list" were both true — the list was whatever the store held
+/// when the app started.
+class ScheduledView extends ConsumerStatefulWidget {
   const ScheduledView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ScheduledView> createState() => _ScheduledViewState();
+}
+
+class _ScheduledViewState extends ConsumerState<ScheduledView> {
+  @override
+  void initState() {
+    super.initState();
+    // After the frame: refreshing writes a provider, which must not happen while
+    // the tree is still being built.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(scheduledJobsProvider.notifier).refresh());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     if (!ref.watch(hermesInstalledProvider)) return const _NoAgent();
 
     final jobs = ref.watch(scheduledJobsProvider);

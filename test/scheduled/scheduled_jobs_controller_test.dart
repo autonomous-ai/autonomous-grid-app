@@ -222,6 +222,28 @@ const _oneJob = '''
 }]}
 ''';
 
+/// The store after the assistant saved a task of its own, straight through
+/// `hermes cron` — no model of its own (it follows the computer's), and the app
+/// was never told.
+const _twoJobs = '''
+{"jobs": [{
+  "id": "abc123",
+  "name": "Daily digest",
+  "prompt": "Summarise my folder",
+  "schedule": {"kind": "cron", "expr": "0 8 * * 1-5"},
+  "enabled": true
+}, {
+  "id": "e966a2f83235",
+  "name": "fleet-reddit-leads",
+  "prompt": "Scan Reddit for leads",
+  "schedule": {"kind": "cron", "expr": "30 13 * * *"},
+  "enabled": true,
+  "model": null,
+  "model_snapshot": "DeepSeek-V4-Flash-0731",
+  "last_status": "ok"
+}]}
+''';
+
 /// The same task after Hermes skipped it: the model moved on since it was
 /// created, so every run fails closed until something re-arms it.
 const _blockedJob = '''
@@ -325,6 +347,30 @@ void main() {
   test('an untouched scheduler reads as no tasks, not an error', () async {
     final h = harness(jobsJson: null);
     expect(await h.container.read(scheduledJobsProvider.future), isEmpty);
+  });
+
+  test('a task the assistant created mid-conversation appears on a refresh — '
+      'the app is not the only thing that writes to the scheduler', () async {
+    final h = harness();
+    await h.container.read(scheduledJobsProvider.future);
+
+    // Hermes's store gains a job nobody told the app about: what happens when
+    // the user asks the assistant in Chat to schedule something.
+    h.cron.jobsJson = _twoJobs;
+    await h.container.read(scheduledJobsProvider.notifier).refresh();
+
+    final jobs = h.container.read(scheduledJobsProvider).value!;
+    expect(jobs.map((job) => job.name), ['Daily digest', 'fleet-reddit-leads']);
+  });
+
+  test('a refresh that finds nothing new leaves the list alone, so the screen '
+      'does not rebuild every sweep', () async {
+    final h = harness();
+    final before = await h.container.read(scheduledJobsProvider.future);
+
+    await h.container.read(scheduledJobsProvider.notifier).refresh();
+
+    expect(h.container.read(scheduledJobsProvider).value, same(before));
   });
 
   test('creating a task hands Hermes a cron expression and the Projects '

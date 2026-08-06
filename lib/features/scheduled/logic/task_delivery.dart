@@ -150,6 +150,10 @@ class TaskDeliveryController extends Notifier<List<String>> {
       // *second* one over the same id — the day's result replacing the history
       // it should have been appended to.
       await ref.read(chatSessionsProvider.notifier).restored;
+      // Pick up tasks created outside this screen before walking them — the
+      // assistant makes them mid-conversation, and one the app never re-read is
+      // one whose results it would never deliver.
+      await ref.read(scheduledJobsProvider.notifier).refresh();
       final jobs = await ref.read(scheduledJobsProvider.future);
       final delivered = {...ref.read(taskDeliveryStoreProvider).load()};
       final links = ref.read(projectTasksProvider);

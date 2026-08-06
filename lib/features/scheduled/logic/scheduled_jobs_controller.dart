@@ -82,13 +82,39 @@ final scheduledJobsProvider =
     );
 
 class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
+  /// The store exactly as it was last read, so a re-read that changed nothing
+  /// leaves the screen alone instead of rebuilding it on every sweep.
+  String? _lastRaw;
+
   @override
   Future<List<ScheduledJob>> build() => _load();
 
   Future<List<ScheduledJob>> _load() async {
     final service = ref.read(hermesCronServiceProvider);
     if (service == null) return const [];
+    return _parse(await service.readJobsJson());
+  }
+
+  /// Re-read the store because something *outside* the app may have changed it.
+  ///
+  /// The app isn't the only thing that writes tasks: the assistant creates them
+  /// mid-conversation when you ask it to, and so does `hermes cron` in a
+  /// terminal. Loading once and only re-reading after the app's own writes meant
+  /// a task the assistant had just confirmed creating was missing from this
+  /// screen until the next launch — and, worse, its results were never delivered
+  /// into a chat, because the sweep walks this same list.
+  Future<void> refresh() async {
+    final service = ref.read(hermesCronServiceProvider);
+    // Mid-load: the build in flight is about to publish a fresher read than
+    // this one, and racing it would only overwrite it with the same thing.
+    if (service == null || state.isLoading) return;
     final raw = await service.readJobsJson();
+    if (raw == _lastRaw) return;
+    state = AsyncData(_parse(raw));
+  }
+
+  List<ScheduledJob> _parse(String? raw) {
+    _lastRaw = raw;
     if (raw == null || raw.trim().isEmpty) return const [];
     return parseScheduledJobs(raw);
   }
