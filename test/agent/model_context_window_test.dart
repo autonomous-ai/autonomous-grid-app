@@ -230,7 +230,7 @@ void main() {
 
     test('the assumption leaves an engine room for its own reply, like any '
         'other window', () {
-      expect(agentContextCeiling(kAssumedContextWindow), 26214);
+      expect(agentContextCeiling(kAssumedContextWindow), 52428);
     });
   });
 }

@@ -71,14 +71,17 @@ int agentContextCeiling(int engineWindow) =>
 /// is talking to (Anthropic's, 200k and up). So "no ceiling" was in practice a
 /// 200k guess made by the component with the least information.
 ///
-/// 32k instead, and deliberately low, because the two ways to be wrong are not
-/// symmetric. Too high and the turn dies at the engine: the user loses the
-/// answer and the session, and llama.cpp's own refusal carries no number for the
-/// app to learn from (see [_windowPatterns]), so it can happen again on the next
-/// long chat. Too low and the conversation summarizes earlier than it had to —
-/// it costs fidelity and nothing else. Any model a real figure exists for never
-/// comes near this number.
-const int kAssumedContextWindow = 32768;
+/// 64k instead — under every figure this grid has actually produced (128000
+/// advertised for one model, 96000 learned from another's refusal), and above
+/// what an engine left on a default is likely to hold. It errs low on purpose,
+/// because the two ways to be wrong are not symmetric. Too high and the turn
+/// dies at the engine: the user loses the answer and the session, and
+/// llama.cpp's own refusal carries no number for the app to learn from (see
+/// [_windowPatterns]), so it can happen again on the next long chat. Too low and
+/// the conversation summarizes earlier than it had to — it costs fidelity and
+/// nothing else. Any model a real figure exists for never comes near this
+/// number.
+const int kAssumedContextWindow = 65536;
 
 /// The window to run [model] against: what the grid advertises, what an engine
 /// taught, or [kAssumedContextWindow] when neither has said anything.
