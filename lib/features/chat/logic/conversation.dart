@@ -250,45 +250,6 @@ String deriveConversationTitle(List<ChatMessage> messages) {
   return kNewConversationTitle;
 }
 
-/// A labelled bucket of conversations for the sidebar (Today / Yesterday / …).
-class ConversationGroup {
-  const ConversationGroup(this.label, this.conversations);
-  final String label;
-  final List<Conversation> conversations;
-}
-
-/// Buckets [conversations] (already newest-first) by how recently each was last
-/// updated, relative to [now] — the Ollama-style history grouping. Empty
-/// buckets are dropped, so the sidebar only shows headers that have rows.
-List<ConversationGroup> groupConversationsByRecency(
-  List<Conversation> conversations,
-  DateTime now,
-) {
-  final startOfToday = DateTime(now.year, now.month, now.day);
-  final today = <Conversation>[];
-  final yesterday = <Conversation>[];
-  final week = <Conversation>[];
-  final older = <Conversation>[];
-  for (final c in conversations) {
-    final d = c.updatedAt;
-    if (!d.isBefore(startOfToday)) {
-      today.add(c);
-    } else if (!d.isBefore(startOfToday.subtract(const Duration(days: 1)))) {
-      yesterday.add(c);
-    } else if (!d.isBefore(startOfToday.subtract(const Duration(days: 7)))) {
-      week.add(c);
-    } else {
-      older.add(c);
-    }
-  }
-  return [
-    if (today.isNotEmpty) ConversationGroup('Today', today),
-    if (yesterday.isNotEmpty) ConversationGroup('Yesterday', yesterday),
-    if (week.isNotEmpty) ConversationGroup('Previous 7 days', week),
-    if (older.isNotEmpty) ConversationGroup('Older', older),
-  ];
-}
-
 Map<String, dynamic> _messageToJson(ChatMessage message) => {
   'role': message.role.name,
   'text': message.text,
@@ -370,3 +331,16 @@ DateTime? _parseNullableDate(Object? raw) =>
     raw is String ? DateTime.tryParse(raw) : null;
 
 final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0);
+
+/// The approval mode [conversation] runs under, given the app's standing
+/// [fallback].
+///
+/// Pure, and the one place the fallback rule lives: `chatApprovalModeProvider`
+/// answers for the open chat, while a turn dispatched into a background chat
+/// has to ask about that chat instead. It lives here rather than beside that
+/// provider because the provider reads the chat controller, and the controller
+/// needs this — a rule about a conversation belongs with the conversation.
+AgentApprovalMode approvalFor(
+  Conversation? conversation,
+  AgentApprovalMode fallback,
+) => conversation?.approval ?? fallback;

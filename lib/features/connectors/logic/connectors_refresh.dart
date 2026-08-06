@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'browse_connectors_controller.dart';
-import 'connector_catalog.dart';
 import 'connector_link_controller.dart';
 import 'connectors_controller.dart';
 

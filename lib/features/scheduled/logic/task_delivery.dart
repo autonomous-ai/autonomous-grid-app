@@ -16,27 +16,10 @@ import 'cron_output.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'scheduled_jobs_controller.dart';
+import 'task_conversation_id.dart';
 import 'task_inbox_store.dart';
 import 'task_model_fallback.dart';
 import 'task_unread_store.dart';
-
-/// Prefix on a task chat's id, the seam between it and the job id it carries.
-const String _kTaskChatPrefix = 'task-';
-
-/// The conversation a task's results land in. One per task, so a daily digest
-/// reads as a thread rather than a pile of unrelated chats.
-String taskConversationId(String jobId) => '$_kTaskChatPrefix$jobId';
-
-/// The job id behind a task chat's [conversationId], or null when it isn't one
-/// — the inverse of [taskConversationId], so opening a chat can find the task to
-/// mark read without the chat feature having to know the id scheme.
-String? jobIdOfTaskConversation(String? conversationId) {
-  if (conversationId == null || !conversationId.startsWith(_kTaskChatPrefix)) {
-    return null;
-  }
-  final jobId = conversationId.substring(_kTaskChatPrefix.length);
-  return jobId.isEmpty ? null : jobId;
-}
 
 /// A result as it reads in the chat: when the task ran, then what it found.
 ///
@@ -150,6 +133,10 @@ class TaskDeliveryController extends Notifier<List<String>> {
       // *second* one over the same id — the day's result replacing the history
       // it should have been appended to.
       await ref.read(chatSessionsProvider.notifier).restored;
+      // Pick up tasks created outside this screen before walking them — the
+      // assistant makes them mid-conversation, and one the app never re-read is
+      // one whose results it would never deliver.
+      await ref.read(scheduledJobsProvider.notifier).refresh();
       final jobs = await ref.read(scheduledJobsProvider.future);
       final delivered = {...ref.read(taskDeliveryStoreProvider).load()};
       final links = ref.read(projectTasksProvider);

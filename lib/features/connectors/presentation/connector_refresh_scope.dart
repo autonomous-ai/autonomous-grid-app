@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/mcp/connector_bridge_provider.dart';
+import '../logic/connector_link_controller.dart';
 import '../logic/connector_refresh_service.dart';
 
 /// Starts the connector token refresh schedule for the life of the app.
@@ -36,7 +37,18 @@ class _ConnectorRefreshScopeState extends ConsumerState<ConnectorRefreshScope> {
       // config entry points at, so starting the sweep — which re-projects —
       // before the port exists would skip exactly those connectors and leave
       // them unprojected until something else happened to trigger a write.
-      await ref.read(connectorBridgeProvider).start();
+      // The controller's own renewal, not a second implementation: it is the
+      // half that knows a self-registered token is renewed against the provider
+      // while a gateway one goes back to the gateway, that a 401 means the
+      // credential is gone for good rather than something to retry, and that a
+      // renewed token has to be re-projected into every agent. Wired here
+      // because this is what owns the bridge's life — see
+      // [ConnectorBridge.refreshToken].
+      final bridge = ref.read(connectorBridgeProvider)
+        ..refreshToken = (connector) => ref
+            .read(connectorLinkControllerProvider.notifier)
+            .refresh(connector);
+      await bridge.start();
       if (!mounted) return;
       await ref.read(connectorRefreshServiceProvider).start();
     });

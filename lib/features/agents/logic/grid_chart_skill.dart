@@ -19,10 +19,6 @@ const String kGridChartSkillName = 'grid-chart';
 GridSkillFiles gridChartSkillFiles(Directory skillDir) =>
     const GridSkillFiles(card: kGridChartSkillMd);
 
-/// Write (or refresh) the skill into [skillDir]. Idempotent.
-Future<void> writeGridChartSkill(Directory skillDir) =>
-    writeSkillFolder(skillDir, gridChartSkillFiles(skillDir));
-
 /// The card. The frontmatter decides when it fires, so it names the words a
 /// person actually uses ("chart", "graph", "plot", "trend") rather than the
 /// fence they've never heard of.

@@ -23,7 +23,7 @@ const _defaultSlug = 'huggingface';
 String _cdnUrl({required String iconId, bool isDarkMode = false}) {
   final slug = iconId.toLowerCase();
   final darkPath = isDarkMode ? 'dark' : 'light';
-  return 'https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/$darkPath/${slug}-color.png';
+  return 'https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/$darkPath/$slug-color.png';
 }
 
 /// Extract icon slug from repo_id.

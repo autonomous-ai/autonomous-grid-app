@@ -9,7 +9,6 @@ import '../../network/logic/node_display.dart';
 import '../../projects/logic/project_tasks_store.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
-import 'task_delivery.dart';
 import 'task_inbox_store.dart';
 import 'task_model_fallback.dart';
 import 'task_power_controller.dart';
@@ -20,42 +19,6 @@ import 'task_power_controller.dart';
 final schedulerRunningProvider = FutureProvider<bool>((ref) async {
   final service = ref.watch(hermesCronServiceProvider);
   return service != null && await service.schedulerRunning();
-});
-
-/// What a task's runs have produced, oldest first — read back from Hermes, which
-/// writes one file per run. Refetches whenever a sweep delivers something new, so
-/// the screen and the chat never disagree about what the task has found.
-final jobOutputsProvider = FutureProvider.family<List<CronOutput>, String>((
-  ref,
-  jobId,
-) async {
-  ref.watch(taskDeliveryProvider);
-  final service = ref.watch(hermesCronServiceProvider);
-  if (service == null) return const [];
-  return service.readOutputs(jobId);
-});
-
-/// One finished run, tagged with the task it belongs to — the unit the "recent
-/// activity" view is built from.
-typedef JobRun = ({String jobId, String jobName, DateTime at, String text});
-
-/// The latest runs across every task, newest first — what the right pane shows
-/// before a task is picked, so an empty selection still proves the assistant is
-/// working. Rebuilds whenever a sweep delivers something new.
-final recentActivityProvider = FutureProvider<List<JobRun>>((ref) async {
-  ref.watch(taskDeliveryProvider);
-  final service = ref.watch(hermesCronServiceProvider);
-  if (service == null) return const [];
-  final jobs = await ref.watch(scheduledJobsProvider.future);
-
-  final runs = <JobRun>[];
-  for (final job in jobs) {
-    for (final run in await service.readOutputs(job.id)) {
-      runs.add((jobId: job.id, jobName: job.name, at: run.at, text: run.text));
-    }
-  }
-  runs.sort((a, b) => b.at.compareTo(a.at));
-  return runs;
 });
 
 /// Which job the detail pane shows. Null until the user picks one (or creates
@@ -82,13 +45,39 @@ final scheduledJobsProvider =
     );
 
 class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
+  /// The store exactly as it was last read, so a re-read that changed nothing
+  /// leaves the screen alone instead of rebuilding it on every sweep.
+  String? _lastRaw;
+
   @override
   Future<List<ScheduledJob>> build() => _load();
 
   Future<List<ScheduledJob>> _load() async {
     final service = ref.read(hermesCronServiceProvider);
     if (service == null) return const [];
+    return _parse(await service.readJobsJson());
+  }
+
+  /// Re-read the store because something *outside* the app may have changed it.
+  ///
+  /// The app isn't the only thing that writes tasks: the assistant creates them
+  /// mid-conversation when you ask it to, and so does `hermes cron` in a
+  /// terminal. Loading once and only re-reading after the app's own writes meant
+  /// a task the assistant had just confirmed creating was missing from this
+  /// screen until the next launch — and, worse, its results were never delivered
+  /// into a chat, because the sweep walks this same list.
+  Future<void> refresh() async {
+    final service = ref.read(hermesCronServiceProvider);
+    // Mid-load: the build in flight is about to publish a fresher read than
+    // this one, and racing it would only overwrite it with the same thing.
+    if (service == null || state.isLoading) return;
     final raw = await service.readJobsJson();
+    if (raw == _lastRaw) return;
+    state = AsyncData(_parse(raw));
+  }
+
+  List<ScheduledJob> _parse(String? raw) {
+    _lastRaw = raw;
     if (raw == null || raw.trim().isEmpty) return const [];
     return parseScheduledJobs(raw);
   }

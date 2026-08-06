@@ -8,7 +8,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
 import '../../network/presentation/detail_widgets.dart';
 import '../logic/log_format.dart';
-import 'log_tile.dart';
+import 'log_status_icon.dart';
 
 /// Everything behind one row of the Debug list, opened by clicking it.
 ///

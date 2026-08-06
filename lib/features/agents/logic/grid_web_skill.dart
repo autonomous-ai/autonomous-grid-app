@@ -44,11 +44,6 @@ GridSkillFiles gridWebSkillFiles(Directory skillDir, {String? uvPath}) {
   );
 }
 
-/// Write (or refresh) the `grid-web` skill into [skillDir]. Wipes the folder
-/// first so a stale copy can't linger beside the current one. Idempotent.
-Future<void> writeGridWebSkill(Directory skillDir, {String? uvPath}) =>
-    writeSkillFolder(skillDir, gridWebSkillFiles(skillDir, uvPath: uvPath));
-
 /// The skill card every agent reads. Only the `name`/`description` frontmatter
 /// decides *when* it triggers, so those carry the intent; the body is loaded only
 /// once it fires and spells out the two commands — search, and read one page.

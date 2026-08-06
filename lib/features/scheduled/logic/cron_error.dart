@@ -42,6 +42,17 @@ CronRunError describeCronRunError(String raw) {
           'it when you do (pick a grid in Chat first if you have not).',
     );
   }
+  if (isCronIdleTimeout(text)) {
+    return const CronRunError(
+      summary:
+          'This run was stopped: the AI went quiet part-way through, and no '
+          'answer came back for as long as a task is allowed to wait. The task '
+          'will try again at its next run.',
+      hint:
+          'If it keeps happening, ask for less in one go — fewer items, a '
+          'shorter answer — or run it on one named model instead of Auto.',
+    );
+  }
   return CronRunError(summary: text);
 }
 
@@ -73,6 +84,25 @@ bool isNoModelConfigured(String text) {
   final lower = text.toLowerCase();
   return lower.contains('no model configured') ||
       lower.contains('model.default missing or empty');
+}
+
+/// Hermes's scheduler stops a run that has shown no sign of life — no tool call,
+/// no API response — for its idle limit, and records a `TimeoutError` naming how
+/// long it waited. It is not a stuck task: a scheduled run answers in **one
+/// non-streaming call**, so nothing touches that clock while a long report is
+/// being written, and the limit is reached by the answer itself.
+///
+/// A one-off, so it stays out of [isBlockingCronError]: the next run may well
+/// finish. The app raises the limit this trips over (`HERMES_CRON_TIMEOUT`, see
+/// `hermes_cron_watchdog.dart`); the wording here is what the user reads when it
+/// trips anyway.
+///
+/// Matched on the stable half of the sentence — the seconds and the job name
+/// differ every time.
+bool isCronIdleTimeout(String text) {
+  final lower = text.toLowerCase();
+  return lower.contains('idle for') &&
+      (lower.contains('timeouterror') || lower.contains('cron job'));
 }
 
 /// Whether a failed run blames the **model** the task is pinned to, rather than

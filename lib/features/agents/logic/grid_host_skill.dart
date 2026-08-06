@@ -19,10 +19,6 @@ const String kGridHostSkillName = 'grid-host';
 GridSkillFiles gridHostSkillFiles(Directory skillDir, {String? uvPath}) =>
     GridSkillFiles(card: gridHostSkillMd(uvPath: uvPath ?? gridSkillUvPath()));
 
-/// Write (or refresh) the `grid-host` skill into [skillDir]. Idempotent.
-Future<void> writeGridHostSkill(Directory skillDir, {String? uvPath}) =>
-    writeSkillFolder(skillDir, gridHostSkillFiles(skillDir, uvPath: uvPath));
-
 /// The card every agent reads.
 ///
 /// The frontmatter has to fire *before* the mistake, so it triggers on the intent

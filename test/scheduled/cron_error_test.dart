@@ -61,6 +61,24 @@ void main() {
       expect(result.hint, contains('create it again'));
     });
 
+    test('turns the scheduler\'s idle watchdog into a plain "it went quiet" '
+        'line, so the user is not shown a raw TimeoutError and a seconds '
+        'count', () {
+      const raw =
+          "TimeoutError: Cron job 'Daily report' idle for 936s (limit 600s) — "
+          'last activity: waiting for non-streaming API response';
+
+      final result = describeCronRunError(raw);
+
+      expect(result.summary, isNot(contains('TimeoutError')));
+      expect(result.summary, isNot(contains('936')));
+      expect(result.summary, isNot(contains('non-streaming')));
+      // It is one bad run, not a dead task — the copy has to say so, or the
+      // user pauses a task that would have answered tomorrow.
+      expect(result.summary, contains('try again'));
+      expect(result.hint, isNotNull);
+    });
+
     test(
       'passes an unrecognized error through verbatim so no detail is lost',
       () {
@@ -100,6 +118,17 @@ void main() {
     test('a one-off failure that could pass next time is not blocking', () {
       expect(
         isBlockingCronError('ConnectionError: relay unreachable'),
+        isFalse,
+      );
+    });
+
+    test('an idle timeout is not blocking: the run was too slow once, and the '
+        'task still has a next run to answer on', () {
+      expect(
+        isBlockingCronError(
+          "TimeoutError: Cron job 'Daily report' idle for 936s (limit 600s) "
+          '— last activity: waiting for non-streaming API response',
+        ),
         isFalse,
       );
     });

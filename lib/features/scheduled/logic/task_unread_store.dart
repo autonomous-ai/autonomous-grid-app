@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
-import 'task_delivery.dart';
+import 'task_conversation_id.dart';
 
 /// Remembers which scheduled tasks have a finished result the user hasn't opened
 /// yet — the set of job ids the sidebar and the Scheduled list badge, so a run

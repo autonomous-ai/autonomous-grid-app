@@ -177,7 +177,12 @@ class _FileList extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-      child: ListView(children: entries),
+      // Built lazily: a skill can carry a scripts folder dozens of files deep,
+      // and laying out the ones nobody has scrolled to is work for nothing.
+      child: ListView.builder(
+        itemCount: entries.length,
+        itemBuilder: (context, i) => entries[i],
+      ),
     );
   }
 }

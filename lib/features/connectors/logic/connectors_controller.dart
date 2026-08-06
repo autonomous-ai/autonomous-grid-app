@@ -6,6 +6,7 @@ import '../../agents/logic/agent_extensions_registry.dart';
 import '../../agents/logic/mcp_server.dart';
 import 'connected_catalog_lookup.dart';
 import 'connector.dart';
+import 'browse_connectors_controller.dart';
 import 'connector_catalog.dart';
 import '../../agents/logic/connector_token.dart';
 import 'connector_link_controller.dart';

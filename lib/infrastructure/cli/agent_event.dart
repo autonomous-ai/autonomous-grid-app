@@ -1,5 +1,3 @@
-import 'hermes_permission_policy.dart';
-
 /// What kind of step the agent is running — a shell command, a look-up on the
 /// web, the model's own reasoning, or any other tool. The kind picks the icon
 /// in the activity feed.
@@ -374,3 +372,12 @@ class AgentPermission {
   bool get canAllowForChat =>
       options.any((o) => o.optionId == kAllowForChatOption);
 }
+
+/// Hermes's own id for "allow every time in this session" — the widest grant the
+/// app hands out. `allow_always` (which Hermes persists to its config, forever,
+/// with no way to take it back from this app) is deliberately never chosen.
+const String kAllowForChatOption = 'allow_session';
+
+/// One choice the agent offered for a permission request: its stable id and the
+/// ACP kind hint (`allow_once` / `allow_always` / `reject_once` / `reject_always`).
+typedef HermesPermissionOption = ({String optionId, String kind});

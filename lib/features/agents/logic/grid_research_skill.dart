@@ -34,13 +34,6 @@ GridSkillFiles gridResearchSkillFiles(Directory skillDir, {String? uvPath}) {
   );
 }
 
-/// Write (or refresh) the skill into [skillDir]. Idempotent.
-Future<void> writeGridResearchSkill(Directory skillDir, {String? uvPath}) =>
-    writeSkillFolder(
-      skillDir,
-      gridResearchSkillFiles(skillDir, uvPath: uvPath),
-    );
-
 /// The card. The frontmatter fires on the shape of the question — "compare",
 /// "is it true that", "what are the options" — not on the word "research",
 /// which is not what people type.

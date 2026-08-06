@@ -54,13 +54,6 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   AgentTool.hermes => !_namesKind(model, kCliSeatKinds),
 };
 
-/// The agents that can answer with [model], in catalog order — who the user can
-/// switch to when the one in force can't.
-List<AgentTool> agentsForModel(String model) => [
-  for (final tool in AgentTool.values)
-    if (agentSupportsModel(tool, model)) tool,
-];
-
 /// The mark on a model row the agent in force can't use — short, because it
 /// rides beside the model's own name.
 String agentModelBlockedLabel(AgentTool tool) => 'Not for ${tool.name}';

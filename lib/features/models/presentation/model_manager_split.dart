@@ -432,7 +432,7 @@ class _EntryList extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       itemCount: entries.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 2),
+      separatorBuilder: (_, _) => const SizedBox(height: 2),
       itemBuilder: (_, i) {
         final e = entries[i];
         final selected = e.repoId == selectedRepoId;
@@ -467,7 +467,7 @@ class _RankedList extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       itemCount: ranked.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 2),
+      separatorBuilder: (_, _) => const SizedBox(height: 2),
       itemBuilder: (_, i) {
         final m = ranked[i];
         final repoId = m.repoId ?? '';
@@ -566,7 +566,7 @@ class _SidebarTileState extends State<_SidebarTile> {
                               child: CachedNetworkImage(
                                 imageUrl: iconUrl,
                                 fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => Container(
+                                errorWidget: (_, _, _) => Container(
                                   color: Colors.white,
                                   decoration: BoxDecoration(
                                     color: AppPalette.textSecondary.withValues(

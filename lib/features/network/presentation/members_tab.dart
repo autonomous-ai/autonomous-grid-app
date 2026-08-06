@@ -78,39 +78,55 @@ class _MembersTabState extends ConsumerState<MembersTab> {
     final membersAsync = ref.watch(networkMembersProvider(_networkId));
     final count = membersAsync.asData?.value.length;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-      children: [
-        _Header(
-          count: count,
-          onRefresh: () => ref.invalidate(networkMembersProvider(_networkId)),
-        ),
-        const SizedBox(height: 16),
-        membersAsync.when(
-          loading: () => const _Message(
-            icon: Icons.cloud_sync_outlined,
-            text: 'Loading members…',
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
+          sliver: SliverToBoxAdapter(
+            child: _Header(
+              count: count,
+              onRefresh: () =>
+                  ref.invalidate(networkMembersProvider(_networkId)),
+            ),
           ),
-          error: (err, _) =>
-              _Message(icon: Icons.cloud_off_outlined, text: '$err'),
-          data: (members) => members.isEmpty
-              ? const _Message(
-                  icon: Icons.group_outlined,
-                  text: 'No members yet. Invite someone to get started.',
-                )
-              : Column(
-                  children: [
-                    for (final m in members) ...[
-                      _MemberTile(
-                        member: m,
-                        isOwner: m.isOwner,
-                        removing: _removing.contains(m.email),
-                        onRemove: () => _confirmRemove(m),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                  ],
-                ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          // A sliver per state rather than a Column of every member: a grid can
+          // have hundreds, and the ones below the fold cost nothing to have.
+          sliver: membersAsync.when(
+            loading: () => const SliverToBoxAdapter(
+              child: _Message(
+                icon: Icons.cloud_sync_outlined,
+                text: 'Loading members…',
+              ),
+            ),
+            error: (err, _) => SliverToBoxAdapter(
+              child: _Message(icon: Icons.cloud_off_outlined, text: '$err'),
+            ),
+            data: (members) => members.isEmpty
+                ? const SliverToBoxAdapter(
+                    child: _Message(
+                      icon: Icons.group_outlined,
+                      text: 'No members yet. Invite someone to get started.',
+                    ),
+                  )
+                : SliverList.builder(
+                    itemCount: members.length,
+                    itemBuilder: (context, i) {
+                      final m = members[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _MemberTile(
+                          member: m,
+                          isOwner: m.isOwner,
+                          removing: _removing.contains(m.email),
+                          onRemove: () => _confirmRemove(m),
+                        ),
+                      );
+                    },
+                  ),
+          ),
         ),
       ],
     );

@@ -112,14 +112,14 @@ void main() {
       home: home,
       readTokens: () async => {'demo': stored},
       restEntryFor: (_) => entryFor(provider),
-      refreshToken: (_) async {
-        refreshCalls++;
-        // What the real controller does: write through the store, so the
-        // re-read that follows is the only way to see the new credential.
-        stored = tokenWith(access: 'new', expiresIn: const Duration(hours: 1));
-        return null;
-      },
     );
+    bridge.refreshToken = (_) async {
+      refreshCalls++;
+      // What the real controller does: write through the store, so the
+      // re-read that follows is the only way to see the new credential.
+      stored = tokenWith(access: 'new', expiresIn: const Duration(hours: 1));
+      return null;
+    };
 
     await callTool(bridge);
 
@@ -140,11 +140,11 @@ void main() {
       home: home,
       readTokens: () async => {'demo': stored},
       restEntryFor: (_) => entryFor(provider),
-      refreshToken: (_) async {
-        refreshCalls++;
-        return null;
-      },
     );
+    bridge.refreshToken = (_) async {
+      refreshCalls++;
+      return null;
+    };
 
     await callTool(bridge);
 
@@ -166,11 +166,11 @@ void main() {
       home: home,
       readTokens: () async => {'demo': stored},
       restEntryFor: (_) => entryFor(provider),
-      refreshToken: (_) async {
-        refreshCalls++;
-        return null;
-      },
     );
+    bridge.refreshToken = (_) async {
+      refreshCalls++;
+      return null;
+    };
 
     await callTool(bridge);
 
@@ -190,8 +190,9 @@ void main() {
       restEntryFor: (_) => entryFor(provider),
       // Both shapes a renewal can fail in: the controller's "returned a
       // sentence", and an outright throw.
-      refreshToken: (_) async => throw const SocketException('offline'),
     );
+
+    bridge.refreshToken = (_) async => throw const SocketException('offline');
 
     await callTool(bridge);
 
@@ -211,15 +212,15 @@ void main() {
       home: home,
       readTokens: () async => {'demo': stored},
       restEntryFor: (_) => entryFor(provider),
-      refreshToken: (_) async {
-        refreshCalls++;
-        // A real exchange is a network round trip; both callers have to be
-        // in flight across it for the race to be the one being tested.
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        stored = tokenWith(access: 'new', expiresIn: const Duration(hours: 1));
-        return null;
-      },
     );
+    bridge.refreshToken = (_) async {
+      refreshCalls++;
+      // A real exchange is a network round trip; both callers have to be
+      // in flight across it for the race to be the one being tested.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      stored = tokenWith(access: 'new', expiresIn: const Duration(hours: 1));
+      return null;
+    };
 
     await callTool(bridge, times: 2, concurrently: true);
 
@@ -241,17 +242,17 @@ void main() {
       home: home,
       readTokens: () async => {'demo': stored},
       restEntryFor: (_) => entryFor(provider),
-      refreshToken: (_) async {
-        refreshCalls++;
-        // Still expiring afterwards, so the guard is the only thing that could
-        // suppress the second attempt — and it must not, once settled.
-        stored = tokenWith(
-          access: 'renewed$refreshCalls',
-          expiresIn: const Duration(minutes: 1),
-        );
-        return null;
-      },
     );
+    bridge.refreshToken = (_) async {
+      refreshCalls++;
+      // Still expiring afterwards, so the guard is the only thing that could
+      // suppress the second attempt — and it must not, once settled.
+      stored = tokenWith(
+        access: 'renewed$refreshCalls',
+        expiresIn: const Duration(minutes: 1),
+      );
+      return null;
+    };
 
     await callTool(bridge, times: 2);
 

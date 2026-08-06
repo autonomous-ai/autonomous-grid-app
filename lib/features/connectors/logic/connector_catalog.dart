@@ -1,7 +1,3 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'browse_connectors_controller.dart';
-
 /// How a catalog service is signed into.
 enum ConnectorAuthMethod {
   /// The connector signs in through Grid — the app opens a browser and the
@@ -210,29 +206,3 @@ String labelFromCode(String code) {
       .map((word) => word[0].toUpperCase() + word.substring(1));
   return words.isEmpty ? code : words.join(' ');
 }
-
-/// The connectors catalog: the public MCP directory, and nothing else.
-///
-/// **One source, by decision (Tony, 2026-08-03).** Two others used to feed this:
-/// the gateway's own sixteen curated rows (`GET {gridApiUrl}/v1/grid/connectors`)
-/// and a bundled list of twenty-four self-serve services. Both are gone from the
-/// screen. What replaced them reaches four thousand servers with no backend of
-/// ours in the path at all — the registry answers unauthenticated, and each
-/// server's own authorization server handles the sign-in.
-///
-/// **The gateway client is still wired, and must stay.** Removing the catalog
-/// call is not removing the gateway: credentials obtained through it
-/// (`ConnectorTokenSource.gateway`) are renewed and revoked against it, so
-/// `connector_link_controller.dart` still holds four references. Cutting those
-/// would strand every connector signed in before this change — they would work
-/// until their token expired and then have nowhere to go.
-///
-/// What this costs, plainly: connectors needing a pre-registered OAuth app —
-/// Google and Slack, whose `client_secret` can only live server-side — can no
-/// longer be signed into from here at all. Rows already connected keep working;
-/// they come from the token store and the agent's config, not from this list.
-final connectorCatalogProvider = FutureProvider<List<ConnectorCatalogEntry>>((
-  ref,
-) async {
-  return ref.watch(directoryCatalogProvider);
-});

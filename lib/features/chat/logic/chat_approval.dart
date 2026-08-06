@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import 'chat_sessions_controller.dart';
-import 'conversation.dart';
 
 /// How much the assistant may do without asking **in the chat that is open**.
 ///
@@ -21,13 +20,3 @@ final chatApprovalModeProvider = Provider<AgentApprovalMode>(
       ref.watch(chatSessionsProvider.select((s) => s.active?.approval)) ??
       ref.watch(chatPrefsProvider).approval,
 );
-
-/// The mode [conversation] runs under, given the app's standing [fallback].
-///
-/// Pure, and the one place the fallback rule lives: the provider above answers
-/// for the open chat, while a turn dispatched into a background chat has to ask
-/// about that chat instead.
-AgentApprovalMode approvalFor(
-  Conversation? conversation,
-  AgentApprovalMode fallback,
-) => conversation?.approval ?? fallback;

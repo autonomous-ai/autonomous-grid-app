@@ -31,10 +31,7 @@ class PkcePair {
     final random = Random.secure();
     final bytes = List<int>.generate(32, (_) => random.nextInt(256));
     final verifier = _base64Url(bytes);
-    return PkcePair(
-      verifier: verifier,
-      challenge: _base64Url(_sha256(utf8.encode(verifier))),
-    );
+    return PkcePair(verifier: verifier, challenge: challengeFor(verifier));
   }
 
   static String _base64Url(List<int> bytes) =>
