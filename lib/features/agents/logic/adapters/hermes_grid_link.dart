@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../../infrastructure/cli/hermes_cron_rearm.dart';
 import '../../../../infrastructure/cli/hermes_cron_service.dart';
+import '../../../../infrastructure/cli/hermes_cron_watchdog.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
@@ -95,6 +96,12 @@ class HermesGridLink {
     // for the next session, which is when Hermes is started again anyway.
     final setup = _ref.read(hermesAcpSetupProvider);
     if (setup != null) unawaited(setup.ensureRuntimeSupport());
+    // Same idea for the scheduler's own limit: a task on this grid answers in
+    // one long non-streaming turn, which Hermes's 10-minute idle watchdog reads
+    // as a hung run and kills. Fire-and-forget, and a no-op after the first
+    // time.
+    final watchdog = _ref.read(hermesCronWatchdogProvider);
+    if (watchdog != null) unawaited(watchdog.ensureLimit());
     // The model a scheduled task runs on just changed under it, and Hermes
     // fail-closes such a task rather than spending on a model nobody chose. The
     // user chose this one, here — so let the tasks follow it instead of quietly
