@@ -170,7 +170,8 @@ Integrations / Developer / Archived. Release build còn **4 group / 7 row** (gro
 **Màn hình không nằm trong shell:** `PreflightScreen`, `LoginScreen`, `InstallerScreen`,
 `OnboardingChoiceScreen` (4 màn full-screen do `RootView` chọn).
 
-**Màn hình unreachable:** `OverlordView` (~1.100 dòng, không có `ShellSection`, không route, 0 tham chiếu).
+**Màn hình unreachable:** `OverlordView` và cả `features/overlord/` (**1.417 dòng**, không có
+`ShellSection`, không route, 0 tham chiếu).
 
 ---
 
@@ -480,7 +481,8 @@ Kill cứng không chặn được — engine đó được **adopt lại** ở 
 `~/.grid/app/chats/<id>.json`, state gửi/stream/huỷ **theo từng chat** (nhiều chat có thể đang trả lời
 cùng lúc), và mọi UI quanh nó.
 
-`ChatSessionsController` (1427 dòng) là lõi. State:
+`ChatSessionsController` (**550 dòng** — `9712fb6` tách nó theo 4 việc nó làm: `chat_sessions_send`
+393, `chat_sessions_state` 268, `chat_sessions_goals` 135, `chat_sessions_settle`) là lõi. State:
 
 ```dart
 conversations: List<Conversation>   // toàn bộ, kể cả archived
@@ -1107,7 +1109,7 @@ Build local luôn `UpdateUnsupported` (`GRID_APPCAST_URL` chỉ bake trong `rele
 >    chạy trên `seedFleet()` hardcode — 4 GPU với **IP nội bộ, username (`samcardillo`), pid thật
 >    (750284, 1190474) của máy người khác**. Nếu ship ra prod thì đây là leak.
 > 2. **Màn hình KHÔNG THỂ MỞ ĐƯỢC.** Không có `ShellSection.overlord`, `section_view.dart` không map
->    tới nó, grep toàn repo (kể cả `test/`) ra 0 kết quả. **~1.100 dòng dead code.**
+>    tới nó, grep toàn repo (kể cả `test/`) ra 0 kết quả. **1.417 dòng dead code.**
 
 Seam thiết kế đúng (`abstract interface class OverlordRepository { Stream<OverlordSnapshot> watch(); }`)
 — nhưng chưa ai cắm gì vào. `StoragePanel` và `OrchestratorPanel` là stub "coming next", với 2
@@ -1316,7 +1318,7 @@ là bug flip theme chắc chắn.
 
 | Feature | Trạng thái | Bằng chứng |
 |---|---|---|
-| Chat + agent (3 runtime) | ✅ **Shipped** | Đầy đủ, 1427 dòng controller, resume/queue/goal/plan |
+| Chat + agent (3 runtime) | ✅ **Shipped** | Đầy đủ, controller 550 dòng + 4 module, resume/queue/goal/plan |
 | Skills | ✅ Shipped | 3 bug đã tìm ra (§7.4), "Draft with AI" tắt cứng |
 | Connectors (gateway + DCR) | ✅ Shipped | `rest_entry_fallback.dart` là scaffolding chờ gateway |
 | Scheduled tasks | ✅ Shipped | Ghim model qua Python nội bộ Hermes (`TODO(BE)`) |
@@ -1333,7 +1335,7 @@ là bug flip theme chắc chắn.
 | Debug | 🔒 devOnly | |
 | Media / ComfyUI | ❌ **Tắt bằng cờ** | `kMediaSetupEnabled = false` |
 | Browse connectors dialog | ❌ Tắt bằng cờ | `kShowBrowseConnectors = false` |
-| **Overlord** | ❌ **FAKE + UNREACHABLE** | `FakeOverlordRepository` hardcode; 0 route; ~1.100 dòng dead |
+| **Overlord** | ❌ **FAKE + UNREACHABLE** | `FakeOverlordRepository` hardcode; 0 route; 1.417 dòng dead |
 | Composio | ❌ **Chưa có 1 dòng Dart** | Doc `composio-proxy-contract.vi.md` nói "app đã implement xong" — **sai** |
 | Windows auto-update | ❌ Hoãn | `isSupported => Platform.isMacOS` |
 | `GridResolver.configuredPath` | ❌ Chưa nối UI | `providers.dart:16` tạo `GridResolver()` trần |
@@ -1428,9 +1430,10 @@ flutter test test/<area>        # logic test — KHÔNG viết widget test mới
 dart format .
 ```
 
-Nợ đo trên `main` sạch 2026-08-05: **9 issue** (đều ở `models/`, một cái `dead_code`) +
-`test/connectors/connectors_view_layout_test.dart` fail 3 widget test do overflow (đúng loại "rot"
-mà §8 conventions nói — xoá cùng widget chứ không đuổi theo).
+Đo lại trên `main` sạch 2026-08-06: **0 issue**, **2122 test pass / 0 fail**. Cả hai bar đều sạch,
+nên một failure bạn thấy là của bạn. (Nợ cũ — 9 issue trong `models/` và 3 widget test overflow ở
+`connectors_view_layout_test` — đã dọn ở `8b5c5ac`: file test kia xoá cùng widget, đúng cách §8
+conventions nói về "rot".)
 
 ### Build & release
 
@@ -1512,18 +1515,19 @@ tab Debug lẫn `app_https-*.log`:
 
 ### Số đo hiện trạng (2026-08-06)
 
-`flutter analyze lib` → **9 issue** (2 warning `dead_code`/`dead_null_aware_expression` + 6
-`unnecessary_underscores` ở `model_detail_panel`/`model_manager_split`, 1
-`unnecessary_brace_in_string_interps` ở `model_icon_service`) — **tất cả nằm trong `features/models/`**.
-**232 file test**, trong đó **26 file còn `testWidgets`** (legacy — §8 conventions cấm thêm mới).
-**21 `TODO` trong `lib/`, 16 trong đó là `TODO(BE)`** (chờ backend).
+`flutter analyze lib test` → **0 issue**. `flutter test` → **2122 pass, 0 fail**.
+(Bản đo đầu của tài liệu này, cùng ngày, còn ghi 9 issue trong `features/models/` — `8b5c5ac` dọn
+xong trong lúc tài liệu đang viết. Đo lại trước khi trích số ở đây.)
+**231 file test**, trong đó **24 file còn `testWidgets`** (legacy — §8 conventions cấm thêm mới).
+**23 `TODO` trong `lib/`, 20 trong đó là `TODO(BE)`** (chờ backend).
 Gateway connector đo 2026-08-05: **12 row, tất cả `auth_type: app`, 8/12 có `mcp_url`, 8/12 trả
 `description: ""`** (nên `connector_blurb_fallback.dart` tồn tại).
 
 ### Dead code đo được
 
-`overlord/**` (~1.100 dòng, unreachable) · `models/presentation/{suggested_models_section,download_row,manager_search_field}.dart`
-(0 import) · `model_shelf.dart::buildModelShelf` · `catalogModelsProvider` ·
+`overlord/**` (**1.417 dòng**, unreachable) · `models/presentation/{download_row,manager_search_field}.dart`
+(0 import; `suggested_models_section.dart` đã xoá ở `8b5c5ac`) · `model_shelf.dart::buildModelShelf` ·
+`catalogModelsProvider` ·
 `shared/layouts/widgets/{hosting_summary,plan_type_pill}.dart` (0 call site) ·
 `shared/widgets/{pulse.dart::PulseDot, coming_soon_view.dart, not_yet_badge.dart}` ·
 `conversation.dart::groupConversationsByRecency` · `parsers/{member_entry,denylist_entry}.dart` ·
@@ -1559,7 +1563,6 @@ Thêm, **trong chính `shared/`**:
 | `docs/features/connectors/composio-proxy-contract.vi.md` | Nói "app đã implement xong và đang chờ" — **0 dòng Dart nhắc tới Composio** |
 | `docs/features/connectors/gateway-api-for-grid-desktop.md` | Mô tả hợp đồng khác hẳn cái đang chạy (D12 supersede D9) |
 | `docs/design-system.md` | Ghi 186 call site `AppTheme.watch` (thực tế **399**); xếp `surfaceFill`/`sidebarFill` vào `AppSurface` (thực tế `AppGlass`); §4 ghi `w600` (thực tế `w500`) |
-| `AGENTS.md` | Nói 2 test fail pre-existing; thực tế `connectors_view_layout_test` fail 3 case |
 
 ### `TODO(BE)` — chờ backend
 
