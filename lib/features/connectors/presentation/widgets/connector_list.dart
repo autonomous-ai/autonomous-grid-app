@@ -776,7 +776,6 @@ class _ConnectedMark extends StatelessWidget {
     AppTheme.watch(context); // reads AppPalette tokens.
     return Tooltip(
       message: 'Connected',
-      waitDuration: const Duration(milliseconds: 500),
       child: SizedBox(
         width: 28,
         height: 28,
@@ -820,7 +819,6 @@ class _AddButtonState extends State<_AddButton> {
     AppTheme.watch(context); // reads AppCard/AppPalette tokens.
     return Tooltip(
       message: 'Connect',
-      waitDuration: const Duration(milliseconds: 500),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovered = true),

@@ -62,7 +62,6 @@ class _SourceChip extends StatelessWidget {
     final theme = Theme.of(context);
     return Tooltip(
       message: source.url,
-      waitDuration: const Duration(milliseconds: 500),
       child: Material(
         color: AppPalette.cardBg,
         borderRadius: BorderRadius.circular(10),

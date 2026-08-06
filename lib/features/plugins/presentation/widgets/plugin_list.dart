@@ -136,7 +136,6 @@ class _PluginRowState extends ConsumerState<_PluginRow> {
                   // as tall and broke the column. The full text is the tooltip.
                   Tooltip(
                     message: plugin.description,
-                    waitDuration: const Duration(milliseconds: 600),
                     child: Text(
                       plugin.description,
                       maxLines: 1,
