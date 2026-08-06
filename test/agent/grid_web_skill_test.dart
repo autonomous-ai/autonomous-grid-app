@@ -88,10 +88,10 @@ void main() {
     });
   });
 
-  group('writeGridWebSkill lays the skill down where the agent looks', () {
+  group('the installer lays the skill down where the agent looks', () {
     test('writes the card and both scripts under the given folder', () async {
       final dir = Directory('${tmp.path}/grid-web');
-      await writeGridWebSkill(dir, uvPath: '/uv');
+      await writeSkillFolder(dir, gridWebSkillFiles(dir, uvPath: '/uv'));
 
       expect(File('${dir.path}/SKILL.md').existsSync(), isTrue);
       expect(File('${dir.path}/scripts/search.py').existsSync(), isTrue);
@@ -102,11 +102,11 @@ void main() {
     test('a rewrite wipes the old copy first, so a stale file never lingers '
         'beside the current one', () async {
       final dir = Directory('${tmp.path}/grid-web');
-      await writeGridWebSkill(dir, uvPath: '/uv');
+      await writeSkillFolder(dir, gridWebSkillFiles(dir, uvPath: '/uv'));
       final stale = File('${dir.path}/scripts/old_prototype.py');
       await stale.writeAsString('# left over');
 
-      await writeGridWebSkill(dir, uvPath: '/uv');
+      await writeSkillFolder(dir, gridWebSkillFiles(dir, uvPath: '/uv'));
 
       expect(stale.existsSync(), isFalse);
       expect(File('${dir.path}/scripts/search.py').existsSync(), isTrue);

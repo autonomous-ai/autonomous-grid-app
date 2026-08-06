@@ -36,16 +36,6 @@ GridSkillFiles gridServeSkillFiles(
   files: const {'scripts/serve.py': kGridServeScript},
 );
 
-/// Write (or refresh) the `grid-serve` skill into [skillDir]. Idempotent.
-Future<void> writeGridServeSkill(
-  Directory skillDir, {
-  String? uvPath,
-  String? stateDir,
-}) => writeSkillFolder(
-  skillDir,
-  gridServeSkillFiles(skillDir, uvPath: uvPath, stateDir: stateDir),
-);
-
 /// The skill card every agent reads.
 ///
 /// The frontmatter is the only part read before it fires, so the description

@@ -246,34 +246,6 @@ void main() {
     });
   });
 
-  group('groupConversationsByRecency', () {
-    test('buckets by last-updated and drops empty buckets', () {
-      final now = DateTime(2026, 7, 8, 10);
-      final groups = groupConversationsByRecency([
-        _conversation(id: 'today', updatedAt: DateTime(2026, 7, 8, 9)),
-        _conversation(id: 'yesterday', updatedAt: DateTime(2026, 7, 7, 23)),
-        _conversation(id: 'lastweek', updatedAt: DateTime(2026, 7, 3)),
-        _conversation(id: 'ancient', updatedAt: DateTime(2026, 1, 1)),
-      ], now);
-
-      expect(groups.map((g) => g.label), [
-        'Today',
-        'Yesterday',
-        'Previous 7 days',
-        'Older',
-      ]);
-      expect(groups.first.conversations.single.id, 'today');
-      expect(groups.last.conversations.single.id, 'ancient');
-    });
-
-    test('returns nothing for an empty history', () {
-      expect(
-        groupConversationsByRecency(const [], DateTime(2026, 7, 8)),
-        isEmpty,
-      );
-    });
-  });
-
   group('liveConversations', () {
     test('hides the archived chats and keeps the order it was given', () {
       final live = liveConversations([

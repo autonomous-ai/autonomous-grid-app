@@ -47,17 +47,3 @@ ConnectorTransport effectiveTransport(ConnectorToken token) {
 /// ships without anyone flipping anything.
 RestEntry? effectiveRestEntry(ConnectorToken token) =>
     token.restEntry ?? restEntryFallbackFor(token.connector);
-
-/// A sentence for the row and the details dialog, or null when the connector is
-/// working and needs no explanation.
-///
-/// Written for someone who has never heard of a scope. "This account's
-/// permissions" rather than `gmail.readonly`; what they can do about it rather
-/// than which field was empty.
-String? transportBlockReason(ConnectorToken token) =>
-    switch (effectiveTransport(token)) {
-      ConnectorTransport.mcp || ConnectorTransport.rest => null,
-      ConnectorTransport.none =>
-        "Signed in, but this account's permissions don't give the agent "
-            'anything it can use.',
-    };

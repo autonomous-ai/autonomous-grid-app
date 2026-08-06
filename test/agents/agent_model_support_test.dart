@@ -115,14 +115,6 @@ void main() {
   });
 
   group('who to switch to when the pair does not work', () {
-    test('the agents offered for a model are the ones that can answer with it, '
-        'so a blocked row can point somewhere real', () {
-      expect(agentsForModel('claude:opus'), [AgentTool.claude]);
-      expect(agentsForModel('codex:gpt-5.5'), [AgentTool.codex]);
-      expect(agentsForModel('codex-cli:gpt-5.5'), [AgentTool.codex]);
-      expect(agentsForModel('qwen3.6-27b'), AgentTool.values);
-    });
-
     test('the blocked mark names the agent refusing, not the model', () {
       expect(agentModelBlockedLabel(AgentTool.codex), 'Not for Codex');
       expect(

@@ -154,7 +154,10 @@ void main() {
       final stale = File('${dir.path}/scripts/old.py');
       await stale.writeAsString('# from an older release');
 
-      await writeGridServeSkill(dir, uvPath: '/uv', stateDir: '/svc');
+      await writeSkillFolder(
+        dir,
+        gridServeSkillFiles(dir, uvPath: '/uv', stateDir: '/svc'),
+      );
 
       expect(stale.existsSync(), isFalse);
       expect(File('${dir.path}/scripts/serve.py').existsSync(), isTrue);

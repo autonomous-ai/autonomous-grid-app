@@ -232,7 +232,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
     double fraction,
     ThemeData theme,
   ) {
-    final doneMb = progress.doneMb ?? 0;
+    final doneMb = progress.doneMb;
     final totalMb = progress.totalMb ?? 0;
     final doneStr = doneMb >= 1000
         ? '${(doneMb / 1000).toStringAsFixed(1)} GB'
@@ -282,7 +282,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                     width: 36,
                     height: 36,
                     fit: BoxFit.contain,
-                    errorWidget: (_, __, ___) => Container(
+                    errorWidget: (_, _, _) => Container(
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(

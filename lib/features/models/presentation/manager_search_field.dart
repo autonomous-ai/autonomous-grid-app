@@ -1,18 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
-
-/// Where to find GGUF models to paste into the Discover box.
-const _huggingFaceGgufUrl =
-    'https://huggingface.co/models?library=gguf&sort=trending';
-
-/// Opens Hugging Face's GGUF listing in the browser.
-Future<void> openHuggingFaceGguf() => launchUrl(
-  Uri.parse(_huggingFaceGgufUrl),
-  mode: LaunchMode.externalApplication,
-);
 
 /// The model manager's filter box — a recessed capsule with a leading glass and
 /// a clear button once there's something to clear.
