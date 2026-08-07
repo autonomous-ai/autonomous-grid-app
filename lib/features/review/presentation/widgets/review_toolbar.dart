@@ -123,9 +123,19 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
             const SizedBox(width: 6),
           ],
           // Then the controls, grouped by what they are for and in that order:
-          // find a file, then change how it is drawn, then act on it. Scattered
-          // — which is what they were — a toolbar is eight glyphs to search
-          // every time.
+          // the settings drawer, finding a file, how it is drawn, then acting
+          // on it. Scattered — which is what they were — a toolbar is eight
+          // glyphs to search every time.
+          //
+          // The "…" leads because that is where a menu of everything else
+          // belongs: in the middle of the row it read as one more switch, and
+          // the eye had to pass it twice.
+          if (!snapshot.isEmpty)
+            DiffViewMenu(
+              snapshot: snapshot,
+              folder: widget.folder,
+              file: widget.openFile,
+            ),
           if (!snapshot.isEmpty)
             JumpToFile(snapshot: snapshot, folder: widget.folder),
           if (widget.openFile != null)
@@ -151,12 +161,6 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               onPressed: ref
                   .read(reviewFilesShownProvider(widget.folder).notifier)
                   .toggle,
-            ),
-          if (!snapshot.isEmpty)
-            DiffViewMenu(
-              snapshot: snapshot,
-              folder: widget.folder,
-              file: widget.openFile,
             ),
           // Sized so the spinner and the glyph occupy the same square: a
           // toolbar that reflows every time you refresh reads as a jolt.
