@@ -44,14 +44,19 @@ class FilesPanelView extends ConsumerWidget {
     final showSource = ref.watch(
       filesBrowserProvider(tabId).select((s) => s.showSource),
     );
+    final showTree = ref.watch(
+      filesBrowserProvider(tabId).select((s) => s.showTree),
+    );
     return PanelBody(
       toolbar: _Toolbar(
         tabId: tabId,
         folder: folder,
         selected: selected,
         showSource: showSource,
+        showTree: showTree,
       ),
       main: FileViewer(path: selected, showSource: showSource),
+      sideOpen: showTree,
       side: FilesTree(
         tabId: tabId,
         root: folder,
@@ -69,12 +74,14 @@ class _Toolbar extends ConsumerWidget {
     required this.folder,
     required this.selected,
     required this.showSource,
+    required this.showTree,
   });
 
   final String tabId;
   final String folder;
   final String? selected;
   final bool showSource;
+  final bool showTree;
 
   Future<void> _reveal(BuildContext context, WidgetRef ref) async {
     // Reveals the file's own folder when one is open, so the user lands on the
@@ -109,6 +116,23 @@ class _Toolbar extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
+          // Not offered until a file is open, and for the same reason the tree
+          // exists: with nothing to read beside it, hiding the tree hides the
+          // whole panel — and the empty state left behind would be telling you
+          // to pick from a tree that isn't there.
+          if (selected != null) ...[
+            AppIconButton(
+              icon: showTree
+                  ? LucideIcons.panelRightClose300
+                  : LucideIcons.panelRightOpen300,
+              size: 15,
+              tooltip: showTree ? 'Hide the file tree' : 'Show the file tree',
+              onPressed: ref
+                  .read(filesBrowserProvider(tabId).notifier)
+                  .toggleTree,
+            ),
+            const SizedBox(width: 2),
+          ],
           // Only Markdown has two ways to be read, so the switch between them is
           // only offered where it means something.
           if (selected != null && isMarkdownPath(selected)) ...[

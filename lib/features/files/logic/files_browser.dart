@@ -10,6 +10,7 @@ class FilesBrowserState {
     this.selected,
     this.query = '',
     this.showSource = false,
+    this.showTree = true,
   }) : expanded = Set.unmodifiable(expanded);
 
   /// Absolute paths of the folders the user has opened. The root's own children
@@ -31,16 +32,25 @@ class FilesBrowserState {
   /// down a folder of documents.
   final bool showSource;
 
+  /// Whether the tree of folders is beside the file.
+  ///
+  /// Out by default — it is how you get anywhere from here. Hiding it is for
+  /// reading: a panel docked at 420px has little enough width without a third of
+  /// it going to a column you have finished with for now.
+  final bool showTree;
+
   FilesBrowserState copyWith({
     Set<String>? expanded,
     String? selected,
     String? query,
     bool? showSource,
+    bool? showTree,
   }) => FilesBrowserState(
     expanded: expanded ?? this.expanded,
     selected: selected ?? this.selected,
     query: query ?? this.query,
     showSource: showSource ?? this.showSource,
+    showTree: showTree ?? this.showTree,
   );
 }
 
@@ -76,6 +86,8 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
   void setQuery(String query) => state = state.copyWith(query: query);
 
   void toggleSource() => state = state.copyWith(showSource: !state.showSource);
+
+  void toggleTree() => state = state.copyWith(showTree: !state.showTree);
 
   void collapseAll() => state = state.copyWith(expanded: const {});
 }
