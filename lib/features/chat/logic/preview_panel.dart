@@ -23,3 +23,28 @@ class PreviewPanelOpen extends Notifier<bool> {
 
   void open() => state = true;
 }
+
+/// Whether the preview panel has the whole pane, with the conversation slid out
+/// from under it.
+///
+/// A second state of the same panel rather than a second panel: what you are
+/// doing in there — reading a long diff, watching a build scroll past — is
+/// sometimes the whole job for a minute, and 45% of the window is not enough of
+/// it. The chat is hidden rather than closed, so the draft, the scroll and the
+/// turn in flight are all still there when it comes back.
+final previewPanelExpandedProvider =
+    NotifierProvider<PreviewPanelExpanded, bool>(PreviewPanelExpanded.new);
+
+class PreviewPanelExpanded extends Notifier<bool> {
+  @override
+  bool build() {
+    // Expanded is a state an *open* panel can be in, so opening or closing the
+    // panel puts it back to its normal width. Without this, closing while
+    // expanded would leave the flag set and the next open would swallow the
+    // conversation with no warning.
+    ref.watch(previewPanelOpenProvider);
+    return false;
+  }
+
+  void toggle() => state = !state;
+}

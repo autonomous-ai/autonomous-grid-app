@@ -55,6 +55,9 @@ class ChatPane extends ConsumerWidget {
     final project = ref.watch(projectByIdProvider(projectId));
     final override = ref.watch(chatRailOverrideProvider);
     final previewOpen = ref.watch(previewPanelOpenProvider);
+    // Asked for, not yet granted: expanding means the panel takes the pane, and
+    // whether it can depends on sizes this pane hasn't measured yet.
+    final expandWanted = ref.watch(previewPanelExpandedProvider) && previewOpen;
     final bottomOpen = ref.watch(bottomPanelOpenProvider);
     // Null until the user drags a seam; the resolver falls back to a share of
     // the pane, which keeps answering to the window's size.
@@ -79,8 +82,13 @@ class ChatPane extends ConsumerWidget {
     // It sits beside the chat only when the column still clears its composer;
     // otherwise — only ever when the user forced it open on a narrow window — it
     // floats over the chat, dismissed by the scrim or the toggle.
-    final inline = open && fits;
-    final overlay = open && !fits;
+    //
+    // Neither while the panel has the pane: the rail is the *chat's* margin, and
+    // 340px of a project's cards beside a full-width terminal, with no
+    // conversation between them, is furniture around nothing. The user's own
+    // rail setting is untouched, so it comes back when the panel does.
+    final inline = open && fits && !expandWanted;
+    final overlay = open && !fits && !expandWanted;
 
     // Measured on this pane rather than on the window, unlike the rail above:
     // what decides the preview panel is the space actually left over, and the
@@ -98,6 +106,25 @@ class ChatPane extends ConsumerWidget {
           bottomOverride: bottomOverride,
         );
         final previewFits = sizes.previewFits;
+        // Granted only where there is a docked panel to give the pane to. A
+        // floating panel already covers the chat, so there is nothing to expand
+        // *into*.
+        final expanded = expandWanted && previewFits;
+
+        // What the conversation is worth when the panel is at its normal width.
+        //
+        // The chat is laid out at this whatever the slot beside it is doing, and
+        // clipped to the slot — so a panel opening, or the pane going to the
+        // panel entirely, slides the conversation left instead of squeezing it.
+        // Squeezing is what a plain `Expanded` does, and at the bottom of the
+        // squeeze the composer is narrower than its own floor: a row of controls
+        // striped yellow and black for the length of the animation.
+        final chatWidth = _atLeast(
+          constraints.maxWidth -
+              (inline ? _railWidth + 1 : 0) -
+              (previewOpen && previewFits ? sizes.previewWidth : 0),
+          kChatMinWidth,
+        );
 
         // ChatView always sits in the same slot — Positioned.fill in a Stack,
         // first child of the Row — so toggling any panel, overlaying one,
@@ -107,34 +134,38 @@ class ChatPane extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(child: ChatView(network: network)),
-                  if (overlay) ...[
-                    Positioned.fill(
-                      child: GestureDetector(
-                        onTap: () => ref
-                            .read(chatRailOverrideProvider.notifier)
-                            .set(false),
-                        child: const ColoredBox(color: Color(0x33000000)),
+              child: _ChatSlot(
+                width: chatWidth,
+                hidden: expanded,
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: ChatView(network: network)),
+                    if (overlay) ...[
+                      Positioned.fill(
+                        child: GestureDetector(
+                          onTap: () => ref
+                              .read(chatRailOverrideProvider.notifier)
+                              .set(false),
+                          child: const ColoredBox(color: Color(0x33000000)),
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      bottom: 0,
-                      width: _railWidth,
-                      child: _RailPanel(project: project),
-                    ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: _railWidth,
+                        child: _RailPanel(project: project),
+                      ),
+                    ],
+                    if (!previewFits)
+                      Positioned.fill(
+                        child: _PreviewOverlay(
+                          open: previewOpen,
+                          width: sizes.previewWidth,
+                        ),
+                      ),
                   ],
-                  if (!previewFits)
-                    Positioned.fill(
-                      child: _PreviewOverlay(
-                        open: previewOpen,
-                        width: sizes.previewWidth,
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
             if (inline) ...[
@@ -150,7 +181,9 @@ class ChatPane extends ConsumerWidget {
             if (previewFits)
               _PreviewSlot(
                 open: previewOpen,
-                width: sizes.previewWidth,
+                // Expanded, the slot *is* the pane: the chat's own slot is
+                // flexible, so it takes what is left, which is nothing.
+                width: expanded ? constraints.maxWidth : sizes.previewWidth,
                 // The panel is on the right, so dragging the seam left — a
                 // negative delta — makes it wider. Each report resizes from the
                 // width just resolved, which is what makes the clamps hold: a
@@ -187,6 +220,48 @@ class ChatPane extends ConsumerWidget {
       },
     );
   }
+}
+
+/// The conversation, laid out at [width] however wide its slot happens to be.
+///
+/// The slot is flexible and gives way to the panel beside it, down to nothing
+/// when that panel takes the pane. The chat inside keeps [width] throughout and
+/// is pinned to the slot's *trailing* edge, so as that edge travels left the
+/// conversation travels with it and leaves past the window's left side — the
+/// mirror of what [_PreviewSlot] does coming the other way.
+///
+/// Two things this buys, both of which were bugs waiting: a composer that is
+/// never laid out below its own floor (a squeezed one stripes yellow and black
+/// for the length of the animation), and a chat that is *hidden* rather than
+/// unbuilt, so the draft in the box and the answer still streaming in are both
+/// there when it comes back.
+class _ChatSlot extends StatelessWidget {
+  const _ChatSlot({
+    required this.width,
+    required this.hidden,
+    required this.child,
+  });
+
+  final double width;
+
+  /// The panel has the pane and the conversation is off the left edge. It stays
+  /// mounted so it can slide back with everything in it, which is exactly why it
+  /// must not keep the keyboard: the same rule the panel obeys while closed,
+  /// pointing the other way — a message typed at a full-screen terminal must not
+  /// land in a composer nobody can see.
+  final bool hidden;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipRect(
+    child: OverflowBox(
+      alignment: Alignment.centerRight,
+      minWidth: width,
+      maxWidth: width,
+      child: ExcludeFocus(excluding: hidden, child: child),
+    ),
+  );
 }
 
 /// The preview panel docked beside the conversation — the layout opening rather
@@ -430,3 +505,7 @@ class _NoGrid extends ConsumerWidget {
     );
   }
 }
+
+/// `a`, but never below `floor`. `clamp` asserts low ≤ high, so a pane laid out
+/// narrower than the composer's floor would throw rather than degrade.
+double _atLeast(double a, double floor) => a > floor ? a : floor;

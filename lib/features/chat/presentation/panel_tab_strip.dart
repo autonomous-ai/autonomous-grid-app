@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
 import '../logic/panel_layout.dart';
 import '../logic/panel_tabs.dart';
+import '../logic/preview_panel.dart';
 import 'panel_feature_menu.dart';
 
 /// A panel's header: one tab per thing open in it, plus the way to open
@@ -23,7 +25,8 @@ import 'panel_feature_menu.dart';
 ///
 /// The "+" sits outside that entirely, pinned to the trailing edge: it is how
 /// you open the next thing, so it is the one control that must never be the
-/// thing that scrolled away.
+/// thing that scrolled away. Expand sits just inside it, so "+" keeps the corner
+/// it has always had.
 class PanelTabStrip extends ConsumerWidget {
   const PanelTabStrip({
     super.key,
@@ -95,9 +98,41 @@ class PanelTabStrip extends ConsumerWidget {
                 },
               ),
             ),
+            if (host == PanelHost.preview) const _ExpandButton(),
             PanelFeatureMenu(onSelected: controller.open),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Hands this panel the whole pane, and gives the conversation back.
+///
+/// Only in the panel beside the chat. Expanding is "take the room the chat is
+/// using", and the panel *under* the chat has no chat beside it to take room
+/// from — a button there would need a different meaning, which is a different
+/// button.
+///
+/// Quiet rather than lit-when-active, unlike the top bar's toggles: the icon
+/// already flips, and a permanently accent-coloured glyph beside a neutral "+"
+/// reads as something being wrong rather than as a state.
+class _ExpandButton extends ConsumerWidget {
+  const _ExpandButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final expanded = ref.watch(previewPanelExpandedProvider);
+    return Padding(
+      padding: const EdgeInsets.only(right: 2),
+      child: AppIconButton(
+        icon: expanded ? LucideIcons.minimize2 : LucideIcons.maximize2,
+        size: 15,
+        // Not "Show/Hide": nothing appears or goes away, the panel changes size.
+        tooltip: expanded ? 'Restore panel' : 'Expand panel',
+        onPressed: () =>
+            ref.read(previewPanelExpandedProvider.notifier).toggle(),
       ),
     );
   }
