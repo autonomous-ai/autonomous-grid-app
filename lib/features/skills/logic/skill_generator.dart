@@ -3,11 +3,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/command_log.dart';
-import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_transport.dart';
-import '../../playground/logic/playground_models.dart';
-import '../../playground/logic/playground_request.dart';
-import '../../provider_node/logic/provider_run_controller.dart';
+import '../../playground/logic/one_shot_target.dart';
 
 /// The three fields a generated draft fills in, matching the skill form.
 typedef GeneratedSkill = ({
@@ -70,7 +67,11 @@ class SkillGenerator {
       responseBody: reply,
     );
 
-    if (error != null) throw SkillGenerationException(_friendlyError(error));
+    if (error != null) {
+      throw SkillGenerationException(
+        friendlyOneShotError(error, what: 'draft the skill'),
+      );
+    }
 
     final draft = parseGeneratedSkill(reply ?? '');
     if (draft == null) {
@@ -82,46 +83,12 @@ class SkillGenerator {
     return draft;
   }
 
-  /// Where to send the request: the local engine when one is serving a known
-  /// model, otherwise the selected grid's relay. Throws a guiding line when
-  /// nothing can answer yet.
-  ({String endpoint, String apiKey, String model}) _resolveTarget() {
-    final localBaseUrl = _ref.read(localProviderEndpointProvider);
-    final localModel = _ref.read(servingModelProvider);
-    if (localBaseUrl != null && localModel != null && localModel.isNotEmpty) {
-      return (
-        endpoint: '$localBaseUrl/v1/chat/completions',
-        apiKey: '',
-        model: localModel,
-      );
-    }
-
-    // No advertised model means no relay chat to reach — don't even resolve the
-    // grid in that case.
-    final model = _firstTextModel();
-    if (model != null) {
-      final network = _ref.read(selectedNetworkProvider);
-      if (network != null) {
-        return (
-          endpoint: '${network.relayBaseUrl}/chat/completions',
-          apiKey: network.relayApiKey,
-          model: model,
-        );
-      }
-    }
-
-    throw const SkillGenerationException(
-      'No model is ready to write it. Start an engine, or pick a grid with a '
-      'model running, then try again.',
-    );
-  }
-
-  /// The first plain-text model advertised on the grid — media modes can't chat.
-  String? _firstTextModel() {
-    for (final option in _ref.read(playgroundModelsProvider)) {
-      if (option.modality == PlaygroundModality.text) return option.id;
-    }
-    return null;
+  /// Where to send the request — the local engine, else the grid's relay.
+  /// Throws a guiding line when nothing can answer yet.
+  OneShotTarget _resolveTarget() {
+    final target = resolveOneShotTarget(_ref);
+    if (target != null) return target;
+    throw SkillGenerationException(noModelReady('write it'));
   }
 
   static List<Map<String, dynamic>> _promptFor(String idea) => [
@@ -141,18 +108,6 @@ class SkillGenerator {
     },
     {'role': 'user', 'content': idea},
   ];
-
-  static String _friendlyError(ChatTransportError error) {
-    if (error.statusCode == 401 || error.statusCode == 403) {
-      return 'Your session expired — please sign in again.';
-    }
-    final detail = error.message.trim();
-    if (detail.isEmpty) {
-      return "Couldn't reach a model to write it. Make sure one is running, "
-          'then try again.';
-    }
-    return "Couldn't draft the skill: $detail";
-  }
 }
 
 /// Wire [SkillGenerator] through the container so the dialog stays testable — a

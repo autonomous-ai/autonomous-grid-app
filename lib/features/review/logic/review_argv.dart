@@ -181,6 +181,24 @@ List<List<String>> stageBatches(List<ReviewFile> files, {int perBatch = 50}) =>
         ]),
     ];
 
+/// The change a commit would carry, as a patch for a model to read.
+///
+/// [includeUnticked] follows the panel's toggle, because the message has to
+/// describe what will actually be committed — asking a model to summarise the
+/// index while the commit sweeps in three more files produces a message that is
+/// wrong in the one way nobody re-reads.
+///
+/// In a repository with no commits yet there is no `HEAD` to measure against,
+/// and `git diff HEAD` is an error rather than an empty answer; the working
+/// tree against the index is the closest true thing.
+List<String> commitDiffArgv({
+  required bool includeUnticked,
+  required bool hasCommits,
+}) {
+  if (!includeUnticked) return const ['diff', '--cached'];
+  return hasCommits ? const ['diff', 'HEAD'] : const ['diff'];
+}
+
 /// Commit what's staged. Deliberately no `-a`: staging is the user's decision,
 /// made file by file on this screen, and `-a` would quietly widen a commit
 /// beyond what the list showed them.
