@@ -13,15 +13,15 @@ import 'panel_tab_strip.dart';
 ///
 /// Two states, and the tab strip decides which:
 ///
-///  - **No tab selected** — the launcher, the list of what this panel can open.
-///    Also where the "+" button goes, so it isn't only the panel's first screen.
-///  - **A tab selected** — that feature's own `PanelBody`, built from its own
-///    folder under `features/`.
+///  - **No tab open** — the launcher, the list of what this panel can open.
+///  - **A tab selected** — that feature's own surface. Review is built; the
+///    other three answer with `TODO — <name>` until they are.
 ///
 /// Deliberately without panel controls of its own: the buttons that move the
 /// panels live together in the top bar. A panel carrying its own copy puts a
 /// second set directly under the first, and the user has to work out whether
-/// the two rows mean different things.
+/// the two rows mean different things. A *surface* inside a tab may carry its
+/// own header — that belongs to the surface, not to the panel.
 class PreviewPanel extends ConsumerWidget {
   const PreviewPanel({super.key, this.onRaisedSurface = false});
 
@@ -50,14 +50,18 @@ class PreviewPanel extends ConsumerWidget {
         Expanded(
           child: active == null
               ? _Launcher(onRaisedSurface: onRaisedSurface)
-              : panelFeatureView(active.feature),
+              : panelFeatureView(
+                  active,
+                  onClose: () =>
+                      ref.read(panelTabsProvider.notifier).close(active.id),
+                ),
         ),
       ],
     );
   }
 }
 
-/// What the panel can open — its resting state, and the "+" screen.
+/// What the panel can open — its resting state, before the first tab.
 class _Launcher extends ConsumerWidget {
   const _Launcher({required this.onRaisedSurface});
 

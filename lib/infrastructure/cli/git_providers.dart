@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'git_install.dart';
 import 'git_probe.dart';
 import 'git_repo.dart';
+import 'git_review.dart';
 import 'host_environment.dart';
 
 /// Riverpod wiring for Git.
@@ -45,6 +46,17 @@ final gitReadyProvider = Provider<bool>(
 /// that is.
 final gitRepoServiceProvider = Provider<GitRepoService>(
   (ref) => GitRepoServiceImpl(() => ref.read(gitStatusProvider.future)),
+);
+
+/// Runs the review screen's Git commands — reading a repository's changes,
+/// staging them, committing, pushing.
+///
+/// Same deal as [gitRepoServiceProvider]: it resolves the Git through
+/// [gitStatusProvider] rather than probing again, so every part of the app is
+/// running the same one. Tests override this with a fake runner and never
+/// spawn a process.
+final gitRunnerProvider = Provider<GitRunner>(
+  (ref) => GitRunnerImpl(() => ref.read(gitStatusProvider.future)),
 );
 
 /// Point the spawn environment at the Git that will actually be used — and, if

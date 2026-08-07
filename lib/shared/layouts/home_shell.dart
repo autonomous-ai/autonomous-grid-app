@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
+import '../../features/chat/logic/panel_tabs.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/git/logic/background_git_installer.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
@@ -121,6 +122,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         // ⌘, opens Settings — the macOS convention, so muscle memory works.
         const SingleActivator(LogicalKeyboardKey.comma, meta: true):
             _openSettings,
+        // ⌃⇧G opens Review beside the chat — the key the preview panel's
+        // launcher advertises, and Codex's own binding for the same thing.
+        const SingleActivator(
+          LogicalKeyboardKey.keyG,
+          control: true,
+          shift: true,
+        ): _openReview,
       },
       child: Focus(
         autofocus: true,
@@ -140,6 +148,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   void _openSettings() {
     ref.read(shellSectionProvider.notifier).select(kDefaultSettingsSection);
+  }
+
+  /// Show what changed in the open chat's project, beside the conversation.
+  ///
+  /// Also brings the user back to Chat: the panel lives there, so firing this
+  /// from Settings would open something they can't see.
+  void _openReview() {
+    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+    // Reveal, not open: pressing the shortcut again should bring the Review
+    // already on screen to the front rather than stack another one behind it.
+    ref.read(panelTabsProvider.notifier).reveal(PanelFeature.review);
   }
 }
 

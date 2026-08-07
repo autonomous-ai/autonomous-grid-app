@@ -80,7 +80,12 @@ class PanelTabs extends Notifier<PanelTabsState> {
   /// Opens [feature] in a new tab and shows it.
   ///
   /// Always a new tab, never a jump to an existing one — two terminals in two
-  /// directories is the normal case, not a mistake.
+  /// directories is the normal case, not a mistake. [reveal] is the other verb,
+  /// for the callers that mean "show me this".
+  ///
+  /// Opens the panel too: every way in here is somebody asking to *see*
+  /// something, and a tab opened behind a closed panel is a click that did
+  /// nothing.
   void open(PanelFeature feature) {
     final tab = PanelTab(
       id: 'tab-${++_seq}',
@@ -88,6 +93,22 @@ class PanelTabs extends Notifier<PanelTabsState> {
       title: _titleFor(feature),
     );
     state = PanelTabsState(tabs: [...state.tabs, tab], activeId: tab.id);
+    ref.read(previewPanelOpenProvider.notifier).open();
+  }
+
+  /// Brings [feature] to the front, opening a tab for it only if none is.
+  ///
+  /// What a keyboard shortcut wants: ⌃⇧G pressed three times should show
+  /// Review, not stack three Reviews. The launcher and the "+" menu still use
+  /// [open], because there the user picked a row meaning "another one".
+  void reveal(PanelFeature feature) {
+    for (final tab in state.tabs) {
+      if (tab.feature != feature) continue;
+      select(tab.id);
+      ref.read(previewPanelOpenProvider.notifier).open();
+      return;
+    }
+    open(feature);
   }
 
   void select(String id) =>

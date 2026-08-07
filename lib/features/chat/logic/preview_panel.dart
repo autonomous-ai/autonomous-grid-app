@@ -20,4 +20,6 @@ class PreviewPanelOpen extends Notifier<bool> {
   void toggle() => state = !state;
 
   void close() => state = false;
+
+  void open() => state = true;
 }
