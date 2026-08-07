@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../features/playground/presentation/code_highlight.dart';
+import '../../../../shared/code/code_highlight.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../logic/unified_diff.dart';
 
@@ -103,6 +103,11 @@ class DiffRowTile extends StatelessWidget {
 }
 
 /// The line's text, coloured by the language when we have a grammar for it.
+///
+/// One line at a time, which is what makes it cheap enough for a four-thousand-
+/// row diff. The cost is that a line inside a block comment is coloured as if it
+/// stood alone — wrong in a way that misreads as ordinary code, never as a
+/// change that isn't there.
 class _Line extends StatelessWidget {
   const _Line({required this.row, required this.language, required this.ink});
 
@@ -126,19 +131,4 @@ class _Line extends StatelessWidget {
     if (spans == null) return Text(row.text, style: base);
     return Text.rich(spans, style: base);
   }
-}
-
-/// The highlighter's name for the language of [path], or '' when its extension
-/// isn't one we have a grammar for.
-///
-/// Highlighting is per line, which is what makes it cheap enough for a
-/// four-thousand-row diff. The cost is that a line inside a block comment is
-/// coloured as if it stood alone — wrong in a way that misreads as ordinary
-/// code, never as a change that isn't there.
-String languageForPath(String path) {
-  final name = path.split('/').last;
-  final dot = name.lastIndexOf('.');
-  if (dot <= 0 || dot == name.length - 1) return '';
-  final extension = name.substring(dot + 1);
-  return CodeHighlight.supports(extension) ? extension : '';
 }

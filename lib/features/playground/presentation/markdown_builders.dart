@@ -7,7 +7,7 @@ import 'package:markdown/markdown.dart' as md;
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/code_text_scope.dart';
 import '../logic/chart_spec.dart';
-import 'code_highlight.dart';
+import '../../../shared/code/code_highlight.dart';
 import 'message_chart.dart';
 
 /// The code block and table renderers a chat turn uses, replacing the defaults

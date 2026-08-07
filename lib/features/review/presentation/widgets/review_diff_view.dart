@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../../shared/code/code_highlight.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
