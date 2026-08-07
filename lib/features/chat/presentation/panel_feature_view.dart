@@ -3,13 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/panel_visibility.dart';
 import '../../agents/logic/agent_changes.dart';
-import '../../browser/presentation/browser_panel_view.dart';
 import '../../files/logic/files_browser.dart';
 import '../../files/presentation/files_panel_view.dart';
 import '../../projects/logic/project.dart';
 import '../../review/logic/review_controller.dart';
 import '../../review/presentation/review_surface.dart';
-import '../../side_chat/presentation/side_chat_panel_view.dart';
 import '../../terminal/presentation/terminal_panel_view.dart';
 import '../logic/active_workdir.dart';
 import '../logic/bottom_panel.dart';
@@ -43,9 +41,7 @@ Widget panelFeatureView(
     tabId: tab.id,
     host: host,
   ),
-  PanelFeature.browser => const BrowserPanelView(),
   PanelFeature.files => _FilesTab(tabId: tab.id, host: host),
-  PanelFeature.sideChat => const SideChatPanelView(),
 };
 
 /// A shell, in the folder the conversation is about.
