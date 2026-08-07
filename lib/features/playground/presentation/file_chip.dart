@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/chip_remove_button.dart';
 import '../logic/chat_file.dart';
 
 /// The documents on a message, as a row of chips.
@@ -101,7 +102,11 @@ class FileChip extends StatelessWidget {
                   formatFileSize(file.sizeBytes),
                   style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
                 ),
-                if (onRemove != null) _RemoveButton(onTap: onRemove!),
+                if (onRemove != null)
+                  ChipRemoveButton(
+                    onTap: onRemove!,
+                    semanticLabel: 'Remove file',
+                  ),
               ],
             ),
           ),
@@ -120,33 +125,3 @@ IconData _iconFor(String name) => switch (fileExtensionOf(name)) {
   'docx' || 'doc' || 'rtf' || 'txt' || 'md' => Icons.description_outlined,
   _ => Icons.insert_drive_file_outlined,
 };
-
-/// Takes one file back off the message.
-class _RemoveButton extends StatelessWidget {
-  const _RemoveButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(7);
-    return Tooltip(
-      message: 'Remove',
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: radius,
-        splashFactory: NoSplash.splashFactory,
-        hoverColor: AppSurface.hoverFill,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(
-            Icons.close_rounded,
-            size: 14,
-            color: AppPalette.textFaint,
-            semanticLabel: 'Remove file',
-          ),
-        ),
-      ),
-    );
-  }
-}

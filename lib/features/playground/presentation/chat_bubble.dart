@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/context_chip.dart';
 import '../logic/chat_message.dart';
 import 'file_chip.dart';
 import 'message_content.dart';
@@ -100,6 +101,25 @@ class ChatBubble extends StatelessWidget {
             // sent is still visible afterwards (and still openable).
             if (message.files.isNotEmpty) ...[
               FileChips(files: message.files),
+              const SizedBox(height: 8),
+            ],
+            // And what was on screen at the time — the same chips the composer
+            // showed, so a turn answered from a build log still says so when the
+            // chat is reopened a week later.
+            if (message.contexts.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final context in message.contexts)
+                    ContextChip(
+                      label: context.label,
+                      tooltip: context.detail.isEmpty
+                          ? 'Sent with this message.'
+                          : '${context.detail}\nSent with this message.',
+                    ),
+                ],
+              ),
               const SizedBox(height: 8),
             ],
             MessageContent(

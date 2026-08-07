@@ -149,14 +149,21 @@ final chatSenderProvider = Provider<ChatSender>(
 /// Attached [files] ride along as they are: they were read when the user
 /// attached them, and they stay beside the text rather than inside it so the
 /// bubble shows a chip where the model gets the document (see [messageForModel]).
+/// [contexts] — what was on screen as Send was pressed — ride the same way.
 Future<ChatMessage> buildUserTurn({
   required String text,
   required List<MediaAttachment> attachments,
   required Directory outputsDir,
   List<ChatFile> files = const [],
+  List<ChatContext> contexts = const [],
 }) async {
   if (attachments.isEmpty) {
-    return ChatMessage(role: ChatRole.user, text: text, files: files);
+    return ChatMessage(
+      role: ChatRole.user,
+      text: text,
+      files: files,
+      contexts: contexts,
+    );
   }
   final media = await saveMediaOutputs([
     for (final a in attachments) a.toMediaFile(),
@@ -166,6 +173,7 @@ Future<ChatMessage> buildUserTurn({
     text: text,
     media: media,
     files: files,
+    contexts: contexts,
   );
 }
 

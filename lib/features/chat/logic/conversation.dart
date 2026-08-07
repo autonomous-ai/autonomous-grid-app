@@ -261,6 +261,10 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   // today rather than for the version the reply was about.
   if (message.files.isNotEmpty)
     'files': [for (final f in message.files) f.toJson()],
+  // Same reason as the files above: a reopened chat has to show what was sent,
+  // and the terminal it was captured from has scrolled on since.
+  if (message.contexts.isNotEmpty)
+    'contexts': [for (final c in message.contexts) c.toJson()],
   if (message.sources.isNotEmpty)
     'sources': [for (final s in message.sources) s.toJson()],
   if (message.plan.isNotEmpty)
@@ -276,6 +280,7 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
   final rawMedia = json['media'];
   final rawFiles = json['files'];
+  final rawContexts = json['contexts'];
   final rawSources = json['sources'];
   final rawPlan = json['plan'];
   return ChatMessage(
@@ -292,6 +297,10 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
     files: [
       if (rawFiles is List)
         for (final f in rawFiles) ?ChatFile.fromJson(f),
+    ],
+    contexts: [
+      if (rawContexts is List)
+        for (final c in rawContexts) ?ChatContext.fromJson(c),
     ],
     sources: [
       if (rawSources is List)

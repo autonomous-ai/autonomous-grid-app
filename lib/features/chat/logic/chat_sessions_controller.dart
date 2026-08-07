@@ -175,6 +175,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     PlaygroundModality modality,
     List<MediaAttachment> attachments,
     List<ChatFile> files,
+    List<ChatContext> contexts,
     bool? planFirst,
     String? into,
   });
