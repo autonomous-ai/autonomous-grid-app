@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
-import '../../../shared/theme/app_theme.dart';
+import '../theme/app_theme.dart';
 
 /// The app's markdown stylesheet for a chat turn.
 ///

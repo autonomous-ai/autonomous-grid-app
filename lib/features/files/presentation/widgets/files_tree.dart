@@ -9,6 +9,7 @@ import '../../../chat/logic/workspace_browser.dart';
 import '../../../projects/logic/agent_workspace.dart';
 import '../../logic/files_browser.dart';
 import '../../logic/files_filter.dart';
+import 'file_type_icon.dart';
 
 /// Left indent added per folder deep. Narrower than the file dialog's 16: this
 /// column is a third of a panel, and four levels in at 16 leaves no room for a
@@ -207,9 +208,6 @@ class _EntryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final isDir = entry.isDirectory;
-    // Selection is said twice — a wash *and* the ink stepping up — because at
-    // this size a wash alone is a shade the eye reads as hover.
-    final ink = isSelected ? AppPalette.textPrimary : AppPalette.textSecondary;
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(7),
@@ -249,15 +247,20 @@ class _EntryRow extends StatelessWidget {
                     : null,
               ),
               const SizedBox(width: 2),
-              Icon(
-                isDir
-                    ? (isExpanded
-                          ? LucideIcons.folderOpen300
-                          : LucideIcons.folder300)
-                    : LucideIcons.file300,
-                size: 14,
-                color: ink,
-              ),
+              // Folders stay the ink of the panel and files take their type's
+              // colour. Colouring both would make the tree a mosaic with no
+              // structure in it — the point of the hue is to pick a file out of
+              // the folder it's in, which needs the folder to be the quiet one.
+              if (isDir)
+                Icon(
+                  isExpanded
+                      ? LucideIcons.folderOpen300
+                      : LucideIcons.folder300,
+                  size: 14,
+                  color: AppPalette.textSecondary,
+                )
+              else
+                FileTypeIcon(path: entry.name),
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
@@ -266,6 +269,11 @@ class _EntryRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 12.5,
+                    // Selection is said by the wash *and* by the label stepping
+                    // up, because at this size a wash alone is a shade the eye
+                    // reads as hover. The icon stays its own colour throughout:
+                    // a file that changed hue when you clicked it would look
+                    // like a different kind of file.
                     fontWeight: isSelected ? AppFont.medium : FontWeight.w400,
                     color: isSelected ? AppPalette.textPrimary : null,
                   ),

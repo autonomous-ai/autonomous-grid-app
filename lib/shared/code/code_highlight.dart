@@ -4,7 +4,8 @@ import 'package:re_highlight/re_highlight.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
-/// Syntax colouring for fenced code blocks.
+/// Syntax colouring for source the app shows: fenced code blocks in a
+/// transcript, the lines of a diff, a file open in the Files panel.
 ///
 /// `re_highlight` is the highlight.js grammar set ported to Dart — ~197
 /// languages, which is what a coding agent actually emits. The TextMate-based
@@ -105,6 +106,20 @@ abstract final class CodeHighlight {
       _ => name,
     };
   }
+}
+
+/// The highlighter's name for the language of [path], or '' when its extension
+/// isn't one we have a grammar for.
+///
+/// Extension only. A shebang would name the language of the handful of files
+/// that have no extension, but reading one means reading the file — and the
+/// callers here already hold nothing but a path.
+String languageForPath(String path) {
+  final name = path.split(RegExp(r'[/\\]')).last;
+  final dot = name.lastIndexOf('.');
+  if (dot <= 0 || dot == name.length - 1) return '';
+  final extension = name.substring(dot + 1);
+  return CodeHighlight.supports(extension) ? extension : '';
 }
 
 /// What a highlighted line was asked for: the text, the grammar, and the two

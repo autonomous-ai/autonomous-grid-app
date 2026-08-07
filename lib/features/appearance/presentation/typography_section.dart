@@ -12,7 +12,7 @@ import '../../../shared/widgets/labeled_field.dart';
 // screen should re-type at 13pt, which is what it did before.
 import '../../network/presentation/grid_overview_widgets.dart';
 // The chat's own code block, reused rather than imitated — see _TypePreview.
-import '../../playground/presentation/markdown_builders.dart';
+import '../../../shared/markdown/markdown_code_block.dart';
 
 /// The type settings: which faces the app is set in, and at what size.
 ///

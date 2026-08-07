@@ -9,6 +9,7 @@ class FilesBrowserState {
     Set<String> expanded = const {},
     this.selected,
     this.query = '',
+    this.showSource = false,
   }) : expanded = Set.unmodifiable(expanded);
 
   /// Absolute paths of the folders the user has opened. The root's own children
@@ -20,14 +21,26 @@ class FilesBrowserState {
 
   final String query;
 
+  /// Whether Markdown is shown as the text it was written in rather than as the
+  /// document it describes. Only Markdown has the two forms, so this means
+  /// nothing for every other file.
+  ///
+  /// Rendered is the resting state: a `.md` is prose, and prose read as source
+  /// is prose with the punctuation left in. It rides on the tab rather than on
+  /// the file, so a reader who wants the raw text keeps getting it as they click
+  /// down a folder of documents.
+  final bool showSource;
+
   FilesBrowserState copyWith({
     Set<String>? expanded,
     String? selected,
     String? query,
+    bool? showSource,
   }) => FilesBrowserState(
     expanded: expanded ?? this.expanded,
     selected: selected ?? this.selected,
     query: query ?? this.query,
+    showSource: showSource ?? this.showSource,
   );
 }
 
@@ -61,6 +74,8 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
   void select(String path) => state = state.copyWith(selected: path);
 
   void setQuery(String query) => state = state.copyWith(query: query);
+
+  void toggleSource() => state = state.copyWith(showSource: !state.showSource);
 
   void collapseAll() => state = state.copyWith(expanded: const {});
 }

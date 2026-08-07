@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/playground/presentation/code_highlight.dart';
+import 'package:grid_app/shared/code/code_highlight.dart';
 
 /// The highlighter is picked for *coverage*: a coding agent emits python,
 /// bash and typescript far more often than dart. The TextMate-based
