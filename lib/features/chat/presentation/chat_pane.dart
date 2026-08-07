@@ -30,12 +30,12 @@ class ChatPane extends ConsumerWidget {
 
   /// The window width — the *whole* window, matching what a user reads as "the
   /// screen", not the pane inside the sidebar — at/above which the project rail
-  /// sits beside the conversation.
+  /// sits beside the conversation once the user opens it.
   ///
   /// Below it the chat column would be too narrow for its composer (a fixed row
   /// of controls that can't shrink past ~550px, so it would overflow), so the
-  /// rail steps aside by default and the top-bar toggle opens it as an overlay
-  /// instead. At this width the column keeps ~615px — clear of the composer.
+  /// rail floats over the chat as an overlay instead. At this width the column
+  /// keeps ~615px — clear of the composer.
   static const _inlineWidth = 1240.0;
 
   static const _railWidth = 340.0;
@@ -64,7 +64,10 @@ class ChatPane extends ConsumerWidget {
     // Measured on the whole window, not the pane inside the sidebar.
     final width = MediaQuery.sizeOf(context).width;
     final fits = width >= _inlineWidth;
-    final open = project != null && (override ?? fits);
+    // Hidden until asked for, however wide the window is: the conversation is
+    // what the user came for, and a rail that lets itself in takes a third of
+    // the pane before anyone has read a line of it. The top-bar toggle opens it.
+    final open = project != null && (override ?? false);
     // The top bar can't see this pane's width, so publish the resolved
     // visibility for its toggle to mirror. Post-frame: writing a provider during
     // build would throw.
