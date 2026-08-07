@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -9,6 +10,7 @@ import '../../../../shared/external_launch.dart';
 import '../../../../shared/markdown/markdown_code_block.dart';
 import '../../../../shared/markdown/markdown_style.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../../shared/widgets/empty_state.dart';
@@ -23,7 +25,12 @@ import '../../logic/file_preview.dart';
 /// drawn with. A README opened here should look like the README quoted in an
 /// answer, not like a third rendering of the same file in one window.
 class FileViewer extends ConsumerWidget {
-  const FileViewer({super.key, required this.path, required this.showSource});
+  const FileViewer({
+    super.key,
+    required this.path,
+    required this.showSource,
+    required this.onToggleSource,
+  });
 
   /// The absolute path of the file to show, or null before one is picked.
   final String? path;
@@ -31,6 +38,14 @@ class FileViewer extends ConsumerWidget {
   /// Show Markdown as the text it was written in. Means nothing for any other
   /// kind of file, which has only the one form.
   final bool showSource;
+
+  /// Swap between the document and its source.
+  ///
+  /// Offered on the page rather than in the toolbar, because it is about *this
+  /// file* rather than about the panel — and because copying and re-reading are
+  /// the same kind of thing, so the two travel together. The toolbar keeps what
+  /// acts on the folder: refresh, Finder, the editor.
+  final VoidCallback onToggleSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -44,6 +59,7 @@ class FileViewer extends ConsumerWidget {
       );
     }
 
+    final markdown = isMarkdownPath(path);
     return switch (ref.watch(filePreviewProvider(path))) {
       AsyncData(:final value) => _Preview(
         preview: value,
@@ -51,7 +67,9 @@ class FileViewer extends ConsumerWidget {
         // Relative images in a README are relative to the file, so the folder
         // it sits in is what turns `./docs/shot.png` into something to draw.
         folder: _folderOf(path),
-        rendered: !showSource && isMarkdownPath(path),
+        markdown: markdown,
+        rendered: markdown && !showSource,
+        onToggleSource: onToggleSource,
       ),
       AsyncError(:final error) => _Failed('$error'),
       _ => const Center(child: AppSpinner(size: SpinnerSize.medium)),
@@ -72,7 +90,9 @@ class _Preview extends StatelessWidget {
     required this.preview,
     required this.language,
     required this.folder,
+    required this.markdown,
     required this.rendered,
+    required this.onToggleSource,
   });
 
   final FilePreview preview;
@@ -83,34 +103,162 @@ class _Preview extends StatelessWidget {
 
   final String folder;
 
+  /// Whether this file has two forms at all.
+  final bool markdown;
+
   /// Draw the text as Markdown rather than as source.
   final bool rendered;
 
+  final VoidCallback onToggleSource;
+
   @override
-  Widget build(BuildContext context) => switch (preview) {
-    FilePreviewText(:final lines) when lines.isEmpty => const _Note(
-      'This file is empty.',
-    ),
-    FilePreviewText(:final lines, :final truncated) when rendered => _Rendered(
-      text: lines.join('\n'),
-      folder: folder,
-      truncated: truncated,
-    ),
-    FilePreviewText(:final lines, :final truncated) => _Source(
-      lines: lines,
-      truncated: truncated,
-      language: language,
-    ),
-    FilePreviewBinary() => const _Note(
-      'This is not a text file, so there is nothing to show. Open it to see it '
-      'in the app that handles it.',
-    ),
-    FilePreviewTooBig(:final bytes) => _Note(
-      'This file is ${_megabytes(bytes)} — too big to read here. Open it in '
-      'your editor instead.',
-    ),
-    FilePreviewFailed(:final message) => _Failed(message),
-  };
+  Widget build(BuildContext context) {
+    final body = switch (preview) {
+      FilePreviewText(:final lines) when lines.isEmpty => const _Note(
+        'This file is empty.',
+      ),
+      FilePreviewText(:final lines, :final truncated) when rendered =>
+        _Rendered(text: lines.join('\n'), folder: folder, truncated: truncated),
+      FilePreviewText(:final lines, :final truncated) => _Source(
+        lines: lines,
+        truncated: truncated,
+        language: language,
+      ),
+      FilePreviewBinary() => const _Note(
+        'This is not a text file, so there is nothing to show. Open it to see '
+        'it in the app that handles it.',
+      ),
+      FilePreviewTooBig(:final bytes) => _Note(
+        'This file is ${_megabytes(bytes)} — too big to read here. Open it in '
+        'your editor instead.',
+      ),
+      FilePreviewFailed(:final message) => _Failed(message),
+    };
+
+    // Only over a document with something in it: there is nothing to copy from
+    // a binary or an empty file, and nothing to switch to.
+    final text = switch (preview) {
+      FilePreviewText(:final lines) when markdown && lines.isNotEmpty =>
+        lines.join('\n'),
+      _ => null,
+    };
+    if (text == null) return body;
+
+    return Stack(
+      children: [
+        Positioned.fill(child: body),
+        Positioned(
+          top: 10,
+          right: 12,
+          child: _PageActions(
+            text: text,
+            showSource: !rendered,
+            onToggleSource: onToggleSource,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Copy, and the switch between the document and its source — floating at the
+/// top-right of the page, the way an editor keeps a file's own actions on the
+/// file.
+///
+/// Fixed to the corner rather than scrolling with the text: a switch you have to
+/// scroll back up to reach is one you stop using halfway down a long README. The
+/// cost is that it sits over the first line, which is why it is small and why it
+/// is on a lifted surface — [AppGlass.surfaceFill] with the card shadow under
+/// it, so it reads as floating *above* the page rather than as something printed
+/// on it (§1: no borders, depth is fill + shadow).
+class _PageActions extends StatelessWidget {
+  const _PageActions({
+    required this.text,
+    required this.showSource,
+    required this.onToggleSource,
+  });
+
+  /// The file as it is on disk — what gets copied whichever form is on screen.
+  /// Copying the *rendered* document would hand over prose with its markup
+  /// silently removed, which is not what anyone means by copying a `.md`.
+  final String text;
+
+  final bool showSource;
+  final VoidCallback onToggleSource;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppGlass.surfaceFill,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _CopyButton(text: text),
+            const SizedBox(width: 2),
+            AppIconButton(
+              icon: showSource ? LucideIcons.bookOpen300 : LucideIcons.code300,
+              size: 15,
+              // The tooltip names what the click *does*, not what is on screen:
+              // a one-button switch whose icon flips is otherwise a guess.
+              tooltip: showSource
+                  ? 'Show it as a document'
+                  : 'Show the Markdown source',
+              onPressed: onToggleSource,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Puts the file on the clipboard, and says so.
+///
+/// The tick rather than a toast: the answer belongs where the click landed, and
+/// a toast for something this small is a notification about a copy. Same
+/// two-second confirmation a fenced code block gives in the transcript.
+class _CopyButton extends StatefulWidget {
+  const _CopyButton({required this.text});
+
+  final String text;
+
+  @override
+  State<_CopyButton> createState() => _CopyButtonState();
+}
+
+class _CopyButtonState extends State<_CopyButton> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.text));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return AppIconButton(
+      icon: _copied ? LucideIcons.check300 : LucideIcons.copy300,
+      size: 15,
+      tooltip: _copied ? 'Copied' : 'Copy the file',
+      // Green while it holds, so the confirmation reads at a glance rather than
+      // asking the user to tell two small grey glyphs apart.
+      color: _copied ? AppPalette.online : null,
+      hoverColor: _copied ? AppPalette.online : null,
+      onPressed: _copy,
+    );
+  }
 }
 
 String _megabytes(int bytes) => '${(bytes / (1 << 20)).toStringAsFixed(1)} MB';

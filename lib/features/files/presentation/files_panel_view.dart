@@ -10,7 +10,6 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/panel_body.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../projects/logic/agent_workspace.dart';
-import '../logic/file_kind.dart';
 import '../logic/file_preview.dart';
 import '../logic/files_browser.dart';
 import '../logic/files_path.dart';
@@ -63,11 +62,16 @@ class FilesPanelView extends ConsumerWidget {
         tabId: tabId,
         folder: folder,
         selected: selected,
-        showSource: showSource,
         showTree: showTree,
         onOpenInNewTab: onOpenInNewTab,
       ),
-      main: FileViewer(path: selected, showSource: showSource),
+      main: FileViewer(
+        path: selected,
+        showSource: showSource,
+        onToggleSource: ref
+            .read(filesBrowserProvider(tabId).notifier)
+            .toggleSource,
+      ),
       sideOpen: showTree,
       side: FilesTree(
         tabId: tabId,
@@ -85,7 +89,6 @@ class _Toolbar extends ConsumerWidget {
     required this.tabId,
     required this.folder,
     required this.selected,
-    required this.showSource,
     required this.showTree,
     required this.onOpenInNewTab,
   });
@@ -93,7 +96,6 @@ class _Toolbar extends ConsumerWidget {
   final String tabId;
   final String folder;
   final String? selected;
-  final bool showSource;
   final bool showTree;
   final ValueChanged<String>? onOpenInNewTab;
 
@@ -148,23 +150,11 @@ class _Toolbar extends ConsumerWidget {
             ),
             const SizedBox(width: 2),
           ],
-          // Only Markdown has two ways to be read, so the switch between them is
-          // only offered where it means something.
-          if (selected != null && isMarkdownPath(selected)) ...[
-            AppIconButton(
-              icon: showSource ? LucideIcons.bookOpen300 : LucideIcons.code300,
-              size: 15,
-              // The tooltip names what the click *does*, not what is on screen:
-              // a one-button switch whose icon flips is otherwise a guess.
-              tooltip: showSource
-                  ? 'Show it as a document'
-                  : 'Show the Markdown source',
-              onPressed: ref
-                  .read(filesBrowserProvider(tabId).notifier)
-                  .toggleSource,
-            ),
-            const SizedBox(width: 2),
-          ],
+          // The Markdown document/source switch used to sit here, beside these.
+          // It moved onto the page (see `_PageActions`): this row is what acts
+          // on the *folder* — re-read it, reveal it, hand the file to an editor
+          // — while reading one file two ways is about the file, and belongs
+          // next to the copy action rather than three buttons away from it.
           AppIconButton(
             icon: LucideIcons.refreshCw300,
             size: 14,
