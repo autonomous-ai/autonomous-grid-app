@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/extension_tile_surface.dart';
+import '../../../shared/widgets/panel_visibility.dart';
 import '../logic/panel_tabs.dart';
 import 'panel_feature_view.dart';
 import 'panel_tab_strip.dart';
@@ -50,15 +51,73 @@ class PreviewPanel extends ConsumerWidget {
         Expanded(
           child: active == null
               ? _Launcher(onRaisedSurface: onRaisedSurface)
-              : panelFeatureView(
-                  active,
-                  onClose: () =>
-                      ref.read(panelTabsProvider.notifier).close(active.id),
-                ),
+              : _OpenTabs(state: state, active: active),
         ),
       ],
     );
   }
+}
+
+/// Every open tab, with the chosen one on top.
+///
+/// An [IndexedStack] rather than "build whichever tab is active": switching
+/// tabs used to throw the old surface away and build the new one from nothing,
+/// so the panel blinked — a file tree lost its open folders and its scroll, a
+/// diff was laid out again from the top, and a terminal would have lost its
+/// session. Here every open tab keeps its element tree; switching only changes
+/// which one paints.
+///
+/// The cost is that a background tab is still laid out. That is the trade a tab
+/// *is*: the user opened it, and a tab that has to be rebuilt to be looked at
+/// again isn't much better than closing it.
+class _OpenTabs extends ConsumerWidget {
+  const _OpenTabs({required this.state, required this.active});
+
+  final PanelTabsState state;
+  final PanelTab active;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => IndexedStack(
+    index: state.tabs.indexWhere((tab) => tab.id == active.id),
+    sizing: StackFit.expand,
+    children: [
+      for (final tab in state.tabs)
+        // Keyed by the tab, not by its place in the row: closing a tab to the
+        // left would otherwise hand its neighbour's state to the wrong
+        // surface.
+        KeyedSubtree(
+          key: ValueKey(tab.id),
+          child: _Tab(visible: tab.id == active.id, tab: tab),
+        ),
+    ],
+  );
+}
+
+/// One tab's surface, told whether it is the one being looked at.
+///
+/// A hidden tab is not painted and not hit-tested, but it is still *there* —
+/// so its animations are stopped, its fields are taken out of focus traversal,
+/// and anything of its own in the overlay is closed (see [PanelTabVisible]).
+class _Tab extends ConsumerWidget {
+  const _Tab({required this.visible, required this.tab});
+
+  final bool visible;
+  final PanelTab tab;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => PanelTabVisible(
+    visible: visible,
+    child: TickerMode(
+      enabled: visible,
+      child: ExcludeFocus(
+        excluding: !visible,
+        child: panelFeatureView(
+          tab,
+          onClose: () => ref.read(panelTabsProvider.notifier).close(tab.id),
+        ),
+      ),
+    ),
+  );
 }
 
 /// What the panel can open — its resting state, before the first tab.
