@@ -1,106 +1,106 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/extension_tile_surface.dart';
-import '../../../shared/widgets/toast.dart';
+import '../logic/panel_tabs.dart';
+import 'panel_feature_view.dart';
+import 'panel_tab_strip.dart';
 
 /// The work surface beside the conversation: where a review, a terminal, a
-/// browser or a file listing will open, so looking at one doesn't push the chat
-/// off the screen.
+/// browser or a file listing opens, so looking at one doesn't push the chat off
+/// the screen.
 ///
-/// None of those four exist yet. What the panel shows today is the launcher for
-/// them — which is also what it will show once they do, because a panel with
-/// nothing open should offer what could be rather than sit empty. Every row
-/// answers with a "not built yet" toast; see [_todo] for why that beats a row
-/// that does nothing at all.
+/// Two states, and the tab strip decides which:
 ///
-/// Deliberately headerless: the buttons that move the panels all live together
-/// in the top bar. A panel that carries its own copy of them puts a second set
-/// directly under the first, and the user has to work out whether the two rows
-/// mean different things.
-class PreviewPanel extends StatelessWidget {
+///  - **No tab selected** — the launcher, the list of what this panel can open.
+///    Also where the "+" button goes, so it isn't only the panel's first screen.
+///  - **A tab selected** — that feature's own `PanelBody`, built from its own
+///    folder under `features/`.
+///
+/// Deliberately without panel controls of its own: the buttons that move the
+/// panels live together in the top bar. A panel carrying its own copy puts a
+/// second set directly under the first, and the user has to work out whether
+/// the two rows mean different things.
+class PreviewPanel extends ConsumerWidget {
   const PreviewPanel({super.key, this.onRaisedSurface = false});
 
   /// Set when the panel is floating over the chat rather than docked beside it.
   ///
-  /// Passed straight through to the rows: their resting fill is tuned against
-  /// the page, and on a raised surface it measures 1.000:1 — the rows vanish.
-  /// [ExtensionTileSurface.onDialog] is the tuned-for-a-raised-surface variant.
+  /// Passed down to anything with a fill of its own: those fills are tuned
+  /// against the page, and on a raised surface they measure 1.000:1 — the rows
+  /// and the selected tab vanish. [ExtensionTileSurface.onDialog] is the
+  /// tuned-for-a-raised-surface variant.
   final bool onRaisedSurface;
 
   @override
-  Widget build(BuildContext context) =>
-      _Launcher(onRaisedSurface: onRaisedSurface);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(panelTabsProvider);
+    final active = state.active;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Not shown before the first tab exists: a strip holding one "+" is
+        // chrome around a screen that already offers the same choice, larger.
+        if (state.tabs.isNotEmpty) ...[
+          PanelTabStrip(onRaisedSurface: onRaisedSurface),
+          const Divider(height: 1),
+        ],
+        Expanded(
+          child: active == null
+              ? _Launcher(onRaisedSurface: onRaisedSurface)
+              : panelFeatureView(active.feature),
+        ),
+      ],
+    );
+  }
 }
 
-/// Says out loud that a control is a placeholder.
-///
-/// The panel's shape is being agreed before the surfaces behind it are built,
-/// and a row that swallows the click is indistinguishable from one that is
-/// broken — the app's copy rule (`docs/conventions.md` §5) is that every state
-/// is actionable or at least honest about itself.
-void _todo(BuildContext context, String feature) => ToastScope.show(
-  context,
-  ToastSpec(message: 'TODO — $feature is not built yet.'),
-);
-
-/// What the panel can open, centred in it — the panel's resting state.
-class _Launcher extends StatelessWidget {
+/// What the panel can open — its resting state, and the "+" screen.
+class _Launcher extends ConsumerWidget {
   const _Launcher({required this.onRaisedSurface});
 
   final bool onRaisedSurface;
 
-  /// The shortcuts are labels, not bindings: nothing listens for them yet, and
-  /// they are here because a launcher that teaches its keys is the point of
-  /// having one. They become real with the surfaces they name.
-  static const _items = <_LauncherItem>[
-    _LauncherItem(
-      icon: LucideIcons.fileCheck,
-      label: 'Review',
-      shortcut: '⌃⇧G',
-    ),
-    _LauncherItem(icon: LucideIcons.squareTerminal, label: 'Terminal'),
-    _LauncherItem(icon: LucideIcons.globe, label: 'Browser', shortcut: '⌘T'),
-    _LauncherItem(icon: LucideIcons.folder, label: 'Files', shortcut: '⌘P'),
-    _LauncherItem(
-      icon: LucideIcons.messagesSquare,
-      label: 'Side chat',
-      shortcut: '⌥⌘S',
-    ),
-  ];
-
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < _items.length; i++) ...[
-                if (i > 0) const SizedBox(height: 8),
-                _LauncherRow(item: _items[i], onRaisedSurface: onRaisedSurface),
-              ],
-            ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final open = ref.read(panelTabsProvider.notifier).open;
+    // Centred when there's room, scrolled when there isn't: five rows need
+    // ~260px, and a short window with the bottom panel open leaves less than
+    // that. `minHeight` is what keeps it centred rather than pinned to the top.
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < PanelFeature.values.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      _LauncherRow(
+                        feature: PanelFeature.values[i],
+                        onRaisedSurface: onRaisedSurface,
+                        onTap: () => open(PanelFeature.values[i]),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
-}
-
-/// One thing the panel can open.
-class _LauncherItem {
-  const _LauncherItem({required this.icon, required this.label, this.shortcut});
-
-  final IconData icon;
-  final String label;
-
-  /// The key it will answer to. Null for the one that hasn't been given one.
-  final String? shortcut;
 }
 
 /// A launcher row.
@@ -109,31 +109,36 @@ class _LauncherItem {
 /// carrying the hover lift, the shadow that separates a row from the page, and
 /// the raised-surface variant this panel needs when it floats.
 class _LauncherRow extends StatelessWidget {
-  const _LauncherRow({required this.item, required this.onRaisedSurface});
+  const _LauncherRow({
+    required this.feature,
+    required this.onRaisedSurface,
+    required this.onTap,
+  });
 
-  final _LauncherItem item;
+  final PanelFeature feature;
   final bool onRaisedSurface;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final shortcut = item.shortcut;
+    final shortcut = feature.shortcut;
     return ExtensionTileSurface(
       onDialog: onRaisedSurface,
-      onTap: () => _todo(context, item.label),
+      onTap: onTap,
       childBuilder: (context, hovered) => Row(
         children: [
           // The glyph rests a step below the label and comes up to meet it
           // under the pointer, so a hovered row reads as one lit object.
           Icon(
-            item.icon,
+            feature.icon,
             size: 16,
             color: hovered ? AppPalette.textPrimary : AppPalette.textSecondary,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              item.label,
+              feature.label,
               style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: AppFont.medium,
