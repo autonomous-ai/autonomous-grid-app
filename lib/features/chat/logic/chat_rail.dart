@@ -1,8 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// The user's manual override of the rail's width-driven default, or null to
-/// follow it (shown beside the chat when the window is wide enough for both, the
-/// panel stepping aside otherwise).
+/// Whether the user has asked for the project rail, or null while they haven't
+/// — in which case it stays hidden, at any window width.
 ///
 /// Sticks once set: a deliberate hide or show carries across chats — in this
 /// project and any other — because a preference the user just expressed
