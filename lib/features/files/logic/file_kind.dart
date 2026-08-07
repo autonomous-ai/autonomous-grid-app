@@ -100,6 +100,17 @@ FileMark fileMarkOf(String path) {
   return _byExtension[name.substring(dot + 1)] ?? _unknown;
 }
 
+/// Whether [path] is Markdown — a file with two honest ways to be read, the
+/// written one and the source it was written in.
+///
+/// `.mdx` is left out on purpose: it is Markdown with JSX components in it, and
+/// a plain renderer shows those components as the literal angle brackets they
+/// are. Better to keep it as source than to render it wrong.
+bool isMarkdownPath(String path) {
+  final name = path.split(RegExp(r'[/\\]')).last.toLowerCase();
+  return name.endsWith('.md') || name.endsWith('.markdown');
+}
+
 const FileMark _unknown = (
   glyph: FileGlyph.unknown,
   accent: FileAccent.neutral,

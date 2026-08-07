@@ -1,25 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../../../../shared/code/code_highlight.dart';
+import '../../../../shared/external_launch.dart';
+import '../../../../shared/markdown/markdown_code_block.dart';
+import '../../../../shared/markdown/markdown_style.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../../shared/widgets/empty_state.dart';
+import '../../logic/file_kind.dart';
 import '../../logic/file_preview.dart';
 
-/// The file on screen: its text, numbered and coloured, in the panel's main
-/// region.
+/// The file on screen, in whichever form it is worth reading in: Markdown as the
+/// document it describes, everything else as source, numbered and coloured.
 ///
-/// Read-only, and the colouring is the same [CodeHighlight] the transcript and
-/// the diff already use — so a file read here looks like the same file quoted in
-/// an answer, rather than like a third rendering of source in one window.
+/// Read-only, and both forms are the app's own — the same [CodeHighlight] the
+/// transcript and the diff use, and the same markdown stylesheet a chat turn is
+/// drawn with. A README opened here should look like the README quoted in an
+/// answer, not like a third rendering of the same file in one window.
 class FileViewer extends ConsumerWidget {
-  const FileViewer({super.key, required this.path});
+  const FileViewer({super.key, required this.path, required this.showSource});
 
   /// The absolute path of the file to show, or null before one is picked.
   final String? path;
+
+  /// Show Markdown as the text it was written in. Means nothing for any other
+  /// kind of file, which has only the one form.
+  final bool showSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -37,6 +48,10 @@ class FileViewer extends ConsumerWidget {
       AsyncData(:final value) => _Preview(
         preview: value,
         language: languageForPath(path),
+        // Relative images in a README are relative to the file, so the folder
+        // it sits in is what turns `./docs/shot.png` into something to draw.
+        folder: _folderOf(path),
+        rendered: !showSource && isMarkdownPath(path),
       ),
       AsyncError(:final error) => _Failed('$error'),
       _ => const Center(child: AppSpinner(size: SpinnerSize.medium)),
@@ -44,9 +59,21 @@ class FileViewer extends ConsumerWidget {
   }
 }
 
+/// The folder [path] sits in, with the separator left on — which is the form
+/// `flutter_markdown_plus` wants, since it resolves an image by concatenation.
+String _folderOf(String path) {
+  final cut = path.lastIndexOf(RegExp(r'[/\\]'));
+  return cut < 0 ? '' : path.substring(0, cut + 1);
+}
+
 /// One resolved preview, in whichever of its four shapes came back.
 class _Preview extends StatelessWidget {
-  const _Preview({required this.preview, required this.language});
+  const _Preview({
+    required this.preview,
+    required this.language,
+    required this.folder,
+    required this.rendered,
+  });
 
   final FilePreview preview;
 
@@ -54,10 +81,20 @@ class _Preview extends StatelessWidget {
   /// for — a `.log`, a `Makefile`, anything the highlighter doesn't know.
   final String language;
 
+  final String folder;
+
+  /// Draw the text as Markdown rather than as source.
+  final bool rendered;
+
   @override
   Widget build(BuildContext context) => switch (preview) {
     FilePreviewText(:final lines) when lines.isEmpty => const _Note(
       'This file is empty.',
+    ),
+    FilePreviewText(:final lines, :final truncated) when rendered => _Rendered(
+      text: lines.join('\n'),
+      folder: folder,
+      truncated: truncated,
     ),
     FilePreviewText(:final lines, :final truncated) => _Source(
       lines: lines,
@@ -77,6 +114,70 @@ class _Preview extends StatelessWidget {
 }
 
 String _megabytes(int bytes) => '${(bytes / (1 << 20)).toStringAsFixed(1)} MB';
+
+/// Markdown as the document it is: headings, lists, tables, and its fences drawn
+/// as the same code blocks a chat turn gets.
+///
+/// The stylesheet is the app's, not the package's — see
+/// [buildMarkdownStyleSheet]. What is set here is only what a *file* needs and a
+/// chat turn doesn't: where its images live, and a page inset, since a document
+/// starting hard against the panel's edge reads as clipped.
+class _Rendered extends StatelessWidget {
+  const _Rendered({
+    required this.text,
+    required this.folder,
+    required this.truncated,
+  });
+
+  final String text;
+  final String folder;
+  final bool truncated;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          // Selection comes from here rather than from `selectable: true`, which
+          // builds a `SelectableText` per block — a text editor for every
+          // paragraph in the document.
+          child: SelectionArea(
+            child: Markdown(
+              data: text,
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+              // What people actually write in a repository: tables, task lists,
+              // strikethrough, and bare URLs that should still be links.
+              extensionSet: md.ExtensionSet.gitHubFlavored,
+              softLineBreak: true,
+              selectable: false,
+              // Relative image paths resolve against the file's own folder; the
+              // package falls back to its error widget when one is missing, so a
+              // screenshot that moved doesn't take the document down.
+              imageDirectory: folder,
+              styleSheet: buildMarkdownStyleSheet(
+                context,
+                textColor: AppPalette.textPrimary,
+              ),
+              // Links leave for the browser. A relative link to another file in
+              // the project is left alone for now — resolving one means picking
+              // it in the tree, which is a navigation this panel doesn't have
+              // yet.
+              onTapLink: (_, href, _) {
+                if (href != null && Uri.tryParse(href)?.hasScheme == true) {
+                  openExternalUrl(href);
+                }
+              },
+              builders: {'pre': MarkdownCodeBlockBuilder()},
+            ),
+          ),
+        ),
+        if (truncated) const _TruncatedBar(),
+      ],
+    );
+  }
+}
 
 /// The source itself: a gutter of line numbers beside the text.
 ///

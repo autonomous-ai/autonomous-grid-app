@@ -10,6 +10,7 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/panel_body.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../projects/logic/agent_workspace.dart';
+import '../logic/file_kind.dart';
 import '../logic/file_preview.dart';
 import '../logic/files_browser.dart';
 import '../logic/files_path.dart';
@@ -40,9 +41,17 @@ class FilesPanelView extends ConsumerWidget {
     final selected = ref.watch(
       filesBrowserProvider(tabId).select((s) => s.selected),
     );
+    final showSource = ref.watch(
+      filesBrowserProvider(tabId).select((s) => s.showSource),
+    );
     return PanelBody(
-      toolbar: _Toolbar(folder: folder, selected: selected),
-      main: FileViewer(path: selected),
+      toolbar: _Toolbar(
+        tabId: tabId,
+        folder: folder,
+        selected: selected,
+        showSource: showSource,
+      ),
+      main: FileViewer(path: selected, showSource: showSource),
       side: FilesTree(
         tabId: tabId,
         root: folder,
@@ -55,10 +64,17 @@ class FilesPanelView extends ConsumerWidget {
 
 /// Region 2: where you are, and the two ways out of here into the system.
 class _Toolbar extends ConsumerWidget {
-  const _Toolbar({required this.folder, required this.selected});
+  const _Toolbar({
+    required this.tabId,
+    required this.folder,
+    required this.selected,
+    required this.showSource,
+  });
 
+  final String tabId;
   final String folder;
   final String? selected;
+  final bool showSource;
 
   Future<void> _reveal(BuildContext context, WidgetRef ref) async {
     // Reveals the file's own folder when one is open, so the user lands on the
@@ -93,6 +109,23 @@ class _Toolbar extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
+          // Only Markdown has two ways to be read, so the switch between them is
+          // only offered where it means something.
+          if (selected != null && isMarkdownPath(selected)) ...[
+            AppIconButton(
+              icon: showSource ? LucideIcons.bookOpen300 : LucideIcons.code300,
+              size: 15,
+              // The tooltip names what the click *does*, not what is on screen:
+              // a one-button switch whose icon flips is otherwise a guess.
+              tooltip: showSource
+                  ? 'Show it as a document'
+                  : 'Show the Markdown source',
+              onPressed: ref
+                  .read(filesBrowserProvider(tabId).notifier)
+                  .toggleSource,
+            ),
+            const SizedBox(width: 2),
+          ],
           AppIconButton(
             icon: LucideIcons.refreshCw300,
             size: 14,
