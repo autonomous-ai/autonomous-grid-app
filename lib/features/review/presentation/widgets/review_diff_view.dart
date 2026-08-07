@@ -13,6 +13,7 @@ import '../../logic/review_comments_controller.dart';
 import '../../logic/review_file.dart';
 import '../../logic/review_patch.dart';
 import '../../logic/review_selection.dart';
+import '../../logic/review_view_prefs.dart';
 import '../../logic/unified_diff.dart';
 import 'comment_composer.dart';
 import 'diff_row_tile.dart';
@@ -179,12 +180,21 @@ class _Patch extends ConsumerWidget {
       file.path,
     );
     final draft = ref.watch(reviewCommentDraftProvider(folder));
+    final prefs = ref.watch(diffViewPrefsProvider);
+    final opened = ref.watch(reviewOpenHunksProvider(file.path));
     // Flattened to *what to draw*, not to widgets: a generated file's diff runs
     // to thousands of rows, and building every widget up front — on every
     // rebuild, for rows nobody can see — is work the lazy list exists to avoid.
     final rows = <_Line>[];
-    for (final hunk in patch.hunks) {
-      rows.add(_Line.heading(hunk));
+    for (var h = 0; h < patch.hunks.length; h++) {
+      final hunk = patch.hunks[h];
+      final open = hunkIsOpen(
+        collapsedAll: prefs.collapsed,
+        exceptions: opened,
+        index: h,
+      );
+      rows.add(_Line.heading(hunk, h, open));
+      if (!open) continue;
       for (final row in hunk.rows) {
         rows.add(_Line.row(row));
         final anchor = commentAnchorFor(row);
@@ -206,41 +216,98 @@ class _Patch extends ConsumerWidget {
       }
     }
 
-    return CodeTextScope(
-      child: ListView.builder(
-        padding: const EdgeInsets.only(bottom: 16),
-        // One more for the "and N more lines" tail, when there is one.
-        itemCount: rows.length + (patch.truncatedBy > 0 ? 1 : 0),
-        itemBuilder: (context, i) {
-          if (i == rows.length) return _Truncated(lines: patch.truncatedBy);
-          final line = rows[i];
-          final hunk = line.hunk;
-          if (hunk != null) return _HunkHeading(hunk: hunk);
-          final open = line.draft;
-          if (open != null) {
-            return CommentComposer(draft: open, folder: folder);
-          }
-          final said = line.comment;
-          if (said != null) return CommentCard(comment: said, folder: folder);
-          final row = line.row!;
-          final anchor = commentAnchorFor(row);
-          return DiffRowTile(
-            row: row,
-            language: language,
-            onComment: anchor == null
-                ? null
-                : () => ref
-                      .read(reviewCommentDraftProvider(folder).notifier)
-                      .open(
-                        CommentDraft(
-                          path: file.path,
-                          side: anchor.side,
-                          line: anchor.line,
-                          code: row.text.trim(),
-                        ),
-                      ),
+    final list = ListView.builder(
+      padding: const EdgeInsets.only(bottom: 16),
+      // One more for the "and N more lines" tail, when there is one.
+      itemCount: rows.length + (patch.truncatedBy > 0 ? 1 : 0),
+      itemBuilder: (context, i) {
+        if (i == rows.length) return _Truncated(lines: patch.truncatedBy);
+        final line = rows[i];
+        final hunk = line.hunk;
+        if (hunk != null) {
+          return _HunkHeading(
+            hunk: hunk,
+            open: line.hunkOpen,
+            onTap: () => ref
+                .read(reviewOpenHunksProvider(file.path).notifier)
+                .toggle(line.hunkIndex),
           );
-        },
+        }
+        final open = line.draft;
+        if (open != null) {
+          return CommentComposer(draft: open, folder: folder);
+        }
+        final said = line.comment;
+        if (said != null) return CommentCard(comment: said, folder: folder);
+        final row = line.row!;
+        final anchor = commentAnchorFor(row);
+        return DiffRowTile(
+          row: row,
+          language: language,
+          wrap: prefs.wrap,
+          onComment: anchor == null
+              ? null
+              : () => ref
+                    .read(reviewCommentDraftProvider(folder).notifier)
+                    .open(
+                      CommentDraft(
+                        path: file.path,
+                        side: anchor.side,
+                        line: anchor.line,
+                        code: row.text.trim(),
+                      ),
+                    ),
+        );
+      },
+    );
+
+    return CodeTextScope(
+      child: prefs.wrap ? list : _SideScroller(patch: patch, child: list),
+    );
+  }
+}
+
+/// The whole diff on one horizontal scroll, for when lines don't fold.
+///
+/// One scroller for the pane rather than one per row: a diff you drag sideways
+/// a line at a time is worse than one that wraps, and the columns would fall
+/// out of line the moment two rows sat at different offsets.
+///
+/// Its width is the longest line's, measured once — laying the widest line out
+/// costs a fraction of a millisecond and is the only way to know what "as wide
+/// as the content" means before the content is built.
+class _SideScroller extends StatelessWidget {
+  const _SideScroller({required this.patch, required this.child});
+
+  final DiffFilePatch patch;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppFont.codeStyle(height: 1.5);
+    var longest = '';
+    for (final hunk in patch.hunks) {
+      for (final row in hunk.rows) {
+        if (row.text.length > longest.length) longest = row.text;
+      }
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: longest, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    // The gutter and the sign column sit to the left of every line.
+    final content = painter.width + DiffRowTile.gutterWidth + 12 + 16;
+
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: content > constraints.maxWidth
+              ? content
+              : constraints.maxWidth,
+          child: child,
+        ),
       ),
     );
   }
@@ -249,36 +316,95 @@ class _Patch extends ConsumerWidget {
 /// One entry in the flattened diff: a hunk's heading, a line of it, a remark
 /// left on that line, or the box writing one.
 class _Line {
-  const _Line.heading(this.hunk) : row = null, comment = null, draft = null;
-  const _Line.row(this.row) : hunk = null, comment = null, draft = null;
-  const _Line.comment(this.comment) : hunk = null, row = null, draft = null;
-  const _Line.draft(this.draft) : hunk = null, row = null, comment = null;
+  const _Line.heading(this.hunk, this.hunkIndex, this.hunkOpen)
+    : row = null,
+      comment = null,
+      draft = null;
+  const _Line.row(this.row)
+    : hunk = null,
+      comment = null,
+      draft = null,
+      hunkIndex = -1,
+      hunkOpen = true;
+  const _Line.comment(this.comment)
+    : hunk = null,
+      row = null,
+      draft = null,
+      hunkIndex = -1,
+      hunkOpen = true;
+  const _Line.draft(this.draft)
+    : hunk = null,
+      row = null,
+      comment = null,
+      hunkIndex = -1,
+      hunkOpen = true;
 
   final DiffHunk? hunk;
   final DiffRow? row;
   final ReviewComment? comment;
   final CommentDraft? draft;
+
+  /// Where this heading's section sits in the file, and whether it is folded —
+  /// meaningless on every other kind of entry.
+  final int hunkIndex;
+  final bool hunkOpen;
 }
 
-/// Where in the file the next run of lines is.
+/// Where in the file the next run of lines is, and the fold for it.
 class _HunkHeading extends StatelessWidget {
-  const _HunkHeading({required this.hunk});
+  const _HunkHeading({
+    required this.hunk,
+    required this.open,
+    required this.onTap,
+  });
 
   final DiffHunk hunk;
+  final bool open;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final where = hunk.context;
-    return Container(
-      width: double.infinity,
-      color: AppGlass.rowFill,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      child: Text(
-        where.isEmpty ? _lineRange(hunk.header) : where,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppFont.codeStyle(color: AppPalette.textSecondary, scale: 0.9),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: double.infinity,
+          color: AppGlass.rowFill,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            children: [
+              Icon(
+                open ? LucideIcons.chevronDown : LucideIcons.chevronRight,
+                size: 13,
+                color: AppPalette.textFaint,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  where.isEmpty ? _lineRange(hunk.header) : where,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFont.codeStyle(
+                    color: AppPalette.textSecondary,
+                    scale: 0.9,
+                  ),
+                ),
+              ),
+              if (!open)
+                Text(
+                  '${hunk.rows.length} lines',
+                  style: AppFont.codeStyle(
+                    color: AppPalette.textFaint,
+                    scale: 0.85,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

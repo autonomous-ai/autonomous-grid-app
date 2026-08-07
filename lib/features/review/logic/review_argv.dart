@@ -116,28 +116,36 @@ List<String> nameStatusArgv(ReviewScope scope) => switch (scope) {
 /// A rename is passed both of its paths: given only the new one, Git has
 /// nothing to pair it with and reports a file that appeared from nowhere —
 /// every line "added", which is the opposite of what a rename is.
+///
+/// [ignoreWhitespace] is Git's own `-w`, not a filter applied after the fact:
+/// asking Git to ignore whitespace drops the *lines* that differ by nothing
+/// else, which is the point — a re-indented file otherwise reads as rewritten
+/// from top to bottom.
 List<String> fileDiffArgv({
   required ReviewScope scope,
   required ReviewFile file,
   required String nullDevice,
+  bool ignoreWhitespace = false,
 }) {
+  final space = [if (ignoreWhitespace) '-w'];
   // An untracked file isn't in the index or in HEAD, so `git diff` has nothing
   // to compare and prints nothing at all. `--no-index` diffs two paths on disk
   // directly; against the null device, every line reads as added — which is
   // what an entirely new file is.
   if (file.kind == ReviewFileKind.untracked) {
-    return ['diff', '--no-index', '--', nullDevice, file.path];
+    return ['diff', '--no-index', ...space, '--', nullDevice, file.path];
   }
   final paths = ['--', ?file.oldPath, file.path];
   return switch (scope) {
     CommittedChange(:final commit) => [
       'show',
       '-M',
+      ...space,
       '--format=',
       commit.sha,
       ...paths,
     ],
-    _ => ['diff', '-M', ...?_range(scope), ...paths],
+    _ => ['diff', '-M', ...space, ...?_range(scope), ...paths],
   };
 }
 
