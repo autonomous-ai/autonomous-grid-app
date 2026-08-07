@@ -11,7 +11,9 @@ import '../../logic/review_comments_controller.dart';
 import '../../logic/review_controller.dart';
 import '../../logic/review_scope.dart';
 import '../../logic/review_snapshot.dart';
+import '../../logic/review_view_prefs.dart';
 import 'commit_button.dart';
+import 'jump_to_file.dart';
 import 'review_mark.dart';
 import 'scope_menu.dart';
 import 'toolbar_pill.dart';
@@ -33,6 +35,7 @@ class ReviewToolbar extends ConsumerStatefulWidget {
     required this.snapshot,
     required this.folder,
     required this.onAskAgent,
+    this.canHideFiles = false,
   });
 
   final ReviewSnapshot snapshot;
@@ -40,6 +43,13 @@ class ReviewToolbar extends ConsumerStatefulWidget {
 
   /// Hands a message to whatever hosts this surface, to put in the composer.
   final ValueChanged<String> onAskAgent;
+
+  /// Whether hiding the changed-file list is on offer here.
+  ///
+  /// Only where the list is *beside* the diff and there is a diff to be left
+  /// with: in the narrow layout the two take turns, so hiding the list would
+  /// leave the panel with nothing in it.
+  final bool canHideFiles;
 
   @override
   ConsumerState<ReviewToolbar> createState() => _ReviewToolbarState();
@@ -53,6 +63,7 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
     AppTheme.watch(context);
     final snapshot = widget.snapshot;
     final comments = ref.watch(reviewCommentsProvider(widget.folder));
+    final filesShown = ref.watch(reviewFilesShownProvider(widget.folder));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
@@ -107,6 +118,24 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               tooltip: 'Ask the assistant to review these changes',
               onPressed: () =>
                   widget.onAskAgent(askAgentPrompt(snapshot.scope)),
+            ),
+          // Only with something to jump *to*.
+          if (!snapshot.isEmpty)
+            JumpToFile(snapshot: snapshot, folder: widget.folder),
+          if (widget.canHideFiles)
+            AppIconButton(
+              icon: filesShown
+                  ? LucideIcons.panelRightClose300
+                  : LucideIcons.panelRightOpen300,
+              size: 15,
+              // The tooltip names what the click *does*, not what is on screen,
+              // and it is the Files tab's wording for the same control.
+              tooltip: filesShown
+                  ? 'Hide the changed files'
+                  : 'Show the changed files',
+              onPressed: ref
+                  .read(reviewFilesShownProvider(widget.folder).notifier)
+                  .toggle,
             ),
           // Sized so the spinner and the glyph occupy the same square: a
           // toolbar that reflows every time you refresh reads as a jolt.

@@ -6,7 +6,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/error_box.dart';
-import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../logic/commit_action.dart';
 import '../../logic/commit_controller.dart';
@@ -368,37 +367,6 @@ class _Failure extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-/// The panel's own surface: the app's menu chrome, so a popover and a menu
-/// opened from the same toolbar are the same object.
-class CommitPanelSurface extends StatelessWidget {
-  const CommitPanelSurface({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Material(
-      color: appMenuFill(),
-      // The same lift, fill and hairline `appMenuStyle` gives a `MenuAnchor`:
-      // this panel opens from the same toolbar and must not read as a second
-      // kind of surface.
-      elevation: 12,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppGlass.hair),
-        ),
-        // Vertical only: rows carry their own gutter so their highlight reads
-        // as an inset pill, and side padding here would double it.
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: child,
       ),
     );
   }

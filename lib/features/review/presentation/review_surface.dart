@@ -8,6 +8,7 @@ import '../../projects/logic/project.dart';
 import '../logic/review_controller.dart';
 import '../logic/review_selection.dart';
 import '../logic/review_snapshot.dart';
+import '../logic/review_view_prefs.dart';
 import 'widgets/review_diff_view.dart';
 import 'widgets/review_file_list.dart';
 import 'widgets/review_states.dart';
@@ -134,19 +135,25 @@ class _Changes extends ConsumerWidget {
         ? null
         : snapshot.files.where((f) => f.path == selected).firstOrNull;
 
-    final toolbar = ReviewToolbar(
-      snapshot: snapshot,
-      folder: folder,
-      onAskAgent: onAskAgent,
-    );
     final list = ReviewFileList(snapshot: snapshot, folder: folder);
+    // Never with nothing open: hiding the list would leave the pane telling the
+    // user to pick from a list that isn't there.
+    final hidden = !ref.watch(reviewFilesShownProvider(folder)) && file != null;
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final sideBySide =
+            constraints.maxWidth >= _sideBySideFrom && !snapshot.isEmpty;
+        final toolbar = ReviewToolbar(
+          snapshot: snapshot,
+          folder: folder,
+          onAskAgent: onAskAgent,
+          canHideFiles: sideBySide && file != null,
+        );
         // Nothing to review: the empty state takes the pane rather than sitting
         // in a column beside "pick a file", which would be two messages about
         // the same nothing.
-        if (constraints.maxWidth < _sideBySideFrom || snapshot.isEmpty) {
+        if (!sideBySide) {
           return PanelBody(
             toolbar: toolbar,
             main: file == null
@@ -159,6 +166,7 @@ class _Changes extends ConsumerWidget {
           main: file == null
               ? const _NothingOpen()
               : ReviewDiffView(file: file, folder: folder, showBack: false),
+          sideOpen: !hidden,
           side: list,
         );
       },
