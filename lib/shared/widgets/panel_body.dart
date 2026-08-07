@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../theme/app_theme.dart';
+import 'panel_side_layout.dart';
+import 'panel_splitter.dart';
 
 /// The inside of one preview-panel tab: a toolbar, the work itself, and an
 /// optional column beside it.
@@ -12,7 +15,7 @@ import '../theme/app_theme.dart';
 ///
 /// Features live in their own folders (`features/review/presentation`, and so
 /// on) and each returns one of these.
-class PanelBody extends StatelessWidget {
+class PanelBody extends ConsumerWidget {
   const PanelBody({
     super.key,
     required this.toolbar,
@@ -36,8 +39,11 @@ class PanelBody extends StatelessWidget {
   static const double toolbarHeight = 36;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final side = this.side;
+    // Null until the user drags the seam; the resolver falls back to a share of
+    // the panel, which keeps answering to its width.
+    final dragged = ref.watch(panelSideWidthProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -50,16 +56,44 @@ class PanelBody extends StatelessWidget {
                   builder: (context, constraints) {
                     // A share rather than a fixed width: the panel itself is a
                     // share of the window, so a fixed column would eat most of
-                    // it at the narrow end and look lost at the wide one.
-                    final width = (constraints.maxWidth * 0.3)
-                        .clamp(180.0, 280.0)
-                        .toDouble();
+                    // it at the narrow end and look lost at the wide one — until
+                    // the user says otherwise by moving the seam.
+                    final width = resolvePanelSideWidth(
+                      panelWidth: constraints.maxWidth,
+                      override: dragged,
+                    );
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Expanded(child: main),
-                        const VerticalDivider(width: 1),
-                        SizedBox(width: width, child: side),
+                        SizedBox(
+                          width: width,
+                          // The seam rides *inside* the column it sizes, the
+                          // way the chat pane's does, so the width resolved
+                          // here is the whole slot and the work beside it keeps
+                          // exactly the rest.
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // The column is on the right, so dragging the
+                              // seam left — a negative delta — widens it. Each
+                              // report resizes from the width just resolved,
+                              // which is what makes the clamps hold: a drag
+                              // past a limit stops there instead of banking
+                              // distance to be paid back on the way out.
+                              PanelSplitter(
+                                axis: Axis.vertical,
+                                onDrag: (dx) => ref
+                                    .read(panelSideWidthProvider.notifier)
+                                    .set(width - dx),
+                                onReset: ref
+                                    .read(panelSideWidthProvider.notifier)
+                                    .reset,
+                              ),
+                              Expanded(child: side),
+                            ],
+                          ),
+                        ),
                       ],
                     );
                   },
