@@ -83,9 +83,33 @@ class _Tab extends StatefulWidget {
 class _TabState extends State<_Tab> {
   bool _hovered = false;
 
+  /// Whether this build is the one where the selection moved.
+  ///
+  /// Selection is drawn *instantly*; only hover is animated. Fading it looked
+  /// like both tabs lighting up at once and then one giving in: for 130ms the
+  /// tab being left still carried its fill and shadow while the tab arriving
+  /// already had them, which reads as a flash across the whole strip rather
+  /// than as a switch. A click is a decision, and a decision the app has
+  /// already acted on has nothing left to animate.
+  bool _switching = false;
+
+  @override
+  void didUpdateWidget(_Tab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _switching = oldWidget.selected != widget.selected;
+  }
+
+  /// The pointer arriving or leaving — which *is* worth easing, and which must
+  /// not inherit the instant duration a switch just asked for.
+  void _hover(bool value) => setState(() {
+    _hovered = value;
+    _switching = false;
+  });
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final motion = _switching ? Duration.zero : AppMotion.hover;
     // Selected reads as a raised chip; hovered as a wash under the label. Two
     // different questions, so two different treatments — a hover that borrowed
     // the selected fill would say the pointer had already switched tabs.
@@ -106,12 +130,12 @@ class _TabState extends State<_Tab> {
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) => _hover(true),
+      onExit: (_) => _hover(false),
       child: GestureDetector(
         onTap: widget.onSelect,
         child: AnimatedContainer(
-          duration: AppMotion.hover,
+          duration: motion,
           curve: AppMotion.curve,
           height: 26,
           constraints: const BoxConstraints(maxWidth: 180),
@@ -142,7 +166,7 @@ class _TabState extends State<_Tab> {
               ),
               const SizedBox(width: 2),
               AnimatedOpacity(
-                duration: AppMotion.hover,
+                duration: motion,
                 curve: AppMotion.curve,
                 opacity: showClose ? 1 : 0,
                 child: IgnorePointer(
