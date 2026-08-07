@@ -93,35 +93,34 @@ class _PanelState extends State<_Panel> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(15, 6, 15, 8),
-            child: Row(
-              children: [
-                Icon(LucideIcons.search, size: 14, color: AppPalette.textFaint),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _query,
-                    autofocus: true,
-                    onChanged: (_) => setState(() {}),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppPalette.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Jump to file',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: AppPalette.textFaint,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
+            child: TextField(
+              controller: _query,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              style: TextStyle(fontSize: 13, color: AppPalette.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Jump to file',
+                hintStyle: TextStyle(fontSize: 13, color: AppPalette.textFaint),
+                // The glyph belongs to the field, not beside it: laid out in a
+                // `Row` it centred on the input's *box*, which is taller than
+                // its text, and sat a few pixels below the words it labels.
+                // Material lines a prefix up with the text itself.
+                prefixIcon: Icon(
+                  LucideIcons.search,
+                  size: 14,
+                  color: AppPalette.textFaint,
                 ),
-              ],
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 22,
+                  minHeight: 0,
+                ),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
             ),
           ),
           const MenuDivider(),
