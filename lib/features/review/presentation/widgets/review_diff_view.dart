@@ -7,10 +7,13 @@ import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../../shared/widgets/empty_state.dart';
+import '../../logic/review_comment.dart';
+import '../../logic/review_comments_controller.dart';
 import '../../logic/review_file.dart';
 import '../../logic/review_patch.dart';
 import '../../logic/review_selection.dart';
 import '../../logic/unified_diff.dart';
+import 'comment_composer.dart';
 import 'diff_row_tile.dart';
 import 'review_mark.dart';
 
@@ -52,6 +55,7 @@ class ReviewDiffView extends ConsumerWidget {
             AsyncData(value: final DiffFilePatch found) => _Patch(
               patch: found,
               file: file,
+              folder: folder,
             ),
             AsyncData() => const _Unreadable(),
             AsyncError() => const _Unreadable(),
@@ -148,19 +152,27 @@ class _FileName extends StatelessWidget {
   }
 }
 
-/// The lines themselves.
-class _Patch extends StatelessWidget {
-  const _Patch({required this.patch, required this.file});
+/// The lines themselves, with whatever has been said about them.
+class _Patch extends ConsumerWidget {
+  const _Patch({required this.patch, required this.file, required this.folder});
 
   final DiffFilePatch patch;
   final ReviewFile file;
 
+  /// The folder being reviewed — where comments are kept.
+  final String folder;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (patch.binary) return const _Binary();
     if (patch.isEmpty) return const _Unreadable();
 
     final language = languageForPath(file.path);
+    final comments = commentsForFile(
+      ref.watch(reviewCommentsProvider(folder)),
+      file.path,
+    );
+    final draft = ref.watch(reviewCommentDraftProvider(folder));
     // Flattened to *what to draw*, not to widgets: a generated file's diff runs
     // to thousands of rows, and building every widget up front — on every
     // rebuild, for rows nobody can see — is work the lazy list exists to avoid.
@@ -169,6 +181,22 @@ class _Patch extends StatelessWidget {
       rows.add(_Line.heading(hunk));
       for (final row in hunk.rows) {
         rows.add(_Line.row(row));
+        final anchor = commentAnchorFor(row);
+        if (anchor == null) continue;
+        // Under the line they are about, in the order a reader meets them: the
+        // box being typed in, then the remark already left there.
+        if (draft != null &&
+            draft.path == file.path &&
+            draft.side == anchor.side &&
+            draft.line == anchor.line) {
+          rows.add(_Line.draft(draft));
+          continue;
+        }
+        for (final comment in comments) {
+          if (comment.side == anchor.side && comment.line == anchor.line) {
+            rows.add(_Line.comment(comment));
+          }
+        }
       }
     }
 
@@ -182,20 +210,48 @@ class _Patch extends StatelessWidget {
           final line = rows[i];
           final hunk = line.hunk;
           if (hunk != null) return _HunkHeading(hunk: hunk);
-          return DiffRowTile(row: line.row!, language: language);
+          final open = line.draft;
+          if (open != null) {
+            return CommentComposer(draft: open, folder: folder);
+          }
+          final said = line.comment;
+          if (said != null) return CommentCard(comment: said, folder: folder);
+          final row = line.row!;
+          final anchor = commentAnchorFor(row);
+          return DiffRowTile(
+            row: row,
+            language: language,
+            onComment: anchor == null
+                ? null
+                : () => ref
+                      .read(reviewCommentDraftProvider(folder).notifier)
+                      .open(
+                        CommentDraft(
+                          path: file.path,
+                          side: anchor.side,
+                          line: anchor.line,
+                          code: row.text.trim(),
+                        ),
+                      ),
+          );
         },
       ),
     );
   }
 }
 
-/// One entry in the flattened diff: a hunk's heading, or a line of it.
+/// One entry in the flattened diff: a hunk's heading, a line of it, a remark
+/// left on that line, or the box writing one.
 class _Line {
-  const _Line.heading(this.hunk) : row = null;
-  const _Line.row(this.row) : hunk = null;
+  const _Line.heading(this.hunk) : row = null, comment = null, draft = null;
+  const _Line.row(this.row) : hunk = null, comment = null, draft = null;
+  const _Line.comment(this.comment) : hunk = null, row = null, draft = null;
+  const _Line.draft(this.draft) : hunk = null, row = null, comment = null;
 
   final DiffHunk? hunk;
   final DiffRow? row;
+  final ReviewComment? comment;
+  final CommentDraft? draft;
 }
 
 /// Where in the file the next run of lines is.
