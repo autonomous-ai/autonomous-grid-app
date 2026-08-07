@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/panel_visibility.dart';
 import '../../logic/commit_action.dart';
 import '../../logic/commit_controller.dart';
 import '../../logic/review_snapshot.dart';
@@ -44,6 +45,14 @@ class _CommitButtonState extends ConsumerState<CommitButton> {
 
     final running = ref.watch(commitProvider(widget.folder)) is CommitRunning;
     final open = _panel.isShowing;
+    // The panel is mounted in the app's overlay, above every tab — so switching
+    // to another one would leave it floating over a surface it has nothing to
+    // do with. After the frame, never during it: closing sets state.
+    if (open && !PanelTabVisible.of(context)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _panel.isShowing) _close();
+      });
+    }
     final ink = ToolbarPill.tint(tinted: true, enabled: true);
 
     return TapRegion(
