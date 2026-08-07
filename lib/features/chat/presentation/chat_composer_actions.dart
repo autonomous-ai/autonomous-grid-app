@@ -61,54 +61,92 @@ class _Actions extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      // Two groups pushed apart, rather than one flat row with a spacer in the
+      // middle. The spacer version was the reason the composer had a hard floor
+      // around 550px: every control was inflexible, so a narrower column
+      // overflowed instead of tightening, and the chat pane had to refuse to go
+      // below that. Grouped, each side is a [Flexible] that gives its pills room
+      // to ellipsis — and the pane's floor becomes what this row can really do.
+      //
+      // Loose fit, so on a roomy composer both groups still take their natural
+      // width and `spaceBetween` puts them exactly where they were.
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _AttachButton(canAttach: canAttach, onAttach: onAttachFile),
-          _PromptsButton(
-            enabled: !sending,
-            savesInput: promptsSaveInput,
-            onPressed: onOpenPrompts,
-          ),
-          const SizedBox(width: 4),
-          if (approvalPicker != null)
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 178),
-              child: approvalPicker!,
-            ),
-          const Expanded(child: SizedBox()),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Agent then model, the two halves of "who answers, and with what"
-              // — bounded (not fixed) so the pill sizes to the agent's name while
-              // its inner label can still ellipsis on a narrow window.
-              if (agentPicker != null) ...[
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 132),
-                  child: agentPicker!,
+          // What goes into the turn.
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _AttachButton(canAttach: canAttach, onAttach: onAttachFile),
+                _PromptsButton(
+                  enabled: !sending,
+                  savesInput: promptsSaveInput,
+                  onPressed: onOpenPrompts,
                 ),
+                if (approvalPicker != null) ...[
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 178),
+                      child: approvalPicker!,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Who answers, and go.
+          //
+          // An even share, not the 2:1 this first had. Each group carries one
+          // more control than the other side thinks: two icon buttons and a
+          // pill here, two pills and a send button there. Giving the left a
+          // third made *it* the first thing to break — the access pill was
+          // squeezed to 33px against a floor of 58 and struck stripes across
+          // the composer.
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Agent then model, the two halves of "who answers, and with
+                // what" — bounded (not fixed) so the pill sizes to the agent's
+                // name while its inner label can still ellipsis.
+                if (agentPicker != null) ...[
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 132),
+                      child: agentPicker!,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                // The pills are chips, not push buttons, so both sit at
+                // heightSmall. This used to force a bare 30 — a fifth number in
+                // a row that already had 32/32/28/32, and it silently overrode
+                // the AppControl.height the picker itself asks for.
+                //
+                // The fixed 140 stays: a model pill that resized to each name
+                // would make the row twitch on every switch. Under a tighter
+                // box a `SizedBox` gives way to the box, which is the whole
+                // point of putting it in a [Flexible].
+                Flexible(child: SizedBox(width: 140, child: modelPicker)),
                 const SizedBox(width: 8),
+                // Stop only gets its own button when Send has been taken over
+                // by a follow-up waiting to be queued; the rest of the time the
+                // one round button is both.
+                if (sending && canSend) ...[
+                  _StopButton(onStop: onStop),
+                  const SizedBox(width: 6),
+                ],
+                _SendButton(
+                  sending: sending,
+                  canSend: canSend,
+                  onSend: onSend,
+                  onStop: onStop,
+                ),
               ],
-              // The pills are chips, not push buttons, so both sit at
-              // heightSmall. This used to force a bare 30 — a fifth number in a
-              // row that already had 32/32/28/32, and it silently overrode the
-              // AppControl.height the picker itself asks for.
-              SizedBox(width: 140, child: modelPicker),
-              const SizedBox(width: 8),
-              // Stop only gets its own button when Send has been taken over by
-              // a follow-up waiting to be queued; the rest of the time the one
-              // round button is both.
-              if (sending && canSend) ...[
-                _StopButton(onStop: onStop),
-                const SizedBox(width: 6),
-              ],
-              _SendButton(
-                sending: sending,
-                canSend: canSend,
-                onSend: onSend,
-                onStop: onStop,
-              ),
-            ],
+            ),
           ),
         ],
       ),

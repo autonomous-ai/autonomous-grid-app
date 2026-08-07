@@ -4,12 +4,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/panel_splitter.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/project_rail.dart';
 import '../logic/bottom_panel.dart';
 import '../logic/chat_rail.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/panel_layout.dart';
 import '../logic/preview_panel.dart';
 import 'bottom_panel.dart';
 import 'chat_view.dart';
@@ -38,29 +40,6 @@ class ChatPane extends ConsumerWidget {
 
   static const _railWidth = 340.0;
 
-  /// What the conversation keeps for itself before the preview panel is allowed
-  /// to dock beside it.
-  ///
-  /// The composer is a fixed row of controls that can't shrink past ~550px, so
-  /// this is that floor with room to breathe. Below it the panel floats over the
-  /// chat instead — the same fallback, for the same reason, as the project rail.
-  static const _chatMinWidth = 600.0;
-
-  /// The preview panel takes a share of what's left rather than a fixed width:
-  /// it is a work surface, so on a wide window it should be worth working in,
-  /// and on a narrow one it shouldn't be the reason the chat is cramped.
-  static const _previewMinWidth = 420.0;
-  static const _previewMaxWidth = 760.0;
-
-  /// The same deal vertically for the bottom panel, against a transcript that
-  /// still has to be worth reading above it.
-  ///
-  /// The window can't go below 560 tall, so this always resolves — the bottom
-  /// panel never needs the float-over-the-chat fallback the side panels have.
-  static const _chatMinHeight = 260.0;
-  static const _bottomMinHeight = 180.0;
-  static const _bottomMaxHeight = 420.0;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final network = ref.watch(selectedNetworkProvider);
@@ -77,6 +56,10 @@ class ChatPane extends ConsumerWidget {
     final override = ref.watch(chatRailOverrideProvider);
     final previewOpen = ref.watch(previewPanelOpenProvider);
     final bottomOpen = ref.watch(bottomPanelOpenProvider);
+    // Null until the user drags a seam; the resolver falls back to a share of
+    // the pane, which keeps answering to the window's size.
+    final previewOverride = ref.watch(previewWidthOverrideProvider);
+    final bottomOverride = ref.watch(bottomHeightOverrideProvider);
 
     // Measured on the whole window, not the pane inside the sidebar.
     final width = MediaQuery.sizeOf(context).width;
@@ -101,27 +84,17 @@ class ChatPane extends ConsumerWidget {
     // rail may already be holding 340 of it.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final free = constraints.maxWidth - (inline ? _railWidth + 1 : 0);
-        final previewWidth = (free * 0.45)
-            .clamp(_previewMinWidth, _previewMaxWidth)
-            .toDouble();
-        // Whether the window can host the panel *beside* the chat at all. Kept
-        // separate from `previewOpen` so the docked slot and the floating one
-        // are never both in the tree.
-        final previewFits = free - previewWidth >= _chatMinWidth;
-
-        // A share of the height, but never more than leaves the transcript
-        // above it worth reading. `room` is floored at zero before it becomes a
-        // clamp bound — `clamp` asserts low <= high, so a pane laid out shorter
-        // than the floor would throw rather than degrade.
-        final room = (constraints.maxHeight - _chatMinHeight).clamp(
-          0.0,
-          double.infinity,
+        // Every size at once, and out of this build: they are four clamps that
+        // have to agree with each other, and two of them now answer to a drag
+        // as well as to the window.
+        final sizes = resolvePanelSizes(
+          paneWidth: constraints.maxWidth,
+          paneHeight: constraints.maxHeight,
+          railWidth: inline ? _railWidth + 1 : 0,
+          previewOverride: previewOverride,
+          bottomOverride: bottomOverride,
         );
-        final bottomHeight = (constraints.maxHeight * 0.34)
-            .clamp(_bottomMinHeight, _bottomMaxHeight)
-            .clamp(0.0, room)
-            .toDouble();
+        final previewFits = sizes.previewFits;
 
         // ChatView always sits in the same slot — Positioned.fill in a Stack,
         // first child of the Row — so toggling any panel, overlaying one,
@@ -155,7 +128,7 @@ class ChatPane extends ConsumerWidget {
                     Positioned.fill(
                       child: _PreviewOverlay(
                         open: previewOpen,
-                        width: previewWidth,
+                        width: sizes.previewWidth,
                       ),
                     ),
                 ],
@@ -172,7 +145,21 @@ class ChatPane extends ConsumerWidget {
               ),
             ],
             if (previewFits)
-              _PreviewSlot(open: previewOpen, width: previewWidth),
+              _PreviewSlot(
+                open: previewOpen,
+                width: sizes.previewWidth,
+                // The panel is on the right, so dragging the seam left — a
+                // negative delta — makes it wider. Each report resizes from the
+                // width just resolved, which is what makes the clamps hold: a
+                // drag past a limit stops there instead of banking distance to
+                // be paid back on the way out.
+                onResize: (dx) => ref
+                    .read(previewWidthOverrideProvider.notifier)
+                    .set(sizes.previewWidth - dx),
+                onResetSize: ref
+                    .read(previewWidthOverrideProvider.notifier)
+                    .reset,
+              ),
           ],
         );
 
@@ -182,7 +169,16 @@ class ChatPane extends ConsumerWidget {
         return Column(
           children: [
             Expanded(child: row),
-            _BottomSlot(open: bottomOpen, height: bottomHeight),
+            _BottomSlot(
+              open: bottomOpen,
+              height: sizes.bottomHeight,
+              onResize: (dy) => ref
+                  .read(bottomHeightOverrideProvider.notifier)
+                  .set(sizes.bottomHeight - dy),
+              onResetSize: ref
+                  .read(bottomHeightOverrideProvider.notifier)
+                  .reset,
+            ),
           ],
         );
       },
@@ -203,10 +199,17 @@ class ChatPane extends ConsumerWidget {
 /// The chat column only ever shrinks *to* its final width, never through
 /// something narrower, so its composer can't overflow mid-animation.
 class _PreviewSlot extends StatelessWidget {
-  const _PreviewSlot({required this.open, required this.width});
+  const _PreviewSlot({
+    required this.open,
+    required this.width,
+    required this.onResize,
+    required this.onResetSize,
+  });
 
   final bool open;
   final double width;
+  final ValueChanged<double> onResize;
+  final VoidCallback onResetSize;
 
   @override
   Widget build(BuildContext context) {
@@ -226,11 +229,18 @@ class _PreviewSlot extends StatelessWidget {
             duration: AppMotion.swap,
             curve: AppMotion.curve,
             opacity: open ? 1 : 0,
-            child: const Row(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                VerticalDivider(width: 1),
-                Expanded(child: PreviewPanel()),
+                // The seam doubles as the handle. It rides inside the slot so
+                // it slides in with the panel rather than appearing under the
+                // pointer a frame before the panel it belongs to.
+                PanelSplitter(
+                  axis: Axis.vertical,
+                  onDrag: onResize,
+                  onReset: onResetSize,
+                ),
+                const Expanded(child: PreviewPanel()),
               ],
             ),
           ),
@@ -245,10 +255,17 @@ class _PreviewSlot extends StatelessWidget {
 /// the slot's top edge, so as that edge rises the panel rises with it, sliding
 /// up from under the window.
 class _BottomSlot extends StatelessWidget {
-  const _BottomSlot({required this.open, required this.height});
+  const _BottomSlot({
+    required this.open,
+    required this.height,
+    required this.onResize,
+    required this.onResetSize,
+  });
 
   final bool open;
   final double height;
+  final ValueChanged<double> onResize;
+  final VoidCallback onResetSize;
 
   @override
   Widget build(BuildContext context) {
@@ -261,10 +278,16 @@ class _BottomSlot extends StatelessWidget {
           alignment: Alignment.topCenter,
           minHeight: height,
           maxHeight: height,
-          child: const Column(
+          child: Column(
             children: [
-              Divider(height: 1),
-              Expanded(child: BottomPanel()),
+              // Dragging the seam up — a negative delta — makes the panel
+              // taller, so the caller subtracts it.
+              PanelSplitter(
+                axis: Axis.horizontal,
+                onDrag: onResize,
+                onReset: onResetSize,
+              ),
+              const Expanded(child: BottomPanel()),
             ],
           ),
         ),
