@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -14,8 +15,10 @@ import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../../shared/widgets/empty_state.dart';
+import '../../../../shared/widgets/labeled_field.dart';
 import '../../logic/file_kind.dart';
 import '../../logic/file_preview.dart';
+import 'files_menu_row.dart';
 
 /// The file on screen, in whichever form it is worth reading in: Markdown as the
 /// document it describes, everything else as source, numbered and coloured.
@@ -30,6 +33,7 @@ class FileViewer extends ConsumerWidget {
     required this.path,
     required this.showSource,
     required this.onToggleSource,
+    required this.onAddSelection,
   });
 
   /// The absolute path of the file to show, or null before one is picked.
@@ -46,6 +50,11 @@ class FileViewer extends ConsumerWidget {
   /// the same kind of thing, so the two travel together. The toolbar keeps what
   /// acts on the folder: refresh, Finder, the editor.
   final VoidCallback onToggleSource;
+
+  /// A run of text out of this file, on its way to the conversation. Null when
+  /// there is no chat to put it in, and then the selection menu is the
+  /// platform's own.
+  final ValueChanged<String>? onAddSelection;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -70,12 +79,146 @@ class FileViewer extends ConsumerWidget {
         markdown: markdown,
         rendered: markdown && !showSource,
         onToggleSource: onToggleSource,
+        onAddSelection: onAddSelection,
       ),
       AsyncError(:final error) => _Failed('$error'),
       _ => const Center(child: AppSpinner(size: SpinnerSize.medium)),
     };
   }
 }
+
+/// How far the pointer must travel before a press counts as picking text out.
+///
+/// A click *inside* a selection is how you dismiss it, and a click that landed
+/// a pixel off centre must not be read as a fresh drag — that would pop the menu
+/// over a selection the user was in the middle of throwing away.
+const double _dragSlop = 6;
+
+/// Selectable text that offers **Add to Chat** the moment a selection is made.
+///
+/// Two ways in, because they answer different habits:
+///
+///  - **Let go of the drag** and the app's own one-item menu appears where the
+///    pointer stopped. This is the affordance the feature is for; macOS shows
+///    nothing after a mouse drag by design (see `_handleMouseDragEnd` in
+///    `selectable_region.dart`), and `SelectableRegion` keeps its `_showToolbar`
+///    private, so the menu here is the app's rather than the platform's.
+///  - **Right-click** and the platform's own strip appears, with Copy and Select
+///    All where the user expects them and *Add to Chat* appended. Replacing that
+///    one would mean re-implementing two behaviours nobody asked to change.
+///
+/// The selected text is kept in a plain field rather than in state: it changes
+/// on every tick of a drag, and rebuilding a two-thousand-line file to remember
+/// a string no menu has asked for yet is work for nothing.
+class _AddToChatSelection extends StatefulWidget {
+  const _AddToChatSelection({required this.onAdd, required this.child});
+
+  /// Null when the panel has nowhere to put a selection, and then there is no
+  /// menu on release and the right-click one is exactly the platform's own.
+  final ValueChanged<String>? onAdd;
+
+  final Widget child;
+
+  @override
+  State<_AddToChatSelection> createState() => _AddToChatSelectionState();
+}
+
+class _AddToChatSelectionState extends State<_AddToChatSelection> {
+  final _menu = MenuController();
+  String? _selected;
+
+  /// Where the *left* button went down, so a release can tell a drag from a
+  /// click. Null for any other button: a right-click has its own menu, and a
+  /// right-drag must not open a second one over it.
+  Offset? _pressed;
+
+  String? get _addable {
+    final text = _selected;
+    if (widget.onAdd == null) return null;
+    return text != null && text.trim().isNotEmpty ? text : null;
+  }
+
+  void _down(PointerDownEvent event) {
+    // A press anywhere puts the last menu away — including the press that
+    // starts the next selection, which would otherwise leave two on screen.
+    if (_menu.isOpen) _menu.close();
+    _pressed = event.buttons == kPrimaryButton ? event.localPosition : null;
+  }
+
+  void _up(PointerUpEvent event) {
+    final from = _pressed;
+    _pressed = null;
+    if (from == null) return;
+    if ((event.localPosition - from).distance < _dragSlop) return;
+
+    // After the frame: the selection is finalised on drag end, and asking for it
+    // in the same event that ended the drag reads the *previous* answer.
+    final at = event.localPosition;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _addable == null || _menu.isOpen) return;
+      // Just below the pointer, so the menu doesn't land on the last words of
+      // what was selected.
+      _menu.open(position: at + const Offset(4, 8));
+    });
+  }
+
+  void _add() {
+    final text = _addable;
+    _menu.close();
+    if (text != null) widget.onAdd!(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return MenuAnchor(
+      controller: _menu,
+      style: appMenuStyle().copyWith(
+        minimumSize: const WidgetStatePropertyAll(Size(_selectionMenuWidth, 0)),
+      ),
+      menuChildren: [
+        SizedBox(
+          width: _selectionMenuWidth,
+          child: FilesMenuRow(
+            icon: LucideIcons.messageSquarePlus300,
+            label: 'Add to Chat',
+            onPressed: _add,
+          ),
+        ),
+      ],
+      builder: (context, controller, child) => Listener(
+        onPointerDown: _down,
+        onPointerUp: _up,
+        child: SelectionArea(
+          onSelectionChanged: (content) => _selected = content?.plainText,
+          contextMenuBuilder: (context, selection) {
+            final text = _addable;
+            return AdaptiveTextSelectionToolbar.buttonItems(
+              anchors: selection.contextMenuAnchors,
+              buttonItems: [
+                ...selection.contextMenuButtonItems,
+                if (text != null)
+                  ContextMenuButtonItem(
+                    label: 'Add to Chat',
+                    onPressed: () {
+                      // The strip goes first: the selection stays highlighted so
+                      // the user can see what they just sent, but a menu left
+                      // standing over it would hide the chip appearing below.
+                      selection.hideToolbar();
+                      widget.onAdd!(text);
+                    },
+                  ),
+              ],
+            );
+          },
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+const double _selectionMenuWidth = 168;
 
 /// The folder [path] sits in, with the separator left on — which is the form
 /// `flutter_markdown_plus` wants, since it resolves an image by concatenation.
@@ -93,6 +236,7 @@ class _Preview extends StatelessWidget {
     required this.markdown,
     required this.rendered,
     required this.onToggleSource,
+    required this.onAddSelection,
   });
 
   final FilePreview preview;
@@ -110,6 +254,7 @@ class _Preview extends StatelessWidget {
   final bool rendered;
 
   final VoidCallback onToggleSource;
+  final ValueChanged<String>? onAddSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -118,11 +263,17 @@ class _Preview extends StatelessWidget {
         'This file is empty.',
       ),
       FilePreviewText(:final lines, :final truncated) when rendered =>
-        _Rendered(text: lines.join('\n'), folder: folder, truncated: truncated),
+        _Rendered(
+          text: lines.join('\n'),
+          folder: folder,
+          truncated: truncated,
+          onAddSelection: onAddSelection,
+        ),
       FilePreviewText(:final lines, :final truncated) => _Source(
         lines: lines,
         truncated: truncated,
         language: language,
+        onAddSelection: onAddSelection,
       ),
       FilePreviewBinary() => const _Note(
         'This is not a text file, so there is nothing to show. Open it to see '
@@ -275,11 +426,13 @@ class _Rendered extends StatelessWidget {
     required this.text,
     required this.folder,
     required this.truncated,
+    required this.onAddSelection,
   });
 
   final String text;
   final String folder;
   final bool truncated;
+  final ValueChanged<String>? onAddSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -291,7 +444,8 @@ class _Rendered extends StatelessWidget {
           // Selection comes from here rather than from `selectable: true`, which
           // builds a `SelectableText` per block — a text editor for every
           // paragraph in the document.
-          child: SelectionArea(
+          child: _AddToChatSelection(
+            onAdd: onAddSelection,
             child: Markdown(
               data: text,
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
@@ -345,11 +499,13 @@ class _Source extends StatefulWidget {
     required this.lines,
     required this.truncated,
     required this.language,
+    required this.onAddSelection,
   });
 
   final List<String> lines;
   final bool truncated;
   final String language;
+  final ValueChanged<String>? onAddSelection;
 
   @override
   State<_Source> createState() => _SourceState();
@@ -422,7 +578,8 @@ class _SourceState extends State<_Source> {
                         // Only the code is selectable — a copy that came back
                         // with the line numbers in it would have to be cleaned
                         // up by hand before it could be pasted anywhere.
-                        SelectionArea(
+                        _AddToChatSelection(
+                          onAdd: widget.onAddSelection,
                           child: coloured == null
                               ? Text(source, style: code)
                               : Text.rich(coloured, style: code),

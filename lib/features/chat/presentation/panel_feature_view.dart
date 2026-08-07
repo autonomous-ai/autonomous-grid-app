@@ -14,7 +14,9 @@ import '../../terminal/presentation/terminal_panel_view.dart';
 import '../logic/active_workdir.dart';
 import '../logic/bottom_panel.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/composer_file_request.dart';
 import '../logic/composer_prefill.dart';
+import '../logic/composer_snippet.dart';
 import '../logic/panel_tabs.dart';
 import '../logic/preview_panel.dart';
 
@@ -113,6 +115,7 @@ class _FilesTab extends ConsumerWidget {
       chatSessionsProvider.select((s) => s.openProjectId),
     );
     final folder = ref.watch(projectByIdProvider(projectId))?.path;
+
     return FilesPanelView(
       tabId: tabId,
       folder: folder,
@@ -122,6 +125,16 @@ class _FilesTab extends ConsumerWidget {
       onOpenInNewTab: folder == null
           ? null
           : (path) => _openInNewTab(ref, path, folder),
+      // "Add to chat", off a file's right-click menu — the only way a file gets
+      // onto a message from here. Reading one in the panel used to attach it on
+      // its own, which read as the app doing things behind the user's back.
+      onAddToChat: (path) =>
+          ref.read(composerFileRequestProvider.notifier).add(path),
+      onAddSelection: (path, text) {
+        final snippet = snippetOf(path: path, text: text);
+        if (snippet == null) return;
+        ref.read(composerSnippetProvider.notifier).offer(snippet);
+      },
     );
   }
 }

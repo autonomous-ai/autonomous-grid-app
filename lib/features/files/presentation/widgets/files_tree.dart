@@ -24,6 +24,7 @@ class FilesTree extends ConsumerWidget {
     required this.tabId,
     required this.root,
     required this.onOpen,
+    required this.onAddToChat,
   });
 
   final String tabId;
@@ -33,6 +34,10 @@ class FilesTree extends ConsumerWidget {
 
   /// A file was picked — the panel shows it.
   final ValueChanged<WorkspaceEntry> onOpen;
+
+  /// A file was chosen out of its right-click menu to ride on the next message.
+  /// Null when there is no conversation to put it in, and then no menu opens.
+  final ValueChanged<String>? onAddToChat;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -77,6 +82,7 @@ class FilesTree extends ConsumerWidget {
                   .read(filesBrowserProvider(tabId).notifier)
                   .toggleFolder(path),
               onOpen: onOpen,
+              onAddToChat: onAddToChat,
             ),
             AsyncError() => const _Message(
               'Could not read this folder. It may have been moved or deleted.',
@@ -224,6 +230,7 @@ class _Rows extends StatelessWidget {
     required this.selected,
     required this.onToggle,
     required this.onOpen,
+    required this.onAddToChat,
   });
 
   final List<WorkspaceRow> rows;
@@ -231,6 +238,7 @@ class _Rows extends StatelessWidget {
   final String? selected;
   final ValueChanged<String> onToggle;
   final ValueChanged<WorkspaceEntry> onOpen;
+  final ValueChanged<String>? onAddToChat;
 
   @override
   Widget build(BuildContext context) {
@@ -244,26 +252,35 @@ class _Rows extends StatelessWidget {
             : 'Nothing here.',
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(left: 4, right: 6, bottom: 8),
-      itemCount: rows.length,
-      itemBuilder: (context, i) => switch (rows[i]) {
-        WorkspaceEntryRow(:final entry, :final depth, :final isExpanded) =>
-          FileTreeEntryRow(
-            entry: entry,
-            depth: depth,
-            isExpanded: isExpanded,
-            isSelected: entry.path == selected,
-            onTap: () =>
-                entry.isDirectory ? onToggle(entry.path) : onOpen(entry),
-          ),
-        WorkspaceStatusRow(:final depth, :final isError) => FileTreeStatusRow(
-          depth: depth,
-          isError: isError,
-        ),
-      },
+    final onAddToChat = this.onAddToChat;
+    if (onAddToChat == null) return _list(null);
+    return FileTreeContextMenu(
+      onAddToChat: onAddToChat,
+      builder: (context, onContextMenu) => _list(onContextMenu),
     );
   }
+
+  Widget _list(
+    void Function(WorkspaceEntry entry, Offset globalPosition)? onContextMenu,
+  ) => ListView.builder(
+    padding: const EdgeInsets.only(left: 4, right: 6, bottom: 8),
+    itemCount: rows.length,
+    itemBuilder: (context, i) => switch (rows[i]) {
+      WorkspaceEntryRow(:final entry, :final depth, :final isExpanded) =>
+        FileTreeEntryRow(
+          entry: entry,
+          depth: depth,
+          isExpanded: isExpanded,
+          isSelected: entry.path == selected,
+          onTap: () => entry.isDirectory ? onToggle(entry.path) : onOpen(entry),
+          onContextMenu: onContextMenu,
+        ),
+      WorkspaceStatusRow(:final depth, :final isError) => FileTreeStatusRow(
+        depth: depth,
+        isError: isError,
+      ),
+    },
+  );
 }
 
 /// A quiet, centred sentence for the states with no rows to draw.

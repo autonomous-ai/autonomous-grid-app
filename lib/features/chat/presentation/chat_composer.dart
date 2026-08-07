@@ -7,7 +7,9 @@ import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/file_chip.dart';
+import '../logic/composer_snippet.dart';
 import '../logic/file_attachments.dart';
+import 'snippet_chip.dart';
 
 part 'chat_composer_actions.dart';
 part 'chat_composer_context.dart';
@@ -24,6 +26,7 @@ class ComposerSection extends StatelessWidget {
     required this.messageController,
     required this.attachments,
     required this.files,
+    required this.snippets,
     required this.modality,
     required this.needsImage,
     required this.sending,
@@ -38,6 +41,7 @@ class ComposerSection extends StatelessWidget {
     required this.onPaste,
     required this.onRemoveAttachment,
     required this.onRemoveFile,
+    required this.onRemoveSnippets,
     required this.onOpenPrompts,
     required this.promptsSaveInput,
     required this.onSend,
@@ -50,6 +54,10 @@ class ComposerSection extends StatelessWidget {
   /// The documents on this message — a report, a spreadsheet — shown as chips
   /// above the field so what will be sent is visible before Send.
   final List<ChatFile> files;
+
+  /// The runs of text picked out of files, in one chip beside the documents.
+  final List<ChatSnippet> snippets;
+
   final PlaygroundModality modality;
   final bool needsImage;
   final bool sending;
@@ -81,6 +89,10 @@ class ComposerSection extends StatelessWidget {
   final VoidCallback onPaste;
   final ValueChanged<int> onRemoveAttachment;
   final ValueChanged<int> onRemoveFile;
+
+  /// Takes every selection off at once — see [SnippetChip] for why they arrive
+  /// and leave as one.
+  final VoidCallback onRemoveSnippets;
 
   /// Opens the saved-prompt menu, or — when there's already text — saves it as a
   /// new prompt. [promptsSaveInput] says which, so the button's icon and tooltip
@@ -140,10 +152,12 @@ class ComposerSection extends StatelessWidget {
                 isText: _isText,
                 attachments: attachments,
                 files: files,
+                snippets: snippets,
                 needsImage: needsImage,
                 onAdd: onAddAttachment,
                 onRemoveAt: onRemoveAttachment,
                 onRemoveFileAt: onRemoveFile,
+                onRemoveSnippets: onRemoveSnippets,
               ),
               ComposerKeys(
                 canSend: canSend,

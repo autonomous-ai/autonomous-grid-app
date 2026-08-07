@@ -29,6 +29,8 @@ class FilesPanelView extends ConsumerWidget {
     required this.tabId,
     required this.folder,
     required this.onOpenInNewTab,
+    required this.onAddToChat,
+    required this.onAddSelection,
   });
 
   final String tabId;
@@ -42,6 +44,16 @@ class FilesPanelView extends ConsumerWidget {
   /// were already reading. Tabs belong to the panel, not to Files, so the verb
   /// arrives from outside.
   final ValueChanged<String>? onOpenInNewTab;
+
+  /// Put a file on the next message — chosen out of a row's right-click menu,
+  /// which is an act, unlike clicking a file to read it. Null when this chat has
+  /// nowhere to put one.
+  final ValueChanged<String>? onAddToChat;
+
+  /// The same, for a run of text selected inside the open file. Carries the
+  /// file's path as well as the text: a quote with no source is a quote from
+  /// nowhere.
+  final void Function(String path, String text)? onAddSelection;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -71,6 +83,11 @@ class FilesPanelView extends ConsumerWidget {
         onToggleSource: ref
             .read(filesBrowserProvider(tabId).notifier)
             .toggleSource,
+        // The viewer knows the text; only this level knows which file it came
+        // out of, so the two are put together here.
+        onAddSelection: selected == null || onAddSelection == null
+            ? null
+            : (text) => onAddSelection!(selected, text),
       ),
       sideOpen: showTree,
       side: FilesTree(
@@ -78,6 +95,7 @@ class FilesPanelView extends ConsumerWidget {
         root: folder,
         onOpen: (entry) =>
             ref.read(filesBrowserProvider(tabId).notifier).select(entry.path),
+        onAddToChat: onAddToChat,
       ),
     );
   }

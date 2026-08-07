@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
+import '../../../../shared/widgets/labeled_field.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../../projects/logic/agent_workspace.dart';
 import 'file_type_icon.dart';
+import 'files_menu_row.dart';
 
 /// Left indent added per folder deep. Narrower than the file dialog's 16: these
 /// rows are drawn in a third of a panel and in a menu no wider, and four levels
@@ -24,6 +28,7 @@ class FileTreeEntryRow extends StatelessWidget {
     required this.isExpanded,
     required this.isSelected,
     required this.onTap,
+    this.onContextMenu,
   });
 
   final WorkspaceEntry entry;
@@ -32,11 +37,24 @@ class FileTreeEntryRow extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
+  /// Right-clicked, at that point on screen.
+  ///
+  /// The row reports rather than opens: one menu belongs to the *tree*, not one
+  /// to each row. A `MenuAnchor` per row would put a focus scope on every line
+  /// of a folder listing, and — worse — the rows are built by a lazy list that
+  /// hands one row's element to another as you scroll, which is a menu opening
+  /// over the wrong file.
+  ///
+  /// Null for every folder and wherever there is no conversation to add to, so
+  /// no menu opens on either.
+  final void Function(WorkspaceEntry entry, Offset globalPosition)?
+  onContextMenu;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final isDir = entry.isDirectory;
-    return Material(
+    final row = Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(7),
       child: InkWell(
@@ -112,8 +130,109 @@ class FileTreeEntryRow extends StatelessWidget {
         ),
       ),
     );
+
+    final onContextMenu = this.onContextMenu;
+    // A folder has neither of the two things that menu offers: nothing to copy
+    // that the breadcrumb doesn't already show, and nothing to attach.
+    if (isDir || onContextMenu == null) return row;
+    return GestureDetector(
+      onSecondaryTapDown: (details) =>
+          onContextMenu(entry, details.globalPosition),
+      child: row,
+    );
   }
 }
+
+/// The tree's one right-click menu, wrapped around whatever draws its rows.
+///
+/// Opened by a row reporting where it was clicked — see
+/// [FileTreeEntryRow.onContextMenu] for why the menu isn't the row's own.
+class FileTreeContextMenu extends StatefulWidget {
+  const FileTreeContextMenu({
+    super.key,
+    required this.onAddToChat,
+    required this.builder,
+  });
+
+  final ValueChanged<String> onAddToChat;
+
+  /// Draws the rows, given the callback to hand a right-click back with.
+  final Widget Function(
+    BuildContext context,
+    void Function(WorkspaceEntry entry, Offset globalPosition) onContextMenu,
+  )
+  builder;
+
+  @override
+  State<FileTreeContextMenu> createState() => _FileTreeContextMenuState();
+}
+
+class _FileTreeContextMenuState extends State<FileTreeContextMenu> {
+  final _menu = MenuController();
+
+  /// The file the open menu is about. Held rather than passed to the rows,
+  /// because by the time an item is tapped the row under it may have scrolled.
+  String? _path;
+
+  void _open(WorkspaceEntry entry, Offset globalPosition) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox) return;
+    setState(() => _path = entry.path);
+    // At the pointer, not under the row: a menu answering a right-click has to
+    // arrive at the thing that was clicked, and these rows are 24px tall in a
+    // column a third of a panel wide.
+    _menu.open(position: box.globalToLocal(globalPosition));
+  }
+
+  void _copyPath() {
+    final path = _path;
+    _menu.close();
+    if (path == null) return;
+    Clipboard.setData(ClipboardData(text: path));
+    ToastScope.show(context, const ToastSpec(message: 'Path copied'));
+  }
+
+  void _add() {
+    final path = _path;
+    _menu.close();
+    if (path != null) widget.onAddToChat(path);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return MenuAnchor(
+      controller: _menu,
+      style: appMenuStyle().copyWith(
+        minimumSize: const WidgetStatePropertyAll(Size(_menuWidth, 0)),
+      ),
+      menuChildren: [
+        SizedBox(
+          width: _menuWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FilesMenuRow(
+                icon: LucideIcons.link300,
+                label: 'Copy path',
+                onPressed: _copyPath,
+              ),
+              FilesMenuRow(
+                icon: LucideIcons.messageSquarePlus300,
+                label: 'Add to chat',
+                onPressed: _add,
+              ),
+            ],
+          ),
+        ),
+      ],
+      builder: (context, controller, child) => widget.builder(context, _open),
+    );
+  }
+}
+
+const double _menuWidth = 176;
 
 /// The line inside an expanded folder while its contents arrive, or after they
 /// fail — indented to sit under that folder's children.

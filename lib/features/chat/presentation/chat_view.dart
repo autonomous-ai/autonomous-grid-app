@@ -42,7 +42,9 @@ import '../../skills/presentation/save_skill_bar.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/composer_file_request.dart';
 import '../logic/composer_prefill.dart';
+import '../logic/composer_snippet.dart';
 import '../logic/conversation.dart';
 import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
@@ -109,6 +111,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// The documents riding on the next message — read at attach time, so what
   /// goes out is what the file said when the user pointed at it.
   final List<ChatFile> _files = [];
+
+  /// Runs of text the user picked out of a file and sent this way. They are
+  /// folded into the message on the way out ([messageWithSnippets]), so the
+  /// transcript shows what was actually asked.
+  final List<ChatSnippet> _snippets = [];
 
   /// The `conversationId|gridId` the model field was last synced to, so switching
   /// chats restores that chat's model and switching grids drops to the new grid's
@@ -332,16 +339,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
         .send(
           network: widget.network,
           model: _model.text.trim(),
-          message: message,
+          // Selections ride *inside* the message rather than beside it: the turn
+          // that gets persisted is then the turn that was asked, quotes and all,
+          // instead of a bubble reading as a question about nothing.
+          message: messageWithSnippets(message, _snippets),
           modality: modality,
           attachments: List.of(_attachments),
           files: List.of(_files),
         );
     _message.clear();
-    if (_attachments.isNotEmpty || _files.isNotEmpty) {
+    if (_attachments.isNotEmpty || _files.isNotEmpty || _snippets.isNotEmpty) {
       setState(() {
         _attachments.clear();
         _files.clear();
+        _snippets.clear();
       });
     }
   }
@@ -432,6 +443,64 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _insertIntoMessage(pathsForMessage(added.paths));
     }
     _sayOverflow(added.overflow);
+  }
+
+  /// Put [paths] on the message because somebody asked for them by name.
+  ///
+  /// Documents only, and deliberately not [_attachPaths]: that path turns a
+  /// picture into an image attachment, and a turn carrying an image goes to the
+  /// grid API instead of the agent — "Add to chat" on a `.png` must not quietly
+  /// change who answers. It also writes whatever it couldn't attach into the
+  /// draft as text, which is not what a menu item promised to do.
+  Future<void> _attachRequested(List<String> paths) async {
+    final read = <ChatFile>[];
+    final noRoom = <String>[];
+    var room = maxChatFiles - _files.length;
+
+    for (final path in paths) {
+      if (_files.any((file) => file.path == path)) continue;
+      if (read.any((file) => file.path == path)) continue;
+      if (room <= 0) {
+        noRoom.add(fileNameOf(path));
+        continue;
+      }
+      final file = await readChatFile(path);
+      if (file == null) continue;
+      read.add(file);
+      room--;
+    }
+    if (!mounted) return;
+
+    if (read.isNotEmpty) setState(() => _files.addAll(read));
+    if (noRoom.isNotEmpty) _sayOverflow(noRoom);
+  }
+
+  /// Take the selections a panel handed over.
+  void _takeSnippets(List<ChatSnippet> offered) {
+    final noRoom = <String>[];
+    final taken = <ChatSnippet>[];
+    for (final snippet in offered) {
+      // The same run of text picked twice is one selection. Easy to do by
+      // accident — right-click, miss the menu, right-click again.
+      if (_snippets.contains(snippet) || taken.contains(snippet)) continue;
+      if (_snippets.length + taken.length >= maxChatSnippets) {
+        noRoom.add(snippet.name);
+        continue;
+      }
+      taken.add(snippet);
+    }
+
+    if (taken.isNotEmpty) setState(() => _snippets.addAll(taken));
+    if (noRoom.isEmpty) return;
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message:
+            '“${noRoom.first}” wasn’t added — a message holds up to '
+            '$maxChatSnippets selections.',
+        severity: ToastSeverity.warning,
+      ),
+    );
   }
 
   /// Say what didn't fit. Silence here is what made an attach that quietly did
@@ -583,6 +652,23 @@ class _ChatViewState extends ConsumerState<ChatView> {
       if (text == null) return;
       _useStarter(text);
       ref.read(composerPrefillProvider.notifier).taken();
+    });
+
+    // And a panel saying what it is *looking at* — a Files tab, today. That
+    // rides on the message as an ordinary attachment chip, so asking about the
+    // file on screen doesn't mean attaching it a second time by hand.
+    // A panel asking for a file — "Add to chat" out of a right-click menu.
+    ref.listen(composerFileRequestProvider, (_, paths) {
+      if (paths.isEmpty) return;
+      ref.read(composerFileRequestProvider.notifier).taken();
+      unawaited(_attachRequested(paths));
+    });
+
+    // A run of text picked out of a file.
+    ref.listen(composerSnippetProvider, (_, offered) {
+      if (offered.isEmpty) return;
+      ref.read(composerSnippetProvider.notifier).taken();
+      _takeSnippets(offered);
     });
 
     _syncModelField(active, options, widget.network.networkId);
@@ -806,6 +892,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               messageController: _message,
                               attachments: _attachments,
                               files: _files,
+                              snippets: _snippets,
                               modality: modality,
                               needsImage: needsImage,
                               sending: sending,
@@ -848,6 +935,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                   setState(() => _attachments.removeAt(i)),
                               onRemoveFile: (i) =>
                                   setState(() => _files.removeAt(i)),
+                              onRemoveSnippets: () => setState(_snippets.clear),
                               onOpenPrompts: _promptsButton,
                               promptsSaveInput: _message.text.trim().isNotEmpty,
                               onSend: () => _send(modality),
