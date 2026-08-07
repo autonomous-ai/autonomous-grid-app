@@ -39,9 +39,11 @@ import '../../prompts/logic/prompt_slash.dart';
 import '../../prompts/presentation/prompt_dialog.dart';
 import '../../prompts/presentation/prompt_slash_menu.dart';
 import '../../skills/presentation/save_skill_bar.dart';
+import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/composer_context.dart';
 import '../logic/composer_file_request.dart';
 import '../logic/composer_prefill.dart';
 import '../logic/composer_snippet.dart';
@@ -346,8 +348,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
           modality: modality,
           attachments: List.of(_attachments),
           files: List.of(_files),
+          contexts: _captureTerminals(modality),
         );
     _message.clear();
+    // The ✕ on a terminal chip belonged to the message just sent. The next one
+    // starts with whatever is on screen offered again — which is the whole point
+    // of the chips being derived rather than a list to curate.
+    ref.read(dismissedTerminalsProvider.notifier).clear();
     if (_attachments.isNotEmpty || _files.isNotEmpty || _snippets.isNotEmpty) {
       setState(() {
         _attachments.clear();
@@ -355,6 +362,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
         _snippets.clear();
       });
     }
+  }
+
+  /// Reads the terminals on screen, at the moment Send is pressed rather than
+  /// when their chips appeared: the minute between opening a terminal and asking
+  /// about it is usually the minute the thing being asked about happened.
+  ///
+  /// Nothing on a picture or video turn — those are made by the grid, which has
+  /// no filesystem and nothing to say about a build log.
+  List<ChatContext> _captureTerminals(PlaygroundModality modality) {
+    if (modality != PlaygroundModality.text) return const [];
+    return captureTerminalContexts(
+      attached: ref.read(attachedTerminalsProvider),
+      sessions: ref.read(terminalSessionsProvider),
+    );
   }
 
   /// Attach whatever the user picks — pictures and documents in one list, since
@@ -893,6 +914,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               attachments: _attachments,
                               files: _files,
                               snippets: _snippets,
+                              // Only on a turn a model can read them on: a
+                              // picture request goes to the grid, and a terminal
+                              // offered there would be a chip that promises
+                              // something the turn can't carry.
+                              terminals: modality == PlaygroundModality.text
+                                  ? ref.watch(attachedTerminalsProvider)
+                                  : const [],
                               modality: modality,
                               needsImage: needsImage,
                               sending: sending,
@@ -936,6 +964,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               onRemoveFile: (i) =>
                                   setState(() => _files.removeAt(i)),
                               onRemoveSnippets: () => setState(_snippets.clear),
+                              onRemoveTerminal: (tabId) => ref
+                                  .read(dismissedTerminalsProvider.notifier)
+                                  .dismiss(tabId),
                               onOpenPrompts: _promptsButton,
                               promptsSaveInput: _message.text.trim().isNotEmpty,
                               onSend: () => _send(modality),

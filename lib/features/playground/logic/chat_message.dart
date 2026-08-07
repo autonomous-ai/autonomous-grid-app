@@ -1,7 +1,9 @@
 import '../../../infrastructure/cli/agent_event.dart';
+import 'chat_context.dart';
 import 'chat_file.dart';
 import 'message_media.dart';
 
+export 'chat_context.dart';
 export 'chat_file.dart';
 
 /// Who authored a transcript message.
@@ -25,6 +27,7 @@ class ChatMessage {
     this.text = '',
     this.media = const [],
     this.files = const [],
+    this.contexts = const [],
     this.sources = const [],
     this.plan = const [],
     this.model,
@@ -40,6 +43,11 @@ class ChatMessage {
   /// contract. Kept apart from [text] so the bubble shows them as files while the
   /// model reads their content (see [messageForModel]). Empty on assistant turns.
   final List<ChatFile> files;
+
+  /// What the user had on screen when they sent this — the terminal open beside
+  /// the conversation, captured as they pressed Send. Empty on assistant turns,
+  /// and on any turn sent with no panel open.
+  final List<ChatContext> contexts;
 
   /// Web pages an agent turn cited while answering — shown as clickable sources
   /// under the reply. Empty for user turns and for answers built without the
@@ -82,6 +90,7 @@ class ChatMessage {
     String? text,
     List<ChatMedia>? media,
     List<ChatFile>? files,
+    List<ChatContext>? contexts,
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
     String? model,
@@ -92,6 +101,7 @@ class ChatMessage {
     text: text ?? this.text,
     media: media ?? this.media,
     files: files ?? this.files,
+    contexts: contexts ?? this.contexts,
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
     model: model ?? this.model,
@@ -100,19 +110,23 @@ class ChatMessage {
   );
 }
 
-/// The turn as a model reads it: what the user typed, followed by the text of
-/// any files they attached.
+/// The turn as a model reads it: what the user typed, then the text of any files
+/// they attached, then what they had on screen.
 ///
-/// The two are joined only here, on the way out — the transcript keeps them
-/// apart so the user's bubble stays the sentence they wrote with the files named
+/// These are joined only here, on the way out — the transcript keeps them apart
+/// so the user's bubble stays the sentence they wrote with the files named
 /// beside it, rather than the sentence buried under a spreadsheet. Every path
 /// that sends a turn goes through this (relay chat, Responses, the agent
 /// prompt), so a file attached in the composer reaches whoever answers.
+///
+/// Terminals come last because they are the least deliberate thing on the
+/// message: a file was picked, a terminal was merely open.
 String messageForModel(ChatMessage message) {
-  if (message.files.isEmpty) return message.text;
+  if (message.files.isEmpty && message.contexts.isEmpty) return message.text;
   return [
     if (message.text.trim().isNotEmpty) message.text.trim(),
     for (final file in message.files) file.promptBlock,
+    for (final context in message.contexts) context.promptBlock,
   ].join('\n\n');
 }
 

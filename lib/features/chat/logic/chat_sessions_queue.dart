@@ -40,6 +40,7 @@ mixin _ChatQueue on _ChatSessions {
         modality: next.modality,
         attachments: next.attachments,
         files: next.files,
+        contexts: next.contexts,
         into: id,
       ),
     );

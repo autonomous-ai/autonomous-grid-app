@@ -33,6 +33,7 @@ class QueuedTurn {
     required this.modality,
     required this.attachments,
     this.files = const [],
+    this.contexts = const [],
   });
 
   final NetworkCredential network;
@@ -44,6 +45,11 @@ class QueuedTurn {
   /// The documents attached to the queued message — carried with it so a file
   /// picked now still goes out with the sentence it belonged to.
   final List<ChatFile> files;
+
+  /// What was on screen when the user pressed Send, captured then rather than
+  /// when the queue drains: a follow-up typed while the agent works can wait
+  /// minutes, and the terminal it was about has moved on by the time it goes.
+  final List<ChatContext> contexts;
 }
 
 /// The Chat tab's whole state: every saved conversation (newest first), which

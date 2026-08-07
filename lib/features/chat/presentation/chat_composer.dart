@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/composer_keys.dart';
+import '../../../shared/widgets/context_chip.dart';
 import '../../../shared/widgets/liquid_glass.dart';
 import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/file_chip.dart';
 import '../logic/composer_snippet.dart';
+import '../logic/composer_context.dart';
 import '../logic/file_attachments.dart';
 import 'snippet_chip.dart';
 
@@ -27,6 +29,7 @@ class ComposerSection extends StatelessWidget {
     required this.attachments,
     required this.files,
     required this.snippets,
+    required this.terminals,
     required this.modality,
     required this.needsImage,
     required this.sending,
@@ -42,6 +45,7 @@ class ComposerSection extends StatelessWidget {
     required this.onRemoveAttachment,
     required this.onRemoveFile,
     required this.onRemoveSnippets,
+    required this.onRemoveTerminal,
     required this.onOpenPrompts,
     required this.promptsSaveInput,
     required this.onSend,
@@ -58,6 +62,9 @@ class ComposerSection extends StatelessWidget {
   /// The runs of text picked out of files, in one chip beside the documents.
   final List<ChatSnippet> snippets;
 
+  /// The terminals on screen, shown as chips so what the assistant will be able
+  /// to read is visible before Send rather than a surprise afterwards.
+  final List<AttachedTerminal> terminals;
   final PlaygroundModality modality;
   final bool needsImage;
   final bool sending;
@@ -93,6 +100,11 @@ class ComposerSection extends StatelessWidget {
   /// Takes every selection off at once — see [SnippetChip] for why they arrive
   /// and leave as one.
   final VoidCallback onRemoveSnippets;
+
+  /// Takes a terminal off this message, by the id of the tab it lives in — not
+  /// an index: the chips are derived from what the panels are showing, and a
+  /// position in that list is only true until a panel changes tab.
+  final ValueChanged<String> onRemoveTerminal;
 
   /// Opens the saved-prompt menu, or — when there's already text — saves it as a
   /// new prompt. [promptsSaveInput] says which, so the button's icon and tooltip
@@ -153,11 +165,13 @@ class ComposerSection extends StatelessWidget {
                 attachments: attachments,
                 files: files,
                 snippets: snippets,
+                terminals: terminals,
                 needsImage: needsImage,
                 onAdd: onAddAttachment,
                 onRemoveAt: onRemoveAttachment,
                 onRemoveFileAt: onRemoveFile,
                 onRemoveSnippets: onRemoveSnippets,
+                onRemoveTerminal: onRemoveTerminal,
               ),
               ComposerKeys(
                 canSend: canSend,

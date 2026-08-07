@@ -22,14 +22,17 @@ enum PanelHost {
 /// A surface a panel can open, and everything the app needs to name it: the
 /// launcher row, the tab, and the tooltip all read from here.
 ///
+/// Only what is built. A browser and a side chat were listed here while they
+/// were still `TODO — <name>`: a menu that opens onto an empty screen is a
+/// worse answer than a shorter menu, and it costs the user the click to find
+/// that out.
+///
 /// The shortcuts are labels, not bindings — nothing listens for them yet. They
 /// become real with the surfaces they name.
 enum PanelFeature {
   review(LucideIcons.fileCheck, 'Review', shortcut: '⌃⇧G'),
   terminal(LucideIcons.squareTerminal, 'Terminal'),
-  browser(LucideIcons.globe, 'Browser', shortcut: '⌘T'),
-  files(LucideIcons.folder, 'Files', shortcut: '⌘P'),
-  sideChat(LucideIcons.messagesSquare, 'Side chat', shortcut: '⌥⌘S');
+  files(LucideIcons.folder, 'Files', shortcut: '⌘P');
 
   const PanelFeature(this.icon, this.label, {this.shortcut});
 

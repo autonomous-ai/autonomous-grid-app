@@ -20,6 +20,7 @@ mixin _ChatSend on _ChatSessions {
     PlaygroundModality modality = PlaygroundModality.text,
     List<MediaAttachment> attachments = const [],
     List<ChatFile> files = const [],
+    List<ChatContext> contexts = const [],
     bool? planFirst,
     String? into,
   }) async {
@@ -35,6 +36,7 @@ mixin _ChatSend on _ChatSessions {
           modality: modality,
           attachments: List.unmodifiable(attachments),
           files: List.unmodifiable(files),
+          contexts: List.unmodifiable(contexts),
         ),
       );
       return;
@@ -72,6 +74,7 @@ mixin _ChatSend on _ChatSessions {
       text: text,
       attachments: attachments,
       files: files,
+      contexts: contexts,
       outputsDir: ref.read(mediaOutputsDirProvider),
     );
     final withUser = target.copyWith(
