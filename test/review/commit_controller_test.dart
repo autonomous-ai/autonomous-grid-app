@@ -7,23 +7,77 @@ import 'fake_git_runner.dart';
 import 'git_fixtures.dart';
 import 'review_controller_test.dart' show containerWith;
 
-/// A repository with one staged file, on `main`, tracking `origin/main`.
+/// A repository with one changed file, on `main`, tracking `origin/main`.
+///
+/// [xy] is the file's porcelain state: `M.` staged — what a commit would carry
+/// as things stand — and `.M` changed on disk only, which is what the panel's
+/// "include the files not ticked" toggle exists for.
+FakeGitRunner _repo({
+  String xy = 'M.',
+  GitRun? Function(List<String> args)? override,
+}) => FakeGitRunner(
+  (args) =>
+      override?.call(args) ??
+      switch (args) {
+        ['rev-parse', '--abbrev-ref', 'HEAD'] => gitSaid('main\n'),
+        ['rev-parse', '--verify', ...] => gitSaid('abc123\n'),
+        ['rev-parse', ...] => gitSaid('origin/main\n'),
+        ['status', ...] => gitSaid(
+          z('1 $xy N... 100644 100644 100644 422c 422c lib/a.dart|'),
+        ),
+        _ => gitSaid(''),
+      },
+);
+
+/// The everyday case: the file is already ticked.
 FakeGitRunner _staged({GitRun? Function(List<String> args)? override}) =>
-    FakeGitRunner(
-      (args) =>
-          override?.call(args) ??
-          switch (args) {
-            ['rev-parse', '--abbrev-ref', 'HEAD'] => gitSaid('main\n'),
-            ['rev-parse', '--verify', ...] => gitSaid('abc123\n'),
-            ['rev-parse', ...] => gitSaid('origin/main\n'),
-            ['status', ...] => gitSaid(
-              z('1 M. N... 100644 100644 100644 422c 422c lib/a.dart|'),
-            ),
-            _ => gitSaid(''),
-          },
-    );
+    _repo(override: override);
+
+/// The file is changed but not ticked.
+FakeGitRunner _unticked({GitRun? Function(List<String> args)? override}) =>
+    _repo(xy: '.M', override: override);
 
 void main() {
+  test('the panel\'s toggle ticks the listed files before committing, so the '
+      'commit carries what the user was looking at', () async {
+    final runner = _unticked();
+    final container = containerWith(runner: runner);
+    await container.read(reviewProvider('/repo').future);
+
+    await container
+        .read(commitProvider('/repo').notifier)
+        .run(message: 'Fix the thing', push: false, includeUnticked: true);
+
+    expect(runner.argsFor('add'), ['add', '--', 'lib/a.dart']);
+    expect(runner.argsFor('commit'), ['commit', '-m', 'Fix the thing']);
+    expect(container.read(commitProvider('/repo')), isA<CommitDone>());
+  });
+
+  test(
+    'a refusal while ticking stops before the commit — half a change set '
+    'recorded under the message for all of it is worse than nothing',
+    () async {
+      final runner = _unticked(
+        override: (args) => switch (args) {
+          ['add', ...] => gitRefused(
+            'fatal: pathspec did not match any files',
+            exitCode: 128,
+          ),
+          _ => null,
+        },
+      );
+      final container = containerWith(runner: runner);
+      await container.read(reviewProvider('/repo').future);
+
+      await container
+          .read(commitProvider('/repo').notifier)
+          .run(message: 'Fix the thing', push: false, includeUnticked: true);
+
+      expect(runner.ran('commit'), isFalse);
+      expect(container.read(commitProvider('/repo')), isA<CommitFailed>());
+    },
+  );
+
   test('commits and pushes, and says which branch went where', () async {
     final runner = _staged();
     final container = containerWith(runner: runner);

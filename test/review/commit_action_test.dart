@@ -36,7 +36,15 @@ void main() {
       final state = snapshot(files: [file('a.dart')]);
 
       expect(commitActionFor(state), CommitAction.commitAll);
-      expect(CommitAction.commitAll.label, 'Commit all');
+    });
+
+    test('the control names the panel it opens, never a verb it does not '
+        'perform on click', () {
+      expect(CommitAction.commit.panelLabel, 'Commit or push');
+      expect(CommitAction.commitAll.panelLabel, 'Commit or push');
+      // Nothing can be committed from a branch comparison, so the one thing
+      // that *is* possible is what it says.
+      expect(CommitAction.push.panelLabel, 'Push');
     });
 
     test('a commit or a branch has nothing to tick, so waiting commits are '

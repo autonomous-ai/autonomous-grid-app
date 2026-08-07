@@ -27,6 +27,7 @@ class MenuRow extends StatefulWidget {
     this.icon,
     this.selected = false,
     this.detail,
+    this.trailing,
     this.submenu = false,
     this.enabled = true,
   });
@@ -35,6 +36,10 @@ class MenuRow extends StatefulWidget {
 
   /// The second line under it — a commit's author and age, a branch's remote.
   final String? detail;
+
+  /// What sits at the end of the row: a count, the keys that do the same
+  /// thing. Drawn before the chosen-row check, so a row can carry both.
+  final Widget? trailing;
 
   final IconData? icon;
   final double width;
@@ -90,6 +95,7 @@ class _MenuRowState extends State<MenuRow> {
           child: MenuRowBody(
             label: widget.label,
             detail: widget.detail,
+            trailing: widget.trailing,
             icon: widget.icon,
             width: widget.width - kMenuRowGutter * 2,
             selected: selected,
@@ -115,6 +121,7 @@ class MenuRowBody extends StatelessWidget {
     required this.width,
     this.detail,
     this.icon,
+    this.trailing,
     this.selected = false,
     this.submenu = false,
     this.enabled = true,
@@ -123,6 +130,10 @@ class MenuRowBody extends StatelessWidget {
 
   final String label;
   final String? detail;
+
+  /// What sits at the end of the row — see [MenuRow.trailing].
+  final Widget? trailing;
+
   final IconData? icon;
   final double width;
   final bool selected;
@@ -155,6 +166,13 @@ class MenuRowBody extends StatelessWidget {
             Expanded(
               child: _Label(row: this, enabled: enabled),
             ),
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              // Faded rather than hidden on a row that can't be picked: the
+              // count is *why* the row is greyed, so taking it away removes
+              // the explanation.
+              Opacity(opacity: enabled ? 1 : 0.5, child: trailing),
+            ],
             if (selected) ...[
               const SizedBox(width: 8),
               Icon(
