@@ -6,12 +6,15 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../logic/commit_action.dart';
+import '../../logic/review_comment.dart';
+import '../../logic/review_comments_controller.dart';
 import '../../logic/review_controller.dart';
 import '../../logic/review_scope.dart';
 import '../../logic/review_snapshot.dart';
 import 'commit_button.dart';
 import 'review_mark.dart';
 import 'scope_menu.dart';
+import 'toolbar_pill.dart';
 
 /// The row under the panel's tabs: which changes are on screen, how much they
 /// come to, and what can be done with them.
@@ -49,6 +52,7 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final snapshot = widget.snapshot;
+    final comments = ref.watch(reviewCommentsProvider(widget.folder));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
@@ -69,7 +73,34 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               ],
             ),
           ),
-          if (!snapshot.isEmpty)
+          // Comments outrank "review this": the user has already read the diff
+          // and said what they want, and the button that would throw that away
+          // must not look like the one that sends it.
+          if (comments.isNotEmpty)
+            ToolbarPill(
+              onTap: _sendComments,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.messageSquare,
+                    size: 13,
+                    color: AppPalette.accentOnSurface,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Send ${comments.length} comment'
+                    '${comments.length == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: AppFont.medium,
+                      color: AppPalette.accentOnSurface,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (!snapshot.isEmpty)
             AppIconButton(
               icon: LucideIcons.sparkles,
               size: 15,
@@ -103,6 +134,16 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
         ],
       ),
     );
+  }
+
+  /// Hand every remark to the assistant, then let them go: they were a request
+  /// in the making, and one that has been sent must not be sent again with the
+  /// next question.
+  void _sendComments() {
+    widget.onAskAgent(
+      commentsPrompt(ref.read(reviewCommentsProvider(widget.folder))),
+    );
+    ref.read(reviewCommentsProvider(widget.folder).notifier).clear();
   }
 
   Future<void> _refresh() async {

@@ -10,6 +10,7 @@ import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../logic/commit_action.dart';
 import '../../logic/commit_controller.dart';
+import '../../logic/commit_message_writer.dart';
 import '../../logic/review_file.dart';
 import '../../logic/review_snapshot.dart';
 import 'menu_row.dart';
@@ -49,6 +50,14 @@ class CommitPopover extends ConsumerStatefulWidget {
 class _CommitPopoverState extends ConsumerState<CommitPopover> {
   final _message = TextEditingController();
   late bool _includeUnticked;
+
+  /// A draft being written, and why the last attempt didn't produce one.
+  ///
+  /// Local to the panel rather than a provider: a half-written message belongs
+  /// to the box it is being written into, and the panel is closed the moment
+  /// the commit it feeds is made.
+  bool _writing = false;
+  String? _writeFailed;
 
   @override
   void initState() {
@@ -108,7 +117,31 @@ class _CommitPopoverState extends ConsumerState<CommitPopover> {
               onChanged: (_) => setState(() {}),
             ),
           ),
+          if (_writeFailed != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(15, 0, 15, 10),
+              child: Text(
+                _writeFailed!,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
           const MenuDivider(),
+          MenuRow(
+            label: _writing ? 'Writing it…' : 'Write the message for me',
+            icon: LucideIcons.sparkles,
+            width: CommitPopover.width,
+            // Not while a commit is in flight, and not with nothing to read:
+            // a model asked to describe an empty change invents one.
+            enabled: !running && !_writing && _hasContent(),
+            trailing: _writing
+                ? const AppSpinner(size: SpinnerSize.small)
+                : null,
+            onTap: _writeMessage,
+          ),
           if (unticked.isNotEmpty && snapshot.scope.canStage)
             MenuRow(
               label: 'Include the files not ticked',
@@ -169,6 +202,36 @@ class _CommitPopoverState extends ConsumerState<CommitPopover> {
   bool _hasContent() {
     if (widget.snapshot.staged.isNotEmpty) return true;
     return _includeUnticked && widget.snapshot.files.isNotEmpty;
+  }
+
+  /// Ask a model to describe the change, and put what it says in the box.
+  ///
+  /// Straight into the field, not committed: it is a draft the user reads and
+  /// edits, which is also why a failure is a line under the box rather than a
+  /// dialog — the box still works.
+  Future<void> _writeMessage() async {
+    setState(() {
+      _writing = true;
+      _writeFailed = null;
+    });
+    final (written, failed) = await ref
+        .read(commitMessageWriterProvider)
+        .write(
+          root: widget.snapshot.root,
+          includeUnticked: _includeUnticked,
+          hasCommits: widget.snapshot.hasCommits,
+        );
+    if (!mounted) return;
+    setState(() {
+      _writing = false;
+      _writeFailed = failed;
+      if (written != null) {
+        _message.text = written;
+        // The caret at the end, so the first keystroke adds to the draft
+        // instead of landing in the middle of it.
+        _message.selection = TextSelection.collapsed(offset: written.length);
+      }
+    });
   }
 
   Future<void> _commit({required bool push}) => ref

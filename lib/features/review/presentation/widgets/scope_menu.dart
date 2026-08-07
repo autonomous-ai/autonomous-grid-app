@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -27,8 +29,10 @@ class ScopeMenu extends ConsumerWidget {
   final String folder;
 
   /// Wide enough for `origin/feature/some-longer-name` before it ellipsizes,
-  /// narrow enough to sit under a 420px panel without covering it.
-  static const double width = 268;
+  /// and for the second line under "Last turn" to be a sentence rather than a
+  /// sentence with its end cut off. Still narrow enough to sit under a 420px
+  /// panel without covering it.
+  static const double width = 300;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -64,7 +68,7 @@ class _AnchorState extends ConsumerState<_Anchor> {
         MenuRow(
           label: 'Last turn',
           detail: lastTurn.isEmpty
-              ? "The assistant hasn't changed a file here yet"
+              ? "The assistant hasn't changed a file yet"
               : '${lastTurn.length} file${lastTurn.length == 1 ? '' : 's'} '
                     'the assistant just changed',
           icon: LucideIcons.sparkles,
@@ -263,6 +267,18 @@ class _BranchSubmenu extends ConsumerWidget {
   }
 }
 
+/// The gap Material reserves at the end of a submenu row, worked out the way
+/// `_MenuItemLabel` does — its constants are private, so the formula is
+/// mirrored rather than the number copied.
+///
+/// It has to be accounted for because it cannot be removed: the space is padding
+/// around `submenuIcon`, and a *null* `submenuIcon` doesn't mean "none" — it
+/// falls back to Material's own solid black triangle. So the glyph is emptied
+/// and the row's body made narrower by exactly this much, which is what keeps
+/// every row in the menu the same width.
+double _submenuTrailingGap(BuildContext context) =>
+    math.max(4, 12 + Theme.of(context).visualDensity.horizontal * 2);
+
 /// A row that opens more rows.
 ///
 /// [SubmenuButton] rather than a second [MenuAnchor]: it is what places the
@@ -285,6 +301,7 @@ class _Submenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final gap = _submenuTrailingGap(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: kMenuRowGutter),
       child: SubmenuButton(
@@ -293,6 +310,9 @@ class _Submenu extends StatelessWidget {
         style: ButtonStyle(
           padding: const WidgetStatePropertyAll(EdgeInsets.zero),
           minimumSize: const WidgetStatePropertyAll(Size.zero),
+          // Material pads every button out to a 48px tap target, which left
+          // these two rows visibly taller than the four above them.
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           backgroundColor: WidgetStatePropertyAll(
             selected ? AppSurface.accentWash : Colors.transparent,
           ),
@@ -302,15 +322,20 @@ class _Submenu extends StatelessWidget {
             RoundedRectangleBorder(borderRadius: kMenuRowRadius),
           ),
         ),
-        // The chevron is drawn by the row itself, in the app's own glyph.
-        trailingIcon: const SizedBox.shrink(),
+        // The app's chevron in the slot Material reserves, rather than null —
+        // which is what asks for its own solid triangle, and left two arrows on
+        // the row with the second hanging outside the panel.
+        submenuIcon: const WidgetStatePropertyAll(MenuRowChevron()),
         menuChildren: children,
         child: MenuRowBody(
           label: label,
           icon: icon,
-          width: ScopeMenu.width - kMenuRowGutter * 2,
+          // Narrower by exactly what the chevron and Material's gap take, so
+          // the row measures the same as every other one and its glyph lands in
+          // the same column as their check.
+          width:
+              ScopeMenu.width - kMenuRowGutter * 2 - gap - MenuRowChevron.width,
           selected: selected,
-          submenu: true,
           tint: selected
               ? AppPalette.accentOnSurface
               : AppPalette.textSecondary,
