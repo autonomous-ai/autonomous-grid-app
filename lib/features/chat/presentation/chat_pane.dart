@@ -219,12 +219,20 @@ class _PreviewSlot extends StatelessWidget {
           alignment: Alignment.centerLeft,
           minWidth: width,
           maxWidth: width,
-          child: const Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              VerticalDivider(width: 1),
-              Expanded(child: PreviewPanel()),
-            ],
+          // Fades with the slide. Closing the last tab empties the panel in the
+          // same frame the slide begins, so without this the launcher flashes
+          // up at full width and *then* leaves.
+          child: AnimatedOpacity(
+            duration: AppMotion.swap,
+            curve: AppMotion.curve,
+            opacity: open ? 1 : 0,
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                VerticalDivider(width: 1),
+                Expanded(child: PreviewPanel()),
+              ],
+            ),
           ),
         ),
       ),

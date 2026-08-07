@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/panel_body.dart';
 import '../../projects/logic/project.dart';
 import '../logic/review_controller.dart';
 import '../logic/review_selection.dart';
@@ -14,10 +15,10 @@ import 'widgets/review_toolbar.dart';
 
 /// Review: what has changed in a project's folder, and what to do about it.
 ///
-/// Lives in the panel beside the conversation rather than on a screen of its
-/// own, because reviewing is something you do *while* the assistant works —
-/// walking to another screen to see what it just wrote would mean leaving the
-/// chat that asked for it.
+/// Lives in a tab of the panel beside the conversation rather than on a screen
+/// of its own, because reviewing is something you do *while* the assistant
+/// works — walking to another screen to see what it just wrote would mean
+/// leaving the chat that asked for it.
 class ReviewSurface extends ConsumerWidget {
   const ReviewSurface({
     super.key,
@@ -30,7 +31,8 @@ class ReviewSurface extends ConsumerWidget {
   /// the chat belongs to no project.
   final Project? project;
 
-  /// Leaves Review and puts the panel back to what it can open.
+  /// Dismisses Review. What that means belongs to the host — today it closes
+  /// the tab holding this surface, and the panel with it if it was the last.
   final VoidCallback onClose;
 
   /// Hands a message to the host to put in the chat's composer — how "ask the
@@ -41,7 +43,7 @@ class ReviewSurface extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final open = project;
-    if (open == null) return const ReviewNoProject();
+    if (open == null) return ReviewNoProject(onClose: onClose);
 
     final folder = open.path;
     final state = ref.watch(reviewProvider(folder));
@@ -90,37 +92,34 @@ class _Body extends ConsumerWidget {
     ReviewReady(:final snapshot) => _Changes(
       snapshot: snapshot,
       folder: folder,
-      onClose: onClose,
       onAskAgent: onAskAgent,
     ),
   };
 }
 
-/// The repository as it stands: the toolbar, the changed files, and whichever
-/// file the user opened from them.
+/// The repository as it stands, in the panel's own geometry: the toolbar under
+/// the tabs, the diff filling the pane, and the changed files beside it.
 ///
-/// Two shapes, chosen by how much room the panel has. Wide enough and it is
-/// Codex's own: the diff filling the pane with the file list beside it, so
-/// picking the next file never hides the one you were reading. Narrower than
-/// that the two take turns, because a diff in a 200px column is a column of
-/// ellipses.
+/// [PanelBody] owns those regions, so five features can't drift into five
+/// toolbar heights. What is left to decide here is what goes in each, and that
+/// depends on the room: wide enough and it is Codex's shape, with the list
+/// beside the diff so picking the next file never hides the one you were
+/// reading. Narrower and the two take turns, because a diff in a 200px column
+/// is a column of ellipses.
 class _Changes extends ConsumerWidget {
   const _Changes({
     required this.snapshot,
     required this.folder,
-    required this.onClose,
     required this.onAskAgent,
   });
 
   final ReviewSnapshot snapshot;
   final String folder;
-  final VoidCallback onClose;
   final ValueChanged<String> onAskAgent;
 
-  /// Below this the panel can't hold both: the list needs [_listWidth] and a
-  /// diff needs the rest to be worth reading.
+  /// Below this the panel can't hold a list and a diff side by side and still
+  /// leave the diff worth reading.
   static const double _sideBySideFrom = 720;
-  static const double _listWidth = 280;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -132,54 +131,34 @@ class _Changes extends ConsumerWidget {
         ? null
         : snapshot.files.where((f) => f.path == selected).firstOrNull;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ReviewToolbar(
-          snapshot: snapshot,
-          folder: folder,
-          onClose: onClose,
-          onAskAgent: onAskAgent,
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Nothing to review: the empty state takes the pane rather than
-              // sitting in a column beside "pick a file", which would be two
-              // messages about the same nothing.
-              if (constraints.maxWidth < _sideBySideFrom || snapshot.isEmpty) {
-                return file == null
-                    ? ReviewFileList(snapshot: snapshot, folder: folder)
-                    : ReviewDiffView(
-                        file: file,
-                        folder: folder,
-                        showBack: true,
-                      );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: file == null
-                        ? const _NothingOpen()
-                        : ReviewDiffView(
-                            file: file,
-                            folder: folder,
-                            showBack: false,
-                          ),
-                  ),
-                  const VerticalDivider(width: 1),
-                  SizedBox(
-                    width: _listWidth,
-                    child: ReviewFileList(snapshot: snapshot, folder: folder),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
+    final toolbar = ReviewToolbar(
+      snapshot: snapshot,
+      folder: folder,
+      onAskAgent: onAskAgent,
+    );
+    final list = ReviewFileList(snapshot: snapshot, folder: folder);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Nothing to review: the empty state takes the pane rather than sitting
+        // in a column beside "pick a file", which would be two messages about
+        // the same nothing.
+        if (constraints.maxWidth < _sideBySideFrom || snapshot.isEmpty) {
+          return PanelBody(
+            toolbar: toolbar,
+            main: file == null
+                ? list
+                : ReviewDiffView(file: file, folder: folder, showBack: true),
+          );
+        }
+        return PanelBody(
+          toolbar: toolbar,
+          main: file == null
+              ? const _NothingOpen()
+              : ReviewDiffView(file: file, folder: folder, showBack: false),
+          side: list,
+        );
+      },
     );
   }
 }

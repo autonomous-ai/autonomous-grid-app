@@ -7,6 +7,7 @@ import '../../../../shared/widgets/empty_state.dart';
 import '../../logic/review_snapshot.dart';
 import '../../logic/review_tree.dart';
 import 'review_file_row.dart';
+import 'review_toolbar.dart' show ReviewBranchLine;
 
 /// The changed files, gathered under the folder each lives in.
 ///
@@ -42,7 +43,18 @@ class _ReviewFileListState extends ConsumerState<ReviewFileList> {
     AppTheme.watch(context);
     final files = widget.snapshot.files;
     final scope = widget.snapshot.scope;
-    if (files.isEmpty) return _NothingChanged(line: scope.emptyLine);
+    if (files.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: ReviewBranchLine(snapshot: widget.snapshot),
+          ),
+          Expanded(child: _NothingChanged(line: scope.emptyLine)),
+        ],
+      );
+    }
 
     final shown = filterFiles(files, _query.text);
     // Ticking a file on or off only means something where there is still an
@@ -52,6 +64,10 @@ class _ReviewFileListState extends ConsumerState<ReviewFileList> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+          child: ReviewBranchLine(snapshot: widget.snapshot),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
           // The same field the model manager searches with, so two lists in

@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
-import '../../features/chat/logic/preview_panel.dart';
+import '../../features/chat/logic/panel_tabs.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/git/logic/background_git_installer.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
@@ -156,7 +156,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// from Settings would open something they can't see.
   void _openReview() {
     ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-    ref.read(previewSurfaceProvider.notifier).open(PreviewSurface.review);
+    // Reveal, not open: pressing the shortcut again should bring the Review
+    // already on screen to the front rather than stack another one behind it.
+    ref.read(panelTabsProvider.notifier).reveal(PanelFeature.review);
   }
 }
 

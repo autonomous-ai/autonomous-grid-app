@@ -13,16 +13,22 @@ import '../../logic/review_controller.dart';
 /// Not a failure — the ordinary state of a chat that isn't about code. It says
 /// what a project is for rather than only that one is missing.
 class ReviewNoProject extends StatelessWidget {
-  const ReviewNoProject({super.key});
+  const ReviewNoProject({super.key, required this.onClose});
+
+  /// Dismisses Review. Offered here because this is the one state the surface
+  /// can do nothing from: with no project there is no folder to look at, and a
+  /// tab that can only be shut from its own strip is a dead end (§5).
+  final VoidCallback onClose;
 
   @override
-  Widget build(BuildContext context) => const EmptyState(
+  Widget build(BuildContext context) => EmptyState(
     icon: LucideIcons.folderOpen,
     title: 'Open a chat in a project',
     message:
         'Review shows what changed in a project folder. Start a chat inside '
         'one and the changes appear here.',
     compact: true,
+    action: TextButton(onPressed: onClose, child: const Text('Close Review')),
   );
 }
 
