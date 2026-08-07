@@ -149,6 +149,7 @@ class _Changes extends ConsumerWidget {
           folder: folder,
           onAskAgent: onAskAgent,
           canHideFiles: sideBySide && file != null,
+          openFile: file,
         );
         // Nothing to review: the empty state takes the pane rather than sitting
         // in a column beside "pick a file", which would be two messages about

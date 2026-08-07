@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Whether the changed-file list is beside the diff.
@@ -58,18 +59,109 @@ enum DiffLayout {
 /// shredding every line into three.
 const double kSplitDiffFrom = 620;
 
+/// Everything about *how* a diff is drawn that the user can change, held
+/// together because they are read together and one menu sets them all.
+@immutable
+class DiffViewPrefs {
+  const DiffViewPrefs({
+    this.layout = DiffLayout.unified,
+    this.wrap = true,
+    this.ignoreWhitespace = false,
+    this.collapsed = false,
+  });
+
+  final DiffLayout layout;
+
+  /// Long lines fold onto the next row rather than running off the side.
+  ///
+  /// On by default, and the reason the diff has no horizontal scrollbar: the
+  /// panel is 420–760px wide, and a line you have to drag sideways to finish
+  /// reading is one you don't finish reading.
+  final bool wrap;
+
+  /// Ask Git to ignore lines that differ only in spacing — a re-indented file
+  /// otherwise reads as rewritten from top to bottom.
+  final bool ignoreWhitespace;
+
+  /// Every changed section folded to its heading, so a long file can be read as
+  /// a table of contents first.
+  final bool collapsed;
+
+  DiffViewPrefs copyWith({
+    DiffLayout? layout,
+    bool? wrap,
+    bool? ignoreWhitespace,
+    bool? collapsed,
+  }) => DiffViewPrefs(
+    layout: layout ?? this.layout,
+    wrap: wrap ?? this.wrap,
+    ignoreWhitespace: ignoreWhitespace ?? this.ignoreWhitespace,
+    collapsed: collapsed ?? this.collapsed,
+  );
+}
+
 /// How diffs are drawn, everywhere in the app.
 ///
 /// One setting rather than one per folder: this is a preference about reading
 /// diffs, not a fact about a repository, and a user who wants two columns wants
 /// them in the next project too.
-final reviewDiffLayoutProvider = NotifierProvider<ReviewDiffLayout, DiffLayout>(
-  ReviewDiffLayout.new,
-);
+final diffViewPrefsProvider =
+    NotifierProvider<DiffViewPrefsController, DiffViewPrefs>(
+      DiffViewPrefsController.new,
+    );
 
-class ReviewDiffLayout extends Notifier<DiffLayout> {
+class DiffViewPrefsController extends Notifier<DiffViewPrefs> {
   @override
-  DiffLayout build() => DiffLayout.unified;
+  DiffViewPrefs build() => const DiffViewPrefs();
 
-  void toggle() => state = state.other;
+  void toggleLayout() => state = state.copyWith(layout: state.layout.other);
+
+  void toggleWrap() => state = state.copyWith(wrap: !state.wrap);
+
+  void toggleWhitespace() =>
+      state = state.copyWith(ignoreWhitespace: !state.ignoreWhitespace);
+
+  /// Fold or unfold every section at once. A section opened by hand afterwards
+  /// wins over this — see `reviewOpenHunksProvider`.
+  void toggleCollapsed() => state = state.copyWith(collapsed: !state.collapsed);
 }
+
+/// The sections the user has opened or closed by hand since the last "collapse
+/// all", per file.
+///
+/// A set of *exceptions* rather than the truth: "collapse all" is one flag, and
+/// a fold opened afterwards has to survive without turning that flag off for
+/// every other section too. Cleared whenever the flag is thrown, which is what
+/// makes the button say what it does.
+final reviewOpenHunksProvider =
+    NotifierProvider.family<ReviewOpenHunks, Set<int>, String>(
+      ReviewOpenHunks.new,
+    );
+
+class ReviewOpenHunks extends Notifier<Set<int>> {
+  ReviewOpenHunks(this.path);
+
+  /// The file whose sections these are — the family argument.
+  final String path;
+
+  @override
+  Set<int> build() {
+    // Thrown by the menu, so the exceptions it collected stop applying.
+    ref.listen(diffViewPrefsProvider.select((p) => p.collapsed), (_, _) {
+      state = const {};
+    });
+    return const {};
+  }
+
+  void toggle(int index) => state = state.contains(index)
+      ? Set.unmodifiable({...state}..remove(index))
+      : Set.unmodifiable({...state, index});
+}
+
+/// Whether the section at [index] is open, given the standing choice and the
+/// exceptions since.
+bool hunkIsOpen({
+  required bool collapsedAll,
+  required Set<int> exceptions,
+  required int index,
+}) => exceptions.contains(index) ? collapsedAll : !collapsedAll;

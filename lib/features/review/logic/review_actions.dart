@@ -23,10 +23,16 @@ class ReviewActions {
     required String root,
     required ReviewScope scope,
     required ReviewFile file,
+    bool ignoreWhitespace = false,
   }) async {
     final result = await _runner.run(
       root,
-      fileDiffArgv(scope: scope, file: file, nullDevice: nullDevice),
+      fileDiffArgv(
+        scope: scope,
+        file: file,
+        nullDevice: nullDevice,
+        ignoreWhitespace: ignoreWhitespace,
+      ),
     );
     if (result == null) return null;
     // `git diff --no-index` reports "these differ" as exit code 1, which is the

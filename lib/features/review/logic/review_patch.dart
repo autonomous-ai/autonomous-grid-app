@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'review_controller.dart';
+import 'review_view_prefs.dart';
 import 'unified_diff.dart';
 
 /// Which file's diff to fetch: the folder being reviewed, and the file's path
@@ -37,9 +38,19 @@ final reviewPatchProvider =
           .firstOrNull;
       if (file == null) return null;
 
+      // Watched, not read: turning whitespace off asks Git a different
+      // question, so the answer on screen has to be fetched again.
+      final ignoreWhitespace = ref.watch(
+        diffViewPrefsProvider.select((prefs) => prefs.ignoreWhitespace),
+      );
       final raw = await ref
           .read(reviewActionsProvider)
-          .patch(root: snapshot.root, scope: snapshot.scope, file: file);
+          .patch(
+            root: snapshot.root,
+            scope: snapshot.scope,
+            file: file,
+            ignoreWhitespace: ignoreWhitespace,
+          );
       if (raw == null) return null;
       if (raw.length <= kInlineParseLimit) return parseUnifiedDiff(raw);
       return compute(parseUnifiedDiff, raw);

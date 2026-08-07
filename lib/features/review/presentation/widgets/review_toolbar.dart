@@ -8,11 +8,13 @@ import '../../../../shared/widgets/app_spinner.dart';
 import '../../logic/commit_action.dart';
 import '../../logic/review_comment.dart';
 import '../../logic/review_comments_controller.dart';
+import '../../logic/review_file.dart';
 import '../../logic/review_controller.dart';
 import '../../logic/review_scope.dart';
 import '../../logic/review_snapshot.dart';
 import '../../logic/review_view_prefs.dart';
 import 'commit_button.dart';
+import 'diff_view_menu.dart';
 import 'jump_to_file.dart';
 import 'review_mark.dart';
 import 'scope_menu.dart';
@@ -36,6 +38,7 @@ class ReviewToolbar extends ConsumerStatefulWidget {
     required this.folder,
     required this.onAskAgent,
     this.canHideFiles = false,
+    this.openFile,
   });
 
   final ReviewSnapshot snapshot;
@@ -50,6 +53,10 @@ class ReviewToolbar extends ConsumerStatefulWidget {
   /// with: in the narrow layout the two take turns, so hiding the list would
   /// leave the panel with nothing in it.
   final bool canHideFiles;
+
+  /// The file whose diff is on screen, when one is — what the "…" menu's copy
+  /// row takes.
+  final ReviewFile? openFile;
 
   @override
   ConsumerState<ReviewToolbar> createState() => _ReviewToolbarState();
@@ -119,6 +126,15 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               onPressed: () =>
                   widget.onAskAgent(askAgentPrompt(snapshot.scope)),
             ),
+          // How the diff is drawn belongs with the diff, so it is only offered
+          // where there is one.
+          if (!snapshot.isEmpty) ...[
+            DiffViewMenu(
+              snapshot: snapshot,
+              folder: widget.folder,
+              file: widget.openFile,
+            ),
+          ],
           // Only with something to jump *to*.
           if (!snapshot.isEmpty)
             JumpToFile(snapshot: snapshot, folder: widget.folder),

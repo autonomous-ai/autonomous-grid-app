@@ -17,6 +17,7 @@ class DiffRowTile extends StatefulWidget {
     required this.row,
     required this.language,
     this.onComment,
+    this.wrap = true,
   });
 
   final DiffRow row;
@@ -27,6 +28,11 @@ class DiffRowTile extends StatefulWidget {
   /// Leave a remark on this line. Null on rows that can't carry one — Git's own
   /// asides have no line number to point at.
   final VoidCallback? onComment;
+
+  /// Whether a long line folds onto the next row. False lets it run off the
+  /// side, for a file whose lines are meant to be read as lines — a table, a
+  /// minified bundle, a log.
+  final bool wrap;
 
   /// The line-number column. Fits five digits — a file longer than 99,999 lines
   /// is not one anybody reads in a panel.
@@ -121,7 +127,12 @@ class _DiffRowTileState extends State<DiffRowTile> {
               ),
             ),
             Expanded(
-              child: _Line(row: row, language: widget.language, ink: ink),
+              child: _Line(
+                row: row,
+                language: widget.language,
+                ink: ink,
+                wrap: widget.wrap,
+              ),
             ),
           ],
         ),
@@ -175,17 +186,24 @@ class _CommentButton extends StatelessWidget {
 /// stood alone — wrong in a way that misreads as ordinary code, never as a
 /// change that isn't there.
 class _Line extends StatelessWidget {
-  const _Line({required this.row, required this.language, required this.ink});
+  const _Line({
+    required this.row,
+    required this.language,
+    required this.ink,
+    required this.wrap,
+  });
 
   final DiffRow row;
   final String language;
   final Color ink;
+  final bool wrap;
 
   @override
   Widget build(BuildContext context) {
     final base = AppFont.codeStyle(color: ink, height: 1.5);
     // Note rows are Git talking about the file, not code in it — colouring
     // them as source would be a lie about what they are.
+    final overflow = wrap ? TextOverflow.clip : TextOverflow.visible;
     final spans = row.kind == DiffRowKind.note || language.isEmpty
         ? null
         : CodeHighlight.spans(
@@ -194,7 +212,11 @@ class _Line extends StatelessWidget {
             base: base,
             brightness: Theme.of(context).brightness,
           );
-    if (spans == null) return Text(row.text, style: base);
-    return Text.rich(spans, style: base);
+    // Clipped rather than ellipsized when it doesn't wrap: an ellipsis says
+    // "there is more, and you can't have it", and the pane scrolls sideways.
+    if (spans == null) {
+      return Text(row.text, style: base, softWrap: wrap, overflow: overflow);
+    }
+    return Text.rich(spans, style: base, softWrap: wrap, overflow: overflow);
   }
 }
