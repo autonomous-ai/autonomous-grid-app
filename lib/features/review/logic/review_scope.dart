@@ -158,36 +158,3 @@ class CommitRef {
   /// The seven characters everyone actually quotes.
   String get shortSha => sha.length <= 7 ? sha : sha.substring(0, 7);
 }
-
-/// What to put in the composer when the user asks the assistant to review this
-/// change.
-///
-/// Names the same range the screen is showing and leaves the agent to read it
-/// with its own tools: pasting a sixteen-thousand-line diff into a message
-/// would blow the context window and cost the user's grid for the privilege.
-///
-/// Pure so the words are testable — this is the one place they are written.
-String askAgentPrompt(ReviewScope scope) {
-  final what = switch (scope) {
-    LastTurnChanges() =>
-      'the changes you just made in this project — run `git status` and '
-          '`git diff HEAD` to read them',
-    UncommittedChanges() =>
-      'the changes I have not committed yet in this project — run '
-          '`git status` and `git diff HEAD` to read them',
-    UnstagedChanges() =>
-      'the changes not yet staged in this project — run `git diff` to read '
-          'them',
-    StagedChanges() =>
-      'the changes staged for the next commit — run `git diff --cached` to '
-          'read them',
-    CommittedChange(:final commit) =>
-      'commit ${commit.shortSha} — run `git show ${commit.shortSha}` to read '
-          'it',
-    BranchAgainst(:final ref) =>
-      'what this branch changes compared with $ref — run '
-          '`git diff $ref...HEAD` to read it',
-  };
-  return 'Review $what. Tell me what looks wrong, risky or unfinished, and '
-      'what you would change. Do not edit anything yet.';
-}

@@ -162,7 +162,6 @@ class _Changes extends ConsumerWidget {
           folder: folder,
           onAskAgent: onAskAgent,
           canHideFiles: sideBySide && file != null,
-          canSplit: canSplit,
           openFile: file,
         );
         // Nothing to review: the empty state takes the pane rather than sitting

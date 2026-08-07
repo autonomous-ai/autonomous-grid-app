@@ -10,7 +10,6 @@ import '../../logic/review_comment.dart';
 import '../../logic/review_comments_controller.dart';
 import '../../logic/review_file.dart';
 import '../../logic/review_controller.dart';
-import '../../logic/review_scope.dart';
 import '../../logic/review_snapshot.dart';
 import '../../logic/review_view_prefs.dart';
 import 'commit_button.dart';
@@ -38,7 +37,6 @@ class ReviewToolbar extends ConsumerStatefulWidget {
     required this.folder,
     required this.onAskAgent,
     this.canHideFiles = false,
-    this.canSplit = false,
     this.openFile,
   });
 
@@ -54,10 +52,6 @@ class ReviewToolbar extends ConsumerStatefulWidget {
   /// with: in the narrow layout the two take turns, so hiding the list would
   /// leave the panel with nothing in it.
   final bool canHideFiles;
-
-  /// Whether the pane has the room for two columns. Offered only where it does:
-  /// a switch that visibly changes nothing is worse than no switch.
-  final bool canSplit;
 
   /// The file whose diff is on screen, when one is — what the "…" menu's copy
   /// row takes.
@@ -99,10 +93,10 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               ],
             ),
           ),
-          // Comments outrank "review this": the user has already read the diff
-          // and said what they want, and the button that would throw that away
-          // must not look like the one that sends it.
-          if (comments.isNotEmpty)
+          // What the user has already said outranks everything else here:
+          // these are a request in the making, and the row that sends it is
+          // the only one that has to be found without looking.
+          if (comments.isNotEmpty) ...[
             ToolbarPill(
               onTap: _sendComments,
               child: Row(
@@ -125,16 +119,16 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
                   ),
                 ],
               ),
-            )
-          else if (!snapshot.isEmpty)
-            AppIconButton(
-              icon: LucideIcons.sparkles,
-              size: 15,
-              tooltip: 'Ask the assistant to review these changes',
-              onPressed: () =>
-                  widget.onAskAgent(askAgentPrompt(snapshot.scope)),
             ),
-          if (widget.canSplit && widget.openFile != null)
+            const SizedBox(width: 6),
+          ],
+          // Then the controls, grouped by what they are for and in that order:
+          // find a file, then change how it is drawn, then act on it. Scattered
+          // — which is what they were — a toolbar is eight glyphs to search
+          // every time.
+          if (!snapshot.isEmpty)
+            JumpToFile(snapshot: snapshot, folder: widget.folder),
+          if (widget.openFile != null)
             AppIconButton(
               icon: layout == DiffLayout.split
                   ? LucideIcons.rows3300
@@ -143,18 +137,6 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               tooltip: layout.switchLabel,
               onPressed: ref.read(diffViewPrefsProvider.notifier).toggleLayout,
             ),
-          // How the diff is drawn belongs with the diff, so it is only offered
-          // where there is one.
-          if (!snapshot.isEmpty) ...[
-            DiffViewMenu(
-              snapshot: snapshot,
-              folder: widget.folder,
-              file: widget.openFile,
-            ),
-          ],
-          // Only with something to jump *to*.
-          if (!snapshot.isEmpty)
-            JumpToFile(snapshot: snapshot, folder: widget.folder),
           if (widget.canHideFiles)
             AppIconButton(
               icon: filesShown
@@ -169,6 +151,12 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               onPressed: ref
                   .read(reviewFilesShownProvider(widget.folder).notifier)
                   .toggle,
+            ),
+          if (!snapshot.isEmpty)
+            DiffViewMenu(
+              snapshot: snapshot,
+              folder: widget.folder,
+              file: widget.openFile,
             ),
           // Sized so the spinner and the glyph occupy the same square: a
           // toolbar that reflows every time you refresh reads as a jolt.
