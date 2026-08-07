@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/panel_visibility.dart';
 import '../../agents/logic/agent_changes.dart';
 import '../../browser/presentation/browser_panel_view.dart';
 import '../../files/logic/files_browser.dart';
@@ -10,9 +11,12 @@ import '../../review/logic/review_controller.dart';
 import '../../review/presentation/review_surface.dart';
 import '../../side_chat/presentation/side_chat_panel_view.dart';
 import '../../terminal/presentation/terminal_panel_view.dart';
+import '../logic/active_workdir.dart';
+import '../logic/bottom_panel.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/composer_prefill.dart';
 import '../logic/panel_tabs.dart';
+import '../logic/preview_panel.dart';
 
 /// The one place a [PanelTab] becomes a widget.
 ///
@@ -24,14 +28,57 @@ import '../logic/panel_tabs.dart';
 ///
 /// [onClose] closes *this tab*. A surface asking to be dismissed doesn't know
 /// it's in a tab, and shouldn't have to.
-Widget panelFeatureView(PanelTab tab, {required VoidCallback onClose}) =>
-    switch (tab.feature) {
-      PanelFeature.review => _ReviewTab(onClose: onClose),
-      PanelFeature.terminal => const TerminalPanelView(),
-      PanelFeature.browser => const BrowserPanelView(),
-      PanelFeature.files => _FilesTab(tabId: tab.id),
-      PanelFeature.sideChat => const SideChatPanelView(),
+Widget panelFeatureView(
+  PanelTab tab, {
+  required PanelHost host,
+  required VoidCallback onClose,
+}) => switch (tab.feature) {
+  PanelFeature.review => _ReviewTab(onClose: onClose),
+  // Keyed by tab: two Terminal tabs are two live shells, and without a key
+  // Flutter hands the second tab's id to the first one's element — same widget
+  // type in the same slot — which leaves the new tab showing the old tab's
+  // screen, or nothing at all.
+  PanelFeature.terminal => _TerminalTab(
+    key: ValueKey(tab.id),
+    tabId: tab.id,
+    host: host,
+  ),
+  PanelFeature.browser => const BrowserPanelView(),
+  PanelFeature.files => _FilesTab(tabId: tab.id, host: host),
+  PanelFeature.sideChat => const SideChatPanelView(),
+};
+
+/// A shell, in the folder the conversation is about.
+///
+/// The folder is the one the assistant works in — this chat's project, or the
+/// default workspace when it belongs to none — so a command typed here acts on
+/// the files being discussed. Keyed by the tab, and the shell dies with it.
+class _TerminalTab extends ConsumerWidget {
+  const _TerminalTab({super.key, required this.tabId, required this.host});
+
+  final String tabId;
+
+  /// Which panel this tab is in — only so the terminal can tell whether that
+  /// panel is actually open.
+  final PanelHost host;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final panelOpen = switch (host) {
+      PanelHost.preview => ref.watch(previewPanelOpenProvider),
+      PanelHost.bottom => ref.watch(bottomPanelOpenProvider),
     };
+    return TerminalPanelView(
+      tabId: tabId,
+      workdir: ref.watch(activeChatWorkdirProvider),
+      // Both conditions, because both can hide a live terminal: a closed panel
+      // stays in the tree so it can animate, and every open tab stays in the
+      // tree so switching keeps its scrollback. A terminal that took the
+      // keyboard in either case would swallow what the user typed at the chat.
+      showing: panelOpen && PanelTabVisible.of(context),
+    );
+  }
+}
 
 /// The open chat's project folder, browsable.
 ///
@@ -40,9 +87,13 @@ Widget panelFeatureView(PanelTab tab, {required VoidCallback onClose}) =>
 /// the tab so two Files tabs are two places in the project rather than one
 /// selection shared between them.
 class _FilesTab extends ConsumerWidget {
-  const _FilesTab({required this.tabId});
+  const _FilesTab({required this.tabId, required this.host});
 
   final String tabId;
+
+  /// Which panel this tab is in, so a second one opens beside it rather than in
+  /// the other panel.
+  final PanelHost host;
 
   /// Open [path] in a Files tab of its own.
   ///
@@ -50,7 +101,9 @@ class _FilesTab extends ConsumerWidget {
   /// state is keyed by the id [PanelTabs.open] hands back, so the tab arrives
   /// already at the file with the folders above it open.
   void _openInNewTab(WidgetRef ref, String path, String root) {
-    final id = ref.read(panelTabsProvider.notifier).open(PanelFeature.files);
+    final id = ref
+        .read(panelTabsProvider(host).notifier)
+        .open(PanelFeature.files);
     ref.read(filesBrowserProvider(id).notifier).reveal(path: path, root: root);
   }
 
