@@ -62,16 +62,40 @@ class CommitController extends Notifier<CommitState> {
   /// The two are one action from the user's side ("commit and push") but two
   /// commands, and the second can fail on its own — which is why [CommitFailed]
   /// carries whether the commit was made.
-  Future<void> run({required String message, required bool push}) async {
+  ///
+  /// [includeUnticked] ticks the rest of the list first, which is the panel's
+  /// toggle. Here rather than at the call site so the staging, the commit and
+  /// the push are one run with one failure to report — a commit that stopped
+  /// half way through staging would otherwise be reported as though nothing had
+  /// been touched.
+  Future<void> run({
+    required String message,
+    required bool push,
+    bool includeUnticked = false,
+  }) async {
     if (state is CommitRunning) return;
-    final snapshot = _snapshot();
-    if (snapshot == null) return;
+    if (_snapshot() == null) return;
 
     final trimmed = message.trim();
     if (trimmed.isEmpty) {
       state = const CommitFailed('Say what this change does first.');
       return;
     }
+
+    if (includeUnticked) {
+      state = const CommitRunning('Including the rest…');
+      final refused = await ref
+          .read(reviewProvider(folder).notifier)
+          .stageAll();
+      if (refused != null) {
+        state = CommitFailed(refused);
+        return;
+      }
+    }
+    // Read again: staging re-read the repository, and this is what the commit
+    // and the push are measured against.
+    final snapshot = _snapshot();
+    if (snapshot == null) return;
 
     state = const CommitRunning('Committing…');
     final actions = ref.read(reviewActionsProvider);

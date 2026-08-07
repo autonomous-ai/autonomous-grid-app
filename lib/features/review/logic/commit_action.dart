@@ -11,23 +11,30 @@ import 'review_snapshot.dart';
 /// the user holding a dead control with the only way forward hidden inside a
 /// caret menu, which is the opposite of what §5 asks of every state.
 enum CommitAction {
-  /// Commit the files that are ticked.
-  commit('Commit'),
+  /// Files are ticked: a commit would carry them.
+  commit,
 
-  /// Nothing is ticked yet: tick every file the list is showing, then commit.
-  commitAll('Commit all'),
+  /// There are changes but none are ticked, so the panel opens with "include
+  /// the rest" already on — otherwise its first click would commit nothing.
+  commitAll,
 
   /// Nothing here can be committed, but commits are waiting to be sent.
-  push('Push'),
+  push,
 
-  /// Neither is possible, so the button doesn't belong on screen at all.
-  none('');
+  /// Neither is possible, so the control doesn't belong on screen at all.
+  none;
 
-  const CommitAction(this.label);
-
-  /// What the button says. Always a verb — this is the only place the words are
-  /// written.
-  final String label;
+  /// What the control that opens the panel is called.
+  ///
+  /// Never a bare "Commit": the pill opens a panel rather than doing the thing,
+  /// and a button labelled with a verb it doesn't perform is the same lie as a
+  /// button labelled with a state. On a branch or inside a commit there is
+  /// nothing to commit at all, so it says the one thing that *is* possible.
+  String get panelLabel => switch (this) {
+    commit || commitAll => 'Commit or push',
+    push => 'Push',
+    none => '',
+  };
 }
 
 /// The action [snapshot] leaves open, in the order a person would reach for
