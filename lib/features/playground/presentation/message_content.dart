@@ -5,7 +5,7 @@ import 'package:markdown/markdown.dart' as md;
 import '../logic/chat_message.dart';
 import '../logic/message_media.dart';
 import 'markdown_builders.dart';
-import 'markdown_style.dart';
+import '../../../shared/markdown/markdown_style.dart';
 import 'media/inline_audio.dart';
 import 'media/inline_image.dart';
 import 'media/inline_video.dart';

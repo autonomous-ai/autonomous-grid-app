@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:grid_app/features/appearance/presentation/typography_section.dart';
-import 'package:grid_app/features/playground/presentation/markdown_builders.dart';
+import 'package:grid_app/shared/markdown/markdown_code_block.dart';
 import 'package:grid_app/infrastructure/platform/system_fonts.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/shared/theme/app_theme.dart';
