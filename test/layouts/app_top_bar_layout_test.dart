@@ -59,10 +59,7 @@ void main() {
     await tester.pumpWidget(host(headerVisible: true));
     await tester.pumpAndSettle();
 
-    final pill = tester.getRect(find.byType(GridPowerPill));
-    // The bar's own right padding is 18; the pill's right edge must land on it
-    // rather than anywhere short of it.
-    expect(pill.right, moreOrLessEquals(width - 18, epsilon: 0.5));
+    _expectPackedRight(tester, width);
   });
 
   testWidgets('the chat header stays left while the pill stays right', (
@@ -95,9 +92,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ChatHeader), findsNothing);
-    final pill = tester.getRect(find.byType(GridPowerPill));
-    expect(pill.right, moreOrLessEquals(width - 18, epsilon: 0.5));
+    _expectPackedRight(tester, width);
   });
+}
+
+/// The right-hand group ends on the bar's own 18px padding, with the grid pill
+/// hard against it.
+///
+/// The pill stopped being the last thing in the row when the panel toggles
+/// arrived after it, so pinning the *pill* to the window edge would now be
+/// pinning the wrong thing. What the original bug did was park the pill in the
+/// middle of the row, and that is what these two assertions still catch.
+void _expectPackedRight(WidgetTester tester, double width) {
+  final pill = tester.getRect(find.byType(GridPowerPill));
+  final toggle = tester.getRect(find.byTooltip('Show preview panel'));
+
+  expect(toggle.right, moreOrLessEquals(width - 18, epsilon: 0.5));
+  expect(pill.right, lessThanOrEqualTo(toggle.left + 0.5));
+  expect(pill.right, greaterThan(width / 2));
 }
 
 /// Flips [chatHeaderVisibleProvider] the way the chat view does, so the bar

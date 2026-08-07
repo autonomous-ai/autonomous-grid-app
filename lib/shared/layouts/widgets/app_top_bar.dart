@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/auth/logic/session_controller.dart';
+import '../../../features/chat/logic/bottom_panel.dart';
 import '../../../features/chat/logic/chat_rail.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
+import '../../../features/chat/logic/preview_panel.dart';
 import '../../../features/chat/presentation/chat_header.dart';
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
+import '../../widgets/panel_toggle.dart';
 import '../shell_state.dart';
 import 'grid_power_pill.dart';
 import 'top_bar_pill.dart';
@@ -81,6 +86,8 @@ class AppTopBar extends ConsumerWidget {
                 const _ModelDownloadPill(),
                 const GridPowerPill(),
                 const _ProjectRailToggle(),
+                const _BottomPanelToggle(),
+                const _PreviewPanelToggle(),
               ],
             ),
           ),
@@ -110,22 +117,68 @@ class _ProjectRailToggle extends ConsumerWidget {
     // Mirror the pane's resolved visibility (it alone knows its width); a tap
     // forces the opposite, overriding the smart default until the next chat.
     final visible = ref.watch(chatRailVisibleProvider);
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: IconButton(
-        tooltip: visible ? 'Hide project panel' : 'Show project panel',
-        iconSize: 18,
-        visualDensity: VisualDensity.compact,
-        color: visible ? AppPalette.accent : AppPalette.textSecondary,
-        icon: Icon(
-          visible ? Icons.vertical_split : Icons.vertical_split_outlined,
-        ),
-        onPressed: () =>
-            ref.read(chatRailOverrideProvider.notifier).set(!visible),
-      ),
+    return PanelToggle(
+      icon: visible ? Icons.vertical_split : Icons.vertical_split_outlined,
+      open: visible,
+      // "Project panel", not "rail": the word on the button has to be the word
+      // the user would use for the thing that appears.
+      label: 'project panel',
+      leading: 8,
+      onPressed: () =>
+          ref.read(chatRailOverrideProvider.notifier).set(!visible),
     );
   }
 }
+
+/// Opens and closes the bottom panel — the strip under the conversation.
+///
+/// Between the two side toggles because that is the order the panels sit in
+/// around the chat, read clockwise from the left edge; a row of toggles whose
+/// order doesn't match the thing they move is a row you have to read twice.
+class _BottomPanelToggle extends ConsumerWidget {
+  const _BottomPanelToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!_chatWithGrid(ref)) return const SizedBox.shrink();
+
+    final open = ref.watch(bottomPanelOpenProvider);
+    return PanelToggle(
+      icon: LucideIcons.panelBottom,
+      open: open,
+      label: 'bottom panel',
+      onPressed: () => ref.read(bottomPanelOpenProvider.notifier).toggle(),
+    );
+  }
+}
+
+/// Opens and closes the preview panel — the work surface beside the
+/// conversation.
+class _PreviewPanelToggle extends ConsumerWidget {
+  const _PreviewPanelToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!_chatWithGrid(ref)) return const SizedBox.shrink();
+
+    final open = ref.watch(previewPanelOpenProvider);
+    return PanelToggle(
+      icon: LucideIcons.panelRight,
+      open: open,
+      label: 'preview panel',
+      onPressed: () => ref.read(previewPanelOpenProvider.notifier).toggle(),
+    );
+  }
+}
+
+/// Whether a panel toggle has anything to toggle.
+///
+/// Neither panel waits for a project the way the rail does — any chat can open
+/// a terminal or a review. Both wait for a grid: without one the pane is a nudge
+/// to pick one, and a button that moves nothing is worse than no button.
+bool _chatWithGrid(WidgetRef ref) =>
+    ref.watch(shellSectionProvider) == ShellSection.chat &&
+    ref.watch(selectedNetworkProvider) != null;
 
 /// The background model download, shown in the top bar so a user who went
 /// straight into chat can see their own model arriving. Nothing when idle or
