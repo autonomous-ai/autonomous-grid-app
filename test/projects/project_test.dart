@@ -27,6 +27,9 @@ void main() {
   test('folderName is what a person calls the folder', () {
     expect(folderName('/Users/me/WorkPlace/web-v16'), 'web-v16');
     expect(folderName('/Users/me/notes/'), 'notes');
+    // Windows hands out backslashes; splitting on '/' alone would name the
+    // project after its whole absolute path.
+    expect(folderName(r'C:\Users\me\web-v16'), 'web-v16');
   });
 
   test('adding a folder names the project after it and persists', () {

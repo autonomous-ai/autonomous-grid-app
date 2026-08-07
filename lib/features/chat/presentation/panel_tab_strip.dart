@@ -3,19 +3,36 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
+import '../logic/panel_layout.dart';
 import '../logic/panel_tabs.dart';
 import 'panel_feature_menu.dart';
 
-/// The preview panel's header: one tab per thing open in it, plus the way to
-/// open another.
+/// A panel's header: one tab per thing open in it, plus the way to open
+/// another.
 ///
-/// Shared by every feature and fixed at the top of the panel — the tab strip is
-/// the panel's own chrome, so switching tabs never moves it.
+/// Shared by every feature *and* by both panels — the strip is the panel's own
+/// chrome, so switching tabs never moves it, and the panel under the chat works
+/// the way the one beside it does rather than being a lookalike with its own
+/// habits.
 ///
-/// Scrolls sideways rather than shrinking its tabs: a row of tabs that squeezes
-/// as you open more ends with a row of unreadable stubs.
+/// Tabs share the width they have: they shrink as more open, down to a floor,
+/// and only past that floor does the row start scrolling. A strip that never
+/// shrank pushed the fourth tab — and the "+" — out of sight in a panel this
+/// narrow, and a strip that shrank without a floor would end in stubs too short
+/// to read.
+///
+/// The "+" sits outside that entirely, pinned to the trailing edge: it is how
+/// you open the next thing, so it is the one control that must never be the
+/// thing that scrolled away.
 class PanelTabStrip extends ConsumerWidget {
-  const PanelTabStrip({super.key, this.onRaisedSurface = false});
+  const PanelTabStrip({
+    super.key,
+    required this.host,
+    this.onRaisedSurface = false,
+  });
+
+  /// Which panel's tabs this is showing.
+  final PanelHost host;
 
   /// Set when the panel is floating over the chat instead of docked beside it —
   /// the selected tab's fill is tuned against the page and matches the raised
@@ -27,30 +44,59 @@ class PanelTabStrip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final state = ref.watch(panelTabsProvider);
-    final controller = ref.read(panelTabsProvider.notifier);
+    final state = ref.watch(panelTabsProvider(host));
+    final controller = ref.read(panelTabsProvider(host).notifier);
 
     return SizedBox(
       height: height,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final tab in state.tabs) ...[
-                _Tab(
-                  tab: tab,
-                  selected: tab.id == state.activeId,
-                  onRaisedSurface: onRaisedSurface,
-                  onSelect: () => controller.select(tab.id),
-                  onClose: () => controller.close(tab.id),
-                ),
-                const SizedBox(width: 4),
-              ],
-              PanelFeatureMenu(onSelected: controller.open),
-            ],
-          ),
+        child: Row(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final count = state.tabs.length;
+                  final width = tabStripTabWidth(
+                    available: constraints.maxWidth,
+                    count: count,
+                  );
+                  final row = Row(
+                    children: [
+                      for (final tab in state.tabs) ...[
+                        // A ceiling, not a width: a chip whose fill runs on past
+                        // its label reads as a text field, not a tab. Short
+                        // labels take what they need; long ones stop here and
+                        // ellipsis, which is what keeps the row inside the strip.
+                        ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: width),
+                          child: _Tab(
+                            tab: tab,
+                            selected: tab.id == state.activeId,
+                            onRaisedSurface: onRaisedSurface,
+                            onSelect: () => controller.select(tab.id),
+                            onClose: () => controller.close(tab.id),
+                          ),
+                        ),
+                        const SizedBox(width: kTabGap),
+                      ],
+                    ],
+                  );
+                  // Only once they are already as narrow as they may go.
+                  return tabStripScrolls(
+                        available: constraints.maxWidth,
+                        count: count,
+                      )
+                      ? SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: row,
+                        )
+                      : row;
+                },
+              ),
+            ),
+            PanelFeatureMenu(onSelected: controller.open),
+          ],
         ),
       ),
     );
@@ -138,7 +184,8 @@ class _TabState extends State<_Tab> {
           duration: motion,
           curve: AppMotion.curve,
           height: 26,
-          constraints: const BoxConstraints(maxWidth: 180),
+          // No width of its own: the strip hands every tab the same width, so
+          // one tab widening as the row shrinks would be a tab out of step.
           padding: const EdgeInsets.only(left: 8, right: 4),
           decoration: BoxDecoration(
             color: fill,
@@ -149,6 +196,8 @@ class _TabState extends State<_Tab> {
             boxShadow: widget.selected ? AppGlass.cardShadow : null,
           ),
           child: Row(
+            // Hugs its label: the strip caps how wide a tab may get, and the
+            // tab takes only what it needs of that.
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(widget.tab.feature.icon, size: 13, color: ink),

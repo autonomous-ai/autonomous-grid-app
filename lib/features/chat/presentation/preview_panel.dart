@@ -5,6 +5,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/extension_tile_surface.dart';
 import '../../../shared/widgets/panel_visibility.dart';
 import '../logic/panel_tabs.dart';
+import '../logic/preview_panel.dart';
 import 'panel_feature_view.dart';
 import 'panel_tab_strip.dart';
 
@@ -36,24 +37,34 @@ class PreviewPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(panelTabsProvider);
+    final state = ref.watch(panelTabsProvider(PanelHost.preview));
     final active = state.active;
+    final open = ref.watch(previewPanelOpenProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Not shown before the first tab exists: a strip holding one "+" is
-        // chrome around a screen that already offers the same choice, larger.
-        if (state.tabs.isNotEmpty) ...[
-          PanelTabStrip(onRaisedSurface: onRaisedSurface),
-          const Divider(height: 1),
+    // The slot keeps this mounted while closed so it can slide both ways.
+    // Nothing inside a closed panel may hold the keyboard, or a message typed
+    // into the chat would go to a terminal nobody can see.
+    return ExcludeFocus(
+      excluding: !open,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Not shown before the first tab exists: a strip holding one "+" is
+          // chrome around a screen that already offers the same choice, larger.
+          if (state.tabs.isNotEmpty) ...[
+            PanelTabStrip(
+              host: PanelHost.preview,
+              onRaisedSurface: onRaisedSurface,
+            ),
+            const Divider(height: 1),
+          ],
+          Expanded(
+            child: active == null
+                ? _Launcher(onRaisedSurface: onRaisedSurface)
+                : _OpenTabs(state: state, active: active),
+          ),
         ],
-        Expanded(
-          child: active == null
-              ? _Launcher(onRaisedSurface: onRaisedSurface)
-              : _OpenTabs(state: state, active: active),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -113,7 +124,10 @@ class _Tab extends ConsumerWidget {
         excluding: !visible,
         child: panelFeatureView(
           tab,
-          onClose: () => ref.read(panelTabsProvider.notifier).close(tab.id),
+          host: PanelHost.preview,
+          onClose: () => ref
+              .read(panelTabsProvider(PanelHost.preview).notifier)
+              .close(tab.id),
         ),
       ),
     ),
@@ -128,7 +142,7 @@ class _Launcher extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final open = ref.read(panelTabsProvider.notifier).open;
+    final open = ref.read(panelTabsProvider(PanelHost.preview).notifier).open;
     // Centred when there's room, scrolled when there isn't: five rows need
     // ~260px, and a short window with the bottom panel open leaves less than
     // that. `minHeight` is what keeps it centred rather than pinned to the top.
