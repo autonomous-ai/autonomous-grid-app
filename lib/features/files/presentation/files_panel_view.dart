@@ -80,46 +80,53 @@ class _Toolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     final selected = this.selected;
-    return Row(
-      children: [
-        Expanded(
-          child: FilesBreadcrumb(
-            crumbs: filePathCrumbs(root: folder, filePath: selected),
+    return Padding(
+      // The same inset Review's toolbar takes, so the row under the tabs starts
+      // in the same place whichever tab you switch to.
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilesBreadcrumb(
+              crumbs: filePathCrumbs(root: folder, filePath: selected),
+              filePath: selected,
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        AppIconButton(
-          icon: LucideIcons.refreshCw300,
-          size: 14,
-          tooltip: 'Re-read this folder',
-          // The assistant writes in here while the panel is open, so the tree
-          // and the open file both go stale on their own. One invalidate covers
-          // every folder listing loaded and every file read.
-          onPressed: () {
-            ref.invalidate(workdirEntriesProvider);
-            ref.invalidate(filePreviewProvider);
-          },
-        ),
-        const SizedBox(width: 2),
-        AppIconButton(
-          icon: LucideIcons.folderOpen300,
-          size: 15,
-          tooltip: 'Show in Finder',
-          onPressed: () => _reveal(context, ref),
-        ),
-        const SizedBox(width: 2),
-        AppIconButton(
-          icon: LucideIcons.squareArrowOutUpRight300,
-          size: 15,
-          tooltip: selected == null
-              ? 'Pick a file to open it'
-              : 'Open in the default app',
-          // Null disables it rather than hiding it: a button that comes and
-          // goes as you click around the tree makes the toolbar twitch.
-          onPressed: selected == null ? null : () => openExternalUrl(selected),
-        ),
-        const SizedBox(width: 4),
-      ],
+          const SizedBox(width: 8),
+          AppIconButton(
+            icon: LucideIcons.refreshCw300,
+            size: 14,
+            tooltip: 'Re-read this folder',
+            // The assistant writes in here while the panel is open, so the tree
+            // and the open file both go stale on their own. One invalidate
+            // covers every folder listing loaded and every file read.
+            onPressed: () {
+              ref.invalidate(workdirEntriesProvider);
+              ref.invalidate(filePreviewProvider);
+            },
+          ),
+          const SizedBox(width: 2),
+          AppIconButton(
+            icon: LucideIcons.folderOpen300,
+            size: 15,
+            tooltip: 'Show in Finder',
+            onPressed: () => _reveal(context, ref),
+          ),
+          const SizedBox(width: 2),
+          AppIconButton(
+            icon: LucideIcons.squareArrowOutUpRight300,
+            size: 15,
+            tooltip: selected == null
+                ? 'Pick a file to open it'
+                : 'Open in the default app',
+            // Null disables it rather than hiding it: a button that comes and
+            // goes as you click around the tree makes the toolbar twitch.
+            onPressed: selected == null
+                ? null
+                : () => openExternalUrl(selected),
+          ),
+        ],
+      ),
     );
   }
 }
