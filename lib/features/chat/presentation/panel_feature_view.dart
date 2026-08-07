@@ -28,9 +28,32 @@ Widget panelFeatureView(PanelTab tab, {required VoidCallback onClose}) =>
       PanelFeature.review => _ReviewTab(onClose: onClose),
       PanelFeature.terminal => const TerminalPanelView(),
       PanelFeature.browser => const BrowserPanelView(),
-      PanelFeature.files => const FilesPanelView(),
+      PanelFeature.files => _FilesTab(tabId: tab.id),
       PanelFeature.sideChat => const SideChatPanelView(),
     };
+
+/// The open chat's project folder, browsable.
+///
+/// Same wiring as [_ReviewTab] and for the same reason: the panel sits beside
+/// one conversation, so the folder it shows is that conversation's. Keyed by
+/// the tab so two Files tabs are two places in the project rather than one
+/// selection shared between them.
+class _FilesTab extends ConsumerWidget {
+  const _FilesTab({required this.tabId});
+
+  final String tabId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final projectId = ref.watch(
+      chatSessionsProvider.select((s) => s.openProjectId),
+    );
+    return FilesPanelView(
+      tabId: tabId,
+      folder: ref.watch(projectByIdProvider(projectId))?.path,
+    );
+  }
+}
 
 /// What changed in the project the open chat belongs to.
 ///
