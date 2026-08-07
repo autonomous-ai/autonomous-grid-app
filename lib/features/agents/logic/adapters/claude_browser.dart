@@ -65,8 +65,7 @@ ClaudeBrowserPlan planClaudeBrowser({
   if (!cdpAllowed) {
     return (
       lane: ClaudeBrowserLane.none,
-      reason:
-          'the assistant is not allowed to open a browser (Agents ▸ Claude '
+      reason: 'the assistant is not allowed to open a browser (Agents ▸ Claude '
           'Code ▸ Let it open a browser)',
     );
   }
