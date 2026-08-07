@@ -5,6 +5,9 @@ import '../../../infrastructure/cli/git_providers.dart';
 import '../../playground/logic/chat_transport.dart';
 import '../../playground/logic/one_shot_target.dart';
 import 'review_argv.dart';
+import 'review_controller.dart';
+import 'review_file.dart';
+import 'review_snapshot.dart';
 
 /// Writes the commit message from the change itself, so the box doesn't have to
 /// start empty.
@@ -29,37 +32,22 @@ class CommitMessageWriter {
   /// first few files anyway. What is cut is *said* — see [_trim].
   static const int _maxPatchChars = 12000;
 
-  /// Draft a message for what a commit in [root] would carry. Exactly one half
-  /// of the pair is non-null.
+  /// Draft a message for what a commit would carry. Exactly one half of the
+  /// pair is non-null.
   Future<(String? message, String? error)> write({
-    required String root,
+    required ReviewSnapshot snapshot,
     required bool includeUnticked,
-    required bool hasCommits,
   }) async {
-    final patch = await _ref
-        .read(gitRunnerProvider)
-        .run(
-          root,
-          commitDiffArgv(
-            includeUnticked: includeUnticked,
-            hasCommits: hasCommits,
-          ),
-        );
+    final patch = await _patch(snapshot, includeUnticked);
     if (patch == null) {
       return (null, 'Grid could not run Git to read the change.');
     }
-    if (!patch.ok || patch.stdout.trim().isEmpty) {
-      return (
-        null,
-        'There is nothing to describe yet — tick a file, or turn on '
-            '"Include the files not ticked".',
-      );
-    }
+    if (patch.trim().isEmpty) return (null, _nothingToRead(snapshot));
 
     final target = resolveOneShotTarget(_ref);
     if (target == null) return (null, noModelReady('write the message'));
 
-    final messages = _promptFor(_trim(patch.stdout));
+    final messages = _promptFor(_trim(patch));
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(
       CliCallKind.http,
@@ -96,6 +84,60 @@ class CommitMessageWriter {
       );
     }
     return (written, null);
+  }
+
+  /// Everything the commit would carry, as one patch — or null when Git
+  /// couldn't be run at all.
+  ///
+  /// Two reads, not one: `git diff` in any of its forms says nothing about a
+  /// file Git has never been told about, so a change that is *entirely* a new
+  /// file came back empty and the row answered "nothing to describe" over a
+  /// list showing +32. Each untracked file is diffed against the null device —
+  /// the same call the diff pane makes to draw one.
+  Future<String?> _patch(ReviewSnapshot snapshot, bool includeUnticked) async {
+    final tracked = await _ref
+        .read(gitRunnerProvider)
+        .run(
+          snapshot.root,
+          commitDiffArgv(
+            includeUnticked: includeUnticked,
+            hasCommits: snapshot.hasCommits,
+          ),
+        );
+    if (tracked == null) return null;
+
+    final parts = [if (tracked.ok) tracked.stdout];
+    // Only when the commit would take them: a file left unticked is a file the
+    // commit won't carry, and describing it would be describing the wrong
+    // change.
+    if (includeUnticked) {
+      final actions = _ref.read(reviewActionsProvider);
+      for (final file in snapshot.files) {
+        if (file.kind != ReviewFileKind.untracked) continue;
+        final own = await actions.patch(
+          root: snapshot.root,
+          scope: snapshot.scope,
+          file: file,
+        );
+        if (own != null) parts.add(own);
+      }
+    }
+    return parts.join('\n');
+  }
+
+  /// Why there was nothing to read — which is not always the same reason, and
+  /// a line that tells the user to tick a file they have already ticked is a
+  /// bug, not wording (§5).
+  String _nothingToRead(ReviewSnapshot snapshot) {
+    if (!snapshot.scope.canStage) {
+      return 'These changes are already recorded, so there is no message to '
+          'write for them.';
+    }
+    if (snapshot.staged.isEmpty && snapshot.files.isNotEmpty) {
+      return 'Nothing is ticked yet — turn on "Include the files not ticked", '
+          'or tick a file first.';
+    }
+    return 'Git reports no change here to describe.';
   }
 
   /// The patch as far as the model gets to read it, with the cut named rather

@@ -216,11 +216,7 @@ class _CommitPopoverState extends ConsumerState<CommitPopover> {
     });
     final (written, failed) = await ref
         .read(commitMessageWriterProvider)
-        .write(
-          root: widget.snapshot.root,
-          includeUnticked: _includeUnticked,
-          hasCommits: widget.snapshot.hasCommits,
-        );
+        .write(snapshot: widget.snapshot, includeUnticked: _includeUnticked);
     if (!mounted) return;
     setState(() {
       _writing = false;
