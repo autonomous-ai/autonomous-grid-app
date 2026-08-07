@@ -149,6 +149,42 @@ PanelSizes resolvePanelSizes({
   );
 }
 
+/// What one tab takes when the strip has room for every tab at full width.
+const double kTabMaxWidth = 180;
+
+/// The width a tab shrinks to before the strip gives up and scrolls instead.
+///
+/// Below this the label runs out before "Terminal 2" and "Terminal 3" differ,
+/// which is the only job the label has.
+const double kTabMinWidth = 96;
+
+/// The gap after each tab. The last one's is the space before the "+".
+const double kTabGap = 4;
+
+/// How wide each tab is in a strip [available] px across holding [count] of
+/// them — the same for all of them, so the row can't come out ragged.
+///
+/// Shrinks with the count rather than scrolling straight away: in a panel this
+/// narrow the fourth tab used to push the "+" out of sight, and a control you
+/// have to scroll to reach is one people conclude is missing. Past
+/// [kTabMinWidth] the row scrolls instead, which is what [tabStripScrolls]
+/// answers.
+double tabStripTabWidth({required double available, required int count}) {
+  if (count <= 0) return kTabMaxWidth;
+  return _clamp(
+    (available - kTabGap * count) / count,
+    kTabMinWidth,
+    kTabMaxWidth,
+  );
+}
+
+/// Whether the tabs, already as narrow as they may go, still overrun the strip.
+bool tabStripScrolls({required double available, required int count}) {
+  if (count <= 0) return false;
+  final width = tabStripTabWidth(available: available, count: count);
+  return (width + kTabGap) * count > available;
+}
+
 /// `clamp` asserts low <= high, so a pane laid out shorter than a floor would
 /// throw rather than degrade. When there is less room than the minimum, the
 /// room wins: better a panel squeezed under its own floor than a crash.

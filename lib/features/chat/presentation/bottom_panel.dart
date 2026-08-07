@@ -1,144 +1,90 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_icon_button.dart';
-import '../../../shared/widgets/empty_state.dart';
-import '../../../shared/widgets/toast.dart';
 import '../logic/bottom_panel.dart';
+import '../logic/panel_tabs.dart';
+import 'panel_feature_view.dart';
+import 'panel_tab_strip.dart';
 
-/// The strip under the conversation: where a terminal session will run, so a
-/// command and the chat that asked for it are on screen at once.
+/// The strip under the conversation: the same panel as the one beside the chat,
+/// on the other edge.
 ///
-/// It spans the whole pane rather than only the chat column — a terminal put
-/// beside the preview panel would be too narrow to read a wrapped command in.
+/// Same tab strip, same "+" menu, same surfaces — a second panel that behaved
+/// differently from the first would be a second thing to learn. What differs is
+/// the shape it gives its contents: full pane width, so a terminal here can hold
+/// a wrapped command that would be unreadable in the column beside the chat.
 ///
-/// The session itself isn't built. What's here is the tab strip it will live in,
-/// and an empty state that says so: a panel showing an invented shell
-/// transcript would be the one kind of placeholder that can be mistaken for
-/// working software.
-class BottomPanel extends ConsumerWidget {
+/// Opens straight into a terminal. The button that reveals this panel carries a
+/// terminal glyph and nothing else, so making the user pick "Terminal" out of a
+/// menu after pressing it is answering a question they already answered — while
+/// the "+" is still there for a second one, or for anything else.
+class BottomPanel extends ConsumerStatefulWidget {
   const BottomPanel({super.key});
 
-  static const double tabStripHeight = 38;
-
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(context);
-    return Column(
-      children: [
-        _TabStrip(
-          onClose: () => ref.read(bottomPanelOpenProvider.notifier).close(),
-        ),
-        const Expanded(
-          child: EmptyState(
-            icon: LucideIcons.squareTerminal,
-            title: 'No terminal yet',
-            message: 'Running commands from here is not built yet.',
-            compact: true,
-          ),
-        ),
-      ],
-    );
-  }
+  ConsumerState<BottomPanel> createState() => _BottomPanelState();
 }
 
-/// Says out loud that a control is a placeholder — see the same helper in
-/// `preview_panel.dart` for why a row that swallows the click is worse.
-void _todo(BuildContext context, String feature) => ToastScope.show(
-  context,
-  ToastSpec(message: 'TODO — $feature is not built yet.'),
-);
+class _BottomPanelState extends ConsumerState<BottomPanel> {
+  @override
+  void initState() {
+    super.initState();
+    // The panel can already be open the first time this mounts — the user
+    // switched away from Chat and back with it left open.
+    _openTerminalIfEmpty(ref.read(bottomPanelOpenProvider));
+  }
 
-/// The sessions across the top of the panel, and the way out of it.
-class _TabStrip extends StatelessWidget {
-  const _TabStrip({required this.onClose});
-
-  final VoidCallback onClose;
+  /// Post-frame, never straight from `build`: writing a provider while the tree
+  /// is building throws, and both callers are reacting to something that
+  /// happened during a build.
+  void _openTerminalIfEmpty(bool open) {
+    if (!open) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final tabs = ref.read(panelTabsProvider(PanelHost.bottom));
+      if (tabs.tabs.isNotEmpty) return;
+      ref
+          .read(panelTabsProvider(PanelHost.bottom).notifier)
+          .open(PanelFeature.terminal);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return SizedBox(
-      height: BottomPanel.tabStripHeight,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Row(
-          children: [
-            const _SessionTab(label: 'autonomous-grid'),
-            const SizedBox(width: 4),
-            AppIconButton(
-              icon: Icons.add_rounded,
-              size: 15,
-              tooltip: 'New terminal',
-              onPressed: () => _todo(context, 'A second terminal'),
-            ),
-            const Spacer(),
-            AppIconButton(
-              icon: Icons.close_rounded,
-              size: 15,
-              tooltip: 'Hide bottom panel',
-              onPressed: onClose,
-            ),
-          ],
-        ),
-      ),
+    // Opening the panel is what starts a shell — not this widget existing. The
+    // slot keeps the panel mounted while closed so it can slide both ways, so
+    // mounting can't be the trigger: every chat would quietly spawn one.
+    ref.listen(
+      bottomPanelOpenProvider,
+      (_, open) => _openTerminalIfEmpty(open),
     );
-  }
-}
 
-/// One terminal session's tab.
-///
-/// Reads as selected without a second state to compare against, so it carries
-/// the raised fill and the primary ink rather than an accent wash — there is
-/// nothing here yet for an accent to distinguish it *from*.
-class _SessionTab extends StatelessWidget {
-  const _SessionTab({required this.label});
+    final state = ref.watch(panelTabsProvider(PanelHost.bottom));
+    final active = state.active;
+    final open = ref.watch(bottomPanelOpenProvider);
 
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Container(
-      height: 26,
-      constraints: const BoxConstraints(maxWidth: 200),
-      padding: const EdgeInsets.only(left: 8, right: 4),
-      decoration: BoxDecoration(
-        color: AppGlass.rowFill,
-        borderRadius: BorderRadius.circular(8),
-        // The fill alone doesn't separate it: against the page it measures
-        // 1.22:1 in dark and 1.05:1 in light. Depth here comes from the shadow,
-        // which is the whole reason the app can do without borders.
-        boxShadow: AppGlass.cardShadow,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    // Nothing inside a closed panel may hold the keyboard, or a message typed
+    // into the chat would go to a terminal nobody can see.
+    return ExcludeFocus(
+      excluding: !open,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(
-            LucideIcons.squareTerminal,
-            size: 13,
-            color: AppPalette.textSecondary,
-          ),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: AppFont.medium,
-                color: AppPalette.textPrimary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 2),
-          AppIconButton(
-            icon: Icons.close_rounded,
-            size: 12,
-            tooltip: 'Close this terminal',
-            onPressed: () => _todo(context, 'Closing a terminal'),
+          PanelTabStrip(host: PanelHost.bottom),
+          const Divider(height: 1),
+          // Empty only for the frame between opening the panel and its first
+          // tab arriving. A launcher here would flash a menu at somebody who
+          // pressed a button that means one thing.
+          Expanded(
+            child: active == null
+                ? const SizedBox.shrink()
+                : panelFeatureView(
+                    active,
+                    host: PanelHost.bottom,
+                    onClose: () => ref
+                        .read(panelTabsProvider(PanelHost.bottom).notifier)
+                        .close(active.id),
+                  ),
           ),
         ],
       ),

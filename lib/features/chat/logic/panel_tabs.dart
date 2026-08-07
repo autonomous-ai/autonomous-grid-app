@@ -2,10 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../terminal/logic/terminal_sessions_controller.dart';
+import 'bottom_panel.dart';
 import 'preview_panel.dart';
 
-/// A surface the preview panel can open, and everything the app needs to name
-/// it: the launcher row, the tab, and the tooltip all read from here.
+/// One of the two panels around the conversation.
+///
+/// They hold the same kinds of surface and none of the same contents: a
+/// terminal opened beside the chat and one opened under it are two terminals,
+/// the way two windows of the same app are two windows.
+enum PanelHost {
+  /// Beside the conversation, on the right.
+  preview,
+
+  /// Under the conversation, spanning the whole pane.
+  bottom,
+}
+
+/// A surface a panel can open, and everything the app needs to name it: the
+/// launcher row, the tab, and the tooltip all read from here.
 ///
 /// The shortcuts are labels, not bindings — nothing listens for them yet. They
 /// become real with the surfaces they name.
@@ -41,7 +56,7 @@ class PanelTab {
   final String title;
 }
 
-/// What the preview panel is showing.
+/// What one panel is showing.
 @immutable
 class PanelTabsState {
   PanelTabsState({List<PanelTab> tabs = const [], this.activeId})
@@ -64,14 +79,24 @@ class PanelTabsState {
   }
 }
 
-final panelTabsProvider = NotifierProvider<PanelTabs, PanelTabsState>(
-  PanelTabs.new,
-);
+/// The tabs of one panel. Per host, because the two panels are two places to
+/// work: opening a terminal beside the conversation must not change what is
+/// open under it.
+final panelTabsProvider =
+    NotifierProvider.family<PanelTabs, PanelTabsState, PanelHost>(
+      PanelTabs.new,
+    );
 
 class PanelTabs extends Notifier<PanelTabsState> {
+  PanelTabs(this.host);
+
+  /// The panel these tabs belong to — the family argument.
+  final PanelHost host;
+
   /// Ids come from a counter rather than the clock: two tabs opened in the same
   /// microsecond would collide, and a counter is the same every run, which a
-  /// test can assert against.
+  /// test can assert against. Prefixed by the panel so the two counters can't
+  /// hand out the same id to a tab in each.
   int _seq = 0;
 
   @override
@@ -92,12 +117,12 @@ class PanelTabs extends Notifier<PanelTabsState> {
   /// showing this file" needs it before the tab has drawn once.
   String open(PanelFeature feature) {
     final tab = PanelTab(
-      id: 'tab-${++_seq}',
+      id: '${host.name}-tab-${++_seq}',
       feature: feature,
       title: _titleFor(feature),
     );
     state = PanelTabsState(tabs: [...state.tabs, tab], activeId: tab.id);
-    ref.read(previewPanelOpenProvider.notifier).open();
+    _openPanel();
     return tab.id;
   }
 
@@ -110,7 +135,7 @@ class PanelTabs extends Notifier<PanelTabsState> {
     for (final tab in state.tabs) {
       if (tab.feature != feature) continue;
       select(tab.id);
-      ref.read(previewPanelOpenProvider.notifier).open();
+      _openPanel();
       return;
     }
     open(feature);
@@ -128,10 +153,17 @@ class PanelTabs extends Notifier<PanelTabsState> {
     final index = state.tabs.indexWhere((tab) => tab.id == id);
     if (index < 0) return;
 
+    // Whatever the tab was holding goes with it. Done here rather than by
+    // something watching the tab list, because a watcher only runs while
+    // somebody is looking at it — and this has to happen even if the user
+    // closes a tab on their way out of Chat. A feature with nothing to release
+    // (Review, Files) needs no line here; a shell does.
+    ref.read(terminalSessionsProvider.notifier).endSession(id);
+
     final rest = [...state.tabs]..removeAt(index);
     if (rest.isEmpty) {
       state = PanelTabsState();
-      ref.read(previewPanelOpenProvider.notifier).close();
+      _closePanel();
       return;
     }
 
@@ -143,6 +175,16 @@ class PanelTabs extends Notifier<PanelTabsState> {
         : state.activeId;
     state = PanelTabsState(tabs: rest, activeId: activeId);
   }
+
+  void _openPanel() => switch (host) {
+    PanelHost.preview => ref.read(previewPanelOpenProvider.notifier).open(),
+    PanelHost.bottom => ref.read(bottomPanelOpenProvider.notifier).open(),
+  };
+
+  void _closePanel() => switch (host) {
+    PanelHost.preview => ref.read(previewPanelOpenProvider.notifier).close(),
+    PanelHost.bottom => ref.read(bottomPanelOpenProvider.notifier).close(),
+  };
 
   /// "Review", then "Review 2" — the lowest number not currently on screen, so
   /// closing one and opening another can't produce two tabs with one name.

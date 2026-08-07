@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Whether the bottom panel — the strip under the conversation, where a
-/// terminal will run — is open.
+/// Whether the bottom panel — the strip under the conversation, where the
+/// terminal runs — is open.
 ///
 /// Its own flag rather than a mode of the preview panel: the two occupy
 /// different edges and are read at the same time, so opening one must never
@@ -16,6 +16,10 @@ class BottomPanelOpen extends Notifier<bool> {
   bool build() => false;
 
   void toggle() => state = !state;
+
+  /// Shows the panel without closing it when it is already up — what opening a
+  /// tab in it means, as opposed to pressing its button.
+  void open() => state = true;
 
   void close() => state = false;
 }

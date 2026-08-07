@@ -158,7 +158,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
     // Reveal, not open: pressing the shortcut again should bring the Review
     // already on screen to the front rather than stack another one behind it.
-    ref.read(panelTabsProvider.notifier).reveal(PanelFeature.review);
+    ref
+        .read(panelTabsProvider(PanelHost.preview).notifier)
+        .reveal(PanelFeature.review);
   }
 }
 
