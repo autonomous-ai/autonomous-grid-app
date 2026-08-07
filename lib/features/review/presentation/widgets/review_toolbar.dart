@@ -38,6 +38,7 @@ class ReviewToolbar extends ConsumerStatefulWidget {
     required this.folder,
     required this.onAskAgent,
     this.canHideFiles = false,
+    this.canSplit = false,
     this.openFile,
   });
 
@@ -53,6 +54,10 @@ class ReviewToolbar extends ConsumerStatefulWidget {
   /// with: in the narrow layout the two take turns, so hiding the list would
   /// leave the panel with nothing in it.
   final bool canHideFiles;
+
+  /// Whether the pane has the room for two columns. Offered only where it does:
+  /// a switch that visibly changes nothing is worse than no switch.
+  final bool canSplit;
 
   /// The file whose diff is on screen, when one is — what the "…" menu's copy
   /// row takes.
@@ -71,6 +76,9 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
     final snapshot = widget.snapshot;
     final comments = ref.watch(reviewCommentsProvider(widget.folder));
     final filesShown = ref.watch(reviewFilesShownProvider(widget.folder));
+    final layout = ref.watch(
+      diffViewPrefsProvider.select((prefs) => prefs.layout),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
@@ -125,6 +133,15 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
               tooltip: 'Ask the assistant to review these changes',
               onPressed: () =>
                   widget.onAskAgent(askAgentPrompt(snapshot.scope)),
+            ),
+          if (widget.canSplit && widget.openFile != null)
+            AppIconButton(
+              icon: layout == DiffLayout.split
+                  ? LucideIcons.rows3300
+                  : LucideIcons.columns2300,
+              size: 15,
+              tooltip: layout.switchLabel,
+              onPressed: ref.read(diffViewPrefsProvider.notifier).toggleLayout,
             ),
           // How the diff is drawn belongs with the diff, so it is only offered
           // where there is one.
