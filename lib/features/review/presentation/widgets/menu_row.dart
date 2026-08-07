@@ -9,6 +9,16 @@ const double kMenuRowGutter = 6;
 
 /// Row height and rounding, matching the app's other menu rows.
 const double kMenuRowHeight = 32;
+
+/// The inset from a row's own edge to its contents — where the check on a
+/// chosen row lands, and so where anything drawn *beside* a row (a submenu's
+/// chevron, which Material insists on placing itself) has to land to line up
+/// with it.
+const double kMenuRowPadding = 9;
+
+/// The trailing glyph's box. Every row that has one uses the same size, so the
+/// column they form is straight.
+const double kMenuRowGlyph = 14;
 final BorderRadius kMenuRowRadius = BorderRadius.circular(AppControl.radius);
 
 /// One row of the Review scope menu.
@@ -28,7 +38,6 @@ class MenuRow extends StatefulWidget {
     this.selected = false,
     this.detail,
     this.trailing,
-    this.submenu = false,
     this.enabled = true,
   });
 
@@ -44,9 +53,6 @@ class MenuRow extends StatefulWidget {
   final IconData? icon;
   final double width;
   final bool selected;
-
-  /// Draws the trailing chevron that says this row opens more rows.
-  final bool submenu;
 
   /// A row that can't be picked yet, with the reason belonging in [detail] —
   /// greyed rather than hidden, so the menu keeps its shape.
@@ -99,7 +105,6 @@ class _MenuRowState extends State<MenuRow> {
             icon: widget.icon,
             width: widget.width - kMenuRowGutter * 2,
             selected: selected,
-            submenu: widget.submenu,
             enabled: enabled,
             tint: tint,
           ),
@@ -123,7 +128,6 @@ class MenuRowBody extends StatelessWidget {
     this.icon,
     this.trailing,
     this.selected = false,
-    this.submenu = false,
     this.enabled = true,
     this.tint,
   });
@@ -137,7 +141,6 @@ class MenuRowBody extends StatelessWidget {
   final IconData? icon;
   final double width;
   final bool selected;
-  final bool submenu;
   final bool enabled;
 
   /// The glyph's colour, when the row that owns it tracks its own hover.
@@ -152,7 +155,7 @@ class MenuRowBody extends StatelessWidget {
       width: width,
       height: detail == null ? kMenuRowHeight : 44,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9),
+        padding: const EdgeInsets.symmetric(horizontal: kMenuRowPadding),
         child: Row(
           children: [
             // Fixed leading slot so every label starts at the same x, whatever
@@ -177,20 +180,39 @@ class MenuRowBody extends StatelessWidget {
               const SizedBox(width: 8),
               Icon(
                 LucideIcons.check,
-                size: 14,
+                size: kMenuRowGlyph,
                 color: AppPalette.accentOnSurface,
-              ),
-            ],
-            if (submenu) ...[
-              const SizedBox(width: 6),
-              Icon(
-                LucideIcons.chevronRight,
-                size: 14,
-                color: AppPalette.textFaint,
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The chevron that says a row opens more rows.
+///
+/// Its own widget because it isn't drawn *inside* the row: [SubmenuButton]
+/// keeps a slot at the end of its label for exactly this glyph and won't give
+/// it up, so the row is made narrower and this is handed over to fill it —
+/// which is what lands it in the same column as the chosen row's check.
+class MenuRowChevron extends StatelessWidget {
+  const MenuRowChevron({super.key});
+
+  /// What the glyph and its inset come to — subtract this from a row's width
+  /// and its contents keep the position they have everywhere else.
+  static const double width = kMenuRowGlyph + kMenuRowPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(right: kMenuRowPadding),
+      child: Icon(
+        LucideIcons.chevronRight,
+        size: kMenuRowGlyph,
+        color: AppPalette.textFaint,
       ),
     );
   }
