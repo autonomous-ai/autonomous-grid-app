@@ -53,12 +53,22 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
-          Flexible(
-            child: ScopeMenu(snapshot: snapshot, folder: widget.folder),
+          // One flexible child, not two. With a `Flexible` scope menu *and* a
+          // `Spacer`, the row split the free space between them, the loose
+          // scope menu gave most of its half back — and the space it returned
+          // stayed where it was, stranding the actions in the middle of the
+          // toolbar instead of at its right edge.
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: ScopeMenu(snapshot: snapshot, folder: widget.folder),
+                ),
+                const SizedBox(width: 8),
+                ChangeCount(added: snapshot.added, removed: snapshot.removed),
+              ],
+            ),
           ),
-          const SizedBox(width: 8),
-          ChangeCount(added: snapshot.added, removed: snapshot.removed),
-          const Spacer(),
           if (!snapshot.isEmpty)
             AppIconButton(
               icon: LucideIcons.sparkles,

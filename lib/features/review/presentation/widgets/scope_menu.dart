@@ -9,6 +9,7 @@ import '../../logic/review_refs.dart';
 import '../../logic/review_scope.dart';
 import '../../logic/review_snapshot.dart';
 import 'menu_row.dart';
+import 'toolbar_pill.dart';
 
 /// The one control that says what the surface is showing — the button in the
 /// toolbar and the menu it opens.
@@ -119,70 +120,50 @@ class _AnchorState extends ConsumerState<_Anchor> {
 }
 
 /// The toolbar button: what is being shown, and a caret that says there is more.
-class _ScopeButton extends StatefulWidget {
+///
+/// The same [ToolbarPill] the commit control is built from, untinted — the two
+/// ends of the toolbar were drawn twice and had already drifted a pixel of
+/// padding apart.
+class _ScopeButton extends StatelessWidget {
   const _ScopeButton({required this.scope, required this.controller});
 
   final ReviewScope scope;
   final MenuController controller;
 
   @override
-  State<_ScopeButton> createState() => _ScopeButtonState();
-}
-
-class _ScopeButtonState extends State<_ScopeButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final open = widget.controller.isOpen;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: () =>
-            open ? widget.controller.close() : widget.controller.open(),
-        child: AnimatedContainer(
-          duration: AppMotion.hover,
-          curve: AppMotion.curve,
-          height: 26,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            // Quiet at rest: the toolbar's one bright thing is the commit
-            // button, and a filled pill here would fight it for the eye.
-            color: open || _hovered ? AppSurface.hoverFill : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppControl.radius),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  widget.scope.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: AppFont.medium,
-                    color: AppPalette.textPrimary,
-                  ),
-                ),
+    final open = controller.isOpen;
+    return ToolbarPill(
+      active: open,
+      onTap: () => open ? controller.close() : controller.open(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              scope.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: AppFont.medium,
+                color: AppPalette.textPrimary,
               ),
-              const SizedBox(width: 4),
-              AnimatedRotation(
-                duration: AppMotion.hover,
-                curve: AppMotion.curve,
-                turns: open ? 0.5 : 0,
-                child: Icon(
-                  LucideIcons.chevronDown,
-                  size: 13,
-                  color: AppPalette.textSecondary,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 4),
+          AnimatedRotation(
+            duration: AppMotion.hover,
+            curve: AppMotion.curve,
+            turns: open ? 0.5 : 0,
+            child: Icon(
+              LucideIcons.chevronDown,
+              size: 13,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }

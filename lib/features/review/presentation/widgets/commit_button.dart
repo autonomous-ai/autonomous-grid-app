@@ -11,6 +11,7 @@ import '../../logic/review_snapshot.dart';
 import 'commit_sheet.dart';
 import 'menu_row.dart';
 import 'review_feedback.dart';
+import 'toolbar_pill.dart';
 
 /// The toolbar's one bright control: commit these changes, or push them.
 ///
@@ -45,7 +46,7 @@ class _CommitButtonState extends ConsumerState<CommitButton> {
     final running = ref.watch(commitProvider(widget.folder)) is CommitRunning;
     final alternatives = _alternatives(snapshot, action);
     if (alternatives.isEmpty) {
-      return _Primary(action: action, running: running, onPressed: _run);
+      return _Pill(action: action, running: running, onPressed: _run);
     }
 
     return MenuAnchor(
@@ -53,30 +54,13 @@ class _CommitButtonState extends ConsumerState<CommitButton> {
       alignmentOffset: const Offset(0, 6),
       style: appMenuStyle(),
       menuChildren: alternatives,
-      builder: (context, controller, _) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Primary(
-            action: action,
-            running: running,
-            onPressed: _run,
-            // Square the inner edge so the two halves read as one control.
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.horizontal(
-                left: Radius.circular(AppControl.radius),
-              ),
-            ),
-          ),
-          const SizedBox(width: 1),
-          _Caret(
-            open: controller.isOpen,
-            onPressed: running
-                ? null
-                : () => controller.isOpen
-                      ? controller.close()
-                      : controller.open(),
-          ),
-        ],
+      builder: (context, controller, _) => _Pill(
+        action: action,
+        running: running,
+        onPressed: _run,
+        menuOpen: controller.isOpen,
+        onMenu: () =>
+            controller.isOpen ? controller.close() : controller.open(),
       ),
     );
   }
@@ -147,76 +131,69 @@ class _CommitButtonState extends ConsumerState<CommitButton> {
   }
 }
 
-/// The half that does the thing — or the whole button when there is nothing
-/// else to offer.
+/// The control itself: an accent-washed pill with the commit glyph, the action,
+/// and — when there is another one — a caret beside it.
 ///
-/// Disabled only while a commit or a push is in flight, so the two halves are
-/// never lit differently: a bright caret beside a grey label reads as a broken
-/// control rather than as one action being unavailable.
-class _Primary extends StatelessWidget {
-  const _Primary({
+/// Both halves are lit the same and go quiet together, because the state that
+/// disables them is one state: a commit or a push already running. A bright
+/// caret next to a grey label reads as a control that broke, not as one action
+/// being unavailable.
+class _Pill extends StatelessWidget {
+  const _Pill({
     required this.action,
     required this.running,
     required this.onPressed,
-    this.shape,
+    this.onMenu,
+    this.menuOpen = false,
   });
 
   final CommitAction action;
   final bool running;
   final ValueChanged<CommitAction> onPressed;
 
-  /// Square on the inner edge when a caret sits beside it; the theme's own
-  /// rounding when it stands alone.
-  final OutlinedBorder? shape;
+  /// Null when this action is the only one — the pill then has no caret.
+  final VoidCallback? onMenu;
+  final bool menuOpen;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final button = FilledButton(
-      style: FilledButton.styleFrom(
-        shape: shape,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+    final ink = ToolbarPill.tint(tinted: true, enabled: !running);
+    final pill = ToolbarPill(
+      tinted: true,
+      active: menuOpen,
+      onTap: running ? null : () => onPressed(action),
+      onTrailingTap: onMenu,
+      trailing: onMenu == null
+          ? null
+          : AnimatedRotation(
+              duration: AppMotion.hover,
+              curve: AppMotion.curve,
+              turns: menuOpen ? 0.5 : 0,
+              child: Icon(LucideIcons.chevronDown, size: 13, color: ink),
+            ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.gitCommitHorizontal, size: 13, color: ink),
+          const SizedBox(width: 6),
+          Text(
+            action.label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: AppFont.medium,
+              color: ink,
+            ),
+          ),
+        ],
       ),
-      onPressed: running ? null : () => onPressed(action),
-      child: Text(action.label),
     );
     // "Commit all" is the one label that doesn't say its whole story — what
     // "all" covers is the list on screen, and the tooltip is where that fits.
-    if (action != CommitAction.commitAll) return button;
+    if (action != CommitAction.commitAll) return pill;
     return Tooltip(
       message: 'Tick every file listed here, then commit',
-      child: button,
-    );
-  }
-}
-
-/// The half that opens the menu.
-class _Caret extends StatelessWidget {
-  const _Caret({required this.open, required this.onPressed});
-
-  final bool open;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return FilledButton(
-      style: FilledButton.styleFrom(
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.horizontal(
-            right: Radius.circular(AppControl.radius),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        minimumSize: const Size(0, 0),
-      ),
-      onPressed: onPressed,
-      child: AnimatedRotation(
-        duration: AppMotion.hover,
-        curve: AppMotion.curve,
-        turns: open ? 0.5 : 0,
-        child: const Icon(LucideIcons.chevronDown, size: 13),
-      ),
+      child: pill,
     );
   }
 }
