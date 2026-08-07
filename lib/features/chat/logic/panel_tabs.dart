@@ -86,7 +86,11 @@ class PanelTabs extends Notifier<PanelTabsState> {
   /// Opens the panel too: every way in here is somebody asking to *see*
   /// something, and a tab opened behind a closed panel is a click that did
   /// nothing.
-  void open(PanelFeature feature) {
+  ///
+  /// Returns the new tab's id, for the callers that have something to put in it:
+  /// a feature's per-tab state is keyed by that id, so "open a Files tab already
+  /// showing this file" needs it before the tab has drawn once.
+  String open(PanelFeature feature) {
     final tab = PanelTab(
       id: 'tab-${++_seq}',
       feature: feature,
@@ -94,6 +98,7 @@ class PanelTabs extends Notifier<PanelTabsState> {
     );
     state = PanelTabsState(tabs: [...state.tabs, tab], activeId: tab.id);
     ref.read(previewPanelOpenProvider.notifier).open();
+    return tab.id;
   }
 
   /// Brings [feature] to the front, opening a tab for it only if none is.

@@ -228,7 +228,9 @@ class _Tree extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final root = ref.watch(workdirEntriesProvider(rootPath));
+    final root = ref.watch(
+      workdirEntriesProvider((path: rootPath, hidden: false)),
+    );
     return switch (root) {
       AsyncData(:final value) when value.isEmpty => const _Message(
         'This folder is empty. Files the assistant saves while you chat show up '
@@ -240,7 +242,8 @@ class _Tree extends ConsumerWidget {
         rows: flattenWorkspaceTree(
           rootEntries: value,
           expanded: expanded,
-          childrenOf: (path) => ref.watch(workdirEntriesProvider(path)),
+          childrenOf: (path) =>
+              ref.watch(workdirEntriesProvider((path: path, hidden: false))),
         ),
         onToggle: onToggle,
         onOpenFile: onOpenFile,

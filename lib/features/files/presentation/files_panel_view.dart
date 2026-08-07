@@ -25,13 +25,24 @@ import 'widgets/files_tree.dart';
 /// none of the first one's habits — undo, find, a language server — so this
 /// shows the file and hands it to the real editor when the user wants more.
 class FilesPanelView extends ConsumerWidget {
-  const FilesPanelView({super.key, required this.tabId, required this.folder});
+  const FilesPanelView({
+    super.key,
+    required this.tabId,
+    required this.folder,
+    required this.onOpenInNewTab,
+  });
 
   final String tabId;
 
   /// The project folder this tab is rooted at, or null when the open chat
   /// belongs to no project.
   final String? folder;
+
+  /// Show a file somewhere that isn't this tab — what picking one out of a
+  /// crumb's folder does, since going sideways shouldn't cost you the file you
+  /// were already reading. Tabs belong to the panel, not to Files, so the verb
+  /// arrives from outside.
+  final ValueChanged<String>? onOpenInNewTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -54,6 +65,7 @@ class FilesPanelView extends ConsumerWidget {
         selected: selected,
         showSource: showSource,
         showTree: showTree,
+        onOpenInNewTab: onOpenInNewTab,
       ),
       main: FileViewer(path: selected, showSource: showSource),
       sideOpen: showTree,
@@ -75,6 +87,7 @@ class _Toolbar extends ConsumerWidget {
     required this.selected,
     required this.showSource,
     required this.showTree,
+    required this.onOpenInNewTab,
   });
 
   final String tabId;
@@ -82,13 +95,15 @@ class _Toolbar extends ConsumerWidget {
   final String? selected;
   final bool showSource;
   final bool showTree;
+  final ValueChanged<String>? onOpenInNewTab;
 
   Future<void> _reveal(BuildContext context, WidgetRef ref) async {
     // Reveals the file's own folder when one is open, so the user lands on the
     // file rather than at the top of the project.
+    final open = selected;
     final ok = await ref
         .read(hostShellServiceProvider)
-        .openFolder(_parentOf(selected) ?? folder);
+        .openFolder((open == null ? null : parentFolderOf(open)) ?? folder);
     if (ok || !context.mounted) return;
     ToastScope.show(
       context,
@@ -112,7 +127,7 @@ class _Toolbar extends ConsumerWidget {
           Expanded(
             child: FilesBreadcrumb(
               crumbs: filePathCrumbs(root: folder, filePath: selected),
-              filePath: selected,
+              onOpenInNewTab: onOpenInNewTab,
             ),
           ),
           const SizedBox(width: 8),
@@ -186,13 +201,6 @@ class _Toolbar extends ConsumerWidget {
       ),
     );
   }
-}
-
-/// The folder above [path], or null when there isn't one to speak of.
-String? _parentOf(String? path) {
-  if (path == null) return null;
-  final cut = path.lastIndexOf(RegExp(r'[/\\]'));
-  return cut <= 0 ? null : path.substring(0, cut);
 }
 
 /// A chat that belongs to no project has no folder to browse — the fix is a

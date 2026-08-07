@@ -37,7 +37,9 @@ class FileMentionMenu extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Lives in a detached overlay above the composer — follow theme flips itself.
     AppTheme.watch(context);
-    final entries = ref.watch(workdirEntriesProvider(workdir));
+    final entries = ref.watch(
+      workdirEntriesProvider((path: workdir, hidden: false)),
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(

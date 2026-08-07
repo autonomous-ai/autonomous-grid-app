@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../agents/logic/agent_changes.dart';
 import '../../browser/presentation/browser_panel_view.dart';
+import '../../files/logic/files_browser.dart';
 import '../../files/presentation/files_panel_view.dart';
 import '../../projects/logic/project.dart';
 import '../../review/logic/review_controller.dart';
@@ -43,14 +44,31 @@ class _FilesTab extends ConsumerWidget {
 
   final String tabId;
 
+  /// Open [path] in a Files tab of its own.
+  ///
+  /// The tab is told what to show before it has drawn once: a feature's per-tab
+  /// state is keyed by the id [PanelTabs.open] hands back, so the tab arrives
+  /// already at the file with the folders above it open.
+  void _openInNewTab(WidgetRef ref, String path, String root) {
+    final id = ref.read(panelTabsProvider.notifier).open(PanelFeature.files);
+    ref.read(filesBrowserProvider(id).notifier).reveal(path: path, root: root);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projectId = ref.watch(
       chatSessionsProvider.select((s) => s.openProjectId),
     );
+    final folder = ref.watch(projectByIdProvider(projectId))?.path;
     return FilesPanelView(
       tabId: tabId,
-      folder: ref.watch(projectByIdProvider(projectId))?.path,
+      folder: folder,
+      // Opening a second place in the project is a *tab* operation, and Files
+      // knows nothing about tabs — so the verb is wired here, in the one file
+      // allowed to name both sides.
+      onOpenInNewTab: folder == null
+          ? null
+          : (path) => _openInNewTab(ref, path, folder),
     );
   }
 }

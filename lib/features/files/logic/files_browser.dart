@@ -83,6 +83,25 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
 
   void select(String path) => state = state.copyWith(selected: path);
 
+  /// Show [path], with every folder between [root] and it already open.
+  ///
+  /// For a tab that has just been created to hold one file: selecting alone
+  /// would put the file on screen with a tree collapsed to the project's top
+  /// level beside it, so the panel would be showing something it couldn't say
+  /// the whereabouts of.
+  void reveal({required String path, required String root}) {
+    final expanded = {...state.expanded};
+    // Every ancestor, walked down from the root rather than up from the file:
+    // the root's own separator is whatever the platform wrote, and re-joining
+    // segments would lose it.
+    var cut = path.indexOf(RegExp(r'[/\\]'), root.length + 1);
+    while (cut > 0) {
+      expanded.add(path.substring(0, cut));
+      cut = path.indexOf(RegExp(r'[/\\]'), cut + 1);
+    }
+    state = state.copyWith(expanded: expanded, selected: path);
+  }
+
   void setQuery(String query) => state = state.copyWith(query: query);
 
   void toggleSource() => state = state.copyWith(showSource: !state.showSource);
