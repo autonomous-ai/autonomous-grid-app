@@ -92,7 +92,7 @@ class _PanelState extends State<_Panel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(15, 6, 15, 8),
+            padding: const EdgeInsets.fromLTRB(15, 8, 15, 9),
             child: TextField(
               controller: _query,
               autofocus: true,
@@ -114,6 +114,11 @@ class _PanelState extends State<_Panel> {
                   minWidth: 22,
                   minHeight: 0,
                 ),
+                // Measured: a borderless dense field still renders 36px tall
+                // for 17px of text — `InputDecorator` keeps a floor of its own,
+                // and it was most of the empty space in this panel. This takes
+                // the box down to the line it holds.
+                constraints: const BoxConstraints(maxHeight: 22),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
