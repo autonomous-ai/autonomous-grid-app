@@ -149,6 +149,39 @@ void main() {
     expect(runner.calls.length, greaterThan(before + 1));
   });
 
+  test('including everything stages the files the list is showing — under the '
+      "assistant's last turn, `git add -A` would commit work the user never "
+      'saw', () async {
+    final runner = FakeGitRunner(
+      (args) => switch (args) {
+        ['rev-parse', '--abbrev-ref', 'HEAD'] => gitSaid('main\n'),
+        ['status', ...] => gitSaid(
+          z(
+            '1 .M N... 100644 100644 100644 422c 422c lib/a.dart|'
+            '1 .M N... 100644 100644 100644 422c 422c lib/untouched.dart|',
+          ),
+        ),
+        _ => gitSaid(''),
+      },
+    );
+    final container = containerWith(runner: runner);
+    container.read(reviewLastTurnPathsProvider.notifier).show({
+      '/repo/lib/a.dart',
+    });
+    container
+        .read(reviewScopeProvider('/repo').notifier)
+        .show(const LastTurnChanges());
+    await container.read(reviewProvider('/repo').future);
+
+    final error = await container
+        .read(reviewProvider('/repo').notifier)
+        .stageAll();
+
+    expect(error, isNull);
+    expect(runner.argsFor('add'), ['add', '--', 'lib/a.dart']);
+    expect(runner.calls.any((args) => args.contains('-A')), isFalse);
+  });
+
   test(
     'a refused stage comes back as a sentence to show, not a silent no-op',
     () async {

@@ -159,8 +159,27 @@ List<String> unstageArgv(List<String> paths, {required bool hasCommits}) =>
     ? ['reset', '-q', 'HEAD', '--', ...paths]
     : ['rm', '--cached', '-q', '--', ...paths];
 
-/// Stage everything that changed, deletions included — what "Include all" does.
-const List<String> kStageAllArgv = ['add', '-A'];
+/// Ticking every file the list is showing, as commands short enough to run.
+///
+/// Their paths rather than `git add -A`, which is what this used to be: under a
+/// narrowed scope — the assistant's last turn — "everything" means the files on
+/// screen, and `-A` would quietly put work the user never saw into their next
+/// commit. Staging a path covers a deletion too, so nothing is lost by naming
+/// them.
+///
+/// Batched because a command line has a length limit and Windows' is 32 KB: a
+/// repository with a thousand changed files would otherwise fail on the one
+/// command that was meant to save the user a thousand clicks.
+List<List<String>> stageBatches(List<ReviewFile> files, {int perBatch = 50}) =>
+    [
+      for (var start = 0; start < files.length; start += perBatch)
+        stageArgv([
+          for (final file in files.skip(start).take(perBatch)) ...[
+            ?file.oldPath,
+            file.path,
+          ],
+        ]),
+    ];
 
 /// Commit what's staged. Deliberately no `-a`: staging is the user's decision,
 /// made file by file on this screen, and `-a` would quietly widen a commit

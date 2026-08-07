@@ -50,8 +50,18 @@ class ReviewActions {
     unstageArgv([?file.oldPath, file.path], hasCommits: hasCommits),
   );
 
-  /// Include everything that changed.
-  Future<ReviewFailure?> stageAll(String root) => _write(root, kStageAllArgv);
+  /// Include every file the list is showing — [files], not whatever else the
+  /// repository happens to hold (see [stageBatches]).
+  ///
+  /// Stops at the first refusal rather than pressing on: the rest would fail the
+  /// same way, and a second toast saying so adds nothing.
+  Future<ReviewFailure?> stageAll(String root, List<ReviewFile> files) async {
+    for (final argv in stageBatches(files)) {
+      final failure = await _write(root, argv);
+      if (failure != null) return failure;
+    }
+    return null;
+  }
 
   /// Record what's staged as a commit.
   Future<ReviewFailure?> commit(String root, String message) =>

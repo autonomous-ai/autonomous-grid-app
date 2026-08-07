@@ -19,7 +19,10 @@ void main() {
         numstatArgv(const BranchAgainst('origin/main')).last,
         'origin/main...HEAD',
       );
-      expect(nameStatusArgv(const BranchAgainst('origin/main')).last, 'origin/main...HEAD');
+      expect(
+        nameStatusArgv(const BranchAgainst('origin/main')).last,
+        'origin/main...HEAD',
+      );
     });
   });
 
