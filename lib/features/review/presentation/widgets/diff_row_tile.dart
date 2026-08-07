@@ -103,7 +103,7 @@ class _DiffRowTileState extends State<DiffRowTile> {
                   // In the number's place rather than beside it: a button that
                   // appeared *next* to the line would push every line right as
                   // the pointer moved down the file.
-                  ? _CommentButton(onPressed: comment)
+                  ? DiffCommentButton(onPressed: comment)
                   : Padding(
                       padding: const EdgeInsets.only(left: 4, right: 8),
                       child: Text(
@@ -142,8 +142,11 @@ class _DiffRowTileState extends State<DiffRowTile> {
 }
 
 /// The `+` that opens a comment on this line.
-class _CommentButton extends StatelessWidget {
-  const _CommentButton({required this.onPressed});
+///
+/// Public because the side-by-side tile draws the same button in the same
+/// gutter — two glyphs for one action would drift apart.
+class DiffCommentButton extends StatelessWidget {
+  const DiffCommentButton({super.key, required this.onPressed});
 
   final VoidCallback onPressed;
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/panel_body.dart';
+import '../../../shared/widgets/panel_side_layout.dart';
 import '../../projects/logic/project.dart';
 import '../logic/review_controller.dart';
 import '../logic/review_selection.dart';
@@ -139,16 +140,29 @@ class _Changes extends ConsumerWidget {
     // Never with nothing open: hiding the list would leave the pane telling the
     // user to pick from a list that isn't there.
     final hidden = !ref.watch(reviewFilesShownProvider(folder)) && file != null;
+    final sideOverride = ref.watch(panelSideWidthProvider);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final sideBySide =
             constraints.maxWidth >= _sideBySideFrom && !snapshot.isEmpty;
+        // What the diff itself gets, which is the panel less whatever the file
+        // list is holding — asked of the same resolver `PanelBody` lays it out
+        // with, so the two can't disagree about what "wide enough" means.
+        final paneWidth = sideBySide && !hidden
+            ? constraints.maxWidth -
+                  resolvePanelSideWidth(
+                    panelWidth: constraints.maxWidth,
+                    override: sideOverride,
+                  )
+            : constraints.maxWidth;
+        final canSplit = paneWidth >= kSplitDiffFrom;
         final toolbar = ReviewToolbar(
           snapshot: snapshot,
           folder: folder,
           onAskAgent: onAskAgent,
           canHideFiles: sideBySide && file != null,
+          canSplit: canSplit,
           openFile: file,
         );
         // Nothing to review: the empty state takes the pane rather than sitting
@@ -159,14 +173,24 @@ class _Changes extends ConsumerWidget {
             toolbar: toolbar,
             main: file == null
                 ? list
-                : ReviewDiffView(file: file, folder: folder, showBack: true),
+                : ReviewDiffView(
+                    file: file,
+                    folder: folder,
+                    showBack: true,
+                    canSplit: canSplit,
+                  ),
           );
         }
         return PanelBody(
           toolbar: toolbar,
           main: file == null
               ? const _NothingOpen()
-              : ReviewDiffView(file: file, folder: folder, showBack: false),
+              : ReviewDiffView(
+                  file: file,
+                  folder: folder,
+                  showBack: false,
+                  canSplit: canSplit,
+                ),
           sideOpen: !hidden,
           side: list,
         );
