@@ -2,7 +2,7 @@ import 'dart:io';
 
 import '../../../infrastructure/cli/git_review.dart';
 import 'review_argv.dart';
-import 'review_base.dart';
+import 'review_scope.dart';
 import 'review_failure.dart';
 import 'review_file.dart';
 
@@ -21,12 +21,12 @@ class ReviewActions {
   /// pane says so rather than drawing an empty file.
   Future<String?> patch({
     required String root,
-    required ReviewBase base,
+    required ReviewScope scope,
     required ReviewFile file,
   }) async {
     final result = await _runner.run(
       root,
-      fileDiffArgv(base: base, file: file, nullDevice: nullDevice),
+      fileDiffArgv(scope: scope, file: file, nullDevice: nullDevice),
     );
     if (result == null) return null;
     // `git diff --no-index` reports "these differ" as exit code 1, which is the
@@ -50,8 +50,18 @@ class ReviewActions {
     unstageArgv([?file.oldPath, file.path], hasCommits: hasCommits),
   );
 
-  /// Include everything that changed.
-  Future<ReviewFailure?> stageAll(String root) => _write(root, kStageAllArgv);
+  /// Include every file the list is showing — [files], not whatever else the
+  /// repository happens to hold (see [stageBatches]).
+  ///
+  /// Stops at the first refusal rather than pressing on: the rest would fail the
+  /// same way, and a second toast saying so adds nothing.
+  Future<ReviewFailure?> stageAll(String root, List<ReviewFile> files) async {
+    for (final argv in stageBatches(files)) {
+      final failure = await _write(root, argv);
+      if (failure != null) return failure;
+    }
+    return null;
+  }
 
   /// Record what's staged as a commit.
   Future<ReviewFailure?> commit(String root, String message) =>

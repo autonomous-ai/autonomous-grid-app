@@ -32,10 +32,9 @@ void main() {
   group('filterFiles', () {
     test('matches on the whole path, which is the only way to tell two files '
         'with the same name apart', () {
-      expect(
-        filterFiles(files, 'lib/new').map((f) => f.path),
-        ['lib/new/name.dart'],
-      );
+      expect(filterFiles(files, 'lib/new').map((f) => f.path), [
+        'lib/new/name.dart',
+      ]);
     });
 
     test('finds a renamed file by the name it used to have, because that is '

@@ -1,14 +1,14 @@
-import 'review_base.dart';
 import 'review_file.dart';
+import 'review_scope.dart';
 
 /// Every `git` invocation the Review screen makes, built here and nowhere else.
 ///
 /// Pure functions rather than argv assembled at the call site, because a wrong
 /// flag fails exactly like a repository with nothing in it (§7): `git diff`
-/// takes `--cached`, `git status` doesn't; `--no-index` needs two paths and
-/// ignores `-C`-relative ones on Windows unless the null device is spelled the
-/// platform's way. Each of these is covered by a test that names the shape it
-/// protects.
+/// takes `--cached`, `git status` doesn't; `git show` needs `--format=` or it
+/// prints its own header into the diff; `--no-index` needs two paths and the
+/// null device spelled the platform's way. Each of these is covered by a test
+/// that names the shape it protects.
 
 /// Which files changed, and on which side — index, working tree, or neither.
 const List<String> kStatusArgv = [
@@ -55,6 +55,23 @@ const String kRemoteRefPrefix = 'refs/remotes/';
 /// Where it keeps local ones.
 const String kLocalRefPrefix = 'refs/heads/';
 
+/// Field and record separators for `git log`.
+///
+/// Unit and record separator, not `|` or a newline: a commit subject may
+/// contain any printable character, and every printable delimiter has already
+/// been used in somebody's commit message.
+const String kLogFieldSeparator = '\u001f';
+const String kLogRecordSeparator = '\u001e';
+
+/// The last [limit] commits on this branch, for the Committed menu.
+List<String> recentCommitsArgv({int limit = 20}) => [
+  'log',
+  '-n',
+  '$limit',
+  '--format=%H$kLogFieldSeparator%s$kLogFieldSeparator%an'
+      '$kLogFieldSeparator%ar$kLogRecordSeparator',
+];
+
 /// How many commits [upstream] has that we don't, and the other way round.
 /// Answers as `<behind>\t<ahead>` — left is the upstream side.
 List<String> aheadBehindArgv(String upstream) => [
@@ -64,24 +81,35 @@ List<String> aheadBehindArgv(String upstream) => [
   '$upstream...HEAD',
 ];
 
-/// The changed-line counts for the whole change set.
-List<String> numstatArgv(ReviewBase base) => [
-  'diff',
-  '--numstat',
-  '-z',
-  '-M',
-  _range(base),
-];
+/// The changed-line counts for a whole scope.
+List<String> numstatArgv(ReviewScope scope) => switch (scope) {
+  CommittedChange(:final commit) => [
+    'show',
+    '--numstat',
+    '-z',
+    '-M',
+    // Without this, `git show` prints its own commit header above the diff and
+    // the first "file" parsed out of it is the subject line.
+    '--format=',
+    commit.sha,
+  ],
+  _ => ['diff', '--numstat', '-z', '-M', ...?_range(scope)],
+};
 
-/// What each file's change *is*, for a branch comparison — the working tree
-/// isn't involved, so `status` can't answer this one.
-List<String> nameStatusArgv(String ref) => [
-  'diff',
-  '--name-status',
-  '-M',
-  '-z',
-  _threeDot(ref),
-];
+/// What each file's change *is*, where `status` can't answer: a branch
+/// comparison and a commit have no index and no working tree, only what the
+/// commits did.
+List<String> nameStatusArgv(ReviewScope scope) => switch (scope) {
+  CommittedChange(:final commit) => [
+    'show',
+    '--name-status',
+    '-M',
+    '-z',
+    '--format=',
+    commit.sha,
+  ],
+  _ => ['diff', '--name-status', '-M', '-z', ...?_range(scope)],
+};
 
 /// One file's diff.
 ///
@@ -89,7 +117,7 @@ List<String> nameStatusArgv(String ref) => [
 /// nothing to pair it with and reports a file that appeared from nowhere —
 /// every line "added", which is the opposite of what a rename is.
 List<String> fileDiffArgv({
-  required ReviewBase base,
+  required ReviewScope scope,
   required ReviewFile file,
   required String nullDevice,
 }) {
@@ -100,7 +128,17 @@ List<String> fileDiffArgv({
   if (file.kind == ReviewFileKind.untracked) {
     return ['diff', '--no-index', '--', nullDevice, file.path];
   }
-  return ['diff', '-M', _range(base), '--', ?file.oldPath, file.path];
+  final paths = ['--', ?file.oldPath, file.path];
+  return switch (scope) {
+    CommittedChange(:final commit) => [
+      'show',
+      '-M',
+      '--format=',
+      commit.sha,
+      ...paths,
+    ],
+    _ => ['diff', '-M', ...?_range(scope), ...paths],
+  };
 }
 
 /// Put a file's change in the index, so the next commit carries it. Works for
@@ -121,8 +159,27 @@ List<String> unstageArgv(List<String> paths, {required bool hasCommits}) =>
     ? ['reset', '-q', 'HEAD', '--', ...paths]
     : ['rm', '--cached', '-q', '--', ...paths];
 
-/// Stage everything that changed, deletions included — what "Select all" does.
-const List<String> kStageAllArgv = ['add', '-A'];
+/// Ticking every file the list is showing, as commands short enough to run.
+///
+/// Their paths rather than `git add -A`, which is what this used to be: under a
+/// narrowed scope — the assistant's last turn — "everything" means the files on
+/// screen, and `-A` would quietly put work the user never saw into their next
+/// commit. Staging a path covers a deletion too, so nothing is lost by naming
+/// them.
+///
+/// Batched because a command line has a length limit and Windows' is 32 KB: a
+/// repository with a thousand changed files would otherwise fail on the one
+/// command that was meant to save the user a thousand clicks.
+List<List<String>> stageBatches(List<ReviewFile> files, {int perBatch = 50}) =>
+    [
+      for (var start = 0; start < files.length; start += perBatch)
+        stageArgv([
+          for (final file in files.skip(start).take(perBatch)) ...[
+            ?file.oldPath,
+            file.path,
+          ],
+        ]),
+    ];
 
 /// Commit what's staged. Deliberately no `-a`: staging is the user's decision,
 /// made file by file on this screen, and `-a` would quietly widen a commit
@@ -134,14 +191,18 @@ List<String> commitArgv(String message) => ['commit', '-m', message];
 List<String> pushArgv({required String branch, required bool setUpstream}) =>
     setUpstream ? ['push', '--set-upstream', 'origin', branch] : const ['push'];
 
-/// What a diff command compares against: `HEAD` for the working tree, or the
-/// three-dot form for a branch.
-String _range(ReviewBase base) => switch (base) {
-  UncommittedChanges() => 'HEAD',
-  BranchAgainst(:final ref) => _threeDot(ref),
+/// What a `git diff` in this scope compares, as the arguments that go after the
+/// flags: `HEAD`, `--cached`, a three-dot range — or nothing at all, which is
+/// how Git spells "the working tree against the index".
+///
+/// Null for a commit, which is read with `git show` rather than `git diff`.
+List<String>? _range(ReviewScope scope) => switch (scope) {
+  // The assistant's edits live in the working tree and the index alike, so its
+  // scope is measured exactly as "uncommitted" is; the narrowing to the files
+  // it touched happens on the file list, not in the range.
+  LastTurnChanges() || UncommittedChanges() => const ['HEAD'],
+  UnstagedChanges() => const [],
+  StagedChanges() => const ['--cached'],
+  BranchAgainst(:final ref) => ['$ref...HEAD'],
+  CommittedChange() => null,
 };
-
-/// `ref...HEAD` — from where the branch parted from [ref], not from [ref] as it
-/// stands now. Without the third dot, commits that landed on `main` after this
-/// branch started would read as changes this branch *removed*.
-String _threeDot(String ref) => '$ref...HEAD';

@@ -127,18 +127,21 @@ deleted file mode 100644
       expect(patch.hunks.single.rows[1].text, '');
     });
 
-    test('stops at the row cap and says how many it dropped, so a generated '
-        'file cannot take the window down and cannot lie about being whole', () {
-      final huge = StringBuffer('@@ -1,500 +1,500 @@\n');
-      for (var i = 0; i < 500; i++) {
-        huge.writeln('+line $i');
-      }
+    test(
+      'stops at the row cap and says how many it dropped, so a generated '
+      'file cannot take the window down and cannot lie about being whole',
+      () {
+        final huge = StringBuffer('@@ -1,500 +1,500 @@\n');
+        for (var i = 0; i < 500; i++) {
+          huge.writeln('+line $i');
+        }
 
-      final patch = parseUnifiedDiff(huge.toString(), maxRows: 100);
+        final patch = parseUnifiedDiff(huge.toString(), maxRows: 100);
 
-      expect(patch.hunks.single.rows.length, 100);
-      expect(patch.truncatedBy, 400);
-    });
+        expect(patch.hunks.single.rows.length, 100);
+        expect(patch.truncatedBy, 400);
+      },
+    );
 
     test('answers an empty patch for a file Git reports as unchanged', () {
       expect(parseUnifiedDiff('').isEmpty, isTrue);

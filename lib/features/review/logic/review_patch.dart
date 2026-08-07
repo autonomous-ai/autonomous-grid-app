@@ -39,7 +39,7 @@ final reviewPatchProvider =
 
       final raw = await ref
           .read(reviewActionsProvider)
-          .patch(root: snapshot.root, base: snapshot.base, file: file);
+          .patch(root: snapshot.root, scope: snapshot.scope, file: file);
       if (raw == null) return null;
       if (raw.length <= kInlineParseLimit) return parseUnifiedDiff(raw);
       return compute(parseUnifiedDiff, raw);

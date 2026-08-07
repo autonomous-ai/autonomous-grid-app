@@ -57,7 +57,12 @@ void main() {
         .read(commitProvider('/repo').notifier)
         .run(message: 'First', push: true);
 
-    expect(runner.argsFor('push'), ['push', '--set-upstream', 'origin', 'main']);
+    expect(runner.argsFor('push'), [
+      'push',
+      '--set-upstream',
+      'origin',
+      'main',
+    ]);
   });
 
   test('a push that fails after the commit landed says the commit was made — '
@@ -122,17 +127,20 @@ void main() {
     expect(container.read(commitProvider('/repo')), isA<CommitFailed>());
   });
 
-  test('committing without pushing leaves the work local and says so', () async {
-    final runner = _staged();
-    final container = containerWith(runner: runner);
-    await container.read(reviewProvider('/repo').future);
+  test(
+    'committing without pushing leaves the work local and says so',
+    () async {
+      final runner = _staged();
+      final container = containerWith(runner: runner);
+      await container.read(reviewProvider('/repo').future);
 
-    await container
-        .read(commitProvider('/repo').notifier)
-        .run(message: 'Local only', push: false);
+      await container
+          .read(commitProvider('/repo').notifier)
+          .run(message: 'Local only', push: false);
 
-    expect(runner.ran('push'), isFalse);
-    final state = container.read(commitProvider('/repo'));
-    expect((state as CommitDone).pushed, isFalse);
-  });
+      expect(runner.ran('push'), isFalse);
+      final state = container.read(commitProvider('/repo'));
+      expect((state as CommitDone).pushed, isFalse);
+    },
+  );
 }

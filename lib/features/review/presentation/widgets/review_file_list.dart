@@ -4,10 +4,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/empty_state.dart';
-import '../../logic/review_base.dart';
 import '../../logic/review_snapshot.dart';
+import '../../logic/review_file.dart';
 import '../../logic/review_tree.dart';
 import 'review_file_row.dart';
+import 'review_toolbar.dart' show ReviewBranchLine;
 
 /// The changed files, gathered under the folder each lives in.
 ///
@@ -24,9 +25,6 @@ class ReviewFileList extends ConsumerStatefulWidget {
 
   /// The folder being reviewed — what the rows stage against.
   final String folder;
-
-  /// Below this many files, every one is on screen at once.
-  static const int filterFrom = 8;
 
   @override
   ConsumerState<ReviewFileList> createState() => _ReviewFileListState();
@@ -45,38 +43,53 @@ class _ReviewFileListState extends ConsumerState<ReviewFileList> {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final files = widget.snapshot.files;
-    if (files.isEmpty) return const _NothingChanged();
+    final scope = widget.snapshot.scope;
+    if (files.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: ReviewBranchLine(snapshot: widget.snapshot),
+          ),
+          Expanded(child: _NothingChanged(line: scope.emptyLine)),
+        ],
+      );
+    }
 
     final shown = filterFiles(files, _query.text);
-    // Only what's uncommitted can be staged; a branch comparison is work that
-    // is already in a commit.
-    final stageable = widget.snapshot.base is UncommittedChanges;
+    // Ticking a file on or off only means something where there is still an
+    // index to move it into — not on a branch or inside a commit.
+    final stageable = scope.canStage;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (files.length >= ReviewFileList.filterFrom)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            // The same field the model manager searches with, so two lists in
-            // the app don't ask the same question in two different shapes.
-            child: TextField(
-              controller: _query,
-              decoration: InputDecoration(
-                hintText: 'Filter files…',
-                prefixIcon: const Icon(LucideIcons.search, size: 16),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppCard.insetRadius),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: AppGlass.bubbleFill,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+          child: ReviewBranchLine(snapshot: widget.snapshot),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          // The same field the model manager searches with, so two lists in
+          // the app don't ask the same question in two different shapes.
+          child: TextField(
+            controller: _query,
+            decoration: InputDecoration(
+              hintText: 'Filter files…',
+              prefixIcon: const Icon(LucideIcons.search, size: 16),
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppCard.insetRadius),
+                borderSide: BorderSide.none,
               ),
-              style: const TextStyle(fontSize: 13),
-              onChanged: (_) => setState(() {}),
+              filled: true,
+              fillColor: AppGlass.bubbleFill,
             ),
+            style: const TextStyle(fontSize: 13),
+            onChanged: (_) => setState(() {}),
           ),
+        ),
         Expanded(
           child: shown.isEmpty
               ? const EmptyState.noMatches(
@@ -107,35 +120,45 @@ class _Groups extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // One flat list of rows and headings rather than nested scrollables: a
-    // change spanning forty folders must stay lazy, and a Column of Columns
-    // would build every row up front.
-    final rows = <Widget>[];
+    // Flattened to *what to draw* rather than to widgets: a change spanning
+    // forty folders must stay lazy, and building every row up front on each
+    // rebuild is the work the lazy list is here to avoid.
+    final entries = <_Entry>[];
     for (final group in groups) {
-      rows.add(_FolderHeading(label: group.label));
+      entries.add(_Entry.heading(group.label));
       for (final file in group.files) {
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            // Conflicted files are *not* filtered out here: the row itself
-            // shows why it can't be staged, which is the thing the user needs
-            // told. Dropping the control would leave them wondering where it
-            // went.
-            child: ReviewFileRow(
-              file: file,
-              folder: folder,
-              stageable: stageable,
-            ),
-          ),
-        );
+        entries.add(_Entry.file(file));
       }
     }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-      itemCount: rows.length,
-      itemBuilder: (context, i) => rows[i],
+      itemCount: entries.length,
+      itemBuilder: (context, i) {
+        final entry = entries[i];
+        final file = entry.file;
+        if (file == null) return _FolderHeading(label: entry.label!);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          // Conflicted files are *not* filtered out here: the row itself shows
+          // why it can't be staged, which is the thing the user needs told.
+          child: ReviewFileRow(
+            file: file,
+            folder: folder,
+            stageable: stageable,
+          ),
+        );
+      },
     );
   }
+}
+
+/// One entry in the flattened list: a folder's heading, or a file under it.
+class _Entry {
+  const _Entry.heading(this.label) : file = null;
+  const _Entry.file(this.file) : label = null;
+
+  final String? label;
+  final ReviewFile? file;
 }
 
 /// One folder's name over its files.
@@ -163,17 +186,18 @@ class _FolderHeading extends StatelessWidget {
   }
 }
 
-/// A repository with nothing to review — the good kind of empty.
+/// Nothing to review — the good kind of empty. What *nothing* means depends on
+/// the scope, so the line comes from it rather than being written here.
 class _NothingChanged extends StatelessWidget {
-  const _NothingChanged();
+  const _NothingChanged({required this.line});
+
+  final String line;
 
   @override
-  Widget build(BuildContext context) => const EmptyState(
+  Widget build(BuildContext context) => EmptyState(
     icon: LucideIcons.check,
-    title: 'Nothing has changed',
-    message:
-        'Every file here matches the last commit. Ask the assistant to make '
-        'a change and it will show up here.',
+    title: 'Nothing to review',
+    message: line,
     compact: true,
   );
 }

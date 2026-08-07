@@ -19,10 +19,21 @@ import 'review_mark.dart';
 /// Fetched when it opens and not before — that is what lets a branch with
 /// sixteen thousand changed lines appear instantly.
 class ReviewDiffView extends ConsumerWidget {
-  const ReviewDiffView({super.key, required this.file, required this.folder});
+  const ReviewDiffView({
+    super.key,
+    required this.file,
+    required this.folder,
+    required this.showBack,
+  });
 
   final ReviewFile file;
   final String folder;
+
+  /// Whether the header carries the way back to the file list.
+  ///
+  /// Only when the two take turns: beside a list that is on screen anyway, a
+  /// back arrow points at something the user can already see.
+  final bool showBack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,7 +45,7 @@ class ReviewDiffView extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FileHeader(file: file, folder: folder),
+        _FileHeader(file: file, folder: folder, showBack: showBack),
         const Divider(height: 1),
         Expanded(
           child: switch (patch) {
@@ -54,10 +65,15 @@ class ReviewDiffView extends ConsumerWidget {
 
 /// Which file this is, and the way back to the list.
 class _FileHeader extends ConsumerWidget {
-  const _FileHeader({required this.file, required this.folder});
+  const _FileHeader({
+    required this.file,
+    required this.folder,
+    required this.showBack,
+  });
 
   final ReviewFile file;
   final String folder;
+  final bool showBack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -66,14 +82,17 @@ class _FileHeader extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
       child: Row(
         children: [
-          AppIconButton(
-            icon: LucideIcons.arrowLeft,
-            size: 16,
-            tooltip: 'Back to the changed files',
-            onPressed: () =>
-                ref.read(reviewSelectionProvider(folder).notifier).close(),
-          ),
-          const SizedBox(width: 6),
+          if (showBack) ...[
+            AppIconButton(
+              icon: LucideIcons.arrowLeft,
+              size: 16,
+              tooltip: 'Back to the changed files',
+              onPressed: () =>
+                  ref.read(reviewSelectionProvider(folder).notifier).close(),
+            ),
+            const SizedBox(width: 6),
+          ] else
+            const SizedBox(width: 6),
           ReviewMark(kind: file.kind),
           const SizedBox(width: 8),
           Expanded(child: _FileName(file: file)),
@@ -142,27 +161,41 @@ class _Patch extends StatelessWidget {
     if (patch.isEmpty) return const _Unreadable();
 
     final language = languageForPath(file.path);
-    // Flattened once here rather than nesting a list per hunk: the whole point
-    // of the cap is that one lazy list draws only the rows on screen.
-    final rows = <Widget>[];
+    // Flattened to *what to draw*, not to widgets: a generated file's diff runs
+    // to thousands of rows, and building every widget up front — on every
+    // rebuild, for rows nobody can see — is work the lazy list exists to avoid.
+    final rows = <_Line>[];
     for (final hunk in patch.hunks) {
-      rows.add(_HunkHeading(hunk: hunk));
+      rows.add(_Line.heading(hunk));
       for (final row in hunk.rows) {
-        rows.add(DiffRowTile(row: row, language: language));
+        rows.add(_Line.row(row));
       }
-    }
-    if (patch.truncatedBy > 0) {
-      rows.add(_Truncated(lines: patch.truncatedBy));
     }
 
     return CodeTextScope(
       child: ListView.builder(
         padding: const EdgeInsets.only(bottom: 16),
-        itemCount: rows.length,
-        itemBuilder: (context, i) => rows[i],
+        // One more for the "and N more lines" tail, when there is one.
+        itemCount: rows.length + (patch.truncatedBy > 0 ? 1 : 0),
+        itemBuilder: (context, i) {
+          if (i == rows.length) return _Truncated(lines: patch.truncatedBy);
+          final line = rows[i];
+          final hunk = line.hunk;
+          if (hunk != null) return _HunkHeading(hunk: hunk);
+          return DiffRowTile(row: line.row!, language: language);
+        },
       ),
     );
   }
+}
+
+/// One entry in the flattened diff: a hunk's heading, or a line of it.
+class _Line {
+  const _Line.heading(this.hunk) : row = null;
+  const _Line.row(this.row) : hunk = null;
+
+  final DiffHunk? hunk;
+  final DiffRow? row;
 }
 
 /// Where in the file the next run of lines is.

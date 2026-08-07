@@ -25,6 +25,7 @@ class ReviewFile {
     required this.kind,
     this.oldPath,
     this.staged = false,
+    this.unstaged = false,
     this.added = 0,
     this.removed = 0,
     this.binary = false,
@@ -41,6 +42,11 @@ class ReviewFile {
 
   /// Whether this file's change is in the index, so a commit would include it.
   final bool staged;
+
+  /// Whether it *also* differs from the index — the half of a change that is
+  /// only on disk. Both can be true at once: a file staged and then edited
+  /// again is in the next commit *and* has something left over.
+  final bool unstaged;
 
   /// Lines added and removed. Both zero for a [binary] file, where counting
   /// lines means nothing.
@@ -63,6 +69,7 @@ class ReviewFile {
         kind: kind,
         oldPath: oldPath,
         staged: staged ?? this.staged,
+        unstaged: unstaged,
         added: added ?? this.added,
         removed: removed ?? this.removed,
         binary: binary ?? this.binary,

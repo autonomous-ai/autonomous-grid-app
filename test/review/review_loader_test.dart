@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/review/logic/review_base.dart';
+import 'package:grid_app/features/review/logic/review_scope.dart';
 import 'package:grid_app/features/review/logic/review_failure.dart';
 import 'package:grid_app/features/review/logic/review_file.dart';
 import 'package:grid_app/features/review/logic/review_loader.dart';
@@ -55,25 +55,27 @@ void main() {
       expect(snapshot.staged.map((f) => f.path), ['staged.txt']);
     });
 
-    test('counts an untracked file from disk — Git is not tracking it, so '
-        '--numstat says nothing and a whole new file would read as empty',
-        () async {
-      File('${repo.path}/new.txt').writeAsStringSync('one\ntwo\nthree\n');
-      final runner = FakeGitRunner(
-        (args) => switch (args) {
-          ['rev-parse', '--abbrev-ref', 'HEAD'] => gitSaid('main\n'),
-          ['status', ...] => gitSaid(z('? new.txt|')),
-          _ => gitSaid(''),
-        },
-      );
+    test(
+      'counts an untracked file from disk — Git is not tracking it, so '
+      '--numstat says nothing and a whole new file would read as empty',
+      () async {
+        File('${repo.path}/new.txt').writeAsStringSync('one\ntwo\nthree\n');
+        final runner = FakeGitRunner(
+          (args) => switch (args) {
+            ['rev-parse', '--abbrev-ref', 'HEAD'] => gitSaid('main\n'),
+            ['status', ...] => gitSaid(z('? new.txt|')),
+            _ => gitSaid(''),
+          },
+        );
 
-      final (snapshot, _) = await ReviewLoader(
-        runner,
-      ).load(repo.path, const UncommittedChanges());
+        final (snapshot, _) = await ReviewLoader(
+          runner,
+        ).load(repo.path, const UncommittedChanges());
 
-      expect(snapshot!.files.single.kind, ReviewFileKind.untracked);
-      expect(snapshot.files.single.added, 3);
-    });
+        expect(snapshot!.files.single.kind, ReviewFileKind.untracked);
+        expect(snapshot.files.single.added, 3);
+      },
+    );
 
     test('a file that vanished between the status and the count is still '
         'listed, rather than taking the whole screen down', () async {
@@ -200,29 +202,36 @@ void main() {
   });
 
   group('baseRefs', () {
-    test('offers remote branches first — a change is measured against what '
-        'everyone else has — and never origin/HEAD, which is not a branch',
-        () async {
-      final runner = FakeGitRunner(
-        (args) => switch (args) {
-          ['for-each-ref', ...] => gitSaid(
-            'refs/heads/main\n'
-            'refs/heads/feat/x\n'
-            'refs/remotes/origin/HEAD\n'
-            'refs/remotes/origin/main\n',
-          ),
-          _ => gitSaid(''),
-        },
-      );
+    test(
+      'offers remote branches first — a change is measured against what '
+      'everyone else has — and never origin/HEAD, which is not a branch',
+      () async {
+        final runner = FakeGitRunner(
+          (args) => switch (args) {
+            ['for-each-ref', ...] => gitSaid(
+              'refs/heads/main\n'
+              'refs/heads/feat/x\n'
+              'refs/remotes/origin/HEAD\n'
+              'refs/remotes/origin/main\n',
+            ),
+            _ => gitSaid(''),
+          },
+        );
 
-      final refs = await ReviewLoader(runner).baseRefs(repo.path);
+        final refs = await ReviewLoader(runner).baseRefs(repo.path);
 
-      expect(refs, ['origin/main', 'main', 'feat/x']);
-    });
+        expect(refs.map((r) => r.name), ['origin/main', 'main', 'feat/x']);
+        // Where a branch lives comes from Git's own ref prefix, not from a
+        // guess at its name: `feat/x` has a slash in it and is still local.
+        expect(refs.map((r) => r.remote), [true, false, false]);
+      },
+    );
 
     test('answers nothing when Git cannot, so the picker degrades instead of '
         'showing a made-up branch', () async {
-      final refs = await ReviewLoader(FakeGitRunner((_) => null)).baseRefs('/x');
+      final refs = await ReviewLoader(
+        FakeGitRunner((_) => null),
+      ).baseRefs('/x');
 
       expect(refs, isEmpty);
     });

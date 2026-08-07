@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/review/logic/review_base.dart';
+import 'package:grid_app/features/review/logic/review_scope.dart';
 import 'package:grid_app/features/review/logic/review_controller.dart';
 import 'package:grid_app/features/review/logic/review_file.dart';
 import 'package:grid_app/infrastructure/cli/git_providers.dart';
@@ -100,29 +100,35 @@ void main() {
     await container.read(reviewProvider('/repo').future);
 
     container
-        .read(reviewBaseProvider('/repo').notifier)
+        .read(reviewScopeProvider('/repo').notifier)
         .show(const BranchAgainst('origin/main'));
     final state = await container.read(reviewProvider('/repo').future);
 
-    expect((state as ReviewReady).snapshot.base, const BranchAgainst('origin/main'));
+    expect(
+      (state as ReviewReady).snapshot.scope,
+      const BranchAgainst('origin/main'),
+    );
     expect(
       runner.calls.any((args) => args.contains('origin/main...HEAD')),
       isTrue,
     );
   });
 
-  test('one repository\'s base does not follow the user into another', () async {
-    final container = containerWith(runner: oneModifiedFile());
+  test(
+    'one repository\'s base does not follow the user into another',
+    () async {
+      final container = containerWith(runner: oneModifiedFile());
 
-    container
-        .read(reviewBaseProvider('/repo').notifier)
-        .show(const BranchAgainst('origin/main'));
+      container
+          .read(reviewScopeProvider('/repo').notifier)
+          .show(const BranchAgainst('origin/main'));
 
-    expect(
-      container.read(reviewBaseProvider('/other')),
-      const UncommittedChanges(),
-    );
-  });
+      expect(
+        container.read(reviewScopeProvider('/other')),
+        const UncommittedChanges(),
+      );
+    },
+  );
 
   test('staging runs git add and re-reads, so the list always says what Git '
       'now holds rather than what the click intended', () async {
@@ -143,33 +149,68 @@ void main() {
     expect(runner.calls.length, greaterThan(before + 1));
   });
 
-  test('a refused stage comes back as a sentence to show, not a silent no-op',
-      () async {
+  test('including everything stages the files the list is showing — under the '
+      "assistant's last turn, `git add -A` would commit work the user never "
+      'saw', () async {
     final runner = FakeGitRunner(
       (args) => switch (args) {
         ['rev-parse', '--abbrev-ref', 'HEAD'] => gitSaid('main\n'),
         ['status', ...] => gitSaid(
-          z('1 .M N... 100644 100644 100644 422c 422c lib/a.dart|'),
-        ),
-        ['add', ...] => gitRefused(
-          'fatal: pathspec did not match any files',
-          exitCode: 128,
+          z(
+            '1 .M N... 100644 100644 100644 422c 422c lib/a.dart|'
+            '1 .M N... 100644 100644 100644 422c 422c lib/untouched.dart|',
+          ),
         ),
         _ => gitSaid(''),
       },
     );
     final container = containerWith(runner: runner);
+    container.read(reviewLastTurnPathsProvider.notifier).show({
+      '/repo/lib/a.dart',
+    });
+    container
+        .read(reviewScopeProvider('/repo').notifier)
+        .show(const LastTurnChanges());
     await container.read(reviewProvider('/repo').future);
 
     final error = await container
         .read(reviewProvider('/repo').notifier)
-        .stage(
-          const ReviewFile(path: 'lib/a.dart', kind: ReviewFileKind.modified),
-        );
+        .stageAll();
 
-    expect(error, isNotNull);
-    // Git's own words, tidied of the `fatal:` prefix — not a sentence the app
-    // invented about a failure it doesn't recognise.
-    expect(error, 'Pathspec did not match any files');
+    expect(error, isNull);
+    expect(runner.argsFor('add'), ['add', '--', 'lib/a.dart']);
+    expect(runner.calls.any((args) => args.contains('-A')), isFalse);
   });
+
+  test(
+    'a refused stage comes back as a sentence to show, not a silent no-op',
+    () async {
+      final runner = FakeGitRunner(
+        (args) => switch (args) {
+          ['rev-parse', '--abbrev-ref', 'HEAD'] => gitSaid('main\n'),
+          ['status', ...] => gitSaid(
+            z('1 .M N... 100644 100644 100644 422c 422c lib/a.dart|'),
+          ),
+          ['add', ...] => gitRefused(
+            'fatal: pathspec did not match any files',
+            exitCode: 128,
+          ),
+          _ => gitSaid(''),
+        },
+      );
+      final container = containerWith(runner: runner);
+      await container.read(reviewProvider('/repo').future);
+
+      final error = await container
+          .read(reviewProvider('/repo').notifier)
+          .stage(
+            const ReviewFile(path: 'lib/a.dart', kind: ReviewFileKind.modified),
+          );
+
+      expect(error, isNotNull);
+      // Git's own words, tidied of the `fatal:` prefix — not a sentence the app
+      // invented about a failure it doesn't recognise.
+      expect(error, 'Pathspec did not match any files');
+    },
+  );
 }

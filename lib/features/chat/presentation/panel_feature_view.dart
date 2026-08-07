@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../agents/logic/agent_changes.dart';
 import '../../browser/presentation/browser_panel_view.dart';
 import '../../files/presentation/files_panel_view.dart';
 import '../../projects/logic/project.dart';
+import '../../review/logic/review_controller.dart';
 import '../../review/presentation/review_surface.dart';
 import '../../side_chat/presentation/side_chat_panel_view.dart';
 import '../../terminal/presentation/terminal_panel_view.dart';
@@ -73,6 +75,19 @@ class _ReviewTab extends ConsumerWidget {
     final projectId = ref.watch(
       chatSessionsProvider.select((s) => s.openProjectId),
     );
+    // Keep Review's "Last turn" scope fed with what the assistant just changed
+    // in this conversation — the same exemption as the import above, and for
+    // the same reason: Review narrows a file list by these paths and must not
+    // have to know an agent or a chat exists to get them.
+    final lastTurn = ref.watch(lastTurnAgentPathsProvider);
+    // After the frame, never during it: writing a provider while another is
+    // building is what Riverpod forbids outright.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) {
+        ref.read(reviewLastTurnPathsProvider.notifier).show(lastTurn);
+      }
+    });
+
     return ReviewSurface(
       project: ref.watch(projectByIdProvider(projectId)),
       onClose: onClose,

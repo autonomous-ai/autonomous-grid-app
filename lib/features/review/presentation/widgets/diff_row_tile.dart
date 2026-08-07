@@ -26,35 +26,53 @@ class DiffRowTile extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    final (background, ink, sign) = switch (row.kind) {
+    final (background, edge, ink, sign) = switch (row.kind) {
       DiffRowKind.added => (
         AppPalette.online.withValues(alpha: 0.13),
+        AppPalette.online,
         AppPalette.textPrimary,
         '+',
       ),
       DiffRowKind.removed => (
         theme.colorScheme.error.withValues(alpha: 0.11),
+        theme.colorScheme.error,
         AppPalette.textPrimary,
         '−',
       ),
       DiffRowKind.context => (
         Colors.transparent,
+        Colors.transparent,
         AppPalette.textSecondary,
         ' ',
       ),
       // Git's own aside about the file, not a line of it.
-      DiffRowKind.note => (Colors.transparent, AppPalette.textFaint, ' '),
+      DiffRowKind.note => (
+        Colors.transparent,
+        Colors.transparent,
+        AppPalette.textFaint,
+        ' ',
+      ),
     };
 
-    return ColoredBox(
-      color: background,
+    return Container(
+      decoration: BoxDecoration(
+        color: background,
+        // The edge bar down the changed lines, the way Codex marks them: at a
+        // glance it is what separates a run of additions from the context
+        // around it, before any colour has been read.
+        //
+        // A border rather than a sibling box in the row: a box would have to be
+        // stretched to the row's height, and a Row that stretches its children
+        // has no height of its own to give them inside a lazy list.
+        border: Border(left: BorderSide(color: edge, width: 2)),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: gutterWidth,
             child: Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(left: 4, right: 8),
               child: Text(
                 '${row.newLine ?? row.oldLine ?? ''}',
                 textAlign: TextAlign.right,
