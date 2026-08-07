@@ -9,12 +9,7 @@ import '../../../chat/logic/workspace_browser.dart';
 import '../../../projects/logic/agent_workspace.dart';
 import '../../logic/files_browser.dart';
 import '../../logic/files_filter.dart';
-import 'file_type_icon.dart';
-
-/// Left indent added per folder deep. Narrower than the file dialog's 16: this
-/// column is a third of a panel, and four levels in at 16 leaves no room for a
-/// name.
-const double _indentStep = 12;
+import 'file_tree_rows.dart';
 
 /// The project's folders and files, in the panel's side column: a filter box
 /// over a tree that opens in place.
@@ -43,7 +38,9 @@ class FilesTree extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     final state = ref.watch(filesBrowserProvider(tabId));
-    final entries = ref.watch(workdirEntriesProvider(root));
+    final entries = ref.watch(
+      workdirEntriesProvider((path: root, hidden: true)),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -68,7 +65,9 @@ class FilesTree extends ConsumerWidget {
                 flattenWorkspaceTree(
                   rootEntries: value,
                   expanded: state.expanded,
-                  childrenOf: (path) => ref.watch(workdirEntriesProvider(path)),
+                  childrenOf: (path) => ref.watch(
+                    workdirEntriesProvider((path: path, hidden: true)),
+                  ),
                 ),
                 state.query,
               ),
@@ -107,16 +106,40 @@ class _FilterFieldState extends State<_FilterField> {
   late final _controller = TextEditingController(text: widget.value);
 
   @override
+  void initState() {
+    super.initState();
+    // The clear button comes and goes with the text, and the text changes under
+    // the keyboard rather than under this widget — so the field itself has to
+    // say when it has something in it.
+    _controller.addListener(_onTyped);
+  }
+
+  void _onTyped() => setState(() {});
+
+  void _clear() {
+    _controller.clear();
+    widget.onChanged('');
+  }
+
+  @override
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeListener(_onTyped)
+      ..dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final hasText = _controller.text.isNotEmpty;
     return SizedBox(
-      height: AppControl.heightSmall,
+      // [AppControl.heightField], the token that already exists for exactly
+      // this — a search field at the head of a list column. It was on
+      // [AppControl.heightSmall]'s 28, which is a chip in a toolbar row: a
+      // control sized to be *hit* rather than typed in, and it read as cramped
+      // against the tree it heads.
+      height: AppControl.heightField,
       child: TextField(
         controller: _controller,
         onChanged: widget.onChanged,
@@ -130,6 +153,62 @@ class _FilterFieldState extends State<_FilterField> {
             color: AppPalette.textFaint,
           ),
           prefixIconConstraints: const BoxConstraints(minWidth: 30),
+          // Shown whenever there is something to clear — including when the
+          // filter matches nothing, which is exactly when the user most needs
+          // the way out of it.
+          suffixIcon: hasText ? _ClearButton(onPressed: _clear) : null,
+          suffixIconConstraints: const BoxConstraints(minWidth: 28),
+        ),
+      ),
+    );
+  }
+}
+
+/// The × that empties the filter.
+///
+/// Its own widget so it owns its hover: inside a `TextField`'s decoration there
+/// is no parent tracking the pointer, and a glyph that stays faint under the
+/// cursor reads as decoration rather than as a button.
+class _ClearButton extends StatefulWidget {
+  const _ClearButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_ClearButton> createState() => _ClearButtonState();
+}
+
+class _ClearButtonState extends State<_ClearButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Tooltip(
+        message: 'Clear the filter',
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          child: InkWell(
+            onTap: widget.onPressed,
+            borderRadius: BorderRadius.circular(6),
+            hoverColor: AppSurface.hoverFill,
+            splashFactory: NoSplash.splashFactory,
+            onHover: (value) => setState(() => _hovered = value),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: Icon(
+                LucideIcons.x300,
+                size: 13,
+                color: _hovered
+                    ? AppPalette.textPrimary
+                    : AppPalette.textSecondary,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -170,7 +249,7 @@ class _Rows extends StatelessWidget {
       itemCount: rows.length,
       itemBuilder: (context, i) => switch (rows[i]) {
         WorkspaceEntryRow(:final entry, :final depth, :final isExpanded) =>
-          _EntryRow(
+          FileTreeEntryRow(
             entry: entry,
             depth: depth,
             isExpanded: isExpanded,
@@ -178,142 +257,11 @@ class _Rows extends StatelessWidget {
             onTap: () =>
                 entry.isDirectory ? onToggle(entry.path) : onOpen(entry),
           ),
-        WorkspaceStatusRow(:final depth, :final isError) => _StatusRow(
+        WorkspaceStatusRow(:final depth, :final isError) => FileTreeStatusRow(
           depth: depth,
           isError: isError,
         ),
       },
-    );
-  }
-}
-
-/// One file or folder. A folder shows a chevron that turns as it opens; a file
-/// shows as selected once it's the one on screen.
-class _EntryRow extends StatelessWidget {
-  const _EntryRow({
-    required this.entry,
-    required this.depth,
-    required this.isExpanded,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final WorkspaceEntry entry;
-  final int depth;
-  final bool isExpanded;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final isDir = entry.isDirectory;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(7),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(7),
-        hoverColor: AppSurface.hoverFill,
-        splashFactory: NoSplash.splashFactory,
-        child: Ink(
-          decoration: BoxDecoration(
-            color: isSelected ? AppSurface.selectedFill : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-          ),
-          padding: EdgeInsets.only(
-            left: 6 + depth * _indentStep,
-            right: 8,
-            top: 5,
-            bottom: 5,
-          ),
-          child: Row(
-            children: [
-              // The chevron slot: a folder fills it, a file leaves it blank so
-              // its icon still lines up under its sibling folders'.
-              SizedBox(
-                width: 14,
-                child: isDir
-                    ? AnimatedRotation(
-                        turns: isExpanded ? 0.25 : 0,
-                        duration: AppMotion.hover,
-                        curve: AppMotion.curve,
-                        child: Icon(
-                          LucideIcons.chevronRight300,
-                          size: 13,
-                          color: AppPalette.textFaint,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 2),
-              // Folders stay the ink of the panel and files take their type's
-              // colour. Colouring both would make the tree a mosaic with no
-              // structure in it — the point of the hue is to pick a file out of
-              // the folder it's in, which needs the folder to be the quiet one.
-              if (isDir)
-                Icon(
-                  isExpanded
-                      ? LucideIcons.folderOpen300
-                      : LucideIcons.folder300,
-                  size: 14,
-                  color: AppPalette.textSecondary,
-                )
-              else
-                FileTypeIcon(path: entry.name),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  entry.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    // Selection is said by the wash *and* by the label stepping
-                    // up, because at this size a wash alone is a shade the eye
-                    // reads as hover. The icon stays its own colour throughout:
-                    // a file that changed hue when you clicked it would look
-                    // like a different kind of file.
-                    fontWeight: isSelected ? AppFont.medium : FontWeight.w400,
-                    color: isSelected ? AppPalette.textPrimary : null,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The line inside an expanded folder while its contents arrive, or after they
-/// fail — indented to sit under that folder's children.
-class _StatusRow extends StatelessWidget {
-  const _StatusRow({required this.depth, required this.isError});
-
-  final int depth;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 6 + depth * _indentStep + 23,
-        right: 8,
-        top: 5,
-        bottom: 5,
-      ),
-      child: isError
-          ? Text(
-              'Couldn’t open this folder.',
-              style: TextStyle(fontSize: 12, color: AppPalette.textSecondary),
-            )
-          : const Align(
-              alignment: Alignment.centerLeft,
-              child: AppSpinner(size: SpinnerSize.small),
-            ),
     );
   }
 }

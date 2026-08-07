@@ -34,26 +34,43 @@ final workspaceEntriesProvider = FutureProvider<List<WorkspaceEntry>>(
   (ref) => readWorkspaceEntries(ref.watch(agentWorkspaceDirProvider)),
 );
 
-/// The top-level entries of any [dir] — the same listing as
+/// Which folder to list, and whether its dotfiles count.
+///
+/// The flag is part of the *key*, not a setting read inside: two callers asking
+/// about one folder want two different answers, and a single cached listing
+/// would hand whichever asked first to both.
+typedef WorkdirQuery = ({String path, bool hidden});
+
+/// The top-level entries of any folder — the same listing as
 /// [workspaceEntriesProvider] but for a folder chosen at call time, so the
 /// `@`-mention menu can list whichever project a chat is open in. A missing or
 /// unreadable folder lists nothing rather than throwing.
 final workdirEntriesProvider =
-    FutureProvider.family<List<WorkspaceEntry>, String>(
-      (ref, path) => readWorkspaceEntries(Directory(path)),
+    FutureProvider.family<List<WorkspaceEntry>, WorkdirQuery>(
+      (ref, query) => readWorkspaceEntries(
+        Directory(query.path),
+        includeHidden: query.hidden,
+      ),
     );
 
 /// List [dir]'s immediate children — folders first, then files, each group
-/// alphabetical (the order a file manager shows). OS dotfiles are skipped. Not
-/// recursive: a deep tree would make the caller slow for little gain.
-Future<List<WorkspaceEntry>> readWorkspaceEntries(Directory dir) async {
+/// alphabetical (the order a file manager shows). Not recursive: a deep tree
+/// would make the caller slow for little gain.
+///
+/// Dotfiles are left out unless [includeHidden] says otherwise. Two callers,
+/// two right answers: a picker offering the assistant something to read should
+/// not lead with `.DS_Store`, while a file browser that quietly dropped
+/// `.github`, `.env` and `.gitignore` would be lying about what is in the
+/// project.
+Future<List<WorkspaceEntry>> readWorkspaceEntries(
+  Directory dir, {
+  bool includeHidden = false,
+}) async {
   if (!dir.existsSync()) return const [];
   final entries = <WorkspaceEntry>[];
   await for (final entity in dir.list(followLinks: false)) {
     final name = entity.path.split('/').last;
-    // Skip the dotfiles the OS leaves behind (.DS_Store) — they aren't the
-    // user's files and would only be noise in the list.
-    if (name.startsWith('.')) continue;
+    if (!includeHidden && name.startsWith('.')) continue;
     final stat = await entity.stat();
     entries.add(
       WorkspaceEntry(
