@@ -75,4 +75,71 @@ void main() {
       returnsNormally,
     );
   });
+
+  group('remembering what it has already coloured', () {
+    setUp(CodeHighlight.forgetHighlights);
+
+    test('the same line under the same theme is answered from memory, not '
+        'parsed again — a diff redraws its lines on every scroll, and at '
+        '~170µs each a screenful is half a frame spent twice', () {
+      const line = 'final files = ref.watch(reviewProvider(folder));';
+
+      final first = CodeHighlight.spans(
+        code: line,
+        language: 'dart',
+        base: base,
+        brightness: Brightness.dark,
+      );
+      final second = CodeHighlight.spans(
+        code: line,
+        language: 'dart',
+        base: base,
+        brightness: Brightness.dark,
+      );
+
+      expect(first, isNotNull);
+      expect(identical(first, second), isTrue);
+    });
+
+    test('the other theme is a different answer, so a theme flip re-colours '
+        'instead of handing back the dark spans on a light page', () {
+      const line = 'final x = 1;';
+
+      final dark = CodeHighlight.spans(
+        code: line,
+        language: 'dart',
+        base: base,
+        brightness: Brightness.dark,
+      );
+      final light = CodeHighlight.spans(
+        code: line,
+        language: 'dart',
+        base: base,
+        brightness: Brightness.light,
+      );
+
+      expect(identical(dark, light), isFalse);
+    });
+
+    test('a bigger code size is a different answer too — the size is baked '
+        'into the spans, and the user can change it', () {
+      const line = 'final x = 1;';
+
+      final small = CodeHighlight.spans(
+        code: line,
+        language: 'dart',
+        base: const TextStyle(fontSize: 12),
+        brightness: Brightness.dark,
+      );
+      final large = CodeHighlight.spans(
+        code: line,
+        language: 'dart',
+        base: const TextStyle(fontSize: 18),
+        brightness: Brightness.dark,
+      );
+
+      expect(small!.style?.fontSize, 12);
+      expect(large!.style?.fontSize, 18);
+    });
+  });
 }

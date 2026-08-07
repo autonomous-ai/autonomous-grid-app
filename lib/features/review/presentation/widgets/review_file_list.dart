@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../logic/review_snapshot.dart';
+import '../../logic/review_file.dart';
 import '../../logic/review_tree.dart';
 import 'review_file_row.dart';
 import 'review_toolbar.dart' show ReviewBranchLine;
@@ -119,35 +120,45 @@ class _Groups extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // One flat list of rows and headings rather than nested scrollables: a
-    // change spanning forty folders must stay lazy, and a Column of Columns
-    // would build every row up front.
-    final rows = <Widget>[];
+    // Flattened to *what to draw* rather than to widgets: a change spanning
+    // forty folders must stay lazy, and building every row up front on each
+    // rebuild is the work the lazy list is here to avoid.
+    final entries = <_Entry>[];
     for (final group in groups) {
-      rows.add(_FolderHeading(label: group.label));
+      entries.add(_Entry.heading(group.label));
       for (final file in group.files) {
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            // Conflicted files are *not* filtered out here: the row itself
-            // shows why it can't be staged, which is the thing the user needs
-            // told. Dropping the control would leave them wondering where it
-            // went.
-            child: ReviewFileRow(
-              file: file,
-              folder: folder,
-              stageable: stageable,
-            ),
-          ),
-        );
+        entries.add(_Entry.file(file));
       }
     }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-      itemCount: rows.length,
-      itemBuilder: (context, i) => rows[i],
+      itemCount: entries.length,
+      itemBuilder: (context, i) {
+        final entry = entries[i];
+        final file = entry.file;
+        if (file == null) return _FolderHeading(label: entry.label!);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          // Conflicted files are *not* filtered out here: the row itself shows
+          // why it can't be staged, which is the thing the user needs told.
+          child: ReviewFileRow(
+            file: file,
+            folder: folder,
+            stageable: stageable,
+          ),
+        );
+      },
     );
   }
+}
+
+/// One entry in the flattened list: a folder's heading, or a file under it.
+class _Entry {
+  const _Entry.heading(this.label) : file = null;
+  const _Entry.file(this.file) : label = null;
+
+  final String? label;
+  final ReviewFile? file;
 }
 
 /// One folder's name over its files.

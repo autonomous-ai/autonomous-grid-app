@@ -112,10 +112,13 @@ class ReviewController extends AsyncNotifier<ReviewState> {
   @override
   Future<ReviewState> build() {
     // Changing the comparison re-reads the repository; that's the whole
-    // mechanism behind the scope menu. So does the assistant touching another
-    // file, which is what keeps the list live while it works.
-    ref.watch(reviewScopeProvider(_folder));
-    ref.watch(reviewLastTurnPathsProvider);
+    // mechanism behind the scope menu.
+    final scope = ref.watch(reviewScopeProvider(_folder));
+    // What the assistant touched is only *watched* by the scope built out of
+    // it. Watching it always meant six `git` calls every time an agent wrote a
+    // file — a storm of process spawns behind a list the user wasn't looking
+    // at. Every other scope refreshes when asked.
+    if (scope is LastTurnChanges) ref.watch(reviewLastTurnPathsProvider);
     return _read();
   }
 

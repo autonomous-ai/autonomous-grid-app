@@ -161,27 +161,41 @@ class _Patch extends StatelessWidget {
     if (patch.isEmpty) return const _Unreadable();
 
     final language = languageForPath(file.path);
-    // Flattened once here rather than nesting a list per hunk: the whole point
-    // of the cap is that one lazy list draws only the rows on screen.
-    final rows = <Widget>[];
+    // Flattened to *what to draw*, not to widgets: a generated file's diff runs
+    // to thousands of rows, and building every widget up front — on every
+    // rebuild, for rows nobody can see — is work the lazy list exists to avoid.
+    final rows = <_Line>[];
     for (final hunk in patch.hunks) {
-      rows.add(_HunkHeading(hunk: hunk));
+      rows.add(_Line.heading(hunk));
       for (final row in hunk.rows) {
-        rows.add(DiffRowTile(row: row, language: language));
+        rows.add(_Line.row(row));
       }
-    }
-    if (patch.truncatedBy > 0) {
-      rows.add(_Truncated(lines: patch.truncatedBy));
     }
 
     return CodeTextScope(
       child: ListView.builder(
         padding: const EdgeInsets.only(bottom: 16),
-        itemCount: rows.length,
-        itemBuilder: (context, i) => rows[i],
+        // One more for the "and N more lines" tail, when there is one.
+        itemCount: rows.length + (patch.truncatedBy > 0 ? 1 : 0),
+        itemBuilder: (context, i) {
+          if (i == rows.length) return _Truncated(lines: patch.truncatedBy);
+          final line = rows[i];
+          final hunk = line.hunk;
+          if (hunk != null) return _HunkHeading(hunk: hunk);
+          return DiffRowTile(row: line.row!, language: language);
+        },
       ),
     );
   }
+}
+
+/// One entry in the flattened diff: a hunk's heading, or a line of it.
+class _Line {
+  const _Line.heading(this.hunk) : row = null;
+  const _Line.row(this.row) : hunk = null;
+
+  final DiffHunk? hunk;
+  final DiffRow? row;
 }
 
 /// Where in the file the next run of lines is.
