@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
+import '../../logic/commit_action.dart';
 import '../../logic/review_controller.dart';
 import '../../logic/review_scope.dart';
 import '../../logic/review_snapshot.dart';
@@ -82,10 +83,10 @@ class _ReviewToolbarState extends ConsumerState<ReviewToolbar> {
                     ),
             ),
           ),
-          // Also when the scope can't stage: a branch with commits waiting
-          // still has something to push, and hiding the control there would
-          // send the user looking for another screen.
-          if (snapshot.scope.canStage || snapshot.ahead > 0) ...[
+          // Asked of the same function the button itself uses, so the gap in
+          // front of it can't outlive the control — and so a scope that can't
+          // stage still shows it when there are commits waiting to be pushed.
+          if (commitActionFor(snapshot) != CommitAction.none) ...[
             const SizedBox(width: 6),
             CommitButton(snapshot: snapshot, folder: widget.folder),
           ],

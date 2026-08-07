@@ -16,17 +16,19 @@ void main() {
       }
     });
 
-    test('a commit is labelled by its short hash, which is what people quote',
-        () {
-      const commit = CommitRef(
-        sha: '0123456789abcdef',
-        subject: 'Fix the thing',
-        author: 'Dev',
-        when: '2 hours ago',
-      );
+    test(
+      'a commit is labelled by its short hash, which is what people quote',
+      () {
+        const commit = CommitRef(
+          sha: '0123456789abcdef',
+          subject: 'Fix the thing',
+          author: 'Dev',
+          when: '2 hours ago',
+        );
 
-      expect(const CommittedChange(commit).label, '0123456');
-    });
+        expect(const CommittedChange(commit).label, '0123456');
+      },
+    );
 
     test("an empty list says nothing of *what* — a branch comparison names the "
         'branch, the staged list names the tick', () {

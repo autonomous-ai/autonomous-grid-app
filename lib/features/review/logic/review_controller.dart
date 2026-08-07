@@ -133,30 +133,39 @@ class ReviewController extends AsyncNotifier<ReviewState> {
   /// Include [file] in the next commit. Returns null when it worked, else a
   /// line to show; the list is re-read either way, so what's on screen matches
   /// what Git now holds.
-  Future<String?> stage(ReviewFile file) =>
-      _act((actions, root) => actions.stage(root, file), 'stage ${file.path}');
+  Future<String?> stage(ReviewFile file) => _act(
+    (actions, repo) => actions.stage(repo.root, file),
+    'stage ${file.path}',
+  );
 
   /// Leave [file] out of it again.
-  Future<String?> unstage(ReviewFile file) => _act((actions, root) {
-    final ready = state.value;
-    final hasCommits = ready is ReviewReady ? ready.snapshot.hasCommits : true;
-    return actions.unstage(root, file, hasCommits: hasCommits);
-  }, 'unstage ${file.path}');
+  Future<String?> unstage(ReviewFile file) => _act(
+    (actions, repo) =>
+        actions.unstage(repo.root, file, hasCommits: repo.hasCommits),
+    'unstage ${file.path}',
+  );
 
-  /// Include everything that changed.
-  Future<String?> stageAll() =>
-      _act((actions, root) => actions.stageAll(root), 'stage everything');
+  /// Include every file the list is showing.
+  Future<String?> stageAll() => _act(
+    (actions, repo) => actions.stageAll(repo.root, repo.files),
+    'stage everything',
+  );
 
-  /// Run one write against the repository root, then re-read.
+  /// Run one write against the repository as it was last read, then re-read.
+  ///
+  /// The snapshot rather than just its root: staging and unstaging both need
+  /// something else off it, and reaching back into `state` mid-action was how
+  /// one of them ended up reading the repository twice.
   Future<String?> _act(
-    Future<ReviewFailure?> Function(ReviewActions actions, String root) write,
+    Future<ReviewFailure?> Function(ReviewActions actions, ReviewSnapshot repo)
+    write,
     String what,
   ) async {
     final ready = state.value;
     if (ready is! ReviewReady) return null;
     final failure = await write(
       ref.read(reviewActionsProvider),
-      ready.snapshot.root,
+      ready.snapshot,
     );
     await refresh();
     return _explain(failure, what);
