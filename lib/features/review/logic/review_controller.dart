@@ -5,7 +5,7 @@ import '../../../infrastructure/cli/git_repo.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import 'git_failure.dart';
 import 'review_actions.dart';
-import 'review_base.dart';
+import 'review_scope.dart';
 import 'review_failure.dart';
 import 'review_file.dart';
 import 'review_loader.dart';
@@ -46,27 +46,48 @@ class ReviewReady extends ReviewState {
   final ReviewSnapshot snapshot;
 }
 
+/// The files the assistant touched in its most recent turn, absolute paths.
+///
+/// Pushed in by whoever hosts the surface rather than read from the agent
+/// feature directly: which assistant, in which conversation, is the chat's
+/// business, and Review's job is only to narrow a file list by it.
+final reviewLastTurnPathsProvider =
+    NotifierProvider<ReviewLastTurnPaths, Set<String>>(ReviewLastTurnPaths.new);
+
+class ReviewLastTurnPaths extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => const {};
+
+  /// What the assistant has just changed. A no-op when it is what we already
+  /// hold — the chat republishes on every rebuild, and each real change re-reads
+  /// the repository.
+  void show(Set<String> paths) {
+    if (paths.length == state.length && paths.every(state.contains)) return;
+    state = Set.unmodifiable(paths);
+  }
+}
+
 /// Which comparison the surface is showing for one folder.
 ///
 /// Per folder rather than one setting for the whole app: `origin/main` is a
-/// branch that exists in one repository and not the next, so a base carried
+/// branch that exists in one repository and not the next, so a scope carried
 /// across projects would resolve to nothing.
-final reviewBaseProvider =
-    NotifierProvider.family<ReviewBaseController, ReviewBase, String>(
-      ReviewBaseController.new,
+final reviewScopeProvider =
+    NotifierProvider.family<ReviewScopeController, ReviewScope, String>(
+      ReviewScopeController.new,
     );
 
-class ReviewBaseController extends Notifier<ReviewBase> {
-  ReviewBaseController(this.folder);
+class ReviewScopeController extends Notifier<ReviewScope> {
+  ReviewScopeController(this.folder);
 
   /// The folder this choice belongs to — the family argument, which is what
-  /// keeps one repository's base out of another's.
+  /// keeps one repository's scope out of another's.
   final String folder;
 
   @override
-  ReviewBase build() => const UncommittedChanges();
+  ReviewScope build() => const UncommittedChanges();
 
-  void show(ReviewBase base) => state = base;
+  void show(ReviewScope base) => state = base;
 }
 
 /// The changes in one folder, for whichever comparison [reviewBaseProvider]
@@ -91,8 +112,10 @@ class ReviewController extends AsyncNotifier<ReviewState> {
   @override
   Future<ReviewState> build() {
     // Changing the comparison re-reads the repository; that's the whole
-    // mechanism behind the base picker.
-    ref.watch(reviewBaseProvider(_folder));
+    // mechanism behind the scope menu. So does the assistant touching another
+    // file, which is what keeps the list live while it works.
+    ref.watch(reviewScopeProvider(_folder));
+    ref.watch(reviewLastTurnPathsProvider);
     return _read();
   }
 
@@ -146,10 +169,13 @@ class ReviewController extends AsyncNotifier<ReviewState> {
   }
 
   Future<ReviewState> _readRepo(String root) async {
-    final base = ref.read(reviewBaseProvider(_folder));
     final (snapshot, failure) = await ref
         .read(reviewLoaderProvider)
-        .load(root, base);
+        .load(
+          root,
+          ref.read(reviewScopeProvider(_folder)),
+          lastTurnPaths: ref.read(reviewLastTurnPathsProvider),
+        );
     if (snapshot != null) return ReviewReady(snapshot);
     final message = _explain(failure, 'read $root');
     return message == null ? const ReviewNeedsGit() : ReviewFailed(message);

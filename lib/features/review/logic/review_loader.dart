@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import '../../../infrastructure/cli/git_review.dart';
+import 'branch_ref.dart';
+import 'commit_log_parse.dart';
 import 'numstat_parse.dart';
 import 'porcelain_parse.dart';
 import 'review_argv.dart';
-import 'review_base.dart';
 import 'review_failure.dart';
 import 'review_file.dart';
+import 'review_scope.dart';
 import 'review_snapshot.dart';
 
 /// Reads a repository into a [ReviewSnapshot].
@@ -27,12 +29,17 @@ class ReviewLoader {
   /// reported as binary — honest about not knowing rather than wrong.
   static const int _maxUntrackedBytes = 4 * 1024 * 1024;
 
-  /// Read [root] as it stands, for the comparison [base] asks for. Exactly one
-  /// half of the pair is non-null.
+  /// Read [root] as it stands, for what [scope] asks for. Exactly one half of
+  /// the pair is non-null.
+  ///
+  /// [lastTurnPaths] are the files the assistant touched in its most recent
+  /// turn, absolute — only consulted by [LastTurnChanges], and passed in rather
+  /// than looked up so this stays a plain class the tests can drive.
   Future<(ReviewSnapshot?, ReviewFailure?)> load(
     String root,
-    ReviewBase base,
-  ) async {
+    ReviewScope scope, {
+    Set<String> lastTurnPaths = const {},
+  }) async {
     final branch = await _runner.run(root, kBranchArgv);
     if (branch == null) return (null, const ReviewNoGit());
     if (!branch.ok) return (null, ReviewGitRefused(branch.failure));
@@ -42,7 +49,7 @@ class ReviewLoader {
     final (head, upstream, files) = await (
       _runner.run(root, kHeadExistsArgv),
       _runner.run(root, kUpstreamArgv),
-      _files(root, base),
+      _files(root, scope, lastTurnPaths),
     ).wait;
 
     final (found, failure) = files;
@@ -56,7 +63,7 @@ class ReviewLoader {
       ReviewSnapshot(
         root: root,
         branch: name,
-        base: base,
+        scope: scope,
         files: found ?? const [],
         upstream: tracking,
         ahead: ahead,
@@ -68,14 +75,14 @@ class ReviewLoader {
     );
   }
 
-  /// The branches the base picker offers, remote ones first: a change is
-  /// usually measured against what everyone else has, not against a local copy.
-  /// Empty when Git can't answer.
-  Future<List<String>> baseRefs(String root) async {
+  /// The branches the scope menu offers, remote ones first: a change is usually
+  /// measured against what everyone else has, not against a local copy. Empty
+  /// when Git can't answer.
+  Future<List<BranchRef>> baseRefs(String root) async {
     final result = await _runner.run(root, kRefsArgv);
     if (result == null || !result.ok) return const [];
-    final remote = <String>[];
-    final local = <String>[];
+    final remote = <BranchRef>[];
+    final local = <BranchRef>[];
     for (final line in result.stdout.split('\n')) {
       final ref = line.trim();
       if (ref.startsWith(kRemoteRefPrefix)) {
@@ -83,52 +90,106 @@ class ReviewLoader {
         // `origin/HEAD` is a pointer at whichever branch the remote calls its
         // default, not a branch of its own — offering it would list one branch
         // twice under two names.
-        if (!short.endsWith('/HEAD')) remote.add(short);
+        if (!short.endsWith('/HEAD')) {
+          remote.add(BranchRef(name: short, remote: true));
+        }
         continue;
       }
       if (ref.startsWith(kLocalRefPrefix)) {
-        local.add(ref.substring(kLocalRefPrefix.length));
+        local.add(
+          BranchRef(name: ref.substring(kLocalRefPrefix.length), remote: false),
+        );
       }
     }
     return List.unmodifiable([...remote, ...local]);
   }
 
-  /// The file list for [base], with its line counts filled in.
+  /// The commits the Committed menu offers, newest first. Empty in a repository
+  /// with no commits yet, which is also what Git answers there.
+  Future<List<CommitRef>> recentCommits(String root) async {
+    final result = await _runner.run(root, recentCommitsArgv());
+    if (result == null || !result.ok) return const [];
+    return parseCommitLog(result.stdout);
+  }
+
+  /// The file list for [scope], with its line counts filled in.
   Future<(List<ReviewFile>?, ReviewFailure?)> _files(
     String root,
-    ReviewBase base,
-  ) => switch (base) {
-    UncommittedChanges() => _uncommitted(root),
-    BranchAgainst(:final ref) => _branch(root, ref),
+    ReviewScope scope,
+    Set<String> lastTurnPaths,
+  ) => switch (scope) {
+    // Everything measured against the working tree comes from `status`, which
+    // is the one command that knows which side of the index a change is on.
+    LastTurnChanges() ||
+    UncommittedChanges() ||
+    UnstagedChanges() ||
+    StagedChanges() => _working(root, scope, lastTurnPaths),
+    // A branch or a commit has no working tree and no index — only what the
+    // commits did, which `status` cannot answer.
+    BranchAgainst() || CommittedChange() => _recorded(root, scope),
   };
 
-  Future<(List<ReviewFile>?, ReviewFailure?)> _uncommitted(String root) async {
+  Future<(List<ReviewFile>?, ReviewFailure?)> _working(
+    String root,
+    ReviewScope scope,
+    Set<String> lastTurnPaths,
+  ) async {
     final status = await _runner.run(root, kStatusArgv);
     if (status == null) return (null, const ReviewNoGit());
     if (!status.ok) return (null, ReviewGitRefused(status.failure));
 
-    final files = parsePorcelainV2(status.stdout);
+    final files = _narrow(
+      parsePorcelainV2(status.stdout),
+      scope,
+      root,
+      lastTurnPaths,
+    );
     // `git diff HEAD` is an error in a repository whose first commit hasn't
     // been made. That isn't worth its own branch: the counts simply don't
     // arrive, and every file there is untracked or staged-new anyway, both of
     // which are counted from disk below.
-    final numstat = await _runner.run(
-      root,
-      numstatArgv(const UncommittedChanges()),
-    );
+    final numstat = await _runner.run(root, numstatArgv(scope));
     final counted = numstat != null && numstat.ok
         ? withCounts(files, parseNumstat(numstat.stdout))
         : files;
     return (await _withUntrackedCounts(root, counted), null);
   }
 
-  Future<(List<ReviewFile>?, ReviewFailure?)> _branch(
+  /// The files [scope] wants out of everything `status` reported.
+  ///
+  /// The narrowing is here rather than in the parser because it is the *scope's*
+  /// question, not the format's: the same `status` answers all four of these.
+  List<ReviewFile> _narrow(
+    List<ReviewFile> files,
+    ReviewScope scope,
     String root,
-    String ref,
+    Set<String> lastTurnPaths,
+  ) => switch (scope) {
+    UncommittedChanges() => files,
+    // An untracked file is in no index, so "staged" can't include it, and
+    // "unstaged" must — it is the most unstaged thing there is.
+    StagedChanges() => [
+      for (final file in files)
+        if (file.staged && file.kind != ReviewFileKind.untracked) file,
+    ],
+    UnstagedChanges() => [
+      for (final file in files)
+        if (file.unstaged || file.kind == ReviewFileKind.untracked) file,
+    ],
+    LastTurnChanges() => [
+      for (final file in files)
+        if (lastTurnPaths.contains('$root/${file.path}')) file,
+    ],
+    BranchAgainst() || CommittedChange() => files,
+  };
+
+  Future<(List<ReviewFile>?, ReviewFailure?)> _recorded(
+    String root,
+    ReviewScope scope,
   ) async {
     final (names, numstat) = await (
-      _runner.run(root, nameStatusArgv(ref)),
-      _runner.run(root, numstatArgv(BranchAgainst(ref))),
+      _runner.run(root, nameStatusArgv(scope)),
+      _runner.run(root, numstatArgv(scope)),
     ).wait;
     if (names == null) return (null, const ReviewNoGit());
     if (!names.ok) return (null, ReviewGitRefused(names.failure));

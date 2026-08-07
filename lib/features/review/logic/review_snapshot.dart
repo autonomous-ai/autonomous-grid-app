@@ -1,4 +1,4 @@
-import 'review_base.dart';
+import 'review_scope.dart';
 import 'review_file.dart';
 
 /// Everything the Review screen knows about a repository at one moment.
@@ -10,7 +10,7 @@ class ReviewSnapshot {
   const ReviewSnapshot({
     required this.root,
     required this.branch,
-    required this.base,
+    required this.scope,
     required this.files,
     this.upstream,
     this.ahead = 0,
@@ -27,7 +27,7 @@ class ReviewSnapshot {
   final String branch;
 
   /// Which comparison [files] answers.
-  final ReviewBase base;
+  final ReviewScope scope;
 
   final List<ReviewFile> files;
 

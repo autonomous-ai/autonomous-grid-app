@@ -5,7 +5,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/extension_tile_surface.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../agents/logic/agent_changes.dart';
 import '../../projects/logic/project.dart';
+import '../../review/logic/review_controller.dart';
 import '../../review/presentation/review_surface.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/composer_prefill.dart';
@@ -60,6 +62,19 @@ class _Review extends ConsumerWidget {
     final projectId = ref.watch(
       chatSessionsProvider.select((s) => s.openProjectId),
     );
+    // Keep Review's "Last turn" scope fed with what the assistant just changed
+    // in this conversation. Published from here rather than read over there:
+    // which agent, in which chat, is the chat's business — Review only narrows
+    // a file list by it.
+    final lastTurn = ref.watch(lastTurnAgentPathsProvider);
+    // After the frame, never during it: writing a provider while another is
+    // building is what Riverpod forbids outright.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) {
+        ref.read(reviewLastTurnPathsProvider.notifier).show(lastTurn);
+      }
+    });
+
     return ReviewSurface(
       project: ref.watch(projectByIdProvider(projectId)),
       onClose: () => ref.read(previewSurfaceProvider.notifier).showLauncher(),

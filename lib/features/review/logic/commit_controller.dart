@@ -106,6 +106,39 @@ class CommitController extends Notifier<CommitState> {
     state = CommitDone(pushed: true, branch: snapshot.branch);
   }
 
+  /// Send commits that are already made, without making another one.
+  ///
+  /// Its own action rather than a commit with an empty message: work committed
+  /// in a terminal, or by an earlier failed push, is waiting on this — and
+  /// there is nothing left to describe.
+  Future<void> pushOnly() async {
+    if (state is CommitRunning) return;
+    final snapshot = _snapshot();
+    if (snapshot == null) return;
+    if (snapshot.detached) {
+      state = const CommitFailed(
+        'This folder is not on a branch, so there is nothing to push to. '
+        'Switch to a branch first.',
+      );
+      return;
+    }
+
+    state = const CommitRunning('Pushing…');
+    final rejected = await ref
+        .read(reviewActionsProvider)
+        .push(
+          snapshot.root,
+          branch: snapshot.branch,
+          setUpstream: snapshot.upstream == null,
+        );
+    if (rejected != null) {
+      state = CommitFailed(_explain(rejected, 'push', snapshot));
+      return;
+    }
+    await ref.read(reviewProvider(folder).notifier).refresh();
+    state = CommitDone(pushed: true, branch: snapshot.branch);
+  }
+
   /// Put the panel back to a state that isn't reporting on a finished attempt —
   /// after the user has read the outcome, or when they start typing again.
   void reset() => state = const CommitIdle();

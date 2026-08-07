@@ -1,0 +1,366 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/labeled_field.dart';
+import '../../logic/review_controller.dart';
+import '../../logic/review_refs.dart';
+import '../../logic/review_scope.dart';
+import '../../logic/review_snapshot.dart';
+import 'menu_row.dart';
+
+/// The one control that says what the surface is showing — the button in the
+/// toolbar and the menu it opens.
+///
+/// One menu rather than a row of pills, because these are six answers to a
+/// single question ("which changes?") and only two of them need something else
+/// named. The two that do get a submenu instead of a second control in the
+/// toolbar.
+class ScopeMenu extends ConsumerWidget {
+  const ScopeMenu({super.key, required this.snapshot, required this.folder});
+
+  final ReviewSnapshot snapshot;
+
+  /// The folder being reviewed — what the choice is remembered against.
+  final String folder;
+
+  /// Wide enough for `origin/feature/some-longer-name` before it ellipsizes,
+  /// narrow enough to sit under a 420px panel without covering it.
+  static const double width = 268;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    return _Anchor(snapshot: snapshot, folder: folder);
+  }
+}
+
+class _Anchor extends ConsumerStatefulWidget {
+  const _Anchor({required this.snapshot, required this.folder});
+
+  final ReviewSnapshot snapshot;
+  final String folder;
+
+  @override
+  ConsumerState<_Anchor> createState() => _AnchorState();
+}
+
+class _AnchorState extends ConsumerState<_Anchor> {
+  final _menu = MenuController();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final scope = widget.snapshot.scope;
+    final lastTurn = ref.watch(reviewLastTurnPathsProvider);
+
+    return MenuAnchor(
+      controller: _menu,
+      alignmentOffset: const Offset(0, 6),
+      style: appMenuStyle(),
+      menuChildren: [
+        MenuRow(
+          label: 'Last turn',
+          detail: lastTurn.isEmpty
+              ? "The assistant hasn't changed a file here yet"
+              : '${lastTurn.length} file${lastTurn.length == 1 ? '' : 's'} '
+                    'the assistant just changed',
+          icon: LucideIcons.sparkles,
+          width: ScopeMenu.width,
+          enabled: lastTurn.isNotEmpty,
+          selected: scope is LastTurnChanges,
+          onTap: () => _pick(const LastTurnChanges()),
+        ),
+        MenuRow(
+          label: 'Uncommitted',
+          icon: LucideIcons.filePen,
+          width: ScopeMenu.width,
+          selected: scope is UncommittedChanges,
+          onTap: () => _pick(const UncommittedChanges()),
+        ),
+        MenuRow(
+          label: 'Unstaged',
+          icon: LucideIcons.circleDashed,
+          width: ScopeMenu.width,
+          selected: scope is UnstagedChanges,
+          onTap: () => _pick(const UnstagedChanges()),
+        ),
+        MenuRow(
+          label: 'Staged',
+          icon: LucideIcons.circleCheck,
+          width: ScopeMenu.width,
+          selected: scope is StagedChanges,
+          onTap: () => _pick(const StagedChanges()),
+        ),
+        const MenuDivider(),
+        _CommittedSubmenu(
+          root: widget.snapshot.root,
+          scope: scope,
+          onPick: _pick,
+        ),
+        _BranchSubmenu(
+          root: widget.snapshot.root,
+          current: widget.snapshot.branch,
+          upstream: widget.snapshot.upstream,
+          scope: scope,
+          onPick: _pick,
+        ),
+      ],
+      builder: (context, controller, _) =>
+          _ScopeButton(scope: scope, controller: controller),
+    );
+  }
+
+  void _pick(ReviewScope scope) {
+    _menu.close();
+    ref.read(reviewScopeProvider(widget.folder).notifier).show(scope);
+  }
+}
+
+/// The toolbar button: what is being shown, and a caret that says there is more.
+class _ScopeButton extends StatefulWidget {
+  const _ScopeButton({required this.scope, required this.controller});
+
+  final ReviewScope scope;
+  final MenuController controller;
+
+  @override
+  State<_ScopeButton> createState() => _ScopeButtonState();
+}
+
+class _ScopeButtonState extends State<_ScopeButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final open = widget.controller.isOpen;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () =>
+            open ? widget.controller.close() : widget.controller.open(),
+        child: AnimatedContainer(
+          duration: AppMotion.hover,
+          curve: AppMotion.curve,
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            // Quiet at rest: the toolbar's one bright thing is the commit
+            // button, and a filled pill here would fight it for the eye.
+            color: open || _hovered ? AppSurface.hoverFill : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppControl.radius),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  widget.scope.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: AppFont.medium,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              AnimatedRotation(
+                duration: AppMotion.hover,
+                curve: AppMotion.curve,
+                turns: open ? 0.5 : 0,
+                child: Icon(
+                  LucideIcons.chevronDown,
+                  size: 13,
+                  color: AppPalette.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Committed ›" — the recent commits, read when the row is opened.
+class _CommittedSubmenu extends ConsumerWidget {
+  const _CommittedSubmenu({
+    required this.root,
+    required this.scope,
+    required this.onPick,
+  });
+
+  final String root;
+  final ReviewScope scope;
+  final ValueChanged<ReviewScope> onPick;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final commits = ref.watch(reviewCommitsProvider(root)).value ?? const [];
+    // A local, so `is` promotes it — a field can't be promoted, and the row
+    // needs to compare the chosen commit with each one it draws.
+    final chosen = scope;
+    return _Submenu(
+      label: 'Committed',
+      icon: LucideIcons.gitCommitHorizontal,
+      selected: scope is CommittedChange,
+      children: [
+        if (commits.isEmpty)
+          const _EmptySubmenu('Nothing has been committed here yet.')
+        else
+          for (final commit in commits)
+            MenuRow(
+              label: commit.subject,
+              detail: '${commit.shortSha} · ${commit.author} · ${commit.when}',
+              icon: LucideIcons.gitCommitHorizontal,
+              width: ScopeMenu.width,
+              selected:
+                  chosen is CommittedChange && chosen.commit.sha == commit.sha,
+              onTap: () => onPick(CommittedChange(commit)),
+            ),
+      ],
+    );
+  }
+}
+
+/// "Branch ›" — every branch this change could be measured against.
+class _BranchSubmenu extends ConsumerWidget {
+  const _BranchSubmenu({
+    required this.root,
+    required this.current,
+    required this.upstream,
+    required this.scope,
+    required this.onPick,
+  });
+
+  final String root;
+
+  /// The branch the repository is on — never offered to compare with itself.
+  final String current;
+
+  final String? upstream;
+  final ReviewScope scope;
+  final ValueChanged<ReviewScope> onPick;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final refs = ref.watch(reviewBaseRefsProvider(root)).value ?? const [];
+    final offered = [
+      for (final ref in refs)
+        if (ref.name != current) ref,
+    ];
+    final chosen = scope;
+    return _Submenu(
+      label: 'Branch',
+      icon: LucideIcons.gitBranch,
+      selected: scope is BranchAgainst,
+      children: [
+        if (offered.isEmpty)
+          const _EmptySubmenu('This repository has no other branch yet.')
+        else
+          for (final branch in offered)
+            MenuRow(
+              label: branch.name,
+              detail: branch.name == upstream
+                  ? 'What this branch tracks'
+                  : branch.remote
+                  ? 'Shared with others'
+                  : 'On this computer',
+              icon: LucideIcons.gitBranch,
+              width: ScopeMenu.width,
+              selected: chosen is BranchAgainst && chosen.ref == branch.name,
+              onTap: () => onPick(BranchAgainst(branch.name)),
+            ),
+      ],
+    );
+  }
+}
+
+/// A row that opens more rows.
+///
+/// [SubmenuButton] rather than a second [MenuAnchor]: it is what places the
+/// panel beside its parent, keeps it open while the pointer travels there, and
+/// closes the whole stack on a pick. Its own chrome is stripped back to
+/// nothing so the row inside reads as the app's, not Material's.
+class _Submenu extends StatelessWidget {
+  const _Submenu({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.children,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: kMenuRowGutter),
+      child: SubmenuButton(
+        alignmentOffset: const Offset(6, -6),
+        menuStyle: appMenuStyle(),
+        style: ButtonStyle(
+          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+          minimumSize: const WidgetStatePropertyAll(Size.zero),
+          backgroundColor: WidgetStatePropertyAll(
+            selected ? AppSurface.accentWash : Colors.transparent,
+          ),
+          overlayColor: WidgetStatePropertyAll(AppSurface.hoverFill),
+          splashFactory: NoSplash.splashFactory,
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: kMenuRowRadius),
+          ),
+        ),
+        // The chevron is drawn by the row itself, in the app's own glyph.
+        trailingIcon: const SizedBox.shrink(),
+        menuChildren: children,
+        child: MenuRowBody(
+          label: label,
+          icon: icon,
+          width: ScopeMenu.width - kMenuRowGutter * 2,
+          selected: selected,
+          submenu: true,
+          tint: selected
+              ? AppPalette.accentOnSurface
+              : AppPalette.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// A submenu with nothing in it — says why, rather than opening onto a void.
+class _EmptySubmenu extends StatelessWidget {
+  const _EmptySubmenu(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return SizedBox(
+      width: ScopeMenu.width,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(kMenuRowGutter + 9, 6, 12, 10),
+        child: Text(
+          message,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.35,
+            color: AppPalette.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -37,6 +37,7 @@ List<ReviewFile> parsePorcelainV2(String stdout) {
             path: path,
             kind: _ordinaryKind(record[2], record[3]),
             staged: record[2] != '.',
+            unstaged: record[3] != '.',
           ),
         );
       case '2':
@@ -53,16 +54,29 @@ List<ReviewFile> parsePorcelainV2(String stdout) {
             kind: copied ? ReviewFileKind.added : ReviewFileKind.renamed,
             oldPath: copied ? null : origPath,
             staged: record[2] != '.',
+            unstaged: record[3] != '.',
           ),
         );
       case 'u':
         final path = _afterFields(record, 10);
         if (path == null) continue;
-        files.add(ReviewFile(path: path, kind: ReviewFileKind.conflicted));
+        files.add(
+          ReviewFile(
+            path: path,
+            kind: ReviewFileKind.conflicted,
+            unstaged: true,
+          ),
+        );
       case '?':
         final path = _afterFields(record, 1);
         if (path == null) continue;
-        files.add(ReviewFile(path: path, kind: ReviewFileKind.untracked));
+        files.add(
+          ReviewFile(
+            path: path,
+            kind: ReviewFileKind.untracked,
+            unstaged: true,
+          ),
+        );
       // '!' (ignored) and '#' (branch headers) are not changes to review.
     }
   }

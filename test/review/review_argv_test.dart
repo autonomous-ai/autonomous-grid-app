@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/review/logic/review_argv.dart';
-import 'package:grid_app/features/review/logic/review_base.dart';
+import 'package:grid_app/features/review/logic/review_scope.dart';
 import 'package:grid_app/features/review/logic/review_file.dart';
 
 /// A wrong flag fails exactly like a repository with nothing in it, so each of
@@ -15,9 +15,11 @@ void main() {
     test('a branch is measured from where it parted from the base (three '
         'dots) — two dots would count the base\'s own new commits as this '
         "branch's removals", () {
-      expect(numstatArgv(const BranchAgainst('origin/main')).last,
-          'origin/main...HEAD');
-      expect(nameStatusArgv('origin/main').last, 'origin/main...HEAD');
+      expect(
+        numstatArgv(const BranchAgainst('origin/main')).last,
+        'origin/main...HEAD',
+      );
+      expect(nameStatusArgv(const BranchAgainst('origin/main')).last, 'origin/main...HEAD');
     });
   });
 
@@ -25,7 +27,7 @@ void main() {
     test('diffs an untracked file against the null device, because Git has '
         'nothing to compare it with and would print nothing at all', () {
       final args = fileDiffArgv(
-        base: const UncommittedChanges(),
+        scope: const UncommittedChanges(),
         file: const ReviewFile(path: 'new.txt', kind: ReviewFileKind.untracked),
         nullDevice: '/dev/null',
       );
@@ -36,7 +38,7 @@ void main() {
     test('passes both paths of a rename, or Git reports a file that appeared '
         'from nowhere with every line added', () {
       final args = fileDiffArgv(
-        base: const UncommittedChanges(),
+        scope: const UncommittedChanges(),
         file: const ReviewFile(
           path: 'new/name.dart',
           oldPath: 'old/name.dart',
@@ -57,7 +59,7 @@ void main() {
 
     test('an ordinary file is diffed by its path alone', () {
       final args = fileDiffArgv(
-        base: const BranchAgainst('main'),
+        scope: const BranchAgainst('main'),
         file: const ReviewFile(path: 'a.dart', kind: ReviewFileKind.modified),
         nullDevice: '/dev/null',
       );

@@ -77,6 +77,21 @@ final visibleAgentChangesProvider = Provider<List<AgentChange>>((ref) {
   return ref.watch(agentChangesProvider)[chatId] ?? const [];
 });
 
+/// The files the agent touched in the **most recent turn** of the conversation
+/// on screen, absolute paths.
+///
+/// A conversation's changes pile up across every turn it has run; this is the
+/// last one alone — which is what "what did it just do?" means, and what the
+/// Review surface offers as its narrowest scope. Empty before the first turn
+/// makes an edit.
+final lastTurnAgentPathsProvider = Provider<Set<String>>((ref) {
+  final chatId = ref.watch(agentChangesScopeProvider);
+  if (chatId == null) return const {};
+  final changes = ref.watch(agentChangesProvider)[chatId] ?? const [];
+  final from = ref.watch(agentChangesProvider.notifier).turnStartIn(chatId);
+  return {for (final change in changes.skip(from)) change.path};
+});
+
 class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
   /// The conversation whose agent turn is running — claimed by the chat that
   /// dispatched it. Agent turns run one at a time, so everything recorded until
@@ -84,12 +99,28 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
   /// user has moved on.
   String? _owner;
 
+  /// How many changes each conversation already held when its current turn
+  /// started — the line between "this turn" and everything before it. Kept
+  /// beside the list rather than in it so nothing about undo changes shape.
+  final Map<String, int> _turnStart = {};
+
   @override
   Map<String, List<AgentChange>> build() => const {};
 
   /// The agent is about to work for [chatId]: file what it changes under that
-  /// conversation.
-  void attributeTo(String chatId) => _owner = chatId;
+  /// conversation, and mark where this turn's changes begin.
+  void attributeTo(String chatId) {
+    _owner = chatId;
+    _turnStart[chatId] = _changesIn(chatId).length;
+  }
+
+  /// Where [chatId]'s current turn started in its change list. Clamped, because
+  /// undoing a change shortens the list under the mark.
+  int turnStartIn(String chatId) {
+    final start = _turnStart[chatId] ?? 0;
+    final length = _changesIn(chatId).length;
+    return start > length ? length : start;
+  }
 
   /// Note that the agent changed [path] from [before] to [after]. The first
   /// [before] seen for a file wins, so undoing restores the pre-agent original
@@ -176,6 +207,7 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
   /// exists.
   void forget(String chatId) {
     if (_owner == chatId) _owner = null;
+    _turnStart.remove(chatId);
     _drop(chatId);
   }
 

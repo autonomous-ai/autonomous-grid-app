@@ -36,15 +36,18 @@ void main() {
     expect(line, contains('user.email'));
   });
 
-  test('a rejected push names what happened rather than "non-fast-forward"', () {
-    final line = friendlyGitFailure(
-      ' ! [rejected]        main -> main (non-fast-forward)',
-      branch: 'main',
-    );
+  test(
+    'a rejected push names what happened rather than "non-fast-forward"',
+    () {
+      final line = friendlyGitFailure(
+        ' ! [rejected]        main -> main (non-fast-forward)',
+        branch: 'main',
+      );
 
-    expect(line, contains('pushed to “main”'));
-    expect(line, contains('Pull'));
-  });
+      expect(line, contains('pushed to “main”'));
+      expect(line, contains('Pull'));
+    },
+  );
 
   test('an unreachable remote is told apart from a refused one: one is the '
       "network, the other is permission", () {

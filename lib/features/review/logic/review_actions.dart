@@ -2,7 +2,7 @@ import 'dart:io';
 
 import '../../../infrastructure/cli/git_review.dart';
 import 'review_argv.dart';
-import 'review_base.dart';
+import 'review_scope.dart';
 import 'review_failure.dart';
 import 'review_file.dart';
 
@@ -21,12 +21,12 @@ class ReviewActions {
   /// pane says so rather than drawing an empty file.
   Future<String?> patch({
     required String root,
-    required ReviewBase base,
+    required ReviewScope scope,
     required ReviewFile file,
   }) async {
     final result = await _runner.run(
       root,
-      fileDiffArgv(base: base, file: file, nullDevice: nullDevice),
+      fileDiffArgv(scope: scope, file: file, nullDevice: nullDevice),
     );
     if (result == null) return null;
     // `git diff --no-index` reports "these differ" as exit code 1, which is the

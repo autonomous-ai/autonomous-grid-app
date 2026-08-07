@@ -19,10 +19,21 @@ import 'review_mark.dart';
 /// Fetched when it opens and not before — that is what lets a branch with
 /// sixteen thousand changed lines appear instantly.
 class ReviewDiffView extends ConsumerWidget {
-  const ReviewDiffView({super.key, required this.file, required this.folder});
+  const ReviewDiffView({
+    super.key,
+    required this.file,
+    required this.folder,
+    required this.showBack,
+  });
 
   final ReviewFile file;
   final String folder;
+
+  /// Whether the header carries the way back to the file list.
+  ///
+  /// Only when the two take turns: beside a list that is on screen anyway, a
+  /// back arrow points at something the user can already see.
+  final bool showBack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,7 +45,7 @@ class ReviewDiffView extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FileHeader(file: file, folder: folder),
+        _FileHeader(file: file, folder: folder, showBack: showBack),
         const Divider(height: 1),
         Expanded(
           child: switch (patch) {
@@ -54,10 +65,15 @@ class ReviewDiffView extends ConsumerWidget {
 
 /// Which file this is, and the way back to the list.
 class _FileHeader extends ConsumerWidget {
-  const _FileHeader({required this.file, required this.folder});
+  const _FileHeader({
+    required this.file,
+    required this.folder,
+    required this.showBack,
+  });
 
   final ReviewFile file;
   final String folder;
+  final bool showBack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -66,14 +82,17 @@ class _FileHeader extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
       child: Row(
         children: [
-          AppIconButton(
-            icon: LucideIcons.arrowLeft,
-            size: 16,
-            tooltip: 'Back to the changed files',
-            onPressed: () =>
-                ref.read(reviewSelectionProvider(folder).notifier).close(),
-          ),
-          const SizedBox(width: 6),
+          if (showBack) ...[
+            AppIconButton(
+              icon: LucideIcons.arrowLeft,
+              size: 16,
+              tooltip: 'Back to the changed files',
+              onPressed: () =>
+                  ref.read(reviewSelectionProvider(folder).notifier).close(),
+            ),
+            const SizedBox(width: 6),
+          ] else
+            const SizedBox(width: 6),
           ReviewMark(kind: file.kind),
           const SizedBox(width: 8),
           Expanded(child: _FileName(file: file)),
