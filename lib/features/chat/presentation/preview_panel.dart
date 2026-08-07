@@ -1,25 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/extension_tile_surface.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../projects/logic/project.dart';
+import '../../review/presentation/review_surface.dart';
+import '../logic/chat_sessions_controller.dart';
+import '../logic/composer_prefill.dart';
+import '../logic/preview_panel.dart';
 
 /// The work surface beside the conversation: where a review, a terminal, a
-/// browser or a file listing will open, so looking at one doesn't push the chat
-/// off the screen.
+/// browser or a file listing opens, so looking at one doesn't push the chat off
+/// the screen.
 ///
-/// None of those four exist yet. What the panel shows today is the launcher for
-/// them — which is also what it will show once they do, because a panel with
-/// nothing open should offer what could be rather than sit empty. Every row
-/// answers with a "not built yet" toast; see [_todo] for why that beats a row
-/// that does nothing at all.
+/// Review is built; the other three aren't. What the panel shows with nothing
+/// open is the launcher for them — which is also what it shows once they exist,
+/// because a panel with nothing open should offer what could be rather than sit
+/// empty. The rows that name a surface that isn't built answer with a "not built
+/// yet" toast; see [_todo] for why that beats a row that does nothing at all.
 ///
 /// Deliberately headerless: the buttons that move the panels all live together
 /// in the top bar. A panel that carries its own copy of them puts a second set
 /// directly under the first, and the user has to work out whether the two rows
-/// mean different things.
-class PreviewPanel extends StatelessWidget {
+/// mean different things. A *surface* inside it may carry its own header — that
+/// belongs to the surface, not to the panel.
+class PreviewPanel extends ConsumerWidget {
   const PreviewPanel({super.key, this.onRaisedSurface = false});
 
   /// Set when the panel is floating over the chat rather than docked beside it.
@@ -30,8 +37,38 @@ class PreviewPanel extends StatelessWidget {
   final bool onRaisedSurface;
 
   @override
-  Widget build(BuildContext context) =>
-      _Launcher(onRaisedSurface: onRaisedSurface);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final surface = ref.watch(previewSurfaceProvider);
+    return switch (surface) {
+      PreviewSurface.launcher => _Launcher(onRaisedSurface: onRaisedSurface),
+      PreviewSurface.review => const _Review(),
+    };
+  }
+}
+
+/// What changed in the project the open chat belongs to.
+///
+/// The project comes from the conversation rather than a picker of its own:
+/// the panel sits beside that chat, and a Review showing a different folder
+/// from the one the assistant is working in would be the wrong changes on the
+/// same screen.
+class _Review extends ConsumerWidget {
+  const _Review();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final projectId = ref.watch(
+      chatSessionsProvider.select((s) => s.openProjectId),
+    );
+    return ReviewSurface(
+      project: ref.watch(projectByIdProvider(projectId)),
+      onClose: () => ref.read(previewSurfaceProvider.notifier).showLauncher(),
+      // Into the composer, not straight to the agent: which model answers is
+      // chosen down there, and so is whether to send it at all.
+      onAskAgent: (message) =>
+          ref.read(composerPrefillProvider.notifier).offer(message),
+    );
+  }
 }
 
 /// Says out loud that a control is a placeholder.
@@ -59,6 +96,7 @@ class _Launcher extends StatelessWidget {
       icon: LucideIcons.fileCheck,
       label: 'Review',
       shortcut: '⌃⇧G',
+      surface: PreviewSurface.review,
     ),
     _LauncherItem(icon: LucideIcons.squareTerminal, label: 'Terminal'),
     _LauncherItem(icon: LucideIcons.globe, label: 'Browser', shortcut: '⌘T'),
@@ -94,13 +132,22 @@ class _Launcher extends StatelessWidget {
 
 /// One thing the panel can open.
 class _LauncherItem {
-  const _LauncherItem({required this.icon, required this.label, this.shortcut});
+  const _LauncherItem({
+    required this.icon,
+    required this.label,
+    this.shortcut,
+    this.surface,
+  });
 
   final IconData icon;
   final String label;
 
   /// The key it will answer to. Null for the one that hasn't been given one.
   final String? shortcut;
+
+  /// What the row opens, or null while that surface is still to be built — the
+  /// one thing that tells a working row from a placeholder.
+  final PreviewSurface? surface;
 }
 
 /// A launcher row.
@@ -108,19 +155,22 @@ class _LauncherItem {
 /// Built on [ExtensionTileSurface] — the app's list-tile surface, already
 /// carrying the hover lift, the shadow that separates a row from the page, and
 /// the raised-surface variant this panel needs when it floats.
-class _LauncherRow extends StatelessWidget {
+class _LauncherRow extends ConsumerWidget {
   const _LauncherRow({required this.item, required this.onRaisedSurface});
 
   final _LauncherItem item;
   final bool onRaisedSurface;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     final shortcut = item.shortcut;
+    final surface = item.surface;
     return ExtensionTileSurface(
       onDialog: onRaisedSurface,
-      onTap: () => _todo(context, item.label),
+      onTap: surface == null
+          ? () => _todo(context, item.label)
+          : () => ref.read(previewSurfaceProvider.notifier).open(surface),
       childBuilder: (context, hovered) => Row(
         children: [
           // The glyph rests a step below the label and comes up to meet it

@@ -42,6 +42,7 @@ import '../../skills/presentation/save_skill_bar.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_approval.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/composer_prefill.dart';
 import '../logic/conversation.dart';
 import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
@@ -574,6 +575,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // see [playgroundModelsResolvingProvider] for why a later poll must not
     // count.
     final loadingModels = ref.watch(playgroundModelsResolvingProvider);
+
+    // A panel beside the chat — Review, today — asking for a message to be
+    // typed here. It goes in the box exactly as a starter would, so the user
+    // can edit it and pick who answers before anything is sent.
+    ref.listen(composerPrefillProvider, (_, text) {
+      if (text == null) return;
+      _useStarter(text);
+      ref.read(composerPrefillProvider.notifier).taken();
+    });
 
     _syncModelField(active, options, widget.network.networkId);
 
