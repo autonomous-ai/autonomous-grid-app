@@ -21,6 +21,7 @@ class PanelBody extends ConsumerWidget {
     required this.toolbar,
     required this.main,
     this.side,
+    this.sideOpen = true,
   });
 
   /// Region 2 — the row under the tabs. Every feature has one: a breadcrumb, a
@@ -33,6 +34,13 @@ class PanelBody extends ConsumerWidget {
   /// Region 4 — the column on the right, for the features that want one (a file
   /// tree, a list of changed files). Left out entirely by the rest.
   final Widget? side;
+
+  /// Whether that column is out. False slides it away and gives the work its
+  /// width; the column stays built behind the clip, which is what lets it come
+  /// back with its scroll position and its open folders intact.
+  ///
+  /// A feature that never hides its column leaves this alone.
+  final bool sideOpen;
 
   /// The toolbar's height, fixed across features so the seam under it doesn't
   /// move when you switch tabs.
@@ -66,32 +74,49 @@ class PanelBody extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Expanded(child: main),
-                        SizedBox(
-                          width: width,
-                          // The seam rides *inside* the column it sizes, the
-                          // way the chat pane's does, so the width resolved
-                          // here is the whole slot and the work beside it keeps
-                          // exactly the rest.
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // The column is on the right, so dragging the
-                              // seam left — a negative delta — widens it. Each
-                              // report resizes from the width just resolved,
-                              // which is what makes the clamps hold: a drag
-                              // past a limit stops there instead of banking
-                              // distance to be paid back on the way out.
-                              PanelSplitter(
-                                axis: Axis.vertical,
-                                onDrag: (dx) => ref
-                                    .read(panelSideWidthProvider.notifier)
-                                    .set(width - dx),
-                                onReset: ref
-                                    .read(panelSideWidthProvider.notifier)
-                                    .reset,
+                        // The slot narrows to nothing while the column stays
+                        // laid out at its full width, pinned to the slot's
+                        // leading edge — so the column travels out to the right
+                        // with the edge instead of being wiped away in place.
+                        // Same recipe as the preview panel's own slide, for the
+                        // same reason: animating the column's real width would
+                        // squash its rows flat on the way.
+                        ClipRect(
+                          child: AnimatedContainer(
+                            duration: AppMotion.swap,
+                            curve: AppMotion.curve,
+                            width: sideOpen ? width : 0,
+                            child: OverflowBox(
+                              alignment: Alignment.centerLeft,
+                              minWidth: width,
+                              maxWidth: width,
+                              // The seam rides *inside* the column it sizes, the
+                              // way the chat pane's does, so the width resolved
+                              // here is the whole slot and the work beside it
+                              // keeps exactly the rest.
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // The column is on the right, so dragging the
+                                  // seam left — a negative delta — widens it.
+                                  // Each report resizes from the width just
+                                  // resolved, which is what makes the clamps
+                                  // hold: a drag past a limit stops there
+                                  // instead of banking distance to be paid back
+                                  // on the way out.
+                                  PanelSplitter(
+                                    axis: Axis.vertical,
+                                    onDrag: (dx) => ref
+                                        .read(panelSideWidthProvider.notifier)
+                                        .set(width - dx),
+                                    onReset: ref
+                                        .read(panelSideWidthProvider.notifier)
+                                        .reset,
+                                  ),
+                                  Expanded(child: side),
+                                ],
                               ),
-                              Expanded(child: side),
-                            ],
+                            ),
                           ),
                         ),
                       ],
