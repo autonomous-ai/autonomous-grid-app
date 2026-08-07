@@ -48,9 +48,12 @@ class ReviewSurface extends ConsumerWidget {
     final folder = open.path;
     final state = ref.watch(reviewProvider(folder));
 
+    // The last answer stays on screen while a new one is fetched — changing the
+    // scope re-reads the repository, and a spinner in its place would take away
+    // the list you were reading to decide.
     return switch (state) {
-      AsyncData(:final value) => _Body(
-        state: value,
+      AsyncValue(value: final ReviewState ready) => _Body(
+        state: ready,
         folder: folder,
         onClose: onClose,
         onAskAgent: onAskAgent,

@@ -52,15 +52,20 @@ class ReviewDiffView extends ConsumerWidget {
         _FileHeader(file: file, folder: folder, showBack: showBack),
         const Divider(height: 1),
         Expanded(
+          // `AsyncValue`, not `AsyncData`: the patch is re-read every time the
+          // repository is, and ticking a file is one of those times. Matching
+          // only `AsyncData` sent the pane to a spinner and back on every tick —
+          // the diff blinked and the scroll position went with it. A reload
+          // carries the last answer, so the lines stay put until new ones
+          // arrive.
           child: switch (patch) {
-            AsyncData(value: final DiffFilePatch found) => _Patch(
+            AsyncValue(value: final DiffFilePatch found) => _Patch(
               patch: found,
               file: file,
               folder: folder,
             ),
-            AsyncData() => const _Unreadable(),
-            AsyncError() => const _Unreadable(),
-            _ => const Center(child: AppSpinner()),
+            AsyncLoading() => const Center(child: AppSpinner()),
+            _ => const _Unreadable(),
           },
         ),
       ],
