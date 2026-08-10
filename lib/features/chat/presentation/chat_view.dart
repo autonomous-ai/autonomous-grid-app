@@ -10,6 +10,7 @@ import '../../../core/composer_text.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/file_drag.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -797,194 +798,217 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // `ref.watch` may only be called during it.
     final workdir = ref.watch(activeChatWorkdirProvider);
     final approval = ref.watch(chatApprovalModeProvider);
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _dragging = true),
-      onDragExited: (_) => setState(() => _dragging = false),
-      onDragDone: (details) {
-        setState(() => _dragging = false);
-        unawaited(_addDroppedFiles(details.files));
-      },
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: noModel
-                    ? NoModelYet(
-                        canManage: widget.network.canManageProvider,
-                        onGoToEngines: () => ref
-                            .read(shellSectionProvider.notifier)
-                            .select(ShellSection.engines),
-                      )
-                    : isNewChat
-                    ? ChatStarters(
-                        greeting: _greeting(modality),
-                        // Name the project a new chat is being composed in, so
-                        // its empty state reads "…in <project>?" rather than the
-                        // same blank greeting a loose chat shows.
-                        projectName: ref
-                            .watch(projectByIdProvider(openProjectId))
-                            ?.name,
-                        onPick: _useStarter,
-                      )
-                    : _Transcript(
-                        scroll: _scroll,
-                        messages: messages,
-                        trailing: hasTrailing
-                            ? _TrailingBubble(agentMode: agentMode)
-                            : null,
-                        atBottom: _atBottom,
-                        onJumpToLatest: () => _scrollToBottom(animated: true),
+    // Two ways a file arrives by hand, one landing. [DropTarget] is the one the
+    // system hands us — a file dragged in from Finder, which Flutter never sees
+    // as a drag at all. [DragTarget] is a file dragged out of the Files panel,
+    // which never leaves the app and so is invisible to the system.
+    //
+    // The whole pane takes them, not just the composer: it is where the Finder
+    // drop already lands, and one window teaching two rules for one gesture is
+    // worse than a target that is bigger than it strictly needs to be.
+    return DragTarget<FileDrag>(
+      onAcceptWithDetails: (details) =>
+          // The same call the panel's "Add to chat" ends in, so a dropped file
+          // is de-duplicated against what is already attached and counted
+          // against the same budget.
+          unawaited(_attachRequested([details.data.path])),
+      builder: (_, candidates, _) => DropTarget(
+        onDragEntered: (_) => setState(() => _dragging = true),
+        onDragExited: (_) => setState(() => _dragging = false),
+        onDragDone: (details) {
+          setState(() => _dragging = false);
+          unawaited(_addDroppedFiles(details.files));
+        },
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: noModel
+                      ? NoModelYet(
+                          canManage: widget.network.canManageProvider,
+                          onGoToEngines: () => ref
+                              .read(shellSectionProvider.notifier)
+                              .select(ShellSection.engines),
+                        )
+                      : isNewChat
+                      ? ChatStarters(
+                          greeting: _greeting(modality),
+                          // Name the project a new chat is being composed in, so
+                          // its empty state reads "…in <project>?" rather than the
+                          // same blank greeting a loose chat shows.
+                          projectName: ref
+                              .watch(projectByIdProvider(openProjectId))
+                              ?.name,
+                          onPick: _useStarter,
+                        )
+                      : _Transcript(
+                          scroll: _scroll,
+                          messages: messages,
+                          trailing: hasTrailing
+                              ? _TrailingBubble(agentMode: agentMode)
+                              : null,
+                          atBottom: _atBottom,
+                          onJumpToLatest: () => _scrollToBottom(animated: true),
+                        ),
+                ),
+                if (permission != null)
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: _composerWidth,
+                        maxHeight: _permissionCardHeight(context),
                       ),
-              ),
-              if (permission != null)
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                        child: AgentPermissionCard(request: permission),
+                      ),
+                    ),
+                  ),
                 Center(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: _composerWidth,
-                      maxHeight: _permissionCardHeight(context),
-                    ),
+                    constraints: const BoxConstraints(maxWidth: _composerWidth),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                      child: AgentPermissionCard(request: permission),
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                      // Everything that answers to what is being typed lives under
+                      // here, so a keystroke rebuilds the composer and not the
+                      // transcript above it. The controller is the listenable —
+                      // it notifies on text *and* caret moves, which is what the
+                      // `@`-mention menu reads.
+                      child: ListenableBuilder(
+                        listenable: _message,
+                        builder: (context, _) {
+                          // "There is something to send", not "the chat is free":
+                          // a turn already in flight no longer blocks Send, it
+                          // queues what is typed behind it. The text check lives
+                          // here rather than in `_send` so the button and the Stop
+                          // beside it agree with what pressing them would do.
+                          final canSend =
+                              !noModel &&
+                              _message.text.trim().isNotEmpty &&
+                              (!needsImage || _attachments.isNotEmpty);
+                          // A leading "/" (with no space yet) opens the
+                          // saved-prompt menu; an "@" token opens the file menu.
+                          // Only one shows at a time, prompts first.
+                          final slash = sending
+                              ? null
+                              : slashQuery(_message.text);
+                          final cursor = _message.selection.baseOffset;
+                          final mention =
+                              (sending || slash != null || cursor < 0)
+                              ? null
+                              : activeMention(_message.text, cursor);
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const AgentHandoverBar(),
+                              const PlanApproveBar(),
+                              // Above the changes bar: "it stopped early" is the
+                              // more urgent of the two, and the files it did
+                              // change are still there to review afterwards.
+                              const OutOfStepsBar(),
+                              const AgentChangesBar(),
+                              const GoalBar(),
+                              const RunningServicesBar(),
+                              const SaveSkillBar(),
+                              const QueuedFollowUps(),
+                              if (slash != null)
+                                PromptSlashMenu(
+                                  query: slash,
+                                  onPick: _insertPrompt,
+                                )
+                              else if (mention != null)
+                                FileMentionMenu(
+                                  workdir: workdir,
+                                  query: mention.query,
+                                  onPick: _insertMention,
+                                ),
+                              ComposerSection(
+                                messageController: _message,
+                                attachments: _attachments,
+                                files: _files,
+                                snippets: _snippets,
+                                // Only on a turn a model can read them on: a
+                                // picture request goes to the grid, and a terminal
+                                // offered there would be a chip that promises
+                                // something the turn can't carry.
+                                terminals: modality == PlaygroundModality.text
+                                    ? ref.watch(attachedTerminalsProvider)
+                                    : const [],
+                                modality: modality,
+                                needsImage: needsImage,
+                                sending: sending,
+                                canSend: canSend,
+                                error: error,
+                                // Any turn the agent couldn't finish gets the way out
+                                // offered beside it. Keying this to one known message
+                                // meant the failure people actually hit (a 503 from
+                                // the grid) arrived with no button at all — and the
+                                // message is the wrong thing to hang it on anyway:
+                                // what makes the swap worth offering is that an agent
+                                // failed, not which sentence it failed with.
+                                errorAction: agentMode
+                                    ? const SwitchAgentButton()
+                                    : null,
+                                // Only the agent can touch this computer — a picture is made
+                                // by the grid, so there'd be nothing to approve.
+                                approvalPicker: agentMode
+                                    ? ApprovalPicker(
+                                        value: approval,
+                                        onChanged: ref
+                                            .read(chatSessionsProvider.notifier)
+                                            .setApproval,
+                                      )
+                                    : null,
+                                // Which agent answers, beside the model it runs — only
+                                // when an agent is the one answering this turn.
+                                agentPicker: agentMode
+                                    ? const AgentPicker()
+                                    : null,
+                                modelPicker: GridModelPicker(
+                                  currentModelId: _model.text,
+                                  onSelect: _pickGridModel,
+                                ),
+                                onAddAttachment: (a) =>
+                                    setState(() => _attachments.add(a)),
+                                onAttachFile: () => unawaited(_attachFile()),
+                                onPaste: () => unawaited(_paste()),
+                                onRemoveAttachment: (i) =>
+                                    setState(() => _attachments.removeAt(i)),
+                                onRemoveFile: (i) =>
+                                    setState(() => _files.removeAt(i)),
+                                onRemoveSnippets: () =>
+                                    setState(_snippets.clear),
+                                onRemoveTerminal: (tabId) => ref
+                                    .read(dismissedTerminalsProvider.notifier)
+                                    .dismiss(tabId),
+                                onOpenPrompts: _promptsButton,
+                                promptsSaveInput: _message.text
+                                    .trim()
+                                    .isNotEmpty,
+                                onSend: () => _send(modality),
+                                onStop: () => ref
+                                    .read(chatSessionsProvider.notifier)
+                                    .stop(),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _composerWidth),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                    // Everything that answers to what is being typed lives under
-                    // here, so a keystroke rebuilds the composer and not the
-                    // transcript above it. The controller is the listenable —
-                    // it notifies on text *and* caret moves, which is what the
-                    // `@`-mention menu reads.
-                    child: ListenableBuilder(
-                      listenable: _message,
-                      builder: (context, _) {
-                        // "There is something to send", not "the chat is free":
-                        // a turn already in flight no longer blocks Send, it
-                        // queues what is typed behind it. The text check lives
-                        // here rather than in `_send` so the button and the Stop
-                        // beside it agree with what pressing them would do.
-                        final canSend =
-                            !noModel &&
-                            _message.text.trim().isNotEmpty &&
-                            (!needsImage || _attachments.isNotEmpty);
-                        // A leading "/" (with no space yet) opens the
-                        // saved-prompt menu; an "@" token opens the file menu.
-                        // Only one shows at a time, prompts first.
-                        final slash = sending
-                            ? null
-                            : slashQuery(_message.text);
-                        final cursor = _message.selection.baseOffset;
-                        final mention = (sending || slash != null || cursor < 0)
-                            ? null
-                            : activeMention(_message.text, cursor);
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const AgentHandoverBar(),
-                            const PlanApproveBar(),
-                            // Above the changes bar: "it stopped early" is the
-                            // more urgent of the two, and the files it did
-                            // change are still there to review afterwards.
-                            const OutOfStepsBar(),
-                            const AgentChangesBar(),
-                            const GoalBar(),
-                            const RunningServicesBar(),
-                            const SaveSkillBar(),
-                            const QueuedFollowUps(),
-                            if (slash != null)
-                              PromptSlashMenu(
-                                query: slash,
-                                onPick: _insertPrompt,
-                              )
-                            else if (mention != null)
-                              FileMentionMenu(
-                                workdir: workdir,
-                                query: mention.query,
-                                onPick: _insertMention,
-                              ),
-                            ComposerSection(
-                              messageController: _message,
-                              attachments: _attachments,
-                              files: _files,
-                              snippets: _snippets,
-                              // Only on a turn a model can read them on: a
-                              // picture request goes to the grid, and a terminal
-                              // offered there would be a chip that promises
-                              // something the turn can't carry.
-                              terminals: modality == PlaygroundModality.text
-                                  ? ref.watch(attachedTerminalsProvider)
-                                  : const [],
-                              modality: modality,
-                              needsImage: needsImage,
-                              sending: sending,
-                              canSend: canSend,
-                              error: error,
-                              // Any turn the agent couldn't finish gets the way out
-                              // offered beside it. Keying this to one known message
-                              // meant the failure people actually hit (a 503 from
-                              // the grid) arrived with no button at all — and the
-                              // message is the wrong thing to hang it on anyway:
-                              // what makes the swap worth offering is that an agent
-                              // failed, not which sentence it failed with.
-                              errorAction: agentMode
-                                  ? const SwitchAgentButton()
-                                  : null,
-                              // Only the agent can touch this computer — a picture is made
-                              // by the grid, so there'd be nothing to approve.
-                              approvalPicker: agentMode
-                                  ? ApprovalPicker(
-                                      value: approval,
-                                      onChanged: ref
-                                          .read(chatSessionsProvider.notifier)
-                                          .setApproval,
-                                    )
-                                  : null,
-                              // Which agent answers, beside the model it runs — only
-                              // when an agent is the one answering this turn.
-                              agentPicker: agentMode
-                                  ? const AgentPicker()
-                                  : null,
-                              modelPicker: GridModelPicker(
-                                currentModelId: _model.text,
-                                onSelect: _pickGridModel,
-                              ),
-                              onAddAttachment: (a) =>
-                                  setState(() => _attachments.add(a)),
-                              onAttachFile: () => unawaited(_attachFile()),
-                              onPaste: () => unawaited(_paste()),
-                              onRemoveAttachment: (i) =>
-                                  setState(() => _attachments.removeAt(i)),
-                              onRemoveFile: (i) =>
-                                  setState(() => _files.removeAt(i)),
-                              onRemoveSnippets: () => setState(_snippets.clear),
-                              onRemoveTerminal: (tabId) => ref
-                                  .read(dismissedTerminalsProvider.notifier)
-                                  .dismiss(tabId),
-                              onOpenPrompts: _promptsButton,
-                              promptsSaveInput: _message.text.trim().isNotEmpty,
-                              onSend: () => _send(modality),
-                              onStop: () => ref
-                                  .read(chatSessionsProvider.notifier)
-                                  .stop(),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (_dragging) const _DropHint(),
-        ],
+              ],
+            ),
+            // One hint for both, so the answer to "will this land?" looks the
+            // same whichever drag the file came in on. `candidates` is the
+            // in-app one: the target rebuilds as a file enters and leaves it, so
+            // it needs no state of its own the way the system drop does.
+            if (_dragging || candidates.isNotEmpty) const _DropHint(),
+          ],
+        ),
       ),
     );
   }

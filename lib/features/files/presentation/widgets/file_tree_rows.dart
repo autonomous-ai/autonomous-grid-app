@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../../shared/file_drag.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/labeled_field.dart';
@@ -131,14 +132,89 @@ class FileTreeEntryRow extends StatelessWidget {
       ),
     );
 
+    // A folder is neither draggable nor right-clickable, and for one reason: it
+    // has nothing to attach. Both gestures end in the same "put this file on the
+    // message", so what is true for the menu is true for the drag.
+    if (isDir) return row;
+
+    // Dragging a file onto the conversation attaches it — the same landing as
+    // the menu's "Add to chat", reached by hand instead of by menu.
+    //
+    // A plain [Draggable], not a long-press one: the app never lets a mouse drag
+    // scroll a list (Flutter's desktop default, and nothing here overrides it),
+    // so there is no gesture to lose the race to, and a file that needs holding
+    // down first would be the only thing on this desktop that does.
+    final draggable = Draggable<FileDrag>(
+      data: FileDrag(entry.path),
+      // The chip rides under the pointer rather than where the row was grabbed:
+      // it is a different size and shape from the row, so keeping the original
+      // grab offset would leave it floating off at an angle to the cursor.
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: _DragChip(name: entry.name),
+      // The row stays where it is, dimmed. Removing it would collapse the tree
+      // under the pointer mid-drag, which reads as having dropped something.
+      childWhenDragging: Opacity(opacity: 0.4, child: row),
+      child: row,
+    );
+
     final onContextMenu = this.onContextMenu;
-    // A folder has neither of the two things that menu offers: nothing to copy
-    // that the breadcrumb doesn't already show, and nothing to attach.
-    if (isDir || onContextMenu == null) return row;
+    if (onContextMenu == null) return draggable;
     return GestureDetector(
       onSecondaryTapDown: (details) =>
           onContextMenu(entry, details.globalPosition),
-      child: row,
+      child: draggable,
+    );
+  }
+}
+
+/// What a file looks like while it is being carried: its own icon and name on a
+/// small lifted surface.
+///
+/// Drawn in the app's overlay rather than in the tree, so it takes none of the
+/// tree's context with it — hence the explicit [Material] and text style, and
+/// the width cap, since a generated filename can run to a couple of hundred
+/// characters and a chip that wide would cover the thing being aimed at.
+class _DragChip extends StatelessWidget {
+  const _DragChip({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Material(
+      color: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 260),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppGlass.surfaceFill,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: AppGlass.cardShadow,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FileTypeIcon(path: name),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: AppPalette.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
