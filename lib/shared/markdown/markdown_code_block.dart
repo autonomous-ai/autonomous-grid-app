@@ -41,13 +41,37 @@ class MarkdownCodeBlock extends StatefulWidget {
   State<MarkdownCodeBlock> createState() => _MarkdownCodeBlockState();
 }
 
+/// Past this many lines a block is folded down to [_previewLines].
+///
+/// Measured against what the transcript is for: a dozen lines is something you
+/// read, and a hundred is something you scroll past to find the sentence after
+/// it. A quoted selection out of the Files panel or a terminal is routinely a
+/// whole file, and it arrived in the conversation as a *reference*, not as the
+/// thing the user wanted to read again.
+///
+/// The gap between the two numbers is deliberate: folding a 20-line block to 12
+/// would hide eight lines and spend a row of chrome saying so.
+const int _collapseOver = 18;
+const int _previewLines = 12;
+
 class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
+  bool _expanded = false;
+
   @override
   Widget build(BuildContext context) {
     // Reads AppPalette/AppCard tokens from inside a lazy transcript — watch here
     // or a theme flip leaves the block on the palette it was first built with.
     AppTheme.watch(context);
     final label = widget.language.trim();
+    final code = widget.code.trimRight();
+
+    // Only a block that has settled. A fence still streaming grows by the line,
+    // and the lines worth watching are the newest ones — folding it would hide
+    // exactly what the user is waiting for, and re-measure the whole string on
+    // every chunk to do it.
+    final lines = widget.closed ? '\n'.allMatches(code).length + 1 : 0;
+    final foldable = lines > _collapseOver;
+    final folded = foldable && !_expanded;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -103,9 +127,14 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
           CodeTextScope(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              // Less room under the code when a bar follows it: the bar brings
+              // its own, and two paddings stacked read as a gap in the block.
+              padding: EdgeInsets.fromLTRB(14, 12, 14, foldable ? 6 : 14),
               child: _CodeText(
-                code: widget.code.trimRight(),
+                // Whole lines only — a fold that cut mid-line would need a
+                // gradient to explain itself, and would still leave the reader
+                // guessing whether the line ended there.
+                code: folded ? _firstLines(code, _previewLines) : code,
                 language: label,
                 // Colour only settles once the fence closes. Highlighting a
                 // fragment costs a full re-tokenise per streamed chunk, and the
@@ -116,7 +145,99 @@ class _MarkdownCodeBlockState extends State<MarkdownCodeBlock> {
               ),
             ),
           ),
+          if (foldable) ...[
+            // The same hairline as under the header, so the block reads as
+            // chrome / code / chrome rather than leaving the bar looking like a
+            // last line of output.
+            Container(height: 1, color: AppPalette.divider),
+            _FoldBar(
+              folded: folded,
+              lines: lines,
+              onPressed: () => setState(() => _expanded = !_expanded),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// The first [count] lines of [code], without the trailing newline.
+String _firstLines(String code, int count) {
+  var cut = -1;
+  for (var i = 0; i < count; i++) {
+    final next = code.indexOf('\n', cut + 1);
+    if (next < 0) return code;
+    cut = next;
+  }
+  return code.substring(0, cut);
+}
+
+/// The row under a folded block: how much is being held back, and the way to
+/// see it.
+///
+/// Full width and part of the block rather than a button floating over the last
+/// line: it is the block's own footer, and something laid over the code would
+/// cover the line the reader is trying to finish.
+class _FoldBar extends StatefulWidget {
+  const _FoldBar({
+    required this.folded,
+    required this.lines,
+    required this.onPressed,
+  });
+
+  final bool folded;
+  final int lines;
+  final VoidCallback onPressed;
+
+  @override
+  State<_FoldBar> createState() => _FoldBarState();
+}
+
+class _FoldBarState extends State<_FoldBar> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    // Says the size of what is hidden, not "Show more": a reader deciding
+    // whether to open a block wants to know whether it is eight more lines or
+    // eight hundred.
+    final label = widget.folded
+        ? 'Show all ${widget.lines} lines'
+        : 'Show less';
+    final ink = _hovered ? AppPalette.textPrimary : AppPalette.textSecondary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: widget.onPressed,
+        onHover: (value) => setState(() => _hovered = value),
+        hoverColor: AppSurface.hoverFill,
+        splashFactory: NoSplash.splashFactory,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 7, 14, 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                widget.folded
+                    ? LucideIcons.chevronDown300
+                    : LucideIcons.chevronUp300,
+                size: 14,
+                color: ink,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: AppFont.medium,
+                  color: ink,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
