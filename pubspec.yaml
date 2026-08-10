@@ -66,6 +66,7 @@ flutter:
     - assets/agents/hermes_icon.webp
     - assets/agents/codex_icon.png
     - assets/agents/claude_icon.png
+    - assets/agents/pi_icon.png
     # Connectors the app signs into without the gateway. Data rather than Dart
     # so the list reads as the wire shape it mirrors — and so adding one is an
     # edit to a file, not to a compiled const.

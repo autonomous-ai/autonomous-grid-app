@@ -52,6 +52,11 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   //    coding CLI answering a single turn behind the relay — and is blocked with
   //    it rather than waiting to be measured on somebody's 8am task.
   AgentTool.hermes => !_namesKind(model, kCliSeatKinds),
+  // Pi answers a grid model over OpenAI chat-completions, so any plain grid
+  // model or `auto` is open to it. A CLI seat is the vendor's own coding CLI
+  // answering behind the relay — Pi can't drive Claude Code, Codex or a Codex
+  // CLI seat, so every seat is blocked, exactly as for Hermes.
+  AgentTool.pi => !_namesKind(model, kCliSeatKinds),
 };
 
 /// The mark on a model row the agent in force can't use — short, because it

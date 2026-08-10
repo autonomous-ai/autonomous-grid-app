@@ -101,9 +101,70 @@ ReleaseBuild? codexBuildFor(String target) {
   );
 }
 
+// ─── Node (Pi's runtime) ──────────────────────────────────────────────────────
+// Pi ships only as an npm package, so — unlike Codex's single binary — the app
+// fetches this pinned Node.js toolchain into `~/.grid/node` and lets its own npm
+// install Pi with `--prefix ~/.grid`. Same self-contained story as Hermes' uv:
+// a private runtime under `~/.grid`, hash-verified, no system Node, no admin.
+
+const String kNodeRelease = 'v22.19.0';
+
+/// The npm package the app installs Pi from, and the version it pins — mirroring
+/// the CLI's own installer. `pi --list-models` / `pi --mode json` come from here.
+const String kPiPackage = '@earendil-works/pi-coding-agent';
+const String kPiRelease = '0.84.1';
+
+/// The Node platform slug (`<os>-<arch>`) per `<arch>-<os>` target — Node's dist
+/// archives are named `node-<release>-<slug>.<ext>`. Node uses the gnu Linux
+/// build (not musl), so the app resolves its target with `linuxMusl: false`.
+const Map<String, ({String slug, String sha256})> _nodeBuilds = {
+  'aarch64-apple-darwin': (
+    slug: 'darwin-arm64',
+    sha256: 'c59006db713c770d6ec63ae16cb3edc11f49ee093b5c415d667bb4f436c6526d',
+  ),
+  'x86_64-apple-darwin': (
+    slug: 'darwin-x64',
+    sha256: '3cfed4795cd97277559763c5f56e711852d2cc2420bda1cea30c8aa9ac77ce0c',
+  ),
+  'aarch64-unknown-linux-gnu': (
+    slug: 'linux-arm64',
+    sha256: 'd32817b937219b8f131a28546035183d79e7fd17a86e38ccb8772901a7cd9009',
+  ),
+  'x86_64-unknown-linux-gnu': (
+    slug: 'linux-x64',
+    sha256: 'd36e56998220085782c0ca965f9d51b7726335aed2f5fc7321c6c0ad233aa96d',
+  ),
+  'aarch64-pc-windows-msvc': (
+    slug: 'win-arm64',
+    sha256: 'e4a7336010d58ff35b53d9dd5869095c56089c70913cf22508cf8183593e56b2',
+  ),
+  'x86_64-pc-windows-msvc': (
+    slug: 'win-x64',
+    sha256: 'ea3fad0e67a991d8477d8c01344b56e69c676ccb733f065b22436994b1253f86',
+  ),
+};
+
+/// The pinned Node build for [target], or null when there's no build for it —
+/// Node ships Windows as a `.zip`, every other platform as a `.tar.gz`.
+ReleaseBuild? nodeBuildFor(String target) {
+  final build = _nodeBuilds[target];
+  if (build == null) return null;
+  final ext = build.slug.startsWith('win') ? 'zip' : 'tar.gz';
+  return (
+    url:
+        'https://nodejs.org/dist/$kNodeRelease/'
+        'node-$kNodeRelease-${build.slug}.$ext',
+    sha256: build.sha256,
+  );
+}
+
 /// Every uv target this build knows — the coverage test asserts the platform
 /// matrix stays complete.
 Iterable<String> get uvTargets => _uvSha256.keys;
 
 /// Every Codex target this build knows.
 Iterable<String> get codexTargets => _codexBuilds.keys;
+
+/// Every Node target this build knows — the coverage test asserts Pi can be
+/// installed on the same platform matrix as the other agents.
+Iterable<String> get nodeTargets => _nodeBuilds.keys;
