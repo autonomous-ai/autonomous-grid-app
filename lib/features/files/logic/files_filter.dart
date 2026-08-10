@@ -3,7 +3,7 @@
 /// List logic only — no filesystem, no widgets.
 library;
 
-import '../../chat/logic/workspace_browser.dart';
+import '../../../shared/workspace/workspace_tree.dart';
 
 /// Keep the rows whose name matches [query], plus every folder above one.
 ///

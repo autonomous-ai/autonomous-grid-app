@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/logging/app_log.dart';
+import '../../../shared/file_changes.dart';
 
 /// One file the agent changed in a conversation — enough to show the change and
 /// put it back the way it was.
@@ -156,13 +157,20 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
           else
             change,
       ]);
-      return;
+    } else {
+      _put(chatId, [
+        ...current,
+        AgentChange(path: resolved, before: before, after: after),
+      ]);
     }
-    _put(chatId, [
-      ...current,
-      AgentChange(path: resolved, before: before, after: after),
-    ]);
+    _announce(resolved);
   }
+
+  /// Tell the rest of the app that a file on disk has moved on, so anything
+  /// showing it re-reads rather than going on drawing the version from before
+  /// the edit.
+  void _announce(String path) =>
+      ref.read(fileChangesProvider.notifier).touch([path]);
 
   /// Put [change] back — restore its original contents, or delete it when the
   /// agent had created it — and drop it from the conversation on screen, the
@@ -241,6 +249,10 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
       } else {
         await file.writeAsString(change.before!);
       }
+      // Undo writes to disk as surely as the agent did, so it announces itself
+      // the same way — otherwise the panel keeps showing the edit that was just
+      // taken back.
+      _announce(change.path);
       return null;
     } on Object catch (error) {
       return "Couldn't undo ${change.name}: $error";

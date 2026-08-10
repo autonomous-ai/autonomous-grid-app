@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/projects/logic/agent_workspace.dart';
+import 'package:grid_app/shared/workspace/workspace_entries.dart';
 
 void main() {
   late Directory workspace;

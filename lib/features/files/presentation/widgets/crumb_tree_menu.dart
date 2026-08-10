@@ -5,8 +5,8 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/anchored_menu_position.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/labeled_field.dart';
-import '../../../chat/logic/workspace_browser.dart';
-import '../../../projects/logic/agent_workspace.dart';
+import '../../../../shared/workspace/workspace_entries.dart';
+import '../../../../shared/workspace/workspace_tree.dart';
 import 'file_tree_rows.dart';
 
 const double _menuWidth = 268;

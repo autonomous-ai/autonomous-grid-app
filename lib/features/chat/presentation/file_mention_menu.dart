@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
-import '../../projects/logic/agent_workspace.dart';
+import '../../../shared/workspace/workspace_entries.dart';
 
 /// The longest shortlist the `@` menu shows before it asks the user to keep
 /// typing. Comfortably more than the 280px box can hold at once, so scrolling

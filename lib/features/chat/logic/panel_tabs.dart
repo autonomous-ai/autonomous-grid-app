@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../files/logic/files_browser.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import 'bottom_panel.dart';
 import 'preview_panel.dart';
@@ -159,9 +160,13 @@ class PanelTabs extends Notifier<PanelTabsState> {
     // Whatever the tab was holding goes with it. Done here rather than by
     // something watching the tab list, because a watcher only runs while
     // somebody is looking at it — and this has to happen even if the user
-    // closes a tab on their way out of Chat. A feature with nothing to release
-    // (Review, Files) needs no line here; a shell does.
+    // closes a tab on their way out of Chat.
+    //
+    // A shell has to be killed. Files only has state — but that state is keyed
+    // by this id and nothing else will ever ask for it again, so left alone it
+    // is a set of open folder paths per Files tab the session ever had.
     ref.read(terminalSessionsProvider.notifier).endSession(id);
+    ref.invalidate(filesBrowserProvider(id));
 
     final rest = [...state.tabs]..removeAt(index);
     if (rest.isEmpty) {

@@ -9,10 +9,11 @@ import '../../../shared/widgets/app_icon_button.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/panel_body.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../projects/logic/agent_workspace.dart';
+import '../../../shared/workspace/workspace_entries.dart';
 import '../logic/file_preview.dart';
 import '../logic/files_browser.dart';
 import '../logic/files_path.dart';
+import '../logic/files_refresh.dart';
 import 'widgets/file_viewer.dart';
 import 'widgets/files_breadcrumb.dart';
 import 'widgets/files_tree.dart';
@@ -59,6 +60,12 @@ class FilesPanelView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final folder = this.folder;
     if (folder == null) return const _NoProject();
+
+    // Keeps the tab honest while something else writes: the file on screen and
+    // the folder holding it are re-read as they change. Watched here because
+    // this is what stays mounted for as long as the tab exists — the tree comes
+    // and goes with `showTree`, and the viewer is rebuilt on every selection.
+    ref.watch(filesAutoRefreshProvider);
 
     final selected = ref.watch(
       filesBrowserProvider(tabId).select((s) => s.selected),
@@ -177,8 +184,10 @@ class _Toolbar extends ConsumerWidget {
             icon: LucideIcons.refreshCw300,
             size: 14,
             tooltip: 'Re-read this folder',
-            // The assistant writes in here while the panel is open, so the tree
-            // and the open file both go stale on their own. One invalidate
+            // What the assistant writes is re-read on its own (see
+            // [filesAutoRefreshProvider]); this is for the writers the app never
+            // hears about — a build running in the Terminal tab, a `git
+            // checkout`, an editor open in another window. One invalidate
             // covers every folder listing loaded and every file read.
             onPressed: () {
               ref.invalidate(workdirEntriesProvider);

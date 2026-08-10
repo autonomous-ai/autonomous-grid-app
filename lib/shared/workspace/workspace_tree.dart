@@ -1,5 +1,5 @@
-/// Pure flattening for the chat file browser's tree: turning the folders the
-/// user has opened into the flat, ordered list of rows the tree draws.
+/// Pure flattening for a file tree: turning the folders the user has opened
+/// into the flat, ordered list of rows the tree draws.
 ///
 /// List logic only — no filesystem, no widgets — so it's unit-tested. The
 /// browser reads each folder lazily (only an *expanded* folder's children are
@@ -9,7 +9,7 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../projects/logic/agent_workspace.dart';
+import 'workspace_entries.dart';
 
 /// One line in the flattened tree, tagged with its [depth] so the view can
 /// indent it without re-walking the hierarchy (0 for a top-level child of the

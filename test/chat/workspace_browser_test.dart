@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/chat/logic/workspace_browser.dart';
-import 'package:grid_app/features/projects/logic/agent_workspace.dart';
+import 'package:grid_app/shared/workspace/workspace_entries.dart';
+import 'package:grid_app/shared/workspace/workspace_tree.dart';
 
 /// The chat file browser draws whatever [flattenWorkspaceTree] returns, in order,
 /// at the depth it says — so a wrong row or depth here would misdraw the tree,

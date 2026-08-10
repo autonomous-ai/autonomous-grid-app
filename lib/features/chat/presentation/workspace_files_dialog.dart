@@ -8,8 +8,8 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../projects/logic/agent_workspace.dart';
-import '../logic/workspace_browser.dart';
+import '../../../shared/workspace/workspace_entries.dart';
+import '../../../shared/workspace/workspace_tree.dart';
 
 /// Opens the file browser for the chat's working folder — [rootPath] under the
 /// friendly [rootLabel] — so the user can find and open the files the assistant

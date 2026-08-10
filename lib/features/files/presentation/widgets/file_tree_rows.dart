@@ -5,10 +5,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/labeled_field.dart';
-import '../../../../shared/widgets/toast.dart';
-import '../../../projects/logic/agent_workspace.dart';
-import 'file_type_icon.dart';
 import '../../../../shared/widgets/app_menu_row.dart';
+import '../../../../shared/widgets/toast.dart';
+import '../../../../shared/workspace/workspace_entries.dart';
+import 'file_type_icon.dart';
 
 /// Left indent added per folder deep. Narrower than the file dialog's 16: these
 /// rows are drawn in a third of a panel and in a menu no wider, and four levels
