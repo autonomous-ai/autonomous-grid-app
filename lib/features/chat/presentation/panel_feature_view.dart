@@ -34,7 +34,7 @@ Widget panelFeatureView(
   required PanelHost host,
   required VoidCallback onClose,
 }) => switch (tab.feature) {
-  PanelFeature.review => _ReviewTab(onClose: onClose),
+  PanelFeature.review => _ReviewTab(onClose: onClose, host: host),
   // Keyed by tab: two Terminal tabs are two live shells, and without a key
   // Flutter hands the second tab's id to the first one's element — same widget
   // type in the same slot — which leaves the new tab showing the old tab's
@@ -146,13 +146,37 @@ class _FilesTab extends ConsumerWidget {
 /// The wiring lives here rather than in `features/review/` so Review stays
 /// ignorant of chats, projects-as-the-chat-sees-them, and composers — it is
 /// handed a folder and hands back a message.
-class _ReviewTab extends ConsumerWidget {
-  const _ReviewTab({required this.onClose});
+class _ReviewTab extends ConsumerStatefulWidget {
+  const _ReviewTab({required this.onClose, required this.host});
 
   final VoidCallback onClose;
 
+  /// Which panel this tab sits in — how the surface knows whether anyone can
+  /// actually see it, since a closed panel keeps its tabs in the tree.
+  final PanelHost host;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ReviewTab> createState() => _ReviewTabState();
+}
+
+class _ReviewTabState extends ConsumerState<_ReviewTab> {
+  /// Whether the last frame had this tab on screen.
+  ///
+  /// Starts true so opening Review doesn't read the repository twice — the
+  /// provider's own first read is already on its way.
+  bool _wasVisible = true;
+
+  /// Read the repository again, if there is one on screen to read.
+  void _lookAgain() {
+    final folder = ref.read(projectByIdProvider(_projectId))?.path;
+    if (folder == null) return;
+    ref.read(reviewProvider(folder).notifier).refresh();
+  }
+
+  String? get _projectId => ref.read(chatSessionsProvider).openProjectId;
+
+  @override
+  Widget build(BuildContext context) {
     final projectId = ref.watch(
       chatSessionsProvider.select((s) => s.openProjectId),
     );
@@ -170,10 +194,43 @@ class _ReviewTab extends ConsumerWidget {
       }
     });
 
+    // On screen means *this tab* is the one showing and the panel holding it is
+    // open — a closed panel keeps its tabs built, so the tab's own flag is only
+    // half the answer.
+    final visible =
+        PanelTabVisible.of(context) &&
+        ref.watch(switch (widget.host) {
+          PanelHost.preview => previewPanelOpenProvider,
+          PanelHost.bottom => bottomPanelOpenProvider,
+        });
+
+    // The assistant has finished a turn while Review was being watched. It may
+    // have written files, staged them, or committed the lot — so the list on
+    // screen is about a repository that has moved.
+    //
+    // At the *end* of the turn and not on each write: watching what the agent
+    // touches meant six `git` calls every time it saved a file, which is the
+    // storm [ReviewController.build] is written to avoid. A turn that ended is
+    // one read.
+    ref.listen(chatSessionsProvider.select((s) => s.sending), (was, now) {
+      if (was == true && now == false && visible) _lookAgain();
+    });
+
+    // Coming back to the tab is the other moment the answer may be stale — a
+    // turn that ended while it was hidden, or a `git commit` typed into the
+    // Terminal tab next to it. Asked on arrival rather than polled, so a tab
+    // nobody is looking at costs nothing.
+    if (visible && !_wasVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) _lookAgain();
+      });
+    }
+    _wasVisible = visible;
+
     final folder = project?.path;
     return ReviewSurface(
       project: project,
-      onClose: onClose,
+      onClose: widget.onClose,
       // Into the composer, not straight to the agent: which model answers is
       // chosen down there, and so is whether to send it at all.
       onAskAgent: (message) =>

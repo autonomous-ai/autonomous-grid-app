@@ -1383,6 +1383,11 @@ ReviewController (AsyncNotifier.family theo folder)
 - ⚠️ **`build()` chỉ `watch` `reviewLastTurnPathsProvider` KHI scope là `LastTurnChanges`.** Watch vô
   điều kiện nghĩa là **6 lệnh `git` mỗi lần agent ghi một file** — một cơn bão spawn process sau một
   danh sách không ai đang nhìn
+- **Tự đọc lại đúng hai thời điểm** (`_ReviewTab`, cùng lý do như trên — cuối lượt chứ không phải mỗi
+  lần ghi): (1) một lượt agent **kết thúc** trong lúc Review đang hiện, vì lượt đó có thể đã sửa file,
+  stage, hoặc commit hết; (2) tab **quay lại hiện** sau khi bị ẩn hoặc panel đóng — bắt cả `git commit`
+  gõ tay ở tab Terminal bên cạnh. "Đang hiện" = `PanelTabVisible.of` **và** panel đang mở: panel đóng
+  vẫn giữ tab trong cây
 
 #### `ReviewState` — 4 nhánh vì **3 trong số đó user làm được gì đó**
 
