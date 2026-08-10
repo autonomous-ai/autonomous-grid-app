@@ -36,13 +36,18 @@ class ContextChip extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads AppPalette tokens — follow theme flips
     final radius = BorderRadius.circular(8);
-    // Tighter than a file chip, because it carries less: a file says its name
-    // and its size, a terminal says one word. At the file chip's metrics two of
+    // Narrower than a file chip, because it carries less: a file says its name
+    // and its size, a terminal says one word. At the file chip's width two of
     // these fill half the composer to hold "Terminal" twice.
+    //
+    // The same height as one, though. Tightening it vertically as well bought
+    // nothing — the row is as tall as the tallest thing in it either way — and
+    // cost 8px of difference that shows the moment a terminal chip stands next
+    // to a file chip, which is now the ordinary case rather than a separate row.
     return Tooltip(
       message: tooltip,
       child: Container(
-        padding: EdgeInsets.fromLTRB(8, 4, onRemove == null ? 8 : 2, 4),
+        padding: EdgeInsets.fromLTRB(8, 7, onRemove == null ? 8 : 2, 7),
         decoration: BoxDecoration(
           color: AppPalette.cardBg,
           borderRadius: radius,

@@ -27,33 +27,125 @@ final agentWorkspaceDirProvider = Provider<Directory>((ref) {
   return dir;
 });
 
-/// The live activity feed of the in-flight agent run — the shell commands and
-/// tool calls the agent runs, newest appended last. The "agent is working"
-/// bubble watches this; `HermesChatSender` clears it at the start of each send
-/// and upserts each step as Hermes reports it over ACP.
-final agentActivityProvider =
-    NotifierProvider<AgentActivityLog, List<AgentActivity>>(
-      AgentActivityLog.new,
-    );
+/// What one conversation's in-flight agent turn is doing right now: the steps it
+/// is running (newest last), the pages it has cited, and the to-do plan it is
+/// working through.
+///
+/// One object rather than three feeds because it is one turn's live state, and
+/// keeping the three in step was the whole difficulty: they are reset together,
+/// they belong to the same chat, and the bubble shows all three at once.
+class AgentRun {
+  const AgentRun({
+    this.steps = const [],
+    this.sources = const [],
+    this.plan = const [],
+  });
 
-class AgentActivityLog extends Notifier<List<AgentActivity>> {
+  /// Nothing running (or nothing said yet) — what a chat with no turn reads as.
+  static const empty = AgentRun();
+
+  /// The shell commands and tool calls the agent has run this turn, each with
+  /// its status.
+  final List<AgentActivity> steps;
+
+  /// The web pages this turn has cited so far, deduplicated by url and kept in
+  /// the order they were found. Pinned onto the answer when the turn lands, so
+  /// the citations persist under the message.
+  final List<WebSource> sources;
+
+  /// The agent's live to-do list. Replaced wholesale each time the agent reports
+  /// it — its `todo` tool sends the full list with each step's status, not a
+  /// delta.
+  final List<AgentPlanEntry> plan;
+
+  AgentRun copyWith({
+    List<AgentActivity>? steps,
+    List<WebSource>? sources,
+    List<AgentPlanEntry>? plan,
+  }) => AgentRun(
+    steps: steps ?? this.steps,
+    sources: sources ?? this.sources,
+    plan: plan ?? this.plan,
+  );
+}
+
+/// The live feed of every agent turn in flight, keyed by the conversation it
+/// belongs to.
+///
+/// **Keyed, not shared.** Agent turns run at the same time in different projects
+/// (see `ChatSessionsState.runningAgentIds`), and one app-wide feed would show
+/// each of those chats the other's work — and pin one chat's citations onto the
+/// other's answer. The key is what keeps two live turns apart.
+final agentRunsProvider = NotifierProvider<AgentRuns, Map<String, AgentRun>>(
+  AgentRuns.new,
+);
+
+/// One chat's run — what its working bubble watches and its sender appends to.
+/// Reads [AgentRun.empty] for a chat with nothing in flight.
+final agentRunProvider = Provider.autoDispose.family<AgentRun, String>(
+  (ref, chatId) => ref.watch(agentRunsProvider)[chatId] ?? AgentRun.empty,
+);
+
+class AgentRuns extends Notifier<Map<String, AgentRun>> {
   @override
-  List<AgentActivity> build() => const [];
+  Map<String, AgentRun> build() => const {};
 
-  void clear() => state = const [];
+  /// Empty [chatId]'s feed so a starting turn never shows the previous one's.
+  ///
+  /// Called at the very top of an agent send, *before* the turn's awaited setup
+  /// (pointing Hermes/Codex at the grid, opening the session): the chat flips to
+  /// its "working" bubble the instant the send is committed, and that bubble
+  /// reads this. Clearing it only once the stream reached the turn body — after
+  /// that setup await — left the last turn's steps on screen for the whole wait.
+  void reset(String chatId) => _write(chatId, AgentRun.empty);
 
-  /// Insert a new step, or replace the existing one with the same id (a
-  /// `started` step transitioning to `completed`).
-  void upsert(AgentActivity activity) {
-    final index = state.indexWhere((step) => step.id == activity.id);
-    if (index == -1) {
-      state = [...state, activity];
-      return;
-    }
-    final next = [...state];
-    next[index] = activity;
-    state = List.unmodifiable(next);
+  /// Drop [chatId] entirely — for a conversation that has been deleted, so its
+  /// feed doesn't sit in memory for the rest of the run.
+  void forget(String chatId) {
+    if (!state.containsKey(chatId)) return;
+    state = Map.unmodifiable({
+      for (final entry in state.entries)
+        if (entry.key != chatId) entry.key: entry.value,
+    });
   }
+
+  /// Insert a step, or replace the existing one with the same id (a `started`
+  /// step transitioning to `completed`).
+  void upsertStep(String chatId, AgentActivity activity) {
+    final steps = _run(chatId).steps;
+    final index = steps.indexWhere((step) => step.id == activity.id);
+    final next = [...steps];
+    if (index == -1) {
+      next.add(activity);
+    } else {
+      next[index] = activity;
+    }
+    _write(chatId, _run(chatId).copyWith(steps: List.unmodifiable(next)));
+  }
+
+  /// Append [sources], skipping any url already collected this turn.
+  void addSources(String chatId, List<WebSource> sources) {
+    final run = _run(chatId);
+    final seen = {for (final s in run.sources) s.url};
+    final fresh = [
+      for (final s in sources)
+        if (seen.add(s.url)) s,
+    ];
+    if (fresh.isEmpty) return;
+    _write(
+      chatId,
+      run.copyWith(sources: List.unmodifiable([...run.sources, ...fresh])),
+    );
+  }
+
+  /// Replace the plan with the agent's latest full to-do list.
+  void setPlan(String chatId, List<AgentPlanEntry> entries) =>
+      _write(chatId, _run(chatId).copyWith(plan: List.unmodifiable(entries)));
+
+  AgentRun _run(String chatId) => state[chatId] ?? AgentRun.empty;
+
+  void _write(String chatId, AgentRun run) =>
+      state = Map.unmodifiable({...state, chatId: run});
 }
 
 /// The single status that stands for a whole run of [steps] — for the one-line
@@ -103,68 +195,4 @@ List<AgentActivity> foldedActivitySteps(List<AgentActivity> steps) {
   take((_) => true);
   final order = picked.toList()..sort();
   return List.unmodifiable([for (final i in order) steps[i]]);
-}
-
-/// The web pages the in-flight agent run has cited so far, deduplicated by url
-/// and kept in the order they were found. The "agent is working" bubble shows
-/// them live; `HermesChatSender` clears it at the start of each send, adds each
-/// batch as Hermes reports it, and pins the final list onto the answer so the
-/// citations persist under the message.
-final agentSourcesProvider = NotifierProvider<AgentSourcesLog, List<WebSource>>(
-  AgentSourcesLog.new,
-);
-
-class AgentSourcesLog extends Notifier<List<WebSource>> {
-  @override
-  List<WebSource> build() => const [];
-
-  void clear() => state = const [];
-
-  /// Append [sources], skipping any url already collected this turn.
-  void addAll(List<WebSource> sources) {
-    final seen = {for (final s in state) s.url};
-    final fresh = [
-      for (final s in sources)
-        if (seen.add(s.url)) s,
-    ];
-    if (fresh.isEmpty) return;
-    state = List.unmodifiable([...state, ...fresh]);
-  }
-}
-
-/// The agent's live to-do plan for the in-flight run. Unlike the sources feed,
-/// this is **replaced** wholesale each time Hermes reports it — its `todo` tool
-/// sends the full list (with each step's status), not a delta. The "agent is
-/// working" bubble shows it live so the user sees which step it's on; and
-/// `HermesChatSender` clears it at the start of each send and pins the final
-/// plan onto the answer.
-final agentPlanProvider = NotifierProvider<AgentPlanLog, List<AgentPlanEntry>>(
-  AgentPlanLog.new,
-);
-
-class AgentPlanLog extends Notifier<List<AgentPlanEntry>> {
-  @override
-  List<AgentPlanEntry> build() => const [];
-
-  void clear() => state = const [];
-
-  /// Replace the plan with the agent's latest full to-do list.
-  void replace(List<AgentPlanEntry> entries) =>
-      state = List.unmodifiable(entries);
-}
-
-/// Empty the shared agent feed — the running turn's steps, cited sources and
-/// plan — so a starting turn never shows the previous one's (or another chat's).
-///
-/// Called at the very top of an agent send, *before* the turn's awaited setup
-/// (pointing Hermes/Codex at the grid, opening the session): the chat flips to
-/// its "working" bubble the instant the send is committed, and that bubble reads
-/// this one app-wide feed. Clearing it only once the stream reached the turn body
-/// — after that setup await — left the last turn's steps on screen for the whole
-/// wait. Clearing here, synchronously as the stream is first listened, closes
-/// that window.
-void resetAgentFeed(Ref ref) {
-  ref.read(agentActivityProvider.notifier).clear();
-  ref.read(agentSourcesProvider.notifier).clear();
-  ref.read(agentPlanProvider.notifier).clear();
 }

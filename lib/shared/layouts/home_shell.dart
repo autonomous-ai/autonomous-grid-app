@@ -129,6 +129,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           control: true,
           shift: true,
         ): _openReview,
+        // ⌘P opens the project's files beside the chat. Both modifiers, the way
+        // ⌘K above does it: the launcher spells it the macOS way, but the key
+        // has to work on the two platforms that call it Ctrl.
+        //
+        // The menu has advertised this since Files shipped and nothing was
+        // listening — the `shortcut` on [PanelFeature] is a *label*, and a label
+        // is a promise the app has to keep somewhere else.
+        const SingleActivator(LogicalKeyboardKey.keyP, meta: true): _openFiles,
+        const SingleActivator(LogicalKeyboardKey.keyP, control: true):
+            _openFiles,
       },
       child: Focus(
         autofocus: true,
@@ -161,6 +171,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref
         .read(panelTabsProvider(PanelHost.preview).notifier)
         .reveal(PanelFeature.review);
+  }
+
+  /// Browse the open chat's project, beside the conversation.
+  ///
+  /// Same two moves as [_openReview] and for the same two reasons: back to Chat,
+  /// because that is where the panel lives, and reveal rather than open, because
+  /// pressing a shortcut twice means "show me that" both times.
+  void _openFiles() {
+    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+    ref
+        .read(panelTabsProvider(PanelHost.preview).notifier)
+        .reveal(PanelFeature.files);
   }
 }
 

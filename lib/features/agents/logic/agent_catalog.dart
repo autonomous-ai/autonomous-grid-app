@@ -90,3 +90,16 @@ enum AgentTool {
 /// The agent that answers chats before the user picks one. Named rather than
 /// assumed, so the places that assume "the agent" stay findable.
 const AgentTool kChatAgent = AgentTool.hermes;
+
+/// The agent stored under [id], or null when nothing (or nothing this build
+/// still ships) is named.
+///
+/// Ids are read back from disk — a project's saved choice, the app's prefs — so
+/// an id from a build that carried an agent this one has dropped has to resolve
+/// to "no choice" rather than throw.
+AgentTool? agentToolById(String? id) {
+  for (final tool in AgentTool.values) {
+    if (tool.id == id) return tool;
+  }
+  return null;
+}

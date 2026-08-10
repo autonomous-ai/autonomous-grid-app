@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/composer_trigger.dart';
+import '../../chat/logic/chat_scope.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
 import 'agent_mark.dart';
@@ -14,10 +14,12 @@ import '../logic/agent_status.dart';
 /// of "what happens when I press Send", sitting next to the model it runs.
 ///
 /// Lists the agents installed on this computer; the one in force wears a tick.
-/// Picking one saves it as the chat's agent ([ChatPrefs.chatAgent]); an agent
-/// this grid can't run is offered but marked, so the choice is honest rather
-/// than silently handed back (the handover bar explains the swap). Shown only
-/// when an agent is the one answering (the composer gates it on that).
+/// Picking one saves it where the chat lives — on its **project** when it has
+/// one, else as the app's standing choice (see [ChatScopePrefs]) — and the menu
+/// says which, so a pick that follows you between projects is never a surprise.
+/// An agent this grid can't run is offered but marked, so the choice is honest
+/// rather than silently handed back (the handover bar explains the swap). Shown
+/// only when an agent is the one answering (the composer gates it on that).
 class AgentPicker extends ConsumerStatefulWidget {
   const AgentPicker({super.key});
 
@@ -34,7 +36,7 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
   final _menu = MenuController();
 
   void _select(AgentTool tool) {
-    ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id);
+    ref.read(chatScopePrefsProvider).setAgent(tool.id);
     _menu.close();
   }
 
@@ -65,6 +67,10 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
       for (final tool in AgentTool.values)
         if (ref.watch(agentInstalledProvider(tool))) tool,
     ];
+    // Where the pick will be remembered, said out loud: in a project the choice
+    // is that project's and changes nothing anywhere else, which is the whole
+    // point of it — and it explains why the agent changed when they switched.
+    final project = ref.watch(openChatProjectProvider);
     return MenuAnchor(
       controller: _menu,
       alignmentOffset: const Offset(0, -8),
@@ -88,12 +94,53 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
             unavailable: _unavailableNote(tool),
             onTap: () => _select(tool),
           ),
+        _ScopeNote(projectName: project?.name),
       ],
       builder: (context, controller, _) => ComposerTrigger(
         label: active.name,
-        tooltip: 'Which agent answers · ${active.name}',
+        tooltip: project == null
+            ? 'Which agent answers · ${active.name}'
+            : 'Which agent answers in ${project.name} · ${active.name}',
         leading: AgentMark(tool: active, size: 14),
         onTap: () => controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+  }
+}
+
+/// The line under the list that says who the pick belongs to: this project, or
+/// every chat outside one.
+///
+/// One sentence, in the user's terms — "your other projects keep theirs" is the
+/// fact that stops a per-project setting reading as an app-wide one that keeps
+/// changing itself.
+class _ScopeNote extends StatelessWidget {
+  const _ScopeNote({required this.projectName});
+
+  final String? projectName;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        _rowGutter + _rowInnerPad,
+        6,
+        _rowGutter + _rowInnerPad,
+        4,
+      ),
+      child: SizedBox(
+        width: _menuWidth - (_rowGutter + _rowInnerPad) * 2,
+        child: Text(
+          projectName == null
+              ? 'Saved for chats outside a project. Each project keeps its own.'
+              : 'Saved for $projectName. Your other projects keep theirs.',
+          style: TextStyle(
+            color: AppPalette.textFaint,
+            fontSize: 11,
+            height: 1.3,
+          ),
+        ),
       ),
     );
   }

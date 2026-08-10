@@ -8,8 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/composer_text.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/file_drag.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -23,7 +23,6 @@ import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/presentation/agent_picker.dart';
-import '../../agents/presentation/agent_changes_bar.dart';
 import '../../agents/presentation/agent_permission_card.dart';
 import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
@@ -32,7 +31,6 @@ import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
-import '../../projects/logic/project.dart';
 import '../../playground/presentation/chat_bubble.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../prompts/logic/prompt_slash.dart';
@@ -42,6 +40,7 @@ import '../../skills/presentation/save_skill_bar.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_approval.dart';
+import '../logic/chat_scope.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/composer_context.dart';
 import '../logic/composer_file_request.dart';
@@ -119,9 +118,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// transcript shows what was actually asked.
   final List<ChatSnippet> _snippets = [];
 
-  /// The `conversationId|gridId` the model field was last synced to, so switching
-  /// chats restores that chat's model and switching grids drops to the new grid's
-  /// first model — without clobbering a model being mid-typed.
+  /// The `conversationId|projectId|gridId` the model field was last synced to,
+  /// so switching chats restores that chat's model and switching grids drops to
+  /// the new grid's first model — without clobbering a model being mid-typed.
+  ///
+  /// The project is part of the key because two *unsaved* chats are both a null
+  /// conversation id: starting a new chat in another project would otherwise
+  /// look like the same chat and keep the model of the project just left.
   String? _syncedKey;
   bool _synced = false;
 
@@ -192,8 +195,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   /// Persist the selection once it's a real option (not a name being typed):
   /// onto the open chat, so leaving and returning restores *its* model rather
-  /// than a default; and into the shared prefs, so a new chat and the next
-  /// launch default to it too.
+  /// than a default; and onto the chat's scope — its project, or the app's
+  /// standing choice outside one — so the next chat started there defaults to it
+  /// too.
   ///
   /// Only ever reached for a model the user picked — restoring a chat's own
   /// model on switch is not a choice, and treating it as one wrote both files on
@@ -201,7 +205,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _rememberModel() {
     final id = _model.text.trim();
     if (id.isEmpty || !_options.any((o) => o.id == id)) return;
-    ref.read(chatPrefsProvider.notifier).setModel(id);
+    ref.read(chatScopePrefsProvider).setModel(id);
     ref.read(chatSessionsProvider.notifier).setActiveModel(id);
   }
 
@@ -213,9 +217,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     Conversation? active,
     List<PlaygroundModelOption> options,
     String gridId,
+    String? projectId,
   ) {
     _options = options;
-    final key = '${active?.id}|$gridId';
+    final key = '${active?.id}|$projectId|$gridId';
     // A picker-driven grid switch just landed: honor the model the user chose
     // rather than resetting to this grid's default, then treat it as synced.
     final pending = _pendingPick;
@@ -256,9 +261,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _retargetModel(ref.read(chatModelAgentProvider));
   }
 
-  /// The model to fall back to when the conversation has none: the one the user
-  /// last used (if this grid still offers it and the agent can answer with it),
-  /// else the first option that pairs with the agent answering.
+  /// The model to fall back to when the conversation has none: the one this
+  /// chat's scope last used — its project's, or the app's outside one — if this
+  /// grid still offers it and the agent can answer with it, else the first
+  /// option that pairs with the agent answering.
   String _defaultModel(List<PlaygroundModelOption> options) {
     // A grid that serves nothing this agent can use falls back to the whole
     // list: the composer still names what the grid has, and the picker's greyed
@@ -269,7 +275,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
         if (_agentCanUse(option.id)) option,
     ];
     final pool = usable.isEmpty ? options : usable;
-    final saved = ref.read(chatPrefsProvider).model;
+    final saved = ref.read(chatScopeModelProvider);
     if (saved != null && pool.any((o) => o.id == saved)) return saved;
     return pool.isEmpty ? '' : pool.first.id;
   }
@@ -657,9 +663,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final activeId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
     final sending = ref.watch(chatSessionsProvider.select((s) => s.sending));
     final error = ref.watch(chatSessionsProvider.select((s) => s.error));
-    final openProjectId = ref.watch(
-      chatSessionsProvider.select((s) => s.openProjectId),
-    );
+    final openProject = ref.watch(openChatProjectProvider);
     final options = ref.watch(playgroundModelsProvider);
     // Still resolving means waiting on the *first* answer from either source —
     // see [playgroundModelsResolvingProvider] for why a later poll must not
@@ -692,7 +696,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _takeSnippets(offered);
     });
 
-    _syncModelField(active, options, widget.network.networkId);
+    _syncModelField(active, options, widget.network.networkId, openProject?.id);
 
     // The undo bar speaks for the chat on screen, so tell it which one that is.
     // The snapshots themselves are kept per conversation and outlive the switch:
@@ -751,15 +755,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];
-    // The "agent is working" feed and the permission card read one shared,
-    // app-wide state, but only the chat whose agent turn is actually running
-    // owns it — an agent chat still queued behind another must show its own
-    // waiting cue, not borrow the running chat's steps (or its permission).
-    final thisChatIsRunning = ref.watch(
-      chatSessionsProvider.select(
-        (s) => s.activeId != null && s.activeId == s.runningAgentId,
-      ),
-    );
     // *Whether* there is an in-flight bubble, not what it says: this answers
     // once when the turn starts and once when it ends, while the bubble's own
     // contents change with every token.
@@ -786,205 +781,231 @@ class _ChatViewState extends ConsumerState<ChatView> {
       });
     }
 
-    // The agent has stopped and is asking before it touches this computer. Only
-    // the chat whose turn is running owns that request — on any other chat the
-    // card would be asking about work the user can't see.
-    final permission = thisChatIsRunning
-        ? ref.watch(agentPermissionProvider)
-        : null;
+    // The agent has stopped and is asking before it touches this computer. Read
+    // for the open chat by name: several turns can be waiting on the user at
+    // once, and each chat shows the question its own agent asked.
+    final permission = ref.watch(agentPermissionProvider(activeId));
     // Read here, not down in the composer's builder: that builder runs when the
     // text controller notifies, which is outside this widget's own build, and
     // `ref.watch` may only be called during it.
     final workdir = ref.watch(activeChatWorkdirProvider);
     final approval = ref.watch(chatApprovalModeProvider);
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _dragging = true),
-      onDragExited: (_) => setState(() => _dragging = false),
-      onDragDone: (details) {
-        setState(() => _dragging = false);
-        unawaited(_addDroppedFiles(details.files));
-      },
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: noModel
-                    ? NoModelYet(
-                        canManage: widget.network.canManageProvider,
-                        onGoToEngines: () => ref
-                            .read(shellSectionProvider.notifier)
-                            .select(ShellSection.engines),
-                      )
-                    : isNewChat
-                    ? ChatStarters(
-                        greeting: _greeting(modality),
-                        // Name the project a new chat is being composed in, so
-                        // its empty state reads "…in <project>?" rather than the
-                        // same blank greeting a loose chat shows.
-                        projectName: ref
-                            .watch(projectByIdProvider(openProjectId))
-                            ?.name,
-                        onPick: _useStarter,
-                      )
-                    : _Transcript(
-                        scroll: _scroll,
-                        messages: messages,
-                        trailing: hasTrailing
-                            ? _TrailingBubble(agentMode: agentMode)
-                            : null,
-                        atBottom: _atBottom,
-                        onJumpToLatest: () => _scrollToBottom(animated: true),
+    // Two ways a file arrives by hand, one landing. [DropTarget] is the one the
+    // system hands us — a file dragged in from Finder, which Flutter never sees
+    // as a drag at all. [DragTarget] is a file dragged out of the Files panel,
+    // which never leaves the app and so is invisible to the system.
+    //
+    // The whole pane takes them, not just the composer: it is where the Finder
+    // drop already lands, and one window teaching two rules for one gesture is
+    // worse than a target that is bigger than it strictly needs to be.
+    return DragTarget<FileDrag>(
+      onAcceptWithDetails: (details) =>
+          // The same call the panel's "Add to chat" ends in, so a dropped file
+          // is de-duplicated against what is already attached and counted
+          // against the same budget.
+          unawaited(_attachRequested([details.data.path])),
+      builder: (_, candidates, _) => DropTarget(
+        onDragEntered: (_) => setState(() => _dragging = true),
+        onDragExited: (_) => setState(() => _dragging = false),
+        onDragDone: (details) {
+          setState(() => _dragging = false);
+          unawaited(_addDroppedFiles(details.files));
+        },
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: noModel
+                      ? NoModelYet(
+                          canManage: widget.network.canManageProvider,
+                          onGoToEngines: () => ref
+                              .read(shellSectionProvider.notifier)
+                              .select(ShellSection.engines),
+                        )
+                      : isNewChat
+                      ? ChatStarters(
+                          greeting: _greeting(modality),
+                          // Name the project a new chat is being composed in, so
+                          // its empty state reads "…in <project>?" rather than the
+                          // same blank greeting a loose chat shows.
+                          projectName: openProject?.name,
+                          onPick: _useStarter,
+                        )
+                      : _Transcript(
+                          scroll: _scroll,
+                          messages: messages,
+                          trailing: hasTrailing
+                              ? _TrailingBubble(agentMode: agentMode)
+                              : null,
+                          atBottom: _atBottom,
+                          onJumpToLatest: () => _scrollToBottom(animated: true),
+                        ),
+                ),
+                if (permission != null && activeId != null)
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: _composerWidth,
+                        maxHeight: _permissionCardHeight(context),
                       ),
-              ),
-              if (permission != null)
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                        child: AgentPermissionCard(
+                          chatId: activeId,
+                          request: permission,
+                        ),
+                      ),
+                    ),
+                  ),
                 Center(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: _composerWidth,
-                      maxHeight: _permissionCardHeight(context),
-                    ),
+                    constraints: const BoxConstraints(maxWidth: _composerWidth),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                      child: AgentPermissionCard(request: permission),
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                      // Everything that answers to what is being typed lives under
+                      // here, so a keystroke rebuilds the composer and not the
+                      // transcript above it. The controller is the listenable —
+                      // it notifies on text *and* caret moves, which is what the
+                      // `@`-mention menu reads.
+                      child: ListenableBuilder(
+                        listenable: _message,
+                        builder: (context, _) {
+                          // "There is something to send", not "the chat is free":
+                          // a turn already in flight no longer blocks Send, it
+                          // queues what is typed behind it. The text check lives
+                          // here rather than in `_send` so the button and the Stop
+                          // beside it agree with what pressing them would do.
+                          final canSend =
+                              !noModel &&
+                              _message.text.trim().isNotEmpty &&
+                              (!needsImage || _attachments.isNotEmpty);
+                          // A leading "/" (with no space yet) opens the
+                          // saved-prompt menu; an "@" token opens the file menu.
+                          // Only one shows at a time, prompts first.
+                          final slash = sending
+                              ? null
+                              : slashQuery(_message.text);
+                          final cursor = _message.selection.baseOffset;
+                          final mention =
+                              (sending || slash != null || cursor < 0)
+                              ? null
+                              : activeMention(_message.text, cursor);
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const AgentHandoverBar(),
+                              const PlanApproveBar(),
+                              const OutOfStepsBar(),
+                              // `AgentChangesBar` used to sit here. Hidden on
+                              // 2026-08-10: git and the Review tab already show
+                              // what the assistant changed, and a third notice
+                              // over the composer said it a third time. The
+                              // recording behind it stays on — Review's "Last
+                              // turn" scope reads it (`lastTurnAgentPaths`) —
+                              // so bringing the bar back is putting this one
+                              // line back.
+                              const GoalBar(),
+                              const RunningServicesBar(),
+                              const SaveSkillBar(),
+                              const QueuedFollowUps(),
+                              if (slash != null)
+                                PromptSlashMenu(
+                                  query: slash,
+                                  onPick: _insertPrompt,
+                                )
+                              else if (mention != null)
+                                FileMentionMenu(
+                                  workdir: workdir,
+                                  query: mention.query,
+                                  onPick: _insertMention,
+                                ),
+                              ComposerSection(
+                                messageController: _message,
+                                attachments: _attachments,
+                                files: _files,
+                                snippets: _snippets,
+                                // Only on a turn a model can read them on: a
+                                // picture request goes to the grid, and a terminal
+                                // offered there would be a chip that promises
+                                // something the turn can't carry.
+                                terminals: modality == PlaygroundModality.text
+                                    ? ref.watch(attachedTerminalsProvider)
+                                    : const [],
+                                modality: modality,
+                                needsImage: needsImage,
+                                sending: sending,
+                                canSend: canSend,
+                                error: error,
+                                // Any turn the agent couldn't finish gets the way out
+                                // offered beside it. Keying this to one known message
+                                // meant the failure people actually hit (a 503 from
+                                // the grid) arrived with no button at all — and the
+                                // message is the wrong thing to hang it on anyway:
+                                // what makes the swap worth offering is that an agent
+                                // failed, not which sentence it failed with.
+                                errorAction: agentMode
+                                    ? const SwitchAgentButton()
+                                    : null,
+                                // Only the agent can touch this computer — a picture is made
+                                // by the grid, so there'd be nothing to approve.
+                                approvalPicker: agentMode
+                                    ? ApprovalPicker(
+                                        value: approval,
+                                        onChanged: ref
+                                            .read(chatSessionsProvider.notifier)
+                                            .setApproval,
+                                      )
+                                    : null,
+                                // Which agent answers, beside the model it runs — only
+                                // when an agent is the one answering this turn.
+                                agentPicker: agentMode
+                                    ? const AgentPicker()
+                                    : null,
+                                modelPicker: GridModelPicker(
+                                  currentModelId: _model.text,
+                                  onSelect: _pickGridModel,
+                                ),
+                                onAddAttachment: (a) =>
+                                    setState(() => _attachments.add(a)),
+                                onAttachFile: () => unawaited(_attachFile()),
+                                onPaste: () => unawaited(_paste()),
+                                onRemoveAttachment: (i) =>
+                                    setState(() => _attachments.removeAt(i)),
+                                onRemoveFile: (i) =>
+                                    setState(() => _files.removeAt(i)),
+                                onRemoveSnippets: () =>
+                                    setState(_snippets.clear),
+                                onRemoveTerminal: (tabId) => ref
+                                    .read(dismissedTerminalsProvider.notifier)
+                                    .dismiss(tabId),
+                                onOpenPrompts: _promptsButton,
+                                promptsSaveInput: _message.text
+                                    .trim()
+                                    .isNotEmpty,
+                                onSend: () => _send(modality),
+                                onStop: () => ref
+                                    .read(chatSessionsProvider.notifier)
+                                    .stop(),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _composerWidth),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                    // Everything that answers to what is being typed lives under
-                    // here, so a keystroke rebuilds the composer and not the
-                    // transcript above it. The controller is the listenable —
-                    // it notifies on text *and* caret moves, which is what the
-                    // `@`-mention menu reads.
-                    child: ListenableBuilder(
-                      listenable: _message,
-                      builder: (context, _) {
-                        // "There is something to send", not "the chat is free":
-                        // a turn already in flight no longer blocks Send, it
-                        // queues what is typed behind it. The text check lives
-                        // here rather than in `_send` so the button and the Stop
-                        // beside it agree with what pressing them would do.
-                        final canSend =
-                            !noModel &&
-                            _message.text.trim().isNotEmpty &&
-                            (!needsImage || _attachments.isNotEmpty);
-                        // A leading "/" (with no space yet) opens the
-                        // saved-prompt menu; an "@" token opens the file menu.
-                        // Only one shows at a time, prompts first.
-                        final slash = sending
-                            ? null
-                            : slashQuery(_message.text);
-                        final cursor = _message.selection.baseOffset;
-                        final mention = (sending || slash != null || cursor < 0)
-                            ? null
-                            : activeMention(_message.text, cursor);
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const AgentHandoverBar(),
-                            const PlanApproveBar(),
-                            // Above the changes bar: "it stopped early" is the
-                            // more urgent of the two, and the files it did
-                            // change are still there to review afterwards.
-                            const OutOfStepsBar(),
-                            const AgentChangesBar(),
-                            const GoalBar(),
-                            const RunningServicesBar(),
-                            const SaveSkillBar(),
-                            const QueuedFollowUps(),
-                            if (slash != null)
-                              PromptSlashMenu(
-                                query: slash,
-                                onPick: _insertPrompt,
-                              )
-                            else if (mention != null)
-                              FileMentionMenu(
-                                workdir: workdir,
-                                query: mention.query,
-                                onPick: _insertMention,
-                              ),
-                            ComposerSection(
-                              messageController: _message,
-                              attachments: _attachments,
-                              files: _files,
-                              snippets: _snippets,
-                              // Only on a turn a model can read them on: a
-                              // picture request goes to the grid, and a terminal
-                              // offered there would be a chip that promises
-                              // something the turn can't carry.
-                              terminals: modality == PlaygroundModality.text
-                                  ? ref.watch(attachedTerminalsProvider)
-                                  : const [],
-                              modality: modality,
-                              needsImage: needsImage,
-                              sending: sending,
-                              canSend: canSend,
-                              error: error,
-                              // Any turn the agent couldn't finish gets the way out
-                              // offered beside it. Keying this to one known message
-                              // meant the failure people actually hit (a 503 from
-                              // the grid) arrived with no button at all — and the
-                              // message is the wrong thing to hang it on anyway:
-                              // what makes the swap worth offering is that an agent
-                              // failed, not which sentence it failed with.
-                              errorAction: agentMode
-                                  ? const SwitchAgentButton()
-                                  : null,
-                              // Only the agent can touch this computer — a picture is made
-                              // by the grid, so there'd be nothing to approve.
-                              approvalPicker: agentMode
-                                  ? ApprovalPicker(
-                                      value: approval,
-                                      onChanged: ref
-                                          .read(chatSessionsProvider.notifier)
-                                          .setApproval,
-                                    )
-                                  : null,
-                              // Which agent answers, beside the model it runs — only
-                              // when an agent is the one answering this turn.
-                              agentPicker: agentMode
-                                  ? const AgentPicker()
-                                  : null,
-                              modelPicker: GridModelPicker(
-                                currentModelId: _model.text,
-                                onSelect: _pickGridModel,
-                              ),
-                              onAddAttachment: (a) =>
-                                  setState(() => _attachments.add(a)),
-                              onAttachFile: () => unawaited(_attachFile()),
-                              onPaste: () => unawaited(_paste()),
-                              onRemoveAttachment: (i) =>
-                                  setState(() => _attachments.removeAt(i)),
-                              onRemoveFile: (i) =>
-                                  setState(() => _files.removeAt(i)),
-                              onRemoveSnippets: () => setState(_snippets.clear),
-                              onRemoveTerminal: (tabId) => ref
-                                  .read(dismissedTerminalsProvider.notifier)
-                                  .dismiss(tabId),
-                              onOpenPrompts: _promptsButton,
-                              promptsSaveInput: _message.text.trim().isNotEmpty,
-                              onSend: () => _send(modality),
-                              onStop: () => ref
-                                  .read(chatSessionsProvider.notifier)
-                                  .stop(),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (_dragging) const _DropHint(),
-        ],
+              ],
+            ),
+            // One hint for both, so the answer to "will this land?" looks the
+            // same whichever drag the file came in on. `candidates` is the
+            // in-app one: the target rebuilds as a file enters and leaves it, so
+            // it needs no state of its own the way the system drop does.
+            if (_dragging || candidates.isNotEmpty) const _DropHint(),
+          ],
+        ),
       ),
     );
   }
@@ -1020,10 +1041,9 @@ bool _bubbleShows(SendPhase phase, bool agentMode) => switch (phase) {
 /// streams in, or a spinner while the agent works before its first token.
 ///
 /// Watches the phase itself so the growing text rebuilds this bubble and
-/// nothing else. [running] is whether this chat holds the agent's live turn:
-/// only then does the working bubble (which reads the shared activity feed)
-/// belong to it — an agent chat still queued behind another shows a plain
-/// waiting cue instead.
+/// nothing else. Whether this chat's own agent turn is running decides between
+/// the working feed and a plain waiting cue — a chat queued behind another in
+/// its project has a feed, but nothing in it yet.
 class _TrailingBubble extends ConsumerWidget {
   const _TrailingBubble({required this.agentMode});
 
@@ -1034,19 +1054,22 @@ class _TrailingBubble extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final phase = ref.watch(chatSessionsProvider.select((s) => s.phase));
+    final chatId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
     final running = ref.watch(
-      chatSessionsProvider.select(
-        (s) => s.activeId != null && s.activeId == s.runningAgentId,
-      ),
+      chatSessionsProvider.select((s) => s.agentRunningIn(s.activeId)),
     );
+    if (chatId == null) return const SizedBox.shrink();
     return switch (phase) {
       SendGenerating g => GeneratingBubble(phase: g),
       SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
+        chatId: chatId,
         text: text,
         showActivity: agentMode,
       ),
-      SendStreaming() => const AgentWorkingBubble(),
-      SendBusy() when agentMode && running => const AgentWorkingBubble(),
+      SendStreaming() => AgentWorkingBubble(chatId: chatId),
+      SendBusy() when agentMode && running => AgentWorkingBubble(
+        chatId: chatId,
+      ),
       SendBusy() when agentMode => const _QueuedBubble(),
       _ => const SizedBox.shrink(),
     };
@@ -1067,7 +1090,14 @@ class _TrailingBubble extends ConsumerWidget {
 /// the moment the cue drops away. The cue sits at the content's left edge (the
 /// assistant column starts there), a touch below.
 class _StreamingReply extends StatelessWidget {
-  const _StreamingReply({required this.text, this.showActivity = false});
+  const _StreamingReply({
+    required this.chatId,
+    required this.text,
+    this.showActivity = false,
+  });
+
+  /// The conversation being answered — the feed under the text is that chat's.
+  final String chatId;
 
   final String text;
 
@@ -1089,7 +1119,7 @@ class _StreamingReply extends StatelessWidget {
         // Agent turn: the feed's own spinner is the "still going" cue, so no
         // dots. Plain reply: no feed, so the dots carry it.
         if (showActivity)
-          const AgentActivityFeed()
+          AgentActivityFeed(chatId: chatId)
         else
           const Padding(
             padding: EdgeInsets.only(left: 2, bottom: 10),
@@ -1100,13 +1130,14 @@ class _StreamingReply extends StatelessWidget {
   }
 }
 
-/// Shown on an agent chat whose turn is queued behind another that's still
-/// running — the local agent answers one at a time.
+/// Shown on a chat whose turn is queued behind another **in the same project** —
+/// two agents let loose in one folder would edit the same files, so they take
+/// turns. Chats in other projects (and outside every project) are unaffected and
+/// answer at the same time.
 ///
-/// Deliberately NOT [AgentWorkingBubble]: that bubble reads the shared activity
-/// feed, which belongs to the chat actually running, so it would show this chat
-/// another chat's steps. This says, honestly, that the assistant is finishing
-/// something else first — a spinner and one line, no borrowed feed.
+/// Deliberately NOT [AgentWorkingBubble]: this turn hasn't started, so its feed
+/// is empty and the bubble would sit blank. This says what is actually happening
+/// — a spinner and one line.
 class _QueuedBubble extends StatelessWidget {
   const _QueuedBubble();
 
@@ -1128,7 +1159,7 @@ class _QueuedBubble extends StatelessWidget {
             const AppSpinner(),
             const SizedBox(width: 10),
             Text(
-              'Finishing another chat first…',
+              'Finishing another chat in this project…',
               style: theme.textTheme.bodyMedium,
             ),
           ],

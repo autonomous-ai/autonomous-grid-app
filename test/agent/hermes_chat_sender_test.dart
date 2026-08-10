@@ -247,6 +247,10 @@ AgentActivity _step(String id, AgentActivityStatus status) => AgentActivity(
   status: status,
 );
 
+/// These sends carry no conversation id, so everything they publish is filed
+/// under the empty key — runs and permission requests are per chat now.
+const _noChat = '';
+
 void main() {
   late Directory tmp;
   setUp(() async {
@@ -278,7 +282,7 @@ void main() {
     expect(updates.last, isA<ChatSendSuccess>());
     expect((updates.last as ChatSendSuccess).reply.text, 'PANGOLIN');
     // The activity feed collapsed the started→done tool into one done step.
-    final steps = container.read(agentActivityProvider);
+    final steps = container.read(agentRunProvider(_noChat)).steps;
     expect(steps, hasLength(1));
     expect(steps.single.status, AgentActivityStatus.done);
     // Pointed Hermes at the grid.
@@ -346,13 +350,16 @@ void main() {
     // Sit on the card well past the idle window — a user reading a prompt is
     // not the agent hanging, so the turn must still be waiting, not failed.
     await Future<void>.delayed(const Duration(milliseconds: 120));
-    expect(container.read(agentPermissionProvider)?.command, 'rm -rf build');
+    expect(
+      container.read(agentPermissionProvider(_noChat))?.command,
+      'rm -rf build',
+    );
     expect(updates.whereType<ChatSendFailure>(), isEmpty);
 
     // Answering lets it finish normally.
     container
-        .read(agentPermissionProvider.notifier)
-        .answer(AgentPermissionChoice.allowOnce);
+        .read(agentPermissionsProvider.notifier)
+        .answer(_noChat, AgentPermissionChoice.allowOnce);
     service.session.finish('Done.');
     await finished;
     expect((updates.last as ChatSendSuccess).reply.text, 'Done.');
@@ -367,13 +374,12 @@ void main() {
 
       // A prior turn (or another chat) left steps, a citation and a plan behind
       // in the one app-wide feed the working bubble reads.
-      container
-          .read(agentActivityProvider.notifier)
-          .upsert(_step('stale', AgentActivityStatus.done));
-      container.read(agentSourcesProvider.notifier).addAll(const [
+      final runs = container.read(agentRunsProvider.notifier);
+      runs.upsertStep(_noChat, _step('stale', AgentActivityStatus.done));
+      runs.addSources(_noChat, const [
         WebSource(title: 'old', url: 'https://old.example'),
       ]);
-      container.read(agentPlanProvider.notifier).replace(const [
+      runs.setPlan(_noChat, const [
         AgentPlanEntry(content: 'old', status: AgentPlanStatus.pending),
       ]);
 
@@ -402,9 +408,10 @@ void main() {
       // already empty: it was cleared up front, not once the turn body ran. Were
       // the reset back in the turn body (after this await), the stale entries
       // would still be here.
-      expect(container.read(agentActivityProvider), isEmpty);
-      expect(container.read(agentSourcesProvider), isEmpty);
-      expect(container.read(agentPlanProvider), isEmpty);
+      final run = container.read(agentRunProvider(_noChat));
+      expect(run.steps, isEmpty);
+      expect(run.sources, isEmpty);
+      expect(run.plan, isEmpty);
     },
   );
 
@@ -445,10 +452,10 @@ void main() {
         'https://dart.dev',
       ]);
       // …and were exposed live for the working bubble.
-      expect(container.read(agentSourcesProvider).map((s) => s.url), [
-        'https://flutter.dev',
-        'https://dart.dev',
-      ]);
+      expect(
+        container.read(agentRunProvider(_noChat)).sources.map((s) => s.url),
+        ['https://flutter.dev', 'https://dart.dev'],
+      );
     },
   );
 
@@ -483,7 +490,7 @@ void main() {
         AgentPlanStatus.done,
       ]);
       // …and the live provider holds that latest full list, not the union.
-      expect(container.read(agentPlanProvider), hasLength(2));
+      expect(container.read(agentRunProvider(_noChat)).plan, hasLength(2));
     },
   );
 
@@ -1194,19 +1201,22 @@ void main() {
     await _untilListening(service);
     service.session.events.add(const HermesAcpPermission(_permission));
     await pumpEventQueue();
-    expect(container.read(agentPermissionProvider)?.command, 'rm -rf build');
+    expect(
+      container.read(agentPermissionProvider(_noChat))?.command,
+      'rm -rf build',
+    );
     expect(service.session.answers, isEmpty);
 
     container
-        .read(agentPermissionProvider.notifier)
-        .answer(AgentPermissionChoice.allowOnce);
+        .read(agentPermissionsProvider.notifier)
+        .answer(_noChat, AgentPermissionChoice.allowOnce);
     expect(service.session.answers, [(7, 'allow_once')]);
 
     service.session.finish('Cleaned it.');
     await finished;
 
     // The turn is over: nothing is left waiting on an answer.
-    expect(container.read(agentPermissionProvider), isNull);
+    expect(container.read(agentPermissionProvider(_noChat)), isNull);
     expect((updates.last as ChatSendSuccess).reply.text, 'Cleaned it.');
   });
 
@@ -1222,13 +1232,13 @@ void main() {
     await _untilListening(service);
     service.session.events.add(const HermesAcpPermission(_permission));
     await pumpEventQueue();
-    expect(container.read(agentPermissionProvider), isNotNull);
+    expect(container.read(agentPermissionProvider(_noChat)), isNotNull);
 
     // The user hit stop.
     await sub.cancel();
     await pumpEventQueue();
 
-    expect(container.read(agentPermissionProvider), isNull);
+    expect(container.read(agentPermissionProvider(_noChat)), isNull);
     expect(service.session.answers, isEmpty);
   });
 }

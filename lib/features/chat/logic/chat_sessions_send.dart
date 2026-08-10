@@ -96,6 +96,11 @@ mixin _ChatSend on _ChatSessions {
     final id = conversation.id;
     final done = _dones[id] = Completer<void>();
     final project = ref.read(projectByIdProvider(conversation.projectId));
+    // Who answers this turn, read here for the same reason [approval] is: the
+    // agent belongs to the chat's *project*, and a turn can go out (or wait in
+    // the agent queue) long after the user has moved to a project that runs a
+    // different one.
+    final agent = ref.read(chatAgentForProjectProvider(conversation.projectId));
     // Plain text goes through the agent (it can use tools and keeps the
     // conversation's context); pictures — generating one, or a turn that carries
     // attachments — go straight to the grid's chat API, which is the only one
@@ -119,18 +124,17 @@ mixin _ChatSend on _ChatSessions {
       planTurn: planTurn,
       approval: approval,
       viaAgent: viaAgent,
+      agent: agent,
       done: done,
     );
 
-    // Serialize agent turns (see [ChatSessionsState.runningAgentId]): a second
-    // one waits its turn rather than running concurrently and corrupting the
-    // first's session and permission card. The chat sits in its [SendBusy]
-    // "thinking" state until the slot frees. Relay/media turns share none of
-    // that and go straight out, still fully concurrent.
-    if (viaAgent &&
-        state.runningAgentId != null &&
-        state.runningAgentId != id) {
-      _agentQueue.add((id: id, dispatch: dispatch));
+    // Agent turns take turns **within a project** (see [_agentQueues]): two
+    // agents in one folder would edit the same files. Anywhere else — another
+    // project, or no project at all — the turn goes straight out, concurrently,
+    // as a relay/media turn always has.
+    final lane = conversation.projectId;
+    if (viaAgent && lane != null && _laneBusy(lane, except: id)) {
+      (_agentQueues[lane] ??= []).add((id: id, dispatch: dispatch));
     } else {
       dispatch();
     }
@@ -154,16 +158,17 @@ mixin _ChatSend on _ChatSessions {
     required bool planTurn,
     required AgentApprovalMode approval,
     required bool viaAgent,
+    required AgentTool agent,
     required Completer<void> done,
   }) {
     final id = conversation.id;
-    // Claim the agent's single turn slot — released on finish/stop, which then
-    // starts the next queued agent turn — and with it the files this turn is
-    // about to change, so its undo stays with this chat even when the user has
-    // moved to another one by the time the agent writes.
+    // Take this project's lane — released on finish/stop, which then starts the
+    // next turn waiting in it — and mark where this turn's file changes begin,
+    // so "what did it just do?" answers for this turn and not the chat's whole
+    // history.
     if (viaAgent) {
-      state = state.copyWith(runningAgentId: id);
-      ref.read(agentChangesProvider.notifier).attributeTo(id);
+      state = state.copyWith(runningAgentIds: {...state.runningAgentIds, id});
+      ref.read(agentChangesProvider.notifier).beginTurn(id);
     }
 
     // How long the answer takes, timed from here rather than from `send`: an
@@ -176,7 +181,7 @@ mixin _ChatSend on _ChatSessions {
     // reading any of them would time the last word instead of the first.
     Duration? firstToken;
 
-    final updates = _senderFor(modality, attachments).send(
+    final updates = _senderFor(viaAgent, agent).send(
       network: network,
       model: model,
       history: conversation.messages,
@@ -355,21 +360,16 @@ mixin _ChatSend on _ChatSessions {
     _saveAndReplace(renamed);
   }
 
-  /// Who answers this turn: the agent for plain text, the grid's chat API for
-  /// anything with a picture in it (and on a computer with no agent installed).
-  ChatSender _senderFor(
-    PlaygroundModality modality,
-    List<MediaAttachment> attachments,
-  ) {
-    final viaAgent = agentAnswersTurn(
-      modality: modality,
-      hasAttachments: attachments.isNotEmpty,
-      agentInstalled: ref.read(anyAgentInstalledProvider),
-    );
-    return viaAgent
-        ? ref.read(chatAgentSenderProvider)
-        : ref.read(chatSenderProvider);
-  }
+  /// Who answers this turn: [agent] for plain text ([viaAgent]), the grid's chat
+  /// API for anything with a picture in it (and on a computer with no agent
+  /// installed).
+  ///
+  /// Both facts are decided by the caller and passed in rather than re-derived
+  /// here: the turn has to be sent by the agent its own chat resolved at Send,
+  /// which an agent turn waiting in the queue can outlive.
+  ChatSender _senderFor(bool viaAgent, AgentTool agent) => viaAgent
+      ? ref.read(agentChatSenderProvider(agent))
+      : ref.read(chatSenderProvider);
 
   /// Stop the **open** chat's in-flight reply, keeping whatever the assistant had
   /// already said. A reply streaming in another chat is left running.

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../chat/logic/chat_scope.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
 import '../logic/agent_grid_support.dart';
@@ -33,7 +33,9 @@ class AgentsView extends ConsumerWidget {
       title: 'Agents',
       subtitle:
           'The assistant that does the work: it runs on this computer, with '
-          'your model, and can use your files and tools.',
+          'your model, and can use your files and tools. Pick one and the chat '
+          'you have open uses it — inside a project, that project keeps the '
+          'choice.',
       // Name on the left, action on the right. Let a row run the full width of a
       // large window and the two ends drift apart until pairing them takes a
       // deliberate look; this keeps a row scannable in one glance. Matches the
@@ -97,10 +99,13 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
         : AppGlass.surfaceFill;
 
     // Tapping the card hands the chat to this agent — the whole row is the
-    // affordance, so the user never has to hunt for a specific button. Only when
-    // there's a switch to make: an installed agent this grid can run that isn't
-    // already the one answering. The Update button carries its own tap, so it
-    // never triggers this. Uninstalled/unavailable/active cards aren't tappable.
+    // affordance, so the user never has to hunt for a specific button. It lands
+    // where the open chat's choice lives (its project, or the app's standing
+    // one), so this screen and the composer's picker can't disagree about who
+    // answers. Only when there's a switch to make: an installed agent this grid
+    // can run that isn't already the one answering. The Update button carries its
+    // own tap, so it never triggers this. Uninstalled/unavailable/active cards
+    // aren't tappable.
     final canSwitch = installed && runsHere && !isActive;
 
     return MouseRegion(
@@ -109,7 +114,7 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: canSwitch
-            ? () => ref.read(chatPrefsProvider.notifier).setChatAgent(tool.id)
+            ? () => ref.read(chatScopePrefsProvider).setAgent(tool.id)
             : null,
         child: AnimatedContainer(
           // The house row-hover timing, shared with the plugin and job lists.

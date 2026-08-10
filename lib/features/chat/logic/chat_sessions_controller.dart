@@ -9,9 +9,11 @@ import '../../../infrastructure/platform/window_focus.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agents/logic/agent_changes.dart';
+import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
@@ -70,14 +72,24 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// stopped rather than finished.
   final Map<String, ({String? reply, String? failure})> _lastTurn = {};
 
-  /// Agent turns waiting for the slot, oldest first. The chat holding the slot
-  /// is [ChatSessionsState.runningAgentId]; the local agent has one live session
-  /// and one permission focus, so agent turns are serialized — a second waits
-  /// here rather than clobbering the first (two at once left one chat hung on a
-  /// permission the other had cleared). The user turn is already committed and
-  /// the chat sits in [SendBusy] until its [dispatch] runs. Relay/media turns
-  /// touch none of this and never queue.
-  final List<({String id, void Function() dispatch})> _agentQueue = [];
+  /// Agent turns waiting for their **project's** lane, oldest first, keyed by
+  /// project id. The chats running right now are
+  /// [ChatSessionsState.runningAgentIds].
+  ///
+  /// One lane per project, because that is the real conflict: two agents let
+  /// loose in the same folder edit the same files, run the same dev server and
+  /// undo each other's work. Two *different* projects share nothing, so making
+  /// them take turns only made the user wait — which is what one app-wide lane
+  /// did, and why a chat could sit on "Finishing another chat first…" over work
+  /// in a folder it had never heard of.
+  ///
+  /// A chat outside every project never queues: it has no lane, so it goes out
+  /// the moment it's sent.
+  ///
+  /// The user turn is already committed and the chat sits in [SendBusy] until
+  /// its [dispatch] runs. Relay/media turns touch none of this and never queue.
+  final Map<String, List<({String id, void Function() dispatch})>>
+  _agentQueues = {};
 
   ChatStore get _store => ref.read(chatStoreProvider);
 
@@ -194,6 +206,10 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 
   /// Cancel one chat's send — [_ChatSettle].
   void _cancel(String id);
+
+  /// Whether a project's agent lane is taken — [_ChatSettle], read by
+  /// [_ChatSend] to decide between dispatching a turn and queueing it.
+  bool _laneBusy(String lane, {required String except});
 }
 
 class ChatSessionsController extends _ChatSessions
@@ -363,8 +379,9 @@ class ChatSessionsController extends _ChatSessions
     _deletedWhileLoading?.add(id);
     // The chat that held this undo is gone, so nothing can reach it any more —
     // drop the snapshots rather than keep whole file contents in memory for a
-    // conversation the user deleted.
+    // conversation the user deleted, and its live feed with them.
     ref.read(agentChangesProvider.notifier).forget(id);
+    ref.read(agentRunsProvider.notifier).forget(id);
     final remaining = [
       for (final c in state.conversations)
         if (c.id != id) c,
@@ -416,10 +433,12 @@ class ChatSessionsController extends _ChatSessions
     ];
     if (doomed.isEmpty) return;
     final changes = ref.read(agentChangesProvider.notifier);
+    final runs = ref.read(agentRunsProvider.notifier);
     for (final id in doomed) {
       _cancel(id);
       _store.delete(id);
       changes.forget(id);
+      runs.forget(id);
       _deletedWhileLoading?.add(id);
     }
     final gone = doomed.toSet();

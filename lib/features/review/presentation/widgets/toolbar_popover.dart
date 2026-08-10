@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/panel_visibility.dart';
+import '../../../../shared/widgets/popover_surface.dart';
 
 /// A panel hung under a control in the toolbar.
 ///
@@ -96,32 +96,4 @@ class _ToolbarPopoverState extends State<ToolbarPopover> {
       setState(() => _portal.isShowing ? _portal.hide() : _portal.show());
 
   void close() => setState(_portal.hide);
-}
-
-/// What a popover is drawn on: the app's menu chrome, so a panel and a menu
-/// opened from the same toolbar are not two kinds of surface.
-class PopoverSurface extends StatelessWidget {
-  const PopoverSurface({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Material(
-      color: appMenuFill(),
-      elevation: 12,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppGlass.hair),
-        ),
-        // Vertical only: rows carry their own gutter so their highlight reads
-        // as an inset pill, and side padding here would double it.
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: child,
-      ),
-    );
-  }
 }

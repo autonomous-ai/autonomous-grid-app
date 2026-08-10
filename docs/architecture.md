@@ -476,8 +476,8 @@ gỡ Git **phải invalidate nó** — đúng như `agentInstalledProvider` vớ
 | File | Nội dung |
 |---|---|
 | `chats/<id>.json` | Toàn bộ transcript conversation |
-| `chat_prefs.json` | grid, model, approval, detail mode, themeMode, chatAgent, 2 font family + 2 size |
-| `projects.json` | `Project{id, name, path, instructions, memory, pinned}` |
+| `chat_prefs.json` | grid, model, approval, detail mode, themeMode, chatAgent, 2 font family + 2 size — **mặc định của app**, chỉ áp cho chat ngoài mọi project |
+| `projects.json` | `Project{id, name, path, instructions, memory, pinned, agent?, model?}` — `agent`/`model` null = theo mặc định app |
 | `project_tasks.json` | `{jobId → projectId}` |
 | `prompts.json` | Thư viện prompt `/` |
 | `onboarding.json` | `{"decision": "local"\|"openai"\|"later"}` |
@@ -613,13 +613,20 @@ cùng lúc), và mọi UI quanh nó.
 ```dart
 conversations: List<Conversation>   // toàn bộ, kể cả archived
 activeId, draftProjectId, loading
-runningAgentId: String?             // chat đang giữ slot agent DUY NHẤT
+runningAgentIds: Set<String>        // các chat đang chạy agent turn (1 lane / project)
 phases: Map<String, SendPhase>      // chỉ chứa chat đang bận
 errors, awaitingPlanIds, queued: Map<String, List<QueuedTurn>>
 ```
 
 Getter kép — bản "cho chat đang mở" (`phase`, `sending`) và bản "cho chat bất kỳ" (`phaseFor`,
-`sendingFor`) vì sidebar phải đánh dấu chat nền đang chạy.
+`sendingFor`, `agentRunningIn`) vì sidebar phải đánh dấu chat nền đang chạy.
+
+> **Nhiều agent turn chạy cùng lúc ⇒ mọi live state của turn phải khoá theo conversation.**
+> `agentRunsProvider` (steps + sources + plan, đọc qua `agentRunProvider(chatId)`),
+> `agentPermissionsProvider` (đọc qua `agentPermissionProvider(chatId)`) và
+> `AgentChangesController.record(chatId:)` đều nhận id chat. Trước đây cả ba là **một** slot dùng
+> chung — đó chính là lý do phải serialize toàn app: turn thứ hai ghi đè `_respond` của turn đầu và
+> treo chat đó tới lúc timeout.
 
 #### `send()` — 11 bước
 
@@ -632,8 +639,9 @@ Getter kép — bản "cho chat đang mở" (`phase`, `sending`) và bản "cho 
 7. Đặt tên lần đầu (`deriveConversationTitle`) — chỉ một lần
 8. **`_commit()` ghi đĩa TRƯỚC khi gửi** → tin user không bao giờ mất
 9. `agentAnswersTurn(modality, hasAttachments, agentInstalled)` — agent chỉ nhận **text, không attachment, và phải cài**
-10. **Serialize agent turn**: đúng **một** agent turn tại một thời điểm (`runningAgentId` + `_agentQueue`).
-    Turn relay/media chạy song song thoải mái
+10. **Serialize agent turn theo PROJECT**: mỗi project một lane (`runningAgentIds` + `_agentQueues[projectId]`).
+    Hai chat cùng thư mục thì xếp hàng (chúng sửa cùng file); khác project — hoặc **ngoài mọi project** —
+    chạy song song. Turn relay/media không đụng gì tới lane
 11. `return done.future` — `await send(...)` đợi turn settle (goal loop dựa vào đây)
 
 #### Feature con
@@ -765,16 +773,34 @@ không feature nào ngoài `agents/logic/adapters/` được biết tên class `
 
 ```
 ChatSessionsController.send()
+  → chatAgentForProjectProvider(conversation.projectId)   ← chốt Ở send, như approval
+      chatAgentChoiceProvider = project.agent ?? chatPrefs.chatAgent
+      resolve (KHÔNG lưu): chọn nếu _canAnswer (installed && agentRunsOnGrid)
+                           ngược lại mượn agent đầu tiên clear cả hai bar
+                           cuối cùng kChatAgent = hermes
   → agentAnswersTurn(modality, hasAttachments, agentInstalled)
       false → chatSenderProvider (relay HTTP)
-      true  → chatAgentSenderProvider
-                → activeChatAgentProvider  (resolve, KHÔNG lưu)
-                    chatPrefs.chatAgent nếu _canAnswer (installed && agentRunsOnGrid)
-                    ngược lại mượn agent đầu tiên clear cả hai bar
-                    cuối cùng kChatAgent = hermes
+      true  → agentChatSenderProvider(agent)
 ```
 
-Pick của user trong prefs **không bị ghi đè** → đổi grid xong là trả lại.
+Pick của user **không bị ghi đè** → đổi grid xong là trả lại.
+
+#### Agent + model đi theo project
+
+`chat_scope.dart` là chỗ *duy nhất* quyết định lựa chọn được ghi vào đâu:
+
+```
+openChatProjectIdProvider  = chatSessions.openProjectId (chat đã lưu, hoặc draft)
+chatScopePrefsProvider.setAgent/setModel
+    trong project → ProjectsController.setAgent/setModel   (projects.json)
+    ngoài project → ChatPrefsController.setChatAgent/setModel (chat_prefs.json)
+đọc lại: chatAgentChoiceProvider(projectId) / chatScopeModelProvider
+```
+
+Ba nơi user đổi agent (composer `AgentPicker`, card ở Agents, `SwitchAgentButton`) đều đi qua đây,
+nên không nơi nào ghi lệch. Agent chốt **theo conversation** chứ không theo chat đang mở: một
+follow-up xếp hàng trong project A phải do agent của A trả lời, dù user đã sang project B.
+`ProjectAssistantCard` trong rail chỉ *hiển thị* + nút trả về mặc định app — pick thật nằm ở composer.
 
 #### Approval flow — **chỉ Hermes có kênh**
 
@@ -1384,6 +1410,17 @@ ReviewController (AsyncNotifier.family theo folder)
   điều kiện nghĩa là **6 lệnh `git` mỗi lần agent ghi một file** — một cơn bão spawn process sau một
   danh sách không ai đang nhìn
 
+**Ba đường tự đọc lại, và chúng bù chỗ hở của nhau:**
+
+| Đường | Bắt được gì | Cách ghìm chi phí |
+|---|---|---|
+| `_followDisk` — nghe `fileChangesProvider` | agent ghi file, watcher của Files panel | burst đã gộp sẵn, **cộng** thêm lặng 400ms → agent ghi 12 file = **một** lần đọc |
+| `_ReviewTab`: lượt agent **kết thúc** khi Review đang hiện | **commit** — thứ đĩa không nói được, vì commit **không ghi file nào trong working tree** dù git đã đổi hẳn | cuối lượt, không phải mỗi lần ghi |
+| `_ReviewTab`: tab **quay lại hiện** | `git commit`/`checkout` gõ tay ở tab Terminal bên cạnh; mọi thứ xảy ra lúc không ai nhìn | một lần mỗi lần quay lại, không poll |
+
+> "Đang hiện" = `PanelTabVisible.of(context)` **và** panel đang mở — panel đóng vẫn giữ tab trong cây,
+> nên cờ của riêng tab mới là nửa câu trả lời.
+
 #### `ReviewState` — 4 nhánh vì **3 trong số đó user làm được gì đó**
 
 `ReviewNeedsGit` (→ màn Git) · `ReviewNotARepo(folder)` (→ mời `git init`) · `ReviewFailed(message)` ·
@@ -1548,12 +1585,13 @@ Seam thiết kế đúng (`abstract interface class OverlordRepository { Stream<
       _commit(phase: SendBusy)                          ← GHI ĐĨA TRƯỚC KHI GỬI
       viaAgent = agentAnswersTurn(modality, hasAttachments, agentInstalled)
 
-[4] Serialize: runningAgentId != null && != id → vào _agentQueue
-                                                 (_QueuedBubble "Finishing another chat first…")
+[4] Lane theo project: conversation.projectId != null && _laneBusy(lane) → vào _agentQueues[lane]
+                       (_QueuedBubble "Finishing another chat in this project…")
+                       chat ngoài project: không có lane → chạy ngay
 
-[5] _dispatch()  → agentChangesProvider.attributeTo(id)   ← claim mọi file change
+[5] _dispatch()  → agentChangesProvider.beginTurn(id)     ← mốc "turn này bắt đầu từ đâu"
                   Stopwatch bắt đầu Ở ĐÂY (không ở send — chờ trong queue không tính giờ)
-                  _senderFor(modality, attachments)
+                  _senderFor(viaAgent, agent)             ← agent chốt theo project của chat
 
 ┌─────────────────────────────── NHÁNH A: RELAY (không agent) ────────────────────────────────┐
 │ [6a] DefaultChatSender.send()                                                                │
@@ -1567,7 +1605,7 @@ Seam thiết kế đúng (`abstract interface class OverlordRepository { Stream<
 
 ┌───────────────────────────── NHÁNH B: HERMES (ACP, session dài) ─────────────────────────────┐
 │ [6b] HermesChatSender.send()                                                                 │
-│      resetAgentFeed(_ref)  ← ĐỒNG BỘ, TRƯỚC MỌI await                                        │
+│      agentRuns.reset(chat)  ← ĐỒNG BỘ, TRƯỚC MỌI await (feed khoá theo conversation)                                        │
 │      hermesGridLink.point(network, model)                                                    │
 │        → ClientAppConfigurator.apply → ~/.hermes/config.yaml (+ .bak)                         │
 │        → ensureRuntimeSupport() fire-and-forget · cron.followModel(model) re-arm             │

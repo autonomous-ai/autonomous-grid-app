@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/scroll_reveal_text.dart';
 
 /// How long a row takes to settle into — or out of — being the selected one.
 ///
@@ -42,6 +43,7 @@ class SidebarItem extends StatefulWidget {
     this.trailingAlwaysVisible = false,
     this.badge,
     this.tooltip,
+    this.revealLabelOnHover = false,
   });
 
   final String label;
@@ -71,6 +73,15 @@ class SidebarItem extends StatefulWidget {
   /// action; null on a row with nothing to flag.
   final Widget? badge;
   final String? tooltip;
+
+  /// Let a label too long for the rail slide left under the pointer until its
+  /// end is in view, instead of resting behind an ellipsis.
+  ///
+  /// Opt-in, because it only pays where the cut-off part is what you're hunting
+  /// for: two chats can be six words of the same sentence apart. A nav entry
+  /// ("Settings") is a fixed word you already know, and a label that crawled
+  /// every time the pointer crossed the rail would be noise.
+  final bool revealLabelOnHover;
 
   /// The row's left inset — where its icon starts, measured from the row's own
   /// edge. Exposed so chrome placed alongside these rows (the Settings back
@@ -239,23 +250,11 @@ class _SidebarRow extends StatelessWidget {
                           const SizedBox(width: 10),
                         ],
                         Expanded(
-                          child: Text(
-                            item.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            strutStyle: const StrutStyle(
-                              fontSize: 13.5,
-                              height: 1.25,
-                              forceStrutHeight: true,
-                            ),
-                            style: TextStyle(
-                              color: ink,
-                              fontSize: 13.7,
-                              height: 1.25,
-                              fontWeight: strong
-                                  ? AppFont.medium
-                                  : FontWeight.w400,
-                            ),
+                          child: _RowLabel(
+                            item: item,
+                            ink: ink,
+                            strong: strong,
+                            hovered: hovered,
                           ),
                         ),
                         // An unread mark sits just left of the action, always
@@ -293,6 +292,64 @@ class _SidebarRow extends StatelessWidget {
         // out and a layer to composite.
         if (select > 0) _SelectionRail(select: select),
       ],
+    );
+  }
+}
+
+/// The row's label — and, on a row that asks for it, the reveal of whatever the
+/// rail was too narrow to show.
+///
+/// The travelling version is mounted only while the pointer is on the row, so
+/// leaving puts the label back at its start: the reveal answers "which chat is
+/// this?" once, and the next hover asks the question again.
+class _RowLabel extends StatelessWidget {
+  const _RowLabel({
+    required this.item,
+    required this.ink,
+    required this.strong,
+    required this.hovered,
+  });
+
+  final SidebarItem item;
+  final Color ink;
+  final bool strong;
+  final bool hovered;
+
+  /// Pinned metrics, shared by both versions of the label: the strut is what
+  /// keeps every row's text on the same baseline whatever font falls out of the
+  /// fallback chain, and a travelling label that dropped it would jump a pixel
+  /// as the pointer landed.
+  static const _strut = StrutStyle(
+    fontSize: 13.5,
+    height: 1.25,
+    forceStrutHeight: true,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      color: ink,
+      fontSize: 13.7,
+      height: 1.25,
+      fontWeight: strong ? AppFont.medium : FontWeight.w400,
+    );
+
+    if (!item.revealLabelOnHover || !hovered) {
+      return Text(
+        item.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        strutStyle: _strut,
+        style: style,
+      );
+    }
+    return ScrollRevealText(
+      text: item.label,
+      style: style,
+      strutStyle: _strut,
+      // A beat behind the hover preview that opens beside the row, so the two
+      // read as one gesture settling rather than two things firing at once.
+      startDelay: const Duration(milliseconds: 460),
     );
   }
 }

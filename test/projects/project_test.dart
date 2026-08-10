@@ -123,6 +123,61 @@ void main() {
     expect(file.readAsStringSync(), isNot(contains('instructions')));
   });
 
+  test('a project starts on the app default assistant and model', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+    expect(project.agent, isNull);
+    expect(project.model, isNull);
+  });
+
+  test('the assistant and model picked in a project persist and reload next '
+      'launch — the whole point of steering one project', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+
+    c.read(projectsProvider.notifier).setAgent(project.id, 'codex');
+    c.read(projectsProvider.notifier).setModel(project.id, ' qwen3-coder ');
+
+    final reloaded = container().read(projectsProvider).single;
+    expect(reloaded.agent, 'codex');
+    expect(reloaded.model, 'qwen3-coder');
+  });
+
+  test('clearing them puts the project back on the app default and drops them '
+      'out of the saved file', () {
+    final c = container();
+    final project = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+    c.read(projectsProvider.notifier).setAgent(project.id, 'codex');
+    c.read(projectsProvider.notifier).setModel(project.id, 'qwen3-coder');
+
+    c.read(projectsProvider.notifier).setAgent(project.id, null);
+    c.read(projectsProvider.notifier).setModel(project.id, null);
+
+    expect(c.read(projectByIdProvider(project.id))?.agent, isNull);
+    expect(c.read(projectByIdProvider(project.id))?.model, isNull);
+    expect(file.readAsStringSync(), isNot(contains('agent')));
+    expect(file.readAsStringSync(), isNot(contains('model')));
+  });
+
+  test('steering one project leaves the others alone', () {
+    final c = container();
+    final steered = c.read(projectsProvider.notifier).add('${tmp.path}/api');
+    final other = c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+
+    c.read(projectsProvider.notifier).setAgent(steered.id, 'codex');
+
+    expect(c.read(projectByIdProvider(other.id))?.agent, isNull);
+  });
+
+  test('setting an assistant on a missing project is a no-op, not a crash', () {
+    final c = container();
+    c.read(projectsProvider.notifier).add('${tmp.path}/notes');
+
+    c.read(projectsProvider.notifier).setAgent('nope', 'codex');
+
+    expect(c.read(projectsProvider).single.agent, isNull);
+  });
+
   test('setting rules on a missing project is a no-op, not a crash', () {
     final c = container();
     c.read(projectsProvider.notifier).add('${tmp.path}/notes');

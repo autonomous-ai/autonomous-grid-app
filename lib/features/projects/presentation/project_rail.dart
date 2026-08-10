@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../logic/project.dart';
+import 'widgets/project_assistant_card.dart';
 import 'widgets/project_context_card.dart';
 import 'widgets/project_instructions_card.dart';
 import 'widgets/project_memory_card.dart';
@@ -30,6 +31,8 @@ class ProjectRail extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         ProjectContextCard(project: project),
+        const SizedBox(height: 12),
+        ProjectAssistantCard(project: project),
         const SizedBox(height: 12),
         ProjectScheduledCard(project: project),
         const SizedBox(height: 12),
