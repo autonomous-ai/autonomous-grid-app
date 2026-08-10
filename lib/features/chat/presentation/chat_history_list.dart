@@ -17,6 +17,7 @@ import '../../scheduled/logic/task_conversation_id.dart';
 import '../../scheduled/logic/task_unread_store.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import 'chat_hover_preview.dart';
 
 /// The sidebar's body: your projects, each holding the chats you opened inside
 /// it, then the chats that belong to no project.
@@ -412,6 +413,9 @@ class _ChatRow extends ConsumerWidget {
         (s) => s.contains(jobIdOfTaskConversation(chat.id)),
       ),
     );
+    // What the hover preview names as the chat's home. A chat whose project was
+    // removed reads as loose here for the same reason the rail lists it there.
+    final project = ref.watch(projectByIdProvider(chat.projectId));
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
@@ -420,33 +424,48 @@ class _ChatRow extends ConsumerWidget {
       // same column. Codex keeps this one clean left edge; anything else makes
       // the list read as ragged.
       padding: EdgeInsets.only(left: indented ? 28 : 0),
-      child: SidebarItem(
-        label: chat.title,
-        selected: selected,
-        // Muted-accent so it reads as "new" without competing with the selected
-        // row's bright rail; hidden the instant the chat is opened (read). A
-        // pinned chat marks itself when there's nothing more urgent to say —
-        // otherwise the top of the rail is a group with no explanation for why
-        // those rows are there.
-        badge: unread
-            ? const StatusDot(color: AppPalette.accent, size: 7)
-            : chat.pinned
-            ? Icon(LucideIcons.pin300, size: 11, color: AppPalette.textFaint)
-            : null,
-        onTap: () {
-          controller.select(chat.id);
-          ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-        },
-        // While a reply is coming in, the row shows a live cue instead of the
-        // archive action — you can't archive mid-reply anyway, and a pulsing
-        // cue says "still working" at a glance without hovering. Idle, it's the
-        // archive affordance revealed on hover: reversible, so it belongs on a
-        // list where a mis-aimed click lands on the row below; deleting a
-        // transcript stays behind the chat's own "…" menu.
-        trailingAlwaysVisible: working,
-        trailing: working
-            ? const _ChatActivityCue()
-            : _ArchiveButton(onTap: () => _archive(context, ref)),
+      // Hovering a row floats the whole title out to the right of the rail,
+      // where there's room for it — the rail itself can only ever show the
+      // first few words of a conversation's name.
+      child: ChatHoverPreview(
+        title: chat.title,
+        updatedAt: chat.updatedAt,
+        place: project?.name ?? 'Chats',
+        placeIcon: project != null
+            ? LucideIcons.folder300
+            : LucideIcons.messageSquare300,
+        child: SidebarItem(
+          label: chat.title,
+          // Two chats can be six words of the same sentence apart, and the rail
+          // shows the first three — so the row itself hands the rest over under
+          // the pointer instead of leaving the ellipsis to be argued with.
+          revealLabelOnHover: true,
+          selected: selected,
+          // Muted-accent so it reads as "new" without competing with the selected
+          // row's bright rail; hidden the instant the chat is opened (read). A
+          // pinned chat marks itself when there's nothing more urgent to say —
+          // otherwise the top of the rail is a group with no explanation for why
+          // those rows are there.
+          badge: unread
+              ? const StatusDot(color: AppPalette.accent, size: 7)
+              : chat.pinned
+              ? Icon(LucideIcons.pin300, size: 11, color: AppPalette.textFaint)
+              : null,
+          onTap: () {
+            controller.select(chat.id);
+            ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+          },
+          // While a reply is coming in, the row shows a live cue instead of the
+          // archive action — you can't archive mid-reply anyway, and a pulsing
+          // cue says "still working" at a glance without hovering. Idle, it's the
+          // archive affordance revealed on hover: reversible, so it belongs on a
+          // list where a mis-aimed click lands on the row below; deleting a
+          // transcript stays behind the chat's own "…" menu.
+          trailingAlwaysVisible: working,
+          trailing: working
+              ? const _ChatActivityCue()
+              : _ArchiveButton(onTap: () => _archive(context, ref)),
+        ),
       ),
     );
   }
