@@ -489,7 +489,6 @@ class _FooterStats extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final parallel = power.parallel;
-    final toks = power.throughputTokS;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -501,12 +500,9 @@ class _FooterStats extends StatelessWidget {
             value: '$parallel',
             unit: plural(parallel, 'task'),
           ),
-        if (toks != null)
-          _StatRow(
-            label: 'Speed',
-            value: formatThroughput(toks),
-            unit: 'tok/s',
-          ),
+        // No grid-wide "Speed" row: a single tok/s for the whole grid is the
+        // average of machines that differ by an order of magnitude, so it
+        // describes none of them. The dashboard shows each node's own figure.
         _StatRow(
           label: 'Models',
           value: '${power.models}',
