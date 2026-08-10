@@ -13,6 +13,14 @@ import 'diff_view.dart';
 /// A slim bar above the composer summarising what the agent changed in this
 /// conversation, with one tap to review the changes and one to undo them all.
 ///
+/// **Parked since 2026-08-10 — nothing in the app builds this today.** Git and
+/// the Review tab already show what the assistant changed, so a third notice
+/// over the composer was saying it a third time. It is kept whole rather than
+/// deleted because the decision was "hide it for now": putting it back is one
+/// line in `chat_view.dart`, where the removal is marked. What feeds it —
+/// [agentChangesProvider] and the snapshots behind undo — is still recorded,
+/// because Review's "Last turn" scope reads the same log.
+///
 /// Shown only when the open chat has something to undo — the honest answer to
 /// Full access's old "Nothing to undo" — and only while the bar hasn't hidden
 /// itself or been waved away ([agentChangesBarProvider]). Undoing stays possible
