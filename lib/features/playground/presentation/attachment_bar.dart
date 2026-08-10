@@ -74,7 +74,7 @@ class AttachmentBar extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (var i = 0; i < attachments.length; i++)
-              _Thumb(
+              AttachmentThumb(
                 attachment: attachments[i],
                 size: _thumbSize,
                 onRemove: () => onRemoveAt(i),
@@ -88,21 +88,31 @@ class AttachmentBar extends StatelessWidget {
 }
 
 /// One attached image with a remove affordance.
-class _Thumb extends StatelessWidget {
-  const _Thumb({
+///
+/// The remove button sits *inside* the picture's own corner. Hanging off the
+/// outside, as it did, made the tile 6px taller and wider than the size it was
+/// given: nothing could line up beside it, and on the top row the button was cut
+/// off by the padding above the strip.
+class AttachmentThumb extends StatelessWidget {
+  const AttachmentThumb({
+    super.key,
     required this.attachment,
-    required this.size,
     required this.onRemove,
+    this.size = 56,
   });
 
   final MediaAttachment attachment;
+
+  /// The tile's side. Bigger where picking images is the job (the media bar),
+  /// smaller in the chat composer, where a thumbnail is a receipt for something
+  /// already attached rather than something to look at.
   final double size;
+
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
-      clipBehavior: Clip.none,
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
@@ -114,18 +124,27 @@ class _Thumb extends StatelessWidget {
           ),
         ),
         Positioned(
-          top: -6,
-          right: -6,
+          top: 3,
+          right: 3,
           child: GestureDetector(
             onTap: onRemove,
-            child: Container(
+            child: const DecoratedBox(
+              // A fixed scrim rather than a theme token, and the one place in
+              // the app that is right: this sits on a photograph, which can be
+              // any colour in either theme, so the glyph needs its own ground
+              // rather than the window's.
               decoration: BoxDecoration(
-                color: AppPalette.windowBg,
+                color: Color(0xB3000000),
                 shape: BoxShape.circle,
-                border: Border.all(color: AppPalette.divider),
               ),
-              padding: const EdgeInsets.all(2),
-              child: const Icon(Icons.close_rounded, size: 14),
+              child: Padding(
+                padding: EdgeInsets.all(2),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 12,
+                  color: Color(0xFFFFFFFF),
+                ),
+              ),
             ),
           ),
         ),
