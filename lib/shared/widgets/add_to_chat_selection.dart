@@ -25,9 +25,10 @@ const double _dragSlop = 6;
 /// used to raise two different menus — the app's single *Add to Chat* on a drag,
 /// the platform's Copy/Select All strip on a right-click — and a surface that
 /// answers one selection with two menus is one the user has to learn twice. The
-/// platform strip is switched off (`contextMenuBuilder: null`) and its two
-/// actions are done here instead: copy is the text we already hold, and select
-/// all is [SelectionAreaState.selectableRegion]'s own.
+/// platform strip is switched off — by building nothing, never by passing null,
+/// see the builder below — and its two actions are done here instead: copy is
+/// the text we already hold, and select all is
+/// [SelectionAreaState.selectableRegion]'s own.
 ///
 /// macOS shows nothing after a mouse drag by design (see `_handleMouseDragEnd`
 /// in `selectable_region.dart`) and `SelectableRegion` keeps `_showToolbar`
@@ -181,9 +182,16 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
         child: SelectionArea(
           key: _area,
           onSelectionChanged: (content) => _selected = content?.plainText,
-          // Off: the menu above is the one this surface answers with, and the
-          // platform's strip would be a second one for the same selection.
-          contextMenuBuilder: null,
+          // Nothing: the menu above is the one this surface answers with, and
+          // the platform's strip would be a second one for the same selection.
+          //
+          // An empty widget rather than `null`, which reads like the way to
+          // say "no toolbar" and is a crash. `SelectableRegion._showToolbar`
+          // calls `widget.contextMenuBuilder!` with no null check
+          // (`selectable_region.dart:1384`), and it runs on a right-click and
+          // on a double-click — so null took the whole window to the red
+          // screen the moment anyone tried either.
+          contextMenuBuilder: (_, _) => const SizedBox.shrink(),
           child: widget.child,
         ),
       ),
