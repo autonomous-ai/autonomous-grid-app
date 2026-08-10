@@ -9,6 +9,9 @@ import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_grid_support.dart';
+import 'package:grid_app/features/chat/logic/chat_scope.dart';
+import 'package:grid_app/features/playground/logic/chat_sender.dart';
+import 'package:grid_app/features/projects/logic/project.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 
 /// A prefs controller pinned to a fixed value, so a test controls the remembered
@@ -25,18 +28,26 @@ class _FixedPrefs extends ChatPrefsController {
 /// [blocked] names the agents the open grid can't run. Which dialect decides
 /// that is `agent_grid_support_test`'s subject; here it is stubbed outright, so
 /// these tests are about *picking* an agent and no test reaches for a real grid.
+///
+/// [project] is the project the chat on screen sits in — null for a loose chat,
+/// which is what most of these are about. Stubbed at [openChatProjectIdProvider]
+/// so no test builds the chat sessions controller (and reads a real `~/.grid`).
 ProviderContainer _container({
   required String chosen,
   required bool hermes,
   required bool codex,
   bool claude = false,
   Set<AgentTool> blocked = const {},
+  Project? project,
 }) {
   final container = ProviderContainer(
     overrides: [
       chatPrefsProvider.overrideWith(
         () => _FixedPrefs(ChatPrefs(chatAgent: chosen)),
       ),
+      openChatProjectIdProvider.overrideWithValue(project?.id),
+      if (project != null)
+        projectByIdProvider(project.id).overrideWith((ref) => project),
       hermesInstalledProvider.overrideWithValue(hermes),
       codexInstalledProvider.overrideWithValue(codex),
       claudeInstalledProvider.overrideWithValue(claude),
@@ -48,6 +59,10 @@ ProviderContainer _container({
   addTearDown(container.dispose);
   return container;
 }
+
+/// A project that has (or hasn't) picked its own assistant.
+Project _project({String? agent}) =>
+    Project(id: 'p1', name: 'grid-apis', path: '/repo/grid-apis', agent: agent);
 
 void main() {
   group('which agent answers chats', () {
@@ -75,6 +90,54 @@ void main() {
         codex: false,
       );
       expect(container.read(activeChatAgentProvider), kChatAgent);
+    });
+  });
+
+  group('a chat inside a project', () {
+    test("answers with the project's own assistant, not the app's", () {
+      // The whole point of the per-project choice: the user set this repo to
+      // Codex once, and it holds there whatever the app was last left on.
+      final container = _container(
+        chosen: 'hermes',
+        hermes: true,
+        codex: true,
+        project: _project(agent: 'codex'),
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+    });
+
+    test("follows the app's choice while the project has picked nobody", () {
+      final container = _container(
+        chosen: 'codex',
+        hermes: true,
+        codex: true,
+        project: _project(),
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+    });
+
+    test('a project pointed at an agent this build dropped falls back rather '
+        'than leaving the chat unanswerable', () {
+      final container = _container(
+        chosen: 'hermes',
+        hermes: true,
+        codex: true,
+        project: _project(agent: 'gone'),
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.hermes);
+    });
+
+    test("a project's pick this grid can't run is reported as the hand-over, "
+        'the same as the app-wide one', () {
+      final container = _container(
+        chosen: 'hermes',
+        hermes: true,
+        codex: true,
+        blocked: const {AgentTool.codex},
+        project: _project(agent: 'codex'),
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.hermes);
+      expect(container.read(blockedChatAgentProvider), AgentTool.codex);
     });
   });
 
@@ -134,11 +197,16 @@ void main() {
     });
   });
 
-  group('the sender follows the active agent', () {
+  group('the sender follows the agent a turn was resolved for', () {
+    /// The sender chat routing would use for whichever agent answers here.
+    ChatSender senderFor(ProviderContainer container) => container.read(
+      agentChatSenderProvider(container.read(activeChatAgentProvider)),
+    );
+
     test('Codex active routes chats through the Codex sender', () {
       final container = _container(chosen: 'codex', hermes: true, codex: true);
       expect(
-        container.read(chatAgentSenderProvider),
+        senderFor(container),
         same(container.read(codexChatSenderProvider)),
       );
     });
@@ -146,7 +214,7 @@ void main() {
     test('Hermes active routes chats through the Hermes sender', () {
       final container = _container(chosen: 'hermes', hermes: true, codex: true);
       expect(
-        container.read(chatAgentSenderProvider),
+        senderFor(container),
         same(container.read(hermesChatSenderProvider)),
       );
     });
@@ -160,8 +228,29 @@ void main() {
       );
       expect(container.read(activeChatAgentProvider), AgentTool.claude);
       expect(
-        container.read(chatAgentSenderProvider),
+        senderFor(container),
         same(container.read(claudeChatSenderProvider)),
+      );
+    });
+
+    test("a project's turn is sent by its own agent, not the open chat's", () {
+      // A follow-up queued in one project goes out minutes later, by which time
+      // the user may be reading another. It must still be answered by the agent
+      // the project it was typed in runs.
+      final container = _container(
+        chosen: 'hermes',
+        hermes: true,
+        codex: true,
+        project: _project(agent: 'codex'),
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+      expect(
+        container.read(
+          agentChatSenderProvider(
+            container.read(chatAgentForProjectProvider(null)),
+          ),
+        ),
+        same(container.read(hermesChatSenderProvider)),
       );
     });
   });

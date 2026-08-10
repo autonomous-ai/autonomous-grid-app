@@ -137,6 +137,11 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   /// The model this task will be pinned to, out of [options]: the user's pick
   /// while it's still on offer, else the default for what the grid serves.
   ///
+  /// A task being made *inside* a project starts on that project's model, the
+  /// same one its chats run — a task set up in a folder is about that folder,
+  /// and offering the app's model there would quietly pin it to something the
+  /// user last used somewhere else.
+  ///
   /// Resolved from a list the build already watched rather than read from a
   /// provider here — this is also what `Schedule it` sends, and `ref.watch`
   /// outside `build` is not allowed.
@@ -145,7 +150,10 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     if (picked != null && options.any((option) => option.id == picked)) {
       return picked;
     }
-    return defaultTaskModel(options, ref.read(chatPrefsProvider).model);
+    return defaultTaskModel(
+      options,
+      widget.project?.model ?? ref.read(chatPrefsProvider).model,
+    );
   }
 
   /// Empty means the grid serves nothing the assistant can use — [_ModelRow]

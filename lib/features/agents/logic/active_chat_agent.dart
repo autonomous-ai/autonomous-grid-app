@@ -4,31 +4,54 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import 'adapters/claude_chat_sender.dart';
 import 'adapters/codex_chat_sender.dart';
 import 'adapters/hermes_chat_sender.dart';
+import '../../chat/logic/chat_scope.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_models.dart';
+import '../../projects/logic/project.dart';
 import 'agent_catalog.dart';
 import 'agent_grid_support.dart';
 import 'agent_model_support.dart';
 import 'agent_status.dart';
 
-/// The agent that answers chats right now — the user's remembered choice when
-/// it's installed *and* the open grid can run it, else any agent that clears
-/// both bars so chat still has one, else the catalog default.
+/// Which agent the chats in [projectId] are meant to run — the project's own
+/// pick when it has made one, else the app's standing choice ([ChatPrefs]).
+///
+/// A bare id, not an [AgentTool]: it's whatever was stored, including an id this
+/// build no longer knows. [chatAgentForProjectProvider] is what turns it into an
+/// agent that can actually answer.
+final chatAgentChoiceProvider = Provider.family<String, String?>((
+  ref,
+  projectId,
+) {
+  final project = ref.watch(projectByIdProvider(projectId));
+  return project?.agent ??
+      ref.watch(chatPrefsProvider.select((p) => p.chatAgent));
+});
+
+/// The agent that answers [projectId]'s chats — the choice above when it's
+/// installed *and* the open grid can run it, else any agent that clears both
+/// bars so chat still has one, else the catalog default.
 ///
 /// Resolving rather than *storing* the answer is the whole point: the user's
-/// pick stays in [ChatPrefs] untouched, so a grid that can't run Codex borrows
-/// the chat for as long as it's open and hands it back on the next grid that
-/// can. Writing the fallback into prefs would spend their choice to describe a
-/// grid they were passing through.
+/// pick stays where it was made (the project, or [ChatPrefs]) untouched, so a
+/// grid that can't run Codex borrows the chat for as long as it's open and hands
+/// it back on the next grid that can. Writing the fallback back down would spend
+/// their choice to describe a grid they were passing through.
 ///
 /// Both bars are honest ones: an agent the user has since removed can't answer,
 /// and neither can one this grid serves no model for (see [agentRunsOnGrid]).
-final activeChatAgentProvider = Provider<AgentTool>((ref) {
-  final chosen = ref.watch(chatPrefsProvider.select((p) => p.chatAgent));
+///
+/// Keyed by project so a turn can be dispatched with the agent of *its own*
+/// chat: a follow-up queued in one project goes out minutes later, by which time
+/// the user may be reading another, and it must still be answered by the agent
+/// the project it was typed in runs.
+final chatAgentForProjectProvider = Provider.family<AgentTool, String?>((
+  ref,
+  projectId,
+) {
   // The chosen agent, if it's one we know and it can answer here.
-  for (final tool in AgentTool.values) {
-    if (tool.id == chosen && _canAnswer(ref, tool)) return tool;
-  }
+  final chosen = agentToolById(ref.watch(chatAgentChoiceProvider(projectId)));
+  if (chosen != null && _canAnswer(ref, chosen)) return chosen;
   // The choice isn't available — fall back to any agent that can answer.
   for (final tool in AgentTool.values) {
     if (_canAnswer(ref, tool)) return tool;
@@ -36,20 +59,26 @@ final activeChatAgentProvider = Provider<AgentTool>((ref) {
   return kChatAgent;
 });
 
-/// The agent the user picked and this grid can't run — null whenever their pick
-/// is the one answering.
+/// The agent answering the chat **on screen** — [chatAgentForProjectProvider]
+/// for the project that chat belongs to.
+final activeChatAgentProvider = Provider<AgentTool>(
+  (ref) => ref.watch(
+    chatAgentForProjectProvider(ref.watch(openChatProjectIdProvider)),
+  ),
+);
+
+/// The agent the user picked for the open chat and this grid can't run — null
+/// whenever their pick is the one answering.
 ///
 /// Only reported for an agent that is actually *installed*: an uninstalled pick
 /// has a plainer problem, and the Agents screen already says so. Drives the
 /// chat's notice, so a silent hand-over never reads as the agent behaving oddly.
 final blockedChatAgentProvider = Provider<AgentTool?>((ref) {
-  final chosen = ref.watch(chatPrefsProvider.select((p) => p.chatAgent));
-  for (final tool in AgentTool.values) {
-    if (tool.id != chosen) continue;
-    if (!ref.watch(agentInstalledProvider(tool))) return null;
-    return ref.watch(agentRunsOnGridProvider(tool)) ? null : tool;
-  }
-  return null;
+  final chosen = agentToolById(
+    ref.watch(chatAgentChoiceProvider(ref.watch(openChatProjectIdProvider))),
+  );
+  if (chosen == null || !ref.watch(agentInstalledProvider(chosen))) return null;
+  return ref.watch(agentRunsOnGridProvider(chosen)) ? null : chosen;
 });
 
 /// An agent other than the one answering that could take this chat right now —
@@ -100,12 +129,16 @@ bool _canAnswer(Ref ref, AgentTool tool) =>
     ref.watch(agentInstalledProvider(tool)) &&
     ref.watch(agentRunsOnGridProvider(tool));
 
-/// The [ChatSender] for whichever agent is answering chats — the seam chat
-/// routing reads so it never has to know which agent is behind the reply.
-final chatAgentSenderProvider = Provider<ChatSender>((ref) {
-  return switch (ref.watch(activeChatAgentProvider)) {
+/// The [ChatSender] behind one agent — the seam chat routing reads so it never
+/// has to know which agent is behind the reply.
+///
+/// Keyed by agent rather than reading "the active one" so a turn can be sent by
+/// the agent that was resolved for *its* chat, even after the user has moved to
+/// a project that runs a different one (see `_ChatSend.send`).
+final agentChatSenderProvider = Provider.family<ChatSender, AgentTool>(
+  (ref, tool) => switch (tool) {
     AgentTool.codex => ref.watch(codexChatSenderProvider),
     AgentTool.claude => ref.watch(claudeChatSenderProvider),
     AgentTool.hermes => ref.watch(hermesChatSenderProvider),
-  };
-});
+  },
+);

@@ -476,8 +476,8 @@ gỡ Git **phải invalidate nó** — đúng như `agentInstalledProvider` vớ
 | File | Nội dung |
 |---|---|
 | `chats/<id>.json` | Toàn bộ transcript conversation |
-| `chat_prefs.json` | grid, model, approval, detail mode, themeMode, chatAgent, 2 font family + 2 size |
-| `projects.json` | `Project{id, name, path, instructions, memory, pinned}` |
+| `chat_prefs.json` | grid, model, approval, detail mode, themeMode, chatAgent, 2 font family + 2 size — **mặc định của app**, chỉ áp cho chat ngoài mọi project |
+| `projects.json` | `Project{id, name, path, instructions, memory, pinned, agent?, model?}` — `agent`/`model` null = theo mặc định app |
 | `project_tasks.json` | `{jobId → projectId}` |
 | `prompts.json` | Thư viện prompt `/` |
 | `onboarding.json` | `{"decision": "local"\|"openai"\|"later"}` |
@@ -765,16 +765,34 @@ không feature nào ngoài `agents/logic/adapters/` được biết tên class `
 
 ```
 ChatSessionsController.send()
+  → chatAgentForProjectProvider(conversation.projectId)   ← chốt Ở send, như approval
+      chatAgentChoiceProvider = project.agent ?? chatPrefs.chatAgent
+      resolve (KHÔNG lưu): chọn nếu _canAnswer (installed && agentRunsOnGrid)
+                           ngược lại mượn agent đầu tiên clear cả hai bar
+                           cuối cùng kChatAgent = hermes
   → agentAnswersTurn(modality, hasAttachments, agentInstalled)
       false → chatSenderProvider (relay HTTP)
-      true  → chatAgentSenderProvider
-                → activeChatAgentProvider  (resolve, KHÔNG lưu)
-                    chatPrefs.chatAgent nếu _canAnswer (installed && agentRunsOnGrid)
-                    ngược lại mượn agent đầu tiên clear cả hai bar
-                    cuối cùng kChatAgent = hermes
+      true  → agentChatSenderProvider(agent)
 ```
 
-Pick của user trong prefs **không bị ghi đè** → đổi grid xong là trả lại.
+Pick của user **không bị ghi đè** → đổi grid xong là trả lại.
+
+#### Agent + model đi theo project
+
+`chat_scope.dart` là chỗ *duy nhất* quyết định lựa chọn được ghi vào đâu:
+
+```
+openChatProjectIdProvider  = chatSessions.openProjectId (chat đã lưu, hoặc draft)
+chatScopePrefsProvider.setAgent/setModel
+    trong project → ProjectsController.setAgent/setModel   (projects.json)
+    ngoài project → ChatPrefsController.setChatAgent/setModel (chat_prefs.json)
+đọc lại: chatAgentChoiceProvider(projectId) / chatScopeModelProvider
+```
+
+Ba nơi user đổi agent (composer `AgentPicker`, card ở Agents, `SwitchAgentButton`) đều đi qua đây,
+nên không nơi nào ghi lệch. Agent chốt **theo conversation** chứ không theo chat đang mở: một
+follow-up xếp hàng trong project A phải do agent của A trả lời, dù user đã sang project B.
+`ProjectAssistantCard` trong rail chỉ *hiển thị* + nút trả về mặc định app — pick thật nằm ở composer.
 
 #### Approval flow — **chỉ Hermes có kênh**
 

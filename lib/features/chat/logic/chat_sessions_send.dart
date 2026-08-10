@@ -96,6 +96,11 @@ mixin _ChatSend on _ChatSessions {
     final id = conversation.id;
     final done = _dones[id] = Completer<void>();
     final project = ref.read(projectByIdProvider(conversation.projectId));
+    // Who answers this turn, read here for the same reason [approval] is: the
+    // agent belongs to the chat's *project*, and a turn can go out (or wait in
+    // the agent queue) long after the user has moved to a project that runs a
+    // different one.
+    final agent = ref.read(chatAgentForProjectProvider(conversation.projectId));
     // Plain text goes through the agent (it can use tools and keeps the
     // conversation's context); pictures — generating one, or a turn that carries
     // attachments — go straight to the grid's chat API, which is the only one
@@ -119,6 +124,7 @@ mixin _ChatSend on _ChatSessions {
       planTurn: planTurn,
       approval: approval,
       viaAgent: viaAgent,
+      agent: agent,
       done: done,
     );
 
@@ -154,6 +160,7 @@ mixin _ChatSend on _ChatSessions {
     required bool planTurn,
     required AgentApprovalMode approval,
     required bool viaAgent,
+    required AgentTool agent,
     required Completer<void> done,
   }) {
     final id = conversation.id;
@@ -176,7 +183,7 @@ mixin _ChatSend on _ChatSessions {
     // reading any of them would time the last word instead of the first.
     Duration? firstToken;
 
-    final updates = _senderFor(modality, attachments).send(
+    final updates = _senderFor(viaAgent, agent).send(
       network: network,
       model: model,
       history: conversation.messages,
@@ -355,21 +362,16 @@ mixin _ChatSend on _ChatSessions {
     _saveAndReplace(renamed);
   }
 
-  /// Who answers this turn: the agent for plain text, the grid's chat API for
-  /// anything with a picture in it (and on a computer with no agent installed).
-  ChatSender _senderFor(
-    PlaygroundModality modality,
-    List<MediaAttachment> attachments,
-  ) {
-    final viaAgent = agentAnswersTurn(
-      modality: modality,
-      hasAttachments: attachments.isNotEmpty,
-      agentInstalled: ref.read(anyAgentInstalledProvider),
-    );
-    return viaAgent
-        ? ref.read(chatAgentSenderProvider)
-        : ref.read(chatSenderProvider);
-  }
+  /// Who answers this turn: [agent] for plain text ([viaAgent]), the grid's chat
+  /// API for anything with a picture in it (and on a computer with no agent
+  /// installed).
+  ///
+  /// Both facts are decided by the caller and passed in rather than re-derived
+  /// here: the turn has to be sent by the agent its own chat resolved at Send,
+  /// which an agent turn waiting in the queue can outlive.
+  ChatSender _senderFor(bool viaAgent, AgentTool agent) => viaAgent
+      ? ref.read(agentChatSenderProvider(agent))
+      : ref.read(chatSenderProvider);
 
   /// Stop the **open** chat's in-flight reply, keeping whatever the assistant had
   /// already said. A reply streaming in another chat is left running.
