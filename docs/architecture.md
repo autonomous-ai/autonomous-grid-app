@@ -1,10 +1,14 @@
 # Grid Desktop App — Kiến trúc, Domain & Feature
 
-> Tài liệu kiến trúc đầy đủ, dựng từ việc đọc toàn bộ `lib/` (**558 file Dart, ~105.000 dòng, 23 feature domain**).
-> Cập nhật: **2026-08-06** · Nhánh `main` · Version `0.2.0+1`
+> Tài liệu kiến trúc đầy đủ, dựng từ việc đọc toàn bộ `lib/` (**668 file Dart, ~120.900 dòng, 26 feature domain**).
+> Cập nhật: **2026-08-10** · Nhánh `main` · Version `0.2.0+1`
+>
+> Bản 06/08 đo **558 file / 105.000 dòng / 23 domain**. Chênh lệch nằm gần như trọn vẹn ở **một tính năng
+> duy nhất**: hệ **panel quanh hội thoại** và ba bề mặt làm việc mở trong đó — `review/` (44 file),
+> `files/` (13), `terminal/` (7). Xem §7.22–§7.24, và §3 cho trục điều hướng **thứ hai** mà chúng sinh ra.
 >
 > Thay thế `docs/OVERVIEW.md` (viết 2026-07-14 — trước khi `prompts`, `appearance`, `auto_router`,
-> `connectors`, `skills` tồn tại và trước khi `agents/` phình từ vài file lên 65 file).
+> `connectors`, `skills` tồn tại và trước khi `agents/` phình từ vài file lên 71 file).
 > OVERVIEW.md vẫn đúng ở phần build/release và mô tả CLI seam; phần feature thì đã lạc hậu.
 
 ---
@@ -45,6 +49,7 @@ App cho phép, từ một cửa sổ:
 | **Model** | Duyệt catalog gợi ý theo phần cứng, tải GGUF, phục vụ, đặt context length |
 | **Playground** | Chat / sinh ảnh / sinh video OpenAI-compatible stream thẳng từ relay |
 | **Projects** | Một project = một thư mục agent được phép đọc, kèm rules + memory ghép vào lượt đầu |
+| **Làm việc cạnh chat** | Hai **panel** quanh hội thoại, mỗi cái nhiều tab: **Review** (diff của project, stage/commit/push, comment từng dòng), **Terminal** (shell thật qua pty), **Files** (duyệt & đọc file project). Nội dung của chúng đi ngược vào composer: gắn terminal, gắn file, gắn đoạn bôi đen |
 
 ### Bản chất
 
@@ -104,11 +109,32 @@ App cho phép, từ một cửa sổ:
 2. **Data plane = HTTP trực tiếp.** Chat/media stream qua relay (`{lan_signaling_url}/relay/v1/…`).
 3. **`~/.grid` là nguồn chân lý.** App chạy lệnh rồi **đọc lại đĩa**, không parse stdout khi thành công.
 
-### Invariant thứ tư (mới, do agent plane sinh ra)
+### Invariant thứ tư (do agent plane sinh ra)
 
 4. **Config của agent là *projection*, không phải nguồn.** Master store là `~/.grid/connectors/tokens.json`
    và `~/.grid/skills/`. App chiếu (project) chúng vào `~/.hermes/`, `~/.codex/`, `~/.claude*`.
    Xoá entry trong config agent mà không xoá ở master store là vô nghĩa — lần project kế tiếp ghi lại.
+
+### Mặt phẳng thứ tư — **local tooling** (mới 08/2026)
+
+Panel quanh chat sinh ra một loại subprocess **không phải `grid`, cũng không phải agent**: `git` và một
+**login shell chạy trong pty**. Cả hai đi qua seam riêng ở `infrastructure/cli/`, không dùng `GridCliService`:
+
+| | `git` | shell |
+|---|---|---|
+| Seam | `GitRepoService` (folder là repo?) + `GitRunner` (argv tuỳ ý) | `Pty.start` (`flutter_pty`) |
+| Resolve binary | `probeGit()` — **`~/.grid/tools/git` của app trước, rồi máy** | `resolveShell()` — `$SHELL` của user |
+| Argv dựng ở đâu | **hàm thuần** `review_argv.dart`, có test | user gõ |
+| Ai spawn | `infrastructure/` | ⚠️ `features/terminal/logic/terminal_session.dart` — **feature tự spawn process** |
+
+> ⚠️ **`GitRunner.run()` nhận argv tuỳ ý.** Khác `GridCliService` (đúng 3 method, catalog argv đóng),
+> đây là cửa mở: thứ giữ nó an toàn không phải type mà là **kỷ luật** — mọi argv nằm trong
+> `review_argv.dart` dưới dạng hàm thuần có test, không chỗ nào khác được ráp argv tại call site.
+>
+> ⚠️ **`git` chạy với `GIT_TERMINAL_PROMPT=0` + `GIT_SSH_COMMAND='ssh -o BatchMode=yes'`.** App không có
+> terminal, nên một `git push` hỏi mật khẩu sẽ treo tới hết timeout mà **không ai gõ được gì**. Tắt prompt
+> là thứ khiến màn hình nói được "sign in from Terminal" thay vì quay vòng. Credential helper của máy
+> **vẫn chạy** — chỉ chặn nhánh interactive.
 
 ### Phân lớp code
 
@@ -118,14 +144,15 @@ lib/
 ├── app/                   # MaterialApp, RootView (router 5 nhánh), single-instance, window lifecycle
 ├── core/                  # helper thuần: GridPaths, AppEnvironment, host_arch, composer_text
 ├── infrastructure/        # xương sống — KHÔNG business logic
-│   ├── cli/               # GridCliService + 3 agent runtime + Chrome bridge + parsers
+│   ├── cli/               # GridCliService + 3 agent runtime + Chrome bridge + git seam + parsers
 │   ├── api/               # 5 HTTP client + DTO
 │   ├── mcp/               # ConnectorBridge, McpProxy, RestInvoker
 │   ├── state/             # store đọc/ghi ~/.grid
 │   ├── platform/          # clipboard, notification, PDF, font, window focus
-│   └── logging/           # 4 sink ghi ~/.grid/logs
-├── features/              # 23 domain, mỗi cái logic/ + presentation/
-└── shared/                # theme (design system), widgets, layouts (shell/sidebar/settings)
+│   └── logging/           # 4 sink ghi ~/.grid/logs + ErrorBurstFilter
+├── features/              # 26 domain, mỗi cái logic/ + presentation/
+└── shared/                # theme (design system), widgets, layouts (shell/sidebar/settings),
+                           # code/ (syntax highlight), markdown/ (code block + stylesheet)
 ```
 
 Quy tắc `presentation → logic → infrastructure`, không bao giờ ngược. **Có 6 chỗ vi phạm thật**
@@ -172,6 +199,38 @@ Integrations / Developer / Archived. Release build còn **4 group / 7 row** (gro
 
 **Màn hình unreachable:** `OverlordView` và cả `features/overlord/` (**1.417 dòng**, không có
 `ShellSection`, không route, 0 tham chiếu).
+
+### Trục thứ hai: **panel** — điều hướng KHÔNG đi qua `ShellSection`
+
+Từ 08/2026 tab Chat có hai panel bọc quanh hội thoại, mỗi cái là một **tab strip riêng**. Bề mặt mở
+trong đó **không phải** `ShellSection`, không có route, không nằm trong bảng `section_view.dart`:
+
+```
+PanelHost.preview   bên phải hội thoại      ┐
+PanelHost.bottom    dưới hội thoại          ┘ hai panel, hai bộ tab hoàn toàn tách biệt
+
+PanelFeature.review    ⌃⇧G   Review   ┐
+PanelFeature.terminal        Terminal │ bảng ánh xạ: chat/presentation/panel_feature_view.dart
+PanelFeature.files     ⌘P    Files    ┘
+```
+
+- **`panelTabsProvider` là `family` theo `PanelHost`** — mở terminal cạnh chat không được đụng tới cái
+  đang mở dưới chat. Hai panel là hai *nơi làm việc*, như hai cửa sổ của cùng một app.
+- **`open()` luôn tạo tab mới; `reveal()` mới là "cho tôi xem cái này".** Phím tắt dùng `reveal` (bấm
+  ⌃⇧G ba lần phải ra một Review, không phải ba), menu "+" và launcher dùng `open` (user chọn dòng đó
+  nghĩa là "thêm một cái nữa").
+- **Tab đã mở ở lại trong cây widget.** Đó là thứ giữ scroll, thư mục đang mở và ô gõ dở qua mỗi lần
+  đổi tab. Hai thứ thoát khỏi cơ chế đó và phải được báo bằng `PanelTabVisible`: **popover trong
+  overlay** (nổi trên mọi thứ, đổi tab sẽ để nó lơ lửng trên bề mặt chẳng liên quan) và **việc không
+  nên chạy khi không ai nhìn**.
+- **`shortcut` trong `PanelFeature` là *nhãn*, chưa phải binding** — chỉ `⌃⇧G` có listener thật
+  (`home_shell.dart:_openReview`, và nó `select(ShellSection.chat)` trước, vì panel sống trong tab Chat).
+- Menu chỉ liệt kê **thứ đã dựng xong**. Browser và Side chat từng có mặt ở đây lúc còn là
+  `TODO — <name>`; `e37661d` gỡ đi — *"menu mở ra màn hình trống là câu trả lời tệ hơn menu ngắn"*.
+
+**Ba nút bật/tắt panel nằm ở `AppTopBar`**, theo đúng thứ tự chúng bao quanh chat đọc theo chiều kim
+đồng hồ từ mép trái: project rail → bottom → preview. Cùng `PanelToggle` với header của preview panel —
+*"phải là cùng một nút, không phải hai cái giống nhau rồi trôi khỏi nhau"*.
 
 ---
 
@@ -340,6 +399,58 @@ agent gọi tool ──► bridge ──┬─ effectiveTransport == mcp ──�
 **không bao giờ** được ghi (chỉ cờ `authorized`). Thêm `--api-key` vào argv là rò key vào cả Debug tab
 lẫn transcript.
 
+#### `ErrorBurstFilter` — vì sao log lại cần một cái van
+
+`DailyLogFile` ghi **đồng bộ + fsync trên UI isolate**. Một exception ném từ `build`/`paint`/frame
+callback **không xảy ra một lần — nó lặp lại mỗi frame**. 06/08 một assertion tooltip trong mouse tracker
+lặp **11.406 lần trong 2 phút rưỡi**, ghi **19MB** stack trace giống hệt nhau, và app phải bị kill.
+
+`main.dart:_installErrorHandlers` giờ lọc qua `ErrorBurstFilter` (`window` 30s, khớp theo **dòng đầu**
+cắt 200 ký tự, tối đa 256 chữ ký rồi clear sạch). Bản đầu tiên mang chẩn đoán; phần còn lại chỉ cần
+được **đếm** — log ghi `[+3000 identical since the last copy]`.
+
+> `platformDispatcher.onError` khoá theo **chính error**, không theo câu `'Uncaught error'` đứng trước nó
+> — mọi uncaught error dùng chung câu đó, và một lỗi lặp không được phép bịt miệng lỗi kế tiếp.
+
+### 4.6. Local tooling — `git` + pty
+
+Xem §2 cho vị trí của mặt phẳng này. Chi tiết:
+
+**`probeGit()` — thứ tự và một cái bẫy chỉ có trên macOS**
+
+1. `~/.grid/tools/git` (bản app tự tải) → 2. Git của máy.
+
+> ⚠️ **Trên macOS tuyệt đối không được exec `/usr/bin/git`.** File đó **có trên mọi máy Mac** — nó là
+> một trong 78 hard link tới cùng một stub `xcode-select`, nên kiểm tra "file tồn tại" chứng minh **con
+> số không**. Chạy nó khi chưa có Command Line Tools sẽ **bật hộp thoại cài đặt của Apple** đè lên việc
+> user đang làm — tức một *probe* biến thành một *lời mời cài đặt*. Nhánh Mac vì thế resolve developer
+> directory bằng `xcode-select -p` (binary khác, không bao giờ prompt) rồi chạy git bên trong theo
+> đường tuyệt đối.
+
+`GitStatus` sealed 3 nhánh: `GitReady{path, version, ours}` · `GitMissing` · `GitTooOld` — tách
+`GitTooOld` khỏi `GitMissing` để copy nói được *upgrade* thay vì *install*.
+
+**Cài Git — một đường duy nhất.** `BackgroundGitInstaller` (launch, im lặng) và nút ở Settings ▸ Git
+**đều đi qua `GitInstallController`**: nó giữ single-flight guard, re-probe và adopt. Hai caller riêng
+sẽ đua nhau vào cùng một thư mục đích và để lại cây file nửa vời.
+
+> **Git user đã có luôn thắng.** App chỉ lấp chỗ trống. Git mang theo credential helper, proxy và
+> certificate **của user** — thay thế nó sẽ làm hỏng việc clone repo private theo kiểu *trông như bug
+> của mình nhưng lại là của họ*.
+
+`gitStatusProvider` là `FutureProvider` **cache suốt đời app** (probe spawn process). Thứ gì cài hoặc
+gỡ Git **phải invalidate nó** — đúng như `agentInstalledProvider` với `reprobeAgent`.
+
+**pty** (`flutter_pty` + `xterm`): `resolveShell()` lấy `$SHELL` của user. Ba thứ đã là bug thật:
+
+- `TERM=xterm-256color` + `TERM_PROGRAM=Grid` **phải spread đè lên `Platform.environment`** — app mở từ
+  IDE thừa kế `TERM=dumb`, và `dumb` tắt màu, tắt con trỏ, tắt mọi chương trình full-screen
+- **`xterm` đếm cột-rồi-hàng, pty đếm hàng-rồi-cột** — truyền thẳng là hoán vị hai số ở mọi lần resize
+  (`terminal.onResize = (w, h, _, _) => pty.resize(h, w)`)
+- **Kill bằng `SIGHUP`, không phải `SIGTERM`** — đó là thứ đóng cửa sổ terminal gửi đi, nên shell sẽ
+  hangup con của nó (một `flutter run` đang chạy) thay vì để chúng ôm một pty không ai đọc.
+  Windows chỉ biết `SIGTERM`/`SIGKILL` — xin thứ khác là ném exception
+
 ---
 
 ## 5. Bản đồ dữ liệu trên đĩa
@@ -358,6 +469,7 @@ lẫn transcript.
 | `logs/*` | app | text | tab Debug "Open logs" |
 | `bin/` | app + CLI | binary | `uv`, `llama-server`, `codex`, agent |
 | `tools/`, `python/` | `uv` | — | Hermes venv |
+| `tools/git/` | app (`GitInstaller`) | binary tree | `probeGit()` — **giải nén nguyên cây**, không chỉ file `git`: thiếu `libexec/git-core` thì `git clone` qua HTTPS chết bằng `'remote-https' is not a git command`. Với tới qua `HostEnvironment.gitEnvironment()` |
 
 ### `~/.grid/app` — app sở hữu (CLI không chạm)
 
@@ -424,8 +536,14 @@ lẫn transcript.
    titlebar hidden trên macOS
 6. **Sparkle** — set feed URL (`{arch}` thay bằng `arm64`/`x86_64`), interval 86400s.
    **Cố ý không check ngay** — check launch nằm ở `HomeShell`
-7. **Notifications** — xin permission một lần, lúc user đang nhìn app
+7. **Dựng** `SystemDesktopNotifier` — nhưng **KHÔNG xin permission ở đây** (xem cảnh báo dưới)
 8. `runApp(ProviderScope(overrides, child: ConnectorRefreshScope › GridSkillsScope › NotificationScope › GridApp))`
+
+> ⚠️ **Bước 7 đã đổi, và lý do là một bug thật.** `ensurePermission()` **không return cho tới khi user
+> trả lời hộp thoại của OS**. Cửa sổ đã dựng ở bước 5 nhưng chưa có frame nào được vẽ cho tới `runApp` —
+> nên `await` ở đây để lại một **cửa sổ đen không đóng được** suốt thời gian hộp thoại đứng đó (lần mở
+> đầu tiên sau mỗi bản update). Giờ notifier được override **vô điều kiện** (`show` tự no-op tới khi nó
+> biết câu trả lời), còn việc hỏi dời xuống `HomeShell` sau frame đầu.
 
 Hai scope ngoài cùng nằm **ngoài router** vì token connector và skills là *của agent* — agent trả lời
 chat bất kể user có mở màn Connectors/Skills hay không.
@@ -453,13 +571,21 @@ preflightProvider.when(
 - `routeFor` nhận `GridOverview?` chứ **không** `AsyncValue` — nhận `AsyncValue` là mỗi frame `loading`
   của poll nền → splash → remount top bar → poll lại: 3 round-trip/giây.
 
-### `HomeShell` mount — 5 việc post-frame
+### `HomeShell` mount — 7 việc post-frame
 
 1. `BackgroundModelController.startIfNeeded()` — tải model nền (guard chuỗi 7 điều kiện)
 2. `BackgroundAgentInstaller.startIfNeeded()` — cài agent còn thiếu, im lặng
-3. `TaskDeliveryController.start()` — `Timer.periodic(30s)` sweep kết quả cron vào chat
-4. `_markTaskChatRead(activeId)`
-5. `appUpdater.checkInBackground()` — đặt ở đây để prompt Sparkle không đè lên màn download model
+3. `BackgroundGitInstaller.startIfNeeded()` — adopt Git của user, hoặc tải bản của app, im lặng
+4. `TaskDeliveryController.start()` — `Timer.periodic(30s)` sweep kết quả cron vào chat
+5. `_markTaskChatRead(activeId)`
+6. `appUpdater.checkInBackground()` — đặt ở đây để prompt Sparkle không đè lên màn download model
+7. `desktopNotifier.ensurePermission()` — **cùng hai lý do**: không được rơi vào giữa first-run setup,
+   và hỏi ở `main` thì giữ lại frame đầu (cửa sổ đen). Ở đây app đã vẽ xong và lời xin có nghĩa —
+   user đang nhìn đúng thứ đang hỏi
+
+**Phím tắt shell:** `⌘K` palette · `⌘,` Settings · **`⌃⇧G` Review** (binding của Codex cho cùng việc;
+`select(ShellSection.chat)` **trước**, vì panel sống trong tab Chat — bắn từ Settings sẽ mở thứ user
+không nhìn thấy).
 
 ### Teardown — phải có **cả hai** đường
 
@@ -481,8 +607,8 @@ Kill cứng không chặn được — engine đó được **adopt lại** ở 
 `~/.grid/app/chats/<id>.json`, state gửi/stream/huỷ **theo từng chat** (nhiều chat có thể đang trả lời
 cùng lúc), và mọi UI quanh nó.
 
-`ChatSessionsController` (**550 dòng** — `9712fb6` tách nó theo 4 việc nó làm: `chat_sessions_send`
-393, `chat_sessions_state` 268, `chat_sessions_goals` 135, `chat_sessions_settle`) là lõi. State:
+`ChatSessionsController` (**579 dòng** — `9712fb6` tách nó theo 4 việc nó làm: `chat_sessions_send`
+404, `chat_sessions_state` 304, `chat_sessions_goals` 135, `chat_sessions_settle`) là lõi. State:
 
 ```dart
 conversations: List<Conversation>   // toàn bộ, kể cả archived
@@ -525,6 +651,82 @@ Getter kép — bản "cho chat đang mở" (`phase`, `sending`) và bản "cho 
 | **Minimap** | Rail tick bên trái, chỉ đánh dấu **user turn**, chỉ hiện khi content ≥ 1.5× viewport |
 | **Chat từ scheduled task** | id = `task-<jobId>`; `deliverFromAgent` tạo chat nếu chưa có, **không** đổi `activeId` |
 
+#### Panel quanh hội thoại — hình học nằm ở `chat/logic`, nội dung ở feature khác
+
+`chat/` **sở hữu chỗ đứng và kích thước** của panel; nó không biết Review/Terminal/Files là gì (trừ
+đúng một file: `panel_feature_view.dart`, bảng ánh xạ).
+
+| File | Sở hữu |
+|---|---|
+| `logic/panel_tabs.dart` | `PanelHost` (2), `PanelFeature` (3), `PanelTab`, `panelTabsProvider` family |
+| `logic/panel_layout.dart` | **Toàn bộ hằng số hình học** + `resolvePanelSizes()` thuần |
+| `logic/preview_panel.dart` | mở/đóng + **expanded** (panel chiếm cả pane) |
+| `logic/bottom_panel.dart` | mở/đóng panel dưới |
+| `logic/composer_context.dart` | terminal nào sẽ đi kèm tin nhắn kế tiếp |
+| `shared/widgets/panel_*.dart` | `PanelBody` (toolbar 36px + main + side), `PanelSplitter`, `PanelToggle`, `panelSideWidthProvider`, `PanelTabVisible` |
+
+**`resolvePanelSizes()` là hàm thuần, ngoài `build`** — bốn cái clamp phải nhất quán với nhau, và từ khi
+kéo được thì hai trong số đó có nguồn thứ hai. Kéo chỉ là một **yêu cầu**: yêu cầu làm tràn composer
+hoặc xoá sạch transcript được đáp lại bằng kích thước gần nhất **không** gây ra điều đó.
+
+**`kChatMinWidth = 440` là số ĐO, không phải số suy luận — và lần đo đầu sai theo hai cách**, đã ship
+sọc tràn lên composer thật: harness dựng `ComposerSection` trần trong khi chat view bọc nó trong
+`Padding(20,10,20,20)` (thiếu 40px), và thay ba picker bằng một pill co được nhiều hơn `ComposerTrigger`
+thật (sàn thật ≈ 58px bất kể nhãn ghi gì). Đo lại: sạch ở 396, tràn ở 392.
+**Đo lại trước khi đổi — failure mode là sọc, không phải "trông hơi chật".**
+
+**Override kích thước để `null` khi nghỉ, không phải một con số.** Một mặc định đã lưu sẽ **thôi trả lời
+theo bề rộng cửa sổ**, nên panel chỉnh trên màn hình lớn về laptop là sai cứng. Kéo rồi thì dính suốt
+phiên — đủ lâu để là một quyết định, không đủ lâu để một cú kéo hỏng sống dai hơn nó.
+
+**Trần mặc định ≠ trần khi kéo.** `kPreviewMaxWidth = 760` / `kBottomMaxHeight = 420` / `kPanelSideMax = 280`
+chỉ chặn **share app tự chọn**. Một khi user đã nắm lấy seam thì họ đã nói ra ý mình, và thứ duy nhất
+còn phải bảo vệ là sàn của phía bên kia.
+
+**`_clamp` tự viết, không dùng `num.clamp`** — `clamp` assert `low <= high`, nên một pane hẹp hơn cả hai
+sàn sẽ **ném exception thay vì xuống cấp**. Ở đây "hết chỗ thì chỗ thắng".
+
+Ba thứ nhỏ, mỗi cái là một bug đã sửa:
+
+- **`PanelSplitter` dùng `dragStartBehavior: DragStartBehavior.down`** — mặc định (`start`) vứt bỏ đoạn
+  di chuyển đưa recognizer qua slop, nên seam tụt sau con trỏ vài pixel và **ở lại đó suốt cú kéo**
+- **Dải bắt chuột (7px) rộng hơn đường kẻ (1px)** nó vẽ. Đúng thứ khiến nó không thể chỉ là một
+  `Divider` bọc `MouseRegion`
+- **Tab strip co theo số tab rồi mới scroll** (`kTabMaxWidth` 180 → `kTabMinWidth` 96) — panel hẹp từng
+  đẩy nút "+" ra khỏi tầm nhìn ở tab thứ tư, và **một control phải scroll mới tới được là control người
+  ta kết luận là không có**
+
+**`previewPanelExpanded` `watch` `previewPanelOpen` trong `build()`** để đóng/mở panel là reset expanded.
+Không có dòng đó thì đóng lúc đang expanded để cờ dính lại, và lần mở sau **nuốt trọn hội thoại không
+báo trước**.
+
+**Panel cố ý KHÔNG persist và KHÔNG per-chat.** Nó trả lời *"tôi có đang làm việc trong này không"*,
+khác project rail (*"tôi có muốn xem card của project này không"* — cái đó thì dính).
+
+#### Nội dung panel đi ngược vào composer
+
+| Đường | Cơ chế | Cap |
+|---|---|---|
+| Gắn terminal | `attachedTerminalsProvider` **derive** từ panel nào đang mở + tab active là terminal | tối đa 2 (một panel một cái), **không đếm ở đâu cả** |
+| Gắn file | `composerFileRequestProvider` ← menu chuột phải "Add to chat" | `kFileTextBudget` |
+| Gắn đoạn bôi đen | `composerSnippetProvider` (**queue**, không phải một giá trị) | `kSnippetBudget` 4.000 ký tự × `maxChatSnippets` 8 |
+| Nhờ agent review | `composerPrefillProvider` ← Review "Ask the assistant" | — |
+
+> **Terminal được chụp lúc bấm Send, không sớm hơn.** Cái phút giữa lúc mở terminal và lúc hỏi về nó
+> thường **chính là** cái phút thứ đang được hỏi xảy ra: một build còn đang chạy lúc chip hiện ra thì đã
+> fail lúc tin nhắn đi. Chụp ở Send là thứ khiến attachment đáng có.
+
+- Chip terminal **derive** nên phải có `dismissedTerminalsProvider` — không có gì nhớ cú ✕ thì frame kế
+  tiếp dựng lại chip ngay. Dismiss thuộc về **bản nháp**, nên `clear()` chạy ở Send
+- Terminal lấy **đuôi** (200 dòng / 8.000 ký tự), **không bao giờ lấy đầu** — thứ khiến người ta gắn
+  terminal là thứ vừa xảy ra trong đó. Cắt ký tự cũng cắt từ phía trước, cùng lý do
+- Terminal trống trả `null` chứ **không** trả block rỗng — tin nhắn nói "đã gắn" trong khi không gắn gì
+  là nói dối
+- `ChatContext` nằm **cạnh** text, không **trong** text (như file đính kèm): bubble hiện chip, model đọc
+  `promptBlock`. Câu của user chôn dưới 200 dòng build output là phiên bản đã làm transcript không đọc nổi
+- Snippet thì **ngược lại — gộp thẳng vào text** (`messageWithSnippets`), vì đó là thứ khiến transcript
+  trung thực: lượt của user hiện đúng cái đã hỏi, kể cả phần trích dẫn
+
 #### Cạm bẫy đắt nhất
 
 - `archivedAt` **phải** parse bằng `_parseNullableDate` — `_parseDate` fallback epoch làm mọi chat cũ
@@ -536,7 +738,7 @@ Getter kép — bản "cho chat đang mở" (`phase`, `sending`) và bản "cho 
 - ⚠️ `chat_header.dart:36` `_menuSize` tính **4 row + 1 divider** nhưng `_ChatMenuContent` dựng
   **6 row + divider + Delete = 7** → lệch ~108px. **Đang sai.**
 
-### 7.2. `agents/` — lớp trừu tượng agent (65 file, lớn nhất)
+### 7.2. `agents/` — lớp trừu tượng agent (71 file, nhiều file nhất)
 
 **Seam duy nhất** giữa feature `chat`/`skills`/`plugins`/`connectors` và ba runtime cụ thể:
 không feature nào ngoài `agents/logic/adapters/` được biết tên class `Hermes*`/`Codex*`/`Claude*`.
@@ -1102,7 +1304,207 @@ không dựa message (match chuỗi chỉ đúng ở tiếng Anh).
 
 Build local luôn `UpdateUnsupported` (`GRID_APPCAST_URL` chỉ bake trong `release.yml`).
 
-### 7.22. `overlord/` — ⚠️ FAKE + UNREACHABLE
+### 7.22. `review/` — diff của project, cạnh hội thoại (44 file, domain mới lớn nhất)
+
+**Sở hữu:** đọc một repo Git thành thứ xem được, stage/unstage, commit, push, comment từng dòng, và nhờ
+model viết commit message. **Không sở hữu:** chat, project, agent — nó được *đưa cho* một thư mục và
+*trả về* một câu tin nhắn (`onAskAgent`). Dây nối nằm ở `chat/presentation/panel_feature_view.dart`.
+
+Sống trong tab của panel chứ không phải một màn hình riêng: review là việc làm **trong lúc** agent chạy —
+đi sang màn khác để xem nó vừa viết gì nghĩa là rời khỏi chính cuộc chat đã yêu cầu điều đó.
+
+#### `ReviewScope` — sealed 6 nhánh, mỗi nhánh là **một cặp lệnh Git khác nhau**
+
+Không phải filter trên một câu trả lời chung:
+
+| Scope | `_range()` | Nguồn danh sách file |
+|---|---|---|
+| `LastTurnChanges` | `HEAD` | `status`, lọc theo path agent vừa sửa |
+| `UncommittedChanges` (mặc định) | `HEAD` | `status` |
+| `UnstagedChanges` | *(rỗng)* | `status` |
+| `StagedChanges` | `--cached` | `status` |
+| `CommittedChange(sha)` | `null` → dùng `git show` | `show --name-status` |
+| `BranchAgainst(ref)` | `<ref>...HEAD` | `diff --name-status` |
+
+Hai getter chặn control vô nghĩa: `canStage` (commit/branch đã chốt rồi, tick ở đó là nút không làm gì)
+và `showsUntracked` (file Git chưa từng biết không nằm trong commit, index hay branch nào).
+
+`BranchAgainst` dùng **ba chấm** (`merge-base`) chứ không hai — nếu không, commit landing lên `main`
+*sau khi* nhánh này tách ra sẽ đọc thành "nhánh này xoá chúng đi".
+
+#### `review_argv.dart` — mọi argv Git nằm ở đây, dạng hàm thuần có test
+
+*"Một flag sai fail y hệt một repo rỗng"* (§7 conventions). Sáu thứ đã học bằng bug:
+
+- **`git show` phải có `--format=`** — không thì nó in header commit của chính nó lên trên diff, và
+  "file" đầu tiên parse ra là dòng subject
+- **`status --porcelain=v2 -z`, không phải v1.** v1 quote/escape path non-ASCII → **tên file tiếng Việt
+  về là rác**, và dạng rename của nó nhập nhằng. Giá phải trả: path gốc của rename là **một field
+  NUL-terminated riêng sau record**, nên không thể split-rồi-map thẳng
+- **Rename phải truyền CẢ HAI path.** Chỉ đưa path mới thì Git không có gì để ghép cặp và báo một file
+  hiện ra từ hư không — **mọi dòng "added"**, tức ngược hẳn nghĩa của rename
+- **File untracked dùng `diff --no-index -- <nullDevice> <path>`.** `git diff` thường **không in gì cả**
+  cho nó. Và `--no-index` báo "hai bên khác nhau" bằng **exit code 1** — coi đó là lỗi thì diff của mọi
+  file mới **trắng vĩnh viễn**
+- **`unstage` dùng `reset`/`rm --cached`, KHÔNG dùng `git restore --staged`** — `restore` có từ Git 2.23,
+  app đỡ tới 2.20. Repo chưa có commit nào thì không có `HEAD` để reset → drop khỏi index
+- **"Stage all" liệt kê **path đang hiện**, không phải `git add -A`.** Dưới scope hẹp (last turn),
+  "everything" nghĩa là những file trên màn hình — `-A` sẽ **lặng lẽ nhét việc user chưa từng thấy vào
+  commit của họ**. Batch 50 path/lệnh vì command line Windows giới hạn 32KB
+- **`kLogFieldSeparator` là ``/``**, không phải `|` hay newline: mọi ký tự in được đều đã
+  từng xuất hiện trong commit message của ai đó
+
+#### Phân tầng
+
+```
+ReviewController (AsyncNotifier.family theo folder)
+  └─ ReviewLoader   ← đọc: biết THỨ TỰ hỏi và làm gì với câu trả lời
+  └─ ReviewActions  ← ghi: stage/unstage/commit/push + patch một file
+       └─ GitRunner (infrastructure) ← chỉ biết cách spawn git
+```
+
+`ReviewLoader` để ngoài controller để test được bằng fake runner không cần Riverpod, và để ngoài
+`infrastructure/` vì shape nó trả về là **của feature review**, không phải của tầng CLI.
+
+- `branch` / `HEAD tồn tại?` / `upstream` / danh sách file được hỏi **song song** (`(a, b, c).wait`) —
+  màn hình không phải chờ ba round-trip nối đuôi
+- **File untracked được đếm dòng từ ĐĨA**, vì `--numstat` không nói gì về chúng. File mới hiện "0 dòng"
+  là nói giảm đúng cái thay đổi user sắp commit. Cap 4MB → báo binary (thành thật về việc không biết,
+  hơn là sai)
+- `refresh()` **giữ nguyên list đang hiện**, không rơi về spinner — refresh làm trắng file đang đọc thì
+  mất chỗ mỗi lần agent chạm vào một file
+- ⚠️ **`build()` chỉ `watch` `reviewLastTurnPathsProvider` KHI scope là `LastTurnChanges`.** Watch vô
+  điều kiện nghĩa là **6 lệnh `git` mỗi lần agent ghi một file** — một cơn bão spawn process sau một
+  danh sách không ai đang nhìn
+
+#### `ReviewState` — 4 nhánh vì **3 trong số đó user làm được gì đó**
+
+`ReviewNeedsGit` (→ màn Git) · `ReviewNotARepo(folder)` (→ mời `git init`) · `ReviewFailed(message)` ·
+`ReviewReady(snapshot)`.
+
+`friendlyGitFailure()` dịch 8 họ lỗi Git sang câu hành động được — **và raw text luôn vào `appLog` bên
+cạnh** (§6: humanise không bao giờ là bản ghi duy nhất). Đáng chú ý: lỗi credential nói *"push từ
+Terminal một lần, sau đó máy nhớ và nút này chạy được"* — vì **chính app này** là thứ đã tắt prompt.
+
+#### Commit
+
+`CommitState` sealed 4 nhánh; `CommitFailed` mang cờ **`committed`** — push fail sau khi commit thành
+công mà đọc thành "không có gì xảy ra" thì user **commit cùng một việc hai lần**.
+
+- `commitArgv` **cố ý không có `-a`** — stage là quyết định của user, làm từng file trên màn này
+- `includeUnticked` stage nốt phần còn lại **bên trong `run()`**, để stage + commit + push là **một lần
+  chạy với một lỗi để báo**
+- Nhánh riêng `pushOnly()` — việc đã commit ở terminal, hoặc một lần push fail trước đó, đang chờ nó;
+  và **không còn gì để mô tả**
+- `setUpstream: snapshot.upstream == null` — nhánh chưa từng push thì Git từ chối `push` trần
+
+**`CommitMessageWriter`** — một call `chat/completions` blocking qua `ChatTransport` chung, cùng target
+`resolveOneShotTarget` với skill generator (engine local nếu đang serve, không thì relay). Cap
+**12.000 ký tự** patch, và **phần bị cắt được NÓI RA** (`[… the rest of this change is not shown]`).
+
+> ⚠️ **`_patch()` đọc HAI lần, không một.** `git diff` ở mọi dạng đều **không nói gì** về file Git chưa
+> biết, nên một thay đổi *toàn bộ là file mới* về rỗng và nút trả lời "không có gì để mô tả" trên một
+> danh sách đang hiện +32.
+
+`tidyCommitMessage()` thuần và **cố ý dễ dãi** — model trả về fence bọc cả câu trả lời, tiền tố
+`Commit message:`, subject trong ngoặc kép, dấu chấm cuối dòng đầu (dòng đầu commit không mang dấu chấm).
+
+#### Đọc diff
+
+`DiffViewPrefs{layout, wrap, ignoreWhitespace, collapsed}` — **một setting cho cả app**, không per-folder:
+đây là sở thích *đọc diff*, không phải sự thật *về một repo*.
+
+- **`kSplitDiffFrom = 620`** — dưới ngưỡng đó mỗi cột chưa tới 280px. Toggle **không được offer**, và lựa
+  chọn đã làm trên cửa sổ rộng **lặng lẽ vẽ unified** cho tới khi có chỗ, thay vì băm mỗi dòng thành ba
+- **`wrap` mặc định bật** — panel rộng 420–760px, và một dòng phải kéo ngang mới đọc hết là dòng không
+  đọc hết
+- **`ignoreWhitespace` là `-w` của Git**, không phải filter hậu kỳ: nó bỏ **cả dòng** chỉ khác nhau ở
+  khoảng trắng
+- **`reviewOpenHunksProvider` là tập NGOẠI LỆ, không phải sự thật.** "Collapse all" là một cờ; một hunk
+  mở tay sau đó phải sống sót mà không tắt cờ cho mọi hunk khác. `hunkIsOpen()` là hàm thuần
+
+**`CodeHighlight` có memo, và đó là điều kiện để diff scroll được.** Đo: một dòng Dart tốn ~170µs
+tokenise; diff vẽ từng dòng một → một màn hình ≈ **8ms trong ngân sách 16ms của một frame**, tiêu lại
+ở mỗi lần rebuild và mỗi lần scroll. Key theo *text + ngôn ngữ + brightness + base style*; cap 4.000 entry;
+**grammar ném exception cũng được nhớ**, để một dòng không tô được không bị parse lại mỗi frame.
+
+#### Comment từng dòng
+
+`ReviewComment{path, side, line, text, code}` — **giữ trong phiên, không ghi đâu cả**, và UI nói rõ
+"Local comment" để không ai ngồi đợi đồng nghiệp trả lời.
+
+`DiffSide` bắt buộc phải có: dòng bị xoá chỉ tồn tại ở file cũ, dòng thêm chỉ ở file mới — "dòng 32" một
+mình gọi tên **hai dòng khác nhau**. Với dòng context thì **file mới thắng**.
+
+`commentsPrompt()` thuần, và **chính nó là toàn bộ tính năng** — nó dặn agent **đọc lại file quanh dòng
+được trích trước khi sửa**, vì tới lúc agent đọc thì chính bản sửa trước của nó đã đẩy mọi thứ dưới
+dòng 32 đi chỗ khác.
+
+### 7.23. `terminal/` — shell thật trong tab panel
+
+7 file, ~766 dòng. `flutter_pty` + `xterm`. Chi tiết pty ở §4.6.
+
+**`TerminalSession` cố ý KHÔNG phải Riverpod notifier** — nhiều cái mở cùng lúc và panel chỉ hiện một,
+nên chúng là *giá trị* mà controller giữ một danh sách. Thứ chúng không làm được là tự publish:
+`onChanged` là cách controller nghe tin shell đã start hay chết.
+
+Nó **giữ luôn `Terminal`** (emulator) chứ không dựng lại mỗi frame — **màn hình CHÍNH LÀ state**:
+scrollback (10.000 dòng, bằng VS Code), con trỏ, lệnh đang gõ dở. Widget mà sở hữu nó thì mất sạch
+mỗi lần đổi tab.
+
+**Terminal thuộc về TAB, không thuộc về thư mục.** Hai tab Terminal là hai shell kể cả cùng project.
+Và **thư mục bị khoá lúc tab mở ra** — shell đang chạy không dời được, `cd` là việc của user.
+
+⚠️ **`endSession` được gọi từ `PanelTabs.close()`, không phải từ một watcher.** Watcher chỉ chạy khi có
+người đang nhìn — còn việc này phải xảy ra **kể cả khi user đóng tab trên đường rời khỏi Chat**. Một pty
+mồ côi là một process user không còn nhìn thấy, nói gì tới dừng.
+
+⚠️ **`_TerminalTab` phải có `ValueKey(tab.id)`** — cùng loại widget ở cùng slot, Flutter sẽ đưa id của
+tab thứ hai cho element của tab thứ nhất, và tab mới hiện màn hình của tab cũ (hoặc không gì cả).
+
+`ShellState` sealed 4 nhánh; **`ShellExited` không phải error state** — rời một terminal là cách một
+terminal kết thúc. `restart()` **giữ nguyên scrollback** ở trên: transcript của thứ vừa hỏng thường
+chính là lý do user mở lại.
+
+### 7.24. `files/` — duyệt và đọc file của project
+
+13 file, ~2.866 dòng. Cây thư mục + breadcrumb + viewer, trong một tab panel.
+
+- **`filesBrowserProvider` là family theo TAB id**, không theo panel: hai tab Files là hai chỗ trong
+  cùng project; dùng chung một selection thì tab thứ hai vô nghĩa — click ở đâu cũng dời cả hai
+- **`filePreviewProvider` là `autoDispose`, và lý do thứ hai mới là lý do chính**: **agent ghi đè chính
+  những file này trong lúc chúng đang hiện trên màn hình**. Một bản đọc được cache sẽ lặng lẽ hiện bản
+  hôm qua của file vừa đổi một giây trước
+- Cap: **1MB** / **2.000 dòng**. Viewer lay out một lượt (không virtualise) — đó là thứ cho phép cả file
+  scroll và select như một khối. File bị cắt thì **nói ra**
+- `decodeFilePreview` thuần: sniff 8KB đầu tìm byte NUL để quyết định binary; decode `allowMalformed`;
+  **newline cuối kết thúc dòng cuối chứ không mở một dòng rỗng** — nếu không thì mọi file đúng chuẩn đều
+  hiện một dòng ma ở đáy
+- `reveal(path, root)` mở sẵn mọi thư mục cha, đi **xuôi từ root xuống** chứ không ngược từ file lên:
+  separator của root là thứ platform đã ghi, ráp lại từ segment sẽ làm mất nó
+- **Markdown có hai dạng, và "rendered" là dạng nghỉ.** `showSource` cưỡi trên **tab**, không trên file —
+  người muốn đọc raw sẽ tiếp tục nhận raw khi click xuống cả thư mục tài liệu
+- `file_kind.dart` (294 dòng) thuần string: **`FileGlyph` (vẽ gì) tách khỏi `FileAccent` (màu gì)** — một
+  tá ngôn ngữ chung một glyph, một tá khác chung một hue. Tách ra là thứ ngăn nó thành enum-một-giá-trị-
+  mỗi-đuôi-file
+- Cây thư mục ẩn được (`showTree`), cùng lý do với file list của Review: panel dock ở 420px vốn đã ít
+  bề ngang
+
+### 7.25. `git/` — cài & chọn Git (3 file + seam ở `infrastructure/cli`)
+
+Màn Settings ▸ Coding ▸ Git. Cơ chế ở §4.6; ở đây chỉ nói phần UI/controller.
+
+`GitInstallState` sealed 4 nhánh. `GitInstallDone` mang **`GitStatus`**, không mang một câu đã hoàn
+chỉnh — cùng một kết cục phải nói khác nhau: một lần re-check **không tìm thấy gì** vẫn kết thúc hoàn
+hảo và **không được báo là thành công**.
+
+> Nó tồn tại vì probe trả lời trong ~10ms — **dưới một frame**. Trên máy mà Git không đổi, bấm nút
+> không làm gì nhúc nhích trên màn hình, và **không có outcome thì nó đọc ra như một control chết**.
+
+`gitReadyProvider`: **chưa resolve = *chưa biết*, không phải *không có*** — để không có gì bảo user đi
+cài Git trong lúc probe còn đang chạy.
+
+### 7.26. `overlord/` — ⚠️ FAKE + UNREACHABLE
 
 > **Hai vấn đề, cả hai phải nêu rõ:**
 > 1. **Toàn bộ dữ liệu là GIẢ.** `overlordRepositoryProvider` bind cứng `FakeOverlordRepository`,
@@ -1126,7 +1528,11 @@ Seam thiết kế đúng (`abstract interface class OverlordRepository { Stream<
       NUỐT Enter dù thế nào — turn không gửi được cũng không rớt line break thừa
 
 [2] chat_view.dart:330  _send(modality)
-      → chatSessionsProvider.notifier.send(network, model, message, modality, attachments, files)
+      messageWithSnippets(message, _snippets)      ← đoạn bôi đen GỘP VÀO text
+      captureTerminalContexts(attached, sessions)  ← CHỤP TERMINAL Ở ĐÂY, không sớm hơn
+                                                     (terminal rỗng → bỏ hẳn, không gửi block rỗng)
+      → chatSessionsProvider.notifier.send(network, model, message, modality, attachments, files, contexts)
+      dismissedTerminals.clear()                   ← ✕ thuộc về bản nháp, hết nháp thì hết hiệu lực
 
 [3] chat_sessions_controller.dart:696  send()
       bận? → _enqueue(QueuedTurn) và RETURN
@@ -1234,7 +1640,7 @@ Seam thiết kế đúng (`abstract interface class OverlordRepository { Stream<
 
 ## 9. Design system
 
-`lib/shared/theme/app_theme.dart` (1344 dòng) là **toàn bộ** hệ thống.
+`lib/shared/theme/app_theme.dart` (1354 dòng) là **toàn bộ** hệ thống.
 Spec canonical: `docs/design-system.md`.
 
 ### Bốn quy tắc bất khả xâm phạm (§0)
@@ -1267,8 +1673,8 @@ Trường hợp thứ hai: item của `ListView.builder` được giữ nguyên 
 (`ChatBubble` từng làm cả transcript kẹt palette cũ).
 
 Giải pháp: `_BrightnessScope` + `_FontScope` là `InheritedNotifier` — đánh dấu dependent bẩn **trực tiếp**,
-xuyên qua mọi `const` boundary. **Hiện có 399 call site** `AppTheme.watch` trong `lib/`
-(doc ghi 186 — đã lạc hậu).
+xuyên qua mọi `const` boundary. **Hiện có 486 call site** `AppTheme.watch` trong `lib/`
+(đo 2026-08-10; `design-system.md` ghi 186 — đã lạc hậu hai lần).
 
 **Audit nhanh:** đếm số lần đọc token vs số `AppTheme.watch` trong một module — reads > 0 mà watch == 0
 là bug flip theme chắc chắn.
@@ -1318,8 +1724,13 @@ là bug flip theme chắc chắn.
 
 | Feature | Trạng thái | Bằng chứng |
 |---|---|---|
-| Chat + agent (3 runtime) | ✅ **Shipped** | Đầy đủ, controller 550 dòng + 4 module, resume/queue/goal/plan |
-| Skills | ✅ Shipped | 3 bug đã tìm ra (§7.4), "Draft with AI" tắt cứng |
+| Chat + agent (3 runtime) | ✅ **Shipped** | Đầy đủ, controller 579 dòng + 4 module, resume/queue/goal/plan |
+| **Panel quanh chat** | ✅ **Shipped** | 2 host × 3 feature, tab strip, kéo seam, expanded; hình học là hàm thuần — nhưng `resolvePanelSizes` **chưa có test** (§13) |
+| **Review** | ✅ **Shipped** | 6 scope, stage/commit/push, comment dòng, AI commit message, split/unified |
+| **Terminal** | ✅ **Shipped** | pty thật, scrollback 10k, gắn được vào tin nhắn |
+| **Files** | ✅ **Shipped** | Cây + breadcrumb + viewer, Markdown 2 dạng, "Add to chat" |
+| **Git (cài/adopt)** | ✅ Shipped | Background install + Settings ▸ Coding ▸ Git |
+| Skills | ✅ Shipped | 3 bug đã tìm ra (§7.4), "Draft with AI" tắt cứng (`_showAiDraft = false`) |
 | Connectors (gateway + DCR) | ✅ Shipped | `rest_entry_fallback.dart` là scaffolding chờ gateway |
 | Scheduled tasks | ✅ Shipped | Ghim model qua Python nội bộ Hermes (`TODO(BE)`) |
 | Projects | ✅ Shipped | |
@@ -1366,35 +1777,43 @@ Danh sách này là những thứ **mỗi cái từng là một bug thật**. S�
 10. **`slot.seen++` / `live.seen++` chỉ khi turn thành công**
 11. **`StdioLineWriter` xếp hàng chứ không ghi thẳng** — `IOSink.flush()` *bind* sink; một write chen giữa
     ném và **mất luôn dòng đó** (đã treo Hermes gần 6 phút)
+12. **Đóng tab panel phải `endSession(tabId)`** — pty mồ côi là process user không còn thấy để mà dừng.
+    Gọi từ `PanelTabs.close()`, **không** từ watcher (watcher chỉ chạy khi có người nhìn)
+13. **Kill shell bằng `SIGHUP`** (Windows: `SIGTERM`) — `SIGTERM` để lại con của shell ôm một pty không
+    ai đọc
+14. **`git` chạy với `GIT_TERMINAL_PROMPT=0` + `ssh -o BatchMode=yes`** — app không có terminal, prompt
+    không ai trả lời được là treo tới hết timeout
+15. **macOS: không bao giờ exec `/usr/bin/git`** — nó là stub `xcode-select`, chạy nó **bật installer của
+    Apple**; resolve qua `xcode-select -p` rồi dùng đường tuyệt đối
 
 ### Dữ liệu
 
-12. **`archivedAt` dùng `_parseNullableDate`**, không `_parseDate` (fallback epoch)
-13. **`copyWith` không unset được bằng `?? this.x`** → cần cờ `clearArchivedAt`, `clearGoal`,
+16. **`archivedAt` dùng `_parseNullableDate`**, không `_parseDate` (fallback epoch)
+17. **`copyWith` không unset được bằng `?? this.x`** → cần cờ `clearArchivedAt`, `clearGoal`,
     `clearUiFontFamily`, `clearCategory`…
-14. **Mọi thứ đọc lịch sử chat dùng `state.live`**, không `.conversations`
-15. **`saveRefreshed` merge, không assign**
-16. **`null` ≠ `ConnectorTransport.none`**; **`advertises_*` là tri-state**, `null` ≠ `false`
-17. **`served` rỗng = "chưa load"**, không phải "grid không phục vụ gì"
+18. **Mọi thứ đọc lịch sử chat dùng `state.live`**, không `.conversations`
+19. **`saveRefreshed` merge, không assign**
+20. **`null` ≠ `ConnectorTransport.none`**; **`advertises_*` là tri-state**, `null` ≠ `false`
+21. **`served` rỗng = "chưa load"**, không phải "grid không phục vụ gì"
 
 ### Riverpod / render
 
-18. **`gridOverviewSnapshot` là cửa duy nhất** — `.asData` làm số về 0 mỗi poll; watch cả `AsyncValue` +
+22. **`gridOverviewSnapshot` là cửa duy nhất** — `.asData` làm số về 0 mỗi poll; watch cả `AsyncValue` +
     family trong cùng body → `setState() during build`
-19. **Value equality của `GridOverview` là load-bearing**
-20. **`routeFor` nhận `GridOverview?`, không `AsyncValue`**
-21. **`CommandLogNotifier._schedule` = `Future.microtask`** là bắt buộc, không phải tối ưu
-22. **Mọi widget đọc token phải tự `AppTheme.watch(context)`**
+23. **Value equality của `GridOverview` là load-bearing**
+24. **`routeFor` nhận `GridOverview?`, không `AsyncValue`**
+25. **`CommandLogNotifier._schedule` = `Future.microtask`** là bắt buộc, không phải tối ưu
+26. **Mọi widget đọc token phải tự `AppTheme.watch(context)`**
 
 ### Wire protocol
 
-23. **`ChatSendStreaming.text` là TOÀN VĂN; `ChatDelta.text` là mảnh.** Hermes message là **delta**;
+27. **`ChatSendStreaming.text` là TOÀN VĂN; `ChatDelta.text` là mảnh.** Hermes message là **delta**;
     Claude/Codex là **toàn văn**
-24. **`--mcp-config` bắt buộc đi kèm `--strict-mcp-config`**; write hỏng → `null` → bỏ **cả hai**
-25. **`codex exec resume` không nhận `--sandbox` và `-C`**, nhưng `-c` overrides phải đi trên **mọi** lượt
-26. **`Accept: application/json, text/event-stream`** bắt buộc cả hai (Canva trả 406)
-27. **SSE lấy `data:` CUỐI CÙNG**, không phải đầu
-28. **`CliResult.sessionExpired` là string-match trên 4 câu tiếng Anh** — CLI đổi wording là app im lặng
+28. **`--mcp-config` bắt buộc đi kèm `--strict-mcp-config`**; write hỏng → `null` → bỏ **cả hai**
+29. **`codex exec resume` không nhận `--sandbox` và `-C`**, nhưng `-c` overrides phải đi trên **mọi** lượt
+30. **`Accept: application/json, text/event-stream`** bắt buộc cả hai (Canva trả 406)
+31. **SSE lấy `data:` CUỐI CÙNG**, không phải đầu
+32. **`CliResult.sessionExpired` là string-match trên 4 câu tiếng Anh** — CLI đổi wording là app im lặng
     ngừng phát hiện
 
 ---
@@ -1430,10 +1849,10 @@ flutter test test/<area>        # logic test — KHÔNG viết widget test mới
 dart format .
 ```
 
-Đo lại trên `main` sạch 2026-08-06: **0 issue**, **2122 test pass / 0 fail**. Cả hai bar đều sạch,
-nên một failure bạn thấy là của bạn. (Nợ cũ — 9 issue trong `models/` và 3 widget test overflow ở
-`connectors_view_layout_test` — đã dọn ở `8b5c5ac`: file test kia xoá cùng widget, đúng cách §8
-conventions nói về "rot".)
+Đo lại trên `main` sạch **2026-08-10**: **0 issue**, **2351 test pass / 0 fail** (06/08: 2122).
+Cả hai bar đều sạch, nên một failure bạn thấy là của bạn. (Nợ cũ — 9 issue trong `models/` và 3 widget
+test overflow ở `connectors_view_layout_test` — đã dọn ở `8b5c5ac`: file test kia xoá cùng widget, đúng
+cách §8 conventions nói về "rot".)
 
 ### Build & release
 
@@ -1474,8 +1893,23 @@ trên Windows app effectively consumer/playground only.
 > `hermesPathProvider` đều là kiểu **hạ tầng thuần** nhưng bị đặt trong `features/`.
 > Sửa = chuyển 6 file model xuống `infrastructure/` hoặc `core/` — **không cần đổi một dòng logic nào**.
 
-Ngoại lệ hợp lệ: `shared/layouts/widgets/section_view.dart` import 15 view — **không tránh được**,
-đó chính là bảng ánh xạ.
+Ngoại lệ hợp lệ, **giờ có hai**: `shared/layouts/widgets/section_view.dart` import 15 view, và
+`features/chat/presentation/panel_feature_view.dart` import `presentation/` của review/files/terminal.
+Cả hai **là bảng ánh xạ** — một bảng ánh xạ buộc phải gọi tên cả hai phía. Điều giữ ngoại lệ khỏi lan
+ra là **giới hạn nó trong đúng một file**: không thứ gì khác trong `chat/` biết các class đó tồn tại.
+
+**Các domain mới sạch hơn phần còn lại của repo:**
+
+| Domain | Import ra ngoài |
+|---|---|
+| `terminal/`, `git/` | chỉ `infrastructure/` + `shared/` — **0 cross-feature** |
+| `review/` | `playground/logic/{chat_transport, one_shot_target}` (viết commit message), `projects/logic/project.dart` |
+| `files/` | `chat/logic/workspace_browser.dart` (3 chỗ) |
+
+Hai cạnh cuối là **nợ mới, cùng một dạng cũ**: `ChatTransport`/`resolveOneShotTarget` là hạ tầng "gọi một
+phát tới model" (skill generator cũng dùng), và `workspace_browser` là code duyệt thư mục — **cả hai đáng
+lẽ nằm ở `shared/` hoặc `infrastructure/`**, không phải trong `playground/` và `chat/`. Sửa = chuyển file,
+không đổi logic.
 
 ### Chu trình import feature ⇄ feature (Dart cho phép, nhưng mỗi cái là một biên đã mất)
 
@@ -1486,6 +1920,12 @@ Ngoại lệ hợp lệ: `shared/layouts/widgets/section_view.dart` import 15 vi
 | `agents` ⇄ `skills` | 3 `*_extensions.dart` → `skill_author.dart` ↔ 10 file skills → agents | logic ⇄ logic |
 | `auth` ⇄ `provider_node` | `auth_controller.dart:7` (gọi `shutdownServing()` khi logout) ↔ 4 import ngược | logic ⇄ logic |
 | `auth` → `network/presentation` | `browser_fallback.dart:5` → `detail_widgets.dart` | **presentation cross-feature** |
+| `chat` ⇄ `terminal` | `panel_tabs.dart:5` + `composer_context.dart:5,6` ↔ `terminal_session` không import ngược | logic → logic, **một chiều** |
+| `chat` ← `files` | `files_filter.dart:6` + 2 widget → `chat/logic/workspace_browser.dart` | logic ⇄ logic |
+
+Cặp `chat` ⇄ `terminal` là **một chiều** và cố ý: `terminal/` không biết panel là gì
+(*"a terminal has no business knowing what a panel is"*), nên `chat/` gọi `endSession` chứ không phải
+ngược lại. Đó là hình dạng đúng — chỉ thiếu bước cuối là đưa `TerminalCapture` xuống `shared/`.
 
 ### Kiểu choke-point — đổi là gãy nhiều chỗ
 
@@ -1497,6 +1937,23 @@ Ngoại lệ hợp lệ: `shared/layouts/widgets/section_view.dart` import 15 vi
 | `NetworkCredential` | `state/models/network_credential.dart` | 3 trục quyền khác nhau; `isPublic` **cố ý đảo** |
 | `ConnectorToken` + `McpEntry` + `RestEntry` | `agents/logic/` | Type duy nhất đi xuyên **cả ba plane** |
 | `AgentExtensions` (3 plane) | `agents/logic/agent_extensions.dart` | **Null-plane là câu trả lời hợp lệ**, không phải lỗi |
+
+### Hàm thuần tự nhận là "để test được" nhưng **chưa có test**
+
+§8 conventions: *"pure logic (parsing, deriving, planning) sống trong hàm không side-effect **và được
+unit test**"*. Ba hàm dưới đây có doc comment tự biện minh cho việc chúng thuần **bằng chính lý do
+testability** — rồi không ai viết test:
+
+| Hàm | Doc comment nói | Test |
+|---|---|---|
+| `resolvePanelSizes` (`chat/logic/panel_layout.dart`) | *"Pure, and out of `build` on purpose: bốn clamp phải nhất quán với nhau"* | **0** |
+| `decodeFilePreview` (`files/logic/file_preview.dart`) | *"Pure, so ba phán đoán này test được mà không cần filesystem"* | **0** |
+| `filePathCrumbs` (`files/logic/files_path.dart`) | — | **0** |
+
+`resolvePanelSizes` là cái đắt nhất trong ba: nó chi phối **mọi** kích thước của pane, và chính comment
+của `kChatMinWidth` kể lại rằng lần đo trước **đã ship sọc tràn lên composer thật**. Hàng xóm của nó
+(`resolvePanelSideWidth`, `tabStripTabWidth`) thì **có** test — nên khoảng trống này là bỏ sót, không
+phải một quyết định.
 
 ### Điểm mù quan sát
 
@@ -1513,37 +1970,73 @@ tab Debug lẫn `app_https-*.log`:
 > Khi user báo "connector không hoạt động" hoặc "agent gọi tool lỗi", **transcript HTTP trên đĩa không
 > chứa gì cả.** Phải debug bằng `appLog`.
 
-### Số đo hiện trạng (2026-08-06)
+### Số đo hiện trạng (2026-08-10)
 
-`flutter analyze lib test` → **0 issue**. `flutter test` → **2122 pass, 0 fail**.
-(Bản đo đầu của tài liệu này, cùng ngày, còn ghi 9 issue trong `features/models/` — `8b5c5ac` dọn
-xong trong lúc tài liệu đang viết. Đo lại trước khi trích số ở đây.)
-**231 file test**, trong đó **24 file còn `testWidgets`** (legacy — §8 conventions cấm thêm mới).
-**23 `TODO` trong `lib/`, 20 trong đó là `TODO(BE)`** (chờ backend).
+`flutter analyze lib test` → **0 issue**. `flutter test` → **2351 pass, 0 fail**.
+**259 file test**, trong đó **24 file còn `testWidgets`** (legacy — §8 conventions cấm thêm mới;
+con số **không tăng** dù `lib/` phình 15.000 dòng, tức luật đang được giữ).
+**26 `TODO` trong `lib/`, 20 trong đó là `TODO(BE)`** (chờ backend).
+`AppTheme.watch`: **486 call site**.
 Gateway connector đo 2026-08-05: **12 row, tất cả `auth_type: app`, 8/12 có `mcp_url`, 8/12 trả
 `description: ""`** (nên `connector_blurb_fallback.dart` tồn tại).
 
-### Dead code đo được
+| | 06/08 | 10/08 |
+|---|---|---|
+| File Dart trong `lib/` | 558 | **668** |
+| Dòng | ~105.000 | **~120.900** |
+| Feature domain | 23 | **26** |
+| Test pass | 2122 | **2351** |
+| `AppTheme.watch` | 399 | **486** |
+
+> Đo lại trước khi trích bất kỳ số nào ở đây. Bảng này đã lạc hậu **hai lần trong bốn ngày**.
+
+### Dead code đo được (đo lại 2026-08-10 — danh sách **không đổi**)
 
 `overlord/**` (**1.417 dòng**, unreachable) · `models/presentation/{download_row,manager_search_field}.dart`
 (0 import; `suggested_models_section.dart` đã xoá ở `8b5c5ac`) · `model_shelf.dart::buildModelShelf` ·
-`catalogModelsProvider` ·
+`catalogModelsProvider` (chỉ còn chính định nghĩa của nó) ·
 `shared/layouts/widgets/{hosting_summary,plan_type_pill}.dart` (0 call site) ·
-`shared/widgets/{pulse.dart::PulseDot, coming_soon_view.dart, not_yet_badge.dart}` ·
+`shared/widgets/{pulse.dart::PulseDot, coming_soon_view.dart, not_yet_badge.dart}` — hai cái sau chết
+**thành cặp**: `coming_soon_view` là call site duy nhất của `NotYetBadge` ·
 `conversation.dart::groupConversationsByRecency` · `parsers/{member_entry,denylist_entry}.dart` ·
-`api/models/chat_chunk.dart` · `skill_generator.dart` (201 dòng, UI tắt cứng) ·
-`run(timeout:)` (không call site nào truyền) · `snackBarTheme` (SnackBar bị cấm, 0 call site).
+`api/models/chat_chunk.dart` · `run(timeout:)` (không call site nào truyền) ·
+`snackBarTheme` (SnackBar bị cấm, 0 call site).
 
-### Nợ design-system (đo lại 2026-08-06)
+⚠️ **`skill_generator.dart` đã đổi trạng thái** — không còn "0 import". `new_skill_dialog.dart` giờ gọi
+`skillGeneratorProvider`, nhưng **gate là một hằng `final bool _showAiDraft = false`** ở cuối chính file
+dialog đó. Tức nó *biên dịch vào bundle, có call site, và không đường nào tới được*. Dạng dead code này
+khó thấy hơn dạng cũ: grep "0 import" **không bắt được nó nữa**.
 
-| Vi phạm | Số chỗ |
-|---|---|
-| `IconButton` trần | **41** |
-| `backgroundColor: AppPalette.windowBg` (dialog chìm ở dark) | **7** — `login_screen`, `project_instructions_dialog`, `create_project_dialog`, `agent_changes_bar`, `prompt_dialog`, `onboarding_page`, `home_shell` |
-| `MenuItemButton` trần | **3** — `approval_picker`, `agent_picker`, `task_power_bar` |
-| `CircularProgressIndicator` trần | **5** — đều trong `models/` |
-| `Card()` Material | **1** — `node_setup_card.dart:51` |
-| `DropdownButtonFormField` / `InputDecoration(labelText:)` / `SnackBar` | **0** ✅ |
+### Nợ design-system (đo lại 2026-08-10)
+
+| Vi phạm | Số chỗ | So với 06/08 |
+|---|---|---|
+| `IconButton` trần | **41** | = |
+| `backgroundColor: AppPalette.windowBg` (dialog chìm ở dark) | **7** — `login_screen`, `project_instructions_dialog`, `create_project_dialog`, `agent_changes_bar`, `prompt_dialog`, `onboarding_page`, `home_shell` | = |
+| `MenuItemButton` trần | **3** — `approval_picker`, `agent_picker`, `task_power_bar` | = |
+| `CircularProgressIndicator` trần | **5** — đều trong `models/` (`model_detail_panel` 3, `model_manager_split` 2). 4 chỗ còn lại nằm trong chính `AppSpinner`, hợp lệ | = |
+| `Card()` Material | **1** — `node_setup_card.dart:51` | = |
+| `DropdownButtonFormField` / `InputDecoration(labelText:)` / `SnackBar` | **0** ✅ | = |
+
+> **15.000 dòng mới không thêm một vi phạm nào vào bảng này.** Đó là kết quả đáng chú ý nhất của lần đo
+> lại: `review/`, `files/`, `terminal/` dựng menu và spinner theo đúng công thức.
+
+#### Nợ MỚI: công thức menu row bị chép tay **bảy** lần
+
+Design system §5 mô tả một "menu row chuẩn", nhưng `shared/` **không cung cấp widget nào cho nó**. Hệ quả:
+mỗi feature cần menu lại tự dựng lại — `chat_header.dart:_ChatMenuItem` (bản tham chiếu đã đo bằng test),
+`panel_feature_menu.dart:_FeatureMenuItem`, `project_menu.dart:_ProjectMenuItem`,
+`skill_menu.dart:SkillMenuItem`, `archived_chats_view.dart:_FilterMenuRow`, và **hai cái mới**:
+`review/presentation/widgets/menu_row.dart` (297 dòng, có cả `MenuRowBody` + `MenuRowChevron`) và
+`files/presentation/widgets/files_menu_row.dart`.
+
+Cả bảy đều **đúng** hôm nay, và doc comment của mỗi cái đều giải thích lại cùng một lý do (Material sai
+4 điểm: radius 0, text 14pt, hover xám `onSurface`, có ripple). Nhưng bảy bản sao của một công thức là
+bảy chỗ để nó trôi khỏi nhau — và luật "hai màn hỏi cùng một câu thì dùng chung widget và chung chữ"
+(§5 conventions) đang bị vi phạm ở đúng chỗ khó thấy nhất.
+
+**Sửa:** một `AppMenuRow` ở `shared/widgets/`, dựng từ `_ChatMenuItem`. `review/menu_row.dart` đã là bản
+đầy đủ nhất (có chevron cho submenu) nên nó là ứng viên tốt nhất để nâng lên.
 
 Thêm, **trong chính `shared/`**:
 - `appMenuStyle()` hardcode radius **10** trong khi `AppControl.menuRadius = 6` → ba loại menu lệch 6/6/10
@@ -1562,7 +2055,7 @@ Thêm, **trong chính `shared/`**:
 | `docs/messages-tab.md` §5 | Mô tả `_restrict()` ghim toolset — code làm **ngược lại** (unpin) |
 | `docs/features/connectors/composio-proxy-contract.vi.md` | Nói "app đã implement xong và đang chờ" — **0 dòng Dart nhắc tới Composio** |
 | `docs/features/connectors/gateway-api-for-grid-desktop.md` | Mô tả hợp đồng khác hẳn cái đang chạy (D12 supersede D9) |
-| `docs/design-system.md` | Ghi 186 call site `AppTheme.watch` (thực tế **399**); xếp `surfaceFill`/`sidebarFill` vào `AppSurface` (thực tế `AppGlass`); §4 ghi `w600` (thực tế `w500`) |
+| `docs/design-system.md` | Ghi 186 call site `AppTheme.watch` (thực tế **486**); xếp `surfaceFill`/`sidebarFill` vào `AppSurface` (thực tế `AppGlass`); §4 ghi `w600` (thực tế `w500`). **Chưa nói gì về panel** — `PanelBody`, `PanelSplitter`, `PanelToggle`, chiều cao toolbar 36px và thang tab 96–180px đều là hình học chuẩn giờ đã có nhưng không nằm trong spec |
 
 ### `TODO(BE)` — chờ backend
 
@@ -1584,6 +2077,7 @@ Thêm, **trong chính `shared/`**:
 - [`docs/design-system.md`](design-system.md) — **spec canonical** cho UI, đọc trước khi style bất cứ thứ gì
 - [`docs/conventions.md`](conventions.md) — architecture, Riverpod rules, Dart style, copy rules, testing policy
 - [`docs/style-guide-grid-app.md`](style-guide-grid-app.md)
+- [`docs/git-auto-install.md`](git-auto-install.md) — chi tiết probe/tải/adopt Git (§4.6, §7.25)
 - [`docs/messages-tab.md`](messages-tab.md) — ⚠️ §5 đã lỗi thời
 - [`docs/OVERVIEW.md`](OVERVIEW.md) — handover 14/7, còn đúng ở phần build/release
 - [`scripts/README.md`](../scripts/README.md) — sidecar bundling, signing, packaging
