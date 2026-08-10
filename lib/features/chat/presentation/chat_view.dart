@@ -23,7 +23,6 @@ import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/presentation/agent_picker.dart';
-import '../../agents/presentation/agent_changes_bar.dart';
 import '../../agents/presentation/agent_permission_card.dart';
 import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
@@ -907,11 +906,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             children: [
                               const AgentHandoverBar(),
                               const PlanApproveBar(),
-                              // Above the changes bar: "it stopped early" is the
-                              // more urgent of the two, and the files it did
-                              // change are still there to review afterwards.
                               const OutOfStepsBar(),
-                              const AgentChangesBar(),
+                              // `AgentChangesBar` used to sit here. Hidden on
+                              // 2026-08-10: git and the Review tab already show
+                              // what the assistant changed, and a third notice
+                              // over the composer said it a third time. The
+                              // recording behind it stays on — Review's "Last
+                              // turn" scope reads it (`lastTurnAgentPaths`) —
+                              // so bringing the bar back is putting this one
+                              // line back.
                               const GoalBar(),
                               const RunningServicesBar(),
                               const SaveSkillBar(),
