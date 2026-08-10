@@ -113,6 +113,23 @@ class _FilesTab extends ConsumerWidget {
     );
     final folder = ref.watch(projectByIdProvider(projectId))?.path;
 
+    // The tab is rooted at whichever project the open chat belongs to, and
+    // switching chats can move it to another one. Telling it so is what clears
+    // the folders and the file it was showing out of the project it just left.
+    //
+    // After the frame, never during it, and for the same reason as `_ReviewTab`
+    // above: writing a provider while another is building is what Riverpod
+    // forbids outright. A chat that belongs to no project says nothing rather
+    // than re-rooting to null — going back to the project should find the tab
+    // as it was left.
+    if (folder != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          ref.read(filesBrowserProvider(tabId).notifier).showRoot(folder);
+        }
+      });
+    }
+
     return FilesPanelView(
       tabId: tabId,
       folder: folder,
