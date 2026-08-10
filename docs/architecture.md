@@ -708,8 +708,8 @@ khác project rail (*"tôi có muốn xem card của project này không"* — c
 | Đường | Cơ chế | Cap |
 |---|---|---|
 | Gắn terminal | `attachedTerminalsProvider` **derive** từ panel nào đang mở + tab active là terminal | tối đa 2 (một panel một cái), **không đếm ở đâu cả** |
-| Gắn file | `composerFileRequestProvider` ← menu chuột phải "Add to chat" | `kFileTextBudget` |
-| Gắn đoạn bôi đen | `composerSnippetProvider` (**queue**, không phải một giá trị) | `kSnippetBudget` 4.000 ký tự × `maxChatSnippets` 8 |
+| Gắn file | `composerFileRequestProvider` ← Files: menu chuột phải "Add to chat"; Review: nút ✚ cạnh tên file đang mở | `kFileTextBudget` |
+| Gắn đoạn bôi đen | `composerSnippetProvider` (**queue**, không phải một giá trị) ← Files viewer **và** diff Review | `kSnippetBudget` 4.000 ký tự × `maxChatSnippets` 8 |
 | Nhờ agent review | `composerPrefillProvider` ← Review "Ask the assistant" | — |
 
 > **Terminal được chụp lúc bấm Send, không sớm hơn.** Cái phút giữa lúc mở terminal và lúc hỏi về nó
@@ -726,6 +726,13 @@ khác project rail (*"tôi có muốn xem card của project này không"* — c
   `promptBlock`. Câu của user chôn dưới 200 dòng build output là phiên bản đã làm transcript không đọc nổi
 - Snippet thì **ngược lại — gộp thẳng vào text** (`messageWithSnippets`), vì đó là thứ khiến transcript
   trung thực: lượt của user hiện đúng cái đã hỏi, kể cả phần trích dẫn
+- **Một selection chỉ có một menu.** `AddToChatSelection` (shared) dựng cùng ba dòng — Add to Chat, gạch
+  ngang, Copy, Select all — cho *cả* thả-chuột lẫn chuột-phải; strip mặc định của platform bị tắt
+  (`contextMenuBuilder: null`) và hai hành động của nó làm tại chỗ. Trước đó hai cử chỉ ra hai menu khác
+  hình, phải học hai lần
+- Diff Review bọc thêm `LineSelection`: list vẽ **một widget một dòng** nên selection mặc định dán liền
+  thành một dòng dài. Số dòng (`lib/x.dart:11-12`) do `diffExcerptFor` dò lại, và **chỉ** cấp khi đoạn
+  bôi đen là một mạch liền của file *sau* thay đổi — dòng bị xoá không nằm trong file nào để trỏ
 
 #### Cạm bẫy đắt nhất
 
