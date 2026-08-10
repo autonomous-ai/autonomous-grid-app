@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/playground/logic/chat_transport.dart';
+import 'package:grid_app/infrastructure/api/chat_transport.dart';
 
 /// The relay streams `chat/completions` as OpenAI-style SSE. These pin the pure
 /// parsing — which chunks add text and which are skipped — and the fallback for

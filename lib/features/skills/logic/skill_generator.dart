@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/cli/command_log.dart';
-import '../../playground/logic/chat_transport.dart';
 import '../../playground/logic/one_shot_target.dart';
 
 /// The three fields a generated draft fills in, matching the skill form.

@@ -7,11 +7,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class FilesBrowserState {
   FilesBrowserState({
     Set<String> expanded = const {},
+    this.root,
     this.selected,
     this.query = '',
     this.showSource = false,
     this.showTree = true,
   }) : expanded = Set.unmodifiable(expanded);
+
+  /// The project folder this tab was last pointed at, or null before it has been
+  /// pointed anywhere.
+  ///
+  /// Held here so that re-rooting can be *noticed*. A Files tab is rooted at
+  /// whichever project the open chat belongs to, which is not a decision the tab
+  /// made and can change under it — see [FilesBrowser.showRoot].
+  final String? root;
 
   /// Absolute paths of the folders the user has opened. The root's own children
   /// are always listed; this is everything expanded beneath them.
@@ -41,12 +50,14 @@ class FilesBrowserState {
 
   FilesBrowserState copyWith({
     Set<String>? expanded,
+    String? root,
     String? selected,
     String? query,
     bool? showSource,
     bool? showTree,
   }) => FilesBrowserState(
     expanded: expanded ?? this.expanded,
+    root: root ?? this.root,
     selected: selected ?? this.selected,
     query: query ?? this.query,
     showSource: showSource ?? this.showSource,
@@ -83,6 +94,32 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
 
   void select(String path) => state = state.copyWith(selected: path);
 
+  /// Point this tab at [root], forgetting the last project if it was a different
+  /// one.
+  ///
+  /// A tab is rooted at the project the open chat belongs to, so switching to a
+  /// chat in another project re-roots it underneath the user. Nothing it was
+  /// holding survives that: the tree would come back showing this project with
+  /// the other one's folders opened under it, and a file out of the other
+  /// project still on screen beside them.
+  ///
+  /// Called on every rebuild of the tab, so the ordinary case — moving between
+  /// chats inside one project — has to cost nothing, which is what the first
+  /// line is for. A tab whose file was chosen before it first drew ([reveal])
+  /// arrives already carrying its root, so this leaves it alone too.
+  void showRoot(String root) {
+    if (state.root == root) return;
+    // The *place* resets; how the tab is set up to read does not. Hiding the
+    // tree and reading Markdown as source are choices about this tab, and a user
+    // who hid the tree to read a document did not ask for it back by opening a
+    // chat in another project.
+    state = FilesBrowserState(
+      root: root,
+      showSource: state.showSource,
+      showTree: state.showTree,
+    );
+  }
+
   /// Show [path], with every folder between [root] and it already open.
   ///
   /// For a tab that has just been created to hold one file: selecting alone
@@ -99,7 +136,11 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
       expanded.add(path.substring(0, cut));
       cut = path.indexOf(RegExp(r'[/\\]'), cut + 1);
     }
-    state = state.copyWith(expanded: expanded, selected: path);
+    // The root goes in with it. This runs before the tab has drawn once, and
+    // without it the tab's first frame would see a root it had never been told
+    // about, call that a re-rooting, and throw away the file it was opened to
+    // show.
+    state = state.copyWith(expanded: expanded, root: root, selected: path);
   }
 
   void setQuery(String query) => state = state.copyWith(query: query);

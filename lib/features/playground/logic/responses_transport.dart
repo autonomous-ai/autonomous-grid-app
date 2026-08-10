@@ -4,8 +4,8 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/chat_transport.dart';
 import 'chat_message.dart';
-import 'chat_transport.dart';
 import 'message_media.dart';
 
 /// Sends an OpenAI **Responses API** request (`POST {relayBaseUrl}/responses`).

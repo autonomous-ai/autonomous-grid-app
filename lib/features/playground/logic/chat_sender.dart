@@ -3,13 +3,13 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/media_event.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'chat_message.dart';
-import 'chat_transport.dart';
 import 'media_outputs.dart';
 import 'media_transport.dart';
 import 'message_media.dart';

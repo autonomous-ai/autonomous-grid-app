@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/git_providers.dart';
 import '../../../infrastructure/cli/git_repo.dart';
 import '../../../infrastructure/logging/app_log.dart';
+import '../../../shared/file_changes.dart';
 import 'git_failure.dart';
 import 'review_actions.dart';
 import 'review_scope.dart';
@@ -102,6 +105,14 @@ final reviewProvider =
       ReviewController.new,
     );
 
+/// How long the writing has to stop before Review re-reads the repository.
+///
+/// Longer than the file panel's own settling time, and deliberately so: one read
+/// here is around eight `git` processes, where reading a file is one call into
+/// the filesystem. Long enough that a build or a checkout is one read; short
+/// enough that a saved file shows up while the user is still looking at it.
+const _diskSettle = Duration(milliseconds: 400);
+
 class ReviewController extends AsyncNotifier<ReviewState> {
   ReviewController(this._folder);
 
@@ -109,18 +120,82 @@ class ReviewController extends AsyncNotifier<ReviewState> {
   /// than its root.
   final String _folder;
 
+  /// The pending re-read, waiting for the writing to stop. See [_diskSettle].
+  Timer? _settle;
+
+  /// Which read is the current one. A read that finishes after a later one
+  /// started is history, and must not be allowed to put its older snapshot on
+  /// screen — staging a file and having the list flick back to unstaged is what
+  /// that looks like.
+  int _reads = 0;
+
   @override
   Future<ReviewState> build() {
     // Changing the comparison re-reads the repository; that's the whole
     // mechanism behind the scope menu.
     final scope = ref.watch(reviewScopeProvider(_folder));
-    // What the assistant touched is only *watched* by the scope built out of
-    // it. Watching it always meant six `git` calls every time an agent wrote a
-    // file — a storm of process spawns behind a list the user wasn't looking
-    // at. Every other scope refreshes when asked.
+    // The set of paths the "Last turn" scope narrows by is part of what that
+    // scope *is*, so it re-reads on every change to it. Every other scope
+    // follows the disk instead — see [_followDisk].
     if (scope is LastTurnChanges) ref.watch(reviewLastTurnPathsProvider);
+    _followDisk();
     return _read();
   }
+
+  /// Re-read after something writes inside this folder, once the writing stops.
+  ///
+  /// Watching every single write was tried and taken out again: it meant around
+  /// eight `git` invocations *per file the agent saved*, a storm of process
+  /// spawns behind a list nobody was necessarily looking at. What makes it
+  /// affordable now is that the announcement is already gathered into bursts
+  /// ([fileChangesProvider]) and this waits out the rest of the burst on top of
+  /// it — an agent rewriting twelve files costs one read, not twelve.
+  ///
+  /// Without it the panel is honest only at the moment it opens: the default
+  /// scope is [UncommittedChanges], and the whole point of Review sitting beside
+  /// the conversation is watching the diff grow as the assistant works.
+  void _followDisk() {
+    ref.onDispose(() => _settle?.cancel());
+    ref.listen(fileChangesProvider, (_, notice) {
+      if (!notice.paths.any(_isInFolder)) return;
+      _settle?.cancel();
+      _settle = Timer(_diskSettle, _reread);
+    });
+  }
+
+  /// [refresh], with the failure handling a background read needs and a
+  /// foreground one doesn't.
+  ///
+  /// Nobody is waiting on this one, so a throw from it has nowhere to go but out
+  /// of the timer and into the zone — and this fires whenever the assistant
+  /// writes, which is exactly the shape that fills a log file with the same
+  /// stack trace a thousand times. The screen keeps the snapshot it had, which
+  /// is what a failed read leaves behind anyway.
+  Future<void> _reread() async {
+    try {
+      await refresh();
+    } on Object catch (error, stackTrace) {
+      if (!ref.mounted) return;
+      ref
+          .read(appLogProvider)
+          .failure(
+            'review',
+            're-reading $_folder after a write failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+    }
+  }
+
+  /// Whether [path] is this folder or something under it.
+  ///
+  /// The separator matters: without it `/w/grid` would claim every write in
+  /// `/w/grid-app` next door and re-read this repository for changes that have
+  /// nothing to do with it.
+  bool _isInFolder(String path) =>
+      path == _folder ||
+      path.startsWith('$_folder/') ||
+      path.startsWith('$_folder\\');
 
   /// Read the repository again — after an edit the agent made, after staging,
   /// or because the user asked.
@@ -128,7 +203,18 @@ class ReviewController extends AsyncNotifier<ReviewState> {
   /// The list on screen stays put while this runs rather than falling back to a
   /// spinner: a refresh that blanks the file you were reading loses your place
   /// every time an agent touches a file.
-  Future<void> refresh() async => state = AsyncData(await _read());
+  Future<void> refresh() async {
+    // Reading touches half a dozen providers, so a surface that has already gone
+    // must not start one — the timer behind [_followDisk] is cancelled on the
+    // way out, but a click that lands on the closing frame is not.
+    if (!ref.mounted) return;
+    final read = ++_reads;
+    final next = await _read();
+    // Git is slow enough to be overtaken, and the surface can be gone by the
+    // time it answers — a tab closed mid-read, a project switched away from.
+    if (read != _reads || !ref.mounted) return;
+    state = AsyncData(next);
+  }
 
   /// Include [file] in the next commit. Returns null when it worked, else a
   /// line to show; the list is re-read either way, so what's on screen matches

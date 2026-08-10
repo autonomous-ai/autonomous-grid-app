@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/playground/logic/chat_transport.dart';
+import 'package:grid_app/infrastructure/api/chat_transport.dart';
 import 'package:grid_app/features/provider_node/logic/provider_run_controller.dart';
 import 'package:grid_app/features/review/logic/commit_message_writer.dart';
 import 'package:grid_app/features/review/logic/review_file.dart';
