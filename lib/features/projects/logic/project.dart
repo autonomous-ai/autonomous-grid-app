@@ -19,6 +19,8 @@ class Project {
     this.instructions = '',
     this.memory = const [],
     this.pinned = false,
+    this.agent,
+    this.model,
   });
 
   final String id;
@@ -44,6 +46,30 @@ class Project {
   /// true here*. Empty means nothing is remembered yet.
   final List<String> memory;
 
+  /// Which assistant answers this project's chats — an `AgentTool` id (`hermes`,
+  /// `codex`, `claude`), or null to follow the app's standing choice.
+  ///
+  /// Per project because that is how people actually work: a Flutter repo wants
+  /// Claude Code, a folder of notes is happiest on Hermes, and one app-wide
+  /// setting means every switch between the two is a re-pick the user has to
+  /// remember to make — or a turn answered by the wrong assistant.
+  ///
+  /// Stored as a bare id, not the enum: this layer can't reach `AgentTool`
+  /// (projects don't depend on the agents feature), and an id that no longer
+  /// exists has to read as "no choice" rather than throw — see
+  /// `chatAgentChoiceProvider`, which resolves it.
+  final String? agent;
+
+  /// The model this project's chats start on, or null to follow the app's
+  /// standing choice. Remembered beside [agent] and for the same reason: the two
+  /// are one decision ("what answers me here"), and a project that gets its
+  /// assistant back but not its model is still half re-picked every switch.
+  ///
+  /// Not a promise the grid can keep — a model can go offline, or the grid can
+  /// change — so the composer treats it as a preference and falls back to what
+  /// this grid actually serves.
+  final String? model;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
@@ -51,6 +77,8 @@ class Project {
     if (instructions.isNotEmpty) 'instructions': instructions,
     if (memory.isNotEmpty) 'memory': memory,
     if (pinned) 'pinned': true,
+    if (agent != null) 'agent': agent,
+    if (model != null) 'model': model,
   };
 
   static Project? fromJson(Map<String, dynamic> json) {
@@ -73,16 +101,35 @@ class Project {
             ]
           : const [],
       pinned: json['pinned'] == true,
+      agent: _idFrom(json['agent']),
+      model: _idFrom(json['model']),
     );
   }
 
-  /// A copy with [name], [instructions], [memory] or [pinned] changed; id and
-  /// path are the project's identity and never move.
+  /// An id, or null for "no choice here". A blank string is not a choice — it
+  /// would resolve to no agent and no model at all — so it reads as the default.
+  static String? _idFrom(Object? raw) {
+    if (raw is! String) return null;
+    final trimmed = raw.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// A copy with [name], [instructions], [memory], [pinned], [agent] or [model]
+  /// changed; id and path are the project's identity and never move.
+  ///
+  /// [clearAgent] / [clearModel] are how a choice goes *back* to the app's
+  /// standing one: passing null through the `?? this.x` idiom reads as "leave it
+  /// alone", so without them "Use the app default" would silently do nothing.
+  /// Same shape as `ChatPrefs.clearUiFontFamily`, for the same reason.
   Project copyWith({
     String? name,
     String? instructions,
     List<String>? memory,
     bool? pinned,
+    String? agent,
+    String? model,
+    bool clearAgent = false,
+    bool clearModel = false,
   }) => Project(
     id: id,
     name: name ?? this.name,
@@ -90,6 +137,8 @@ class Project {
     instructions: instructions ?? this.instructions,
     memory: memory ?? this.memory,
     pinned: pinned ?? this.pinned,
+    agent: clearAgent ? null : (agent ?? this.agent),
+    model: clearModel ? null : (model ?? this.model),
   );
 }
 
@@ -214,6 +263,44 @@ class ProjectsController extends Notifier<List<Project>> {
           project.copyWith(instructions: trimmed)
         else
           project,
+    ]);
+  }
+
+  /// Point [id]'s chats at the assistant [agent] (an `AgentTool` id), or pass
+  /// null — or a blank string — to put them back on the app's standing choice.
+  ///
+  /// Written from wherever the user picks an assistant *inside a project chat*,
+  /// so the pick lands on the project they were working in rather than on the
+  /// whole app. A project that isn't there any more is a no-op.
+  void setAgent(String id, String? agent) => _steer(
+    id,
+    agent,
+    (project, value) =>
+        project.copyWith(agent: value, clearAgent: value.isEmpty),
+  );
+
+  /// Set the model [id]'s chats start on, or null/blank to follow the app's
+  /// standing choice. The project half of [setAgent]'s decision.
+  void setModel(String id, String? model) => _steer(
+    id,
+    model,
+    (project, value) =>
+        project.copyWith(model: value, clearModel: value.isEmpty),
+  );
+
+  /// Apply [steer] to [id] with [value] trimmed, leaving every other project as
+  /// it was. Both assistant setters are the same body but for the field, and a
+  /// blank has to reach [steer] rather than being dropped here — that is how a
+  /// choice goes back to the app's default.
+  void _steer(
+    String id,
+    String? value,
+    Project Function(Project project, String value) steer,
+  ) {
+    final trimmed = value?.trim() ?? '';
+    _commit([
+      for (final project in state)
+        if (project.id == id) steer(project, trimmed) else project,
     ]);
   }
 

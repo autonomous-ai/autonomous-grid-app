@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/composer_text.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -32,7 +31,6 @@ import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
-import '../../projects/logic/project.dart';
 import '../../playground/presentation/chat_bubble.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../prompts/logic/prompt_slash.dart';
@@ -42,6 +40,7 @@ import '../../skills/presentation/save_skill_bar.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_approval.dart';
+import '../logic/chat_scope.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/composer_context.dart';
 import '../logic/composer_file_request.dart';
@@ -119,9 +118,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// transcript shows what was actually asked.
   final List<ChatSnippet> _snippets = [];
 
-  /// The `conversationId|gridId` the model field was last synced to, so switching
-  /// chats restores that chat's model and switching grids drops to the new grid's
-  /// first model — without clobbering a model being mid-typed.
+  /// The `conversationId|projectId|gridId` the model field was last synced to,
+  /// so switching chats restores that chat's model and switching grids drops to
+  /// the new grid's first model — without clobbering a model being mid-typed.
+  ///
+  /// The project is part of the key because two *unsaved* chats are both a null
+  /// conversation id: starting a new chat in another project would otherwise
+  /// look like the same chat and keep the model of the project just left.
   String? _syncedKey;
   bool _synced = false;
 
@@ -192,8 +195,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   /// Persist the selection once it's a real option (not a name being typed):
   /// onto the open chat, so leaving and returning restores *its* model rather
-  /// than a default; and into the shared prefs, so a new chat and the next
-  /// launch default to it too.
+  /// than a default; and onto the chat's scope — its project, or the app's
+  /// standing choice outside one — so the next chat started there defaults to it
+  /// too.
   ///
   /// Only ever reached for a model the user picked — restoring a chat's own
   /// model on switch is not a choice, and treating it as one wrote both files on
@@ -201,7 +205,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _rememberModel() {
     final id = _model.text.trim();
     if (id.isEmpty || !_options.any((o) => o.id == id)) return;
-    ref.read(chatPrefsProvider.notifier).setModel(id);
+    ref.read(chatScopePrefsProvider).setModel(id);
     ref.read(chatSessionsProvider.notifier).setActiveModel(id);
   }
 
@@ -213,9 +217,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     Conversation? active,
     List<PlaygroundModelOption> options,
     String gridId,
+    String? projectId,
   ) {
     _options = options;
-    final key = '${active?.id}|$gridId';
+    final key = '${active?.id}|$projectId|$gridId';
     // A picker-driven grid switch just landed: honor the model the user chose
     // rather than resetting to this grid's default, then treat it as synced.
     final pending = _pendingPick;
@@ -256,9 +261,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _retargetModel(ref.read(chatModelAgentProvider));
   }
 
-  /// The model to fall back to when the conversation has none: the one the user
-  /// last used (if this grid still offers it and the agent can answer with it),
-  /// else the first option that pairs with the agent answering.
+  /// The model to fall back to when the conversation has none: the one this
+  /// chat's scope last used — its project's, or the app's outside one — if this
+  /// grid still offers it and the agent can answer with it, else the first
+  /// option that pairs with the agent answering.
   String _defaultModel(List<PlaygroundModelOption> options) {
     // A grid that serves nothing this agent can use falls back to the whole
     // list: the composer still names what the grid has, and the picker's greyed
@@ -269,7 +275,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
         if (_agentCanUse(option.id)) option,
     ];
     final pool = usable.isEmpty ? options : usable;
-    final saved = ref.read(chatPrefsProvider).model;
+    final saved = ref.read(chatScopeModelProvider);
     if (saved != null && pool.any((o) => o.id == saved)) return saved;
     return pool.isEmpty ? '' : pool.first.id;
   }
@@ -657,9 +663,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final activeId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
     final sending = ref.watch(chatSessionsProvider.select((s) => s.sending));
     final error = ref.watch(chatSessionsProvider.select((s) => s.error));
-    final openProjectId = ref.watch(
-      chatSessionsProvider.select((s) => s.openProjectId),
-    );
+    final openProject = ref.watch(openChatProjectProvider);
     final options = ref.watch(playgroundModelsProvider);
     // Still resolving means waiting on the *first* answer from either source —
     // see [playgroundModelsResolvingProvider] for why a later poll must not
@@ -692,7 +696,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _takeSnippets(offered);
     });
 
-    _syncModelField(active, options, widget.network.networkId);
+    _syncModelField(active, options, widget.network.networkId, openProject?.id);
 
     // The undo bar speaks for the chat on screen, so tell it which one that is.
     // The snapshots themselves are kept per conversation and outlive the switch:
@@ -823,9 +827,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                         // Name the project a new chat is being composed in, so
                         // its empty state reads "…in <project>?" rather than the
                         // same blank greeting a loose chat shows.
-                        projectName: ref
-                            .watch(projectByIdProvider(openProjectId))
-                            ?.name,
+                        projectName: openProject?.name,
                         onPick: _useStarter,
                       )
                     : _Transcript(

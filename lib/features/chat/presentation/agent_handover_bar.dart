@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/widgets/composer_notice_bar.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_grid_support.dart';
 import '../../agents/logic/agent_status.dart';
+import '../logic/chat_scope.dart';
 import '../logic/chat_sessions_controller.dart';
 
 /// Says out loud when the *grid*, not the user, decided which agent answers.
@@ -72,7 +72,7 @@ class SwitchAgentButton extends ConsumerWidget {
     if (alternative == null) return const SizedBox.shrink();
     return TextButton(
       onPressed: () {
-        ref.read(chatPrefsProvider.notifier).setChatAgent(alternative.id);
+        ref.read(chatScopePrefsProvider).setAgent(alternative.id);
         ref.read(chatSessionsProvider.notifier).clearError();
       },
       child: Text('Use ${alternative.name}'),

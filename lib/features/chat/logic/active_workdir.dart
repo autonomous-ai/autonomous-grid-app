@@ -1,8 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../agents/logic/agent_providers.dart';
-import '../../projects/logic/project.dart';
-import 'chat_sessions_controller.dart';
+import 'chat_scope.dart';
 
 /// The folder the open chat runs in — its project's folder, or the app's default
 /// workspace when the chat belongs to no project.
@@ -11,15 +10,10 @@ import 'chat_sessions_controller.dart';
 /// the `@`-mention menu lists (or the header's file browser opens) is one the
 /// agent can actually read.
 ///
-/// Resolves the project through [ChatSessionsState.openProjectId], not
-/// `active?.projectId ?? draftProjectId`: the draft folder belongs only to a
-/// *new* chat still being composed. On a saved loose chat, falling through to it
-/// pointed the folder at whichever project the user last drafted in — showing a
-/// plain chat another project's files.
+/// Reads the open chat's project through [openChatProjectProvider] — the same
+/// scope the assistant and model choices follow, so the folder, who answers in
+/// it and what they answer with can never describe different projects.
 final activeChatWorkdirProvider = Provider<String>((ref) {
-  final projectId = ref.watch(
-    chatSessionsProvider.select((s) => s.openProjectId),
-  );
-  final project = ref.watch(projectByIdProvider(projectId));
+  final project = ref.watch(openChatProjectProvider);
   return project?.path ?? ref.watch(agentWorkspaceDirProvider).path;
 });
