@@ -1383,11 +1383,17 @@ ReviewController (AsyncNotifier.family theo folder)
 - ⚠️ **`build()` chỉ `watch` `reviewLastTurnPathsProvider` KHI scope là `LastTurnChanges`.** Watch vô
   điều kiện nghĩa là **6 lệnh `git` mỗi lần agent ghi một file** — một cơn bão spawn process sau một
   danh sách không ai đang nhìn
-- **Tự đọc lại đúng hai thời điểm** (`_ReviewTab`, cùng lý do như trên — cuối lượt chứ không phải mỗi
-  lần ghi): (1) một lượt agent **kết thúc** trong lúc Review đang hiện, vì lượt đó có thể đã sửa file,
-  stage, hoặc commit hết; (2) tab **quay lại hiện** sau khi bị ẩn hoặc panel đóng — bắt cả `git commit`
-  gõ tay ở tab Terminal bên cạnh. "Đang hiện" = `PanelTabVisible.of` **và** panel đang mở: panel đóng
-  vẫn giữ tab trong cây
+
+**Ba đường tự đọc lại, và chúng bù chỗ hở của nhau:**
+
+| Đường | Bắt được gì | Cách ghìm chi phí |
+|---|---|---|
+| `_followDisk` — nghe `fileChangesProvider` | agent ghi file, watcher của Files panel | burst đã gộp sẵn, **cộng** thêm lặng 400ms → agent ghi 12 file = **một** lần đọc |
+| `_ReviewTab`: lượt agent **kết thúc** khi Review đang hiện | **commit** — thứ đĩa không nói được, vì commit **không ghi file nào trong working tree** dù git đã đổi hẳn | cuối lượt, không phải mỗi lần ghi |
+| `_ReviewTab`: tab **quay lại hiện** | `git commit`/`checkout` gõ tay ở tab Terminal bên cạnh; mọi thứ xảy ra lúc không ai nhìn | một lần mỗi lần quay lại, không poll |
+
+> "Đang hiện" = `PanelTabVisible.of(context)` **và** panel đang mở — panel đóng vẫn giữ tab trong cây,
+> nên cờ của riêng tab mới là nửa câu trả lời.
 
 #### `ReviewState` — 4 nhánh vì **3 trong số đó user làm được gì đó**
 
