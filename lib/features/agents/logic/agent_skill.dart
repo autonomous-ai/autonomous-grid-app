@@ -21,7 +21,10 @@ enum SkillOwner {
   codex('codex'),
 
   /// Claude Code's own (`~/.claude/skills`).
-  claude('claude');
+  claude('claude'),
+
+  /// Pi's own (`~/.pi/agent/skills`).
+  pi('pi');
 
   const SkillOwner(this.label);
 

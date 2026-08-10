@@ -31,6 +31,12 @@ enum AgentTool {
     name: 'Claude Code',
     tagline: "Anthropic's coding agent.",
     iconAsset: 'assets/agents/claude_icon.png',
+  ),
+  pi(
+    id: 'pi',
+    name: 'Pi',
+    tagline: 'A minimal terminal coding harness.',
+    iconAsset: 'assets/agents/pi_icon.png',
   );
 
   const AgentTool({
@@ -74,6 +80,12 @@ enum AgentTool {
       linuxMusl: true,
     ),
     AgentTool.claude => null,
+    // Pi ships only on npm, so the app fetches a private, pinned Node into
+    // `~/.grid` and lets its npm install Pi there — see [NodeToolInstall].
+    AgentTool.pi => const NodeToolInstall(
+      package: '$kPiPackage@$kPiRelease',
+      executable: 'pi',
+    ),
   };
 
   /// The agent's own mark, bundled with the app (declared in `pubspec.yaml`).

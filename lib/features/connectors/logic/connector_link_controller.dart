@@ -8,6 +8,7 @@ import '../../../shared/external_launch.dart';
 import '../../agents/logic/adapters/claude_tool.dart';
 import '../../agents/logic/adapters/codex_tool.dart';
 import '../../agents/logic/adapters/hermes_tool.dart';
+import '../../agents/logic/adapters/pi_tool.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_extensions_registry.dart';
@@ -755,6 +756,7 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
     AgentTool.hermes => ref.read(hermesInstalledProvider),
     AgentTool.codex => ref.read(codexInstalledProvider),
     AgentTool.claude => ref.read(claudeInstalledProvider),
+    AgentTool.pi => ref.read(piInstalledProvider),
   };
 
   /// Renew a token that is close to expiring, then re-project it.

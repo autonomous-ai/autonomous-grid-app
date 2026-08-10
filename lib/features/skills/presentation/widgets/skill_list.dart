@@ -442,6 +442,7 @@ class _Empty extends StatelessWidget {
     SkillSource.hermes => '~/.hermes/skills',
     SkillSource.codex => '~/.codex/skills',
     SkillSource.claude => '~/.claude/skills',
+    SkillSource.pi => '~/.pi/agent/skills',
   };
 }
 

@@ -27,7 +27,7 @@ class BuiltinGridSkill {
   /// The skill's folder name, e.g. `grid-web`.
   final String name;
 
-  /// The agents this skill is installed for — all three today, though the field
+  /// The agents this skill is installed for — all four today, though the field
   /// stays because a skill can depend on something only one agent has.
   final Set<AgentTool> agents;
 
@@ -49,7 +49,12 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // backend.
   BuiltinGridSkill(
     name: kGridWebSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {
+      AgentTool.hermes,
+      AgentTool.codex,
+      AgentTool.claude,
+      AgentTool.pi,
+    },
     build: gridWebSkillFiles,
   ),
   // What this machine has, and what to use instead of the GNU tools it doesn't:
@@ -57,7 +62,12 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // rediscovering that `timeout`/`gh`/`rg` aren't here.
   BuiltinGridSkill(
     name: kGridHostSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {
+      AgentTool.hermes,
+      AgentTool.codex,
+      AgentTool.claude,
+      AgentTool.pi,
+    },
     build: gridHostSkillFiles,
   ),
   // Starting a dev server is the same job for every agent, and each runs its
@@ -72,17 +82,32 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // voice.
   BuiltinGridSkill(
     name: kGridResearchSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {
+      AgentTool.hermes,
+      AgentTool.codex,
+      AgentTool.claude,
+      AgentTool.pi,
+    },
     build: gridResearchSkillFiles,
   ),
   BuiltinGridSkill(
     name: kGridChartSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {
+      AgentTool.hermes,
+      AgentTool.codex,
+      AgentTool.claude,
+      AgentTool.pi,
+    },
     build: gridChartSkillFiles,
   ),
   BuiltinGridSkill(
     name: kGridServeSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {
+      AgentTool.hermes,
+      AgentTool.codex,
+      AgentTool.claude,
+      AgentTool.pi,
+    },
     build: gridServeSkillFiles,
   ),
 ];
