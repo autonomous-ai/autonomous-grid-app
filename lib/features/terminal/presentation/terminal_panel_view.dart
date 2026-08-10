@@ -17,7 +17,12 @@ class TerminalPanelView extends ConsumerStatefulWidget {
     required this.tabId,
     required this.workdir,
     required this.showing,
+    this.onAddToChat,
   });
+
+  /// A run of output picked out of the screen, on its way to the conversation —
+  /// see [TerminalScreen.onAddToChat].
+  final ValueChanged<String>? onAddToChat;
 
   /// The tab that owns this terminal — its shell dies with it.
   final String tabId;
@@ -68,6 +73,10 @@ class _TerminalPanelViewState extends ConsumerState<TerminalPanelView> {
     // being spawned. An empty state here would flash "no terminal" at somebody
     // who just opened one.
     if (session == null) return const SizedBox.shrink();
-    return TerminalScreen(session: session, focused: widget.showing);
+    return TerminalScreen(
+      session: session,
+      focused: widget.showing,
+      onAddToChat: widget.onAddToChat,
+    );
   }
 }

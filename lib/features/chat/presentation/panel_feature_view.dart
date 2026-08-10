@@ -75,6 +75,18 @@ class _TerminalTab extends ConsumerWidget {
       // tree so switching keeps its scrollback. A terminal that took the
       // keyboard in either case would swallow what the user typed at the chat.
       showing: panelOpen && PanelTabVisible.of(context),
+      // A run of output picked out of the screen, as a quote on the next
+      // message — the same gesture, the same menu and the same words the file
+      // viewer answers a selection with. The whole terminal is a different
+      // thing and asked for differently: drag its tab onto the conversation.
+      //
+      // Named for the tab it came from, since a terminal has no path to be
+      // quoted from the way a file does.
+      onAddToChat: (text) {
+        final snippet = snippetOf(path: 'Terminal', text: text);
+        if (snippet == null) return;
+        ref.read(composerSnippetProvider.notifier).offer(snippet);
+      },
     );
   }
 }

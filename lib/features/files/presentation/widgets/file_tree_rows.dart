@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../../shared/file_drag.dart';
+import '../../../../shared/chat_drop.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/labeled_field.dart';
@@ -144,8 +144,8 @@ class FileTreeEntryRow extends StatelessWidget {
     // scroll a list (Flutter's desktop default, and nothing here overrides it),
     // so there is no gesture to lose the race to, and a file that needs holding
     // down first would be the only thing on this desktop that does.
-    final draggable = Draggable<FileDrag>(
-      data: FileDrag(entry.path),
+    final draggable = Draggable<FileDrop>(
+      data: FileDrop(entry.path),
       // The chip rides under the pointer rather than where the row was grabbed:
       // it is a different size and shape from the row, so keeping the original
       // grab offset would leave it floating off at an angle to the cursor.

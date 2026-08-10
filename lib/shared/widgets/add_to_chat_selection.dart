@@ -141,11 +141,11 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
     return MenuAnchor(
       controller: _menu,
       style: appMenuStyle().copyWith(
-        minimumSize: const WidgetStatePropertyAll(Size(_selectionMenuWidth, 0)),
+        minimumSize: const WidgetStatePropertyAll(Size(kSelectionMenuWidth, 0)),
       ),
       menuChildren: [
         SizedBox(
-          width: _selectionMenuWidth,
+          width: kSelectionMenuWidth,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -160,7 +160,7 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
                   label: 'Add to Chat',
                   onPressed: _add,
                 ),
-                const _MenuRule(),
+                const AppMenuRule(),
               ],
               AppMenuRow(
                 icon: LucideIcons.copy300,
@@ -198,19 +198,3 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
     );
   }
 }
-
-/// The line between what this menu adds and what the platform would have.
-class _MenuRule extends StatelessWidget {
-  const _MenuRule();
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      child: Divider(height: 1, thickness: 1, color: AppPalette.divider),
-    );
-  }
-}
-
-const double _selectionMenuWidth = 168;

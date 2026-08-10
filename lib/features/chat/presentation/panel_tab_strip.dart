@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/chat_drop.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
 import '../logic/panel_layout.dart';
@@ -209,7 +210,7 @@ class _TabState extends State<_Tab> {
     // aren't hovered would resize every tab as the pointer crossed the strip.
     final showClose = widget.selected || _hovered;
 
-    return MouseRegion(
+    final chip = MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => _hover(true),
       onExit: (_) => _hover(false),
@@ -264,6 +265,73 @@ class _TabState extends State<_Tab> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+
+    // Only a terminal, and only by its tab. A terminal is the one surface here
+    // whose worth to a message is the whole screen rather than a line picked out
+    // of it, so the tab — the handle for "this terminal" — is what you drag.
+    // Review and Files hand over a file or a quote instead, and both already
+    // have their own way to do it.
+    if (widget.tab.feature != PanelFeature.terminal) return chip;
+    return Draggable<ChatDrop>(
+      data: TerminalDrop(tabId: widget.tab.id, label: widget.tab.title),
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: _DragChip(label: widget.tab.title),
+      // The tab stays put, dimmed: it is a handle, not the thing itself, and a
+      // tab strip that reflows mid-drag moves the other tabs under the pointer.
+      childWhenDragging: Opacity(opacity: 0.4, child: chip),
+      child: chip,
+    );
+  }
+}
+
+/// A terminal tab in flight — the same shape the file tree's drag uses, so the
+/// two gestures answer alike.
+class _DragChip extends StatelessWidget {
+  const _DragChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Material(
+      color: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 260),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppGlass.surfaceFill,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: AppGlass.cardShadow,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  LucideIcons.squareTerminal,
+                  size: 13,
+                  color: AppPalette.textSecondary,
+                ),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: AppPalette.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

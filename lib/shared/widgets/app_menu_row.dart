@@ -89,3 +89,25 @@ class _AppMenuRowState extends State<AppMenuRow> {
     );
   }
 }
+
+/// The line between what a selection menu adds and what the platform would have
+/// given anyway.
+class AppMenuRule extends StatelessWidget {
+  const AppMenuRule({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: Divider(height: 1, thickness: 1, color: AppPalette.divider),
+    );
+  }
+}
+
+/// How wide a selection menu draws.
+///
+/// One number for every surface that raises one — a file, a diff, a terminal —
+/// because a menu that changes width depending on what is under it reads as
+/// three menus rather than one answer the app gives everywhere.
+const double kSelectionMenuWidth = 168;

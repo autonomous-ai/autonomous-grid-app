@@ -4,9 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../playground/logic/chat_context.dart';
 import '../../terminal/logic/terminal_capture.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
-import 'bottom_panel.dart';
-import 'panel_tabs.dart';
-import 'preview_panel.dart';
 
 /// What [captureTerminalContexts] hands back, so a caller doesn't have to name
 /// two files to send one thing.
@@ -32,76 +29,65 @@ class AttachedTerminal {
   final String label;
 }
 
-/// The terminals the user is looking at — nothing else.
+/// The terminals the user has put on the message they are typing.
 ///
-/// Derived rather than a list anybody adds to, because "the terminal I'm looking
-/// at" is a fact about the panels, not a choice: a panel has to be open and its
-/// active tab has to be the terminal. That is what caps this at two — one panel
-/// beside the conversation, one under it — with no counting anywhere.
+/// **Asked for, never assumed.** This used to be derived — any terminal whose
+/// panel was open and whose tab was in front rode along on the next message, and
+/// the user's only say in it was a ✕ that had to be remembered separately or the
+/// next frame put the chip straight back. Opening a terminal to look something
+/// up is not the same as wanting a screenful of it quoted at a model, and the
+/// app had no way to tell the two apart. Now the gesture says which: drag the
+/// terminal's tab onto the conversation.
 ///
-/// A terminal hidden behind another tab doesn't count, even though its shell is
-/// very much alive. The rule is what the user can see, so that the chips can be
-/// checked against the screen rather than remembered.
-final attachedTerminalsProvider = Provider<List<AttachedTerminal>>((ref) {
-  final dismissed = ref.watch(dismissedTerminalsProvider);
-  final showing = <(PanelHost, PanelTab)>[];
-  for (final host in PanelHost.values) {
-    final open = switch (host) {
-      PanelHost.preview => ref.watch(previewPanelOpenProvider),
-      PanelHost.bottom => ref.watch(bottomPanelOpenProvider),
-    };
-    if (!open) continue;
-    final tab = ref.watch(panelTabsProvider(host)).active;
-    if (tab == null || tab.feature != PanelFeature.terminal) continue;
-    if (dismissed.contains(tab.id)) continue;
-    showing.add((host, tab));
+/// Cleared on Send, like every other part of a draft.
+final attachedTerminalsProvider =
+    NotifierProvider<AttachedTerminals, List<AttachedTerminal>>(
+      AttachedTerminals.new,
+    );
+
+class AttachedTerminals extends Notifier<List<AttachedTerminal>> {
+  @override
+  List<AttachedTerminal> build() => const [];
+
+  /// Put the terminal in tab [tabId] on this message.
+  ///
+  /// Dropping the same tab twice is the same one terminal, so it stays one chip
+  /// rather than quietly sending the screen twice.
+  void attach({required String tabId, required String label}) {
+    if (state.any((terminal) => terminal.tabId == tabId)) return;
+    state = List.unmodifiable([
+      ...state,
+      AttachedTerminal(tabId: tabId, label: label),
+    ]);
   }
 
-  // Both panels number their tabs from one, so two terminals on screen are
-  // usually both called "Terminal". Say which panel only when there are two of
-  // them — on its own, "Terminal · side" is a detail nobody asked for.
-  return List.unmodifiable([
-    for (final (host, tab) in showing)
-      AttachedTerminal(
-        tabId: tab.id,
-        label: showing.length == 1
-            ? tab.title
-            : '${tab.title} · ${_panelWord(host)}',
-      ),
-  ]);
-});
-
-/// The terminals the user took off the message they are typing.
-///
-/// This exists because the chips are derived: with nothing remembering the ✕,
-/// the next frame would put the chip straight back. The dismissal belongs to the
-/// draft rather than to the tab, so [clear] runs on Send and the terminal is
-/// offered again for the next message.
-final dismissedTerminalsProvider =
-    NotifierProvider<DismissedTerminals, Set<String>>(DismissedTerminals.new);
-
-class DismissedTerminals extends Notifier<Set<String>> {
-  @override
-  Set<String> build() => const {};
-
-  void dismiss(String tabId) => state = {...state, tabId};
+  /// Take it back off — the chip's ✕.
+  void remove(String tabId) {
+    if (!state.any((terminal) => terminal.tabId == tabId)) return;
+    state = List.unmodifiable([
+      for (final terminal in state)
+        if (terminal.tabId != tabId) terminal,
+    ]);
+  }
 
   void clear() {
     if (state.isEmpty) return;
-    state = const {};
+    state = const [];
   }
 }
 
 /// Reads [attached] out of [sessions] — called as Send is pressed, never
 /// earlier.
 ///
-/// The minute between opening a terminal and asking about it is usually the
+/// The minute between attaching a terminal and asking about it is usually the
 /// minute the thing being asked about happened: a build that was still running
 /// when the chip appeared has failed by the time the message goes. Capturing at
 /// Send is what makes the attachment worth having.
 ///
 /// A terminal with nothing on it is left off entirely rather than sent as an
-/// empty block — see [captureTerminal].
+/// empty block — see [captureTerminal]. So is one whose tab has been closed
+/// since it was attached: the session is gone, and there is nothing left to
+/// read.
 List<ChatContext> captureTerminalContexts({
   required List<AttachedTerminal> attached,
   required TerminalSessionsState sessions,
@@ -116,8 +102,3 @@ List<ChatContext> captureTerminalContexts({
           truncated: capture.truncated,
         ),
 ];
-
-String _panelWord(PanelHost host) => switch (host) {
-  PanelHost.preview => 'side',
-  PanelHost.bottom => 'bottom',
-};
