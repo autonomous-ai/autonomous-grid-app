@@ -1,5 +1,6 @@
-import 'package:flutter/gestures.dart' show kPrimaryButton;
+import 'package:flutter/gestures.dart' show kPrimaryButton, kSecondaryButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../theme/app_theme.dart';
@@ -19,16 +20,18 @@ const double _dragSlop = 6;
 /// because it is one gesture and one sentence. Two copies of it would answer the
 /// same drag with different words within a release (§5).
 ///
-/// Two ways in, because they answer different habits:
+/// **One menu, whichever way you open it.** Letting go of a drag and
+/// right-clicking both raise the same three rows in the app's own shape. They
+/// used to raise two different menus — the app's single *Add to Chat* on a drag,
+/// the platform's Copy/Select All strip on a right-click — and a surface that
+/// answers one selection with two menus is one the user has to learn twice. The
+/// platform strip is switched off (`contextMenuBuilder: null`) and its two
+/// actions are done here instead: copy is the text we already hold, and select
+/// all is [SelectionAreaState.selectableRegion]'s own.
 ///
-///  - **Let go of the drag** and the app's own one-item menu appears where the
-///    pointer stopped. This is the affordance the feature is for; macOS shows
-///    nothing after a mouse drag by design (see `_handleMouseDragEnd` in
-///    `selectable_region.dart`), and `SelectableRegion` keeps its `_showToolbar`
-///    private, so the menu here is the app's rather than the platform's.
-///  - **Right-click** and the platform's own strip appears, with Copy and Select
-///    All where the user expects them and *Add to Chat* appended. Replacing that
-///    one would mean re-implementing two behaviours nobody asked to change.
+/// macOS shows nothing after a mouse drag by design (see `_handleMouseDragEnd`
+/// in `selectable_region.dart`) and `SelectableRegion` keeps `_showToolbar`
+/// private, so the menu has to be the app's either way.
 ///
 /// The selected text is kept in a plain field rather than in state: it changes
 /// on every tick of a drag, and rebuilding a two-thousand-line file to remember
@@ -52,16 +55,24 @@ class AddToChatSelection extends StatefulWidget {
 
 class _AddToChatSelectionState extends State<AddToChatSelection> {
   final _menu = MenuController();
+  final _area = GlobalKey<SelectionAreaState>();
   String? _selected;
 
-  /// Where the *left* button went down, so a release can tell a drag from a
-  /// click. Null for any other button: a right-click has its own menu, and a
-  /// right-drag must not open a second one over it.
-  Offset? _pressed;
+  /// What was highlighted when the menu went up.
+  ///
+  /// Read then rather than when a row is tapped, because the rows act on the
+  /// selection the user was looking at when they opened it — and a region that
+  /// loses focus to the menu clears its selection on the way (see
+  /// `_handleFocusChanged` in `selectable_region.dart`), which would leave the
+  /// menu standing over a highlight it could no longer send.
+  String? _offered;
 
-  String? get _addable {
+  /// Where the button went down and which one it was, so a release can tell a
+  /// drag from a click — and a right-click from either.
+  ({Offset at, bool secondary})? _pressed;
+
+  String? get _selectedText {
     final text = _selected;
-    if (widget.onAdd == null) return null;
     return text != null && text.trim().isNotEmpty ? text : null;
   }
 
@@ -69,20 +80,31 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
     // A press anywhere puts the last menu away — including the press that
     // starts the next selection, which would otherwise leave two on screen.
     if (_menu.isOpen) _menu.close();
-    _pressed = event.buttons == kPrimaryButton ? event.localPosition : null;
+    _pressed = switch (event.buttons) {
+      kPrimaryButton => (at: event.localPosition, secondary: false),
+      kSecondaryButton => (at: event.localPosition, secondary: true),
+      _ => null,
+    };
   }
 
   void _up(PointerUpEvent event) {
     final from = _pressed;
     _pressed = null;
     if (from == null) return;
-    if ((event.localPosition - from).distance < _dragSlop) return;
-
-    // After the frame: the selection is finalised on drag end, and asking for it
-    // in the same event that ended the drag reads the *previous* answer.
+    // A left button that never travelled was a click, and a click inside a
+    // selection is how you throw it away — not how you ask about it.
+    if (!from.secondary &&
+        (event.localPosition - from.at).distance < _dragSlop) {
+      return;
+    }
+    // After the frame, for both gestures: a drag finalises its selection on
+    // release, and a right-click on plain text selects the word under it, so
+    // asking in the same event reads the *previous* answer.
     final at = event.localPosition;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _addable == null || _menu.isOpen) return;
+      final text = _selectedText;
+      if (!mounted || text == null || _menu.isOpen) return;
+      _offered = text;
       // Just below the pointer, so the menu doesn't land on the last words of
       // what was selected.
       _menu.open(position: at + const Offset(4, 8));
@@ -90,14 +112,31 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
   }
 
   void _add() {
-    final text = _addable;
+    final text = _offered;
     _menu.close();
-    if (text != null) widget.onAdd!(text);
+    // The selection stays highlighted so the user can see what they just sent;
+    // only the menu goes, because standing there it would hide the chip
+    // appearing below it.
+    if (text != null) widget.onAdd?.call(text);
+  }
+
+  void _copy() {
+    final text = _offered;
+    _menu.close();
+    if (text != null) Clipboard.setData(ClipboardData(text: text));
+  }
+
+  void _selectAll() {
+    _menu.close();
+    // Without a cause, which is the desktop path: passing `toolbar` would ask
+    // the region to raise the platform strip this widget exists to replace.
+    _area.currentState?.selectableRegion.selectAll();
   }
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final canAdd = widget.onAdd != null;
     return MenuAnchor(
       controller: _menu,
       style: appMenuStyle().copyWith(
@@ -106,10 +145,33 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
       menuChildren: [
         SizedBox(
           width: _selectionMenuWidth,
-          child: AppMenuRow(
-            icon: LucideIcons.messageSquarePlus300,
-            label: 'Add to Chat',
-            onPressed: _add,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // What this menu is *for* leads it. Copy and Select all are the
+              // ones the platform would have given anyway, and they sit under a
+              // rule so the row that is the app's own reads as the answer to
+              // the drag rather than as a third clipboard command.
+              if (canAdd) ...[
+                AppMenuRow(
+                  icon: LucideIcons.messageSquarePlus300,
+                  label: 'Add to Chat',
+                  onPressed: _add,
+                ),
+                const _MenuRule(),
+              ],
+              AppMenuRow(
+                icon: LucideIcons.copy300,
+                label: 'Copy',
+                onPressed: _copy,
+              ),
+              AppMenuRow(
+                icon: LucideIcons.boxSelect300,
+                label: 'Select all',
+                onPressed: _selectAll,
+              ),
+            ],
           ),
         ),
       ],
@@ -117,30 +179,28 @@ class _AddToChatSelectionState extends State<AddToChatSelection> {
         onPointerDown: _down,
         onPointerUp: _up,
         child: SelectionArea(
+          key: _area,
           onSelectionChanged: (content) => _selected = content?.plainText,
-          contextMenuBuilder: (context, selection) {
-            final text = _addable;
-            return AdaptiveTextSelectionToolbar.buttonItems(
-              anchors: selection.contextMenuAnchors,
-              buttonItems: [
-                ...selection.contextMenuButtonItems,
-                if (text != null)
-                  ContextMenuButtonItem(
-                    label: 'Add to Chat',
-                    onPressed: () {
-                      // The strip goes first: the selection stays highlighted so
-                      // the user can see what they just sent, but a menu left
-                      // standing over it would hide the chip appearing below.
-                      selection.hideToolbar();
-                      widget.onAdd!(text);
-                    },
-                  ),
-              ],
-            );
-          },
+          // Off: the menu above is the one this surface answers with, and the
+          // platform's strip would be a second one for the same selection.
+          contextMenuBuilder: null,
           child: widget.child,
         ),
       ),
+    );
+  }
+}
+
+/// The line between what this menu adds and what the platform would have.
+class _MenuRule extends StatelessWidget {
+  const _MenuRule();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: Divider(height: 1, thickness: 1, color: AppPalette.divider),
     );
   }
 }
