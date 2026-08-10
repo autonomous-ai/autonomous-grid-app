@@ -6,6 +6,7 @@ import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_overview_refresh.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/node_display.dart';
+import '../../../features/network/presentation/node_dashboard_dialog.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
@@ -315,6 +316,7 @@ class _PowerPanel extends ConsumerWidget {
                 ],
                 const SizedBox(height: 11),
                 _FooterStats(power: power),
+                const _ViewDashboardLink(),
               ],
             ),
           ),
@@ -511,6 +513,48 @@ class _FooterStats extends StatelessWidget {
           unit: plural(power.models, 'model'),
         ),
       ],
+    );
+  }
+}
+
+/// The way through to the full node dashboard — every machine's live readings,
+/// which is more than this panel should try to hold. Deliberately a quiet text
+/// row rather than a button: the panel is a summary someone hovered into, and a
+/// filled button at the bottom of it would read as the primary thing to do here.
+class _ViewDashboardLink extends StatelessWidget {
+  const _ViewDashboardLink();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => showNodeDashboard(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'View dashboard',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppPalette.accentOnSurface,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 12,
+                color: AppPalette.accentOnSurface,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -304,6 +304,13 @@ class OverviewNode {
     this.maxConcurrency,
     this.planType,
     this.codexRateLimits,
+    this.vramUsedMb,
+    this.gpuUtilPct,
+    this.gpuTempC,
+    this.gpuPowerW,
+    this.gpuPowerLimitW,
+    this.diskTotalGb,
+    this.diskUsedGb,
     required this.online,
   });
 
@@ -344,6 +351,24 @@ class OverviewNode {
   final int? maxConcurrency;
   final bool online;
 
+  /// Live telemetry from the node's last heartbeat: GPU memory in use, GPU
+  /// utilisation (0–100), die temperature in °C, power draw and the card's
+  /// power cap in watts, and the model volume's size and usage in GB.
+  ///
+  /// **Each one is independently null, and null is not zero.** A Mac reports
+  /// total VRAM but never utilisation or temperature (macOS exposes those only
+  /// to a root `powermetrics`); a CPU-only box reports neither; a datacenter
+  /// card reports all of them. Render nothing where a value is null — a `0%`
+  /// standing in for "not measured" is indistinguishable from a genuinely idle
+  /// node, which is the exact confusion this nullability exists to prevent.
+  final double? vramUsedMb;
+  final double? gpuUtilPct;
+  final double? gpuTempC;
+  final double? gpuPowerW;
+  final double? gpuPowerLimitW;
+  final double? diskTotalGb;
+  final double? diskUsedGb;
+
   /// The codex seat's rate-limit snapshot, when this node serves a codex engine
   /// (`engine == 'codex'`). Null for every other engine. Stale between the
   /// provider's served requests — the relay only refreshes it on a response/seed.
@@ -371,8 +396,25 @@ class OverviewNode {
             (j['codex_rate_limits'] as Map).cast<String, dynamic>(),
           )
         : null,
+    vramUsedMb: (j['vram_used_mb'] as num?)?.toDouble(),
+    gpuUtilPct: (j['gpu_util_pct'] as num?)?.toDouble(),
+    gpuTempC: (j['gpu_temp_c'] as num?)?.toDouble(),
+    gpuPowerW: (j['gpu_power_w'] as num?)?.toDouble(),
+    gpuPowerLimitW: (j['gpu_power_limit_w'] as num?)?.toDouble(),
+    diskTotalGb: (j['disk_total_gb'] as num?)?.toDouble(),
+    diskUsedGb: (j['disk_used_gb'] as num?)?.toDouble(),
     online: j['online'] == true,
   );
+
+  /// GPU memory still free, in GB — the headroom a new model has to fit into.
+  /// Null unless the node reported BOTH total and used: subtracting an absent
+  /// figure from a present one would invent headroom nobody measured.
+  double? get vramFreeGb {
+    final total = vramTotalMb;
+    final used = vramUsedMb;
+    if (total == null || used == null) return null;
+    return (total - used) / 1024;
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -392,10 +434,19 @@ class OverviewNode {
       other.maxConcurrency == maxConcurrency &&
       other.planType == planType &&
       other.codexRateLimits == codexRateLimits &&
+      other.vramUsedMb == vramUsedMb &&
+      other.gpuUtilPct == gpuUtilPct &&
+      other.gpuTempC == gpuTempC &&
+      other.gpuPowerW == gpuPowerW &&
+      other.gpuPowerLimitW == gpuPowerLimitW &&
+      other.diskTotalGb == diskTotalGb &&
+      other.diskUsedGb == diskUsedGb &&
       other.online == online;
 
+  // `Object.hashAll` rather than `Object.hash`: the latter takes at most 20
+  // positional arguments and the telemetry fields push this past that ceiling.
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     name,
     device,
     chip,
@@ -411,6 +462,13 @@ class OverviewNode {
     maxConcurrency,
     planType,
     codexRateLimits,
+    vramUsedMb,
+    gpuUtilPct,
+    gpuTempC,
+    gpuPowerW,
+    gpuPowerLimitW,
+    diskTotalGb,
+    diskUsedGb,
     online,
-  );
+  ]);
 }
