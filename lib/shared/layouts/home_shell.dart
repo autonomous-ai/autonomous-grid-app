@@ -139,6 +139,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const SingleActivator(LogicalKeyboardKey.keyP, meta: true): _openFiles,
         const SingleActivator(LogicalKeyboardKey.keyP, control: true):
             _openFiles,
+        // ⌃` opens a terminal under the chat — the key every editor on all three
+        // platforms uses for the panel below, so it needs no second binding for
+        // Windows and Linux the way the ⌘ ones do.
+        const SingleActivator(LogicalKeyboardKey.backquote, control: true):
+            _openTerminal,
       },
       child: Focus(
         autofocus: true,
@@ -183,6 +188,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref
         .read(panelTabsProvider(PanelHost.preview).notifier)
         .reveal(PanelFeature.files);
+  }
+
+  /// A shell in the folder the conversation is about, under the conversation.
+  ///
+  /// The panel *below*, where the other two open beside — which is what ⌃`
+  /// means everywhere else and is the right shape here too: Review and Files are
+  /// read next to what you are asking about, while a terminal is watched under
+  /// it, wide and short.
+  void _openTerminal() {
+    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+    ref
+        .read(panelTabsProvider(PanelHost.bottom).notifier)
+        .reveal(PanelFeature.terminal);
   }
 }
 

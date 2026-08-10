@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/composer_text.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/file_drag.dart';
+import '../../../shared/chat_drop.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -357,10 +357,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
           contexts: _captureTerminals(modality),
         );
     _message.clear();
-    // The ✕ on a terminal chip belonged to the message just sent. The next one
-    // starts with whatever is on screen offered again — which is the whole point
-    // of the chips being derived rather than a list to curate.
-    ref.read(dismissedTerminalsProvider.notifier).clear();
+    // The terminals belonged to the message just sent. The next one starts
+    // empty, like every other part of a draft: a terminal is put on a message
+    // deliberately, so the app must not go on quoting it into every message
+    // after.
+    ref.read(attachedTerminalsProvider.notifier).clear();
     if (_attachments.isNotEmpty || _files.isNotEmpty || _snippets.isNotEmpty) {
       setState(() {
         _attachments.clear();
@@ -798,12 +799,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // The whole pane takes them, not just the composer: it is where the Finder
     // drop already lands, and one window teaching two rules for one gesture is
     // worse than a target that is bigger than it strictly needs to be.
-    return DragTarget<FileDrag>(
-      onAcceptWithDetails: (details) =>
-          // The same call the panel's "Add to chat" ends in, so a dropped file
-          // is de-duplicated against what is already attached and counted
-          // against the same budget.
-          unawaited(_attachRequested([details.data.path])),
+    return DragTarget<ChatDrop>(
+      onAcceptWithDetails: (details) => switch (details.data) {
+        // The same call the panel's "Add to chat" ends in, so a dropped file
+        // is de-duplicated against what is already attached and counted
+        // against the same budget.
+        FileDrop(:final path) => unawaited(_attachRequested([path])),
+        TerminalDrop(:final tabId, :final label) =>
+          ref
+              .read(attachedTerminalsProvider.notifier)
+              .attach(tabId: tabId, label: label),
+      },
       builder: (_, candidates, _) => DropTarget(
         onDragEntered: (_) => setState(() => _dragging = true),
         onDragExited: (_) => setState(() => _dragging = false),
@@ -979,8 +985,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 onRemoveSnippets: () =>
                                     setState(_snippets.clear),
                                 onRemoveTerminal: (tabId) => ref
-                                    .read(dismissedTerminalsProvider.notifier)
-                                    .dismiss(tabId),
+                                    .read(attachedTerminalsProvider.notifier)
+                                    .remove(tabId),
                                 onOpenPrompts: _promptsButton,
                                 promptsSaveInput: _message.text
                                     .trim()

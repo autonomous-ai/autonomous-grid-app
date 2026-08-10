@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../files/logic/files_browser.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
+import 'composer_context.dart';
 import 'bottom_panel.dart';
 import 'preview_panel.dart';
 
@@ -32,7 +33,7 @@ enum PanelHost {
 /// become real with the surfaces they name.
 enum PanelFeature {
   review(LucideIcons.fileCheck, 'Review', shortcut: '⌃⇧G'),
-  terminal(LucideIcons.squareTerminal, 'Terminal'),
+  terminal(LucideIcons.squareTerminal, 'Terminal', shortcut: '⌃`'),
   files(LucideIcons.folder, 'Files', shortcut: '⌘P');
 
   const PanelFeature(this.icon, this.label, {this.shortcut});
@@ -167,6 +168,10 @@ class PanelTabs extends Notifier<PanelTabsState> {
     // is a set of open folder paths per Files tab the session ever had.
     ref.read(terminalSessionsProvider.notifier).endSession(id);
     ref.invalidate(filesBrowserProvider(id));
+    // A terminal put on the message being typed, whose tab is now gone. The chip
+    // would still be there promising a screen that no longer exists, and Send
+    // would quietly carry nothing.
+    ref.read(attachedTerminalsProvider.notifier).remove(id);
 
     final rest = [...state.tabs]..removeAt(index);
     if (rest.isEmpty) {

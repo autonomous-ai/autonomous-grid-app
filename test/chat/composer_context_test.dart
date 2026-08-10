@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/chat/logic/bottom_panel.dart';
 import 'package:grid_app/features/chat/logic/composer_context.dart';
 import 'package:grid_app/features/chat/logic/panel_tabs.dart';
 import 'package:grid_app/features/terminal/logic/terminal_session.dart';
@@ -10,8 +9,8 @@ void main() {
   ProviderContainer container() {
     final c = ProviderContainer(
       overrides: [
-        // No real shell: what's under test is which terminals the composer
-        // offers, and spawning a login shell per case would make it slow and
+        // No real shell: what's under test is which terminals a message carries,
+        // and spawning a login shell per case would make it slow and
         // machine-dependent for nothing.
         shellStarterProvider.overrideWithValue((session, onError) {}),
       ],
@@ -20,72 +19,81 @@ void main() {
     return c;
   }
 
-  /// Opens a tab in [host] and returns its id — [PanelTabs.open] opens the panel
-  /// too, so this is also how a panel gets on screen.
-  String open(ProviderContainer c, PanelHost host, PanelFeature feature) =>
-      c.read(panelTabsProvider(host).notifier).open(feature);
+  test('a message carries no terminal until one is put on it', () {
+    // The point of the feature, stated as a test: opening a terminal to look
+    // something up must not quote a screenful of it at the model.
+    final c = container();
+    c
+        .read(panelTabsProvider(PanelHost.preview).notifier)
+        .open(PanelFeature.terminal);
 
-  test('a chat with no panel open carries no terminal', () {
-    expect(container().read(attachedTerminalsProvider), isEmpty);
+    expect(c.read(attachedTerminalsProvider), isEmpty);
   });
 
-  test('the terminal on screen is offered with the next message', () {
-    // The whole feature in one line: open a terminal, and the assistant is
-    // asked about what you are looking at without you pasting anything.
+  test('dropping a terminal on the conversation puts it on the message', () {
     final c = container();
-    final id = open(c, PanelHost.preview, PanelFeature.terminal);
+
+    c
+        .read(attachedTerminalsProvider.notifier)
+        .attach(tabId: 'preview-tab-1', label: 'Terminal');
 
     final attached = c.read(attachedTerminalsProvider);
-
     expect(attached, hasLength(1));
-    expect(attached.single.tabId, id);
+    expect(attached.single.tabId, 'preview-tab-1');
     expect(attached.single.label, 'Terminal');
   });
 
-  test('two panels showing terminals say which is which', () {
-    // Both panels number their tabs from one, so without the panel in the label
-    // this is two identical chips and no way to tell what will be sent.
+  test('dropping the same terminal twice still sends it once', () {
+    // Two chips for one shell would send the same screen twice and give the
+    // user two ✕ to press to undo one gesture.
     final c = container();
-    open(c, PanelHost.preview, PanelFeature.terminal);
-    open(c, PanelHost.bottom, PanelFeature.terminal);
+    final notifier = c.read(attachedTerminalsProvider.notifier);
+
+    notifier.attach(tabId: 'preview-tab-1', label: 'Terminal');
+    notifier.attach(tabId: 'preview-tab-1', label: 'Terminal');
+
+    expect(c.read(attachedTerminalsProvider), hasLength(1));
+  });
+
+  test('✕ takes the terminal back off', () {
+    final c = container();
+    final notifier = c.read(attachedTerminalsProvider.notifier);
+    notifier.attach(tabId: 'preview-tab-1', label: 'Terminal');
+    notifier.attach(tabId: 'bottom-tab-1', label: 'Terminal 2');
+
+    notifier.remove('preview-tab-1');
 
     final labels = [for (final t in c.read(attachedTerminalsProvider)) t.label];
-
-    expect(labels, ['Terminal · side', 'Terminal · bottom']);
+    expect(labels, ['Terminal 2']);
   });
 
-  test('a terminal behind another tab is not something you are looking at', () {
-    // It is still running, and the user can still see the panel — but what is in
-    // front of them is a file browser, so the chip would be a claim about a
-    // screen nobody is reading.
+  test('closing a terminal tab takes its chip with it', () {
+    // Otherwise the chip stands there promising a screen that no longer exists,
+    // and Send quietly carries nothing.
     final c = container();
-    open(c, PanelHost.preview, PanelFeature.terminal);
-    open(c, PanelHost.preview, PanelFeature.files);
+    final id = c
+        .read(panelTabsProvider(PanelHost.bottom).notifier)
+        .open(PanelFeature.terminal);
+    c
+        .read(attachedTerminalsProvider.notifier)
+        .attach(tabId: id, label: 'Terminal');
+
+    c.read(panelTabsProvider(PanelHost.bottom).notifier).close(id);
 
     expect(c.read(attachedTerminalsProvider), isEmpty);
   });
 
-  test('closing the panel takes the offer with it', () {
+  test('a terminal is put on one message, not on the conversation', () {
+    // What Send does. Without it, one drop would quote that terminal into every
+    // message after it.
     final c = container();
-    open(c, PanelHost.bottom, PanelFeature.terminal);
+    c
+        .read(attachedTerminalsProvider.notifier)
+        .attach(tabId: 'preview-tab-1', label: 'Terminal');
 
-    c.read(bottomPanelOpenProvider.notifier).close();
+    c.read(attachedTerminalsProvider.notifier).clear();
 
     expect(c.read(attachedTerminalsProvider), isEmpty);
-  });
-
-  test('✕ drops the terminal from this message, not from the next one', () {
-    // The chips are derived, so without the dismissal being remembered the next
-    // frame puts the chip straight back — and without it being *forgotten* on
-    // Send, one ✕ would silence that terminal for the rest of the conversation.
-    final c = container();
-    final id = open(c, PanelHost.preview, PanelFeature.terminal);
-
-    c.read(dismissedTerminalsProvider.notifier).dismiss(id);
-    expect(c.read(attachedTerminalsProvider), isEmpty);
-
-    c.read(dismissedTerminalsProvider.notifier).clear();
-    expect(c.read(attachedTerminalsProvider), hasLength(1));
   });
 
   test('what is sent is the terminal as it reads at Send, with its folder', () {
