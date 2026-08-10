@@ -18,7 +18,7 @@ void main() {
     final c = ProviderContainer();
     addTearDown(c.dispose);
     c.read(agentChangesScopeProvider.notifier).show(chatId);
-    c.read(agentChangesProvider.notifier).attributeTo(chatId);
+    c.read(agentChangesProvider.notifier).beginTurn(chatId);
     return c;
   }
 
@@ -31,7 +31,12 @@ void main() {
     final c = open('chat-1');
     c
         .read(agentChangesProvider.notifier)
-        .record(path: path('a.txt'), before: 'old', after: 'new');
+        .record(
+          chatId: 'chat-1',
+          path: path('a.txt'),
+          before: 'old',
+          after: 'new',
+        );
     expect(changesIn(c, 'chat-1'), hasLength(1));
     expect(changesIn(c, 'chat-1').single.before, 'old');
   });
@@ -40,7 +45,7 @@ void main() {
     final c = open('chat-1');
     c
         .read(agentChangesProvider.notifier)
-        .record(path: 'notes.txt', before: 'x', after: 'y');
+        .record(chatId: 'chat-1', path: 'notes.txt', before: 'x', after: 'y');
     expect(changesIn(c, 'chat-1'), isEmpty);
   });
 
@@ -52,6 +57,7 @@ void main() {
     c
         .read(agentChangesProvider.notifier)
         .record(
+          chatId: 'chat-1',
           path: '~/Downloads/hello_world_all_languages.txt',
           before: null,
           after: 'hi',
@@ -80,8 +86,18 @@ void main() {
   test('a second edit to a file keeps the original before, updates after', () {
     final c = open('chat-1');
     final changes = c.read(agentChangesProvider.notifier);
-    changes.record(path: path('a.txt'), before: 'v1', after: 'v2');
-    changes.record(path: path('a.txt'), before: 'v2', after: 'v3');
+    changes.record(
+      chatId: 'chat-1',
+      path: path('a.txt'),
+      before: 'v1',
+      after: 'v2',
+    );
+    changes.record(
+      chatId: 'chat-1',
+      path: path('a.txt'),
+      before: 'v2',
+      after: 'v3',
+    );
     expect(changesIn(c, 'chat-1'), hasLength(1));
     expect(changesIn(c, 'chat-1').single.before, 'v1');
     expect(changesIn(c, 'chat-1').single.after, 'v3');
@@ -95,7 +111,12 @@ void main() {
 
     c
         .read(agentChangesProvider.notifier)
-        .record(path: path('a.txt'), before: 'old', after: 'new');
+        .record(
+          chatId: 'chat-1',
+          path: path('a.txt'),
+          before: 'old',
+          after: 'new',
+        );
 
     expect(changesIn(c, 'chat-1'), hasLength(1));
     expect(changesIn(c, 'chat-2'), isEmpty);
@@ -109,7 +130,12 @@ void main() {
     final file = File(path('a.txt'))..writeAsStringSync('changed');
     final c = open('chat-1');
     final changes = c.read(agentChangesProvider.notifier);
-    changes.record(path: file.path, before: 'original', after: 'changed');
+    changes.record(
+      chatId: 'chat-1',
+      path: file.path,
+      before: 'original',
+      after: 'changed',
+    );
 
     final error = await changes.revert(changesIn(c, 'chat-1').single);
 
@@ -122,7 +148,12 @@ void main() {
     final file = File(path('made.txt'))..writeAsStringSync('by agent');
     final c = open('chat-1');
     final changes = c.read(agentChangesProvider.notifier);
-    changes.record(path: file.path, before: null, after: 'by agent');
+    changes.record(
+      chatId: 'chat-1',
+      path: file.path,
+      before: null,
+      after: 'by agent',
+    );
 
     await changes.revert(changesIn(c, 'chat-1').single);
 
@@ -136,10 +167,15 @@ void main() {
     final other = File(path('other.txt'))..writeAsStringSync('O2');
     final c = open('chat-1');
     final changes = c.read(agentChangesProvider.notifier);
-    changes.record(path: a.path, before: 'A1', after: 'A2');
-    changes.record(path: b.path, before: 'B1', after: 'B2');
-    changes.attributeTo('chat-2');
-    changes.record(path: other.path, before: 'O1', after: 'O2');
+    changes.record(chatId: 'chat-1', path: a.path, before: 'A1', after: 'A2');
+    changes.record(chatId: 'chat-1', path: b.path, before: 'B1', after: 'B2');
+    changes.beginTurn('chat-2');
+    changes.record(
+      chatId: 'chat-2',
+      path: other.path,
+      before: 'O1',
+      after: 'O2',
+    );
 
     final error = await changes.revertAll();
 
@@ -157,10 +193,20 @@ void main() {
     final file = File(path('a.txt'))..writeAsStringSync('changed');
     final c = open('chat-1');
     final changes = c.read(agentChangesProvider.notifier);
-    changes.record(path: file.path, before: 'original', after: 'changed');
+    changes.record(
+      chatId: 'chat-1',
+      path: file.path,
+      before: 'original',
+      after: 'changed',
+    );
 
     changes.forget('chat-1');
-    changes.record(path: path('b.txt'), before: null, after: 'late');
+    changes.record(
+      chatId: 'chat-1',
+      path: path('b.txt'),
+      before: null,
+      after: 'late',
+    );
 
     expect(c.read(agentChangesProvider), isEmpty);
     expect(file.readAsStringSync(), 'changed');
@@ -171,22 +217,27 @@ void main() {
     final a = File(path('a.txt'))..writeAsStringSync('A2');
     final c = open('chat-1');
     final changes = c.read(agentChangesProvider.notifier);
-    changes.record(path: a.path, before: 'A1', after: 'A2');
+    changes.record(chatId: 'chat-1', path: a.path, before: 'A1', after: 'A2');
 
     await changes.revertAll();
-    changes.record(path: path('b.txt'), before: null, after: 'next');
+    changes.record(
+      chatId: 'chat-1',
+      path: path('b.txt'),
+      before: null,
+      after: 'next',
+    );
 
     expect(changesIn(c, 'chat-1'), hasLength(1));
   });
 
-  test('a change recorded before any chat claimed the turn is not filed '
-      'anywhere — it would be undoable from nowhere', () {
+  test('a change with no conversation behind it is not filed anywhere — it '
+      'would be undoable from nowhere', () {
     final c = ProviderContainer();
     addTearDown(c.dispose);
 
     c
         .read(agentChangesProvider.notifier)
-        .record(path: path('a.txt'), before: 'old', after: 'new');
+        .record(chatId: '', path: path('a.txt'), before: 'old', after: 'new');
 
     expect(c.read(agentChangesProvider), isEmpty);
   });

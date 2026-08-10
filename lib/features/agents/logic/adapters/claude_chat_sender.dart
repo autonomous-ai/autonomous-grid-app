@@ -95,10 +95,12 @@ class ClaudeChatSender implements ChatSender {
       return;
     }
 
-    // Clear the shared feed now, so the chat's "working" bubble, already on
-    // screen, can't flash the previous turn's steps (or another chat's). See
-    // [resetAgentFeed].
-    resetAgentFeed(_ref);
+    // Everything this turn publishes is filed under its conversation, so two
+    // chats answering at once never show each other's work. Cleared now, so the
+    // chat's "working" bubble — already on screen — can't flash the previous
+    // turn's steps. See [AgentRuns.reset].
+    final chat = conversationId ?? '';
+    _ref.read(agentRunsProvider.notifier).reset(chat);
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(
@@ -147,6 +149,7 @@ class ClaudeChatSender implements ChatSender {
             ),
       planFirst: planFirst,
       slot: turn.slot,
+      chat: chat,
       mcpConfigPath: mcpConfigPath,
       chrome: onExtension,
       dropEnvironment: onExtension ? kClaudeRelayEnvKeys : const {},
@@ -233,12 +236,12 @@ class ClaudeChatSender implements ChatSender {
     required Map<String, String> environment,
     required bool planFirst,
     required AgentSessionSlot slot,
+    required String chat,
     required String? mcpConfigPath,
     required bool chrome,
     required Set<String> dropEnvironment,
   }) {
-    final activityLog = _ref.read(agentActivityProvider.notifier);
-    final planLog = _ref.read(agentPlanProvider.notifier);
+    final runs = _ref.read(agentRunsProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     // The argv comes from the same pure builder the service runs, so the Debug
     // tab shows the flags this turn really carried and not a second copy of them.
@@ -295,14 +298,14 @@ class ClaudeChatSender implements ChatSender {
             if (chrome) _checkBrowserServer(statuses);
           case ClaudeActivityEvent(:final activity):
             if (isAgentWork(activity)) workedAtAll = true;
-            activityLog.upsert(activity);
+            runs.upsertStep(chat, activity);
           case ClaudePlanEvent(:final entries):
-            planLog.replace(entries);
+            runs.setPlan(chat, entries);
           case ClaudeFileWriteStarted(:final path):
             workedAtAll = true;
             before[path] = _readNow(path);
           case ClaudeFileWriteFinished(:final path):
-            _recordChange(path, before.remove(path));
+            _recordChange(chat, path, before.remove(path));
           case ClaudeTurnCompleted():
             endedCleanly = true;
           case ClaudeMessageEvent(:final text):
@@ -330,7 +333,7 @@ class ClaudeChatSender implements ChatSender {
         await run.done;
         settled = true;
         final reply = answer.toString().trim();
-        final plan = _ref.read(agentPlanProvider);
+        final plan = _ref.read(agentRunProvider(chat)).plan;
         // A turn that announced a plan and stopped before finishing it is worth
         // recording — but only recording, and identically for every agent: the
         // verdict is a guess about work the app can't see, and calling a finished
@@ -408,7 +411,7 @@ class ClaudeChatSender implements ChatSender {
   /// agent just changed (see `AgentChangesBar`). Unlike Codex, whose events drop
   /// the previous contents, Claude's are seen early enough to keep them, so an
   /// *edit* gets a true diff here and not just an Open button.
-  void _recordChange(String path, String? previous) {
+  void _recordChange(String chat, String path, String? previous) {
     final changesLog = _ref.read(agentChangesProvider.notifier);
     unawaited(() async {
       String after;
@@ -419,7 +422,12 @@ class ClaudeChatSender implements ChatSender {
         // rather than dropping it.
         after = '';
       }
-      changesLog.record(path: path, before: previous, after: after);
+      changesLog.record(
+        chatId: chat,
+        path: path,
+        before: previous,
+        after: after,
+      );
     }());
   }
 

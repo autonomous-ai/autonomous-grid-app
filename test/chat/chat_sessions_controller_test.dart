@@ -598,10 +598,9 @@ void main() {
     );
   });
 
-  group('agent turns are serialized', () {
-    test('a second agent turn waits for the first instead of running at once — '
-        'the local agent has one session and one permission focus, and two at '
-        'once left one chat hung on a permission the other had cleared', () async {
+  group('agent turns take turns per project', () {
+    test('a second agent turn in the same project waits for the first — two '
+        'agents let loose in one folder would edit the same files', () async {
       final answering = _PerChatSender();
       final h = _harness(
         tmp,
@@ -611,8 +610,12 @@ void main() {
       );
       final c = h.container.read(chatSessionsProvider.notifier);
       ChatSessionsState read() => h.container.read(chatSessionsProvider);
+      final project = h.container
+          .read(projectsProvider.notifier)
+          .add('${tmp.path}/api');
 
-      // Chat A (giá vàng) starts on the agent.
+      // Chat A (giá vàng) starts on the agent, inside the project.
+      c.newChat(projectId: project.id);
       final sentA = c.send(
         network: _credential(),
         model: 'qwen',
@@ -621,11 +624,16 @@ void main() {
       await pumpEventQueue();
       final aId = read().activeId!;
       expect(answering.controllers.containsKey(aId), isTrue);
-      expect(read().runningAgentId, aId, reason: 'A holds the agent slot');
+      expect(
+        read().agentRunningIn(aId),
+        isTrue,
+        reason: "A holds its project's lane",
+      );
 
-      // Chat B (tin thế giới) is sent while A is still generating. It must NOT
-      // reach the agent yet — it waits in the queue, showing its own busy state.
-      c.newChat();
+      // Chat B (tin thế giới) is sent into the same project while A is still
+      // generating. It must NOT reach the agent yet — it waits in the lane,
+      // showing its own busy state.
+      c.newChat(projectId: project.id);
       final sentB = c.send(
         network: _credential(),
         model: 'qwen',
@@ -637,7 +645,7 @@ void main() {
       expect(
         answering.controllers.containsKey(bId),
         isFalse,
-        reason: 'the second agent turn is queued, not dispatched',
+        reason: 'the second turn in this project is queued, not dispatched',
       );
       expect(read().sendingFor(aId), isTrue);
       expect(
@@ -645,12 +653,7 @@ void main() {
         isTrue,
         reason: 'B waits in its busy state',
       );
-      expect(
-        read().runningAgentId,
-        aId,
-        reason:
-            'A still owns the slot while B waits — B must not borrow its feed',
-      );
+      expect(read().agentRunningIn(bId), isFalse);
 
       // A finishes. Only now does B reach the agent — and A never hung.
       answering.emit(
@@ -666,9 +669,9 @@ void main() {
       expect(
         answering.controllers.containsKey(bId),
         isTrue,
-        reason: 'B dispatches once the slot frees',
+        reason: 'B dispatches once the lane frees',
       );
-      expect(read().runningAgentId, bId, reason: 'the slot passes to B');
+      expect(read().agentRunningIn(bId), isTrue);
 
       answering.emit(
         bId,
@@ -681,16 +684,70 @@ void main() {
 
       final s = read();
       expect(s.sending, isFalse);
-      expect(s.runningAgentId, isNull, reason: 'no agent turn left running');
+      expect(s.runningAgentIds, isEmpty, reason: 'no agent turn left running');
       final a = s.conversations.firstWhere((x) => x.id == aId);
       final b = s.conversations.firstWhere((x) => x.id == bId);
       expect(a.messages.last.text, 'giá vàng: ...');
       expect(b.messages.last.text, 'tin thế giới: ...');
     });
 
+    test('two projects answer at the same time — a chat about one folder never '
+        'waits on work in a folder it has never heard of', () async {
+      final answering = _PerChatSender();
+      final h = _harness(
+        tmp,
+        updates: const [],
+        agentInstalled: true,
+        answering: answering,
+      );
+      final c = h.container.read(chatSessionsProvider.notifier);
+      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+      final projects = h.container.read(projectsProvider.notifier);
+      final api = projects.add('${tmp.path}/api');
+      final web = projects.add('${tmp.path}/web');
+
+      c.newChat(projectId: api.id);
+      final sentA = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'fix the api',
+      );
+      await pumpEventQueue();
+      final aId = read().activeId!;
+
+      c.newChat(projectId: web.id);
+      final sentB = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'fix the web app',
+      );
+      await pumpEventQueue();
+      final bId = read().activeId!;
+
+      expect(
+        answering.controllers.containsKey(bId),
+        isTrue,
+        reason: 'another project has its own lane — nothing to wait for',
+      );
+      expect(read().runningAgentIds, {aId, bId});
+
+      for (final id in [aId, bId]) {
+        answering.emit(
+          id,
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'done'),
+          ),
+        );
+        await answering.close(id);
+      }
+      await sentA;
+      await sentB;
+      expect(read().runningAgentIds, isEmpty);
+    });
+
     test(
-      'deleting the chat holding the agent slot lets the queued one run — '
-      'a cancelled turn must not strand the ones waiting behind it',
+      'chats outside every project never queue — there is no folder for them '
+      'to collide in',
       () async {
         final answering = _PerChatSender();
         final h = _harness(
@@ -709,7 +766,59 @@ void main() {
         );
         await pumpEventQueue();
         final aId = read().activeId!;
+
         c.newChat();
+        final sentB = c.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'second',
+        );
+        await pumpEventQueue();
+        final bId = read().activeId!;
+
+        expect(answering.controllers.containsKey(bId), isTrue);
+        expect(read().runningAgentIds, {aId, bId});
+
+        for (final id in [aId, bId]) {
+          answering.emit(
+            id,
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'done'),
+            ),
+          );
+          await answering.close(id);
+        }
+        await sentA;
+        await sentB;
+      },
+    );
+
+    test(
+      'deleting the chat holding a project lane lets the queued one run — '
+      'a cancelled turn must not strand the ones waiting behind it',
+      () async {
+        final answering = _PerChatSender();
+        final h = _harness(
+          tmp,
+          updates: const [],
+          agentInstalled: true,
+          answering: answering,
+        );
+        final c = h.container.read(chatSessionsProvider.notifier);
+        ChatSessionsState read() => h.container.read(chatSessionsProvider);
+        final project = h.container
+            .read(projectsProvider.notifier)
+            .add('${tmp.path}/api');
+
+        c.newChat(projectId: project.id);
+        final sentA = c.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'first',
+        );
+        await pumpEventQueue();
+        final aId = read().activeId!;
+        c.newChat(projectId: project.id);
         final sentB = c.send(
           network: _credential(),
           model: 'qwen',
@@ -719,14 +828,14 @@ void main() {
         final bId = read().activeId!;
         expect(answering.controllers.containsKey(bId), isFalse);
 
-        // Delete A while it holds the slot: B must not wait forever.
+        // Delete A while it holds the lane: B must not wait forever.
         c.deleteConversation(aId);
         await sentA;
         await pumpEventQueue();
         expect(
           answering.controllers.containsKey(bId),
           isTrue,
-          reason: 'B runs once A releases the slot',
+          reason: 'B runs once A releases the lane',
         );
         expect(read().sendingFor(bId), isTrue);
 

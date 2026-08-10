@@ -20,16 +20,18 @@ mixin _ChatSettle on _ChatSessions {
   }
 
   /// Cancel one conversation's in-flight reply (if any) and settle it. Also
-  /// drops it from [_agentQueue] in case it was still waiting to dispatch, and
-  /// from the follow-up queue: Stop means stop, so a message typed behind the
-  /// turn being abandoned is abandoned with it rather than firing a second later
-  /// as if nothing had happened. The composer shows what is waiting, so this is
-  /// something the user can see go.
+  /// drops it from its project's lane ([_agentQueues]) in case it was still
+  /// waiting to dispatch, and from the follow-up queue: Stop means stop, so a
+  /// message typed behind the turn being abandoned is abandoned with it rather
+  /// than firing a second later as if nothing had happened. The composer shows
+  /// what is waiting, so this is something the user can see go.
   @override
   void _cancel(String id) {
     final sub = _subs.remove(id);
     sub?.cancel();
-    _agentQueue.removeWhere((queued) => queued.id == id);
+    for (final waiting in _agentQueues.values) {
+      waiting.removeWhere((queued) => queued.id == id);
+    }
     // Not while the controller is being torn down: `_cancelAll` runs from
     // `ref.onDispose`, and Riverpod forbids touching state there. The queue is
     // in-memory anyway, so a disposal takes it with it.
@@ -39,31 +41,49 @@ mixin _ChatSettle on _ChatSessions {
     _releaseAgentSlot(id);
   }
 
-  /// Free the agent's single turn slot when [id] held it, then start the next
-  /// waiting agent turn. A no-op for a relay turn or a background chat that
-  /// never held the slot.
+  /// Free the lane [id] was holding, then start the next turn waiting in that
+  /// project. A no-op for a relay turn or a background chat that never ran an
+  /// agent turn.
   ///
   /// Silent during disposal: this is reached from `ref.onDispose` (via
   /// [_cancelAll]) whenever the app is torn down with an agent turn in flight,
   /// and Riverpod asserts on any state written there. There is also nothing left
   /// to free — the whole controller is going.
   void _releaseAgentSlot(String id) {
-    if (_disposed || state.runningAgentId != id) return;
-    state = state.copyWith(runningAgentId: null);
-    _pumpAgentQueue();
+    if (_disposed || !state.runningAgentIds.contains(id)) return;
+    // The chat's own lane — read before the release, because a deleted chat has
+    // no project to look up afterwards.
+    final lane = _find(id)?.projectId;
+    state = state.copyWith(
+      runningAgentIds: {
+        for (final running in state.runningAgentIds)
+          if (running != id) running,
+      },
+    );
+    if (lane != null) _pumpAgentQueue(lane);
   }
 
-  /// Dispatch the oldest queued agent turn whose chat is still around, if the
-  /// slot is free. One at a time: [dispatch] claims the slot again.
-  void _pumpAgentQueue() {
-    while (state.runningAgentId == null && _agentQueue.isNotEmpty) {
-      final next = _agentQueue.removeAt(0);
+  /// Whether an agent turn is already running in [lane] — any project chat other
+  /// than [except], which is the turn asking.
+  @override
+  bool _laneBusy(String lane, {required String except}) => state.runningAgentIds
+      .any((id) => id != except && _find(id)?.projectId == lane);
+
+  /// Dispatch the oldest turn waiting in [lane] whose chat is still around, if
+  /// the lane is free. One at a time: [dispatch] takes the lane again.
+  void _pumpAgentQueue(String lane) {
+    final waiting = _agentQueues[lane];
+    if (waiting == null) return;
+    while (waiting.isNotEmpty) {
+      final next = waiting.removeAt(0);
       // Skip a turn whose chat was deleted, or whose send was already settled,
       // while it waited — its future is (or will be) completed by [_cancel].
       final done = _dones[next.id];
       if (done == null || done.isCompleted || _find(next.id) == null) continue;
       next.dispatch();
+      break;
     }
+    if (waiting.isEmpty) _agentQueues.remove(lane);
   }
 
   /// Tear down every in-flight reply — for disposal.
@@ -72,8 +92,10 @@ mixin _ChatSettle on _ChatSessions {
       _cancel(id);
     }
     // Queued turns never got a subscription; complete their futures too.
-    for (final queued in _agentQueue.toList()) {
-      _cancel(queued.id);
+    for (final waiting in _agentQueues.values.toList()) {
+      for (final queued in waiting.toList()) {
+        _cancel(queued.id);
+      }
     }
   }
 }

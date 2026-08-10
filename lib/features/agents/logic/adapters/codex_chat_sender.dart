@@ -35,8 +35,8 @@ final codexExecServiceProvider = Provider<CodexExecService?>((ref) {
 /// conversation context itself. Switching conversation, grid or model starts a
 /// fresh thread.
 ///
-/// Codex streams the same activity/plan shapes Hermes does, so this feeds the
-/// shared activity feed ([agentActivityProvider]) and streams the answer into the
+/// Codex streams the same activity/plan shapes Hermes does, so this feeds that
+/// conversation's live run ([agentRunsProvider]) and streams the answer into the
 /// bubble as it lands.
 ///
 /// The grid it answers with is handed over **per run** — `-c` overrides on the
@@ -95,10 +95,12 @@ class CodexChatSender implements ChatSender {
       return;
     }
 
-    // Clear the shared feed now, so the chat's "working" bubble, already on
-    // screen, can't flash the previous turn's steps (or another chat's). See
-    // [resetAgentFeed].
-    resetAgentFeed(_ref);
+    // Everything this turn publishes is filed under its conversation, so two
+    // chats answering at once never show each other's work. Cleared now, so the
+    // chat's "working" bubble — already on screen — can't flash the previous
+    // turn's steps. See [AgentRuns.reset].
+    final chat = conversationId ?? '';
+    _ref.read(agentRunsProvider.notifier).reset(chat);
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(
@@ -123,6 +125,7 @@ class CodexChatSender implements ChatSender {
       environment: {kCodexAppApiKeyEnv: network.relayApiKey},
       planFirst: planFirst,
       slot: turn.slot,
+      chat: chat,
     );
   }
 
@@ -140,13 +143,13 @@ class CodexChatSender implements ChatSender {
     required Map<String, String> environment,
     required bool planFirst,
     required AgentSessionSlot slot,
+    required String chat,
   }) {
     // The feed was reset up front in [send], before the grid setup — see
-    // [resetAgentFeed]; here we only take the notifiers to append to. That reset
+    // [AgentRuns.reset]; here we only take the notifier to append to. That reset
     // also drops any prior Hermes turn's citations, so they can't linger under a
     // Codex answer (Codex cites no sources of its own today).
-    final activityLog = _ref.read(agentActivityProvider.notifier);
-    final planLog = _ref.read(agentPlanProvider.notifier);
+    final runs = _ref.read(agentRunsProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     // Same builder the service runs (see [codexExecArgs]) — the `-c` overrides
     // are where a turn's grid and model actually live, and a wrong one fails
@@ -195,12 +198,12 @@ class CodexChatSender implements ChatSender {
             slot.sessionId = threadId;
           case CodexActivityEvent(:final activity):
             if (isAgentWork(activity)) workedAtAll = true;
-            activityLog.upsert(activity);
+            runs.upsertStep(chat, activity);
           case CodexPlanEvent(:final entries):
-            planLog.replace(entries);
+            runs.setPlan(chat, entries);
           case CodexFileChangeEvent(:final changes):
             workedAtAll = true;
-            _recordAddedFiles(changes);
+            _recordAddedFiles(chat, changes);
           case CodexTurnCompleted():
             endedCleanly = true;
           case CodexMessageEvent(:final text):
@@ -225,7 +228,7 @@ class CodexChatSender implements ChatSender {
         await run.done;
         settled = true;
         final reply = answer.toString().trim();
-        final plan = _ref.read(agentPlanProvider);
+        final plan = _ref.read(agentRunProvider(chat)).plan;
         // A turn that announced a plan and stopped before finishing it is worth
         // recording — but only recording, and identically for every agent: the
         // verdict is a guess about work the app can't see, and calling a finished
@@ -286,10 +289,10 @@ class CodexChatSender implements ChatSender {
   /// user a bare file path in the reply and no way to act on it (see
   /// `AgentChangesBar`). Only adds are recorded: Codex reports an edit's path but
   /// not its old contents, so an update has no honest before to diff or undo.
-  void _recordAddedFiles(List<CodexFileChange> changes) {
+  void _recordAddedFiles(String chat, List<CodexFileChange> changes) {
     final changesLog = _ref.read(agentChangesProvider.notifier);
     for (final path in codexAddedPaths(changes)) {
-      unawaited(_recordAddedFile(path, changesLog));
+      unawaited(_recordAddedFile(chat, path, changesLog));
     }
   }
 
@@ -298,6 +301,7 @@ class CodexChatSender implements ChatSender {
   /// path that can't be read (binary, or already gone) is still worth an Open, so
   /// it's recorded with no diff rather than dropped.
   Future<void> _recordAddedFile(
+    String chat,
     String path,
     AgentChangesController changesLog,
   ) async {
@@ -307,7 +311,7 @@ class CodexChatSender implements ChatSender {
     } on Object {
       after = '';
     }
-    changesLog.record(path: path, before: null, after: after);
+    changesLog.record(chatId: chat, path: path, before: null, after: after);
   }
 
   /// Keep Codex's own words for the log while the chat shows the friendly line.

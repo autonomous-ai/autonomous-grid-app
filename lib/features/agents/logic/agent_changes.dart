@@ -94,26 +94,28 @@ final lastTurnAgentPathsProvider = Provider<Set<String>>((ref) {
 });
 
 class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
-  /// The conversation whose agent turn is running — claimed by the chat that
-  /// dispatched it. Agent turns run one at a time, so everything recorded until
-  /// the next turn belongs to this chat, including edits that land after the
-  /// user has moved on.
-  String? _owner;
-
   /// How many changes each conversation already held when its current turn
   /// started — the line between "this turn" and everything before it. Kept
   /// beside the list rather than in it so nothing about undo changes shape.
   final Map<String, int> _turnStart = {};
 
+  /// Conversations the user deleted. A turn still running for one keeps
+  /// reporting edits, and recording them would rebuild the entry that was just
+  /// dropped — in a chat nothing can show or undo from any more. Ids are never
+  /// reused, so remembering them costs a string apiece.
+  final Set<String> _forgotten = {};
+
   @override
   Map<String, List<AgentChange>> build() => const {};
 
-  /// The agent is about to work for [chatId]: file what it changes under that
-  /// conversation, and mark where this turn's changes begin.
-  void attributeTo(String chatId) {
-    _owner = chatId;
-    _turnStart[chatId] = _changesIn(chatId).length;
-  }
+  /// [chatId] is starting an agent turn: mark where this turn's changes begin.
+  ///
+  /// Which chat a change belongs to is carried by the caller ([record]), not
+  /// latched here — turns run at the same time in different projects, and a
+  /// single "current owner" filed one chat's edits under whichever chat had
+  /// started a turn most recently.
+  void beginTurn(String chatId) =>
+      _turnStart[chatId] = _changesIn(chatId).length;
 
   /// Where [chatId]'s current turn started in its change list. Clamped, because
   /// undoing a change shortens the list under the mark.
@@ -123,24 +125,28 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
     return start > length ? length : start;
   }
 
-  /// Note that the agent changed [path] from [before] to [after]. The first
-  /// [before] seen for a file wins, so undoing restores the pre-agent original
-  /// even after several edits; [after] tracks the latest so the diff stays
-  /// current. A leading `~` is expanded to the home folder first — Hermes reports
-  /// the path the agent typed, and it routinely writes to `~/Downloads/...` —
-  /// after which anything still not absolute is ignored, since only an absolute
-  /// path lets undo write the right file back.
+  /// Note that [chatId]'s agent changed [path] from [before] to [after]. The
+  /// first [before] seen for a file wins, so undoing restores the pre-agent
+  /// original even after several edits; [after] tracks the latest so the diff
+  /// stays current. A leading `~` is expanded to the home folder first — Hermes
+  /// reports the path the agent typed, and it routinely writes to
+  /// `~/Downloads/...` — after which anything still not absolute is ignored,
+  /// since only an absolute path lets undo write the right file back.
+  ///
+  /// [chatId] comes from the turn that made the edit, so an edit landing after
+  /// the user has moved on — or while another project's agent is working — is
+  /// still filed under the chat that asked for it.
   void record({
+    required String chatId,
     required String path,
     required String? before,
     required String after,
   }) {
-    final chatId = _owner;
-    if (chatId == null) {
-      // Only a turn whose chat was deleted mid-flight gets here — an ordinary
-      // one claims the turn before its sender can run. Filed under no
-      // conversation the change would be shown by nothing and undoable from
-      // nowhere, so leave a trace instead of dropping it in silence.
+    if (_forgotten.contains(chatId)) return;
+    if (chatId.isEmpty) {
+      // A send with no conversation behind it (nothing in the app does this
+      // today). Filed under no chat the change would be shown by nothing and
+      // undoable from nowhere, so leave a trace instead of dropping it silently.
       ref
           .read(appLogProvider)
           .failure('agent', 'file change with no chat to file it under: $path');
@@ -208,13 +214,10 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
   }
 
   /// Forget [chatId]'s recorded changes without touching any files — for a
-  /// conversation the user deleted, whose undo nothing can reach any more.
-  ///
-  /// A turn still running for that chat stops being recorded too: its edits
-  /// would rebuild the entry that was just dropped, in a chat that no longer
-  /// exists.
+  /// conversation the user deleted, whose undo nothing can reach any more. A
+  /// turn still running for it stops being recorded too (see [_forgotten]).
   void forget(String chatId) {
-    if (_owner == chatId) _owner = null;
+    _forgotten.add(chatId);
     _turnStart.remove(chatId);
     _drop(chatId);
   }

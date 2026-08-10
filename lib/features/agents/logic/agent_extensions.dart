@@ -13,7 +13,7 @@ import 'skill_writer.dart';
 /// this agent" state instead of pretending the plane is merely empty.
 ///
 /// The Skills/Connectors/Plugins screens speak only to this contract, never to
-/// a `Hermes*` class, mirroring how chat depends on `chatAgentSenderProvider`
+/// a `Hermes*` class, mirroring how chat depends on `agentChatSenderProvider`
 /// rather than `HermesChatSender`. Adding an agent means writing one adapter.
 abstract interface class AgentExtensions {
   AgentTool get tool;

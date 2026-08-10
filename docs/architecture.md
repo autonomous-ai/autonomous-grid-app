@@ -613,13 +613,20 @@ cùng lúc), và mọi UI quanh nó.
 ```dart
 conversations: List<Conversation>   // toàn bộ, kể cả archived
 activeId, draftProjectId, loading
-runningAgentId: String?             // chat đang giữ slot agent DUY NHẤT
+runningAgentIds: Set<String>        // các chat đang chạy agent turn (1 lane / project)
 phases: Map<String, SendPhase>      // chỉ chứa chat đang bận
 errors, awaitingPlanIds, queued: Map<String, List<QueuedTurn>>
 ```
 
 Getter kép — bản "cho chat đang mở" (`phase`, `sending`) và bản "cho chat bất kỳ" (`phaseFor`,
-`sendingFor`) vì sidebar phải đánh dấu chat nền đang chạy.
+`sendingFor`, `agentRunningIn`) vì sidebar phải đánh dấu chat nền đang chạy.
+
+> **Nhiều agent turn chạy cùng lúc ⇒ mọi live state của turn phải khoá theo conversation.**
+> `agentRunsProvider` (steps + sources + plan, đọc qua `agentRunProvider(chatId)`),
+> `agentPermissionsProvider` (đọc qua `agentPermissionProvider(chatId)`) và
+> `AgentChangesController.record(chatId:)` đều nhận id chat. Trước đây cả ba là **một** slot dùng
+> chung — đó chính là lý do phải serialize toàn app: turn thứ hai ghi đè `_respond` của turn đầu và
+> treo chat đó tới lúc timeout.
 
 #### `send()` — 11 bước
 
@@ -632,8 +639,9 @@ Getter kép — bản "cho chat đang mở" (`phase`, `sending`) và bản "cho 
 7. Đặt tên lần đầu (`deriveConversationTitle`) — chỉ một lần
 8. **`_commit()` ghi đĩa TRƯỚC khi gửi** → tin user không bao giờ mất
 9. `agentAnswersTurn(modality, hasAttachments, agentInstalled)` — agent chỉ nhận **text, không attachment, và phải cài**
-10. **Serialize agent turn**: đúng **một** agent turn tại một thời điểm (`runningAgentId` + `_agentQueue`).
-    Turn relay/media chạy song song thoải mái
+10. **Serialize agent turn theo PROJECT**: mỗi project một lane (`runningAgentIds` + `_agentQueues[projectId]`).
+    Hai chat cùng thư mục thì xếp hàng (chúng sửa cùng file); khác project — hoặc **ngoài mọi project** —
+    chạy song song. Turn relay/media không đụng gì tới lane
 11. `return done.future` — `await send(...)` đợi turn settle (goal loop dựa vào đây)
 
 #### Feature con
@@ -1577,12 +1585,13 @@ Seam thiết kế đúng (`abstract interface class OverlordRepository { Stream<
       _commit(phase: SendBusy)                          ← GHI ĐĨA TRƯỚC KHI GỬI
       viaAgent = agentAnswersTurn(modality, hasAttachments, agentInstalled)
 
-[4] Serialize: runningAgentId != null && != id → vào _agentQueue
-                                                 (_QueuedBubble "Finishing another chat first…")
+[4] Lane theo project: conversation.projectId != null && _laneBusy(lane) → vào _agentQueues[lane]
+                       (_QueuedBubble "Finishing another chat in this project…")
+                       chat ngoài project: không có lane → chạy ngay
 
-[5] _dispatch()  → agentChangesProvider.attributeTo(id)   ← claim mọi file change
+[5] _dispatch()  → agentChangesProvider.beginTurn(id)     ← mốc "turn này bắt đầu từ đâu"
                   Stopwatch bắt đầu Ở ĐÂY (không ở send — chờ trong queue không tính giờ)
-                  _senderFor(modality, attachments)
+                  _senderFor(viaAgent, agent)             ← agent chốt theo project của chat
 
 ┌─────────────────────────────── NHÁNH A: RELAY (không agent) ────────────────────────────────┐
 │ [6a] DefaultChatSender.send()                                                                │
@@ -1596,7 +1605,7 @@ Seam thiết kế đúng (`abstract interface class OverlordRepository { Stream<
 
 ┌───────────────────────────── NHÁNH B: HERMES (ACP, session dài) ─────────────────────────────┐
 │ [6b] HermesChatSender.send()                                                                 │
-│      resetAgentFeed(_ref)  ← ĐỒNG BỘ, TRƯỚC MỌI await                                        │
+│      agentRuns.reset(chat)  ← ĐỒNG BỘ, TRƯỚC MỌI await (feed khoá theo conversation)                                        │
 │      hermesGridLink.point(network, model)                                                    │
 │        → ClientAppConfigurator.apply → ~/.hermes/config.yaml (+ .bak)                         │
 │        → ensureRuntimeSupport() fire-and-forget · cron.followModel(model) re-arm             │
