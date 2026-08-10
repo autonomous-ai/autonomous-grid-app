@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/grid_power_provider.dart';
+import '../logic/node_dashboard_layout.dart';
 import 'node_dashboard_card.dart';
 
 /// Opens the node dashboard — every machine on this grid with its live readings.
@@ -25,11 +26,6 @@ Future<void> showNodeDashboard(BuildContext context) => showDialog<void>(
 /// second timer or a second source of truth.
 class NodeDashboardDialog extends ConsumerWidget {
   const NodeDashboardDialog({super.key});
-
-  /// Widest a card gets before the grid adds another column. Sized so a card
-  /// keeps its two detail columns readable rather than stretching one row of
-  /// labels across a wide display.
-  static const double _cardExtent = 340;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -55,25 +51,71 @@ class NodeDashboardDialog extends ConsumerWidget {
               Flexible(
                 child: nodes.isEmpty
                     ? const _EmptyState()
-                    : GridView.builder(
-                        // Lazy, so a grid that grows to dozens of machines
-                        // builds only the cards actually on screen.
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: _cardExtent,
-                              mainAxisExtent: 300,
-                              crossAxisSpacing: 14,
-                              mainAxisSpacing: 14,
-                            ),
-                        itemCount: nodes.length,
-                        itemBuilder: (_, index) =>
-                            NodeDashboardCard(node: nodes[index]),
-                      ),
+                    : _NodeGrid(nodes: nodes),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The cards, laid out in rows that each take the height their tallest card
+/// needs.
+///
+/// **Not a `GridView`, and the reason is a bug this replaced.** A grid tile has
+/// to be given its height up front — `mainAxisExtent`, or an aspect ratio — and
+/// any figure chosen there is a guess about content that varies per node: a
+/// machine reporting three gauges, four detail fields and a throughput footer is
+/// taller than one reporting a size and a sentence. The guess was 300px and the
+/// fullest cards overflowed it by 22, clipping the tok/s figure off the bottom.
+/// Raising the number would only move the cliff.
+///
+/// Rows are built lazily, so this keeps what the grid was chosen for: a dashboard
+/// of many machines still builds only the rows on screen.
+class _NodeGrid extends StatelessWidget {
+  const _NodeGrid({required this.nodes});
+
+  final List<OverviewNode> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = dashboardColumns(constraints.maxWidth);
+        final rowCount = (nodes.length + columns - 1) ~/ columns;
+        return ListView.builder(
+          itemCount: rowCount,
+          itemBuilder: (_, row) {
+            final first = row * columns;
+            final cards = nodes.skip(first).take(columns).toList();
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: row == rowCount - 1 ? 0 : kNodeCardGap,
+              ),
+              child: Row(
+                // `start`, not `stretch`: a short card keeps its own height
+                // rather than being padded out to match the tallest in its row.
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < columns; i++) ...[
+                    if (i > 0) const SizedBox(width: kNodeCardGap),
+                    Expanded(
+                      child: i < cards.length
+                          // A trailing gap in the last row is an empty cell, so
+                          // the final card keeps its column width instead of
+                          // stretching across the leftovers.
+                          ? NodeDashboardCard(node: cards[i])
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
