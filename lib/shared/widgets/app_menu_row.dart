@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 
-import '../../../../shared/theme/app_theme.dart';
+import '../theme/app_theme.dart';
 
-/// One row of a menu this feature opens — the right-click on a file, the one a
-/// finished selection offers.
+/// One row of a menu opened over content: the right-click on a file, the one a
+/// finished selection offers in the file viewer and in a diff.
+///
+/// Shared rather than one per feature, because these menus ask the same thing
+/// in the same words — "Add to chat" over a selection in Files and over one in
+/// Review is one gesture, and two copies of it drift.
 ///
 /// Hand-rolled per the design system's §5 recipe, because the app defines no
 /// `menuButtonTheme`: a bare `MenuItemButton` takes Material's defaults and gets
 /// all four wrong at once — square corners, a 14pt label, a grey `onSurface`
 /// hover, and an ink ripple the app disables everywhere else.
-class FilesMenuRow extends StatefulWidget {
-  const FilesMenuRow({
+class AppMenuRow extends StatefulWidget {
+  const AppMenuRow({
     super.key,
     required this.icon,
     required this.label,
@@ -22,10 +26,10 @@ class FilesMenuRow extends StatefulWidget {
   final VoidCallback onPressed;
 
   @override
-  State<FilesMenuRow> createState() => _FilesMenuRowState();
+  State<AppMenuRow> createState() => _AppMenuRowState();
 }
 
-class _FilesMenuRowState extends State<FilesMenuRow> {
+class _AppMenuRowState extends State<AppMenuRow> {
   bool _hovered = false;
 
   @override

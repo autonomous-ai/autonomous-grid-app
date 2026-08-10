@@ -6,6 +6,7 @@ import '../../agents/logic/agent_changes.dart';
 import '../../files/logic/files_browser.dart';
 import '../../files/presentation/files_panel_view.dart';
 import '../../projects/logic/project.dart';
+import '../../review/logic/diff_excerpt.dart';
 import '../../review/logic/review_controller.dart';
 import '../../review/presentation/review_surface.dart';
 import '../../terminal/presentation/terminal_panel_view.dart';
@@ -155,6 +156,7 @@ class _ReviewTab extends ConsumerWidget {
     final projectId = ref.watch(
       chatSessionsProvider.select((s) => s.openProjectId),
     );
+    final project = ref.watch(projectByIdProvider(projectId));
     // Keep Review's "Last turn" scope fed with what the assistant just changed
     // in this conversation — the same exemption as the import above, and for
     // the same reason: Review narrows a file list by these paths and must not
@@ -168,13 +170,41 @@ class _ReviewTab extends ConsumerWidget {
       }
     });
 
+    final folder = project?.path;
     return ReviewSurface(
-      project: ref.watch(projectByIdProvider(projectId)),
+      project: project,
       onClose: onClose,
       // Into the composer, not straight to the agent: which model answers is
       // chosen down there, and so is whether to send it at all.
       onAskAgent: (message) =>
           ref.read(composerPrefillProvider.notifier).offer(message),
+      // The same two gestures the file viewer offers, in the same words: a
+      // highlight goes as a quote of those lines, a file goes as the file. Both
+      // are asked for — reading a diff attaches nothing on its own.
+      //
+      // Paths reach the composer absolute, because the folder Review counts
+      // from is not something the chat knows.
+      onAddSelection: folder == null
+          ? null
+          : (excerpt) => _addSelection(ref, folder, excerpt),
+      onAddFile: folder == null
+          ? null
+          : (file) => ref
+                .read(composerFileRequestProvider.notifier)
+                .add('$folder/${file.path}'),
     );
+  }
+
+  /// The highlighted lines as a quote of the file they came out of, numbered
+  /// where the diff could say which lines they were.
+  void _addSelection(WidgetRef ref, String folder, DiffExcerpt excerpt) {
+    final snippet = snippetOf(
+      path: '$folder/${excerpt.path}',
+      text: excerpt.text,
+      startLine: excerpt.startLine,
+      endLine: excerpt.endLine,
+    );
+    if (snippet == null) return;
+    ref.read(composerSnippetProvider.notifier).offer(snippet);
   }
 }

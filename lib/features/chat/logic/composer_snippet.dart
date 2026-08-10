@@ -21,6 +21,8 @@ class ChatSnippet {
     required this.path,
     required this.text,
     required this.truncated,
+    this.startLine,
+    this.endLine,
   });
 
   /// The file it came out of — what tells the assistant *where* to look, and
@@ -32,8 +34,31 @@ class ChatSnippet {
   /// The selection ran past [kSnippetBudget] and was cut.
   final bool truncated;
 
+  /// Where in the file the selection sits, 1-based and inclusive, when the
+  /// surface it came from knows.
+  ///
+  /// A diff does; a rendered document doesn't, and null says so rather than
+  /// guessing. Worth having where it exists: an assistant that has already
+  /// edited the file above these lines can find them again by number.
+  final int? startLine;
+  final int? endLine;
+
   /// The file's own name, for the preview.
   String get name => path.split(RegExp(r'[/\\]')).last;
+
+  /// `lib/main.dart`, or `lib/main.dart:11-12` where the lines are known —
+  /// how the selection is pointed at, in the form a diff and an editor both
+  /// use.
+  String get reference => '$path$lineRange';
+
+  /// `:11-12`, or empty where the lines aren't known — the tail of [reference],
+  /// for a label that has room for the file's name but not its folder.
+  String get lineRange {
+    final start = startLine;
+    final end = endLine;
+    if (start == null || end == null) return '';
+    return start == end ? ':$start' : ':$start-$end';
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -47,16 +72,24 @@ class ChatSnippet {
 ///
 /// Whitespace-only selections happen constantly — a stray drag across a blank
 /// line — and a chip for one would be a chip for nothing.
-ChatSnippet? snippetOf({required String path, required String text}) {
+ChatSnippet? snippetOf({
+  required String path,
+  required String text,
+  int? startLine,
+  int? endLine,
+}) {
   final trimmed = text.trim();
   if (trimmed.isEmpty) return null;
-  if (trimmed.length <= kSnippetBudget) {
-    return ChatSnippet(path: path, text: trimmed, truncated: false);
-  }
+  final capped = trimmed.length > kSnippetBudget;
   return ChatSnippet(
     path: path,
-    text: trimmed.substring(0, kSnippetBudget),
-    truncated: true,
+    text: capped ? trimmed.substring(0, kSnippetBudget) : trimmed,
+    truncated: capped,
+    // A selection cut at the budget no longer reaches the line it ended on, and
+    // a range it doesn't cover is the kind of precise-looking lie §5 is about.
+    // The text still says where it came from; only the numbers are dropped.
+    startLine: capped ? null : startLine,
+    endLine: capped ? null : endLine,
   );
 }
 
@@ -89,7 +122,7 @@ String messageWithSnippets(String message, List<ChatSnippet> snippets) {
   if (snippets.isEmpty) return message;
   final blocks = [
     for (final snippet in snippets)
-      'From ${snippet.path}:\n```\n${snippet.text}\n```'
+      'From ${snippet.reference}:\n```\n${snippet.text}\n```'
           '${snippet.truncated ? '\n[selection cut short here]' : ''}',
   ];
   return message.isEmpty

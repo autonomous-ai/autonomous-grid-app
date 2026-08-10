@@ -8,7 +8,7 @@ import '../../../../shared/widgets/labeled_field.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../projects/logic/agent_workspace.dart';
 import 'file_type_icon.dart';
-import 'files_menu_row.dart';
+import '../../../../shared/widgets/app_menu_row.dart';
 
 /// Left indent added per folder deep. Narrower than the file dialog's 16: these
 /// rows are drawn in a third of a panel and in a menu no wider, and four levels
@@ -213,12 +213,12 @@ class _FileTreeContextMenuState extends State<FileTreeContextMenu> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              FilesMenuRow(
+              AppMenuRow(
                 icon: LucideIcons.link300,
                 label: 'Copy path',
                 onPressed: _copyPath,
               ),
-              FilesMenuRow(
+              AppMenuRow(
                 icon: LucideIcons.messageSquarePlus300,
                 label: 'Add to chat',
                 onPressed: _add,

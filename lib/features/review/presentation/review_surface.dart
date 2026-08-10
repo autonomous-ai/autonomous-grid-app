@@ -6,7 +6,9 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/panel_body.dart';
 import '../../../shared/widgets/panel_side_layout.dart';
 import '../../projects/logic/project.dart';
+import '../logic/diff_excerpt.dart';
 import '../logic/review_controller.dart';
+import '../logic/review_file.dart';
 import '../logic/review_selection.dart';
 import '../logic/review_snapshot.dart';
 import '../logic/review_view_prefs.dart';
@@ -27,6 +29,8 @@ class ReviewSurface extends ConsumerWidget {
     required this.project,
     required this.onClose,
     required this.onAskAgent,
+    required this.onAddSelection,
+    required this.onAddFile,
   });
 
   /// The project whose folder is under review — the open chat's, or null when
@@ -41,6 +45,12 @@ class ReviewSurface extends ConsumerWidget {
   /// assistant to review this" reaches a conversation without this feature
   /// having to know one exists.
   final ValueChanged<String> onAskAgent;
+
+  /// The same arrangement for the lines highlighted in a diff, and for a whole
+  /// file: they go to the host, which puts them on the next message as a chip.
+  /// Null when there is no conversation to put them in.
+  final ValueChanged<DiffExcerpt>? onAddSelection;
+  final ValueChanged<ReviewFile>? onAddFile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -59,6 +69,8 @@ class ReviewSurface extends ConsumerWidget {
         folder: folder,
         onClose: onClose,
         onAskAgent: onAskAgent,
+        onAddSelection: onAddSelection,
+        onAddFile: onAddFile,
       ),
       AsyncError(:final error) => ReviewFailedView(
         message: 'Grid could not read this folder: $error',
@@ -76,12 +88,16 @@ class _Body extends ConsumerWidget {
     required this.folder,
     required this.onClose,
     required this.onAskAgent,
+    required this.onAddSelection,
+    required this.onAddFile,
   });
 
   final ReviewState state;
   final String folder;
   final VoidCallback onClose;
   final ValueChanged<String> onAskAgent;
+  final ValueChanged<DiffExcerpt>? onAddSelection;
+  final ValueChanged<ReviewFile>? onAddFile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => switch (state) {
@@ -98,6 +114,8 @@ class _Body extends ConsumerWidget {
       snapshot: snapshot,
       folder: folder,
       onAskAgent: onAskAgent,
+      onAddSelection: onAddSelection,
+      onAddFile: onAddFile,
     ),
   };
 }
@@ -116,11 +134,15 @@ class _Changes extends ConsumerWidget {
     required this.snapshot,
     required this.folder,
     required this.onAskAgent,
+    required this.onAddSelection,
+    required this.onAddFile,
   });
 
   final ReviewSnapshot snapshot;
   final String folder;
   final ValueChanged<String> onAskAgent;
+  final ValueChanged<DiffExcerpt>? onAddSelection;
+  final ValueChanged<ReviewFile>? onAddFile;
 
   /// Below this the panel can't hold a list and a diff side by side and still
   /// leave the diff worth reading.
@@ -157,6 +179,10 @@ class _Changes extends ConsumerWidget {
                   )
             : constraints.maxWidth;
         final canSplit = paneWidth >= kSplitDiffFrom;
+        // Bound to the file on screen here, because that is the only place
+        // that knows which one it is.
+        final add = onAddFile;
+        final addFile = add == null || file == null ? null : () => add(file);
         final toolbar = ReviewToolbar(
           snapshot: snapshot,
           folder: folder,
@@ -177,6 +203,8 @@ class _Changes extends ConsumerWidget {
                     folder: folder,
                     showBack: true,
                     canSplit: canSplit,
+                    onAddSelection: onAddSelection,
+                    onAddFile: addFile,
                   ),
           );
         }
@@ -189,6 +217,8 @@ class _Changes extends ConsumerWidget {
                   folder: folder,
                   showBack: false,
                   canSplit: canSplit,
+                  onAddSelection: onAddSelection,
+                  onAddFile: addFile,
                 ),
           sideOpen: !hidden,
           side: list,

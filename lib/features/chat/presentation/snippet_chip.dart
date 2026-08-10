@@ -38,7 +38,9 @@ class SnippetChip extends StatelessWidget {
       // is on the hover is a reminder of what you picked, not the payload.
       message: [
         for (final snippet in snippets)
-          '${snippet.name} — ${_preview(snippet.text)}',
+          // Named the way the message will name it — with the lines, where the
+          // surface it came from knew them.
+          '${snippet.name}${snippet.lineRange} — ${_preview(snippet.text)}',
       ].join('\n\n'),
       child: Material(
         color: AppPalette.cardBg,

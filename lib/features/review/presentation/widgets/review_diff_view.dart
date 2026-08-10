@@ -4,10 +4,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../shared/code/code_highlight.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/add_to_chat_selection.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../../shared/widgets/empty_state.dart';
+import '../../../../shared/widgets/line_selection.dart';
+import '../../logic/diff_excerpt.dart';
 import '../../logic/review_comment.dart';
 import '../../logic/review_comments_controller.dart';
 import '../../logic/review_file.dart';
@@ -31,11 +34,21 @@ class ReviewDiffView extends ConsumerWidget {
     required this.file,
     required this.folder,
     required this.showBack,
+    required this.onAddSelection,
+    required this.onAddFile,
     this.canSplit = false,
   });
 
   final ReviewFile file;
   final String folder;
+
+  /// Puts the lines the user highlighted on the next message. Null when there
+  /// is no conversation to put them in, and then a highlight is only ever
+  /// something to copy.
+  final ValueChanged<DiffExcerpt>? onAddSelection;
+
+  /// Puts this whole file on the next message — asked for, never assumed.
+  final VoidCallback? onAddFile;
 
   /// Whether the pane has the room for two columns — decided by the surface,
   /// which is the only thing that knows how much of the panel the file list is
@@ -58,7 +71,12 @@ class ReviewDiffView extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FileHeader(file: file, folder: folder, showBack: showBack),
+        _FileHeader(
+          file: file,
+          folder: folder,
+          showBack: showBack,
+          onAddFile: onAddFile,
+        ),
         const Divider(height: 1),
         Expanded(
           // `AsyncValue`, not `AsyncData`: the patch is re-read every time the
@@ -73,6 +91,7 @@ class ReviewDiffView extends ConsumerWidget {
               file: file,
               folder: folder,
               canSplit: canSplit,
+              onAddSelection: onAddSelection,
             ),
             AsyncLoading() => const Center(child: AppSpinner()),
             _ => const _Unreadable(),
@@ -89,11 +108,15 @@ class _FileHeader extends ConsumerWidget {
     required this.file,
     required this.folder,
     required this.showBack,
+    required this.onAddFile,
   });
 
   final ReviewFile file;
   final String folder;
   final bool showBack;
+
+  /// Puts this file on the next message — see [ReviewDiffView.onAddFile].
+  final VoidCallback? onAddFile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -122,6 +145,19 @@ class _FileHeader extends ConsumerWidget {
             removed: file.removed,
             binary: file.binary,
           ),
+          // Beside the name it acts on, so "ask about this file" is one click
+          // from the file rather than a path typed into the box below. The
+          // assistant is *asked* for it here and nowhere else: nothing about
+          // reading a diff attaches anything on its own.
+          if (onAddFile != null) ...[
+            const SizedBox(width: 4),
+            AppIconButton(
+              icon: LucideIcons.messageSquarePlus300,
+              size: 15,
+              tooltip: 'Add this file to the chat',
+              onPressed: onAddFile!,
+            ),
+          ],
         ],
       ),
     );
@@ -175,10 +211,14 @@ class _Patch extends ConsumerWidget {
     required this.file,
     required this.folder,
     required this.canSplit,
+    required this.onAddSelection,
   });
 
   final DiffFilePatch patch;
   final ReviewFile file;
+
+  /// Where a highlight goes — see [ReviewDiffView.onAddSelection].
+  final ValueChanged<DiffExcerpt>? onAddSelection;
 
   /// The folder being reviewed — where comments are kept.
   final String folder;
@@ -269,29 +309,47 @@ class _Patch extends ConsumerWidget {
       }
     }
 
+    // The lines a highlight can land on, in the order they are drawn. Every
+    // other entry stays out of the selection (the `disabled` wrappers below),
+    // so what comes back is code and nothing else — and matches this list run
+    // for run, which is what puts numbers on it.
+    final selectable = [for (final line in rows) ...line.selectableRows];
+
     final list = ListView.builder(
       padding: const EdgeInsets.only(bottom: 16),
       // One more for the "and N more lines" tail, when there is one.
       itemCount: rows.length + (patch.truncatedBy > 0 ? 1 : 0),
       itemBuilder: (context, i) {
-        if (i == rows.length) return _Truncated(lines: patch.truncatedBy);
+        if (i == rows.length) {
+          return SelectionContainer.disabled(
+            child: _Truncated(lines: patch.truncatedBy),
+          );
+        }
         final line = rows[i];
         final hunk = line.hunk;
         if (hunk != null) {
-          return _HunkHeading(
-            hunk: hunk,
-            open: line.hunkOpen,
-            onTap: () => ref
-                .read(reviewOpenHunksProvider(file.path).notifier)
-                .toggle(line.hunkIndex),
+          return SelectionContainer.disabled(
+            child: _HunkHeading(
+              hunk: hunk,
+              open: line.hunkOpen,
+              onTap: () => ref
+                  .read(reviewOpenHunksProvider(file.path).notifier)
+                  .toggle(line.hunkIndex),
+            ),
           );
         }
         final open = line.draft;
         if (open != null) {
-          return CommentComposer(draft: open, folder: folder);
+          return SelectionContainer.disabled(
+            child: CommentComposer(draft: open, folder: folder),
+          );
         }
         final said = line.comment;
-        if (said != null) return CommentCard(comment: said, folder: folder);
+        if (said != null) {
+          return SelectionContainer.disabled(
+            child: CommentCard(comment: said, folder: folder),
+          );
+        }
         final pair = line.pair;
         if (pair != null) {
           return SplitRowTile(
@@ -310,9 +368,32 @@ class _Patch extends ConsumerWidget {
       },
     );
 
-    return CodeTextScope(
-      child: prefs.wrap ? list : _SideScroller(patch: patch, child: list),
+    final add = onAddSelection;
+    return AddToChatSelection(
+      onAdd: add == null ? null : (text) => _offer(add, selectable, text),
+      // Inside the selection, around the list: the diff draws a widget per
+      // line, and without this the highlight comes back as one glued run (see
+      // [LineSelection]).
+      child: LineSelection(
+        child: CodeTextScope(
+          child: prefs.wrap ? list : _SideScroller(patch: patch, child: list),
+        ),
+      ),
     );
+  }
+
+  /// Turns what was highlighted into the lines it covers, then hands it on.
+  void _offer(
+    ValueChanged<DiffExcerpt> add,
+    List<DiffRow> rows,
+    String selected,
+  ) {
+    final excerpt = diffExcerptFor(
+      path: file.path,
+      rows: rows,
+      selected: selected,
+    );
+    if (excerpt != null) add(excerpt);
   }
 }
 
@@ -409,6 +490,20 @@ class _Line {
   /// meaningless on every other kind of entry.
   final int hunkIndex;
   final bool hunkOpen;
+
+  /// The lines of the file this entry draws, in the order it draws them.
+  ///
+  /// Empty for everything that isn't one — a heading, a remark, the box writing
+  /// one — because those are kept out of the selection, and what a highlight
+  /// covers is worked out against exactly this list. Two for a side-by-side
+  /// row, which draws the old line and the new one beside each other.
+  List<DiffRow> get selectableRows {
+    final unified = row;
+    if (unified != null) return [unified];
+    final halves = pair;
+    if (halves == null) return const [];
+    return [?halves.before, ?halves.after, ?halves.note];
+  }
 }
 
 /// Where in the file the next run of lines is, and the fold for it.

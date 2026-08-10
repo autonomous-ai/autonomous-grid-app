@@ -146,22 +146,26 @@ class _Half extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: DiffRowTile.gutterWidth,
-            child: onComment == null
-                ? Padding(
-                    padding: const EdgeInsets.only(left: 4, right: 8),
-                    child: Text(
-                      '${number ?? ''}',
-                      textAlign: TextAlign.right,
-                      style: AppFont.codeStyle(
-                        color: AppPalette.textFaint,
-                        scale: 0.9,
-                        height: 1.5,
+          // Out of the selection, as it is in the unified tile: what a highlight
+          // covers is the code, never the numbers beside it.
+          SelectionContainer.disabled(
+            child: SizedBox(
+              width: DiffRowTile.gutterWidth,
+              child: onComment == null
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 4, right: 8),
+                      child: Text(
+                        '${number ?? ''}',
+                        textAlign: TextAlign.right,
+                        style: AppFont.codeStyle(
+                          color: AppPalette.textFaint,
+                          scale: 0.9,
+                          height: 1.5,
+                        ),
                       ),
-                    ),
-                  )
-                : DiffCommentButton(onPressed: onComment!),
+                    )
+                  : DiffCommentButton(onPressed: onComment!),
+            ),
           ),
           Expanded(
             child: _Text(row: line, language: language, ink: ink, wrap: wrap),

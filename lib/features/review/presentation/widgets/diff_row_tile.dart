@@ -97,33 +97,41 @@ class _DiffRowTileState extends State<DiffRowTile> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: DiffRowTile.gutterWidth,
-              child: _hovered && comment != null
-                  // In the number's place rather than beside it: a button that
-                  // appeared *next* to the line would push every line right as
-                  // the pointer moved down the file.
-                  ? DiffCommentButton(onPressed: comment)
-                  : Padding(
-                      padding: const EdgeInsets.only(left: 4, right: 8),
-                      child: Text(
-                        '${row.newLine ?? row.oldLine ?? ''}',
-                        textAlign: TextAlign.right,
-                        style: AppFont.codeStyle(
-                          color: AppPalette.textFaint,
-                          scale: 0.9,
-                          height: 1.5,
+            // Out of the selection, both of them: a highlight dragged down the
+            // file is about the code, and a copy that came back with the line
+            // numbers and the +/− in it would have to be cleaned up by hand
+            // before it could be pasted — or read by an assistant.
+            SelectionContainer.disabled(
+              child: SizedBox(
+                width: DiffRowTile.gutterWidth,
+                child: _hovered && comment != null
+                    // In the number's place rather than beside it: a button
+                    // that appeared *next* to the line would push every line
+                    // right as the pointer moved down the file.
+                    ? DiffCommentButton(onPressed: comment)
+                    : Padding(
+                        padding: const EdgeInsets.only(left: 4, right: 8),
+                        child: Text(
+                          '${row.newLine ?? row.oldLine ?? ''}',
+                          textAlign: TextAlign.right,
+                          style: AppFont.codeStyle(
+                            color: AppPalette.textFaint,
+                            scale: 0.9,
+                            height: 1.5,
+                          ),
                         ),
                       ),
-                    ),
+              ),
             ),
             // The sign carries what the colour carries, for anyone who can't
             // tell the two tints apart (§11).
-            SizedBox(
-              width: 12,
-              child: Text(
-                sign,
-                style: AppFont.codeStyle(color: ink, height: 1.5),
+            SelectionContainer.disabled(
+              child: SizedBox(
+                width: 12,
+                child: Text(
+                  sign,
+                  style: AppFont.codeStyle(color: ink, height: 1.5),
+                ),
               ),
             ),
             Expanded(
