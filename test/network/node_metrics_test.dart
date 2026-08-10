@@ -135,23 +135,33 @@ void main() {
   });
 
   group('a node with no gauges explains itself instead of showing a blank', () {
-    test('a Mac reporting a size but no occupancy is told apart from a broken '
-        'node', () {
+    test('a node with a size but no occupancy still explains itself', () {
       // The row exists (a bar-less "4 GB"), so this is keyed on there being no
       // *fraction* to fill — not on the reading list being empty.
       final node = _node(vramTotalMb: 4096, platform: 'macos-x86_64');
 
       expect(nodeBars(node), hasLength(1));
-      expect(missingTelemetryReason(node), contains('macOS'));
+      expect(missingTelemetryReason(node), isNotNull);
     });
 
-    test('an Apple Silicon node measuring its unified pool needs no excuse', () {
-      // It shares one pool with the CPU, so the provider can report occupancy —
-      // and a node with a real bar must not be handed the Intel Mac's sentence.
+    test('a Mac is given no platform excuse, because there is none to give', () {
+      // A message here once blamed system permissions for a Mac's missing
+      // gauges. It was false — the IORegistry publishes them to any user — so a
+      // Mac reaching this point is a probe that failed, like any other node.
+      final mac = _node(vramTotalMb: 4096, platform: 'macos-x86_64');
+      final linux = _node(vramTotalMb: 4096, platform: 'linux');
+
+      expect(missingTelemetryReason(mac), missingTelemetryReason(linux));
+      expect(missingTelemetryReason(mac), isNot(contains('macOS')));
+    });
+
+    test('a Mac reporting real readings is not explained away at all', () {
       final node = _node(
-        vramTotalMb: 131072,
-        vramUsedMb: 41000,
-        platform: 'macos-arm64',
+        vramTotalMb: 4096,
+        vramUsedMb: 824,
+        gpuUtilPct: 8,
+        gpuTempC: 66,
+        platform: 'macos-x86_64',
       );
 
       expect(missingTelemetryReason(node), isNull);

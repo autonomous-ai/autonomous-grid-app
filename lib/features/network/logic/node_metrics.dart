@@ -7,13 +7,18 @@ import '../../../infrastructure/api/models/grid_overview.dart';
 ///
 /// **The whole file is built around one rule: a measurement the node did not
 /// report is `null`, and `null` renders as nothing.** Not `0`, not `—%`, not a
-/// bar sitting empty at the left edge. A Mac reports total VRAM but never
-/// utilisation or temperature (macOS exposes those only to a root
-/// `powermetrics`); a CPU-only box reports neither; a datacenter card reports
-/// all of them. Every one of those is a normal, healthy node, and each would be
-/// libelled by a zero: an idle-looking GPU, a card at 0°C, a drive with nothing
-/// on it. So each reading is independently nullable and the card simply omits
-/// the rows it has no numbers for.
+/// bar sitting empty at the left edge. A CPU-only box reports no GPU figures at
+/// all; a card with no power sensor reports load but no watts; a datacenter card
+/// reports everything. Every one of those is a normal, healthy node, and each
+/// would be libelled by a zero: an idle-looking GPU, a card at 0°C, a drive with
+/// nothing on it. So each reading is independently nullable and the card simply
+/// omits the rows it has no numbers for.
+///
+/// Which readings a platform *can* supply is the provider's business, not this
+/// file's — and it is a question worth measuring rather than assuming. An
+/// earlier version of this comment asserted that a Mac could never report GPU
+/// load or temperature; the IORegistry turned out to publish both to any user,
+/// and the provider now sends them.
 
 /// How hard a reading is pushing, for colour only — never for hiding anything.
 /// The thresholds are deliberately coarse: this is a glance-level cue about
@@ -194,22 +199,19 @@ List<NodeMetric> nodeBars(OverviewNode node) => [
 /// person reading it rather than as a blank space they have to interpret.
 ///
 /// Keyed on whether anything has a [NodeMetric.fraction] — a bar to fill — not
-/// on whether the list is empty. An Intel Mac reporting its VRAM total and
-/// nothing else has a row but no gauge, and it is precisely that node the
-/// sentence below is written for: without this it would show a lone figure and
-/// leave the missing bars unexplained.
+/// on whether the list is empty. A node reporting a VRAM total and nothing else
+/// has a row but no gauge, and it is precisely that node the sentences below are
+/// written for: without this it would show a lone figure and leave the missing
+/// bars unexplained.
 ///
-/// The platform tag is what makes this answerable: `macos-arm64` is not a broken
-/// node, it is a node whose OS keeps those counters behind root.
+/// There is deliberately **no macOS-specific message**. One used to live here,
+/// blaming system permissions — and it was simply false: macOS publishes GPU
+/// occupancy, load, temperature and power through the IORegistry to any user,
+/// which the provider now reads. A Mac reaching this point is not a Mac being
+/// restricted, it is a probe that came back empty, and that is what the generic
+/// line says. Do not reintroduce a platform excuse without measuring first.
 String? missingTelemetryReason(OverviewNode node) {
   if (nodeBars(node).any((metric) => metric.fraction != null)) return null;
-  final platform = (node.platform ?? '').toLowerCase();
-  if (platform.startsWith('macos')) {
-    // Reached by an Intel Mac. An Apple Silicon node measures its unified pool
-    // and gets a real memory bar, so it never lands here.
-    return 'macOS reports this card\'s size but not how much of it is in use, '
-        'and keeps GPU load and temperature behind system permissions.';
-  }
   if (node.vramTotalMb == null) {
     return 'This node serves on its processor, so it reports no GPU readings.';
   }
