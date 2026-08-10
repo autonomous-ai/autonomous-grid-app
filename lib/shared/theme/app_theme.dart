@@ -706,8 +706,69 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     // tracker and then re-throws every frame after (see ErrorBurstFilter). A
     // delay is the fix for both, set once here rather than at the nine call
     // sites that each reached for their own number.
-    tooltipTheme: const TooltipThemeData(
-      waitDuration: Duration(milliseconds: 500),
+    //
+    // Everything below the delay is the app's floating-panel recipe, the same
+    // one `appMenuStyle` uses, because a tooltip is one: the menu fill, the
+    // hairline rim, the panel radius and the lift. Material's own is an
+    // *inverse* surface — deliberately the opposite of the window — so on a dark
+    // build it opened a white slab in the middle of a near-black app.
+    //
+    // The rim earns its place here for the reason it does on a menu: in light
+    // the fill is the same white as the surface underneath, so the rim is the
+    // only thing drawing the edge, and in dark it firms up a lift that a shadow
+    // alone renders too softly against near-black.
+    tooltipTheme: TooltipThemeData(
+      waitDuration: const Duration(milliseconds: 500),
+      decoration: BoxDecoration(
+        color: menuFill,
+        borderRadius: BorderRadius.circular(10),
+        // Resolved from `isDark` rather than read off `AppGlass`/`AppSurface`:
+        // those getters answer for the brightness the app is *showing*, and this
+        // function builds the theme for a brightness it has been handed.
+        border: Border.all(
+          color: isDark ? const Color(0x1FFFFFFF) : const Color(0x14000000),
+        ),
+        boxShadow: isDark
+            ? const [
+                BoxShadow(
+                  color: Color(0x66000000),
+                  blurRadius: 24,
+                  offset: Offset(0, 10),
+                  spreadRadius: -10,
+                ),
+                BoxShadow(
+                  color: Color(0x40000000),
+                  blurRadius: 4,
+                  offset: Offset(0, 1),
+                ),
+              ]
+            : const [
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 24,
+                  offset: Offset(0, 10),
+                  spreadRadius: -10,
+                ),
+                BoxShadow(
+                  color: Color(0x0A000000),
+                  blurRadius: 4,
+                  offset: Offset(0, 1),
+                ),
+              ],
+      ),
+      // A step under the control font: a tooltip is read *while* looking at the
+      // thing it explains, so it should not compete with it. The line height is
+      // for the long ones — a run of selections is several lines of quoted code,
+      // and set solid it reads as a wall.
+      textStyle: TextStyle(
+        fontSize: 12.5,
+        height: 1.45,
+        color: scheme.onSurface,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      // Long quoted lines would otherwise take the tooltip out to the window's
+      // full width — a panel wider than the conversation it is explaining.
+      constraints: const BoxConstraints(maxWidth: 420),
     ),
     splashFactory: InkRipple.splashFactory,
     textTheme: textTheme,
