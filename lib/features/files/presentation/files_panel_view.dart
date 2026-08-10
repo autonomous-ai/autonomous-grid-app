@@ -14,6 +14,7 @@ import '../logic/file_preview.dart';
 import '../logic/files_browser.dart';
 import '../logic/files_path.dart';
 import '../logic/files_refresh.dart';
+import '../logic/folder_watch.dart';
 import 'widgets/file_viewer.dart';
 import 'widgets/files_breadcrumb.dart';
 import 'widgets/files_tree.dart';
@@ -65,7 +66,14 @@ class FilesPanelView extends ConsumerWidget {
     // the folder holding it are re-read as they change. Watched here because
     // this is what stays mounted for as long as the tab exists — the tree comes
     // and goes with `showTree`, and the viewer is rebuilt on every selection.
+    //
+    // Two sources feed it, and both are needed. The assistant announces the
+    // files it edits through its own tools, which arrives first and knows the
+    // change was the agent's. The watchers see everything else — a `touch` in a
+    // shell the agent ran, a build in the Terminal tab, a `git checkout`,
+    // another editor — none of which the app is ever told about.
     ref.watch(filesAutoRefreshProvider);
+    ref.watch(openFoldersWatchProvider((tabId: tabId, root: folder)));
 
     final selected = ref.watch(
       filesBrowserProvider(tabId).select((s) => s.selected),
