@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/cli/git_providers.dart';
-import '../../playground/logic/chat_transport.dart';
 import '../../playground/logic/one_shot_target.dart';
 import 'review_argv.dart';
 import 'review_controller.dart';

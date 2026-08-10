@@ -9,7 +9,7 @@ import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/features/playground/logic/chat_controller.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
-import 'package:grid_app/features/playground/logic/chat_transport.dart';
+import 'package:grid_app/infrastructure/api/chat_transport.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/media_transport.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';

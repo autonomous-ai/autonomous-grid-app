@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/chat_transport.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
-import 'chat_transport.dart';
 import 'playground_models.dart';
 import 'playground_request.dart';
 
