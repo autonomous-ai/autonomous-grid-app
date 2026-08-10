@@ -55,8 +55,8 @@ final hermesAcpServiceProvider = Provider<HermesAcpService?>((ref) {
 /// conversations put every turn back on that path, since each switch closed the
 /// other's session.
 ///
-/// ACP streams `tool_call` / `agent_message_chunk` updates, so this feeds the
-/// live activity feed ([agentActivityProvider]) and streams the answer into the
+/// ACP streams `tool_call` / `agent_message_chunk` updates, so this feeds that
+/// conversation's live run ([agentRunsProvider]) and streams the answer into the
 /// bubble as it's generated.
 final hermesChatSenderProvider = Provider<ChatSender>((ref) {
   final sender = HermesChatSender(ref);
@@ -145,11 +145,13 @@ class HermesChatSender implements ChatSender {
       return;
     }
 
-    // Clear the shared feed now — synchronously, before the awaited setup below —
-    // so the chat's "working" bubble, already on screen, can't flash the previous
-    // turn's steps (or another chat's) while the session opens. See
-    // [resetAgentFeed].
-    resetAgentFeed(_ref);
+    // Everything this turn publishes is filed under its conversation, so two
+    // chats answering at once never show each other's work.
+    final chat = conversationId ?? '';
+    // Clear this chat's feed now — synchronously, before the awaited setup below
+    // — so its "working" bubble, already on screen, can't flash the previous
+    // turn's steps while the session opens. See [AgentRuns.reset].
+    _ref.read(agentRunsProvider.notifier).reset(chat);
 
     final pointed = await _ref
         .read(hermesGridLinkProvider)
@@ -203,7 +205,14 @@ class HermesChatSender implements ChatSender {
     // the Chat tab uses that name for the conversation once it lands.
     if (session.sessionId case final id?) yield ChatSendAgentSession(id);
 
-    yield* _runTurn(session, turnText, model, planFirst: planFirst, live: live);
+    yield* _runTurn(
+      session,
+      turnText,
+      model,
+      planFirst: planFirst,
+      live: live,
+      chat: chat,
+    );
   }
 
   /// Reuse the live session when this is the next turn of the same conversation,
@@ -288,13 +297,12 @@ class HermesChatSender implements ChatSender {
     String model, {
     required bool planFirst,
     required _LiveSession live,
+    required String chat,
   }) {
     // The feed was reset up front in [send], before the session setup — see
-    // [resetAgentFeed]; here we only take the notifiers to append to.
-    final activityLog = _ref.read(agentActivityProvider.notifier);
-    final sourcesLog = _ref.read(agentSourcesProvider.notifier);
-    final planLog = _ref.read(agentPlanProvider.notifier);
-    final permissions = _ref.read(agentPermissionProvider.notifier);
+    // [AgentRuns.reset]; here we only take the notifiers to append to.
+    final runs = _ref.read(agentRunsProvider.notifier);
+    final permissions = _ref.read(agentPermissionsProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
     // No argv to show: the turn is a prompt over an ACP session that is already
     // running, so what it carried is the text itself (the model is on the line).
@@ -329,13 +337,13 @@ class HermesChatSender implements ChatSender {
     // to keep.
     ChatMessage? partialReply() {
       final text = answer.toString().trim();
-      final plan = _ref.read(agentPlanProvider);
+      final plan = _ref.read(agentRunProvider(chat)).plan;
       if (text.isEmpty && plan.isEmpty) return null;
       return ChatMessage(
         role: ChatRole.assistant,
         text: text,
         plan: plan,
-        sources: _ref.read(agentSourcesProvider),
+        sources: _ref.read(agentRunProvider(chat)).sources,
       );
     }
 
@@ -369,13 +377,13 @@ class HermesChatSender implements ChatSender {
           case HermesAcpActivity(:final activity):
             armIdle();
             if (isAgentWork(activity)) workedAtAll = true;
-            activityLog.upsert(activity);
+            runs.upsertStep(chat, activity);
           case HermesAcpPermission(:final request):
             // The agent has stopped and is waiting on the user; pause the idle
             // watch (their time isn't a hang) and re-arm it once they answer.
             idle?.cancel();
             idle = null;
-            permissions.ask(request, (optionId) {
+            permissions.ask(chat, request, (optionId) {
               armIdle();
               session.answerPermission(request.id, optionId);
             });
@@ -384,16 +392,16 @@ class HermesChatSender implements ChatSender {
             workedAtAll = true;
             // Full access applied an edit without asking — record it so the
             // user can still undo it.
-            _recordEdit(request);
+            _recordEdit(chat, request);
           case HermesAcpSources(:final sources):
             armIdle();
             // A web look-up finished — collect its pages to cite under the
             // answer once the turn lands.
-            sourcesLog.addAll(sources);
+            runs.addSources(chat, sources);
           case HermesAcpPlan(:final entries):
             armIdle();
             // The agent revised its to-do list — replace ours with its latest.
-            planLog.replace(entries);
+            runs.setPlan(chat, entries);
           case HermesAcpMessage(:final text):
             armIdle();
             answer.write(text);
@@ -414,7 +422,7 @@ class HermesChatSender implements ChatSender {
         idle?.cancel();
         // Nothing is waiting on an answer once the turn is over — a card left
         // pinned in the chat would be a button that does nothing.
-        permissions.clear();
+        permissions.clear(chat);
 
         final reply = answer.toString().trim();
         // Hermes answers with its own failure when the model won't take the turn
@@ -432,7 +440,7 @@ class HermesChatSender implements ChatSender {
         // recording — but only recording. The verdict is a guess about work the
         // app can't see, and calling a finished answer a failure on the strength
         // of an unticked box put an error over turns that had answered (§5).
-        final plan = _ref.read(agentPlanProvider);
+        final plan = _ref.read(agentRunProvider(chat)).plan;
         // Ran out of room rather than out of work. Recorded with the numbers
         // behind the verdict, because the line the user reads carries neither.
         final outOfSteps = agentSpentToolBudget(
@@ -499,7 +507,7 @@ class HermesChatSender implements ChatSender {
                   ChatMessage(
                     role: ChatRole.assistant,
                     text: reply,
-                    sources: _ref.read(agentSourcesProvider),
+                    sources: _ref.read(agentRunProvider(chat)).sources,
                     plan: plan,
                   ),
                   // Hermes reports a turn it capped as an ordinary end_turn, so
@@ -524,21 +532,22 @@ class HermesChatSender implements ChatSender {
       idle?.cancel();
       await events.cancel();
       if (settled) return;
-      permissions.clear();
+      permissions.clear(chat);
       run.kill();
       log.finish(logId, error: 'stopped');
     };
     return updates.stream;
   }
 
-  /// Record an edit the agent made so it can be undone. A create has no old text
-  /// (undo deletes the file); a change carries the original to restore.
-  void _recordEdit(AgentPermission request) {
+  /// Record an edit [chat]'s agent made so it can be undone. A create has no old
+  /// text (undo deletes the file); a change carries the original to restore.
+  void _recordEdit(String chat, AgentPermission request) {
     final path = request.path;
     if (path == null || path.isEmpty) return;
     _ref
         .read(agentChangesProvider.notifier)
         .record(
+          chatId: chat,
           path: path,
           before: request.oldText,
           after: request.newText ?? '',

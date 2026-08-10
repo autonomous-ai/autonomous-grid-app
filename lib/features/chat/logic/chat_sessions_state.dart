@@ -73,7 +73,7 @@ class ChatSessionsState {
     this.errors = const {},
     this.awaitingPlanIds = const {},
     this.outOfStepsIds = const {},
-    this.runningAgentId,
+    this.runningAgentIds = const {},
     this.queued = const {},
     this.loading = false,
   });
@@ -92,12 +92,19 @@ class ChatSessionsState {
   /// the `@`-mention menu its folder) before the first send saves it.
   final String? draftProjectId;
 
-  /// The conversation whose **agent** turn is running right now, or null. Agent
-  /// turns are serialized onto one live session and one shared activity/
-  /// permission feed, so exactly one chat owns that feed at a time — the UI reads
-  /// this to show the "agent is working" steps on that chat and a plain "waiting"
-  /// cue on any other agent chat still queued behind it.
-  final String? runningAgentId;
+  /// The conversations whose **agent** turn is running right now.
+  ///
+  /// More than one, because turns are serialized **per project**, not app-wide:
+  /// two chats in the same folder would trip over each other's files, so they
+  /// queue; two projects (and any chat outside every project) have nothing in
+  /// common and run at the same time. Everything a turn publishes — its steps,
+  /// its permission request, the files it changed — is keyed by conversation for
+  /// exactly this reason.
+  ///
+  /// The UI reads this to show the "agent is working" steps on a chat that is
+  /// running, and a plain "waiting" cue on one still queued behind another in
+  /// its own project.
+  final Set<String> runningAgentIds;
 
   /// In-flight send phase per conversation id — absent means idle.
   final Map<String, SendPhase> phases;
@@ -161,6 +168,11 @@ class ChatSessionsState {
   /// Whether the chat with [id] has a reply in flight.
   bool sendingFor(String? id) => phaseFor(id) is! SendIdle;
 
+  /// Whether the chat with [id] is the one holding an **agent** turn right now —
+  /// as opposed to sitting in [SendBusy] waiting for another chat in its project
+  /// to finish.
+  bool agentRunningIn(String? id) => id != null && runningAgentIds.contains(id);
+
   /// The last error on the chat with [id], or null.
   String? errorFor(String? id) => id == null ? null : errors[id];
 
@@ -204,7 +216,7 @@ class ChatSessionsState {
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
     Set<String>? outOfStepsIds,
-    Object? runningAgentId = _keep,
+    Set<String>? runningAgentIds,
     Map<String, List<QueuedTurn>>? queued,
     bool? loading,
   }) => ChatSessionsState(
@@ -218,9 +230,7 @@ class ChatSessionsState {
     errors: errors ?? this.errors,
     awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
     outOfStepsIds: outOfStepsIds ?? this.outOfStepsIds,
-    runningAgentId: identical(runningAgentId, _keep)
-        ? this.runningAgentId
-        : runningAgentId as String?,
+    runningAgentIds: runningAgentIds ?? this.runningAgentIds,
     queued: queued ?? this.queued,
   );
 

@@ -755,15 +755,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];
-    // The "agent is working" feed and the permission card read one shared,
-    // app-wide state, but only the chat whose agent turn is actually running
-    // owns it — an agent chat still queued behind another must show its own
-    // waiting cue, not borrow the running chat's steps (or its permission).
-    final thisChatIsRunning = ref.watch(
-      chatSessionsProvider.select(
-        (s) => s.activeId != null && s.activeId == s.runningAgentId,
-      ),
-    );
     // *Whether* there is an in-flight bubble, not what it says: this answers
     // once when the turn starts and once when it ends, while the bubble's own
     // contents change with every token.
@@ -790,12 +781,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
       });
     }
 
-    // The agent has stopped and is asking before it touches this computer. Only
-    // the chat whose turn is running owns that request — on any other chat the
-    // card would be asking about work the user can't see.
-    final permission = thisChatIsRunning
-        ? ref.watch(agentPermissionProvider)
-        : null;
+    // The agent has stopped and is asking before it touches this computer. Read
+    // for the open chat by name: several turns can be waiting on the user at
+    // once, and each chat shows the question its own agent asked.
+    final permission = ref.watch(agentPermissionProvider(activeId));
     // Read here, not down in the composer's builder: that builder runs when the
     // text controller notifies, which is outside this widget's own build, and
     // `ref.watch` may only be called during it.
@@ -854,7 +843,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           onJumpToLatest: () => _scrollToBottom(animated: true),
                         ),
                 ),
-                if (permission != null)
+                if (permission != null && activeId != null)
                   Center(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
@@ -863,7 +852,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
                       ),
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                        child: AgentPermissionCard(request: permission),
+                        child: AgentPermissionCard(
+                          chatId: activeId,
+                          request: permission,
+                        ),
                       ),
                     ),
                   ),
@@ -1049,10 +1041,9 @@ bool _bubbleShows(SendPhase phase, bool agentMode) => switch (phase) {
 /// streams in, or a spinner while the agent works before its first token.
 ///
 /// Watches the phase itself so the growing text rebuilds this bubble and
-/// nothing else. [running] is whether this chat holds the agent's live turn:
-/// only then does the working bubble (which reads the shared activity feed)
-/// belong to it — an agent chat still queued behind another shows a plain
-/// waiting cue instead.
+/// nothing else. Whether this chat's own agent turn is running decides between
+/// the working feed and a plain waiting cue — a chat queued behind another in
+/// its project has a feed, but nothing in it yet.
 class _TrailingBubble extends ConsumerWidget {
   const _TrailingBubble({required this.agentMode});
 
@@ -1063,19 +1054,22 @@ class _TrailingBubble extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final phase = ref.watch(chatSessionsProvider.select((s) => s.phase));
+    final chatId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
     final running = ref.watch(
-      chatSessionsProvider.select(
-        (s) => s.activeId != null && s.activeId == s.runningAgentId,
-      ),
+      chatSessionsProvider.select((s) => s.agentRunningIn(s.activeId)),
     );
+    if (chatId == null) return const SizedBox.shrink();
     return switch (phase) {
       SendGenerating g => GeneratingBubble(phase: g),
       SendStreaming(:final text) when text.isNotEmpty => _StreamingReply(
+        chatId: chatId,
         text: text,
         showActivity: agentMode,
       ),
-      SendStreaming() => const AgentWorkingBubble(),
-      SendBusy() when agentMode && running => const AgentWorkingBubble(),
+      SendStreaming() => AgentWorkingBubble(chatId: chatId),
+      SendBusy() when agentMode && running => AgentWorkingBubble(
+        chatId: chatId,
+      ),
       SendBusy() when agentMode => const _QueuedBubble(),
       _ => const SizedBox.shrink(),
     };
@@ -1096,7 +1090,14 @@ class _TrailingBubble extends ConsumerWidget {
 /// the moment the cue drops away. The cue sits at the content's left edge (the
 /// assistant column starts there), a touch below.
 class _StreamingReply extends StatelessWidget {
-  const _StreamingReply({required this.text, this.showActivity = false});
+  const _StreamingReply({
+    required this.chatId,
+    required this.text,
+    this.showActivity = false,
+  });
+
+  /// The conversation being answered — the feed under the text is that chat's.
+  final String chatId;
 
   final String text;
 
@@ -1118,7 +1119,7 @@ class _StreamingReply extends StatelessWidget {
         // Agent turn: the feed's own spinner is the "still going" cue, so no
         // dots. Plain reply: no feed, so the dots carry it.
         if (showActivity)
-          const AgentActivityFeed()
+          AgentActivityFeed(chatId: chatId)
         else
           const Padding(
             padding: EdgeInsets.only(left: 2, bottom: 10),
@@ -1129,13 +1130,14 @@ class _StreamingReply extends StatelessWidget {
   }
 }
 
-/// Shown on an agent chat whose turn is queued behind another that's still
-/// running — the local agent answers one at a time.
+/// Shown on a chat whose turn is queued behind another **in the same project** —
+/// two agents let loose in one folder would edit the same files, so they take
+/// turns. Chats in other projects (and outside every project) are unaffected and
+/// answer at the same time.
 ///
-/// Deliberately NOT [AgentWorkingBubble]: that bubble reads the shared activity
-/// feed, which belongs to the chat actually running, so it would show this chat
-/// another chat's steps. This says, honestly, that the assistant is finishing
-/// something else first — a spinner and one line, no borrowed feed.
+/// Deliberately NOT [AgentWorkingBubble]: this turn hasn't started, so its feed
+/// is empty and the bubble would sit blank. This says what is actually happening
+/// — a spinner and one line.
 class _QueuedBubble extends StatelessWidget {
   const _QueuedBubble();
 
@@ -1157,7 +1159,7 @@ class _QueuedBubble extends StatelessWidget {
             const AppSpinner(),
             const SizedBox(width: 10),
             Text(
-              'Finishing another chat first…',
+              'Finishing another chat in this project…',
               style: theme.textTheme.bodyMedium,
             ),
           ],

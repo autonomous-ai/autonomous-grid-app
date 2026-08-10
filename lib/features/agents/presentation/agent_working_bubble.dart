@@ -22,7 +22,12 @@ import '../logic/agent_step_label.dart';
 /// just that it's busy. The feed carries its own spinner, so there is no
 /// separate "working" header to say the same thing twice.
 class AgentWorkingBubble extends StatelessWidget {
-  const AgentWorkingBubble({super.key});
+  const AgentWorkingBubble({super.key, required this.chatId});
+
+  /// The conversation whose turn this is. Runs are keyed by chat (turns go on in
+  /// several projects at once), so the bubble has to say which one it speaks for
+  /// rather than reading "the" feed.
+  final String chatId;
 
   @override
   Widget build(BuildContext context) {
@@ -30,11 +35,11 @@ class AgentWorkingBubble extends StatelessWidget {
     // where its text lands once it starts streaming (see [_StreamingReply]), so
     // "thinking" and the answer that follows share one left margin instead of
     // the steps jumping out of a tinted box the moment the first token arrives.
-    return const Align(
+    return Align(
       alignment: Alignment.centerLeft,
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 4),
-        child: AgentActivityFeed(leadingGap: false),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: AgentActivityFeed(chatId: chatId, leadingGap: false),
       ),
     );
   }
@@ -52,15 +57,23 @@ class AgentWorkingBubble extends StatelessWidget {
 /// follows other content (a streaming reply); it is off when the feed is the
 /// whole bubble.
 class AgentActivityFeed extends ConsumerWidget {
-  const AgentActivityFeed({super.key, this.leadingGap = true});
+  const AgentActivityFeed({
+    super.key,
+    required this.chatId,
+    this.leadingGap = true,
+  });
+
+  /// The conversation whose live run this feed shows.
+  final String chatId;
 
   final bool leadingGap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final steps = ref.watch(agentActivityProvider);
-    final sources = ref.watch(agentSourcesProvider);
-    final plan = ref.watch(agentPlanProvider);
+    final run = ref.watch(agentRunProvider(chatId));
+    final steps = run.steps;
+    final sources = run.sources;
+    final plan = run.plan;
     // How much of the working-out to show. At [AgentDetailMode.answer] the feed
     // is only the "Thinking…" line and whatever the answer cites — the user
     // asked not to be shown the machinery.

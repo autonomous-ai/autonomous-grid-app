@@ -128,15 +128,13 @@ mixin _ChatSend on _ChatSessions {
       done: done,
     );
 
-    // Serialize agent turns (see [ChatSessionsState.runningAgentId]): a second
-    // one waits its turn rather than running concurrently and corrupting the
-    // first's session and permission card. The chat sits in its [SendBusy]
-    // "thinking" state until the slot frees. Relay/media turns share none of
-    // that and go straight out, still fully concurrent.
-    if (viaAgent &&
-        state.runningAgentId != null &&
-        state.runningAgentId != id) {
-      _agentQueue.add((id: id, dispatch: dispatch));
+    // Agent turns take turns **within a project** (see [_agentQueues]): two
+    // agents in one folder would edit the same files. Anywhere else — another
+    // project, or no project at all — the turn goes straight out, concurrently,
+    // as a relay/media turn always has.
+    final lane = conversation.projectId;
+    if (viaAgent && lane != null && _laneBusy(lane, except: id)) {
+      (_agentQueues[lane] ??= []).add((id: id, dispatch: dispatch));
     } else {
       dispatch();
     }
@@ -164,13 +162,13 @@ mixin _ChatSend on _ChatSessions {
     required Completer<void> done,
   }) {
     final id = conversation.id;
-    // Claim the agent's single turn slot — released on finish/stop, which then
-    // starts the next queued agent turn — and with it the files this turn is
-    // about to change, so its undo stays with this chat even when the user has
-    // moved to another one by the time the agent writes.
+    // Take this project's lane — released on finish/stop, which then starts the
+    // next turn waiting in it — and mark where this turn's file changes begin,
+    // so "what did it just do?" answers for this turn and not the chat's whole
+    // history.
     if (viaAgent) {
-      state = state.copyWith(runningAgentId: id);
-      ref.read(agentChangesProvider.notifier).attributeTo(id);
+      state = state.copyWith(runningAgentIds: {...state.runningAgentIds, id});
+      ref.read(agentChangesProvider.notifier).beginTurn(id);
     }
 
     // How long the answer takes, timed from here rather than from `send`: an

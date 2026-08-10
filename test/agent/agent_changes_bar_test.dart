@@ -17,7 +17,7 @@ void main() {
     );
     addTearDown(c.dispose);
     c.read(agentChangesScopeProvider.notifier).show(chatId);
-    c.read(agentChangesProvider.notifier).attributeTo(chatId);
+    c.read(agentChangesProvider.notifier).beginTurn(chatId);
     // Read the bar so its listener on the change list is live before any edit.
     c.read(agentChangesBarProvider);
     return c;
@@ -38,7 +38,12 @@ void main() {
     final c = container();
     c
         .read(agentChangesProvider.notifier)
-        .record(path: '/tmp/a.txt', before: 'old', after: 'new');
+        .record(
+          chatId: 'chat-1',
+          path: '/tmp/a.txt',
+          before: 'old',
+          after: 'new',
+        );
     await settle();
     expect(c.read(agentChangesBarProvider), isTrue);
   });
@@ -47,7 +52,12 @@ void main() {
       'brings it back over the whole set', () async {
     final c = container();
     final changes = c.read(agentChangesProvider.notifier);
-    changes.record(path: '/tmp/a.txt', before: 'old', after: 'new');
+    changes.record(
+      chatId: 'chat-1',
+      path: '/tmp/a.txt',
+      before: 'old',
+      after: 'new',
+    );
     await settle();
 
     c.read(agentChangesBarProvider.notifier).dismiss();
@@ -55,7 +65,12 @@ void main() {
     // The snapshot is still there — hiding is not undoing.
     expect(changesIn(c, 'chat-1'), hasLength(1));
 
-    changes.record(path: '/tmp/b.txt', before: 'x', after: 'y');
+    changes.record(
+      chatId: 'chat-1',
+      path: '/tmp/b.txt',
+      before: 'x',
+      after: 'y',
+    );
     await settle();
     expect(c.read(agentChangesBarProvider), isTrue);
     expect(changesIn(c, 'chat-1'), hasLength(2));
@@ -66,7 +81,12 @@ void main() {
     final c = container(autoHide: const Duration(milliseconds: 30));
     c
         .read(agentChangesProvider.notifier)
-        .record(path: '/tmp/a.txt', before: 'old', after: 'new');
+        .record(
+          chatId: 'chat-1',
+          path: '/tmp/a.txt',
+          before: 'old',
+          after: 'new',
+        );
     await settle();
     expect(c.read(agentChangesBarProvider), isTrue);
 
@@ -80,7 +100,12 @@ void main() {
     final c = container();
     c
         .read(agentChangesProvider.notifier)
-        .record(path: '/tmp/a.txt', before: 'old', after: 'new');
+        .record(
+          chatId: 'chat-1',
+          path: '/tmp/a.txt',
+          before: 'old',
+          after: 'new',
+        );
     await settle();
     expect(c.read(agentChangesBarProvider), isTrue);
 
@@ -100,11 +125,16 @@ void main() {
     () async {
       final c = container(chatId: 'chat-2');
       // The turn that is running belongs to the chat the user just left.
-      c.read(agentChangesProvider.notifier).attributeTo('chat-1');
+      c.read(agentChangesProvider.notifier).beginTurn('chat-1');
 
       c
           .read(agentChangesProvider.notifier)
-          .record(path: '/tmp/a.txt', before: 'old', after: 'new');
+          .record(
+            chatId: 'chat-1',
+            path: '/tmp/a.txt',
+            before: 'old',
+            after: 'new',
+          );
       await settle();
 
       expect(c.read(agentChangesBarProvider), isFalse);

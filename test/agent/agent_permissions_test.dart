@@ -26,32 +26,39 @@ ProviderContainer _container({Duration timeout = const Duration(seconds: 55)}) {
   return container;
 }
 
+/// The chat under test. Requests are keyed by conversation, so every call names
+/// the chat it belongs to.
+const _chat = 'chat-1';
+
 void main() {
   test('nothing is pending until the agent asks', () {
-    expect(_container().read(agentPermissionProvider), isNull);
+    expect(_container().read(agentPermissionProvider(_chat)), isNull);
   });
 
   test('an allow sends the option the agent offered, and clears the ask', () {
     final container = _container();
     final answers = <String?>[];
-    final controller = container.read(agentPermissionProvider.notifier);
+    final controller = container.read(agentPermissionsProvider.notifier);
 
-    controller.ask(_command(), answers.add);
-    expect(container.read(agentPermissionProvider)?.command, 'rm -rf build');
+    controller.ask(_chat, _command(), answers.add);
+    expect(
+      container.read(agentPermissionProvider(_chat))?.command,
+      'rm -rf build',
+    );
 
-    controller.answer(AgentPermissionChoice.allowOnce);
+    controller.answer(_chat, AgentPermissionChoice.allowOnce);
 
     expect(answers, ['allow_once']);
-    expect(container.read(agentPermissionProvider), isNull);
+    expect(container.read(agentPermissionProvider(_chat)), isNull);
   });
 
   test('"allow in this chat" grants the session, not forever', () {
     final container = _container();
     final answers = <String?>[];
 
-    container.read(agentPermissionProvider.notifier)
-      ..ask(_command(), answers.add)
-      ..answer(AgentPermissionChoice.allowForChat);
+    container.read(agentPermissionsProvider.notifier)
+      ..ask(_chat, _command(), answers.add)
+      ..answer(_chat, AgentPermissionChoice.allowForChat);
 
     expect(answers, ['allow_session']);
   });
@@ -61,12 +68,12 @@ void main() {
     final container = _container();
     final answers = <String?>[];
 
-    container.read(agentPermissionProvider.notifier)
-      ..ask(_command(), answers.add)
-      ..answer(AgentPermissionChoice.refuse);
+    container.read(agentPermissionsProvider.notifier)
+      ..ask(_chat, _command(), answers.add)
+      ..answer(_chat, AgentPermissionChoice.refuse);
 
     expect(answers, ['deny']);
-    final steps = container.read(agentActivityProvider);
+    final steps = container.read(agentRunProvider(_chat)).steps;
     expect(steps.single.label, contains('rm -rf build'));
     expect(steps.single.status, AgentActivityStatus.failed);
   });
@@ -78,27 +85,51 @@ void main() {
       final answers = <String?>[];
 
       container
-          .read(agentPermissionProvider.notifier)
-          .ask(_command(), answers.add);
+          .read(agentPermissionsProvider.notifier)
+          .ask(_chat, _command(), answers.add);
       await Future<void>.delayed(const Duration(milliseconds: 30));
 
       expect(answers, ['deny']);
-      expect(container.read(agentPermissionProvider), isNull);
+      expect(container.read(agentPermissionProvider(_chat)), isNull);
     },
   );
+
+  test('two chats can be waiting at once — answering one leaves the other '
+      'asking, rather than dropping the way back to its agent', () {
+    final container = _container();
+    final first = <String?>[];
+    final second = <String?>[];
+    final controller = container.read(agentPermissionsProvider.notifier);
+
+    controller.ask('chat-1', _command(), first.add);
+    controller.ask('chat-2', _command(), second.add);
+    controller.answer('chat-1', AgentPermissionChoice.allowOnce);
+
+    expect(first, ['allow_once']);
+    expect(second, isEmpty);
+    expect(container.read(agentPermissionProvider('chat-1')), isNull);
+    expect(
+      container.read(agentPermissionProvider('chat-2'))?.command,
+      'rm -rf build',
+      reason: "the second chat's agent is still waiting on its own answer",
+    );
+
+    controller.answer('chat-2', AgentPermissionChoice.refuse);
+    expect(second, ['deny']);
+  });
 
   test('when the turn ends the ask goes away, unanswered', () {
     final container = _container();
     final answers = <String?>[];
-    final controller = container.read(agentPermissionProvider.notifier);
+    final controller = container.read(agentPermissionsProvider.notifier);
 
-    controller.ask(_command(), answers.add);
-    controller.clear();
+    controller.ask(_chat, _command(), answers.add);
+    controller.clear(_chat);
 
-    expect(container.read(agentPermissionProvider), isNull);
+    expect(container.read(agentPermissionProvider(_chat)), isNull);
     expect(answers, isEmpty, reason: 'a dead session has nothing to answer');
     // And a late tap on a card that is already gone does nothing.
-    controller.answer(AgentPermissionChoice.allowOnce);
+    controller.answer(_chat, AgentPermissionChoice.allowOnce);
     expect(answers, isEmpty);
   });
 }

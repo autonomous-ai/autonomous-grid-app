@@ -16,7 +16,16 @@ import 'diff_view.dart';
 /// scrollable out of sight. Nothing happens unless the user says yes; ignoring it
 /// is a no ([kAgentPermissionTimeout]).
 class AgentPermissionCard extends ConsumerWidget {
-  const AgentPermissionCard({super.key, required this.request});
+  const AgentPermissionCard({
+    super.key,
+    required this.chatId,
+    required this.request,
+  });
+
+  /// The conversation whose agent is asking. Carried because turns run at the
+  /// same time in different projects: the answer has to go back to the agent
+  /// that asked, not to whichever one asked last.
+  final String chatId;
 
   final AgentPermission request;
 
@@ -24,7 +33,7 @@ class AgentPermissionCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // rebuild on theme flip — reads card/glass tokens
     final theme = Theme.of(context);
-    final controller = ref.read(agentPermissionProvider.notifier);
+    final controller = ref.read(agentPermissionsProvider.notifier);
     final isEdit = request.kind == AgentPermissionKind.edit;
     // Icon, question and subtitle in one place, so the three can't drift apart.
     // `other` is a tool the app has no drawing for — it gets the agent's own
@@ -94,19 +103,23 @@ class AgentPermissionCard extends ConsumerWidget {
                 const SizedBox(width: 8),
                 TextButton(
                   onPressed: () =>
-                      controller.answer(AgentPermissionChoice.refuse),
+                      controller.answer(chatId, AgentPermissionChoice.refuse),
                   child: const Text("Don't allow"),
                 ),
                 if (request.canAllowForChat)
                   TextButton(
-                    onPressed: () =>
-                        controller.answer(AgentPermissionChoice.allowForChat),
+                    onPressed: () => controller.answer(
+                      chatId,
+                      AgentPermissionChoice.allowForChat,
+                    ),
                     child: const Text('Allow in this chat'),
                   ),
                 const SizedBox(width: 4),
                 FilledButton(
-                  onPressed: () =>
-                      controller.answer(AgentPermissionChoice.allowOnce),
+                  onPressed: () => controller.answer(
+                    chatId,
+                    AgentPermissionChoice.allowOnce,
+                  ),
                   child: const Text('Allow once'),
                 ),
               ],
