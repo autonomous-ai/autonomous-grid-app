@@ -7,8 +7,8 @@ import 'chat_scope.dart';
 /// workspace when the chat belongs to no project.
 ///
 /// This is the same folder the agent gets as its working directory, so a file
-/// the `@`-mention menu lists (or the header's file browser opens) is one the
-/// agent can actually read.
+/// the `@`-mention menu lists (or the Files panel browses) is one the agent can
+/// actually read.
 ///
 /// Reads the open chat's project through [openChatProjectProvider] — the same
 /// scope the assistant and model choices follow, so the folder, who answers in
@@ -26,8 +26,8 @@ const kChatWorkspaceLabel = 'Workspace';
 /// own name, or [kChatWorkspaceLabel] for the folder a chat with no project runs
 /// in.
 ///
-/// Derived here rather than at each screen so the header's browser, the Files
-/// panel's breadcrumb and anything after them name one folder one way.
+/// Derived here rather than at each screen so the Files panel's breadcrumb and
+/// anything after it name one folder one way.
 final activeChatWorkdirLabelProvider = Provider<String>(
   (ref) => ref.watch(openChatProjectProvider)?.name ?? kChatWorkspaceLabel,
 );

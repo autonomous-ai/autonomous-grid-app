@@ -99,10 +99,12 @@ class _TerminalTab extends ConsumerWidget {
 /// selection shared between them.
 ///
 /// The folder is [activeChatWorkdirProvider] — the same one the assistant is
-/// given and the same one the header's browser opens — so a chat that belongs
-/// to no project browses the app's workspace instead of showing an empty panel.
-/// That was the whole complaint: the assistant saves its files there, and Files
-/// was the one place that wouldn't show them.
+/// given — so a chat that belongs to no project browses the app's workspace
+/// instead of showing an empty panel. That was the whole complaint: the
+/// assistant saves its files there, and Files was the one place that wouldn't
+/// show them. It is now the only place that does: the folder button the chat
+/// header used to carry opened a dialog onto this same folder, and two doors
+/// onto one room is one door too many.
 class _FilesTab extends ConsumerWidget {
   const _FilesTab({required this.tabId, required this.host});
 

@@ -61,10 +61,9 @@ class FilesTree extends ConsumerWidget {
         ),
         Expanded(
           child: switch (entries) {
-            // The same sentence the header's browser shows for the same empty
-            // folder — a loose chat's workspace starts out empty, and "This
-            // folder is empty." on its own leaves the user wondering whether
-            // the panel is broken.
+            // A loose chat's workspace starts out empty, and "This folder is
+            // empty." on its own leaves the user wondering whether the panel is
+            // broken rather than telling them what will fill it.
             AsyncData(:final value) when value.isEmpty => const _Message(
               'This folder is empty. Files the assistant saves while you chat '
               'show up here.',
