@@ -94,23 +94,32 @@ class _NodeGrid extends StatelessWidget {
               padding: EdgeInsets.only(
                 bottom: row == rowCount - 1 ? 0 : kNodeCardGap,
               ),
-              child: Row(
-                // `start`, not `stretch`: a short card keeps its own height
-                // rather than being padded out to match the tallest in its row.
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var i = 0; i < columns; i++) ...[
-                    if (i > 0) const SizedBox(width: kNodeCardGap),
-                    Expanded(
-                      child: i < cards.length
-                          // A trailing gap in the last row is an empty cell, so
-                          // the final card keeps its column width instead of
-                          // stretching across the leftovers.
-                          ? NodeDashboardCard(node: cards[i])
-                          : const SizedBox.shrink(),
-                    ),
+              // `IntrinsicHeight` + `stretch`: every card in a row takes the
+              // height of the tallest, so their footers sit on one line and the
+              // row reads as a set rather than a ragged edge. It measures its
+              // children twice, which is affordable here — a row holds at most a
+              // handful of cards, and only visible rows are ever built.
+              //
+              // Still no card declares a height of its own: the row's height is
+              // whatever its content needs, which is what keeps the 22px
+              // overflow from the fixed-extent grid from coming back.
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < columns; i++) ...[
+                      if (i > 0) const SizedBox(width: kNodeCardGap),
+                      Expanded(
+                        child: i < cards.length
+                            // A trailing gap in the last row is an empty cell,
+                            // so the final card keeps its column width instead
+                            // of stretching across the leftovers.
+                            ? NodeDashboardCard(node: cards[i])
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             );
           },

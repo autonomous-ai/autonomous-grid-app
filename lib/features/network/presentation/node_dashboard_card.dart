@@ -15,13 +15,19 @@ Color _toneColor(MetricTone tone) => switch (tone) {
   MetricTone.hot => const Color(0xFFEC6A5E),
 };
 
-/// One node's live readings: its identity, whichever gauges it reports, the
-/// figures beside them, and its measured decode rate.
+/// What a dashed (unmeasured) track says when hovered. Phrased as a fact about
+/// the machine rather than an error, because it is one — plenty of healthy nodes
+/// publish no thermal sensor at all.
+const String _unmeasuredHint = 'This machine does not report this reading.';
+
+/// One node's live readings: its identity, its gauges, the figures beside them,
+/// and its measured decode rate.
 ///
-/// Everything below degrades independently. A node that reports nothing but its
-/// name still renders a card — the relay knows it is online and what it serves,
-/// and that is worth showing — with [missingTelemetryReason] in place of the
-/// gauges rather than an unexplained blank.
+/// Every row is always present, so two cards side by side line up label for
+/// label and the eye can compare figures instead of re-reading the layout. Rows
+/// the machine said nothing about print `—` over a dashed track — see
+/// [NodeMetric.measured], and the note atop `node_metrics.dart` for why "never
+/// measured" must never be allowed to look like "measured zero".
 class NodeDashboardCard extends StatelessWidget {
   const NodeDashboardCard({required this.node, super.key});
 
@@ -30,8 +36,6 @@ class NodeDashboardCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final bars = nodeBars(node);
-    final reason = missingTelemetryReason(node);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppCard.base,
@@ -42,30 +46,20 @@ class NodeDashboardCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
             _CardHeader(node: node),
             const SizedBox(height: 14),
-            for (final bar in bars) ...[
+            for (final bar in nodeBars(node)) ...[
               _Gauge(metric: bar),
               const SizedBox(height: 12),
             ],
-            if (reason != null) ...[
-              Text(
-                reason,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.4,
-                  color: AppPalette.textFaint,
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
             _CardDetails(node: node),
-            if (throughputLabel(node) case final tokS?) ...[
-              const SizedBox(height: 12),
-              _ThroughputFooter(value: tokS),
-            ],
+            // Pushes the throughput to the card's foot, so a row of cards forced
+            // to equal height by their tallest member keeps its big figures on
+            // one line instead of floating at three different heights.
+            const Spacer(),
+            const SizedBox(height: 12),
+            _ThroughputFooter(value: throughputLabel(node)),
           ],
         ),
       ),
@@ -80,12 +74,12 @@ class _CardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // No online/offline badge: the dashboard is fed by the relay's live node
-    // list, so every card here is online and a per-card badge would either be a
-    // branch that never fires or a label that never changes. The dialog header
-    // states it once, for all of them.
     return Row(
       children: [
+        // `Expanded`, so the name absorbs every spare pixel and the summary is
+        // pushed flush to the card's right edge. This was two `Flexible`s, which
+        // both defaulted to flex 1 and so split the row in half — leaving the
+        // summary right-aligned within its own half, floating in the middle.
         Expanded(
           child: Text(
             node.name,
@@ -99,7 +93,11 @@ class _CardHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Flexible(
+        // Capped rather than flexible: it is laid out before the name takes the
+        // remainder, so an unusually long summary would otherwise push the row
+        // past the card instead of ellipsizing.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 150),
           child: Text(
             nodeRoleSummary(node),
             maxLines: 1,
@@ -123,9 +121,11 @@ class _Gauge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fraction = metric.fraction;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final row = Column(
+      // `stretch`, so both track kinds fill the card's width. It also keeps this
+      // column free of any width-measuring widget — see `_DashedTrack` on why a
+      // `LayoutBuilder` cannot live inside a card.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
@@ -147,23 +147,161 @@ class _Gauge extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w500,
-                color: AppPalette.textPrimary,
+                color: metric.measured
+                    ? AppPalette.textPrimary
+                    : AppPalette.textFaint,
               ),
             ),
           ],
         ),
-        if (fraction != null) ...[
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: Stack(
-              children: [
-                Container(height: 4, color: AppCard.inset),
-                FractionallySizedBox(
-                  widthFactor: fraction,
-                  child: Container(height: 4, color: _toneColor(metric.tone)),
-                ),
-              ],
+        const SizedBox(height: 6),
+        if (metric.measured && metric.fraction != null)
+          _FilledTrack(fraction: metric.fraction!, tone: metric.tone)
+        else
+          const _DashedTrack(),
+      ],
+    );
+    if (metric.measured) return row;
+    return Tooltip(message: _unmeasuredHint, child: row);
+  }
+}
+
+/// A measured reading: solid track, coloured fill. An empty one here means a
+/// real zero.
+class _FilledTrack extends StatelessWidget {
+  const _FilledTrack({required this.fraction, required this.tone});
+
+  final double fraction;
+  final MetricTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(3),
+      child: Stack(
+        children: [
+          Container(height: 4, color: AppCard.inset),
+          FractionallySizedBox(
+            widthFactor: fraction,
+            child: Container(height: 4, color: _toneColor(tone)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An unmeasured reading: a broken line where a bar would be.
+///
+/// The texture is the point. A solid empty track is what a genuine `0%` looks
+/// like, so an absent reading drawn that way would claim the node is idle. A
+/// dashed one belongs to no scale at all and cannot be misread as a quantity.
+///
+/// Painted rather than built from a row of boxes, because the row needed a
+/// `LayoutBuilder` to count how many dashes fit — and **no card may contain
+/// one**. The dashboard sizes each row with `IntrinsicHeight` so cards come out
+/// level, which asks every child for its intrinsic height; `LayoutBuilder`
+/// refuses that question and throws mid-layout, leaving a half-built render tree
+/// that the mouse tracker then re-enters. A painter has no such trouble.
+class _DashedTrack extends StatelessWidget {
+  const _DashedTrack();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 4,
+      child: CustomPaint(painter: _DashPainter(color: AppCard.inset)),
+    );
+  }
+}
+
+class _DashPainter extends CustomPainter {
+  const _DashPainter({required this.color});
+
+  final Color color;
+
+  static const double _dash = 4;
+  static const double _gap = 3;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    for (var x = 0.0; x < size.width; x += _dash + _gap) {
+      // The last dash is clipped to the track rather than allowed to run past
+      // it, so the line ends flush with the bars above and below.
+      final width = x + _dash > size.width ? size.width - x : _dash;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, 0, width, size.height),
+          const Radius.circular(1),
+        ),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashPainter oldDelegate) => oldDelegate.color != color;
+}
+
+/// The figures that read better as facts than as bars: power, free memory,
+/// storage, and what the node is serving. A fixed two-column grid — every card
+/// shows all four, so they line up across cards.
+class _CardDetails extends StatelessWidget {
+  const _CardDetails({required this.node});
+
+  final OverviewNode node;
+
+  @override
+  Widget build(BuildContext context) {
+    final power = powerMetric(node);
+    final storage = storageMetric(node);
+    final entries = <({String label, String value, bool measured})>[
+      (label: power.label, value: power.value, measured: power.measured),
+      (
+        label: 'Available',
+        value: freeMemoryLabel(node),
+        measured: freeMemoryLabel(node) != kUnmeasured,
+      ),
+      (label: storage.label, value: storage.value, measured: storage.measured),
+      (
+        label: nodeEngineLabel(node.engine),
+        value: (node.model ?? '').isEmpty ? kUnmeasured : node.model!,
+        measured: (node.model ?? '').isNotEmpty,
+      ),
+    ];
+    // A fixed 2x2 of equal columns. Not a `Wrap` sized by a `LayoutBuilder`:
+    // the dashboard levels each row with `IntrinsicHeight`, which asks every
+    // child for its intrinsic height, and `LayoutBuilder` throws rather than
+    // answer — see `_DashedTrack`. `Expanded` splits the width without anyone
+    // having to measure it.
+    return Column(
+      children: [
+        _DetailRow(entries: entries.take(2).toList()),
+        const SizedBox(height: 12),
+        _DetailRow(entries: entries.skip(2).toList()),
+      ],
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.entries});
+
+  final List<({String label, String value, bool measured})> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < entries.length; i++) ...[
+          if (i > 0) const SizedBox(width: 14),
+          Expanded(
+            child: _DetailField(
+              label: entries[i].label,
+              value: entries[i].value,
+              measured: entries[i].measured,
             ),
           ),
         ],
@@ -172,57 +310,20 @@ class _Gauge extends StatelessWidget {
   }
 }
 
-/// The figures that read better as facts than as bars: power, free memory,
-/// storage, and what the node is serving. Laid out as a two-column wrap so a
-/// node missing half of them closes the gaps instead of leaving holes.
-class _CardDetails extends StatelessWidget {
-  const _CardDetails({required this.node});
-
-  final OverviewNode node;
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = <({String label, String value})>[
-      if (powerMetric(node) case final power?)
-        (label: power.label, value: power.value),
-      if (freeVramLabel(node) case final free?)
-        (label: 'Available', value: free),
-      if (storageMetric(node) case final storage?)
-        (label: storage.label, value: storage.value),
-      if ((node.model ?? '').isNotEmpty)
-        (label: nodeEngineLabel(node.engine), value: node.model!),
-    ];
-    if (entries.isEmpty) return const SizedBox.shrink();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Two columns, minus the gap — computed rather than fixed so the card
-        // survives the dialog being resized down on a small display.
-        final columnWidth = (constraints.maxWidth - 14) / 2;
-        return Wrap(
-          spacing: 14,
-          runSpacing: 12,
-          children: [
-            for (final entry in entries)
-              SizedBox(
-                width: columnWidth,
-                child: _DetailField(label: entry.label, value: entry.value),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 class _DetailField extends StatelessWidget {
-  const _DetailField({required this.label, required this.value});
+  const _DetailField({
+    required this.label,
+    required this.value,
+    required this.measured,
+  });
 
   final String label;
   final String value;
+  final bool measured;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final field = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -240,11 +341,13 @@ class _DetailField extends StatelessWidget {
           style: TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.w500,
-            color: AppPalette.textPrimary,
+            color: measured ? AppPalette.textPrimary : AppPalette.textFaint,
           ),
         ),
       ],
     );
+    if (measured) return field;
+    return Tooltip(message: _unmeasuredHint, child: field);
   }
 }
 
@@ -255,7 +358,8 @@ class _ThroughputFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final measured = value != kUnmeasured;
+    final footer = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(height: 1, color: AppCard.hair),
@@ -270,7 +374,7 @@ class _ThroughputFooter extends StatelessWidget {
               style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.w600,
-                color: AppPalette.textPrimary,
+                color: measured ? AppPalette.textPrimary : AppPalette.textFaint,
               ),
             ),
             const SizedBox(width: 5),
@@ -281,6 +385,11 @@ class _ThroughputFooter extends StatelessWidget {
           ],
         ),
       ],
+    );
+    if (measured) return footer;
+    return Tooltip(
+      message: 'This machine has not served a request yet.',
+      child: footer,
     );
   }
 }
