@@ -117,8 +117,10 @@ are **deliberate** — don't "fix" them back.
 
 - **Never write widget/UI tests** — no `testWidgets`, no pumping, no asserting on
   layout or rendered text. The UI is redesigned weekly, so they rot faster than they
-  catch anything; `flutter analyze` + the running app is the check. The ones left in
-  `test/` are legacy: update or delete them with the widget, never add more.
+  catch anything; `flutter analyze` + the running app is the check. There are none
+  left to copy from either: the last 21 files went on 2026-08-11, and the pure
+  functions a few of them also covered moved to files named after what they test.
+  `grep -rl 'testWidgets\|pumpWidget\|WidgetTester' test` must stay empty.
 - **Do test the logic**, with every logic change: pure functions, controllers via
   `ProviderContainer(overrides: [...])`, services, stores.
 - Arrange-Act-Assert; **fakes over mocks** (`FakeGridCliService`); **offline &
@@ -130,9 +132,9 @@ are **deliberate** — don't "fix" them back.
 ## 9. Definition of done
 
 - `flutter analyze lib test` → **0 issues**; relevant `flutter test test/<area>` green.
-  Measured on a clean `main` on 2026-08-06, the repo clears both bars: `analyze` reports
-  **no issues**, and `flutter test` is **2122 passing, 0 failing**. So a failure you see
-  is *yours* — there is no standing "known failure" list to hide behind.
+  Measured on a clean `main` on 2026-08-11, the repo clears both bars: `analyze` reports
+  **no issues**, and `flutter test` is **2309 passing, 0 failing** in ~55s. So a
+  failure you see is *yours* — there is no standing "known failure" list to hide behind.
   (There was one, twice over: it named `provider_run_controller_test` and
   `sidebar_item_test`, then 9 analyzer issues in `features/models/` and 3 overflow
   failures in `connectors_view_layout_test`. Every one of them outlived the problem it

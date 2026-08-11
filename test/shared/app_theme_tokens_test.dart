@@ -29,4 +29,34 @@ void main() {
     // Leave the global back at the shipped default so test order can't leak.
     AppTheme.brightness.value = Brightness.light;
   });
+
+  group('the font settings notifier', () {
+    // Every `const` widget in the app rebuilds off this notifier, so a fire on
+    // an unchanged setting is a full tree rebuild for nothing.
+    setUp(AppFont.reset);
+    tearDown(AppFont.reset);
+
+    test('only fires when something actually changed', () {
+      var fired = 0;
+      void listener() => fired++;
+      AppTheme.fonts.addListener(listener);
+      addTearDown(() => AppTheme.fonts.removeListener(listener));
+
+      AppTheme.fonts.apply(uiFamily: 'Inter', uiScale: 1, codeSize: 12.5);
+      expect(fired, 1);
+
+      AppTheme.fonts.apply(uiFamily: 'Inter', uiScale: 1, codeSize: 12.5);
+      expect(fired, 1, reason: 'the same settings must not dirty the tree');
+
+      AppTheme.fonts.apply(uiFamily: 'Inter', uiScale: 1.2, codeSize: 12.5);
+      expect(fired, 2);
+    });
+  });
+
+  test('the composer lift rim is clearly stronger than the plain hair', () {
+    AppTheme.brightness.value = Brightness.light;
+    // Alpha is the high byte of the ARGB int; a more opaque rim reads as a
+    // visible border instead of vanishing into a white pane.
+    expect(AppGlass.lift.a, greaterThan(AppGlass.hair.a));
+  });
 }

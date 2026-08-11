@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/network/logic/grid_overview_refresh.dart';
@@ -148,59 +147,6 @@ void main() {
       refresher.setActive(true);
       refresher.release();
       expect(refresher.isRunning, isFalse);
-    });
-  });
-
-  group('GridOverviewRefresh widget', () {
-    testWidgets('holds the refresher open while mounted', (tester) async {
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const MaterialApp(
-            home: GridOverviewRefresh(child: SizedBox()),
-          ),
-        ),
-      );
-      await tester.pump(); // let the post-frame callback run
-
-      expect(refresher.isRunning, isTrue);
-    });
-
-    testWidgets('releases it on unmount, leaving no timer behind', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const MaterialApp(
-            home: GridOverviewRefresh(child: SizedBox()),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const MaterialApp(home: SizedBox()),
-        ),
-      );
-
-      expect(refresher.isRunning, isFalse);
-    });
-
-    testWidgets('renders its child untouched', (tester) async {
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const MaterialApp(
-            home: GridOverviewRefresh(child: Text('pill')),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text('pill'), findsOneWidget);
     });
   });
 }
