@@ -145,6 +145,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         // Windows and Linux the way the ⌘ ones do.
         const SingleActivator(LogicalKeyboardKey.backquote, control: true):
             _openTerminal,
+        // ⌘\ folds the sidebar away and back — the binding the toggle's own
+        // tooltip advertises, and the one editors on all three platforms use
+        // for exactly this.
+        const SingleActivator(LogicalKeyboardKey.backslash, meta: true):
+            _toggleSidebar,
+        const SingleActivator(LogicalKeyboardKey.backslash, control: true):
+            _toggleSidebar,
       },
       child: Focus(
         autofocus: true,
@@ -161,6 +168,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   void _openPalette() => showCommandPalette(context);
+
+  void _toggleSidebar() => ref.read(sidebarCollapsedProvider.notifier).toggle();
 
   void _openSettings() {
     ref.read(shellSectionProvider.notifier).select(kDefaultSettingsSection);
@@ -205,17 +214,22 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 }
 
-class _MainShellBody extends StatelessWidget {
+class _MainShellBody extends ConsumerWidget {
   const _MainShellBody();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Collapsed: the rail is dropped from the Row entirely rather than shrunk to
+    // a sliver. Its content doesn't reflow into a narrow strip — it's a fixed
+    // 284px — so animating the width would just clip it, and a zero-width child
+    // still lays out. The top bar grows an expand button in its place.
+    final collapsed = ref.watch(sidebarCollapsedProvider);
     // No cast shadow between the rail and the pane — the sidebar's own right
     // hairline is the separator, the way Codex draws it. Flat and clean.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppSidebar(),
+        if (!collapsed) const AppSidebar(),
         Expanded(
           child: Column(
             children: [

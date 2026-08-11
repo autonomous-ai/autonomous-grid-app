@@ -10,6 +10,7 @@ import '../../../features/chat/presentation/chat_history_list.dart';
 import '../../../features/code/presentation/code_rail.dart';
 import '../../../features/command_palette/presentation/command_palette.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_icon_button.dart';
 import '../../widgets/app_segmented.dart';
 import '../shell_state.dart';
 import 'sidebar_account.dart';
@@ -73,7 +74,11 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Brand(onSearch: () => showCommandPalette(context)),
+              _Brand(
+                onSearch: () => showCommandPalette(context),
+                onCollapse: () =>
+                    ref.read(sidebarCollapsedProvider.notifier).toggle(),
+              ),
               const _ModeSwitch(),
               // The two halves keep their own rails. Nothing is shared between
               // them below this line except the account at the foot — which is
@@ -181,16 +186,17 @@ class _HomeRail extends ConsumerWidget {
 /// The wordmark row at the top — also the window's drag handle, and on macOS it
 /// leaves room for the traffic-light buttons above it.
 class _Brand extends StatelessWidget {
-  const _Brand({required this.onSearch});
+  const _Brand({required this.onSearch, required this.onCollapse});
 
   final VoidCallback onSearch;
+  final VoidCallback onCollapse;
 
   @override
   Widget build(BuildContext context) {
     final topInset = Platform.isMacOS ? 32.0 : 12.0;
     return DragToMoveArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, topInset, 12, 15),
+        padding: EdgeInsets.fromLTRB(20, topInset, 10, 15),
         child: Row(
           children: [
             Expanded(
@@ -217,6 +223,13 @@ class _Brand extends StatelessWidget {
               color: AppPalette.textSecondary,
               icon: const Icon(LucideIcons.search300),
               onPressed: onSearch,
+            ),
+            const SizedBox(width: 2),
+            AppIconButton(
+              icon: LucideIcons.panelLeft300,
+              size: 18,
+              tooltip: 'Collapse sidebar  ⌘\\',
+              onPressed: onCollapse,
             ),
           ],
         ),

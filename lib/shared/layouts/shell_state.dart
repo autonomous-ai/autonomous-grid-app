@@ -35,6 +35,24 @@ class ShellModeNotifier extends Notifier<ShellMode> {
   void select(ShellMode mode) => state = mode;
 }
 
+/// Whether the left rail is folded away to give the pane the whole window.
+///
+/// Session state, like [shellModeProvider]: a rail you collapsed to read a wide
+/// diff should come back on the next launch, which is what the app is *for*.
+/// The toggle lives on the rail's own header when open, and moves to the top
+/// bar when closed — the two are the same [toggle].
+final sidebarCollapsedProvider =
+    NotifierProvider<SidebarCollapsedNotifier, bool>(
+      SidebarCollapsedNotifier.new,
+    );
+
+class SidebarCollapsedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void toggle() => state = !state;
+}
+
 /// Whether the chat screen is the one actually on screen.
 ///
 /// The section alone stopped being the answer the moment [ShellMode.code]

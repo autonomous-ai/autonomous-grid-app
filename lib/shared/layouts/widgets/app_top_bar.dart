@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -11,6 +13,7 @@ import '../../../features/chat/logic/preview_panel.dart';
 import '../../../features/chat/presentation/chat_header.dart';
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_icon_button.dart';
 import '../../widgets/app_spinner.dart';
 import '../../widgets/panel_toggle.dart';
 import '../shell_state.dart';
@@ -43,6 +46,11 @@ class AppTopBar extends ConsumerWidget {
     // reachable, and the chat is past its starters screen).
     final showChatHeader =
         ref.watch(chatIsOpenProvider) && ref.watch(chatHeaderVisibleProvider);
+    // With the rail folded the bar is the window's left edge, so its content
+    // has to clear the macOS traffic lights the rail's own header normally sits
+    // below; and it grows the button that brings the rail back.
+    final collapsed = ref.watch(sidebarCollapsedProvider);
+    final leftInset = collapsed && Platform.isMacOS ? 78.0 : 16.0;
 
     return DragToMoveArea(
       child: DecoratedBox(
@@ -65,9 +73,19 @@ class AppTopBar extends ConsumerWidget {
           // so an idle grid leaves the bar empty rather than showing a bare
           // capsule.
           child: Padding(
-            padding: const EdgeInsets.only(left: 16, right: 18),
+            padding: EdgeInsets.only(left: leftInset, right: 18),
             child: Row(
               children: [
+                if (collapsed) ...[
+                  AppIconButton(
+                    icon: LucideIcons.panelLeft300,
+                    size: 18,
+                    tooltip: 'Show sidebar  ⌘\\',
+                    onPressed: () =>
+                        ref.read(sidebarCollapsedProvider.notifier).toggle(),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 // One flex child, not two. An Expanded header *plus* a Spacer
                 // both take flex: 1 and split the free space between them,
                 // which parks the grid pill mid-row instead of against the
