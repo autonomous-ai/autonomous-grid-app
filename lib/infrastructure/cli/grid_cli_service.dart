@@ -97,5 +97,25 @@ abstract interface class GridCliService {
   });
 
   /// Run `models pull` / `media pull`, surfacing parsed download progress.
+  ///
+  /// The stream ends with a [GridPullFailed] error when the CLI exits non-zero.
+  /// It used to end cleanly whatever the exit code, so a `grid pull` that died
+  /// on a 404 looked exactly like one that finished — in the app *and* in the
+  /// transcript, which logged `exit=0` because nobody had read the real one.
   Stream<DownloadProgress> pull(List<String> args);
+}
+
+/// A `grid pull` that exited non-zero. [message] is the CLI's own last words on
+/// stderr (empty when it said nothing), kept raw for the log — callers map it to
+/// something a person can act on.
+class GridPullFailed implements Exception {
+  const GridPullFailed({required this.exitCode, required this.message});
+
+  final int exitCode;
+  final String message;
+
+  @override
+  String toString() => message.isEmpty
+      ? 'grid pull failed (exit $exitCode)'
+      : 'grid pull failed (exit $exitCode): $message';
 }
