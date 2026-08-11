@@ -74,6 +74,28 @@ class GridPaths {
 
   static File chatFile(String id) => File('${chatsDir.path}/$id.json');
 
+  /// Copies of the app-owned files taken right before a cloud snapshot is
+  /// merged in (`~/.grid/app/backups/<stamp>.zip`).
+  ///
+  /// A download only ever adds and replaces, never deletes — but "replaced by a
+  /// copy from another machine" is still a change nobody asked to be permanent,
+  /// and this is the way back from it. Only the newest few are kept.
+  static Directory get appBackupsDir => Directory('${home.path}/app/backups');
+
+  /// Which cloud snapshot this machine last uploaded or downloaded
+  /// (`~/.grid/app/sync_state.json`). Read to warn that the cloud has moved on
+  /// since — the one thing standing between a stale push and a snapshot that
+  /// silently drops another machine's chats.
+  static File get syncStateFile => File('${home.path}/app/sync_state.json');
+
+  /// Media that arrived with a downloaded snapshot
+  /// (`~/.grid/outputs/synced/<id>.<ext>`).
+  ///
+  /// Under `outputs/` because that is what it is — Grid's own output, just
+  /// made on the user's other machine — and in its own folder so a sync never
+  /// collides with a file this machine generated.
+  static Directory get syncedMediaDir => Directory('${outputsDir.path}/synced');
+
   /// Services an agent started through the `grid-serve` skill: one `<name>.log`
   /// and one `<name>.json` record each. Written by the skill's own script (which
   /// mirrors this path), and named here so the skill card can point the agent —

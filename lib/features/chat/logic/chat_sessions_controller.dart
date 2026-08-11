@@ -237,6 +237,13 @@ class ChatSessionsController extends _ChatSessions
 
   @override
   ChatSessionsState build() {
+    // Riverpod reuses this *same* notifier across rebuilds, so a flag set by the
+    // previous build's teardown is still standing when the next one starts.
+    // Left set, `_restore` below reads the folder and then drops what it read on
+    // the floor — the history goes empty and stays empty for the rest of the
+    // session. Any rebuild triggers it; restoring a cloud backup is what finally
+    // found it.
+    _disposed = false;
     ref.onDispose(() {
       _disposed = true;
       _cancelAll();
@@ -278,6 +285,31 @@ class ChatSessionsController extends _ChatSessions
       activeId: settled
           ? state.activeId
           : (opening.isEmpty ? null : opening.first.id),
+    );
+  }
+
+  /// Re-read the chat folder and fold in whatever changed underneath us.
+  ///
+  /// For the one case where something other than this controller writes there:
+  /// restoring a cloud backup (Settings ▸ Sync & Backup). Rebuilding the whole
+  /// provider would also do it, but it tears down every send in flight and
+  /// resets what the user is looking at — this keeps both and only swaps the
+  /// conversations.
+  ///
+  /// A chat that is generating right now is left as memory has it: its file is
+  /// mid-write, and the copy in hand is the newer one.
+  Future<void> reloadFromDisk() async {
+    final saved = await _store.loadAll();
+    if (_disposed) return;
+    final byId = {for (final c in state.conversations) c.id: c};
+    for (final c in saved) {
+      if (state.sendingFor(c.id)) continue;
+      byId[c.id] = c;
+    }
+    state = state.copyWith(
+      loading: false,
+      conversations: byId.values.toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
     );
   }
 

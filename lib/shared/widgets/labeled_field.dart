@@ -56,6 +56,7 @@ class LabeledField extends StatelessWidget {
     this.fill,
     this.error,
     this.focusNode,
+    this.obscureText = false,
   });
 
   final String label;
@@ -93,6 +94,10 @@ class LabeledField extends StatelessWidget {
   /// being to decide when [error] should appear.
   final FocusNode? focusNode;
 
+  /// Hides what is typed. For the backup password, which is the one secret in
+  /// this app that cannot be recovered if it's seen and misremembered.
+  final bool obscureText;
+
   @override
   Widget build(BuildContext context) {
     // Reads AppPalette tokens through its decoration — follow theme flips.
@@ -106,6 +111,7 @@ class LabeledField extends StatelessWidget {
           focusNode: focusNode,
           enabled: enabled,
           autofocus: autofocus,
+          obscureText: obscureText,
           minLines: minLines,
           maxLines: maxLines,
           onChanged: onChanged,

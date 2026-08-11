@@ -107,6 +107,7 @@ enum ShellSection {
   // agree. (A half-filled circle is the usual "theme" mark, but Lucide's reads
   // as a contrast/accessibility toggle at nav size.)
   appearance(LucideIcons.sun, 'Appearance', thinIcon: LucideIcons.sun300),
+  dataSync(LucideIcons.cloud, 'Sync & Backup', thinIcon: LucideIcons.cloud300),
   archived(
     LucideIcons.archive,
     'Archived chats',
@@ -191,6 +192,11 @@ const kSettingsGroups = [
   SettingsGroup('Personal', [
     ShellSection.engines,
     ShellSection.appearance,
+    // Between Appearance and the guide: it is about this user's own data on
+    // this computer, which is what the rest of this group is about. It is not
+    // a Grid you talk to (Developer) nor something that shapes an answer
+    // (Customize).
+    ShellSection.dataSync,
     ShellSection.guide,
   ]),
   // What the assistant is and what it can do — mirrors the mental model of

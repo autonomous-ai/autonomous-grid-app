@@ -132,11 +132,16 @@ class Conversation {
     'model': model,
     'projectId': projectId,
     'titleLocked': titleLocked,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
+    // UTC, so the `Z` is on the wire: these files travel between machines now
+    // (Settings ▸ Sync & Backup), and a local-time stamp with no zone reads as
+    // the *reader's* zone — a chat written at 15:00 in Hanoi would look newer
+    // than one written at 16:00 in Berlin, and the merge would keep the wrong
+    // one. [_parseDate] still accepts the zoneless form every older file has.
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
     // Written only when set, so a live chat's file is byte-identical to what
     // every build before archiving existed wrote.
-    if (archivedAt != null) 'archivedAt': archivedAt!.toIso8601String(),
+    if (archivedAt != null) 'archivedAt': archivedAt!.toUtc().toIso8601String(),
     // Same rule: absent means "follows the app setting", which is what every
     // chat written before this field existed meant.
     if (approval != null) 'approval': approval!.name,
@@ -333,15 +338,21 @@ MediaKind _parseKind(Object? raw) {
   return MediaKind.image;
 }
 
-DateTime _parseDate(Object? raw) =>
-    raw is String ? DateTime.tryParse(raw) ?? _epoch : _epoch;
+DateTime _parseDate(Object? raw) => _parseNullableDate(raw) ?? _epoch;
 
 /// Like [_parseDate] but keeps null as null instead of falling back to the
 /// epoch. Archiving is decided by *whether* this date is there, so the epoch
 /// fallback would read every chat that has never been archived as archived in
 /// 1970 and empty the sidebar on first launch.
-DateTime? _parseNullableDate(Object? raw) =>
-    raw is String ? DateTime.tryParse(raw) : null;
+///
+/// Always returns a *local* [DateTime], whichever form the file used. Stamps
+/// carry a `Z` since [Conversation.toJson] started writing UTC; the zoneless
+/// form every older file has is read as this machine's local time, which is
+/// what it was — the machine that wrote it is the machine reading it.
+DateTime? _parseNullableDate(Object? raw) {
+  if (raw is! String) return null;
+  return DateTime.tryParse(raw)?.toLocal();
+}
 
 final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0);
 

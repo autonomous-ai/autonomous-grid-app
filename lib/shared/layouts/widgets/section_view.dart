@@ -5,6 +5,7 @@ import '../../../features/appearance/presentation/appearance_view.dart';
 import '../../../features/chat/presentation/archived_chats_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
 import '../../../features/connectors/presentation/connectors_view.dart';
+import '../../../features/data_sync/presentation/data_sync_view.dart';
 import '../../../features/debug/presentation/debug_view.dart';
 import '../../../features/git/presentation/git_view.dart';
 import '../../../features/messaging/presentation/messages_view.dart';
@@ -47,6 +48,7 @@ class SectionView extends StatelessWidget {
       ShellSection.engines => const ProviderView(),
       ShellSection.guide => const HowToUseView(),
       ShellSection.appearance => const AppearanceView(),
+      ShellSection.dataSync => const DataSyncView(),
       ShellSection.archived => const ArchivedChatsView(),
       ShellSection.debug => const DebugView(),
     };

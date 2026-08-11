@@ -18,6 +18,7 @@ dependencies:
   auto_updater: ^1.0.0
   cached_network_image: ^3.4.1
   crypto: ^3.0.6
+  cryptography: ^2.9.0
   desktop_drop: ^0.7.1
   file_selector: ^1.0.3
   flutter:
