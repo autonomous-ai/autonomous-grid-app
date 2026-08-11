@@ -169,8 +169,8 @@ là **bảng ánh xạ duy nhất** `ShellSection → Widget`.
 |---|---|---|---|
 | `chat` | `ChatPane` | Mặc định của app; sidebar "New chat", tray, notification, ⌘K | |
 | `scheduled` | `ScheduledView` | Sidebar row | |
-| `agents` | `AgentsView` | Sidebar row | |
 | `projects` | `ProjectsView` | Header "Projects" trong sidebar, ⌘K | |
+| `agents` | `AgentsView` | Settings ▸ Customize | |
 | `skills` | `SkillsView` | Settings ▸ Customize | |
 | `connectors` | `ConnectorsView` | Settings ▸ Customize | |
 | `plugins` | `PluginsView` | Settings ▸ Customize | ✅ |

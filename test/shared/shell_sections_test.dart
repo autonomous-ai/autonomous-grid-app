@@ -14,6 +14,7 @@ void main() {
       // can't do this.
       expect(ShellSection.plugins.devOnly, isTrue);
       // Everything an end user needs stays visible in every build.
+      expect(ShellSection.agents.devOnly, isFalse);
       expect(ShellSection.skills.devOnly, isFalse);
       expect(ShellSection.connectors.devOnly, isFalse);
       expect(ShellSection.engines.devOnly, isFalse);
@@ -32,9 +33,21 @@ void main() {
       ).where((g) => g.title == 'Customize');
       expect(customize, hasLength(1));
       expect(customize.single.sections, [
+        // Agents leads the group: which assistant runs is the choice the rows
+        // under it modify.
+        ShellSection.agents,
         ShellSection.skills,
         ShellSection.connectors,
       ]);
+    });
+
+    // Copy that names where a screen lives goes stale when a screen moves, and
+    // the app has shipped a wrong "Settings ▸ Agents" once already. This pins
+    // the current answer: Agents is a settings screen, so the shell draws it
+    // full-screen with the settings nav, and the sidebar never lists it.
+    test('Agents is reached through Settings, not the sidebar', () {
+      expect(ShellSection.agents.isSettings, isTrue);
+      expect(kSidebarSections, isNot(contains(ShellSection.agents)));
     });
 
     // The flat list is what isSettings tests against, so a row that appears in
