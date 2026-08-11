@@ -1,0 +1,64 @@
+import 'dart:convert';
+import 'dart:io';
+
+import '../../core/grid_paths.dart';
+import 'log_file.dart';
+
+/// How much of the tail of a log file is worth opening to find recent errors.
+///
+/// A day's log is unbounded in principle, and this runs while a dialog is
+/// building — so read the end of the file rather than the file. 64 KB is far
+/// more than the last few error lines need and small enough to be free.
+const int _tailBytes = 64 * 1024;
+
+/// The last few `ERROR` lines from today's app log, newest last.
+///
+/// Best-effort by design: this only ever decorates a feedback report, so a
+/// missing directory, a log that hasn't been written yet, or an unreadable file
+/// all mean "nothing to attach" rather than a failure the caller has to handle.
+Future<List<String>> readRecentAppErrors({int keep = 3}) async {
+  try {
+    final file = File(
+      '${GridPaths.logsDir.path}/'
+      '${dailyLogName(GridPaths.appLogBase, DateTime.now())}',
+    );
+    if (!await file.exists()) return const [];
+    return recentErrorLines(await _readTail(file), keep: keep);
+  } on Object {
+    return const [];
+  }
+}
+
+/// The last [_tailBytes] of [file], decoded leniently — a window that starts
+/// mid-character would otherwise throw on an accented path in a log line.
+Future<String> _readTail(File file) async {
+  final handle = await file.open();
+  try {
+    final length = await handle.length();
+    final from = length > _tailBytes ? length - _tailBytes : 0;
+    await handle.setPosition(from);
+    final bytes = await handle.read(length - from);
+    return const Utf8Decoder(allowMalformed: true).convert(bytes);
+  } finally {
+    await handle.close();
+  }
+}
+
+/// The last [keep] error lines in [log], each clipped to [clip] characters.
+///
+/// Matches the shape `FileAppLog` writes — `[stamp] ERROR category message` —
+/// which is also why the indented stack-trace lines that follow an error are
+/// left out: they carry file paths from this machine, and the one-line summary
+/// is what tells us where to look.
+///
+/// Pure, so what gets attached to a feedback report is decided by a function
+/// that can be reasoned about rather than by whatever the disk happens to hold.
+List<String> recentErrorLines(String log, {int keep = 3, int clip = 200}) {
+  final errors = <String>[];
+  for (final line in const LineSplitter().convert(log)) {
+    if (!line.contains('] ERROR ')) continue;
+    errors.add(line.length > clip ? '${line.substring(0, clip)}…' : line);
+  }
+  if (errors.length <= keep) return errors;
+  return errors.sublist(errors.length - keep);
+}

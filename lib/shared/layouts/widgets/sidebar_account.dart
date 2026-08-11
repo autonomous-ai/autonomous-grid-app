@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../features/app_update/logic/app_updater_service.dart';
 import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
+import '../../../features/feedback/presentation/feedback_dialog.dart';
 import '../../../features/provider_node/logic/provider_run_controller.dart';
 import '../../app_info.dart';
 import '../../theme/app_theme.dart';
@@ -37,16 +38,17 @@ final _menuRowRadius = BorderRadius.circular(AppControl.radius);
 /// The menu entries that aren't a section — kept apart from `ShellSection.name`
 /// so a section can never collide with one.
 const _settingsValue = 'settings';
+const _feedbackValue = 'feedback';
 const _updatesValue = 'check_updates';
 const _logoutValue = 'logout';
 
 /// What the menu will actually measure, given what it's about to show: Settings,
-/// the update row (not on platforms without an updater), the version (only once
-/// it's read), Sign out.
+/// Send feedback, the update row (not on platforms without an updater), the
+/// version (only once it's read), Sign out.
 Size _accountMenuSize({required bool updater, required bool version}) => Size(
   _accountMenuWidth,
   _menuPadding * 2 +
-      _menuRowHeight +
+      _menuRowHeight * 2 +
       (updater ? _menuRowHeight : 0) +
       (version ? _menuVersionHeight : 0) +
       _menuRowHeight,
@@ -165,6 +167,10 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
       ref.read(shellSectionProvider.notifier).select(kDefaultSettingsSection);
       return;
     }
+    if (value == _feedbackValue) {
+      await showFeedbackDialog(context);
+      return;
+    }
     if (value != _logoutValue) return;
     final engineRunning =
         ref.read(providerRunControllerProvider) is ProviderRunActive;
@@ -237,6 +243,16 @@ class _AccountMenuContent extends StatelessWidget {
             icon: LucideIcons.settings300,
             label: 'Settings',
             onPressed: () => onSelected(_settingsValue),
+          ),
+          // Feedback lives here rather than in Settings because it is an act,
+          // not a setting — and this menu is where a desktop app keeps the
+          // things you do *to* the app itself. It sits above the update row for
+          // the same reason: both are about Grid, and this is the one a user
+          // reaches for while something is still fresh.
+          _AccountMenuItem(
+            icon: LucideIcons.megaphone300,
+            label: 'Send feedback',
+            onPressed: () => onSelected(_feedbackValue),
           ),
           if (updaterSupported)
             _AccountMenuItem(

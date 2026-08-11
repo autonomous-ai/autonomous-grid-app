@@ -6,6 +6,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../chat/logic/conversation.dart';
+import '../../feedback/presentation/feedback_dialog.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/create_project_dialog.dart';
 import '../../scheduled/logic/scheduled_jobs_controller.dart';
@@ -145,6 +146,8 @@ void runCommand(BuildContext context, WidgetRef ref, CommandItem item) {
       showCreateProjectDialog(context);
     case OpenSettingsCommand():
       shell.select(kDefaultSettingsSection);
+    case SendFeedbackCommand():
+      showFeedbackDialog(context);
     case GoToCommand(:final section):
       shell.select(section);
   }

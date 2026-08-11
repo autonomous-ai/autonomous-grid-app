@@ -74,6 +74,18 @@ class OpenSettingsCommand extends CommandItem {
   String get label => 'Settings';
 }
 
+/// Open the feedback form.
+///
+/// Reachable from the palette as well as the account menu because the moment a
+/// person wants to report something is the moment they're mid-task — and ⌘K is
+/// already how this app is driven without leaving the keyboard.
+class SendFeedbackCommand extends CommandItem {
+  const SendFeedbackCommand();
+
+  @override
+  String get label => 'Send feedback';
+}
+
 /// Jump to one of the app's screens.
 class GoToCommand extends CommandItem {
   const GoToCommand(this.section);
@@ -143,6 +155,7 @@ List<CommandGroup> searchCommands({
     for (final project in projects) NewChatCommand(project: project),
     const AddProjectCommand(),
     const OpenSettingsCommand(),
+    const SendFeedbackCommand(),
     for (final section in ShellSection.values)
       if (section.isVisibleForBuild) GoToCommand(section),
   ];

@@ -130,6 +130,13 @@ class GridPaths {
   static Directory get agentWorkspaceDir =>
       Directory('${home.path}/app/agent-workspace');
 
+  /// Feedback that couldn't be sent (`~/.grid/feedback`), one JSON file per
+  /// attempt. App-owned — the CLI never touches it.
+  ///
+  /// A send that fails would otherwise discard something the user sat down and
+  /// wrote; this keeps the exact payload so they can retry, or send us the file.
+  static Directory get feedbackDir => Directory('${home.path}/feedback');
+
   /// The CLI's own log directory (`~/.grid/logs`, e.g. `llama_llm_*.log`). The
   /// app drops its own diagnostic logs here too so everything a user might send
   /// us to debug lives in one place. Each app log rotates per calendar day into
