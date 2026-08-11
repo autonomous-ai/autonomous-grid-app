@@ -239,6 +239,27 @@ class _ChatViewState extends ConsumerState<ChatView> {
       if (options.isEmpty) return;
       _synced = true;
       _syncedKey = key;
+      // A brand-new plain chat keeps the model you were just using rather than
+      // snapping back to the grid's default. "New chat" beside a DeepSeek chat
+      // should open on DeepSeek, not on the auto-router — and persisting it (as
+      // the standing choice, since there's no project) makes the *next* new
+      // chat land there too, which is the whole of "default to what I last
+      // picked". Scoped to a project-less chat so a project keeps its own
+      // remembered model; an existing chat (active != null) still restores its.
+      if (active == null && projectId == null) {
+        final current = _model.text.trim();
+        if (current.isNotEmpty &&
+            options.any((o) => o.id == current) &&
+            _agentCanUse(current)) {
+          // Deferred: this runs inside build(), and _rememberModel writes a
+          // provider. The field already shows `current`, so there's nothing to
+          // set — only to remember.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _rememberModel();
+          });
+          return;
+        }
+      }
       final stored = active?.model ?? '';
       // The chat's own model, unless the agent answering now can't use it — a
       // chat last used on Claude Code reopening under Codex would otherwise come
