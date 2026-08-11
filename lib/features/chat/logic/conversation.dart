@@ -269,7 +269,9 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
     'sources': [for (final s in message.sources) s.toJson()],
   if (message.plan.isNotEmpty)
     'plan': [for (final p in message.plan) p.toJson()],
+  if (message.agent != null) 'agent': message.agent,
   if (message.model != null) 'model': message.model,
+  if (message.node != null) 'node': message.node,
   // Milliseconds, not a formatted string: the transcript re-renders it in
   // whatever shape the footer wants today, and a saved "8.4s" couldn't.
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
@@ -312,7 +314,9 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
         for (final p in rawPlan)
           if (p is Map<String, dynamic>) ?AgentPlanEntry.fromJson(p),
     ],
+    agent: json['agent'] is String ? json['agent'] as String : null,
     model: json['model'] is String ? json['model'] as String : null,
+    node: json['node'] is String ? json['node'] as String : null,
     took: json['took_ms'] is num
         ? Duration(milliseconds: (json['took_ms'] as num).toInt())
         : null,

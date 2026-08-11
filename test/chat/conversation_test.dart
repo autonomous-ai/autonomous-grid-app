@@ -100,6 +100,53 @@ void main() {
       expect(restored.messages.first.model, isNull);
     });
 
+    test('round-trips who answered and on which machine, so a chat reopened a '
+        'week later still says where the answer came from', () {
+      final original = _conversation(
+        messages: [
+          const ChatMessage(role: ChatRole.user, text: 'hi'),
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'Hello!',
+            agent: 'codex',
+            model: 'qwen/qwen3.6-27b',
+            node: 'doggi',
+          ),
+        ],
+      );
+
+      final restored = Conversation.fromJson(original.toJson());
+
+      expect(restored.messages.last.agent, 'codex');
+      expect(restored.messages.last.node, 'doggi');
+      // The user's own turn was answered by nobody, on no machine.
+      expect(restored.messages.first.agent, isNull);
+      expect(restored.messages.first.node, isNull);
+    });
+
+    test('a reply the grid answered itself keeps no agent, and one whose '
+        'machine could not be told keeps no name — neither is invented on the '
+        'way back in', () {
+      final original = _conversation(
+        messages: [
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'Hello!',
+            model: 'auto',
+          ),
+        ],
+      );
+
+      final json = original.toJson();
+      final stored = (json['messages'] as List).single as Map<String, dynamic>;
+      expect(stored.containsKey('agent'), isFalse);
+      expect(stored.containsKey('node'), isFalse);
+
+      final restored = Conversation.fromJson(json);
+      expect(restored.messages.single.agent, isNull);
+      expect(restored.messages.single.node, isNull);
+    });
+
     test('round-trips how long the answer took, so a reopened chat still says '
         'which model was slow and which was not', () {
       final original = _conversation(

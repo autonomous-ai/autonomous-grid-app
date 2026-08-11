@@ -181,6 +181,28 @@ mixin _ChatSend on _ChatSessions {
     // reading any of them would time the last word instead of the first.
     Duration? firstToken;
 
+    // Which machine on the grid is behind this model, read as the turn goes out
+    // rather than when the bubble is drawn: nodes come and go, and a transcript
+    // re-read next week must still say who answered *then*. Null whenever that
+    // can't be told — see [nodeServingModel].
+    final node = nodeServingModel(
+      ref.read(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[],
+      model,
+    );
+
+    // Who answered, with what, where, and how long it took — the footer's four
+    // facts, stamped onto whatever the turn produced (a whole reply, or the
+    // part-answer a failure left behind).
+    ChatMessage stamp(ChatMessage reply) => reply.copyWith(
+      // Only when the agent actually answered: a picture, or a computer with no
+      // agent installed, goes straight to the grid's chat API.
+      agent: viaAgent ? agent.id : null,
+      model: model,
+      node: node,
+      took: clock.elapsed,
+      firstToken: firstToken,
+    );
+
     final updates = _senderFor(viaAgent, agent).send(
       network: network,
       model: model,
@@ -225,16 +247,9 @@ mixin _ChatSend on _ChatSessions {
           case ChatSendSuccess(:final reply, :final outOfSteps):
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
-              // Stamp the reply with the model that answered, so the transcript
-              // says which one spoke even after switching models mid-chat.
-              messages: [
-                ...current.messages,
-                reply.copyWith(
-                  model: model,
-                  took: clock.elapsed,
-                  firstToken: firstToken,
-                ),
-              ],
+              // Stamp the reply with who and what answered, so the transcript
+              // still says so even after switching agent or model mid-chat.
+              messages: [...current.messages, stamp(reply)],
             );
             // A planning turn's reply is a plan waiting on approval — light the
             // "approve & run" bar for this chat. Any other reply leaves it dark.
@@ -274,17 +289,9 @@ mixin _ChatSend on _ChatSessions {
               _commit(
                 current.copyWith(
                   updatedAt: DateTime.now(),
-                  messages: [
-                    ...current.messages,
-                    // The part-answer is stamped too: a turn that died after
-                    // four minutes and one that died instantly are different
-                    // problems.
-                    kept.copyWith(
-                      model: model,
-                      took: clock.elapsed,
-                      firstToken: firstToken,
-                    ),
-                  ],
+                  // The part-answer is stamped too: a turn that died after four
+                  // minutes and one that died instantly are different problems.
+                  messages: [...current.messages, stamp(kept)],
                 ),
                 phase: const SendIdle(),
               );

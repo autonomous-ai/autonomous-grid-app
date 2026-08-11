@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/text_preview.dart';
+import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/platform/desktop_notifier.dart';
 import '../../../infrastructure/platform/window_focus.dart';
@@ -18,7 +19,9 @@ import '../../agents/logic/agent_status.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
+import '../../network/logic/grid_overview_provider.dart';
 import '../../playground/logic/media_outputs.dart';
+import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
 import 'chat_goal.dart';

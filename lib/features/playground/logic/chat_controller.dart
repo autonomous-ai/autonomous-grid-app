@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../network/logic/grid_overview_provider.dart';
 import 'chat_message.dart';
 import 'chat_sender.dart';
 import 'media_outputs.dart';
+import 'playground_models.dart';
 import 'playground_request.dart';
 
 export 'chat_message.dart' show ChatRole, ChatMessage, ChatMedia, ChatState;
@@ -62,6 +65,21 @@ class ChatController extends Notifier<ChatState> {
     final clock = Stopwatch()..start();
     // Set once, on the first streamed text — see the Chat tab's own dispatch.
     Duration? firstToken;
+    // The machine behind this model, read as the turn goes out. Null whenever
+    // that can't be told honestly — see [nodeServingModel].
+    final node = nodeServingModel(
+      ref.read(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[],
+      model,
+    );
+
+    // What answered, where, and how long it took. No agent here: the Playground
+    // is a smoke test of the grid itself, so every turn goes to its chat API.
+    ChatMessage stamp(ChatMessage reply) => reply.copyWith(
+      model: model,
+      node: node,
+      took: clock.elapsed,
+      firstToken: firstToken,
+    );
 
     // Fold updates through a stored subscription rather than `await for`, so
     // closing the dialog ([clear]) can cancel it — a late update must never
@@ -85,17 +103,8 @@ class ChatController extends Notifier<ChatState> {
           case ChatSendAgentSession():
             break;
           case ChatSendSuccess(:final reply):
-            // Stamp the reply with the model that answered — shown under it.
-            state = ChatState(
-              messages: [
-                ...history,
-                reply.copyWith(
-                  model: model,
-                  took: clock.elapsed,
-                  firstToken: firstToken,
-                ),
-              ],
-            );
+            // Stamp the reply with what answered — shown under it.
+            state = ChatState(messages: [...history, stamp(reply)]);
           case ChatSendFailure(:final error, :final partial):
             // Keep what the assistant produced before failing rather than
             // dropping it to show only the error. Mirrors the Chat tab; the
@@ -108,15 +117,7 @@ class ChatController extends Notifier<ChatState> {
                     ? null
                     : ChatMessage(role: ChatRole.assistant, text: streamed));
             state = ChatState(
-              messages: [
-                ...history,
-                if (kept != null)
-                  kept.copyWith(
-                    model: model,
-                    took: clock.elapsed,
-                    firstToken: firstToken,
-                  ),
-              ],
+              messages: [...history, if (kept != null) stamp(kept)],
               error: error,
             );
         }

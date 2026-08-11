@@ -6,11 +6,14 @@ OverviewNode _node({
   required String engine,
   bool online = true,
   List<String> models = const [],
+  String? name,
+  String? model,
 }) => OverviewNode(
-  name: 'n-$engine',
+  name: name ?? 'n-$engine',
   online: online,
   engine: engine,
   models: models,
+  model: model,
 );
 
 /// A grid lists a model running on a 4090 in the room and a model relayed to
@@ -103,6 +106,81 @@ void main() {
         _node(engine: 'openai', models: ['shared']),
       ]);
       expect(byModel['shared'], ModelHosting.unknown);
+    });
+  });
+
+  group('nodeServingModel', () {
+    test(
+      'names the machine behind the model, so a reply can say where it came '
+      'from instead of leaving the user to guess whose computer answered',
+      () {
+        final nodes = [
+          _node(engine: 'llama.cpp', name: 'doggi', models: ['qwen3.6-27b']),
+          _node(engine: 'openai', name: 'seat', models: ['openai:gpt-5.5']),
+        ];
+
+        expect(nodeServingModel(nodes, 'qwen3.6-27b'), 'doggi');
+        expect(nodeServingModel(nodes, 'openai:gpt-5.5'), 'seat');
+      },
+    );
+
+    test("matches the node's primary model too, and ignores case — the two "
+        'sources spell the same model differently', () {
+      final nodes = [
+        _node(engine: 'llama.cpp', name: 'doggi', model: 'qwen3.6-35b-a3b'),
+      ];
+
+      expect(nodeServingModel(nodes, 'Qwen3.6-35B-A3B'), 'doggi');
+    });
+
+    test('two machines serving one model leaves it unnamed — the relay picks '
+        'per request and does not say which one took the turn', () {
+      final nodes = [
+        _node(engine: 'llama.cpp', name: 'doggi', models: ['shared']),
+        _node(engine: 'llama.cpp', name: 'studio', models: ['shared']),
+      ];
+
+      expect(nodeServingModel(nodes, 'shared'), isNull);
+    });
+
+    test(
+      'the auto router names nobody — choosing per request is its whole job',
+      () {
+        final nodes = [
+          _node(engine: 'llama.cpp', name: 'doggi', models: ['auto', 'qwen']),
+        ];
+
+        expect(nodeServingModel(nodes, 'auto'), isNull);
+      },
+    );
+
+    test('an offline machine is not answering, so it is never named', () {
+      final nodes = [
+        _node(
+          engine: 'llama.cpp',
+          name: 'doggi',
+          online: false,
+          models: ['qwen'],
+        ),
+      ];
+
+      expect(nodeServingModel(nodes, 'qwen'), isNull);
+      // And nothing at all on the grid claims a media mode label.
+      expect(nodeServingModel(nodes, 'Image generation'), isNull);
+    });
+
+    test('one machine advertising a model twice is still one machine — the '
+        'primary and the list overlap on every real node', () {
+      final nodes = [
+        _node(
+          engine: 'llama.cpp',
+          name: 'doggi',
+          model: 'qwen',
+          models: ['qwen'],
+        ),
+      ];
+
+      expect(nodeServingModel(nodes, 'qwen'), 'doggi');
     });
   });
 

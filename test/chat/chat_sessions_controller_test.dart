@@ -14,7 +14,10 @@ import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
+import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
+import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
@@ -211,6 +214,18 @@ class _FakeAgentTitle implements AgentSessionTitle {
   }
 }
 
+/// A grid whose machines are known — what a reply's "on which machine" is read
+/// off. Empty by default: most tests care about the turn, not the grid.
+GridOverview _overview({List<OverviewNode> nodes = const []}) => GridOverview(
+  stats: GridStats(models: 0, nodes: nodes.length),
+  models: const [],
+  nodes: nodes,
+);
+
+/// One online machine on the grid, serving [models].
+OverviewNode _node(String name, {List<String> models = const []}) =>
+    OverviewNode(name: name, online: true, engine: 'llama.cpp', models: models);
+
 /// A controller wired to a temp-dir store, a fake relay sender and a fake agent
 /// (hermes) sender, so a test can assert which of the two a send was routed to.
 ({
@@ -227,6 +242,7 @@ _harness(
   String? agentName,
   bool holdAgentName = false,
   ChatSender? answering,
+  GridOverview? overview,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
@@ -245,14 +261,23 @@ _harness(
         Directory('${dir.path}/outputs'),
       ),
       // Whether this computer has the agent — the one thing that decides who
-      // answers a plain text turn. Codex and Claude Code are pinned absent so
-      // the real machine's PATH (which may have either installed) can't leak in,
-      // pick a different agent, and spawn a real process mid-test.
+      // answers a plain text turn. Every other agent is pinned absent so the
+      // real machine's PATH (which may have any of them installed) can't leak
+      // in, pick a different agent, and spawn a real process mid-test. Pi went
+      // missing from this list when it was added to the catalog, and on a
+      // machine with `pi` installed it took over every turn: eleven tests then
+      // waited on a real process for their reply and never got one.
       hermesPathProvider.overrideWithValue(
         agentInstalled ? '/bin/hermes' : null,
       ),
       codexPathProvider.overrideWithValue(null),
       claudePathProvider.overrideWithValue(null),
+      piPathProvider.overrideWithValue(null),
+      // The grid a reply is stamped with — offline, like everything else here.
+      // Without it, sending a turn would reach for the live overview.
+      // Returned, not awaited: a turn reads the last snapshot as it goes out,
+      // and a future that resolves next microtask is a snapshot it can't see.
+      gridOverviewProvider.overrideWith((ref) => overview ?? _overview()),
       // Keep the remembered model and the projects off the real `~/.grid`.
       chatPrefsStoreProvider.overrideWithValue(
         ChatPrefsStore(file: File('${dir.path}/chat_prefs.json')),
@@ -338,6 +363,105 @@ void main() {
         .last;
     expect(reply.firstToken, isNull);
     expect(reply.took, isNotNull);
+  });
+
+  test('a reply says which agent wrote it, so a chat that changed agent '
+      'half-way still tells you who answered what', () async {
+    final viaAgent = _harness(
+      tmp,
+      agentInstalled: true,
+      updates: [
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+        ),
+      ],
+    );
+
+    await viaAgent.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+
+    expect(
+      viaAgent.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single
+          .messages
+          .last
+          .agent,
+      'hermes',
+    );
+
+    // And with no agent on the computer the grid answered it itself — which is
+    // a different thing, so the footer must not credit an agent for it.
+    final viaGrid = _harness(
+      tmp,
+      updates: [
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+        ),
+      ],
+    );
+
+    await viaGrid.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+
+    expect(
+      viaGrid.container
+          .read(chatSessionsProvider)
+          .conversations
+          .last
+          .messages
+          .last
+          .agent,
+      isNull,
+    );
+  });
+
+  test('a reply names the machine that served the model, and leaves it unnamed '
+      'when the grid has not said which one that is', () async {
+    final h = _harness(
+      tmp,
+      overview: _overview(
+        nodes: [
+          _node('doggi', models: ['qwen']),
+        ],
+      ),
+      updates: [
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+        ),
+      ],
+    );
+    final chat = h.container.read(chatSessionsProvider.notifier);
+
+    await chat.send(network: _credential(), model: 'qwen', message: 'hi');
+    expect(
+      h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single
+          .messages
+          .last
+          .node,
+      'doggi',
+    );
+
+    // The router picks per request and never says which machine took it, so a
+    // reply answered through it names none rather than the one node in sight.
+    chat.newChat();
+    await chat.send(network: _credential(), model: 'auto', message: 'hi');
+    expect(
+      h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .first
+          .messages
+          .last
+          .node,
+      isNull,
+    );
   });
 
   test(

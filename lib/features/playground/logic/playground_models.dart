@@ -127,6 +127,39 @@ Map<String, ModelHosting> hostingByModel(Iterable<OverviewNode> nodes) {
 /// One model id, in the form the app compares by. See [hostingByModel].
 String modelKey(String id) => id.trim().toLowerCase();
 
+/// The machine that serves [model] on this grid, by the name the overview shows
+/// for it — or **null when that can't be told**, which is often.
+///
+/// Stamped on a reply so the transcript says where the answer came from: on a
+/// grid the same model id is a 4090 in the room on one machine and a laptop on
+/// another, and "why was that slow?" starts with which one took it.
+///
+/// Null, rather than a guess, whenever the honest answer is "we don't know":
+/// nothing online advertises the model, several nodes do (the relay picks one
+/// per request and doesn't say which), or the model is the `auto` router, whose
+/// whole job is to choose per request. Naming a machine that didn't answer is
+/// worse than naming none — it is the line a user would quote back when asking
+/// whose computer read their prompt.
+String? nodeServingModel(Iterable<OverviewNode> nodes, String model) {
+  final key = modelKey(model);
+  if (key.isEmpty || key == kAutoModelId) return null;
+  String? found;
+  for (final node in nodes) {
+    if (!node.online) continue;
+    final serves = {
+      node.model,
+      ...node.models,
+    }.nonNulls.any((id) => modelKey(id) == key);
+    if (!serves) continue;
+    // A second machine serving the same model: the relay picks between them, so
+    // the only true answer is that we don't know which one this was.
+    if (found != null && found != node.name) return null;
+    found = node.name;
+  }
+  final name = found?.trim();
+  return (name == null || name.isEmpty) ? null : name;
+}
+
 /// Labels for the media modes — also the picker field value, so they must not
 /// collide with real model ids (they don't: model ids are `maker/name`).
 const String kImageModeLabel = 'Image generation';

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/context_chip.dart';
+import '../../agents/logic/agent_catalog.dart';
 import '../logic/chat_message.dart';
 import 'file_chip.dart';
 import 'message_content.dart';
@@ -58,8 +59,10 @@ class ChatBubble extends StatelessWidget {
               ],
               if (message.model != null) ...[
                 const SizedBox(height: 8),
-                _ModelTag(
+                _ReplyFooter(
                   model: message.model!,
+                  agent: message.agent,
+                  node: message.node,
                   took: message.took,
                   firstToken: message.firstToken,
                 ),
@@ -134,17 +137,32 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
-/// A quiet footer under an assistant reply: which model produced it, and how
-/// long it took. Faint by design — it's a caption on the answer, not part of it.
+/// A quiet footer under an assistant reply — who answered, with which model, on
+/// whose machine, and how long it took. Faint by design: it's a caption on the
+/// answer, not part of it.
 ///
-/// The two belong together. On a grid the same prompt is seconds on one
-/// machine and minutes on another, so the model name alone leaves "why was that
-/// slow?" unanswerable; the time beside it makes switching models an informed
-/// choice rather than a guess.
-class _ModelTag extends StatelessWidget {
-  const _ModelTag({required this.model, this.took, this.firstToken});
+/// The four belong together. On a grid the same prompt is seconds on one machine
+/// and minutes on another, and the same model reads differently through an agent
+/// that can open your files than through a bare relay call — so any one of them
+/// alone leaves "why was that slow?" and "who read my prompt?" unanswerable.
+class _ReplyFooter extends StatelessWidget {
+  const _ReplyFooter({
+    required this.model,
+    this.agent,
+    this.node,
+    this.took,
+    this.firstToken,
+  });
 
   final String model;
+
+  /// The agent that answered, as its own id, or null when the grid's chat API
+  /// answered directly — see [ChatMessage.agent].
+  final String? agent;
+
+  /// The machine that served the model, or null when that can't be told — see
+  /// [ChatMessage.node]. Left out rather than guessed at.
+  final String? node;
 
   /// How long the answer took, or null on a reply saved before the app recorded
   /// it — those keep the plain model name rather than claiming an unknown time.
@@ -168,11 +186,12 @@ class _ModelTag extends StatelessWidget {
           color: AppPalette.textFaint,
         ),
         const SizedBox(width: 5),
-        // The model can ellipsis; the times can't. A long model id on a narrow
-        // window has to give way to the numbers, not swallow them.
+        // The names can ellipsis; the times can't. A long model id or machine
+        // name on a narrow window has to give way to the numbers, not swallow
+        // them — and they give way together, so the line never breaks mid-`·`.
         Flexible(
           child: Text(
-            modelShortLabel(model),
+            _names.join(' · '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: style,
@@ -185,8 +204,31 @@ class _ModelTag extends StatelessWidget {
           ..._segment('first token ${formatTurnDuration(firstToken!)}', style),
       ],
     );
-    final plain = _plainSentence();
-    return plain == null ? row : Tooltip(message: plain, child: row);
+    return Tooltip(message: _plainSentence(), child: row);
+  }
+
+  /// Who, what and where, in that order — the answer's provenance, narrowing
+  /// from the thing that read the prompt to the machine that ran it. Whatever
+  /// isn't known is simply absent: the model is the only one always there.
+  List<String> get _names => [?_agentName, modelShortLabel(model), ?node];
+
+  /// The agent's name as the app calls it elsewhere ("Claude Code", not
+  /// `claude`), or null for a reply the grid answered itself — and for an id
+  /// from a build that carried an agent this one has dropped.
+  String? get _agentName => agentToolById(agent)?.name;
+
+  /// The footer spelled out for the hover, where nothing is ellipsised and
+  /// "first token" needn't stay jargon — the term people compare models by, on a
+  /// screen built for people who don't have it (§5).
+  String _plainSentence() {
+    final who = _agentName == null ? 'Answered' : '$_agentName answered';
+    final where = [
+      '$who with ${modelDisplayLabel(model)}',
+      if (node != null) 'on $node',
+    ].join(' ');
+    if (took == null || firstToken == null) return '$where.';
+    return '$where.\nStarted answering after ${formatTurnDuration(firstToken!)}, '
+        'finished in ${formatTurnDuration(took!)}.';
   }
 
   /// A `·` and one more reading, so the footer's parts stay evenly spaced
@@ -197,15 +239,6 @@ class _ModelTag extends StatelessWidget {
     const SizedBox(width: 6),
     Text(text, style: style),
   ];
-
-  /// The same two numbers as a sentence, for the hover — "first token" is the
-  /// term people compare models by, but it is still jargon on a screen built for
-  /// people who don't have it (§5). Null when there is nothing extra to explain.
-  String? _plainSentence() {
-    if (took == null || firstToken == null) return null;
-    return 'Started answering after ${formatTurnDuration(firstToken!)}, '
-        'finished in ${formatTurnDuration(took!)}.';
-  }
 }
 
 /// A live progress bubble while a media generation streams — percent plus the

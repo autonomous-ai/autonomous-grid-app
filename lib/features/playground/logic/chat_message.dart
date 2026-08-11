@@ -30,7 +30,9 @@ class ChatMessage {
     this.contexts = const [],
     this.sources = const [],
     this.plan = const [],
+    this.agent,
     this.model,
+    this.node,
     this.took,
     this.firstToken,
   });
@@ -59,11 +61,31 @@ class ChatMessage {
   /// didn't plan out.
   final List<AgentPlanEntry> plan;
 
+  /// The agent that answered this turn, as its own id (`codex`, `hermes`…), or
+  /// null when the grid's chat API answered directly — a picture, or a computer
+  /// with no agent on it.
+  ///
+  /// Shown first under the reply, because it is the half of "who answered" the
+  /// model can't give: the same model reads very differently through an agent
+  /// that can open your files and through a bare relay call, and a chat can
+  /// switch agent between two turns.
+  final String? agent;
+
   /// The model that produced this reply, as the id the turn was sent with (e.g.
   /// `qwen/qwen3.6-27b`, or `auto`). Shown under the answer so the transcript
   /// says which model spoke. Set on assistant turns; null on the user's own, and
   /// on replies saved before this was recorded.
   final String? model;
+
+  /// The machine on the grid that served [model], by the name the grid overview
+  /// shows for it — read when the turn went out, not when the bubble is drawn,
+  /// so a transcript re-read next week still says who answered *then*.
+  ///
+  /// Null whenever it can't be told honestly (see `nodeServingModel`): the
+  /// `auto` router picks per request, several nodes can serve one model, and a
+  /// reply saved before this existed never recorded it. The footer then simply
+  /// leaves the name out rather than naming a machine that may not have answered.
+  final String? node;
 
   /// How long this reply took to arrive — from the moment the turn was sent to
   /// the answer landing, so a queued agent turn isn't charged for the wait.
@@ -93,7 +115,9 @@ class ChatMessage {
     List<ChatContext>? contexts,
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
+    String? agent,
     String? model,
+    String? node,
     Duration? took,
     Duration? firstToken,
   }) => ChatMessage(
@@ -104,7 +128,9 @@ class ChatMessage {
     contexts: contexts ?? this.contexts,
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
+    agent: agent ?? this.agent,
     model: model ?? this.model,
+    node: node ?? this.node,
     took: took ?? this.took,
     firstToken: firstToken ?? this.firstToken,
   );
