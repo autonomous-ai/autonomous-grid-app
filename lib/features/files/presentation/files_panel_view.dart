@@ -6,7 +6,6 @@ import '../../../infrastructure/cli/host_shell_service.dart';
 import '../../../shared/external_launch.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
-import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/panel_body.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/workspace/workspace_entries.dart';
@@ -19,8 +18,8 @@ import 'widgets/file_viewer.dart';
 import 'widgets/files_breadcrumb.dart';
 import 'widgets/files_tree.dart';
 
-/// The project's files, in a preview-panel tab: a tree to pick from, the file
-/// you picked, and the path between them.
+/// The files of the folder the chat works in, in a preview-panel tab: a tree to
+/// pick from, the file you picked, and the path between them.
 ///
 /// Read-only on purpose. Editing beside a conversation is a second editor with
 /// none of the first one's habits — undo, find, a language server — so this
@@ -30,6 +29,7 @@ class FilesPanelView extends ConsumerWidget {
     super.key,
     required this.tabId,
     required this.folder,
+    required this.folderLabel,
     required this.onOpenInNewTab,
     required this.onAddToChat,
     required this.onAddSelection,
@@ -37,9 +37,15 @@ class FilesPanelView extends ConsumerWidget {
 
   final String tabId;
 
-  /// The project folder this tab is rooted at, or null when the open chat
-  /// belongs to no project.
-  final String? folder;
+  /// The folder this tab is rooted at — the open chat's project, or the app's
+  /// own workspace folder when the chat belongs to no project. There is always
+  /// one: a chat the assistant can write files in is a chat with somewhere to
+  /// browse.
+  final String folder;
+
+  /// What to call [folder] at the head of the breadcrumb, since the workspace's
+  /// name on disk is a path the app chose rather than a word the user knows.
+  final String folderLabel;
 
   /// Show a file somewhere that isn't this tab — what picking one out of a
   /// crumb's folder does, since going sideways shouldn't cost you the file you
@@ -59,9 +65,6 @@ class FilesPanelView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final folder = this.folder;
-    if (folder == null) return const _NoProject();
-
     // Keeps the tab honest while something else writes: the file on screen and
     // the folder holding it are re-read as they change. Watched here because
     // this is what stays mounted for as long as the tab exists — the tree comes
@@ -88,6 +91,7 @@ class FilesPanelView extends ConsumerWidget {
       toolbar: _Toolbar(
         tabId: tabId,
         folder: folder,
+        folderLabel: folderLabel,
         selected: selected,
         showTree: showTree,
         onOpenInNewTab: onOpenInNewTab,
@@ -121,6 +125,7 @@ class _Toolbar extends ConsumerWidget {
   const _Toolbar({
     required this.tabId,
     required this.folder,
+    required this.folderLabel,
     required this.selected,
     required this.showTree,
     required this.onOpenInNewTab,
@@ -128,6 +133,7 @@ class _Toolbar extends ConsumerWidget {
 
   final String tabId;
   final String folder;
+  final String folderLabel;
   final String? selected;
   final bool showTree;
   final ValueChanged<String>? onOpenInNewTab;
@@ -161,7 +167,11 @@ class _Toolbar extends ConsumerWidget {
         children: [
           Expanded(
             child: FilesBreadcrumb(
-              crumbs: filePathCrumbs(root: folder, filePath: selected),
+              crumbs: filePathCrumbs(
+                root: folder,
+                filePath: selected,
+                rootName: folderLabel,
+              ),
               onOpenInNewTab: onOpenInNewTab,
             ),
           ),
@@ -226,23 +236,4 @@ class _Toolbar extends ConsumerWidget {
       ),
     );
   }
-}
-
-/// A chat that belongs to no project has no folder to browse — the fix is a
-/// project, which lives one screen away.
-class _NoProject extends StatelessWidget {
-  const _NoProject();
-
-  @override
-  Widget build(BuildContext context) => const PanelBody(
-    toolbar: SizedBox.shrink(),
-    main: EmptyState(
-      icon: LucideIcons.folderOpen,
-      title: 'This chat has no project',
-      message:
-          'Files shows the folder a chat is working in. Open a chat inside a '
-          'project to browse it.',
-      compact: true,
-    ),
-  );
 }

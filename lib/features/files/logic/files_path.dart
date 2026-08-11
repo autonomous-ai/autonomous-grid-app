@@ -18,10 +18,18 @@ typedef FileCrumb = ({String name, String path, bool isDirectory});
 /// Just the root when nothing is selected, or when the selection turns out not
 /// to live under the root at all — a path from somewhere else is shown as "not
 /// from here" rather than as a chain of `..` the user has to decode.
-List<FileCrumb> filePathCrumbs({required String root, String? filePath}) {
+///
+/// [rootName] replaces the first crumb's label for a folder whose name on disk
+/// isn't the name the user knows it by — the app's own `agent-workspace` is
+/// "Workspace" everywhere it is shown.
+List<FileCrumb> filePathCrumbs({
+  required String root,
+  String? filePath,
+  String? rootName,
+}) {
   final rootParts = pathSegments(root);
   final rootCrumb = (
-    name: rootParts.lastOrNull ?? root,
+    name: rootName ?? rootParts.lastOrNull ?? root,
     path: root,
     isDirectory: true,
   );

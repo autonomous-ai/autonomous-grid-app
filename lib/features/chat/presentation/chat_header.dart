@@ -7,8 +7,6 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../agents/logic/agent_providers.dart';
-import '../../projects/logic/project.dart';
 import '../logic/active_workdir.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
@@ -110,36 +108,19 @@ class _ChatFilesButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final workdir = ref.watch(activeChatWorkdirProvider);
-    final isWorkspace = workdir == ref.watch(agentWorkspaceDirProvider).path;
-    final project = ref.watch(
-      projectByIdProvider(
-        ref.watch(chatSessionsProvider.select((s) => s.openProjectId)),
-      ),
-    );
     // "Workspace" for a loose chat's app folder; the project's name when the
-    // chat belongs to one — the label the breadcrumb roots itself under.
-    final rootLabel = isWorkspace
-        ? 'Workspace'
-        : (project?.name ?? _basename(workdir));
+    // chat belongs to one — the same label the Files panel roots itself under.
+    final rootLabel = ref.watch(activeChatWorkdirLabelProvider);
     return _HeaderHoverButton(
       icon: LucideIcons.folder300,
       tooltip: 'Files in this chat’s folder',
       semanticsLabel: 'Chat files',
       onTap: () => showWorkspaceFilesDialog(
         context,
-        rootPath: workdir,
+        rootPath: ref.read(activeChatWorkdirProvider),
         rootLabel: rootLabel,
       ),
     );
-  }
-
-  static String _basename(String path) {
-    final trimmed = path.endsWith('/')
-        ? path.substring(0, path.length - 1)
-        : path;
-    final cut = trimmed.lastIndexOf('/');
-    return cut < 0 ? trimmed : trimmed.substring(cut + 1);
   }
 }
 

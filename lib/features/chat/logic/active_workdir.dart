@@ -17,3 +17,17 @@ final activeChatWorkdirProvider = Provider<String>((ref) {
   final project = ref.watch(openChatProjectProvider);
   return project?.path ?? ref.watch(agentWorkspaceDirProvider).path;
 });
+
+/// What that folder is called on screen — the app folder's name, since
+/// `agent-workspace` is a path we chose and not a word the user knows.
+const kChatWorkspaceLabel = 'Workspace';
+
+/// What to call [activeChatWorkdirProvider] wherever it is shown: the project's
+/// own name, or [kChatWorkspaceLabel] for the folder a chat with no project runs
+/// in.
+///
+/// Derived here rather than at each screen so the header's browser, the Files
+/// panel's breadcrumb and anything after them name one folder one way.
+final activeChatWorkdirLabelProvider = Provider<String>(
+  (ref) => ref.watch(openChatProjectProvider)?.name ?? kChatWorkspaceLabel,
+);

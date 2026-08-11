@@ -91,12 +91,18 @@ class _TerminalTab extends ConsumerWidget {
   }
 }
 
-/// The open chat's project folder, browsable.
+/// The folder the open chat works in, browsable.
 ///
 /// Same wiring as [_ReviewTab] and for the same reason: the panel sits beside
 /// one conversation, so the folder it shows is that conversation's. Keyed by
-/// the tab so two Files tabs are two places in the project rather than one
+/// the tab so two Files tabs are two places in the folder rather than one
 /// selection shared between them.
+///
+/// The folder is [activeChatWorkdirProvider] — the same one the assistant is
+/// given and the same one the header's browser opens — so a chat that belongs
+/// to no project browses the app's workspace instead of showing an empty panel.
+/// That was the whole complaint: the assistant saves its files there, and Files
+/// was the one place that wouldn't show them.
 class _FilesTab extends ConsumerWidget {
   const _FilesTab({required this.tabId, required this.host});
 
@@ -120,37 +126,29 @@ class _FilesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final projectId = ref.watch(
-      chatSessionsProvider.select((s) => s.openProjectId),
-    );
-    final folder = ref.watch(projectByIdProvider(projectId))?.path;
+    final folder = ref.watch(activeChatWorkdirProvider);
 
-    // The tab is rooted at whichever project the open chat belongs to, and
+    // The tab is rooted at whichever folder the open chat works in, and
     // switching chats can move it to another one. Telling it so is what clears
-    // the folders and the file it was showing out of the project it just left.
+    // the folders and the file it was showing out of the folder it just left.
     //
     // After the frame, never during it, and for the same reason as `_ReviewTab`
     // above: writing a provider while another is building is what Riverpod
-    // forbids outright. A chat that belongs to no project says nothing rather
-    // than re-rooting to null — going back to the project should find the tab
-    // as it was left.
-    if (folder != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          ref.read(filesBrowserProvider(tabId).notifier).showRoot(folder);
-        }
-      });
-    }
+    // forbids outright.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) {
+        ref.read(filesBrowserProvider(tabId).notifier).showRoot(folder);
+      }
+    });
 
     return FilesPanelView(
       tabId: tabId,
       folder: folder,
-      // Opening a second place in the project is a *tab* operation, and Files
+      folderLabel: ref.watch(activeChatWorkdirLabelProvider),
+      // Opening a second place in the folder is a *tab* operation, and Files
       // knows nothing about tabs — so the verb is wired here, in the one file
       // allowed to name both sides.
-      onOpenInNewTab: folder == null
-          ? null
-          : (path) => _openInNewTab(ref, path, folder),
+      onOpenInNewTab: (path) => _openInNewTab(ref, path, folder),
       // "Add to chat", off a file's right-click menu — the only way a file gets
       // onto a message from here. Reading one in the panel used to attach it on
       // its own, which read as the app doing things behind the user's back.

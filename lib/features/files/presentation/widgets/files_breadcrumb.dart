@@ -15,14 +15,14 @@ import 'file_type_icon.dart';
 /// a menu you have walked away from is gone before you look back.
 const Duration _closeDelay = Duration(milliseconds: 180);
 
-/// Where the open file sits, from the project's folder down — `grid › lib ›
+/// Where the open file sits, from the chat's own folder down — `grid › lib ›
 /// main.dart`.
 ///
 /// The last crumb is the file and carries the ink, with its type's icon in front
 /// of it so the bar says *what* is open as well as where; the folders above it
 /// stay quiet.
 ///
-/// Each crumb is also a way back into the project: hovering one opens the folder
+/// Each crumb is also a way back up the folder: hovering one opens the folder
 /// it stands in, and picking a file there opens it in a new tab — see
 /// [CrumbTreeMenu]. Which crumb is open is tracked *here* rather than by each
 /// crumb, so running the pointer along the path swaps one panel for the next

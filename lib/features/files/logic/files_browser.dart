@@ -14,11 +14,11 @@ class FilesBrowserState {
     this.showTree = true,
   }) : expanded = Set.unmodifiable(expanded);
 
-  /// The project folder this tab was last pointed at, or null before it has been
+  /// The folder this tab was last pointed at, or null before it has been
   /// pointed anywhere.
   ///
   /// Held here so that re-rooting can be *noticed*. A Files tab is rooted at
-  /// whichever project the open chat belongs to, which is not a decision the tab
+  /// whichever folder the open chat works in, which is not a decision the tab
   /// made and can change under it — see [FilesBrowser.showRoot].
   final String? root;
 
@@ -94,17 +94,18 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
 
   void select(String path) => state = state.copyWith(selected: path);
 
-  /// Point this tab at [root], forgetting the last project if it was a different
+  /// Point this tab at [root], forgetting the last folder if it was a different
   /// one.
   ///
-  /// A tab is rooted at the project the open chat belongs to, so switching to a
-  /// chat in another project re-roots it underneath the user. Nothing it was
-  /// holding survives that: the tree would come back showing this project with
-  /// the other one's folders opened under it, and a file out of the other
-  /// project still on screen beside them.
+  /// A tab is rooted at the folder the open chat works in, so switching to a
+  /// chat in another project — or to one in none, which browses the app's
+  /// workspace — re-roots it underneath the user. Nothing it was holding
+  /// survives that: the tree would come back showing this folder with the other
+  /// one's folders opened under it, and a file out of the other one still on
+  /// screen beside them.
   ///
   /// Called on every rebuild of the tab, so the ordinary case — moving between
-  /// chats inside one project — has to cost nothing, which is what the first
+  /// chats inside one folder — has to cost nothing, which is what the first
   /// line is for. A tab whose file was chosen before it first drew ([reveal])
   /// arrives already carrying its root, so this leaves it alone too.
   void showRoot(String root) {
