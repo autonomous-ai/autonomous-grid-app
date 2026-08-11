@@ -62,3 +62,4 @@ docs/*
 !docs/style-guide-grid-app.md
 !docs/architecture.md
 !docs/git-auto-install.md
+.playwright-mcp/*
