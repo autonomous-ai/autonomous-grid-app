@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/glass_card.dart';
-import '../../../shared/widgets/toast.dart';
+import '../../infrastructure/state/models/network_credential.dart';
+import '../theme/app_theme.dart';
+import 'glass_card.dart';
+import 'toast.dart';
 
 /// A titled group of rows in the detail pane (e.g. "Endpoints", "Details").
 class DetailSection extends StatelessWidget {

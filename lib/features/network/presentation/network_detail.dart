@@ -14,7 +14,7 @@ import '../logic/delete_network_controller.dart';
 import '../logic/grid_overview_provider.dart';
 import 'add_member_dialog.dart';
 import 'consumer_env_card.dart';
-import 'detail_widgets.dart';
+import '../../../shared/widgets/detail_widgets.dart';
 import 'grid_hardware_section.dart';
 import 'grid_overview_card.dart';
 import 'members_tab.dart';

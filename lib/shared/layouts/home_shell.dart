@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
 import '../../features/chat/logic/panel_tabs.dart';
+import '../../features/code/presentation/code_pane.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/git/logic/background_git_installer.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
@@ -229,11 +230,18 @@ class _MainShellBody extends StatelessWidget {
   }
 }
 
-/// The pane the sidebar drives — chat, or one of the screens behind it.
+/// The pane the sidebar drives.
+///
+/// Which half of the app is open decides this before the section does: Code is
+/// its own screen with its own rail, not one more entry in the nav, so it
+/// replaces the pane wholesale rather than appearing inside it.
 class _SectionView extends ConsumerWidget {
   const _SectionView();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) =>
-      SectionView(section: ref.watch(shellSectionProvider));
+      switch (ref.watch(shellModeProvider)) {
+        ShellMode.home => SectionView(section: ref.watch(shellSectionProvider)),
+        ShellMode.code => const CodePane(),
+      };
 }

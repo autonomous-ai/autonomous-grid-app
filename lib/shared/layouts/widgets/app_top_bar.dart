@@ -42,8 +42,7 @@ class AppTopBar extends ConsumerWidget {
     // Only the chat view knows whether its header applies (a model is
     // reachable, and the chat is past its starters screen).
     final showChatHeader =
-        ref.watch(shellSectionProvider) == ShellSection.chat &&
-        ref.watch(chatHeaderVisibleProvider);
+        ref.watch(chatIsOpenProvider) && ref.watch(chatHeaderVisibleProvider);
 
     return DragToMoveArea(
       child: DecoratedBox(
@@ -108,7 +107,7 @@ class _ProjectRailToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final inChat = ref.watch(shellSectionProvider) == ShellSection.chat;
+    final inChat = ref.watch(chatIsOpenProvider);
     final inProject = ref.watch(
       chatSessionsProvider.select((s) => s.openProjectId != null),
     );
@@ -177,8 +176,7 @@ class _PreviewPanelToggle extends ConsumerWidget {
 /// a terminal or a review. Both wait for a grid: without one the pane is a nudge
 /// to pick one, and a button that moves nothing is worse than no button.
 bool _chatWithGrid(WidgetRef ref) =>
-    ref.watch(shellSectionProvider) == ShellSection.chat &&
-    ref.watch(selectedNetworkProvider) != null;
+    ref.watch(chatIsOpenProvider) && ref.watch(selectedNetworkProvider) != null;
 
 /// The background model download, shown in the top bar so a user who went
 /// straight into chat can see their own model arriving. Nothing when idle or

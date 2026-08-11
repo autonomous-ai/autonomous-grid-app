@@ -5,7 +5,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
-import 'detail_widgets.dart';
+import '../../../shared/widgets/detail_widgets.dart';
 
 /// The set of grids whose API key is currently revealed. Kept in a provider
 /// (not local widget state) so the choice survives rebuilds, but scoped by

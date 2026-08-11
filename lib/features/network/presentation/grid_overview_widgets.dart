@@ -6,7 +6,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../logic/grid_overview_provider.dart';
-import 'detail_widgets.dart';
+import '../../../shared/widgets/detail_widgets.dart';
 import '../logic/node_display.dart';
 
 /// The overview's prose face — headings, subtitles, labels, chips, node names.

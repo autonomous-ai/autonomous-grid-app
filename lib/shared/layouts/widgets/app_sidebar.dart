@@ -7,14 +7,16 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/presentation/chat_history_list.dart';
+import '../../../features/code/presentation/code_rail.dart';
 import '../../../features/command_palette/presentation/command_palette.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_segmented.dart';
 import '../shell_state.dart';
 import 'sidebar_account.dart';
 import 'sidebar_item.dart';
 
-/// The app's left rail: what you can do (start a chat, and the three screens
-/// behind it), then every chat you've had, then who you're signed in as.
+/// The app's left rail: which half of the app you are in, what you can do in
+/// it, what you have already done, and who you are signed in as.
 ///
 /// It's the app's only navigation — the sections it lists open in the pane to the
 /// right rather than in a dialog, so a first-time user can see the grid and this
@@ -46,7 +48,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
     // colours from a global the element tree can't see, so it only repainted
     // when some *other* change (clicking a row) happened to rebuild it.
     AppTheme.watch(context);
-    final section = ref.watch(shellSectionProvider);
+    final mode = ref.watch(shellModeProvider);
 
     // Codex keeps the rail flat and quiet: a near-white fill set apart from the
     // content by a single hairline on its right edge — no gradient, no cast
@@ -72,38 +74,17 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Brand(onSearch: () => showCommandPalette(context)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SidebarItem(
-                      icon: LucideIcons.squarePen300,
-                      label: 'New chat',
-                      emphasized: true,
-                      onTap: _newChat,
-                    ),
-                    // A hair of air between the one thing you *do* (start a
-                    // chat) and the screens you *go to*, so they read as two
-                    // groups without needing a divider between them.
-                    const SizedBox(height: 4),
-                    for (final target in kSidebarSections)
-                      SidebarItem(
-                        icon: target.thinIcon,
-                        label: target.label,
-                        selected: section == target,
-                        onTap: () => ref
-                            .read(shellSectionProvider.notifier)
-                            .select(target),
-                      ),
-                    const SizedBox(height: 6),
-                  ],
-                ),
+              const _ModeSwitch(),
+              // The two halves keep their own rails. Nothing is shared between
+              // them below this line except the account at the foot — which is
+              // the point: they are two places to work, not two filters over
+              // one list.
+              Expanded(
+                child: switch (mode) {
+                  ShellMode.home => _HomeRail(onNewChat: _newChat),
+                  ShellMode.code => const CodeRail(),
+                },
               ),
-              // No horizontal padding here: the list owns its own insets so
-              // the scrollbar can sit in a gutter at the rail's edge, clear of
-              // the rows, instead of overlapping them (Codex keeps this gap).
-              const Expanded(child: ChatHistoryList()),
               // A full-width hairline sets the account off as the rail's foot,
               // the way Codex separates its signed-in user from the list above.
               const Divider(height: 1, thickness: 1),
@@ -113,6 +94,86 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Home or Code, at the top of the rail where a person decides what they came
+/// to do before they decide which of it.
+///
+/// A segmented control rather than two nav rows, because the choice is
+/// exclusive and changes what every row *under* it means — a nav row that
+/// replaced the whole rail would be the only one in the list that did.
+class _ModeSwitch extends ConsumerWidget {
+  const _ModeSwitch();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(shellModeProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: AppSegmented(
+          segments: const [
+            SegmentSpec(label: 'Home', icon: LucideIcons.house300),
+            SegmentSpec(label: 'Code', icon: LucideIcons.codeXml300),
+          ],
+          selected: mode.index,
+          onChanged: (index) => ref
+              .read(shellModeProvider.notifier)
+              .select(ShellMode.values[index]),
+        ),
+      ),
+    );
+  }
+}
+
+/// The everyday rail: start a chat, the screens behind it, then every chat you
+/// have had.
+class _HomeRail extends ConsumerWidget {
+  const _HomeRail({required this.onNewChat});
+
+  final VoidCallback onNewChat;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final section = ref.watch(shellSectionProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SidebarItem(
+                icon: LucideIcons.squarePen300,
+                label: 'New chat',
+                emphasized: true,
+                onTap: onNewChat,
+              ),
+              // A hair of air between the one thing you *do* (start a chat) and
+              // the screens you *go to*, so they read as two groups without
+              // needing a divider between them.
+              const SizedBox(height: 4),
+              for (final target in kSidebarSections)
+                SidebarItem(
+                  icon: target.thinIcon,
+                  label: target.label,
+                  selected: section == target,
+                  onTap: () =>
+                      ref.read(shellSectionProvider.notifier).select(target),
+                ),
+              const SizedBox(height: 6),
+            ],
+          ),
+        ),
+        // No horizontal padding here: the list owns its own insets so the
+        // scrollbar can sit in a gutter at the rail's edge, clear of the rows,
+        // instead of overlapping them (Codex keeps this gap).
+        const Expanded(child: ChatHistoryList()),
+      ],
     );
   }
 }

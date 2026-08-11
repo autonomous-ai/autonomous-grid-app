@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/choice_row.dart';
-import '../../../network/presentation/detail_widgets.dart';
+import '../../../../shared/widgets/detail_widgets.dart';
 
 /// The "Browser didn't open?" fallback, worn as one of the app's choice rows.
 ///

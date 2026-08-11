@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/folder_name.dart';
 import '../../../core/grid_paths.dart';
 
 /// A folder on this computer the assistant is allowed to read.
@@ -140,16 +141,6 @@ class Project {
     agent: clearAgent ? null : (agent ?? this.agent),
     model: clearModel ? null : (model ?? this.model),
   );
-}
-
-/// The last segment of a path — what a person calls the folder.
-///
-/// Splits on both separators: a Windows path arrives with backslashes, and
-/// taking the last `/` segment of `C:\Users\me\proj` returns the whole string —
-/// a project named with an absolute path rather than a folder.
-String folderName(String path) {
-  final parts = path.split(RegExp(r'[/\\]')).where((p) => p.isNotEmpty);
-  return parts.isEmpty ? path : parts.last;
 }
 
 /// The standing guidance the assistant reads at the start of every chat in a

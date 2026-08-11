@@ -4,6 +4,50 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/app_environment.dart';
 
+/// The two halves of the app, chosen at the top of the sidebar.
+///
+/// They are separate on purpose rather than one more row in the nav: the words
+/// mean different things on each side. A *project* in [home] is a folder on
+/// this computer the assistant may read; a *project* in [code] is a repository
+/// the grid hosts, with members and a trunk. A *task* in [home] is something
+/// the assistant does on a timer; a *task* in [code] is one agent run on
+/// somebody else's machine. Putting both in one rail would force one of each
+/// pair to be renamed into something nobody says out loud.
+enum ShellMode {
+  /// Chatting, and everything that shapes how the assistant answers.
+  home,
+
+  /// Handing coding work to the grid: shared repositories, and the agent runs
+  /// against them.
+  code,
+}
+
+/// Which half is open. Session state — the app opens on [ShellMode.home], which
+/// is what it is for.
+final shellModeProvider = NotifierProvider<ShellModeNotifier, ShellMode>(
+  ShellModeNotifier.new,
+);
+
+class ShellModeNotifier extends Notifier<ShellMode> {
+  @override
+  ShellMode build() => ShellMode.home;
+
+  void select(ShellMode mode) => state = mode;
+}
+
+/// Whether the chat screen is the one actually on screen.
+///
+/// The section alone stopped being the answer the moment [ShellMode.code]
+/// existed: Code replaces the pane wholesale, so `section == chat` can be true
+/// while the user is looking at a task. Everything that decorates chat — the
+/// top bar's header, its panel toggles — asks this instead, in one place, so
+/// they cannot drift apart.
+final chatIsOpenProvider = Provider<bool>(
+  (ref) =>
+      ref.watch(shellModeProvider) == ShellMode.home &&
+      ref.watch(shellSectionProvider) == ShellSection.chat,
+);
+
 /// The screens the app can show in its main pane.
 ///
 /// Two groups, and the split is deliberate: the sidebar lists what you *do* every
@@ -224,8 +268,24 @@ class ShellSectionNotifier extends Notifier<ShellSection> {
   /// Switch to [section], remembering where we came from if we're entering
   /// Settings — so "Back to app" can return to the work screen rather than
   /// always dumping the user in Chat.
+  ///
+  /// A **work** section also brings the user back to [ShellMode.home], because
+  /// that is the half of the app those sections live in. Without it, everything
+  /// that says "go to Chat" from outside the rail — a tray notification, a
+  /// clicked desktop alert, ⌘K, a scheduled task's result — would select the
+  /// chat *behind* a Code pane the user is still looking at, and appear to have
+  /// done nothing.
+  ///
+  /// A **settings** section deliberately does not: Settings takes the whole
+  /// window from either half, and "Back to app" has to return to the one the
+  /// user left.
   void select(ShellSection section) {
-    if (section.isSettings && !state.isSettings) previous = state;
+    if (section.isSettings) {
+      if (!state.isSettings) previous = state;
+      state = section;
+      return;
+    }
+    ref.read(shellModeProvider.notifier).select(ShellMode.home);
     state = section;
   }
 

@@ -2,16 +2,22 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// One tab of an [AppSegmented] — a label, and optionally a count shown beside
-/// it in a quieter ink.
+/// One tab of an [AppSegmented] — a label, and optionally a glyph before it and
+/// a count after it in a quieter ink.
 class SegmentSpec {
-  const SegmentSpec({required this.label, this.count});
+  const SegmentSpec({required this.label, this.count, this.icon});
 
   final String label;
 
   /// Shown after the label ("Installed 3"). Null hides it entirely rather than
   /// printing a `0` that reads as a broken counter.
   final int? count;
+
+  /// Shown before the label, in the segment's own ink so it lights with the
+  /// text rather than staying dim under the pointer. Null draws none — a
+  /// toolbar of short words does not need one, and the top-level Home/Code
+  /// switch does.
+  final IconData? icon;
 }
 
 /// A macOS-style segmented control: a recessed track with the selected segment
@@ -147,6 +153,10 @@ class _SegmentState extends State<_Segment> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.spec.icon != null) ...[
+                Icon(widget.spec.icon, size: 14, color: ink),
+                const SizedBox(width: 6),
+              ],
               Text(
                 widget.spec.label,
                 style: TextStyle(
