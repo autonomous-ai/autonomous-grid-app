@@ -22,34 +22,46 @@ void main() {
   });
 
   group('piSettingsJson — the run config dir', () {
-    test('trusts the workspace and passes the user\'s own skills through', () {
+    test("passes the user's own skills through, so a turn in an app-owned "
+        'config dir still loads what the Skills screen manages', () {
       final decoded =
           jsonDecode(piSettingsJson(userSkillsDir: '/home/.pi/agent/skills'))
               as Map<String, dynamic>;
-      expect(decoded['defaultProjectTrust'], 'always');
       expect(decoded['skills'], ['/home/.pi/agent/skills']);
     });
 
-    test('omits skills when there is no user folder to pass through', () {
+    test('says nothing about project trust — that is the run flag\'s job, and '
+        'two places to set it is two places to disagree', () {
       final decoded =
-          jsonDecode(piSettingsJson()) as Map<String, dynamic>;
+          jsonDecode(piSettingsJson(userSkillsDir: '/home/.pi/agent/skills'))
+              as Map<String, dynamic>;
+      expect(decoded.containsKey('defaultProjectTrust'), isFalse);
+    });
+
+    test('omits skills when there is no user folder to pass through', () {
+      final decoded = jsonDecode(piSettingsJson()) as Map<String, dynamic>;
       expect(decoded.containsKey('skills'), isFalse);
     });
   });
 
   group('piGridEnvironment — the child process env', () {
-    test('points pi at the run config and session dirs and hands over the key',
-        () {
-      final env = piGridEnvironment(
-        configDir: '/tmp/cfg',
-        sessionDir: '/home/.grid/app/pi/sessions',
-        apiKey: 'sk-grid-123',
-      );
-      expect(env['PI_CODING_AGENT_DIR'], '/tmp/cfg');
-      expect(env['PI_CODING_AGENT_SESSION_DIR'], '/home/.grid/app/pi/sessions');
-      expect(env[kPiAppApiKeyEnv], 'sk-grid-123');
-      // An app-driven turn makes no startup network calls.
-      expect(env['PI_OFFLINE'], '1');
-    });
+    test(
+      'points pi at the run config and session dirs and hands over the key',
+      () {
+        final env = piGridEnvironment(
+          configDir: '/tmp/cfg',
+          sessionDir: '/home/.grid/app/pi/sessions',
+          apiKey: 'sk-grid-123',
+        );
+        expect(env['PI_CODING_AGENT_DIR'], '/tmp/cfg');
+        expect(
+          env['PI_CODING_AGENT_SESSION_DIR'],
+          '/home/.grid/app/pi/sessions',
+        );
+        expect(env[kPiAppApiKeyEnv], 'sk-grid-123');
+        // An app-driven turn makes no startup network calls.
+        expect(env['PI_OFFLINE'], '1');
+      },
+    );
   });
 }

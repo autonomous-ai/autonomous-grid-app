@@ -193,13 +193,16 @@ class AgentSpecInstallerImpl implements AgentSpecInstaller {
   }
 
   /// Fetch a private Node, then let its own npm install [package] into `~/.grid`.
-  Future<void> _runNodeTool(String package, void Function(String)? onLog) async {
+  Future<void> _runNodeTool(
+    String package,
+    void Function(String)? onLog,
+  ) async {
     final node = await _ensureNode(onLog);
     final npmCli = _npmCli(node);
     final gridHome = GridPaths.home.path;
     final env = {
       ...Platform.environment,
-      // Node's own bin first, so npm's post-install lifecycle finds the node it
+      // Node's own bin first, so anything npm shells out to finds the node it
       // shipped with, then the augmented PATH the rest of the app uses.
       'PATH': '${node.parent.path}$_pathSep${HostEnvironment.path()}',
       // Keep npm's global root and its cache inside ~/.grid — Grid owns what Grid
@@ -214,8 +217,18 @@ class AgentSpecInstallerImpl implements AgentSpecInstaller {
     onLog?.call('Installing $package …');
     await _stream(
       node.path,
-      [npmCli.path, 'install', '-g', '--prefix', gridHome, '--ignore-scripts',
-        package],
+      [
+        npmCli.path,
+        'install',
+        '-g',
+        '--prefix',
+        gridHome,
+        // No package of ours runs an install script, and one that did would be
+        // arbitrary code from npm running as the user, unasked, behind a
+        // background install. Pi installs and runs fine without them.
+        '--ignore-scripts',
+        package,
+      ],
       env,
       onLog,
     );
@@ -271,17 +284,13 @@ class AgentSpecInstallerImpl implements AgentSpecInstaller {
   /// The `node` executable inside a Node toolchain rooted at [root] — under
   /// `bin/` on POSIX, at the root on Windows.
   File _nodeBinIn(Directory root) => File(
-    Platform.isWindows
-        ? '${root.path}/node.exe'
-        : '${root.path}/bin/node',
+    Platform.isWindows ? '${root.path}/node.exe' : '${root.path}/bin/node',
   );
 
   /// The `npm-cli.js` shipped with the Node at [nodeBin] — `lib/node_modules`
   /// on POSIX, `node_modules` on Windows.
   File _npmCli(File nodeBin) {
-    final root = Platform.isWindows
-        ? nodeBin.parent
-        : nodeBin.parent.parent;
+    final root = Platform.isWindows ? nodeBin.parent : nodeBin.parent.parent;
     for (final rel in const [
       'lib/node_modules/npm/bin/npm-cli.js',
       'node_modules/npm/bin/npm-cli.js',

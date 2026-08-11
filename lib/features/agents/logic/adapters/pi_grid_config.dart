@@ -51,15 +51,17 @@ String piModelsJson({required String base, required String model}) {
 
 /// The `settings.json` for the run's own Pi config dir.
 ///
-/// `defaultProjectTrust: always` is the belt to `--approve`'s brace — a run
-/// answers without stopping to ask about the workspace it opens in. When
-/// [userSkillsDir] is given, it's added to `skills` so an app-driven turn still
-/// loads the skills the user manages in their real `~/.pi/agent/skills` (the
-/// Skills screen's `SkillSource.pi`), even though the turn runs in an app-owned
-/// config dir.
+/// One key, and it exists for one reason: a turn runs in an app-owned config
+/// dir, so Pi would not find the user's real `~/.pi/agent/skills`. Listing it
+/// under `skills` (Pi's own "skills from other harnesses" hook, a list of
+/// paths) hands those back, which is what keeps the Skills screen's
+/// `SkillSource.pi` — and the grid skills the app installs there — true.
+///
+/// Nothing here touches project trust: that is decided per run by
+/// [kPiNoApproveFlag], so there is one mechanism to read rather than a flag and
+/// a setting that have to agree.
 String piSettingsJson({String? userSkillsDir}) {
   final settings = <String, Object?>{
-    'defaultProjectTrust': 'always',
     if (userSkillsDir != null && userSkillsDir.isNotEmpty)
       'skills': [userSkillsDir],
   };

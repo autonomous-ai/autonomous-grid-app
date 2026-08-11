@@ -14,18 +14,24 @@ final backgroundAgentInstallerProvider = Provider<BackgroundAgentInstaller>(
 /// in.
 ///
 /// This is the one place every agent installs the same way at startup — through
-/// [AgentInstaller], which knows the route for each ([grid agent install] for
-/// Hermes and Codex, the vendor script for Claude Code). The full-screen
-/// first-run installer only guarantees the chat assistant before letting the
-/// user in; the rest arrive here, so a machine set up before an agent joined the
-/// catalog (or before Claude Code was one we install) tops itself up instead of
-/// sitting forever with a row the user can only look at.
+/// [AgentInstaller], which knows the route for each (the app's own pinned,
+/// hash-verified recipes for Hermes, Codex and Pi; the vendor script for Claude
+/// Code). The full-screen first-run installer only guarantees the chat
+/// assistant before letting the user in; the rest arrive here, so a machine set
+/// up before an agent joined the catalog tops itself up instead of sitting
+/// forever with a row the user can only look at.
 ///
 /// Silent on purpose: none of the installers need Homebrew or admin rights —
-/// `grid agent install` writes into `~/.grid`, Claude Code's script into
-/// `~/.local/bin` — so an extra assistant that wouldn't download is not worth
-/// interrupting anyone about. The Agents tab still offers Install, and each
-/// installer's own words go to the app log rather than nowhere.
+/// every recipe writes into `~/.grid`, Claude Code's script into `~/.local/bin`
+/// — so an extra assistant that wouldn't download is not worth interrupting
+/// anyone about. The Agents tab still offers Install, and each installer's own
+/// words go to the app log rather than nowhere.
+///
+/// TODO(BE): "silent" now covers a **~350 MB** download on a machine that has
+/// none of them — Pi brings its own Node toolchain (~180 MB unpacked) on top of
+/// its packages, and this round fetches it on a metered connection without
+/// saying so. Either move Pi behind first use (its row already has Install) or
+/// let this round say what it is fetching.
 class BackgroundAgentInstaller {
   BackgroundAgentInstaller(this._ref);
 
