@@ -136,6 +136,21 @@ class GridCliServiceImpl implements GridCliService {
     Process? process;
     StreamSubscription<String>? stderrSub;
     late final StreamController<DownloadProgress> controller;
+    // Set by onCancel, so the SIGTERM we sent ourselves isn't reported to the
+    // user as a download that failed.
+    var cancelled = false;
+    // The last stderr that wasn't a progress frame — `grid pull` prints its
+    // reason there and exits non-zero ("Download failed (404): …"). Kept so the
+    // error carries it instead of a shrug; collecting stderr and never reading
+    // it is how a 404 came to look like a completed download.
+    var lastMessage = '';
+    // Completes when stderr can produce nothing more — drained, errored, or
+    // cancelled. Every one of those has to settle it: the exit handler waits on
+    // it, and a wait that never ends would leave the controller open forever.
+    final stderrDone = Completer<void>();
+    void settleStderr() {
+      if (!stderrDone.isCompleted) stderrDone.complete();
+    }
 
     Future<void> begin() async {
       try {
@@ -157,17 +172,32 @@ class GridCliServiceImpl implements GridCliService {
           .listen(
             (chunk) {
               final progress = DownloadProgress.latest(chunk);
-              if (progress != null && !controller.isClosed) {
-                controller.add(progress);
+              if (progress == null) {
+                final text = chunk.trim();
+                if (text.isNotEmpty) lastMessage = text;
+                return;
               }
+              if (!controller.isClosed) controller.add(progress);
             },
             onError: (Object e, StackTrace st) {
+              settleStderr();
               if (!controller.isClosed) controller.addError(e, st);
             },
+            onDone: settleStderr,
+            cancelOnError: true,
           );
       unawaited(
-        process!.exitCode.whenComplete(() {
-          if (!controller.isClosed) controller.close();
+        process!.exitCode.then((code) async {
+          // Wait for stderr to drain before judging: the reason for a failure
+          // is usually still in flight when the process itself is gone.
+          await stderrDone.future;
+          if (!controller.isClosed && !cancelled && code != 0) {
+            controller.addError(
+              GridPullFailed(exitCode: code, message: lastMessage),
+              StackTrace.current,
+            );
+          }
+          if (!controller.isClosed) await controller.close();
         }),
       );
     }
@@ -175,8 +205,10 @@ class GridCliServiceImpl implements GridCliService {
     controller = StreamController<DownloadProgress>(
       onListen: () => unawaited(begin()),
       onCancel: () async {
+        cancelled = true;
         process?.kill(ProcessSignal.sigterm);
         await stderrSub?.cancel();
+        settleStderr();
       },
     );
     return controller.stream;

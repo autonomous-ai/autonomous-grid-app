@@ -9,14 +9,16 @@ import '../../../infrastructure/api/models/model_icon_service.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
+import '../../../shared/widgets/error_box.dart';
 import '../../auth/logic/session_controller.dart';
 import '../logic/model_delete_controller.dart';
+import '../logic/model_group.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
+import '../logic/pull_spec.dart';
 import '../logic/suggested_catalog.dart';
 import 'cancel_download_button.dart';
-import '../../../infrastructure/cli/parsers/download_progress.dart'
-    as cli_progress;
+import 'model_detail_badges.dart';
 
 /// The right pane of the model manager dialog: one model's full version list
 /// with a runnability verdict per row. Reads `GET /v1/grid/catalog/{repo_id}`
@@ -111,13 +113,16 @@ class _VersionPicker extends ConsumerStatefulWidget {
 class _VersionPickerState extends ConsumerState<_VersionPicker> {
   late ModelVersion _selected;
   bool _isDeleting = false;
-  final listenable = ValueNotifier<bool>(false);
 
-  @override
-  void dispose() {
-    listenable.dispose();
-    super.dispose();
-  }
+  /// The message from a download this panel started and that failed. Set only
+  /// for our own pulls — [ModelPullFailed] doesn't say which spec it belongs
+  /// to, and a failure the reader never triggered isn't theirs to answer for.
+  String? _error;
+
+  /// True between starting a pull and seeing it end, so the listener below can
+  /// tell our outcome from one belonging to another panel. Deliberately not a
+  /// second copy of "is a download running" — that stays the controller's.
+  bool _awaitingOutcome = false;
 
   @override
   void initState() {
@@ -128,18 +133,28 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
     );
   }
 
-  bool get _isDownloaded {
-    final files = ref.read(localModelsProvider);
-    final filename = _selected.pullSpec?.split(':').last;
-    if (filename == null) return false;
-    return files.any((f) => f.name.toLowerCase() == filename.toLowerCase());
-  }
+  /// Every `grid pull` spec [version] needs — one per part of a split GGUF.
+  List<String> _specsFor(ModelVersion version) =>
+      versionPullSpecs(urls: version.urls, pullSpec: version.pullSpec);
 
+  /// The filenames those specs land on disk, folder prefixes stripped the way
+  /// the CLI strips them.
+  List<String> _fileNamesFor(ModelVersion version) => [
+    for (final spec in _specsFor(version)) ?pullSpecFileName(spec),
+  ];
+
+  bool get _isDownloaded => _isVersionDownloaded(_selected);
+
+  /// True once *every* part is on disk. A split model missing one part isn't
+  /// downloaded — it's unservable — so it must not read as done.
   bool _isVersionDownloaded(ModelVersion version) {
-    final files = ref.read(localModelsProvider);
-    final filename = version.pullSpec?.split(':').last;
-    if (filename == null) return false;
-    return files.any((f) => f.name.toLowerCase() == filename.toLowerCase());
+    final names = _fileNamesFor(version);
+    if (names.isEmpty) return false;
+    final onDisk = {
+      for (final file in ref.watch(localModelsProvider))
+        file.name.toLowerCase(),
+    };
+    return names.every((name) => onDisk.contains(name.toLowerCase()));
   }
 
   @override
@@ -157,21 +172,31 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   /// controller's to say — this used to flip a local `_isDownloading` too, and
   /// the two copies drifted the moment anything ended a download by a route the
   /// panel wasn't listening for. See the button's `pulling` below.
+  ///
+  /// Every part goes down in one call: the controller takes one spec per line
+  /// and stops at the first that fails, so a split model arrives whole or the
+  /// user is told which part didn't.
   void _startDownload() {
-    if (_selected.pullSpec == null || _selected.pullSpec!.isEmpty) return;
-    ref.read(modelPullControllerProvider.notifier).pull(_selected.pullSpec!);
+    final specs = _specsFor(_selected);
+    if (specs.isEmpty) return;
+    setState(() {
+      _error = null;
+      _awaitingOutcome = true;
+    });
+    ref.read(modelPullControllerProvider.notifier).pull(specs.join('\n'));
   }
 
   Future<void> _confirmAndDelete(BuildContext context) async {
-    final filename = _selected.pullSpec?.split(':').last;
-    if (filename == null) return;
+    final files = _fileNamesFor(_selected);
+    if (files.isEmpty) return;
+    final label = _modelLabel(files);
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete model?'),
         content: Text(
-          '"$filename" will be removed from this computer. '
+          '"$label" will be removed from this computer. '
           'You can download it again later.',
         ),
         actions: [
@@ -195,10 +220,17 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
     setState(() => _isDeleting = true);
 
     final deleteController = ref.read(modelDeleteControllerProvider.notifier);
-    await deleteController.delete([filename], label: filename);
+    await deleteController.delete(files, label: label);
 
     setState(() => _isDeleting = false);
   }
+
+  /// What to call this model in a sentence: the filename when it's one file,
+  /// the shared base plus a part count when it's a split set — the same shape
+  /// the pull controller reports when a multi-part download finishes.
+  String _modelLabel(List<String> files) => files.length == 1
+      ? files.first
+      : '${stripSplitSuffix(files.first)} (${files.length} parts)';
 
   String _sizeLabel(int bytes) {
     final gb = bytes / 1e9;
@@ -227,36 +259,65 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
       const AppSelectBadge('Downloaded', tone: AppBadgeTone.positive),
   ];
 
-  List<Widget> _buildProgressSection(
-    cli_progress.DownloadProgress progress,
-    double fraction,
-    ThemeData theme,
-  ) {
-    final doneMb = progress.doneMb;
-    final totalMb = progress.totalMb ?? 0;
-    final doneStr = doneMb >= 1000
-        ? '${(doneMb / 1000).toStringAsFixed(1)} GB'
-        : '${doneMb.toStringAsFixed(0)} MB';
-    final totalStr = totalMb >= 1000
-        ? '${(totalMb / 1000).toStringAsFixed(1)} GB'
-        : '${totalMb.toStringAsFixed(0)} MB';
-    return [
-      Text(
-        '$doneStr/$totalStr',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: AppPalette.textSecondary,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      const SizedBox(width: 8),
-    ];
+  /// How far the download has got, beside the button.
+  ///
+  /// The bar the CLI streams is per file, so a split model would otherwise run
+  /// 0→100% once per part with nothing saying why — hence the part counter,
+  /// which only appears when there is more than one.
+  String _progressText(ModelPulling pulling) {
+    final part = pulling.total > 1
+        ? 'Part ${pulling.current} of ${pulling.total} · '
+        : '';
+    final progress = pulling.progress;
+    if (progress == null) return '${part}Starting…';
+    final done = _amount(progress.doneMb);
+    return switch (progress.totalMb) {
+      final total? => '$part$done/${_amount(total)}',
+      _ => '$part$done',
+    };
   }
+
+  static String _amount(double mb) => mb >= 1000
+      ? '${(mb / 1000).toStringAsFixed(1)} GB'
+      : '${mb.toStringAsFixed(0)} MB';
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
     final iconUrl = urlForModel(widget.detail.repoId);
+
+    // A download that ends has to say so. Failing silently is what made a
+    // download that never landed look like a button that does nothing.
+    ref.listen<ModelPullState>(modelPullControllerProvider, (_, next) {
+      if (!mounted || !_awaitingOutcome) return;
+      switch (next) {
+        case ModelPulling():
+          return;
+        case ModelPullIdle():
+          setState(() => _awaitingOutcome = false);
+        case ModelPullDone():
+          setState(() {
+            _awaitingOutcome = false;
+            _error = null;
+          });
+        case ModelPullFailed(:final message):
+          setState(() {
+            _awaitingOutcome = false;
+            _error = message;
+          });
+      }
+    });
+
+    final pullState = ref.watch(modelPullControllerProvider);
+    final pulling = pullState is ModelPulling ? pullState : null;
+    final specs = _specsFor(_selected);
+    // Whether the download in flight is THIS model's. The button's disabled
+    // state stays global — one `grid pull` at a time is what the controller
+    // tracks — but Cancel must not be: from another model's panel it would kill
+    // a transfer the reader never started and cannot see. Matched against every
+    // part, since a split model is mid-flight on any one of them.
+    final cancellable = pulling != null && specs.contains(pulling.spec);
 
     return Stack(
       children: [
@@ -312,7 +373,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
             ),
             const SizedBox(height: 12),
             // Metadata grid: Parameters, Architecture, Format, Capability
-            _DetailBadgeGrid(detail: widget.detail),
+            ModelDetailBadgeGrid(detail: widget.detail),
             const SizedBox(height: 12),
             // Version dropdown label
             Text(
@@ -335,17 +396,29 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                     badges: _versionBadges(v),
                   ),
               ],
-              onChanged: (v) => setState(() => _selected = v),
+              onChanged: (v) => setState(() {
+                _selected = v;
+                _error = null;
+              }),
             ),
           ],
         ),
-        // Download + Delete buttons pinned to bottom-right
+        // Download + Delete buttons pinned to the bottom, with room on the left
+        // for the failure line — which needs the full width, not the leftovers
+        // of a min-width row, or a long message overflows the panel.
         Positioned(
+          left: 16,
           right: 16,
           bottom: 16,
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
+              Expanded(
+                child: switch (_error) {
+                  final message? => ErrorBox(message: message, maxHeight: 72),
+                  _ => const SizedBox.shrink(),
+                },
+              ),
+              const SizedBox(width: 12),
               if (_isDownloaded) ...[
                 TextButton(
                   onPressed: _isDeleting
@@ -377,90 +450,18 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                 ),
                 const SizedBox(width: 8),
               ],
-              AnimatedBuilder(
-                animation: listenable,
-                builder: (context, _) {
-                  final pullState = ref.watch(modelPullControllerProvider);
-                  final pulling = pullState is ModelPulling;
-                  final progress = pulling ? pullState.progress : null;
-                  // Whether the download in flight is THIS model's. The button's
-                  // disabled state stays global — one `grid pull` at a time is
-                  // what the controller tracks — but Cancel must not be: from
-                  // another model's panel it would kill a transfer the reader
-                  // never started and cannot see.
-                  final cancellable =
-                      pulling &&
-                      _selected.pullSpec != null &&
-                      parsePullSpecs(
-                        _selected.pullSpec!,
-                      ).contains(pullState.spec);
-                  final fraction =
-                      (progress != null && !progress.isIndeterminate)
-                      ? progress.pct! / 100
-                      : null;
-
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (pulling && fraction != null)
-                        ..._buildProgressSection(progress!, fraction, theme),
-                      if (cancellable) ...[
-                        const CancelDownloadButton(),
-                        const SizedBox(width: 8),
-                      ],
-                      ElevatedButton.icon(
-                        // Disabled while ANY download runs, not just this
-                        // model's: the controller tracks one subscription, so a
-                        // second `pull` would overwrite it and leave the first
-                        // transfer running with nothing able to stop it.
-                        onPressed:
-                            (_selected.status == VersionStatus.runnable &&
-                                !pulling &&
-                                !_isDownloaded)
-                            ? _startDownload
-                            : null,
-                        icon: pulling
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Icon(
-                                _isDownloaded
-                                    ? Icons.check_circle
-                                    : LucideIcons.download,
-                                size: 16,
-                              ),
-                        label: Text(
-                          pulling
-                              ? 'Downloading'
-                              : _isDownloaded
-                              ? 'Downloaded'
-                              : 'Download',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: pulling
-                              ? AppPalette.accent
-                              : _isDownloaded
-                              ? AppPalette.online
-                              : AppPalette.accent,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppCard.insetRadius,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+              _DownloadButton(
+                pulling: pulling,
+                cancellable: cancellable,
+                isDownloaded: _isDownloaded,
+                progressText: pulling == null ? null : _progressText(pulling),
+                onPressed:
+                    (_selected.status == VersionStatus.runnable &&
+                        specs.isNotEmpty &&
+                        pulling == null &&
+                        !_isDownloaded)
+                    ? _startDownload
+                    : null,
               ),
             ],
           ),
@@ -470,194 +471,79 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   }
 }
 
-class _DetailBadgeGrid extends StatelessWidget {
-  const _DetailBadgeGrid({required this.detail});
-
-  final ModelDetail detail;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    // Popularity stays as it was — two loose pills under the title, the way the
-    // sidebar row shows the same two numbers.
-    final stats = <_BadgeItemData>[
-      if (detail.likes > 0)
-        _BadgeItemData(label: 'Likes', value: _formatCount(detail.likes)),
-      if (detail.downloads > 0)
-        _BadgeItemData(
-          label: 'Downloads',
-          value: _formatCount(detail.downloads),
-        ),
-    ];
-    // What the model *is* — the specs you compare between models — collected
-    // into one block so they read as a set rather than as six loose chips.
-    final specs = <_BadgeItemData>[
-      if (detail.paramsB != null)
-        _BadgeItemData(
-          label: 'Parameters',
-          value: '${detail.paramsB!.toStringAsFixed(1)}B',
-        ),
-      if (detail.architecture != null && detail.architecture!.isNotEmpty)
-        _BadgeItemData(
-          label: 'Architecture',
-          value: _formatValue(detail.architecture!),
-        ),
-      if (detail.format != null)
-        _BadgeItemData(label: 'Format', value: _formatValue(detail.format!)),
-    ];
-    final capability = detail.task != null && detail.task!.isNotEmpty
-        ? _formatValue(detail.task!)
-        : null;
-
-    if (stats.isEmpty && specs.isEmpty && capability == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (stats.isNotEmpty)
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: stats.map((item) => _BadgeItem(data: item)).toList(),
-          ),
-        if (specs.isNotEmpty || capability != null) ...[
-          if (stats.isNotEmpty) const SizedBox(height: 10),
-          _SpecBlock(specs: specs, capability: capability),
-        ],
-      ],
-    );
-  }
-
-  static String _formatCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
-    return '$count';
-  }
-
-  static String _formatValue(String value) {
-    return value
-        .replaceAll('-', ' ')
-        .replaceAll('_', ' ')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
-        .join(' ');
-  }
-}
-
-/// The model's specs as one framed block of two rows: what it is on top, what
-/// it's for underneath, a hairline between them.
+/// The download control: how far the transfer has got, a way to stop it, and
+/// the button itself.
 ///
-/// The specs are label-over-value columns rather than "Label: Value" pills —
-/// three values on one baseline can be compared at a glance, which is the whole
-/// reason to group them; a row of chips each carrying its own label reads as six
-/// unrelated facts.
-class _SpecBlock extends StatelessWidget {
-  const _SpecBlock({required this.specs, required this.capability});
+/// [cancellable] is separate from [pulling] on purpose — the button greys out
+/// for *any* running download (the controller tracks one at a time), but Cancel
+/// belongs only to the panel whose model is actually coming down.
+class _DownloadButton extends StatelessWidget {
+  const _DownloadButton({
+    required this.pulling,
+    required this.cancellable,
+    required this.isDownloaded,
+    required this.progressText,
+    required this.onPressed,
+  });
 
-  final List<_BadgeItemData> specs;
-  final String? capability;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppCard.inset,
-        borderRadius: BorderRadius.circular(AppCard.insetRadius),
-        border: Border.all(color: AppCard.insetHair),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (specs.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              child: Wrap(
-                spacing: 28,
-                runSpacing: 10,
-                children: [for (final s in specs) _SpecCell(data: s)],
-              ),
-            ),
-          if (specs.isNotEmpty && capability != null)
-            Divider(height: 1, thickness: 1, color: AppCard.insetHair),
-          if (capability case final task?)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              child: _SpecCell(
-                data: _BadgeItemData(label: 'Capability', value: task),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One label-over-value column inside [_SpecBlock].
-class _SpecCell extends StatelessWidget {
-  const _SpecCell({required this.data});
-
-  final _BadgeItemData data;
+  final ModelPulling? pulling;
+  final bool cancellable;
+  final bool isDownloaded;
+  final String? progressText;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          data.label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: AppPalette.textFaint,
-            fontSize: 11,
+        if (progressText case final text?) ...[
+          Text(
+            text,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppPalette.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          data.value,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: AppPalette.textPrimary,
-            fontWeight: FontWeight.w600,
+          const SizedBox(width: 8),
+        ],
+        if (cancellable) ...[
+          const CancelDownloadButton(),
+          const SizedBox(width: 8),
+        ],
+        ElevatedButton.icon(
+          onPressed: onPressed,
+          icon: pulling != null
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  isDownloaded ? Icons.check_circle : LucideIcons.download,
+                  size: 16,
+                ),
+          label: Text(
+            pulling != null
+                ? 'Downloading'
+                : isDownloaded
+                ? 'Downloaded'
+                : 'Download',
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isDownloaded
+                ? AppPalette.online
+                : AppPalette.accent,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppCard.insetRadius),
+            ),
           ),
         ),
       ],
-    );
-  }
-}
-
-class _BadgeItemData {
-  const _BadgeItemData({required this.label, required this.value});
-  final String label;
-  final String value;
-}
-
-class _BadgeItem extends StatelessWidget {
-  const _BadgeItem({required this.data});
-
-  final _BadgeItemData data;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppGlass.bubbleFill,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        '${data.label}: ${data.value}',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: AppPalette.textPrimary,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
     );
   }
 }

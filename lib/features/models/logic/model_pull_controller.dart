@@ -8,6 +8,7 @@ import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import 'model_group.dart';
 import 'models_providers.dart';
+import 'pull_spec.dart';
 
 final modelPullControllerProvider =
     NotifierProvider<ModelPullController, ModelPullState>(
@@ -116,12 +117,16 @@ class ModelPullController extends Notifier<ModelPullState> {
       // [cancel] already reset the state to idle; don't clobber it.
       if (_cancelled) return;
       if (failed) {
+        // Naming the part matters: a model in five pieces that stops on the
+        // fourth has four hours of transfer behind it, and the CLI resumes from
+        // the half-written `.part` — so "try again" is cheap, not a restart.
         state = ModelPullFailed(
           specs.length == 1
-              ? "Couldn't download the model — check your internet connection and "
-                    'that the model name is correct, then try again.'
-              : "Couldn't download '$spec' — check your internet connection and "
-                    'that every line is correct, then try again.',
+              ? "Couldn't download this model — check your internet "
+                    'connection, then try again.'
+              : "Couldn't download part ${i + 1} of ${specs.length} — check "
+                    'your internet connection, then try again. Downloading '
+                    'again picks up where this stopped.',
         );
         return;
       }
@@ -132,18 +137,15 @@ class ModelPullController extends Notifier<ModelPullState> {
     ref.invalidate(localModelsProvider);
     ref.invalidate(downloadingModelsProvider);
     final models = ref.read(localModelsProvider);
-    final targets = [
-      for (final spec in specs)
-        if (spec.contains(':')) spec.split(':').last,
-    ];
+    final targets = [for (final spec in specs) ?pullSpecFileName(spec)];
     final allLanded = targets.every((target) => _landed(models, target));
 
     if (targets.isEmpty || allLanded) {
       state = ModelPullDone(_doneLabel(targets, specs));
     } else {
       state = const ModelPullFailed(
-        "The download finished but the model couldn't be found afterwards. "
-        'Check the model name and try again.',
+        "The download finished but the model isn't on this computer. "
+        'Try downloading it again.',
       );
     }
   }

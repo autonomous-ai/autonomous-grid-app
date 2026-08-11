@@ -88,6 +88,25 @@ void main() {
     );
   });
 
+  test('a quant folder in the spec still counts as landed', () async {
+    // The catalog names `<quant-folder>/<file>` while the CLI saves the bare
+    // filename, so comparing the two made a download that worked perfectly
+    // report itself as "the model isn't on this computer".
+    const spec = 'unsloth/DeepSeek-GGUF:UD-IQ1_M/DeepSeek-UD-IQ1_M.gguf';
+    final fake = FakeGridCliService()
+      ..stubPull(
+        ['pull', spec],
+        const [DownloadProgress(doneMb: 100, totalMb: 100, pct: 100)],
+      );
+    final container = _container(fake, [_model('DeepSeek-UD-IQ1_M.gguf')]);
+
+    await container.read(modelPullControllerProvider.notifier).pull(spec);
+
+    final state = container.read(modelPullControllerProvider);
+    expect(state, isA<ModelPullDone>());
+    expect((state as ModelPullDone).file, 'DeepSeek-UD-IQ1_M.gguf');
+  });
+
   test(
     'pulls every line of a split model and reports the shared name',
     () async {
