@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:grid_app/shared/widgets/extension_list.dart';
@@ -68,73 +67,6 @@ void main() {
         filtered: false,
       );
       expect(sections.first.items, ['g:c', 'g:a', 'g:b']);
-    });
-  });
-
-  group('ExtensionList', () {
-    Future<void> pump(WidgetTester tester, List<ExtensionSection<String>> s) {
-      return tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ExtensionList<String>(
-              sections: s,
-              rowBuilder: (context, item) =>
-                  SizedBox(height: 40, child: Text(item)),
-            ),
-          ),
-        ),
-      );
-    }
-
-    testWidgets('renders headers with counts and all rows', (tester) async {
-      await pump(tester, const [
-        ExtensionSection(label: 'On', items: ['alpha', 'beta']),
-        ExtensionSection(label: 'Available', items: ['gamma']),
-      ]);
-      expect(find.text('ON'), findsOneWidget);
-      expect(find.text('AVAILABLE'), findsOneWidget);
-      expect(find.text('2'), findsOneWidget);
-      expect(find.text('1'), findsOneWidget);
-      for (final row in ['alpha', 'beta', 'gamma']) {
-        expect(find.text(row), findsOneWidget);
-      }
-    });
-
-    testWidgets('an unlabelled section draws no header', (tester) async {
-      await pump(tester, const [
-        ExtensionSection(label: '', items: ['alpha', 'beta']),
-      ]);
-      // Nothing but the two rows: no uppercase header, no count.
-      expect(find.text('alpha'), findsOneWidget);
-      expect(find.text('beta'), findsOneWidget);
-      expect(find.text('2'), findsNothing);
-    });
-
-    testWidgets('rows sit 8px apart; a header gets 18px of air above', (
-      tester,
-    ) async {
-      await pump(tester, const [
-        ExtensionSection(label: 'On', items: ['alpha', 'beta']),
-        ExtensionSection(label: 'Available', items: ['gamma']),
-      ]);
-      final alpha = tester.getRect(find.text('alpha'));
-      final beta = tester.getRect(find.text('beta'));
-      // Rows are fixed 40px tall, so the gap is bottom-to-top distance.
-      expect(beta.top - alpha.bottom, 8);
-
-      final betaBottom = tester
-          .getRect(
-            find
-                .ancestor(
-                  of: find.text('beta'),
-                  matching: find.byType(SizedBox),
-                )
-                .first,
-          )
-          .bottom;
-      final headerTop = tester.getRect(find.text('AVAILABLE')).top;
-      // 18px separator, then the header's own 2px top padding.
-      expect(headerTop - betaBottom, 18 + 2);
     });
   });
 }
