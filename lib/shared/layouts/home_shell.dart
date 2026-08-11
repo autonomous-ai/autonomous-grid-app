@@ -129,7 +129,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           control: true,
           shift: true,
         ): _openReview,
-        // ⌘P opens the project's files beside the chat. Both modifiers, the way
+        // ⌘P opens the chat's folder beside it. Both modifiers, the way
         // ⌘K above does it: the launcher spells it the macOS way, but the key
         // has to work on the two platforms that call it Ctrl.
         //
@@ -178,7 +178,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         .reveal(PanelFeature.review);
   }
 
-  /// Browse the open chat's project, beside the conversation.
+  /// Browse the folder the open chat works in, beside the conversation.
   ///
   /// Same two moves as [_openReview] and for the same two reasons: back to Chat,
   /// because that is where the panel lives, and reveal rather than open, because

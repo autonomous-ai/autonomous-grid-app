@@ -88,4 +88,22 @@ void main() {
     final container = harness(const ChatSessionsState());
     expect(container.read(activeChatWorkdirProvider), workspace);
   });
+
+  // The label is what the header's browser and the Files panel's breadcrumb
+  // both put over that folder. `agent-workspace` is a path the app picked, so a
+  // loose chat must never be shown it.
+  test('a loose chat names its folder "Workspace", never the path on disk', () {
+    final container = harness(const ChatSessionsState());
+    expect(container.read(activeChatWorkdirLabelProvider), 'Workspace');
+  });
+
+  test('a chat in a project names the folder after the project', () {
+    final container = harness(
+      ChatSessionsState(
+        conversations: [chat('c1', projectId: project.id)],
+        activeId: 'c1',
+      ),
+    );
+    expect(container.read(activeChatWorkdirLabelProvider), project.name);
+  });
 }

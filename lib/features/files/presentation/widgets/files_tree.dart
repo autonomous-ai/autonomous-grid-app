@@ -11,8 +11,8 @@ import '../../logic/files_browser.dart';
 import '../../logic/files_filter.dart';
 import 'file_tree_rows.dart';
 
-/// The project's folders and files, in the panel's side column: a filter box
-/// over a tree that opens in place.
+/// The folders and files of the folder the chat works in, in the panel's side
+/// column: a filter box over a tree that opens in place.
 ///
 /// Each folder's contents are read only when it's opened, so a repository with
 /// a hundred thousand files in it costs nothing until asked. That laziness is
@@ -29,7 +29,8 @@ class FilesTree extends ConsumerWidget {
 
   final String tabId;
 
-  /// The project folder the tree is rooted at. It never reaches above this.
+  /// The folder the tree is rooted at — the chat's project, or the app's
+  /// workspace when it has none. It never reaches above this.
   final String root;
 
   /// A file was picked — the panel shows it.
@@ -60,8 +61,13 @@ class FilesTree extends ConsumerWidget {
         ),
         Expanded(
           child: switch (entries) {
+            // The same sentence the header's browser shows for the same empty
+            // folder — a loose chat's workspace starts out empty, and "This
+            // folder is empty." on its own leaves the user wondering whether
+            // the panel is broken.
             AsyncData(:final value) when value.isEmpty => const _Message(
-              'This folder is empty.',
+              'This folder is empty. Files the assistant saves while you chat '
+              'show up here.',
             ),
             AsyncData(:final value) => _Rows(
               // Each expanded folder is read lazily here; watching happens in
