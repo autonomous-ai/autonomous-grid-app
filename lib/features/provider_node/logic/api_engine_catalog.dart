@@ -153,6 +153,13 @@ bool isResponsesOnlyModel(String? model) {
       .any(kResponsesOnlyKinds.contains);
 }
 
+/// The CLI-seat kind that serves this computer's Claude Code sign-in.
+///
+/// Named because two unrelated things key off it: the seat itself, and the loop
+/// that claims the grid's distributed coding tasks — those tasks run Claude
+/// Code, so they can only ride on this join and on no other.
+const String kClaudeSeatKind = 'claude';
+
 /// Hosted providers the app can present. Add one here once its kind lands in the
 /// CLI whitelist (`grid catalog --api <kind>`); [apiEnginesProvider] verifies
 /// support at runtime, so an entry the installed CLI doesn't know is simply
@@ -179,7 +186,7 @@ const List<ApiProvider> kApiProviders = [
     keyHelpUrl: 'https://platform.openai.com/api-keys',
   ),
   ApiProvider(
-    kind: 'claude',
+    kind: kClaudeSeatKind,
     label: 'Claude Code',
     auth: ApiAuth.localCli,
     binary: 'claude',

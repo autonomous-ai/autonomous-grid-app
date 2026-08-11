@@ -2,6 +2,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/folder_name.dart';
 import '../../../infrastructure/cli/git_providers.dart';
 import '../../../infrastructure/cli/git_repo.dart';
 import '../../../infrastructure/logging/app_log.dart';

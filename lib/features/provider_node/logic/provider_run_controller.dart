@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/state/models/engine_run.dart';
+import '../../../infrastructure/state/task_serving_store.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_sync_controller.dart';
 import 'api_engine_catalog.dart';
@@ -311,6 +312,13 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// the whole set the credential can see (the CLI's zero-config default). No
   /// `--advertise-as`/`--ctx-size`: the CLI rejects aliasing for API engines and
   /// the vendor owns the context window.
+  ///
+  /// **A Claude seat also carries this computer's task-serving settings.** The
+  /// loop that claims the grid's distributed coding tasks lives *inside* this
+  /// join, and it is off unless `GRID_TASKS` says otherwise — so a machine that
+  /// has opted in has to say so here, on the environment, every time it joins.
+  /// Only for that seat: a task runs Claude Code, and the same variables on any
+  /// other engine would be read by nothing.
   Future<void> startApiEngine({
     required String network,
     required ApiProvider provider,
@@ -318,6 +326,11 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     List<String> models = const [],
   }) {
     final envVar = provider.envVar;
+    final environment = {
+      if (envVar != null && apiKey.isNotEmpty) envVar: apiKey,
+      if (provider.kind == kClaudeSeatKind)
+        ...taskServingEnv(ref.read(taskServingProvider)),
+    };
     return _start(
       [
         'join',
@@ -330,9 +343,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       ],
       grid: network,
       model: models.isEmpty ? provider.kind : models.join(', '),
-      environment: (envVar != null && apiKey.isNotEmpty)
-          ? {envVar: apiKey}
-          : null,
+      environment: environment.isEmpty ? null : environment,
     );
   }
 

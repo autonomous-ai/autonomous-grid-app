@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
+import '../../../shared/layouts/widgets/rail_section_header.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/layouts/widgets/sidebar_show_more.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -194,47 +195,13 @@ class _ProjectsHeader extends StatelessWidget {
   final VoidCallback onManage;
 
   @override
-  Widget build(BuildContext context) {
-    // Reads AppPalette tokens — follow theme flips.
-    AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 12, 2, 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: Tooltip(
-              message: 'Manage projects',
-              child: InkWell(
-                onTap: onManage,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4),
-                  child: Text(
-                    'Projects',
-                    style: TextStyle(
-                      color: AppPalette.textFaint,
-                      fontSize: 11,
-                      fontWeight: AppFont.medium,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Add a folder as a project',
-            iconSize: 18,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 26, height: 26),
-            padding: EdgeInsets.zero,
-            color: AppPalette.textSecondary,
-            icon: const Icon(LucideIcons.plus300),
-            onPressed: onAdd,
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => RailSectionHeader(
+    label: 'Projects',
+    onTap: onManage,
+    tooltip: 'Manage projects',
+    onAdd: onAdd,
+    addTooltip: 'Add a folder as a project',
+  );
 }
 
 /// One project and the chats inside it. Collapsible, because a folder you're not

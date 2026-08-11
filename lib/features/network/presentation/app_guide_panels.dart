@@ -7,7 +7,7 @@ import '../logic/app_guide_snippets.dart';
 import '../logic/client_app_configurator.dart';
 import '../logic/client_app_detector.dart';
 import '../logic/grid_overview_provider.dart';
-import 'detail_widgets.dart';
+import '../../../shared/widgets/detail_widgets.dart';
 import 'missing_app_note.dart';
 import 'setup_steps.dart';
 

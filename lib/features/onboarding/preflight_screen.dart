@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../core/app_environment.dart';
 import '../../shared/widgets/error_box.dart';
-import '../network/presentation/detail_widgets.dart';
+import '../../shared/widgets/detail_widgets.dart';
 import 'preflight_providers.dart';
 import 'preflight_report.dart';
 

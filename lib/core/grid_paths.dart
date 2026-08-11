@@ -124,6 +124,13 @@ class GridPaths {
   /// list can say what arrived rather than only that something did. App-owned.
   static File get taskInboxFile => File('${home.path}/app/task_inbox.json');
 
+  /// Whether this computer claims the grid's *distributed* coding tasks, and
+  /// how many at once. Nothing to do with the scheduled tasks above: claiming
+  /// one runs a coding agent against somebody else's repository here, paid for
+  /// out of this operator's own Claude subscription — so it is off until they
+  /// say otherwise, and the answer has to survive a restart. App-owned.
+  static File get taskServingFile => File('${home.path}/app/task_serving.json');
+
   /// Working directory for the agent that answers chat. It runs read-only here
   /// so its file tools have a stable, app-owned root instead of pointing at the
   /// user's home. App-owned — the CLI never touches it.

@@ -8,7 +8,7 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/member_providers.dart';
-import 'detail_widgets.dart';
+import '../../../shared/widgets/detail_widgets.dart';
 
 /// The "Members" tab of a managed grid's detail pane — shown to admins and
 /// providers. Lists active members and lets them invite or remove people via

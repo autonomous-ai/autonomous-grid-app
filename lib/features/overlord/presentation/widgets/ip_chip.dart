@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../network/presentation/detail_widgets.dart';
+import '../../../../shared/widgets/detail_widgets.dart';
 import '../overlord_tokens.dart';
 
 /// A boxed, monospace endpoint with a copy affordance — the `192.168.50.134:8000`

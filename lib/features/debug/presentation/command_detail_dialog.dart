@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
-import '../../network/presentation/detail_widgets.dart';
+import '../../../shared/widgets/detail_widgets.dart';
 import '../logic/log_format.dart';
 import 'log_status_icon.dart';
 

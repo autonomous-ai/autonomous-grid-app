@@ -14,6 +14,7 @@ import '../logic/provider_run_controller.dart';
 import '../logic/serving_engines_provider.dart';
 import 'engine_block.dart';
 import 'engine_cost_chip.dart';
+import 'task_serving_panel.dart';
 
 /// The "Cloud Provider" engine block: serve a hosted model (e.g. OpenAI's) to
 /// the grid using the user's own API key, with no local engine, model download,
@@ -252,13 +253,21 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
           ),
           const SizedBox(height: 12),
         ],
-        if (engine.provider.isSeat)
+        if (engine.provider.isSeat) ...[
           _SeatPanel(
             provider: engine.provider,
             found: engine.seatFound == true,
             onOpenSetup: _openUrl,
-          )
-        else
+          ),
+          // Only under the Claude seat: a distributed task runs Claude Code,
+          // so this is the one join whose environment the task loop reads.
+          if (engine.provider.kind == kClaudeSeatKind) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            const TaskServingPanel(),
+          ],
+        ] else
           _KeyField(
             provider: engine.provider,
             controller: _key,

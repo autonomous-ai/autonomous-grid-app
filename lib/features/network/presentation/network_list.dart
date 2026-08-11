@@ -9,7 +9,7 @@ import '../../auth/logic/session_controller.dart';
 import '../logic/grid_overview_provider.dart';
 import '../logic/grid_sync_controller.dart';
 import 'create_network_dialog.dart';
-import 'detail_widgets.dart';
+import '../../../shared/widgets/detail_widgets.dart';
 
 /// Middle column: searchable list of joined networks, grouped under the
 /// account owner — Tailscale's "Devices" list. Tapping one selects it.
