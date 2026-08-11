@@ -423,15 +423,42 @@ class _ChatRow extends ConsumerWidget {
             ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
           },
           // While a reply is coming in, the row shows a live cue instead of the
-          // archive action — you can't archive mid-reply anyway, and a pulsing
-          // cue says "still working" at a glance without hovering. Idle, it's the
-          // archive affordance revealed on hover: reversible, so it belongs on a
-          // list where a mis-aimed click lands on the row below; deleting a
-          // transcript stays behind the chat's own "…" menu.
+          // actions — you can't archive mid-reply anyway, and a pulsing cue says
+          // "still working" at a glance without hovering. Idle, the row hands
+          // over two actions on hover: pin and archive. Both are reversible, so
+          // they belong on a list where a mis-aimed click lands on the row below;
+          // deleting a transcript stays behind the chat's own "…" menu.
+          //
+          // Pin sits on the inner edge because it's the one a heavy pin-user
+          // reaches for most; the slot widens to fit the pair. Pinning is a rail
+          // action, not only a thing buried in the open chat's menu, because the
+          // chats worth pinning are the long-running ones you keep coming *back*
+          // to from the rail — not the one already on screen.
+          trailingWidth: working ? 24 : 50,
           trailingAlwaysVisible: working,
           trailing: working
               ? const _ChatActivityCue()
-              : _ArchiveButton(onTap: () => _archive(context, ref)),
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    _RowActionButton(
+                      icon: chat.pinned
+                          ? LucideIcons.pinOff300
+                          : LucideIcons.pin300,
+                      tooltip: chat.pinned ? 'Unpin from top' : 'Pin to top',
+                      semanticLabel: chat.pinned ? 'Unpin chat' : 'Pin chat',
+                      onTap: () => controller.togglePinned(chat.id),
+                    ),
+                    const SizedBox(width: 2),
+                    _RowActionButton(
+                      icon: LucideIcons.archive300,
+                      tooltip: 'Archive chat',
+                      semanticLabel: 'Archive chat',
+                      onTap: () => _archive(context, ref),
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -460,23 +487,35 @@ class _ChatActivityCue extends StatelessWidget {
   }
 }
 
-/// The archive action revealed on a chat row's hover.
+/// One action revealed on a chat row's hover — pin, or archive.
 ///
 /// Built like the project rail's "…" trigger rather than as an [IconButton]:
 /// the row's own hover only *reveals* this glyph, so lighting up under the
 /// pointer needs a second, button-local hover state. Without it the icon sits
 /// at its resting tint while you're aiming at it, and the click target reads as
 /// decoration.
-class _ArchiveButton extends StatefulWidget {
-  const _ArchiveButton({required this.onTap});
+///
+/// One widget for both actions so the two neighbouring rail buttons can't drift
+/// apart in size, hover treatment or ink — they light up identically because
+/// they are the same button.
+class _RowActionButton extends StatefulWidget {
+  const _RowActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.semanticLabel,
+    required this.onTap,
+  });
 
+  final IconData icon;
+  final String tooltip;
+  final String semanticLabel;
   final VoidCallback onTap;
 
   @override
-  State<_ArchiveButton> createState() => _ArchiveButtonState();
+  State<_RowActionButton> createState() => _RowActionButtonState();
 }
 
-class _ArchiveButtonState extends State<_ArchiveButton> {
+class _RowActionButtonState extends State<_RowActionButton> {
   bool _hovered = false;
 
   @override
@@ -492,9 +531,9 @@ class _ArchiveButtonState extends State<_ArchiveButton> {
 
     return Semantics(
       button: true,
-      label: 'Archive chat',
+      label: widget.semanticLabel,
       child: Tooltip(
-        message: 'Archive chat',
+        message: widget.tooltip,
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
@@ -515,7 +554,7 @@ class _ArchiveButtonState extends State<_ArchiveButton> {
                 color: hot ? AppSurface.hoverFill : Colors.transparent,
               ),
               alignment: Alignment.center,
-              child: Icon(LucideIcons.archive300, size: 16, color: ink),
+              child: Icon(widget.icon, size: 16, color: ink),
             ),
           ),
         ),
