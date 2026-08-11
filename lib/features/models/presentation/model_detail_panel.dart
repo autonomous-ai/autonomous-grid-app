@@ -14,6 +14,7 @@ import '../logic/model_delete_controller.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/models_providers.dart';
 import '../logic/suggested_catalog.dart';
+import 'cancel_download_button.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart'
     as cli_progress;
 
@@ -109,7 +110,6 @@ class _VersionPicker extends ConsumerStatefulWidget {
 
 class _VersionPickerState extends ConsumerState<_VersionPicker> {
   late ModelVersion _selected;
-  bool _isDownloading = false;
   bool _isDeleting = false;
   final listenable = ValueNotifier<bool>(false);
 
@@ -153,13 +153,13 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
     }
   }
 
+  /// Starts the pull and nothing else. Whether a download is running is the
+  /// controller's to say — this used to flip a local `_isDownloading` too, and
+  /// the two copies drifted the moment anything ended a download by a route the
+  /// panel wasn't listening for. See the button's `pulling` below.
   void _startDownload() {
     if (_selected.pullSpec == null || _selected.pullSpec!.isEmpty) return;
-
-    setState(() => _isDownloading = true);
-
-    final pullController = ref.read(modelPullControllerProvider.notifier);
-    pullController.pull(_selected.pullSpec!);
+    ref.read(modelPullControllerProvider.notifier).pull(_selected.pullSpec!);
   }
 
   Future<void> _confirmAndDelete(BuildContext context) async {
@@ -257,16 +257,6 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
     AppTheme.watch(context);
     final theme = Theme.of(context);
     final iconUrl = urlForModel(widget.detail.repoId);
-
-    // Watch for download state changes
-    ref.listen<ModelPullState>(modelPullControllerProvider, (prev, next) {
-      if (!mounted) return;
-      if (next is ModelPullDone) {
-        setState(() => _isDownloading = false);
-      } else if (next is ModelPullFailed) {
-        setState(() => _isDownloading = false);
-      }
-    });
 
     return Stack(
       children: [
@@ -390,12 +380,20 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
               AnimatedBuilder(
                 animation: listenable,
                 builder: (context, _) {
-                  final pulling =
-                      ref.watch(modelPullControllerProvider) is ModelPulling;
                   final pullState = ref.watch(modelPullControllerProvider);
-                  final progress = pulling
-                      ? (pullState as ModelPulling).progress
-                      : null;
+                  final pulling = pullState is ModelPulling;
+                  final progress = pulling ? pullState.progress : null;
+                  // Whether the download in flight is THIS model's. The button's
+                  // disabled state stays global — one `grid pull` at a time is
+                  // what the controller tracks — but Cancel must not be: from
+                  // another model's panel it would kill a transfer the reader
+                  // never started and cannot see.
+                  final cancellable =
+                      pulling &&
+                      _selected.pullSpec != null &&
+                      parsePullSpecs(
+                        _selected.pullSpec!,
+                      ).contains(pullState.spec);
                   final fraction =
                       (progress != null && !progress.isIndeterminate)
                       ? progress.pct! / 100
@@ -406,10 +404,18 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                     children: [
                       if (pulling && fraction != null)
                         ..._buildProgressSection(progress!, fraction, theme),
+                      if (cancellable) ...[
+                        const CancelDownloadButton(),
+                        const SizedBox(width: 8),
+                      ],
                       ElevatedButton.icon(
+                        // Disabled while ANY download runs, not just this
+                        // model's: the controller tracks one subscription, so a
+                        // second `pull` would overwrite it and leave the first
+                        // transfer running with nothing able to stop it.
                         onPressed:
                             (_selected.status == VersionStatus.runnable &&
-                                !_isDownloading &&
+                                !pulling &&
                                 !_isDownloaded)
                             ? _startDownload
                             : null,

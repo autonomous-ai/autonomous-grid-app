@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../logic/model_pull_controller.dart';
+import 'cancel_download_button.dart';
 
 /// A download in flight, as a row in the Discover list.
 ///
@@ -20,7 +21,6 @@ class DownloadRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final theme = Theme.of(context);
     final progress = state.progress;
     final fraction = (progress != null && !progress.isIndeterminate)
         ? progress.pct! / 100
@@ -107,18 +107,7 @@ class DownloadRow extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            TextButton(
-              onPressed: () =>
-                  ref.read(modelPullControllerProvider.notifier).cancel(),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, AppControl.heightSmall),
-                padding: AppControl.paddingSmall,
-                // The error colour marks it as the destructive way out of a
-                // running download.
-                foregroundColor: theme.colorScheme.error,
-              ),
-              child: const Text('Cancel'),
-            ),
+            const CancelDownloadButton(),
           ],
         ),
       ),
