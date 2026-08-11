@@ -105,6 +105,15 @@ class AgentSessionSlots {
     );
   }
 
+  /// Drop this conversation's slot, so the next turn starts a session and
+  /// replays the chat into it.
+  ///
+  /// For the case where the agent's own copy is gone — a session folder cleared
+  /// under a running app — and resuming can only keep failing. Forgetting costs
+  /// a replay, which is what a fresh slot does anyway; keeping it costs every
+  /// later message in that chat.
+  void forget(String? conversationId) => _live.remove(conversationId ?? '');
+
   /// Move [id] to the most-recently-used end — see [_live].
   void _touch(String id) {
     final entry = _live.remove(id);

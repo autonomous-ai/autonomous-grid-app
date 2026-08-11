@@ -27,6 +27,15 @@ final piExecServiceProvider = Provider<PiExecService?>((ref) {
   return path == null ? null : PiExecServiceImpl(path);
 });
 
+/// Where Pi's conversations are kept (`~/.grid/app/pi/sessions`).
+///
+/// Outside the per-run config dir on purpose: that one is a temp folder thrown
+/// away at the end of every turn, and a session filed in it would take the
+/// conversation with it — `--session <id>` would then find nothing to resume.
+final piSessionDirProvider = Provider<Directory>(
+  (ref) => Directory('${GridPaths.home.path}/app/pi/sessions'),
+);
+
 /// A [ChatSender] backed by Pi over `pi --mode json`.
 ///
 /// Pi runs one turn per process and exits, so — like Codex, unlike Hermes's
@@ -42,10 +51,11 @@ final piExecServiceProvider = Provider<PiExecService?>((ref) {
 /// user's own `~/.pi/agent/skills` through, so an app turn still loads the skills
 /// the Skills screen manages.
 ///
-/// It runs with `--approve` ([kPiApproveFlag]): Pi changes files and runs
-/// commands on this computer, and — like `codex exec` — has no channel to ask
-/// first, so nothing here prompts the user. TODO(BE): a per-action approval path
-/// for Pi would close that gap.
+/// It runs with `--no-approve` ([kPiNoApproveFlag]), so the folder the chat
+/// opens in never gets to hand Pi its own extensions or settings. Pi still
+/// changes files and runs commands on this computer, and — like `codex exec` —
+/// has no channel to ask first, so nothing here prompts the user. TODO(BE): a
+/// per-action approval path for Pi would close that gap.
 final piChatSenderProvider = Provider<ChatSender>((ref) {
   return PiChatSender(ref);
 });
@@ -105,13 +115,13 @@ class PiChatSender implements ChatSender {
     // The run's own Pi config dir — fresh per turn, cleaned up when it ends, so
     // two concurrent turns never race on one `models.json`.
     final configDir = await Directory.systemTemp.createTemp('grid-pi-cfg-');
-    await File('${configDir.path}/models.json').writeAsString(
-      piModelsJson(base: network.relayBaseUrl, model: model),
-    );
+    await File(
+      '${configDir.path}/models.json',
+    ).writeAsString(piModelsJson(base: network.relayBaseUrl, model: model));
     await File('${configDir.path}/settings.json').writeAsString(
       piSettingsJson(userSkillsDir: '${GridPaths.userHome}/.pi/agent/skills'),
     );
-    final sessionDir = Directory('${GridPaths.home.path}/app/pi/sessions');
+    final sessionDir = _ref.read(piSessionDirProvider);
     await sessionDir.create(recursive: true);
 
     yield* _runTurn(
@@ -128,7 +138,6 @@ class PiChatSender implements ChatSender {
         apiKey: network.relayApiKey,
       ),
       configDir: configDir,
-      planFirst: planFirst,
       slot: turn.slot,
       chat: chat,
     );
@@ -146,7 +155,6 @@ class PiChatSender implements ChatSender {
     required String model,
     required Map<String, String> environment,
     required Directory configDir,
-    required bool planFirst,
     required AgentSessionSlot slot,
     required String chat,
   }) {
@@ -156,7 +164,10 @@ class PiChatSender implements ChatSender {
       CliCallKind.start,
       'pi --mode json -m $model (agent)',
       detail: agentTurnDetail(
-        args: ['pi', ...piExecArgs(model: model, resumeSessionId: resumeSessionId)],
+        args: [
+          'pi',
+          ...piExecArgs(model: model, resumeSessionId: resumeSessionId),
+        ],
         workdir: workdir,
         environment: environment,
         prompt: prompt,
@@ -176,8 +187,7 @@ class PiChatSender implements ChatSender {
     final updates = StreamController<ChatSendUpdate>();
     String? failure;
     var settled = false;
-    var endedCleanly = false;
-    var workedAtAll = false;
+    var lostSession = false;
 
     final events = run.events.listen(
       (event) {
@@ -185,23 +195,21 @@ class PiChatSender implements ChatSender {
           case PiSessionStarted(:final sessionId):
             slot.sessionId = sessionId;
           case PiActivityEvent(:final activity):
-            if (isAgentWork(activity)) workedAtAll = true;
             runs.upsertStep(chat, activity);
-          case PiPlanEvent(:final entries):
-            runs.setPlan(chat, entries);
           case PiFileChangeEvent(:final paths):
-            workedAtAll = true;
             _recordAddedFiles(chat, paths);
-          case PiTurnCompleted():
-            endedCleanly = true;
           case PiMessageEvent(:final text):
             answer
               ..clear()
               ..write(text);
             updates.add(ChatSendStreaming(text));
           case PiTurnFailed(:final message):
+            lostSession = piLostSession(message);
             failure = friendlyPiError(message);
             _logRaw(message);
+          // The exchange settled with no error: what streamed above is all of
+          // it, and the reply goes out from [onDone] below.
+          case PiTurnCompleted():
         }
       },
       onError: (Object error) {
@@ -216,39 +224,24 @@ class PiChatSender implements ChatSender {
         await run.done;
         settled = true;
         final reply = answer.toString().trim();
-        final plan = _ref.read(agentRunProvider(chat)).plan;
-        if (agentTurnStalled(
-          plan: plan,
-          endedCleanly: endedCleanly,
-          workedAtAll: workedAtAll,
-          planFirst: planFirst,
-        )) {
-          _ref
-              .read(appLogProvider)
-              .failure(
-                'agent',
-                describeAgentStall(
-                  plan: plan,
-                  endedCleanly: endedCleanly,
-                  workedAtAll: workedAtAll,
-                ),
-              );
-        }
         final error = failure ?? (reply.isEmpty ? kAgentNoAnswer : null);
         log.finish(logId, error: error);
-        // Pi's own session already holds the answer it just wrote, so count it
-        // as seen — the next turn won't quote it back as "context you missed".
-        // Only on success: a failed turn appends nothing.
-        if (error == null) slot.seen++;
+        if (error == null) {
+          // Pi's own session already holds the answer it just wrote, so count
+          // it as seen — the next turn won't quote it back as "context you
+          // missed". Only on success: a failed turn appends nothing.
+          slot.seen++;
+        } else if (lostSession) {
+          // The conversation Pi was resuming is gone from its session folder,
+          // so this slot can only fail the same way again. Drop it: the next
+          // send starts a session and replays the chat into it.
+          _slots.forget(chat);
+        }
         updates.add(
           error != null
               ? ChatSendFailure(error)
               : ChatSendSuccess(
-                  ChatMessage(
-                    role: ChatRole.assistant,
-                    text: reply,
-                    plan: plan,
-                  ),
+                  ChatMessage(role: ChatRole.assistant, text: reply),
                 ),
         );
         await updates.close();
@@ -306,6 +299,10 @@ class PiChatSender implements ChatSender {
       _ref.read(appLogProvider).failure('agent', 'pi turn failed: $raw');
 }
 
+/// Whether [raw] is Pi refusing to resume a conversation it can't find — it
+/// exits with `No session found matching '<id>'` and says nothing else.
+bool piLostSession(String raw) => raw.contains('No session found');
+
 /// Humanize Pi's failure so the chat shows a next step, not a stack trace.
 ///
 /// Pi answers the grid over OpenAI chat-completions, so the failures a user hits
@@ -313,6 +310,12 @@ class PiChatSender implements ChatSender {
 /// envelope — routed through the same helpers every agent uses. Anything else
 /// keeps Pi's own last line, which at least says what it was doing.
 String friendlyPiError(String raw) {
+  // A session id no longer on disk is not the user's problem to read: the chat
+  // has already been forgotten on this side, so the fix is one more send.
+  if (piLostSession(raw)) {
+    return 'Pi lost track of this conversation. Send your message again to '
+        'start it over.';
+  }
   final empty = friendlyAgentEmptyResponse(raw);
   if (empty != null) return empty;
   final server = friendlyAgentServerError(raw);

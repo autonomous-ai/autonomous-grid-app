@@ -6,8 +6,12 @@ import 'agent_event.dart';
 import 'host_environment.dart';
 
 /// One thing to show from a running Pi turn — the same shapes the Chat tab
-/// already renders for Hermes and Codex ([AgentActivity], [AgentPlanEntry], a
-/// chunk of the answer), so every agent feeds the one activity/plan/answer feed.
+/// already renders for Hermes and Codex ([AgentActivity], a chunk of the
+/// answer), so every agent feeds the one activity/answer feed.
+///
+/// No plan among them: Pi 0.84 ships seven built-in tools (read, write, edit,
+/// bash, grep, find, ls) and none of them is a to-do list, so there is no
+/// [AgentPlanEntry] for this agent to send and nothing here to parse into one.
 ///
 /// Pi speaks its own JSON-lines stream over `pi --mode json`, not ACP, so it
 /// gets its own thin envelope — but the payloads are the shared, agent-neutral
@@ -37,12 +41,6 @@ class PiMessageEvent extends PiExecEvent {
   final String text;
 }
 
-/// Pi's to-do list as it stands now, replacing the previous one wholesale.
-class PiPlanEvent extends PiExecEvent {
-  const PiPlanEvent(this.entries);
-  final List<AgentPlanEntry> entries;
-}
-
 /// One file Pi created this turn: its (absolute) path. Only a freshly *written*
 /// file is recorded — the chat can offer to open what the agent just made —
 /// since an edit has no honest before/after to show (mirrors Codex).
@@ -51,16 +49,17 @@ class PiFileChangeEvent extends PiExecEvent {
   final List<String> paths;
 }
 
-/// The turn failed for good — Pi's assistant message ended with `stopReason:
-/// error`, or the process died. Carries Pi's own last words, humanized by the
-/// sender.
+/// The turn failed for good — the whole exchange settled on an error, or the
+/// process died. Carries Pi's own last words, humanized by the sender.
+///
+/// "For good" is the point: Pi retries a failed round by itself (see
+/// [parsePiEvent]), so a single `stopReason: error` is not this.
 class PiTurnFailed extends PiExecEvent {
   const PiTurnFailed(this.message);
   final String message;
 }
 
-/// Pi ended the exchange by itself (`agent_end`) — it was done, not cut off.
-/// The chat needs the difference for its stall check (see [agentTurnStalled]).
+/// Pi settled the whole exchange without an error — it was done, not cut off.
 class PiTurnCompleted extends PiExecEvent {
   const PiTurnCompleted();
 }
@@ -114,33 +113,39 @@ abstract interface class PiExecService {
   });
 }
 
-/// How Pi is allowed to touch this computer: `--approve` trusts the project for
-/// the run, so its `write`/`edit`/`bash` tools act without a prompt.
+/// What the app will *not* let a Pi turn pick up: `--no-approve` keeps the
+/// project the chat opens in from being trusted for that run.
 ///
-/// TODO(BE): like Codex's `danger-full-access`, this is the widest grant — Pi
-/// runs commands and writes files on this machine with nobody asked first.
-/// `pi --mode json` is non-interactive and has no per-action approval channel
-/// (the thing Hermes gets over ACP), so there is no card and no stopping it
-/// mid-command. Named here rather than buried in an argv string.
-const String kPiApproveFlag = '--approve';
+/// Project trust in Pi is not a permission gate on `write`/`edit`/`bash` — Pi
+/// has no sandbox, and in `--mode json` its tools run unprompted either way
+/// (`pi --help`, `docs/security.md`). What trust decides is whether Pi *loads*
+/// the working folder's own `.pi/settings.json`, `.pi/extensions`, `.pi/skills`
+/// and project packages — extension code from whatever repository the user
+/// happens to have open. The app opens folders on the user's behalf, so it
+/// declines that for them; `AGENTS.md`/`CLAUDE.md` are read regardless, so the
+/// project still speaks for itself.
+///
+/// TODO(BE): Pi has no per-action approval channel (the thing Hermes gets over
+/// ACP), so an app turn still runs commands and writes files with nobody asked
+/// first — same gap as `codex exec`. Named here rather than buried in an argv
+/// string.
+const String kPiNoApproveFlag = '--no-approve';
 
 /// The argv for one Pi turn (flags only — the prompt is appended positionally
 /// by the caller, and the grid provider rides in [environment]).
 ///
-/// `--mode json` streams every session event as JSON lines on stdout;
-/// `--model grid/<model>` selects the app's grid provider (defined in the run's
-/// own `models.json`); `--session <id>` continues an earlier conversation on the
-/// same flags — unlike Codex, Pi's resume takes no different subcommand.
+/// `--mode json` streams every session event as JSON lines on stdout and is
+/// non-interactive, so no `--print` is needed; `--model grid/<model>` selects
+/// the app's grid provider (defined in the run's own `models.json`);
+/// `--session <id>` continues an earlier conversation on the same flags —
+/// unlike Codex, Pi's resume takes no different subcommand.
 ///
 /// Pure, and unit-tested, because the failure mode is silent: a mistyped flag
 /// looks exactly like a model that wouldn't answer.
-List<String> piExecArgs({
-  required String model,
-  String? resumeSessionId,
-}) => [
+List<String> piExecArgs({required String model, String? resumeSessionId}) => [
   '--mode',
   'json',
-  kPiApproveFlag,
+  kPiNoApproveFlag,
   '--model',
   'grid/$model',
   if (resumeSessionId != null) ...['--session', resumeSessionId],
@@ -201,9 +206,6 @@ class _PiExecTurn {
   final _stderr = <String>[];
   static const _stderrKept = 20;
 
-  /// Whether the turn said anything on stdout — an answer or its own failure.
-  var _spoke = false;
-
   /// Whether the turn has already reported how it ended, so the exit below adds
   /// neither a second verdict nor one that contradicts the first.
   var _failed = false;
@@ -212,7 +214,10 @@ class _PiExecTurn {
   PiExecRun start() {
     Process.start(
       _path,
-      [...piExecArgs(model: _model, resumeSessionId: _resumeSessionId), _prompt],
+      [
+        ...piExecArgs(model: _model, resumeSessionId: _resumeSessionId),
+        _prompt,
+      ],
       workingDirectory: _workdir,
       environment: {
         ...Platform.environment,
@@ -268,41 +273,48 @@ class _PiExecTurn {
     _events.add(event);
   }
 
-  /// Remember what the turn has told us, for the exit path below.
+  /// Remember what the turn has told us, for the exit path below. Exhaustive on
+  /// purpose: a new event has to say here how it ends a turn, or not compile.
   void _note(PiExecEvent event) {
     switch (event) {
-      case PiMessageEvent():
-        _spoke = true;
       case PiTurnFailed():
-        _spoke = true;
         _failed = true;
       case PiTurnCompleted():
         _completed = true;
-      // A step, a plan, a written file, the session id: work in progress, not a
-      // word on how the turn ends.
-      default:
+      // A step, a written file, an answer, the session id: work in progress,
+      // not a word on how the turn ends.
+      case PiSessionStarted():
+      case PiActivityEvent():
+      case PiMessageEvent():
+      case PiFileChangeEvent():
     }
   }
 
   /// A turn that dies without a word on stdout — a config Pi won't load, a
   /// crash, a killed process — reaches the chat as "no answer", with the reason
-  /// sitting unread in [_stderr]. Hand that reason over instead. A clean exit is
-  /// also worth saying out loud ([PiTurnCompleted]) in case `agent_end` never
-  /// arrived.
+  /// sitting unread in [_stderr]. Hand that reason over instead.
+  ///
+  /// This is also the backstop for a build that never prints `agent_settled`:
+  /// an error the exchange was sitting on is reported here, and an otherwise
+  /// clean exit is said out loud ([PiTurnCompleted]).
   void _onExit(int code) {
     if (_killed || _events.isClosed) {
       _finish();
       return;
     }
-    if (code == 0 && !_failed && !_completed) {
-      _events.add(const PiTurnCompleted());
-    } else if (!_spoke && code != 0) {
-      final tail = _stderr.join('\n').trim();
-      _events.add(
-        PiTurnFailed(tail.isEmpty ? 'Pi exited with code $code.' : tail),
-      );
-    }
+    if (!_failed && !_completed) _events.add(_verdictAtExit(code));
     _finish();
+  }
+
+  PiExecEvent _verdictAtExit(int code) {
+    final pending = _state.pendingError;
+    if (pending != null) return PiTurnFailed(pending);
+    if (code == 0) return const PiTurnCompleted();
+    // Pi exits 0 even on a turn whose every retry failed, so a non-zero code is
+    // the process itself refusing — a session it couldn't find, a config it
+    // wouldn't load. That reason is on stderr and nowhere else.
+    final tail = _stderr.join('\n').trim();
+    return PiTurnFailed(tail.isEmpty ? 'Pi exited with code $code.' : tail);
   }
 
   void kill() {
@@ -346,6 +358,11 @@ class PiTurnState {
   /// recorded as a written file.
   final Map<String, String> toolPaths = {};
 
+  /// The error the exchange is currently sitting on, or null while it is going
+  /// well. Set by a failed round, cleared by the next round that answers — Pi
+  /// retries by itself, so only the state at `agent_settled` is the verdict.
+  String? pendingError;
+
   /// Open a new assistant message slot.
   void openMessage() => _messages.add('');
 
@@ -365,12 +382,15 @@ class PiTurnState {
   }
 
   /// The answer so far — every non-empty assistant message joined.
-  String get answer =>
-      _messages.where((m) => m.trim().isNotEmpty).join('\n\n');
+  String get answer => _messages.where((m) => m.trim().isNotEmpty).join('\n\n');
 }
 
-/// Pi's built-in tools are lowercase; map them onto the vocabulary the chat's
-/// activity feed already renders (mirrors the harness's `piToolName`).
+/// Pi's built-in tools, lowercase, mapped onto the vocabulary the chat's
+/// activity feed already renders.
+///
+/// These seven are the whole set Pi 0.84 ships (`dist/core/tools`): there is no
+/// to-do, web or sub-agent tool, so there is nothing here to map them to — a
+/// name that isn't on this list is title-cased and shown as it came.
 const Map<String, String> _piToolNames = {
   'read': 'Read',
   'write': 'Write',
@@ -379,12 +399,6 @@ const Map<String, String> _piToolNames = {
   'grep': 'Grep',
   'find': 'Glob',
   'ls': 'LS',
-  'list': 'LS',
-  'webfetch': 'WebFetch',
-  'websearch': 'WebSearch',
-  'todowrite': 'TodoWrite',
-  'todoread': 'TodoRead',
-  'task': 'Task',
 };
 
 String _piToolName(String name) {
@@ -398,13 +412,20 @@ String _piToolName(String name) {
 /// nothing to show (turn boundaries, thinking, token counts, unknown types) so
 /// the parser stays tolerant of a schema that shifts between Pi builds.
 ///
-/// The event vocabulary (Pi 0.84, from `docs/json.md`): a first `session` line;
-/// `agent_start` / `agent_end` around the whole exchange; `turn_start` /
-/// `turn_end` around each model round; `message_start` / `message_update`
-/// (delta-only `assistantMessageEvent`) / `message_end` (the authoritative
-/// message); and `tool_execution_start` / `tool_execution_end`. Only `agent_end`
-/// ends the exchange, and a `message_end` whose assistant message stopped on an
-/// error is the failure.
+/// The event vocabulary (measured against Pi 0.84.1, and `docs/json.md`): a
+/// first `session` line; `agent_start` / `agent_end` around each **attempt**;
+/// `turn_start` / `turn_end` around each model round; `message_start` /
+/// `message_update` (delta-only `assistantMessageEvent`) / `message_end` (the
+/// authoritative message); `tool_execution_start` / `tool_execution_end`; and
+/// `agent_settled` as the last line of all.
+///
+/// **A failed round is not a failed turn.** Pi retries a round that errored
+/// (`auto_retry_start`, three attempts by default) and often answers on the
+/// second, so `agent_end` arrives once per attempt carrying `willRetry` — and a
+/// `message_end` with `stopReason: error` is only ever *pending*. The exchange
+/// is settled exactly once, at `agent_settled`, and that is where the verdict
+/// is read. Reporting the first error was the difference between "Pi couldn't
+/// finish: Connection error." and the answer the retry actually produced.
 PiExecEvent? parsePiEvent(Map<String, dynamic> event, PiTurnState state) {
   switch (event['type']) {
     case 'session':
@@ -421,11 +442,13 @@ PiExecEvent? parsePiEvent(Map<String, dynamic> event, PiTurnState state) {
       return _parseToolStart(event, state);
     case 'tool_execution_end':
       return _parseToolEnd(event, state);
-    case 'agent_end':
-      return const PiTurnCompleted();
+    case 'agent_settled':
+      final pending = state.pendingError;
+      return pending == null ? const PiTurnCompleted() : PiTurnFailed(pending);
     default:
-      // turn_start/turn_end (per-round, not the exchange), agent_start,
-      // compaction_*, queue_update: nothing to surface.
+      // agent_start/agent_end and turn_start/turn_end (per attempt and per
+      // round, not the exchange), auto_retry_*, compaction_*, queue_update:
+      // nothing to surface.
       return null;
   }
 }
@@ -443,14 +466,19 @@ PiExecEvent? _parseMessageUpdate(Object? raw, PiTurnState state) {
 }
 
 /// The authoritative end of one assistant message: its final text (covering a
-/// build that streams no deltas), or its failure when it stopped on an error.
+/// build that streams no deltas), or the error this round stopped on — held on
+/// [PiTurnState.pendingError] rather than reported, because Pi may still retry
+/// (see [parsePiEvent]).
 PiExecEvent? _parseMessageEnd(Object? raw, PiTurnState state) {
   final message = raw is Map ? raw : null;
   if (message == null || message['role'] != 'assistant') return null;
   if (message['stopReason'] == 'error') {
     final reason = message['errorMessage'];
-    return PiTurnFailed(reason is String && reason.isNotEmpty ? reason : '');
+    state.pendingError = reason is String && reason.isNotEmpty ? reason : '';
+    return null;
   }
+  // A round that answered clears the error an earlier attempt left behind.
+  state.pendingError = null;
   final text = _contentText(message['content']);
   state.finishMessage(text);
   return text.trim().isEmpty ? null : PiMessageEvent(state.answer);
@@ -466,10 +494,6 @@ PiExecEvent? _parseToolStart(Map<String, dynamic> event, PiTurnState state) {
   final tool = _piToolName(rawName);
   state.toolNames[id] = tool;
 
-  // Pi surfaces its to-do list as a `todowrite` tool call carrying the plan.
-  if (rawName.toLowerCase() == 'todowrite') {
-    return PiPlanEvent(_parsePlan(args['todos']));
-  }
   // Remember what a write/edit is touching, so its completion can be recorded.
   final path = _pathArg(args);
   if (path != null) state.toolPaths[id] = path;
@@ -492,9 +516,6 @@ PiExecEvent? _parseToolEnd(Map<String, dynamic> event, PiTurnState state) {
   final isError = event['isError'] == true;
   final path = state.toolPaths.remove(id);
 
-  // A `todowrite` completion carries no new plan — the start already emitted it.
-  if (rawName.toLowerCase() == 'todowrite') return null;
-
   // A file freshly written (not an edit) is offered to the chat to open. Only
   // `write` creates a file with an honest whole-file "after"; an `edit` reports
   // no before, so — like Codex — it isn't recorded.
@@ -512,28 +533,23 @@ PiExecEvent? _parseToolEnd(Map<String, dynamic> event, PiTurnState state) {
   );
 }
 
-/// Pi's tool → the activity kind that picks its icon.
-AgentActivityKind _kindFor(String rawName) => switch (rawName.toLowerCase()) {
-  'bash' => AgentActivityKind.command,
-  'websearch' || 'webfetch' => AgentActivityKind.web,
-  _ => AgentActivityKind.tool,
-};
+/// Pi's tool → the activity kind that picks its icon. Only `bash` is a command;
+/// Pi has no web tool of its own, so a look-up arrives as the shell call the
+/// `grid-web` skill makes.
+AgentActivityKind _kindFor(String rawName) => rawName.toLowerCase() == 'bash'
+    ? AgentActivityKind.command
+    : AgentActivityKind.tool;
 
-/// The label a running step shows: the command for a shell call, the query for a
-/// web look-up, else the tool's own name.
+/// The label a running step shows: the command for a shell call, else the
+/// tool's own name.
 String _startLabel(String rawName, Map<String, dynamic> args, String tool) =>
-    switch (rawName.toLowerCase()) {
-      'bash' => '${args['command'] ?? args['cmd'] ?? tool}',
-      'websearch' => '${args['query'] ?? tool}',
-      'webfetch' => '${args['url'] ?? tool}',
-      _ => tool,
-    };
+    rawName.toLowerCase() == 'bash' ? '${args['command'] ?? tool}' : tool;
 
-/// The file path a `write`/`edit` names, under whichever key Pi uses. Best
-/// effort — a key we don't know just leaves the file unrecorded, never wrong.
-/// TODO(verify): confirm Pi's write-tool arg key against a real session.
+/// The file path a `write`/`edit` names. `path` is the key both take (Pi 0.84's
+/// `writeSchema` is `{path, content}`); `file_path` is the alias Pi's own
+/// renderer accepts, kept for a build that starts sending it.
 String? _pathArg(Map<String, dynamic> args) {
-  for (final key in const ['path', 'file_path', 'filePath', 'filename']) {
+  for (final key in const ['path', 'file_path']) {
     final value = args[key];
     if (value is String && value.trim().isNotEmpty) return value.trim();
   }
@@ -554,30 +570,6 @@ String _contentText(Object? content) {
   return buffer.toString();
 }
 
-/// Pi's `todowrite` args carry `todos: [{content|text, status}]`; map them to
-/// the shared plan model. A blank step is dropped; an unknown status reads as
-/// pending, and `in_progress` as the active step.
-List<AgentPlanEntry> _parsePlan(Object? raw) {
-  if (raw is! List) return const [];
-  final entries = <AgentPlanEntry>[];
-  for (final entry in raw) {
-    if (entry is! Map) continue;
-    final content = cleanPlanContent(entry['content'] ?? entry['text']);
-    if (content == null) continue;
-    entries.add(
-      AgentPlanEntry(content: content, status: _planStatus(entry['status'])),
-    );
-  }
-  return List.unmodifiable(entries);
-}
-
-AgentPlanStatus _planStatus(Object? raw) => switch (raw) {
-  'in_progress' || 'active' => AgentPlanStatus.active,
-  'completed' || 'done' => AgentPlanStatus.done,
-  _ => AgentPlanStatus.pending,
-};
-
-String? _role(Object? message) =>
-    message is Map && message['role'] is String
+String? _role(Object? message) => message is Map && message['role'] is String
     ? message['role'] as String
     : null;

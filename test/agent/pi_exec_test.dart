@@ -2,41 +2,82 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/pi_exec_service.dart';
 
+/// One assistant round that ended on [error], as `pi --mode json` writes it.
+Map<String, dynamic> _failedRound(String error) => {
+  'type': 'message_end',
+  'message': {
+    'role': 'assistant',
+    'stopReason': 'error',
+    'errorMessage': error,
+    'content': <dynamic>[],
+  },
+};
+
+/// One assistant round that answered.
+Map<String, dynamic> _answeredRound(String text) => {
+  'type': 'message_end',
+  'message': {
+    'role': 'assistant',
+    'stopReason': 'stop',
+    'content': [
+      {'type': 'text', 'text': text},
+    ],
+  },
+};
+
 void main() {
   group('piExecArgs — the pi --mode json invocation', () {
-    test('a fresh turn streams JSON, trusts the run, and names the grid model',
-        () {
-      // A wrong flag fails exactly like a model that wouldn't answer, so the
-      // argv is pinned here rather than trusted by eye.
-      expect(piExecArgs(model: 'qwen3'), [
-        '--mode',
-        'json',
-        '--approve',
-        '--model',
-        'grid/qwen3',
-      ]);
-    });
+    test(
+      'a fresh turn streams JSON, declines the folder it opens in, and names '
+      'the grid model',
+      () {
+        // A wrong flag fails exactly like a model that wouldn't answer, so the
+        // argv is pinned here rather than trusted by eye.
+        expect(piExecArgs(model: 'qwen3'), [
+          '--mode',
+          'json',
+          '--no-approve',
+          '--model',
+          'grid/qwen3',
+        ]);
+      },
+    );
 
-    test('resuming adds --session and takes no other subcommand — unlike Codex',
-        () {
-      expect(piExecArgs(model: 'qwen3', resumeSessionId: 'sess-1'), [
-        '--mode',
-        'json',
-        '--approve',
-        '--model',
-        'grid/qwen3',
-        '--session',
-        'sess-1',
-      ]);
-    });
+    test(
+      'resuming adds --session and takes no other subcommand — unlike Codex',
+      () {
+        expect(piExecArgs(model: 'qwen3', resumeSessionId: 'sess-1'), [
+          '--mode',
+          'json',
+          '--no-approve',
+          '--model',
+          'grid/qwen3',
+          '--session',
+          'sess-1',
+        ]);
+      },
+    );
+
+    test(
+      'a model id keeps its own punctuation — pi resolves provider/id, and a '
+      'colon in the id is part of the id',
+      () {
+        expect(
+          piExecArgs(model: 'qwen3-coder:30b'),
+          contains('grid/qwen3-coder:30b'),
+        );
+      },
+    );
   });
 
   group('parsePiEvent — the pi --mode json stream', () {
     test('the first session line carries the id to resume with later', () {
-      final event = parsePiEvent(
-        {'type': 'session', 'version': 3, 'id': 'abc-123', 'cwd': '/x'},
-        PiTurnState(),
-      );
+      final event = parsePiEvent({
+        'type': 'session',
+        'version': 3,
+        'id': 'abc-123',
+        'cwd': '/x',
+      }, PiTurnState());
       expect(event, isA<PiSessionStarted>());
       expect((event as PiSessionStarted).sessionId, 'abc-123');
     });
@@ -70,33 +111,65 @@ void main() {
     test('message_end carries the authoritative text — a build with no deltas '
         'still shows an answer', () {
       final state = PiTurnState();
-      final event = parsePiEvent({
-        'type': 'message_end',
-        'message': {
-          'role': 'assistant',
-          'stopReason': 'stop',
-          'content': [
-            {'type': 'text', 'text': 'The answer.'},
-          ],
-        },
-      }, state);
+      final event = parsePiEvent(_answeredRound('The answer.'), state);
       expect((event as PiMessageEvent).text, 'The answer.');
     });
+  });
 
-    test('an assistant message that stopped on an error is a turn failure, with '
-        'its own reason', () {
-      final event = parsePiEvent({
-        'type': 'message_end',
-        'message': {
-          'role': 'assistant',
-          'stopReason': 'error',
-          'errorMessage': 'HTTP 503: no providers',
-        },
-      }, PiTurnState());
-      expect(event, isA<PiTurnFailed>());
-      expect((event as PiTurnFailed).message, 'HTTP 503: no providers');
+  group('parsePiEvent — a failed round is not a failed turn', () {
+    test('a round that stopped on an error says nothing yet: pi retries it '
+        'itself, and the chat must not be told the turn is over', () {
+      final state = PiTurnState();
+      expect(parsePiEvent(_failedRound('Connection error.'), state), isNull);
+      expect(state.pendingError, 'Connection error.');
     });
 
+    test('the answer a retry produced is the turn: the first attempt\'s error '
+        'never reaches the chat', () {
+      final state = PiTurnState();
+      parsePiEvent(_failedRound('Connection error.'), state);
+      parsePiEvent({'type': 'auto_retry_start', 'attempt': 1}, state);
+      final answer = parsePiEvent(_answeredRound('Here you go.'), state);
+      expect((answer as PiMessageEvent).text, 'Here you go.');
+
+      expect(
+        parsePiEvent({'type': 'agent_settled'}, state),
+        isA<PiTurnCompleted>(),
+      );
+    });
+
+    test(
+      'an exchange whose every attempt failed reports the last reason, once, '
+      'when it settles',
+      () {
+        final state = PiTurnState();
+        parsePiEvent(_failedRound('Connection error.'), state);
+        parsePiEvent(_failedRound('HTTP 503: no providers'), state);
+        final settled = parsePiEvent({'type': 'agent_settled'}, state);
+        expect((settled as PiTurnFailed).message, 'HTTP 503: no providers');
+      },
+    );
+
+    test('agent_end closes one attempt, not the exchange — only agent_settled '
+        'ends it', () {
+      final state = PiTurnState();
+      expect(
+        parsePiEvent({
+          'type': 'agent_end',
+          'messages': <dynamic>[],
+          'willRetry': true,
+        }, state),
+        isNull,
+      );
+      expect(parsePiEvent({'type': 'turn_end', 'message': {}}, state), isNull);
+      expect(
+        parsePiEvent({'type': 'agent_settled'}, state),
+        isA<PiTurnCompleted>(),
+      );
+    });
+  });
+
+  group('parsePiEvent — tool calls', () {
     test('a bash tool call maps to a command activity, running then done under '
         'the same id', () {
       final state = PiTurnState();
@@ -137,8 +210,10 @@ void main() {
         'toolName': 'grep',
         'isError': true,
       }, state);
-      expect((ended as PiActivityEvent).activity.status,
-          AgentActivityStatus.failed);
+      expect(
+        (ended as PiActivityEvent).activity.status,
+        AgentActivityStatus.failed,
+      );
     });
 
     test('a completed write is offered to the chat to open, by the path it '
@@ -160,41 +235,17 @@ void main() {
       expect((ended as PiFileChangeEvent).paths, ['/tmp/page.html']);
     });
 
-    test("pi's todowrite tool carries the to-do list as a plan", () {
+    test('a tool name this build has never heard of still shows a readable row '
+        'rather than nothing', () {
       final event = parsePiEvent({
         'type': 'tool_execution_start',
-        'toolCallId': 'p1',
-        'toolName': 'todowrite',
-        'args': {
-          'todos': [
-            {'content': 'Read the files', 'status': 'completed'},
-            {'content': 'Write the fix', 'status': 'in_progress'},
-            {'content': 'Run the tests', 'status': 'pending'},
-          ],
-        },
+        'toolCallId': 'x1',
+        'toolName': 'summarise',
+        'args': <String, dynamic>{},
       }, PiTurnState());
-      final plan = (event as PiPlanEvent).entries;
-      expect(plan.map((e) => e.content), [
-        'Read the files',
-        'Write the fix',
-        'Run the tests',
-      ]);
-      expect(plan[0].status, AgentPlanStatus.done);
-      expect(plan[1].status, AgentPlanStatus.active);
-      expect(plan[2].status, AgentPlanStatus.pending);
-    });
-
-    test('agent_end — not the per-round turn_end — is how the exchange finishes',
-        () {
-      expect(
-        parsePiEvent({'type': 'turn_end', 'message': {}}, PiTurnState()),
-        isNull,
-      );
-      expect(
-        parsePiEvent({'type': 'agent_end', 'messages': <dynamic>[]},
-            PiTurnState()),
-        isA<PiTurnCompleted>(),
-      );
+      final activity = (event as PiActivityEvent).activity;
+      expect(activity.label, 'Summarise');
+      expect(activity.kind, AgentActivityKind.tool);
     });
   });
 }
