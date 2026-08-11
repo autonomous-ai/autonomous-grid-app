@@ -121,8 +121,21 @@ are **deliberate** — don't "fix" them back.
   left to copy from either: the last 21 files went on 2026-08-11, and the pure
   functions a few of them also covered moved to files named after what they test.
   `grep -rl 'testWidgets\|pumpWidget\|WidgetTester' test` must stay empty.
-- **Do test the logic**, with every logic change: pure functions, controllers via
-  `ProviderContainer(overrides: [...])`, services, stores.
+- **Only the grid and the agents are tested.** `test/` holds exactly these areas and
+  no others: `agent`, `agents`, `network`, `chat`, `playground`, `connectors`,
+  `skills`, `scheduled`, `mcp`, `models`, `node_setup`, `provider`, `provider_node`,
+  `auto_router`. Everything else went on 2026-08-11 (~700 tests: review, projects,
+  onboarding, messaging, terminal, prompts, appearance, layouts, logging, core, and
+  the CLI/credentials/store/wire-parse plumbing under `cli`, `auth`, `state`, `api`,
+  `infrastructure`). Don't add a folder back — if a change outside these areas needs
+  proving, prove it by running the app.
+  **TODO(BE): that cut is not free**, and it took real guards with it —
+  `GridCliService`'s argv and logging, `credentials.toml` parsing, `GridHomeStore`,
+  and `GridOverview.fromJson` are now checked by nobody. Those are exactly the
+  places this app has broken silently before, so a change to one of them deserves
+  the running app and a careful read, not confidence.
+- **Do test the logic** in those areas, with every logic change: pure functions,
+  controllers via `ProviderContainer(overrides: [...])`, services, stores.
 - Arrange-Act-Assert; **fakes over mocks** (`FakeGridCliService`); **offline &
   deterministic** — never the network, never the real `~/.grid` (point stores at a temp
   dir). Tests live in `test/<area>/` mirroring features.
@@ -133,19 +146,19 @@ are **deliberate** — don't "fix" them back.
 
 - `flutter analyze lib test` → **0 issues**; relevant `flutter test test/<area>` green.
   Measured on a clean `main` on 2026-08-11, the repo clears both bars: `analyze` reports
-  **no issues**, and `flutter test` is **2309 passing, 0 failing**. So a failure you
+  **no issues**, and `flutter test` is **1599 passing, 0 failing**. So a failure you
   see is *yours* — there is no standing "known failure" list to hide behind.
   (There was one, twice over: it named `provider_run_controller_test` and
   `sidebar_item_test`, then 9 analyzer issues in `features/models/` and 3 overflow
   failures in `connectors_view_layout_test`. Every one of them outlived the problem it
   described. If you add a note like this, date it and re-measure before trusting it.)
-- **Run the whole suite as `flutter test --concurrency=12`** — 30s against 39s, and
-  the tests are the same tests. The suite spends only **19s actually running tests**;
-  the rest is starting one suite per file, 249 of them, and 204 of those files finish
-  in under 100ms each. So the cost is the *number of files*, not the number of tests:
-  the answer to a slow run is never to delete assertions (dropping 500 tests would buy
-  about 4s), it is to stop giving every function its own file. Measured 2026-08-11 on
-  a 10-core Mac; re-measure before quoting.
+- **Run the whole suite as `flutter test --concurrency=12`** — **20s** for 1599 tests
+  in 156 files on a 10-core Mac (2026-08-11), against ~26s at the default. Most of
+  that is still *starting one suite per file*, not running tests: a file costs
+  ~110ms to open and most of them finish their own tests in under 100ms. So if the
+  run ever feels slow again, the lever is fewer files, not fewer assertions — one
+  more `test/<area>/one_function_test.dart` costs more than the twenty tests inside
+  it. Re-measure before quoting these.
 - Diff self-reviewed against this doc: no DRY violations, no dead code, small widgets,
   sealed-state exhaustiveness, themed colours, honest copy, tests updated.
 - **Real risks flagged loudly** (`TODO(BE)`), never hidden behind a calm comment.
