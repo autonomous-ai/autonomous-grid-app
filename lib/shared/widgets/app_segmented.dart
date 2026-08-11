@@ -51,11 +51,24 @@ class AppSegmented extends StatelessWidget {
     required this.segments,
     required this.selected,
     required this.onChanged,
+    this.expand = false,
   });
 
   final List<SegmentSpec> segments;
   final int selected;
   final ValueChanged<int> onChanged;
+
+  /// Divide the full width between the segments instead of hugging their
+  /// labels.
+  ///
+  /// Off — the default — is the toolbar control: a track that shrink-wraps its
+  /// tabs and sits next to a search field. That shape breaks down when the
+  /// control is a *form field*, because a stretching parent gives the track the
+  /// whole width while the row inside stays `min`: the tabs bunch at the left
+  /// and the rest of the track reads as an unfinished box. On sets equal thirds
+  /// and centres each label, so the control's edges line up with the fields
+  /// above and below it.
+  final bool expand;
 
   /// Track corner. The chip inside drops to 6 — a child is never rounder than
   /// its parent (rule 3).
@@ -85,15 +98,28 @@ class AppSegmented extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(_inset),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
           children: [
             for (var i = 0; i < segments.length; i++) ...[
               if (i > 0) const SizedBox(width: _inset),
-              _Segment(
-                spec: segments[i],
-                selected: i == selected,
-                onTap: () => onChanged(i),
-              ),
+              // Equal thirds when expanded — `Expanded`, not a fixed width, so
+              // three labels of very different lengths still divide the track
+              // evenly and the dividing lines stay where the eye expects them.
+              if (expand)
+                Expanded(
+                  child: _Segment(
+                    spec: segments[i],
+                    selected: i == selected,
+                    fill: true,
+                    onTap: () => onChanged(i),
+                  ),
+                )
+              else
+                _Segment(
+                  spec: segments[i],
+                  selected: i == selected,
+                  onTap: () => onChanged(i),
+                ),
             ],
           ],
         ),
@@ -107,14 +133,51 @@ class _Segment extends StatefulWidget {
     required this.spec,
     required this.selected,
     required this.onTap,
+    this.fill = false,
   });
 
   final SegmentSpec spec;
   final bool selected;
   final VoidCallback onTap;
 
+  /// Take the whole slot the parent gives and centre the label in it, for
+  /// [AppSegmented.expand]. Off, the chip shrink-wraps its label.
+  final bool fill;
+
   @override
   State<_Segment> createState() => _SegmentState();
+}
+
+/// A segment's caption. Split out so the filled variant can wrap it in a
+/// `Flexible` (to ellipsize inside its third of the track) while the
+/// shrink-wrapping variant uses it bare — see the note at its call site.
+class _Label extends StatelessWidget {
+  const _Label({
+    required this.spec,
+    required this.selected,
+    required this.ink,
+    this.centred = false,
+  });
+
+  final SegmentSpec spec;
+  final bool selected;
+  final Color ink;
+  final bool centred;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    spec.label,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    textAlign: centred ? TextAlign.center : TextAlign.start,
+    style: TextStyle(
+      fontSize: 12,
+      height: 1.2,
+      // Selection is marked three ways — chip fill, shadow, and this weight.
+      fontWeight: selected ? FontWeight.w600 : AppFont.medium,
+      color: ink,
+    ),
+  );
 }
 
 class _SegmentState extends State<_Segment> {
@@ -151,21 +214,31 @@ class _SegmentState extends State<_Segment> {
             boxShadow: selected ? AppGlass.cardShadow : null,
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: widget.fill ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: widget.fill
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
               if (widget.spec.icon != null) ...[
                 Icon(widget.spec.icon, size: 14, color: ink),
                 const SizedBox(width: 6),
               ],
-              Text(
-                widget.spec.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.2,
-                  fontWeight: selected ? FontWeight.w600 : AppFont.medium,
-                  color: ink,
-                ),
-              ),
+              // Only the filled variant flexes. `Flexible` defaults to `flex: 1`,
+              // which throws the moment a Row is laid out with unbounded width —
+              // and the shrink-wrapping toolbar variant is exactly the shape
+              // that can meet one. Filled segments always sit inside an
+              // `Expanded`, so their width is bounded by construction.
+              if (widget.fill)
+                Flexible(
+                  child: _Label(
+                    spec: widget.spec,
+                    selected: selected,
+                    ink: ink,
+                    centred: true,
+                  ),
+                )
+              else
+                _Label(spec: widget.spec, selected: selected, ink: ink),
               if (widget.spec.count != null) ...[
                 const SizedBox(width: 5),
                 Text(

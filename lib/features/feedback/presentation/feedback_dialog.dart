@@ -152,6 +152,10 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
               const SizedBox(height: 10),
               const FieldLabel('What is this about?'),
               AppSegmented(
+                // A form field, not a toolbar tab strip: the three choices
+                // split the dialog's width so the control's edges line up with
+                // the message box under it.
+                expand: true,
                 segments: [
                   for (final kind in FeedbackKind.values)
                     SegmentSpec(label: kind.label),
