@@ -133,12 +133,19 @@ are **deliberate** — don't "fix" them back.
 
 - `flutter analyze lib test` → **0 issues**; relevant `flutter test test/<area>` green.
   Measured on a clean `main` on 2026-08-11, the repo clears both bars: `analyze` reports
-  **no issues**, and `flutter test` is **2309 passing, 0 failing** in ~55s. So a
-  failure you see is *yours* — there is no standing "known failure" list to hide behind.
+  **no issues**, and `flutter test` is **2309 passing, 0 failing**. So a failure you
+  see is *yours* — there is no standing "known failure" list to hide behind.
   (There was one, twice over: it named `provider_run_controller_test` and
   `sidebar_item_test`, then 9 analyzer issues in `features/models/` and 3 overflow
   failures in `connectors_view_layout_test`. Every one of them outlived the problem it
   described. If you add a note like this, date it and re-measure before trusting it.)
+- **Run the whole suite as `flutter test --concurrency=12`** — 30s against 39s, and
+  the tests are the same tests. The suite spends only **19s actually running tests**;
+  the rest is starting one suite per file, 249 of them, and 204 of those files finish
+  in under 100ms each. So the cost is the *number of files*, not the number of tests:
+  the answer to a slow run is never to delete assertions (dropping 500 tests would buy
+  about 4s), it is to stop giving every function its own file. Measured 2026-08-11 on
+  a 10-core Mac; re-measure before quoting.
 - Diff self-reviewed against this doc: no DRY violations, no dead code, small widgets,
   sealed-state exhaustiveness, themed colours, honest copy, tests updated.
 - **Real risks flagged loudly** (`TODO(BE)`), never hidden behind a calm comment.
