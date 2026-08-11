@@ -111,6 +111,20 @@ bool isMarkdownPath(String path) {
   return name.endsWith('.md') || name.endsWith('.markdown');
 }
 
+/// Whether [path] names a picture — something to *draw* rather than to read.
+///
+/// Answered from [fileMarkOf] rather than from a second list, so the file the
+/// tree marks with the image glyph is exactly the file the viewer tries to
+/// draw. Which formats the engine can actually decode is not decided here: a
+/// `.tiff` gets its attempt and its fallback, because the answer differs per
+/// platform and a hardcoded list of codecs goes stale silently.
+bool isImagePath(String path) => fileMarkOf(path).glyph == FileGlyph.image;
+
+/// Whether [path] is an SVG — the one picture whose source is also text worth
+/// reading, so it gets the same document/source switch Markdown has.
+bool isSvgPath(String path) =>
+    path.split(RegExp(r'[/\\]')).last.toLowerCase().endsWith('.svg');
+
 const FileMark _unknown = (
   glyph: FileGlyph.unknown,
   accent: FileAccent.neutral,

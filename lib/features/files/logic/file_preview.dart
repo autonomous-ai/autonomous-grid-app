@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'file_kind.dart';
+
 /// The most a file may weigh before the panel refuses to read it.
 ///
 /// A preview pane is not an editor: past this, laying the text out costs more
@@ -16,6 +18,15 @@ const int kFilePreviewMaxBytes = 1 << 20;
 /// what lets a whole file scroll and select as one block. This is the cap that
 /// keeps that pass cheap. A file cut here says so.
 const int kFilePreviewMaxLines = 2000;
+
+/// The most an image may weigh before the panel refuses to draw it.
+///
+/// Its own ceiling, well above [kFilePreviewMaxBytes]: a screenshot out of a
+/// repository is routinely past a megabyte, and refusing it would mean the
+/// image cap was really a rule about text applied to something else. What the
+/// number guards is the decode — bytes on disk become width × height × 4 in
+/// memory — so it is generous rather than unlimited.
+const int kImagePreviewMaxBytes = 16 << 20;
 
 /// How much of the head is sniffed for the NUL byte that means "not text".
 const int _sniffBytes = 8192;
@@ -35,7 +46,22 @@ class FilePreviewText extends FilePreview {
   final bool truncated;
 }
 
-/// Not text — an image, an archive, a compiled thing.
+/// A picture, ready to draw, still in the bytes it was stored in.
+///
+/// Undecoded on purpose: the widget layer owns the decode, so the engine's
+/// image cache holds the frame and the panel holds nothing but the file. For a
+/// [vector] the same bytes are also its source, which is what lets the viewer
+/// offer both forms without reading the file twice.
+class FilePreviewImage extends FilePreview {
+  const FilePreviewImage({required this.bytes, required this.vector});
+
+  final Uint8List bytes;
+
+  /// SVG — drawn by `flutter_svg` rather than by the engine's own codecs.
+  final bool vector;
+}
+
+/// Not text and not a picture — an archive, a compiled thing.
 class FilePreviewBinary extends FilePreview {
   const FilePreviewBinary();
 }
@@ -100,6 +126,17 @@ final filePreviewProvider = FutureProvider.autoDispose
       final file = File(path);
       try {
         final length = await file.length();
+        // Decided by the name, before a byte is read: a picture is never text,
+        // and sniffing it for a NUL would only reach the answer the extension
+        // already gave — by the slow route, and wrongly for an SVG, which is
+        // text and still not something to read as source by default.
+        if (isImagePath(path)) {
+          if (length > kImagePreviewMaxBytes) return FilePreviewTooBig(length);
+          return FilePreviewImage(
+            bytes: await file.readAsBytes(),
+            vector: isSvgPath(path),
+          );
+        }
         if (length > kFilePreviewMaxBytes) return FilePreviewTooBig(length);
         return decodeFilePreview(await file.readAsBytes());
       } on FileSystemException catch (e) {

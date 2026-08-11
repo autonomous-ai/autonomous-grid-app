@@ -90,19 +90,45 @@ abstract final class CodeHighlight {
   @visibleForTesting
   static void forgetHighlights() => _memo.clear();
 
-  /// Fence info strings arrive in whatever form the model wrote them.
+  /// Fence info strings arrive in whatever form the model wrote them — and, from
+  /// [languageForPath], as bare file extensions.
+  ///
+  /// The grammar set is highlight.js's, which names a language once and expects
+  /// its aliases to be resolved here: there is no `html` grammar, because in
+  /// highlight.js a page is `xml`. An extension left unresolved is a file drawn
+  /// in one flat colour, so every alias this app can meet has to be listed.
   static String _normalise(String language) {
     final name = language.trim().toLowerCase();
     return switch (name) {
-      'js' || 'jsx' || 'node' => 'javascript',
-      'ts' || 'tsx' => 'typescript',
-      'py' || 'python3' => 'python',
+      'js' || 'jsx' || 'mjs' || 'cjs' || 'node' => 'javascript',
+      'ts' || 'tsx' || 'mts' || 'cts' => 'typescript',
+      'py' || 'pyi' || 'python3' => 'python',
       'sh' || 'shell' || 'zsh' || 'console' => 'bash',
       'yml' => 'yaml',
       'md' => 'markdown',
-      'c++' => 'cpp',
+      // Markup is one grammar under highlight.js: HTML, its templating cousins
+      // and SVG are all read as tags.
+      'html' || 'htm' || 'xhtml' || 'svg' => 'xml',
+      'c++' || 'cc' || 'cxx' || 'h' || 'hpp' || 'hxx' => 'cpp',
+      // `.m` is Objective-C here rather than MATLAB: the repos this app browses
+      // are the ones its own iOS and macOS shells live in.
+      'm' || 'mm' => 'objectivec',
       'rs' => 'rust',
       'golang' => 'go',
+      'rb' => 'ruby',
+      'kt' || 'kts' => 'kotlin',
+      'cs' => 'csharp',
+      'ps1' => 'powershell',
+      'bat' || 'cmd' => 'dos',
+      'jsonc' || 'json5' => 'json',
+      // TOML has no grammar of its own; INI reads the same key/value shape.
+      'toml' => 'ini',
+      'ex' || 'exs' => 'elixir',
+      'hs' => 'haskell',
+      'clj' => 'clojure',
+      'pl' => 'perl',
+      'proto' => 'protobuf',
+      'tex' => 'latex',
       _ => name,
     };
   }

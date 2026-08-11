@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:markdown/markdown.dart' as md;
 
@@ -37,8 +40,8 @@ class FileViewer extends ConsumerWidget {
   /// The absolute path of the file to show, or null before one is picked.
   final String? path;
 
-  /// Show Markdown as the text it was written in. Means nothing for any other
-  /// kind of file, which has only the one form.
+  /// Show a Markdown document, or an SVG, as the text it was written in. Means
+  /// nothing for any other kind of file, which has only the one form.
   final bool showSource;
 
   /// Swap between the document and its source.
@@ -66,7 +69,6 @@ class FileViewer extends ConsumerWidget {
       );
     }
 
-    final markdown = isMarkdownPath(path);
     return switch (ref.watch(filePreviewProvider(path))) {
       AsyncData(:final value) => _Preview(
         preview: value,
@@ -74,8 +76,8 @@ class FileViewer extends ConsumerWidget {
         // Relative images in a README are relative to the file, so the folder
         // it sits in is what turns `./docs/shot.png` into something to draw.
         folder: _folderOf(path),
-        markdown: markdown,
-        rendered: markdown && !showSource,
+        markdown: isMarkdownPath(path),
+        showSource: showSource,
         onToggleSource: onToggleSource,
         onAddSelection: onAddSelection,
       ),
@@ -92,14 +94,14 @@ String _folderOf(String path) {
   return cut < 0 ? '' : path.substring(0, cut + 1);
 }
 
-/// One resolved preview, in whichever of its four shapes came back.
+/// One resolved preview, in whichever of its shapes came back.
 class _Preview extends StatelessWidget {
   const _Preview({
     required this.preview,
     required this.language,
     required this.folder,
     required this.markdown,
-    required this.rendered,
+    required this.showSource,
     required this.onToggleSource,
     required this.onAddSelection,
   });
@@ -112,18 +114,33 @@ class _Preview extends StatelessWidget {
 
   final String folder;
 
-  /// Whether this file has two forms at all.
+  /// Whether this file is Markdown, which is one of the two kinds with a second
+  /// form to switch to. The other — an SVG — is read off the preview itself.
   final bool markdown;
 
-  /// Draw the text as Markdown rather than as source.
-  final bool rendered;
+  /// Show the second form: the Markdown behind a document, the markup behind a
+  /// picture.
+  final bool showSource;
 
   final VoidCallback onToggleSource;
   final ValueChanged<String>? onAddSelection;
 
   @override
   Widget build(BuildContext context) {
-    final body = switch (preview) {
+    // An SVG is a drawing and the markup that draws it, and the switch swaps
+    // between them. Decoded here rather than in the provider because the bytes
+    // are already in hand: reading the file again to see it the other way would
+    // be a second read of a file that hasn't changed.
+    final preview = this.preview;
+    final shown = switch (preview) {
+      FilePreviewImage(:final bytes, vector: true) when showSource =>
+        decodeFilePreview(bytes),
+      _ => preview,
+    };
+    final vector = preview is FilePreviewImage && preview.vector;
+    final rendered = markdown && !showSource;
+
+    final body = switch (shown) {
       FilePreviewText(:final lines) when lines.isEmpty => const _Note(
         'This file is empty.',
       ),
@@ -140,22 +157,31 @@ class _Preview extends StatelessWidget {
         language: language,
         onAddSelection: onAddSelection,
       ),
+      FilePreviewImage(:final bytes, :final vector) => _Picture(
+        bytes: bytes,
+        vector: vector,
+      ),
       FilePreviewBinary() => const _Note(
         'This is not a text file, so there is nothing to show. Open it to see '
         'it in the app that handles it.',
       ),
       FilePreviewTooBig(:final bytes) => _Note(
-        'This file is ${_megabytes(bytes)} — too big to read here. Open it in '
-        'your editor instead.',
+        'This file is ${_megabytes(bytes)} — too big to open here. Open it in '
+        'the app that handles it instead.',
       ),
       FilePreviewFailed(:final message) => _Failed(message),
     };
 
-    // Only over a document with something in it: there is nothing to copy from
-    // a binary or an empty file, and nothing to switch to.
-    final text = switch (preview) {
-      FilePreviewText(:final lines) when markdown && lines.isNotEmpty =>
+    // Only over a file with two forms and something in it: there is nothing to
+    // copy from a binary or an empty file, and nothing to switch to.
+    final text = switch (shown) {
+      FilePreviewText(:final lines)
+          when (markdown || vector) && lines.isNotEmpty =>
         lines.join('\n'),
+      FilePreviewImage(:final bytes, vector: true) => utf8.decode(
+        bytes,
+        allowMalformed: true,
+      ),
       _ => null,
     };
     if (text == null) return body;
@@ -168,7 +194,8 @@ class _Preview extends StatelessWidget {
           right: 12,
           child: _PageActions(
             text: text,
-            showSource: !rendered,
+            showSource: showSource,
+            vector: vector,
             onToggleSource: onToggleSource,
           ),
         ),
@@ -191,6 +218,7 @@ class _PageActions extends StatelessWidget {
   const _PageActions({
     required this.text,
     required this.showSource,
+    required this.vector,
     required this.onToggleSource,
   });
 
@@ -200,6 +228,11 @@ class _PageActions extends StatelessWidget {
   final String text;
 
   final bool showSource;
+
+  /// Whether the two forms are a picture and its markup rather than a document
+  /// and its Markdown — the switch is the same, the words for it are not.
+  final bool vector;
+
   final VoidCallback onToggleSource;
 
   @override
@@ -219,13 +252,18 @@ class _PageActions extends StatelessWidget {
             _CopyButton(text: text),
             const SizedBox(width: 2),
             AppIconButton(
-              icon: showSource ? LucideIcons.bookOpen300 : LucideIcons.code300,
+              icon: showSource
+                  ? (vector ? LucideIcons.image300 : LucideIcons.bookOpen300)
+                  : LucideIcons.code300,
               size: 15,
               // The tooltip names what the click *does*, not what is on screen:
               // a one-button switch whose icon flips is otherwise a guess.
-              tooltip: showSource
-                  ? 'Show it as a document'
-                  : 'Show the Markdown source',
+              tooltip: switch ((showSource, vector)) {
+                (true, true) => 'Show the picture',
+                (true, false) => 'Show it as a document',
+                (false, true) => 'Show the SVG markup',
+                (false, false) => 'Show the Markdown source',
+              },
               onPressed: onToggleSource,
             ),
           ],
@@ -278,6 +316,11 @@ class _CopyButtonState extends State<_CopyButton> {
 }
 
 String _megabytes(int bytes) => '${(bytes / (1 << 20)).toStringAsFixed(1)} MB';
+
+/// A file's weight at the scale it happens to be: an icon measured in megabytes
+/// reads as 0.0, and a screenshot measured in kilobytes reads as noise.
+String _fileSize(int bytes) =>
+    bytes < 1 << 20 ? '${(bytes / 1024).round()} KB' : _megabytes(bytes);
 
 /// Markdown as the document it is: headings, lists, tables, and its fences drawn
 /// as the same code blocks a chat turn gets.
@@ -459,6 +502,156 @@ class _SourceState extends State<_Source> {
         ),
         if (widget.truncated) const _TruncatedBar(),
       ],
+    );
+  }
+}
+
+/// A picture, on the page rather than described in a sentence.
+///
+/// Two things it deliberately doesn't do. It never blows an image up past its
+/// own pixels ([BoxFit.scaleDown]): a 16-pixel favicon stretched across the
+/// panel is a lie about the file, and the size of an asset is usually the thing
+/// being checked. And it decodes nothing itself — the engine's image cache
+/// holds the frame, so flipping between two files and back is free.
+///
+/// A format the platform has no codec for (a `.tiff`, an `.icns`) fails to the
+/// same sentence a binary gets. That is on purpose: which codecs exist differs
+/// per platform, so trying and falling back stays true where a hardcoded list
+/// of extensions would quietly rot.
+class _Picture extends StatefulWidget {
+  const _Picture({required this.bytes, required this.vector});
+
+  final Uint8List bytes;
+
+  /// SVG, which `flutter_svg` draws and the engine's codecs can't.
+  final bool vector;
+
+  @override
+  State<_Picture> createState() => _PictureState();
+}
+
+class _PictureState extends State<_Picture> {
+  /// The frame's own pixel size, once the engine has decoded one. Null for a
+  /// vector, which has no pixels until it is drawn, and null for the moment
+  /// before the decode lands.
+  ({int width, int height})? _pixels;
+
+  ImageStream? _stream;
+
+  late final ImageStreamListener _listener = ImageStreamListener(
+    (info, _) {
+      if (!mounted) return;
+      setState(
+        () => _pixels = (width: info.image.width, height: info.image.height),
+      );
+    },
+    // A file that won't decode is already answered on screen by the error
+    // builder; the caption simply has nothing to add about it.
+    onError: (_, _) {},
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  /// Re-listens whenever the bytes on screen change, which they do without this
+  /// widget being rebuilt from scratch: clicking another picture in the tree
+  /// reuses this state, and so does the assistant rewriting the open file. The
+  /// caption would otherwise keep quoting the previous file's dimensions.
+  @override
+  void didUpdateWidget(_Picture old) {
+    super.didUpdateWidget(old);
+    if (widget.bytes != old.bytes) _resolve();
+  }
+
+  void _resolve() {
+    if (widget.vector) return;
+    final stream = MemoryImage(
+      widget.bytes,
+    ).resolve(createLocalImageConfiguration(context));
+    if (stream.key == _stream?.key) return;
+    _stream?.removeListener(_listener);
+    _stream = stream..addListener(_listener);
+  }
+
+  @override
+  void dispose() {
+    _stream?.removeListener(_listener);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final bytes = widget.bytes;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+            child: Container(
+              // A recessed canvas under the picture, because the picture has no
+              // edge of its own: a screenshot with a white background sits on a
+              // white page in light mode with nothing to say where it stops.
+              // The wash is the one panels already recess with, so it separates
+              // (1.07:1 light, 1.12:1 dark) without becoming a frame — §2 keeps
+              // the only legal border on a menu's rim.
+              decoration: BoxDecoration(
+                color: AppSurface.recess,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.all(12),
+              alignment: Alignment.center,
+              child: widget.vector
+                  ? SvgPicture.memory(bytes, fit: BoxFit.contain)
+                  : Image.memory(
+                      bytes,
+                      fit: BoxFit.scaleDown,
+                      // A screenshot shown at a third of its size is all
+                      // aliasing at the default quality — this is a viewer, so
+                      // the downscale is worth paying for.
+                      filterQuality: FilterQuality.medium,
+                      errorBuilder: (_, _, _) => const _Note(
+                        "This image is in a format the app can't draw. Open it "
+                        'to see it in the app that handles it.',
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        _PictureCaption(pixels: _pixels, bytes: bytes.length),
+      ],
+    );
+  }
+}
+
+/// What the picture is, under it: its pixels and its weight.
+///
+/// Under rather than over, and quiet: it answers the question an asset raises
+/// after you have looked at it ("is this the 2× one?"), so it must not be the
+/// first thing the eye lands on.
+class _PictureCaption extends StatelessWidget {
+  const _PictureCaption({required this.pixels, required this.bytes});
+
+  final ({int width, int height})? pixels;
+  final int bytes;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final size = pixels;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Text(
+        size == null
+            ? _fileSize(bytes)
+            : '${size.width} × ${size.height} · ${_fileSize(bytes)}',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 11.5, color: AppPalette.textFaint),
+      ),
     );
   }
 }
