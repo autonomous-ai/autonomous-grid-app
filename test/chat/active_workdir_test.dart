@@ -8,9 +8,9 @@ import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/projects/logic/project.dart';
 
-/// The folder the open chat runs in — where its agent works, its @-mention menu
-/// lists, and the header's file browser opens. Resolving it wrong showed a plain
-/// chat another project's files: the bug this guards against.
+/// The folder the open chat runs in — where its agent works, and what its
+/// @-mention menu and Files panel list. Resolving it wrong showed a plain chat
+/// another project's files: the bug this guards against.
 class _FixedSessions extends ChatSessionsController {
   _FixedSessions(this._state);
 
@@ -89,9 +89,9 @@ void main() {
     expect(container.read(activeChatWorkdirProvider), workspace);
   });
 
-  // The label is what the header's browser and the Files panel's breadcrumb
-  // both put over that folder. `agent-workspace` is a path the app picked, so a
-  // loose chat must never be shown it.
+  // The label is what the Files panel's breadcrumb puts over that folder.
+  // `agent-workspace` is a path the app picked, so a loose chat must never be
+  // shown it.
   test('a loose chat names its folder "Workspace", never the path on disk', () {
     final container = harness(const ChatSessionsState());
     expect(container.read(activeChatWorkdirLabelProvider), 'Workspace');

@@ -7,13 +7,11 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
-import '../logic/active_workdir.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../skills/logic/skill_proposal.dart';
 import 'goal_dialog.dart';
-import 'workspace_files_dialog.dart';
 
 const _menuWidth = 208.0;
 const _rowHeight = 34.0;
@@ -87,39 +85,8 @@ class ChatHeader extends ConsumerWidget {
           ),
         ),
         const SizedBox(width: 4),
-        const _ChatFilesButton(),
-        const SizedBox(width: 2),
         ChatHeaderMenuButton(conversation: active),
       ],
-    );
-  }
-}
-
-/// Opens the browser for the folder this chat runs in — where the assistant
-/// reads and saves files.
-///
-/// The point of it is the loose chat: with no project, the assistant's files
-/// land in an app folder the user would never think to look in, and the reply's
-/// bare path is no way to reach them. This is the standing door to that folder
-/// (the "changed files" bar over the composer is a passing notice that hides
-/// itself); in a project it browses the project folder instead.
-class _ChatFilesButton extends ConsumerWidget {
-  const _ChatFilesButton();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // "Workspace" for a loose chat's app folder; the project's name when the
-    // chat belongs to one — the same label the Files panel roots itself under.
-    final rootLabel = ref.watch(activeChatWorkdirLabelProvider);
-    return _HeaderHoverButton(
-      icon: LucideIcons.folder300,
-      tooltip: 'Files in this chat’s folder',
-      semanticsLabel: 'Chat files',
-      onTap: () => showWorkspaceFilesDialog(
-        context,
-        rootPath: ref.read(activeChatWorkdirProvider),
-        rootLabel: rootLabel,
-      ),
     );
   }
 }

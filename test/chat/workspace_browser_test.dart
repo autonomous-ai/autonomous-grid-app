@@ -3,9 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/shared/workspace/workspace_entries.dart';
 import 'package:grid_app/shared/workspace/workspace_tree.dart';
 
-/// The chat file browser draws whatever [flattenWorkspaceTree] returns, in order,
-/// at the depth it says — so a wrong row or depth here would misdraw the tree,
-/// descend into a folder the user never opened, or hide a folder still loading.
+/// The Files panel's tree draws whatever [flattenWorkspaceTree] returns, in
+/// order, at the depth it says — so a wrong row or depth here would misdraw the
+/// tree, descend into a folder the user never opened, or hide a folder still
+/// loading.
 void main() {
   WorkspaceEntry dir(String path) => WorkspaceEntry(
     name: path.split('/').last,
