@@ -83,8 +83,9 @@ are **deliberate** — don't "fix" them back.
   next step. After an action, show success/failure/progress in human terms.
 - **Honest labels.** Never "Connected" when it isn't. Never promise a fallback works
   ("Hermes works here" shipped while Hermes was failing on that grid) — offer it to try.
-- **Never name a place you haven't checked** — "Settings ▸ Agents" was wrong; Agents is
-  in the sidebar. Read `shell_state.dart` first.
+- **Never name a place you haven't checked** — "Settings ▸ Agents" was wrong when Agents
+  was a sidebar row, and it moved into Settings ▸ Customize on 2026-08-11, so the copy
+  that was right is now wrong too. Read `shell_state.dart` first, every time.
 - A line that reports a failure and reassures at once ("Couldn't check for updates:
   You're up to date!") is a **bug**, not wording — fix the state behind it.
 - One word per concept across the app; **two screens asking the same question share the

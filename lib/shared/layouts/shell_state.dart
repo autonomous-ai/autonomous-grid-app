@@ -109,7 +109,10 @@ enum ShellSection {
 /// Chat isn't among them (you get there by starting a chat or opening one), and
 /// neither is Projects — your projects *are* the rail below, each holding its
 /// chats; this section is the screen that manages them, opened from that header.
-const kSidebarSections = [ShellSection.scheduled, ShellSection.agents];
+/// Agents isn't either: picking which assistant answers is setup you do once,
+/// and the composer already switches it per chat — so it sits in Settings with
+/// the rest of what shapes the answer.
+const kSidebarSections = [ShellSection.scheduled];
 
 /// One labelled run of rows in the settings nav.
 ///
@@ -146,13 +149,15 @@ const kSettingsGroups = [
     ShellSection.appearance,
     ShellSection.guide,
   ]),
-  // What the assistant can do — mirrors the mental model of other agent apps'
-  // settings. Skills and Connectors ship to everyone; Plugins stays dev-only,
-  // so a release build draws this group with two rows rather than three. The
-  // heading survives because the group still has rows — see
-  // [visibleSettingsGroups], which is also what would drop it silently if the
-  // last public row were ever gated again.
+  // What the assistant is and what it can do — mirrors the mental model of
+  // other agent apps' settings. Agents leads: which assistant runs is the
+  // choice the rows under it modify. Agents, Skills and Connectors ship to
+  // everyone; Plugins stays dev-only, so a release build draws this group with
+  // three rows rather than four. The heading survives because the group still
+  // has rows — see [visibleSettingsGroups], which is also what would drop it
+  // silently if the last public row were ever gated again.
   SettingsGroup('Customize', [
+    ShellSection.agents,
     ShellSection.skills,
     ShellSection.connectors,
     ShellSection.plugins,
