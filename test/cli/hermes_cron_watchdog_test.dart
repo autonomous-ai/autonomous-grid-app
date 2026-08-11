@@ -16,10 +16,13 @@ void main() {
       expect(cronIdleLimitUpdate(const {kCronIdleLimitVar: '300'}), isNull);
     });
 
-    test('a blank assignment is filled in, because Hermes reads it as unset and '
-        'falls back to its own default', () {
-      expect(cronIdleLimitUpdate(const {kCronIdleLimitVar: '  '}), isNotNull);
-    });
+    test(
+      'a blank assignment is filled in, because Hermes reads it as unset and '
+      'falls back to its own default',
+      () {
+        expect(cronIdleLimitUpdate(const {kCronIdleLimitVar: '  '}), isNotNull);
+      },
+    );
   });
 
   group('HermesCronWatchdog.ensureLimit', () {
@@ -45,10 +48,7 @@ void main() {
 
     test('touches nothing when a limit is already set — no write, no restart '
         'that would kill whatever the gateway is running', () async {
-      final gateway = _FakeGateway(
-        up: true,
-        env: {kCronIdleLimitVar: '1800'},
-      );
+      final gateway = _FakeGateway(up: true, env: {kCronIdleLimitVar: '1800'});
 
       await HermesCronWatchdog(gateway).ensureLimit();
 

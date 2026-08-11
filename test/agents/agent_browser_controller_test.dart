@@ -29,10 +29,13 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
-  test('a fresh install never lets an agent open a browser — a window appearing '
-      'while you type is the thing this default prevents', () {
-    expect(container.read(agentBrowserAllowedProvider), isFalse);
-  });
+  test(
+    'a fresh install never lets an agent open a browser — a window appearing '
+    'while you type is the thing this default prevents',
+    () {
+      expect(container.read(agentBrowserAllowedProvider), isFalse);
+    },
+  );
 
   test('turning it on is remembered but opens nothing: the browser starts when '
       'a turn needs it, not when the switch is flipped', () {
