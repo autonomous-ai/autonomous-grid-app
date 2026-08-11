@@ -6,6 +6,8 @@ import '../../../shared/widgets/composer_trigger.dart';
 import '../../chat/logic/chat_scope.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
+import '../logic/auto_agent.dart';
+import '../logic/auto_agent_router.dart';
 import 'agent_mark.dart';
 import '../logic/agent_grid_support.dart';
 import '../logic/agent_status.dart';
@@ -40,6 +42,28 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     _menu.close();
   }
 
+  /// Pick Auto: the grid chooses which installed assistant answers each
+  /// question. Stored like any other agent choice — a sentinel id in the same
+  /// slot — so a project keeps its own, and the model it runs on is decided at
+  /// send time (the grid's auto model).
+  void _selectAuto() {
+    ref.read(chatScopePrefsProvider).setAgent(kAutoAgentId);
+    _menu.close();
+  }
+
+  /// The trigger's tooltip — under Auto it names the assistant *currently*
+  /// answering too, so the row doesn't just say "Auto" while a real agent
+  /// replies underneath it.
+  String _triggerTooltip(bool autoChosen, AgentTool active, String? project) {
+    if (autoChosen) {
+      final where = project == null ? '' : ' in $project';
+      return 'Auto$where · the grid picks per question (now: ${active.name})';
+    }
+    return project == null
+        ? 'Which agent answers · ${active.name}'
+        : 'Which agent answers in $project · ${active.name}';
+  }
+
   /// Why [tool] can't answer on the open grid, or null when it can.
   ///
   /// Two different walls, said apart: the grid answers no dialect this agent
@@ -63,10 +87,15 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
     AppTheme.watch(context);
     final active = ref.watch(activeChatAgentProvider);
+    final autoChosen = ref.watch(isAutoAgentChosenProvider);
     final installed = [
       for (final tool in AgentTool.values)
         if (ref.watch(agentInstalledProvider(tool))) tool,
     ];
+    // Auto is offered only when there's a real choice to make — two or more
+    // installed agents. With one, "let the grid pick" would always pick it, so
+    // the row would be a longer way to say what a single agent already says.
+    final offerAuto = installed.length > 1;
     // Where the pick will be remembered, said out loud: in a project the choice
     // is that project's and changes nothing anywhere else, which is the whole
     // point of it — and it explains why the agent changed when they switched.
@@ -87,21 +116,25 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
         ),
       ),
       menuChildren: [
+        if (offerAuto) _AutoItem(selected: autoChosen, onTap: _selectAuto),
         for (final tool in installed)
           _AgentItem(
             tool: tool,
-            selected: tool == active,
+            // A concrete agent is ticked only when it's the *chosen* one — under
+            // Auto none is, even though one is currently answering, or the list
+            // would show two ticks and hide that the grid is choosing.
+            selected: !autoChosen && tool == active,
             unavailable: _unavailableNote(tool),
             onTap: () => _select(tool),
           ),
         _ScopeNote(projectName: project?.name),
       ],
       builder: (context, controller, _) => ComposerTrigger(
-        label: active.name,
-        tooltip: project == null
-            ? 'Which agent answers · ${active.name}'
-            : 'Which agent answers in ${project.name} · ${active.name}',
-        leading: AgentMark(tool: active, size: 14),
+        label: autoChosen ? 'Auto' : active.name,
+        tooltip: _triggerTooltip(autoChosen, active, project?.name),
+        leading: autoChosen
+            ? Icon(Icons.auto_awesome, size: 14, color: AppPalette.accent)
+            : AgentMark(tool: active, size: 14),
         onTap: () => controller.isOpen ? controller.close() : controller.open(),
       ),
     );
@@ -139,6 +172,93 @@ class _ScopeNote extends StatelessWidget {
             color: AppPalette.textFaint,
             fontSize: 11,
             height: 1.3,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Auto row at the top of the list: a wand, the word "Auto", and the line
+/// that says what it does. Reuses the same box as [_AgentItem] so it reads as a
+/// peer of the agents it chooses between, not a setting bolted above them.
+class _AutoItem extends StatelessWidget {
+  const _AutoItem({required this.selected, required this.onTap});
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return MenuItemButton(
+      onPressed: onTap,
+      style: ButtonStyle(
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+        overlayColor: WidgetStatePropertyAll(AppSurface.hoverFill),
+        splashFactory: NoSplash.splashFactory,
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: _rowRadius),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: _rowGutter,
+          vertical: 3,
+        ),
+        child: Container(
+          width: _menuWidth - _rowGutter * 2,
+          padding: const EdgeInsets.fromLTRB(_rowInnerPad, 8, 8, 8),
+          decoration: BoxDecoration(
+            color: selected ? AppSurface.accentWash : Colors.transparent,
+            borderRadius: _rowRadius,
+          ),
+          child: Row(
+            children: [
+              // A 20px box like AgentMark, so the wand lines up with the agent
+              // icons under it rather than sitting a few pixels off.
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: Icon(
+                  Icons.auto_awesome,
+                  size: 18,
+                  color: AppPalette.accent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Auto',
+                      style: TextStyle(
+                        color: AppPalette.textPrimary,
+                        fontSize: 13,
+                        fontWeight: AppFont.medium,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      kAutoAgentTagline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppPalette.textSecondary,
+                        fontSize: 11.5,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selected) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.check_rounded, size: 16, color: AppPalette.accent),
+              ],
+            ],
           ),
         ),
       ),

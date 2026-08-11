@@ -49,6 +49,27 @@ mixin _ChatSend on _ChatSessions {
     // The chat was deleted while its follow-up waited. Nothing to send it to.
     if (target == null) return;
 
+    // Auto agent: the grid picks which installed assistant answers, and it runs
+    // on the grid's auto model — the one model every agent can use, so the
+    // routed one never dead-ends on a pair the composer left showing. The agent
+    // itself is chosen below, once the message is on screen. [effectiveModel] is
+    // what actually goes on the wire and is stamped on the turn; [model] stays
+    // whatever the composer sent, for the queue path above.
+    final autoChosen = ref.read(
+      isAutoAgentChosenForProjectProvider(target.projectId),
+    );
+    // Only swap to `auto` on a grid that actually serves it — a grid with no
+    // auto-routing would refuse `auto` outright. Where it isn't served the
+    // composer's own model stands, and the routed agent runs on that (every
+    // agent handles a plain grid model; only a foreign vendor seat would clash,
+    // which is the composer's existing wall, not one Auto adds).
+    final gridServesAuto = ref
+        .read(playgroundModelsProvider)
+        .any((option) => option.id == kAutoModelId);
+    final effectiveModel = (autoChosen && gridServesAuto)
+        ? kAutoModelId
+        : model;
+
     // What this chat lets the agent do — its own choice when it has one, else
     // the app's standing one. Read once here so the turn runs under the mode
     // that was on screen when Send was pressed, even if the user switches chats
@@ -78,7 +99,7 @@ mixin _ChatSend on _ChatSessions {
       outputsDir: ref.read(mediaOutputsDirProvider),
     );
     final withUser = target.copyWith(
-      model: model,
+      model: effectiveModel,
       updatedAt: DateTime.now(),
       messages: [...target.messages, userTurn],
     );
@@ -100,7 +121,23 @@ mixin _ChatSend on _ChatSessions {
     // agent belongs to the chat's *project*, and a turn can go out (or wait in
     // the agent queue) long after the user has moved to a project that runs a
     // different one.
-    final agent = ref.read(chatAgentForProjectProvider(conversation.projectId));
+    //
+    // Under Auto, the pick is the grid's: it reads the question and each
+    // installed agent's strengths and names one. Done here, after the user turn
+    // is on screen (SendBusy shows a spinner), so the ~1s classification reads
+    // as the turn starting rather than a lag before the box clears. Every branch
+    // returns a usable agent — one candidate, an unreachable grid, an unreadable
+    // reply all fall back — so the reply footer still names who actually
+    // answered while the picker keeps saying "Auto".
+    var agent = ref.read(chatAgentForProjectProvider(conversation.projectId));
+    if (autoChosen) {
+      agent = await ref
+          .read(autoAgentRouterProvider)
+          .route(
+            question: text,
+            candidates: ref.read(runnableChatAgentsProvider),
+          );
+    }
     // Plain text goes through the agent (it can use tools and keeps the
     // conversation's context); pictures — generating one, or a turn that carries
     // attachments — go straight to the grid's chat API, which is the only one
@@ -114,7 +151,7 @@ mixin _ChatSend on _ChatSessions {
     void dispatch() => _dispatch(
       conversation: conversation,
       network: network,
-      model: model,
+      model: effectiveModel,
       modality: modality,
       attachments: attachments,
       workdir: project?.path,

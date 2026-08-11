@@ -19,24 +19,38 @@ enum AgentTool {
     name: 'Hermes',
     tagline: 'Runs locally. Uses your model and tools.',
     iconAsset: 'assets/agents/hermes_icon.webp',
+    strengths:
+        'General questions, research and web search, writing, running local '
+        'tools and MCP connectors, day-to-day chat. The all-rounder for '
+        'anything that is not specifically writing code.',
   ),
   codex(
     id: 'codex',
     name: 'Codex',
     tagline: "OpenAI's coding agent.",
     iconAsset: 'assets/agents/codex_icon.png',
+    strengths:
+        'Writing, editing and debugging code; running commands and tests in a '
+        'repository; refactors and multi-file changes. A focused coding agent.',
   ),
   claude(
     id: 'claude',
     name: 'Claude Code',
     tagline: "Anthropic's coding agent.",
     iconAsset: 'assets/agents/claude_icon.png',
+    strengths:
+        'Careful reasoning over a codebase, larger refactors, explaining and '
+        'reviewing code, and long multi-step engineering tasks. Strong at '
+        'planning a change before making it.',
   ),
   pi(
     id: 'pi',
     name: 'Pi',
     tagline: 'A minimal terminal coding harness.',
     iconAsset: 'assets/agents/pi_icon.png',
+    strengths:
+        'Small, fast coding tasks in a terminal — a quick edit, a one-off '
+        'command — when a lighter harness is enough.',
   );
 
   const AgentTool({
@@ -44,6 +58,7 @@ enum AgentTool {
     required this.name,
     required this.tagline,
     required this.iconAsset,
+    required this.strengths,
   });
 
   /// The agent's own slug — how it is named on disk and in the log, and the
@@ -58,6 +73,12 @@ enum AgentTool {
   /// the row to two lines, leaving the list unevenly ranked for no reason. Say
   /// only what sets this agent apart from the others.
   final String tagline;
+
+  /// What this agent is *best at*, in prose — the material the Auto agent's
+  /// router shows a model so it can pick the right one for a question. Longer
+  /// and more specific than [tagline], which is chrome; this is a description a
+  /// classifier reasons over, so it names the kinds of work each agent wins on.
+  final String strengths;
 
   /// The recipe the app runs to put this agent on the machine, or null for an
   /// agent that ships its own installer (Claude Code — see

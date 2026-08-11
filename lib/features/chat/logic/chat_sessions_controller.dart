@@ -16,6 +16,8 @@ import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_status.dart';
+import '../../agents/logic/auto_agent_router.dart';
+import '../../network/logic/node_display.dart' show kAutoModelId;
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
