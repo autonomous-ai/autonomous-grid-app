@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'sync_envelope.dart';
 import 'sync_keyring.dart';
 
 /// Talks to the control plane's `/v1/grid/app-sync/*` routes, and to the storage
@@ -33,22 +34,30 @@ class SyncClient {
   static const Duration _transferTimeout = Duration(minutes: 5);
 
   /// Every backup this account holds, newest first.
+  ///
+  /// A row this build cannot read is **skipped**, never fatal, and that is the
+  /// forward-compatibility hinge rather than politeness: `SyncKeyBlob.decode`
+  /// refuses a key record whose `kdf` it doesn't know, so the first backup
+  /// written by a build with stronger parameters would otherwise take the whole
+  /// list down on every older machine — including the older backups on it, which
+  /// that machine can still open perfectly well.
   Future<(List<SyncVersion>?, SyncApiError?)> listVersions() async {
-    final (body, error) = await _send('GET', _uri('snapshots'));
+    final (body, error) = await _json('GET', _uri('snapshots'));
     if (error != null) return (null, error);
-    final decoded = jsonDecode(utf8.decode(body!));
-    if (decoded is! Map<String, Object?>) {
-      return (null, const SyncApiError("The server's answer wasn't readable."));
+    final raw = body!['snapshots'];
+    final versions = <SyncVersion>[];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is! Map<String, Object?>) continue;
+        try {
+          final version = SyncVersion.fromJson(item);
+          if (version != null) versions.add(version);
+        } on SyncFormatException {
+          // One unreadable row, not an unreadable list.
+        }
+      }
     }
-    final raw = decoded['snapshots'];
-    return (
-      [
-        if (raw is List)
-          for (final item in raw)
-            if (item is Map<String, Object?>) ?SyncVersion.fromJson(item),
-      ],
-      null,
-    );
+    return (versions, null);
   }
 
   /// Uploads a sealed snapshot and returns the version number it became.

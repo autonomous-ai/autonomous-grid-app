@@ -5,6 +5,25 @@ import 'dart:typed_data';
 import '../../../core/grid_paths.dart';
 import 'sync_bundle.dart';
 
+/// Whether a chat id from a snapshot may be used as a file name.
+///
+/// A chat id is written by the *other* machine and arrives inside a payload
+/// this one only decrypts — decryption proves the password, not that the id is
+/// a name. `../` in one turns `applyChats` into a write anywhere the app can
+/// reach, and a restore is exactly the moment somebody hands you a file they
+/// were given.
+///
+/// Deliberately a whitelist of shape rather than a hunt for the separators
+/// people remember: an id is a generated identifier, so anything that is not a
+/// plain path segment is already a corrupt one, and the two rules that matter
+/// (`.`/`..` and any separator) are the two an exclusion list gets wrong on the
+/// platform it wasn't written on.
+bool isSafeChatId(String id) {
+  if (id.isEmpty || id == '.' || id == '..') return false;
+  if (id.length > 128) return false;
+  return !id.contains(RegExp(r'[/\\:\x00]'));
+}
+
 /// The only part of Sync & Backup that touches the disk.
 ///
 /// Everything else in this feature is bytes and maps; the reading, the backup,
@@ -132,10 +151,16 @@ class SyncWorkspace {
   }
 
   /// Writes the chats a merge decided to take, one file each.
+  ///
+  /// The id becomes a file name, so [isSafeChatId] is checked here as well as
+  /// where the ids are read off the snapshot. Two checks for one rule because
+  /// this is the only place that *writes*: a caller reached by a route nobody
+  /// has written yet must not be able to turn an id into a path.
   Future<void> applyChats(Map<String, Map<String, Object?>> chats) async {
     if (chats.isEmpty) return;
     await chatsDir.create(recursive: true);
     for (final entry in chats.entries) {
+      if (!isSafeChatId(entry.key)) continue;
       final file = File('${chatsDir.path}/${entry.key}.json');
       await file.writeAsString(_pretty(entry.value), flush: true);
     }
@@ -224,7 +249,16 @@ class SyncWorkspace {
     }
   }
 
-  String _basename(String path) => path.split('/').last;
+  /// The file name out of a path this process got back from `Directory.list()`.
+  ///
+  /// Both separators, because the two halves of that sentence disagree on
+  /// Windows: the paths here are *built* with `/`, while `list()` joins entries
+  /// with the platform's own separator — so a listed chat comes back as
+  /// `…/app/chats\name.json` and splitting on `/` alone leaves nearly the whole
+  /// path as the "name". The rollback zip would then carry a drive letter in its
+  /// entry names, which is the one file a restore gone wrong is undone from.
+  /// Same rule as `fileNameOf` in the chat feature.
+  String _basename(String path) => path.split('/').last.split(r'\').last;
 
   String _pretty(Object? value) =>
       const JsonEncoder.withIndent('  ').convert(value);

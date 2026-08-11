@@ -16,14 +16,25 @@ const int _tailBytes = 64 * 1024;
 /// Best-effort by design: this only ever decorates a feedback report, so a
 /// missing directory, a log that hasn't been written yet, or an unreadable file
 /// all mean "nothing to attach" rather than a failure the caller has to handle.
-Future<List<String>> readRecentAppErrors({int keep = 3}) async {
+///
+/// [sanitize] runs over the whole tail *before* it is split and clipped, and a
+/// caller that sends these lines anywhere must pass one. Before clipping on
+/// purpose: a secret cut in half by the 200-character clip is still half a
+/// secret, and a redactor given the fragment can no longer recognise it. This
+/// layer owns no redaction rule of its own — that lives with the feature that
+/// decided the lines are leaving the machine.
+Future<List<String>> readRecentAppErrors({
+  int keep = 3,
+  String Function(String)? sanitize,
+}) async {
   try {
     final file = File(
       '${GridPaths.logsDir.path}/'
       '${dailyLogName(GridPaths.appLogBase, DateTime.now())}',
     );
     if (!await file.exists()) return const [];
-    return recentErrorLines(await _readTail(file), keep: keep);
+    final tail = await _readTail(file);
+    return recentErrorLines(sanitize == null ? tail : sanitize(tail), keep: keep);
   } on Object {
     return const [];
   }

@@ -132,7 +132,21 @@ class SyncController extends Notifier<SyncRunState> {
       for (final entry in sealed) entry.oid,
     ]);
     if (checkError != null) throw checkError;
-    final missing = remote!.upload.keys.toList();
+    // Only the ids we actually sealed. The server answers `upload` with what it
+    // wants, and an id we never offered has no envelope here — a `!` on that
+    // lookup would crash the upload with the generic "couldn't finish", which
+    // says nothing about the one thing that went wrong.
+    final missing = [
+      for (final oid in remote!.upload.keys)
+        if (envelopes.containsKey(oid)) oid,
+    ];
+    if (missing.length != remote.upload.length) {
+      log.warn(
+        'sync',
+        'the server asked for ${remote.upload.length - missing.length} media '
+            'object(s) this backup does not have; they were not sent',
+      );
+    }
     for (var i = 0; i < missing.length; i++) {
       state = SyncBusy(
         SyncStage.uploadingMedia,
@@ -435,6 +449,11 @@ class SyncController extends Notifier<SyncRunState> {
 List<int> _json(Object? value) =>
     utf8.encode(const JsonEncoder.withIndent('  ').convert(value));
 
+/// The chats inside a downloaded snapshot, keyed by id.
+///
+/// Dropped here rather than at the write, so the preview, the merge and the
+/// summary all count the same chats: a chat filtered out further down would be
+/// promised to the user in the confirmation dialog and then not appear.
 Map<String, Map<String, Object?>> _chatsIn(Map<String, Uint8List> entries) {
   final out = <String, Map<String, Object?>>{};
   for (final entry in entries.entries) {
@@ -442,7 +461,7 @@ Map<String, Map<String, Object?>> _chatsIn(Map<String, Uint8List> entries) {
     final decoded = _decode(entry.value);
     if (decoded is! Map<String, Object?>) continue;
     final id = decoded['id'];
-    if (id is String && id.isNotEmpty) out[id] = decoded;
+    if (id is String && isSafeChatId(id)) out[id] = decoded;
   }
   return out;
 }

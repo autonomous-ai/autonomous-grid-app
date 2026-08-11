@@ -40,6 +40,22 @@ const int syncKdfParallelism = 1;
 /// The name written into [SyncKeyBlob.kdf]; the only one this build accepts.
 const String syncKdfArgon2id = 'argon2id';
 
+/// The most a *stored* blob may ask this machine to spend unwrapping it.
+///
+/// The parameters ride in the blob so they can be raised later without locking
+/// anyone out — which means they are a number this app takes from a record the
+/// server hands back, and runs an allocator on. Left unbounded, a `m` of a few
+/// million KiB is an out-of-memory kill of the whole app at the moment somebody
+/// opens the backup list, from a value nobody here typed.
+///
+/// Generous rather than tight: a hundredfold over today's 19 MiB leaves every
+/// realistic hardening ahead of us inside the bound, so this only ever refuses a
+/// figure that is a mistake or an attack. A refusal costs that one backup's row
+/// (`SyncClient.listVersions` skips it) — never the list.
+const int syncKdfMaxMemoryKib = 2 * 1024 * 1024;
+const int syncKdfMaxIterations = 64;
+const int syncKdfMaxParallelism = 16;
+
 /// Bytes in a version key, and in every key derived from a media file.
 const int syncKeyLength = 32;
 
@@ -115,9 +131,14 @@ class SyncKeyBlob {
       salt: _bytes(json['salt'], 'salt'),
       nonce: _bytes(json['nonce'], 'nonce'),
       wrapped: _bytes(json['wrapped'], 'wrapped'),
-      memoryKib: _int(json['m'], syncKdfMemoryKib),
-      iterations: _int(json['t'], syncKdfIterations),
-      parallelism: _int(json['p'], syncKdfParallelism),
+      memoryKib: _cost(json['m'], syncKdfMemoryKib, syncKdfMaxMemoryKib, 'm'),
+      iterations: _cost(json['t'], syncKdfIterations, syncKdfMaxIterations, 't'),
+      parallelism: _cost(
+        json['p'],
+        syncKdfParallelism,
+        syncKdfMaxParallelism,
+        'p',
+      ),
       hint: json['hint'] is String ? json['hint'] as String : null,
     );
   }
@@ -144,7 +165,25 @@ class SyncKeyBlob {
     }
   }
 
-  static int _int(Object? raw, int fallback) => raw is int ? raw : fallback;
+  /// One KDF cost parameter, refused when it is outside what this machine will
+  /// agree to spend.
+  ///
+  /// A missing or non-integer value falls back to today's figure — an old blob
+  /// that predates the field is readable, which is the whole reason the
+  /// parameters travel. A value that is *present and out of range* is a
+  /// different thing and must not fall back: silently substituting the default
+  /// would derive the wrong key and report it as a wrong password, sending
+  /// somebody to re-type a password that was right.
+  static int _cost(Object? raw, int fallback, int ceiling, String field) {
+    if (raw is! int) return fallback;
+    if (raw < 1 || raw > ceiling) {
+      throw SyncFormatException(
+        'key record asks for $field=$raw, outside the 1..$ceiling this build '
+        'will spend on one backup',
+      );
+    }
+    return raw;
+  }
 }
 
 /// The key that seals one backup.

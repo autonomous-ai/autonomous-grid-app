@@ -7,6 +7,7 @@ import '../../../infrastructure/logging/app_log_tail.dart';
 import '../../../shared/app_info.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../auth/logic/session_controller.dart';
+import 'log_bundle.dart';
 
 /// What the app knows about itself, attached to every feedback message.
 ///
@@ -21,6 +22,13 @@ import '../../auth/logic/session_controller.dart';
 /// clipped — not the stack traces under them, which carry paths from this
 /// machine. Widening this to log *contents* is a different decision with a
 /// different privacy weight; don't reach for it here.
+///
+/// "No tokens" is **enforced**, not merely intended: the error lines go through
+/// [redactLogSecrets] — the same rule the opt-in log bundle uses — before they
+/// are clipped. A log line is free text from anywhere in the app, so a bearer or
+/// an `sk-…` reaching one is a matter of which failure happened rather than of
+/// what this class meant to carry, and this payload leaves the machine on
+/// *every* send rather than on a switch.
 class FeedbackDiagnostics {
   const FeedbackDiagnostics({
     required this.appVersion,
@@ -56,8 +64,9 @@ class FeedbackDiagnostics {
   /// from one is about a different backend than the same version shipped.
   final String buildChannel;
 
-  /// The last few error lines from today's app log, newest last. Empty when the
-  /// app hasn't logged an error today, which is itself worth knowing.
+  /// The last few error lines from today's app log, newest last, with anything
+  /// that could be a secret already blanked. Empty when the app hasn't logged an
+  /// error today, which is itself worth knowing.
   final List<String> recentErrors;
 
   Map<String, dynamic> toJson() => {
@@ -90,7 +99,7 @@ String platformLabel(String operatingSystem) => switch (operatingSystem) {
 final feedbackDiagnosticsProvider = FutureProvider<FeedbackDiagnostics>((
   ref,
 ) async {
-  final errors = await readRecentAppErrors();
+  final errors = await readRecentAppErrors(sanitize: redactLogSecrets);
   return FeedbackDiagnostics(
     appVersion: ref.read(appVersionProvider).asData?.value ?? 'unknown',
     platform: platformLabel(Platform.operatingSystem),

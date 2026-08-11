@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -139,19 +140,28 @@ class HttpFeedbackClient implements FeedbackClient {
   /// `package:http`, so there is no `MultipartRequest` to lean on. Order is
   /// deliberate: the small JSON `payload` first, so a server streaming the parts
   /// has the message and its metadata before the megabytes of `logs`.
-  List<int> _multipartBody(Map<String, dynamic> payload, List<int> zip) {
-    final head = utf8.encode(
-      '--$_boundary\r\n'
-      'Content-Disposition: form-data; name="payload"\r\n'
-      'Content-Type: application/json\r\n\r\n'
-      '${jsonEncode(payload)}\r\n'
-      '--$_boundary\r\n'
-      'Content-Disposition: form-data; name="logs"; '
-      'filename="grid-logs.zip"\r\n'
-      'Content-Type: application/zip\r\n\r\n',
-    );
-    final tail = utf8.encode('\r\n--$_boundary--\r\n');
-    return [...head, ...zip, ...tail];
+  ///
+  /// Assembled through a [BytesBuilder] rather than a spread. The zip is the
+  /// only part with a size worth thinking about, and `[...head, ...zip, ...tail]`
+  /// builds a general `List<int>` — several bytes of heap per byte of log, for a
+  /// payload that is already megabytes.
+  Uint8List _multipartBody(Map<String, dynamic> payload, List<int> zip) {
+    return (BytesBuilder(copy: false)
+          ..add(
+            utf8.encode(
+              '--$_boundary\r\n'
+              'Content-Disposition: form-data; name="payload"\r\n'
+              'Content-Type: application/json\r\n\r\n'
+              '${jsonEncode(payload)}\r\n'
+              '--$_boundary\r\n'
+              'Content-Disposition: form-data; name="logs"; '
+              'filename="grid-logs.zip"\r\n'
+              'Content-Type: application/zip\r\n\r\n',
+            ),
+          )
+          ..add(zip)
+          ..add(utf8.encode('\r\n--$_boundary--\r\n')))
+        .takeBytes();
   }
 
   /// A status turned into something the user can act on. Every branch says what
