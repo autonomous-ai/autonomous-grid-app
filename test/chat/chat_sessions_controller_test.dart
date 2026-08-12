@@ -16,6 +16,7 @@ import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
+import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/agents/logic/auto_agent.dart';
 import 'package:grid_app/features/chat/logic/chat_scope.dart';
 import 'package:grid_app/features/playground/logic/playground_models.dart';
@@ -2291,6 +2292,52 @@ void main() {
         expect(waiting.laneQueuedIn(waiting.activeId), isFalse);
         expect(waiting.agentRunningIn(waiting.activeId), isFalse);
 
+        h.grid.release();
+        await sending;
+      },
+    );
+
+    test(
+      "the previous turn's steps are gone before the grid is even asked",
+      () async {
+        // The working bubble is on screen from the moment the turn is committed,
+        // and routing holds it there for seconds. Left unreset, the new question
+        // sat under the last turn's terminal commands — the user reads that as
+        // the app running them again, now.
+        final h = autoHarness();
+        final chats = h.container.read(chatSessionsProvider.notifier);
+        await chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'what is a CR-V worth?',
+        );
+        final id = h.container.read(chatSessionsProvider).activeId!;
+        h.container
+            .read(agentRunsProvider.notifier)
+            .upsertStep(
+              id,
+              const AgentActivity(
+                id: 'step-1',
+                kind: AgentActivityKind.command,
+                label: 'uv run --with ddgs python3 …',
+                status: AgentActivityStatus.done,
+              ),
+            );
+        expect(h.container.read(agentRunProvider(id)).steps, hasLength(1));
+
+        h.grid.hold();
+        final sending = chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'open the browser for me',
+        );
+        await pumpEventQueue();
+
+        expect(
+          h.container.read(agentRunProvider(id)).steps,
+          isEmpty,
+          reason: 'the feed is this turn\'s, and this turn has run nothing yet',
+        );
         h.grid.release();
         await sending;
       },
