@@ -29,6 +29,18 @@ import 'claude_tool.dart';
 import 'claude_turn_mcp_config.dart';
 import '../model_context_window.dart';
 
+/// Claude Code's own "summarize the conversation and keep the summary" command,
+/// sent as a turn's whole prompt. Its definition inside the installed binary
+/// carries `supportsNonInteractive: true`, which is what makes it usable from
+/// `claude -p`; the CLI takes an unrecognised `/name` as literal prompt text, so
+/// this is checked against the binary rather than assumed.
+const String kClaudeCompactCommand = '/compact';
+
+/// The activity-feed row a compaction runs under. Fixed, so the finished status
+/// replaces the running one instead of adding a second row (`upsertStep` keys on
+/// the id) — and so a chat that compacts twice doesn't grow two.
+const String _compactStepId = 'compact-session';
+
 /// The Claude Code exec seam, or null when Claude Code is absent.
 final claudeExecServiceProvider = Provider<ClaudeExecService?>((ref) {
   final path = ref.watch(claudePathProvider);
@@ -127,30 +139,170 @@ class ClaudeChatSender implements ChatSender {
       extra: browser.mcpExtra,
     );
 
+    // On the extension lane Claude Code runs against its own sign-in, where the
+    // relay's name for the seat (`claude:opus`) is not a model it knows.
+    final turnModel = onExtension ? claudeLocalModel(model) : model;
+    final environment = onExtension
+        ? const <String, String>{}
+        : claudeCodeEnv(
+            network.relayBaseUrl,
+            network.relayApiKey,
+            [model],
+            compactWindow: agentContextCeiling(window),
+          );
+    final dropEnvironment = onExtension
+        ? kClaudeRelayEnvKeys
+        : const <String>{};
+
+    // Make room *before* the turn, not after the refusal.
+    //
+    // The same ceiling already rides in [environment] for Claude Code's own
+    // auto-compact to honour, and on a grid model it measurably doesn't — see
+    // [needsCompaction]. So the app asks the question itself, from the figure
+    // the last turn reported ([ClaudeContextUsed]), and asks for the summary
+    // itself when the answer is yes.
+    if (turn.resumeSessionId case final session?
+        when needsCompaction(
+          usedTokens: turn.slot.usedTokens,
+          engineWindow: window,
+        )) {
+      await _compact(
+        workdir: root,
+        model: turnModel,
+        environment: environment,
+        sessionId: session,
+        mcpConfigPath: mcpConfigPath,
+        chrome: onExtension,
+        dropEnvironment: dropEnvironment,
+        chat: chat,
+        slot: turn.slot,
+      );
+    }
+
     yield* _runTurn(
       workdir: root,
       prompt: withProjectInstructions(
         prompt,
         turn.freshStart ? instructions : null,
       ),
-      resumeSessionId: turn.resumeSessionId,
-      // On the extension lane Claude Code runs against its own sign-in, where
-      // the relay's name for the seat (`claude:opus`) is not a model it knows.
-      model: onExtension ? claudeLocalModel(model) : model,
-      environment: onExtension
-          ? const {}
-          : claudeCodeEnv(
-              network.relayBaseUrl,
-              network.relayApiKey,
-              [model],
-              compactWindow: agentContextCeiling(window),
-            ),
+      // Off the slot, not off the plan, so what gets resumed is whatever the
+      // compaction's own `init` line stated. The same id either way today (see
+      // [_compact]) — reading it here is what keeps that a fact the CLI reports
+      // rather than one this call assumes.
+      resumeSessionId: turn.slot.sessionId ?? turn.resumeSessionId,
+      model: turnModel,
+      environment: environment,
       planFirst: planFirst,
       slot: turn.slot,
       chat: chat,
       mcpConfigPath: mcpConfigPath,
       chrome: onExtension,
-      dropEnvironment: onExtension ? kClaudeRelayEnvKeys : const {},
+      dropEnvironment: dropEnvironment,
+    );
+  }
+
+  /// Ask Claude Code to summarize this session so the next turn has room.
+  ///
+  /// A separate `claude --resume <id>` run whose entire prompt is `/compact` —
+  /// the CLI's own command, which keeps a summary of the work **in** the session
+  /// rather than throwing the session away. The app already knows how to throw
+  /// it away ([_contextFull] does exactly that, after the failure); this is the
+  /// version that doesn't cost the agent everything it had worked out.
+  ///
+  /// It runs headless, so the command has to be one that works there:
+  /// `/compact` declares `supportsNonInteractive: true` in its own definition
+  /// inside the installed binary, verified rather than assumed — a command that
+  /// didn't would be taken as a literal prompt and silently do nothing but burn
+  /// a turn.
+  ///
+  /// **Best effort, on purpose.** Every failure path here returns without
+  /// raising: a compaction that can't run must not swallow the user's message.
+  /// The turn goes ahead on the un-summarized session and, if it really is too
+  /// long, fails exactly the way it did before any of this existed.
+  Future<void> _compact({
+    required String workdir,
+    required String model,
+    required Map<String, String> environment,
+    required String sessionId,
+    required String? mcpConfigPath,
+    required bool chrome,
+    required Set<String> dropEnvironment,
+    required String chat,
+    required AgentSessionSlot slot,
+  }) async {
+    final service = _ref.read(claudeExecServiceProvider);
+    if (service == null) return;
+
+    final runs = _ref.read(agentRunsProvider.notifier);
+    final log = _ref.read(appLogProvider);
+    // In the feed rather than in the log alone: summarizing is a whole model
+    // round-trip, and a chat that sits silent for half a minute before the
+    // answer starts reads as an app that has hung.
+    const label = 'Making room — summarizing the conversation so far';
+    runs.upsertStep(
+      chat,
+      const AgentActivity(
+        id: _compactStepId,
+        kind: AgentActivityKind.tool,
+        label: label,
+        status: AgentActivityStatus.running,
+      ),
+    );
+
+    String? failure;
+    try {
+      final run = service.run(
+        workdir: workdir,
+        prompt: kClaudeCompactCommand,
+        model: model,
+        environment: environment,
+        resumeSessionId: sessionId,
+        mcpConfigPath: mcpConfigPath,
+        chrome: chrome,
+        dropEnvironment: dropEnvironment,
+      );
+      await for (final event in run.events) {
+        switch (event) {
+          // Whatever id the CLI opens with, recorded rather than assumed. It is
+          // the same one in practice — `--resume` reuses the original, and a
+          // new id needs `--fork-session`, which no turn here passes — so this
+          // normally writes back what it already had. It exists because
+          // [_runTurn] treats its own `init` line the same way: which session
+          // is live is the CLI's to state, and a build that changed its mind
+          // would otherwise leave the next turn resuming one that is gone.
+          case ClaudeSessionStarted(:final sessionId):
+            slot.sessionId = sessionId;
+          case ClaudeTurnFailed(:final message):
+            failure = message;
+          default:
+        }
+      }
+      await run.done;
+    } on ClaudeExecException catch (error) {
+      failure = error.message;
+    } on Object catch (error) {
+      failure = '$error';
+    }
+
+    if (failure == null) {
+      // Zero, not a guess at the summary's size: the next turn reports its own
+      // figure, and leaving the old one standing would compact again on the
+      // turn after this — every turn, forever.
+      slot.usedTokens = 0;
+      log.info('agent', 'summarized the session before the next turn');
+    } else {
+      log.failure('agent', "couldn't summarize the session: $failure");
+    }
+    runs.upsertStep(
+      chat,
+      AgentActivity(
+        id: _compactStepId,
+        kind: AgentActivityKind.tool,
+        label: label,
+        status: failure == null
+            ? AgentActivityStatus.done
+            : AgentActivityStatus.failed,
+      ),
     );
   }
 
@@ -306,6 +458,10 @@ class ClaudeChatSender implements ChatSender {
             _recordChange(chat, path, before.remove(path));
           case ClaudeTurnCompleted():
             endedCleanly = true;
+          // Kept per request, not per turn: an agentic turn calls the model
+          // many times and the last call is where the session actually stands.
+          case ClaudeContextUsed(:final tokens):
+            slot.usedTokens = tokens;
           case ClaudeMessageEvent(:final text):
             answer
               ..clear()

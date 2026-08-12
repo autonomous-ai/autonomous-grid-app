@@ -86,6 +86,11 @@ class ClaudeStreamParser {
   }
 
   /// The completed content blocks of one `assistant` or `user` message.
+  ///
+  /// An `assistant` message also carries the `usage` of the request that
+  /// produced it — read here rather than from the closing `result` line, which
+  /// totals every request the turn made (it is what the cost is computed from)
+  /// and so counts one conversation many times over.
   List<ClaudeExecEvent> _readBlocks(
     Map<String, dynamic> event, {
     required bool assistant,
@@ -95,6 +100,9 @@ class ClaudeStreamParser {
     final content = message['content'];
     if (content is! List) return const [];
     return [
+      if (assistant)
+        if (claudeContextTokens(message['usage']) case final tokens?)
+          ClaudeContextUsed(tokens),
       for (final block in content)
         if (block is Map)
           ...(assistant
@@ -218,6 +226,34 @@ class ClaudeStreamParser {
     ..._completed,
     if (_partial.isNotEmpty) _partial.toString(),
   ].join('\n\n');
+}
+
+/// How full the model's context was for one request, from that request's
+/// `usage` — or null when the shape carries no usable figure.
+///
+/// Every request sends the whole conversation, so one request's input **is** the
+/// context size. All three input halves count: fresh tokens, and both cache
+/// figures — a cached token is still occupying the window, it was merely
+/// cheaper to send. Counting only `input_tokens` is the trap here; on a
+/// cache-heavy agentic turn that reads a few thousand while the real occupancy
+/// is two hundred thousand.
+///
+/// `output_tokens` counts too, because the reply joins the conversation the
+/// moment it lands and this figure is read to size the *next* turn. It is the
+/// same sum Claude Code's own compaction trigger uses.
+///
+/// Null rather than zero when nothing parses, so a line from a build that words
+/// it differently leaves the last known figure standing instead of resetting it
+/// and calling a full session empty.
+int? claudeContextTokens(Object? usage) {
+  if (usage is! Map) return null;
+  int field(String name) => (usage[name] as num?)?.toInt() ?? 0;
+  final total =
+      field('input_tokens') +
+      field('cache_read_input_tokens') +
+      field('cache_creation_input_tokens') +
+      field('output_tokens');
+  return total > 0 ? total : null;
 }
 
 /// The `mcp_servers` array of an `init` line, read as name → status.

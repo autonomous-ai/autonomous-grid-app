@@ -61,6 +61,24 @@ const int _ceilingDenominator = 5;
 int agentContextCeiling(int engineWindow) =>
     engineWindow * _ceilingNumerator ~/ _ceilingDenominator;
 
+/// Whether a turn resuming a session that has already filled [usedTokens] of
+/// [engineWindow] must summarize before it sends.
+///
+/// The same ceiling the agent is handed, asked a second time — deliberately one
+/// number and not two, so the app's own check can't drift from what it told the
+/// agent to do.
+///
+/// Asking at all is the point. Claude Code is given that ceiling as
+/// `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and did not act on it: measured on a grid
+/// model advertising 200000 (ceiling 160000), a session was refused by the
+/// engine at 230145 input tokens. Whatever the reason on its side, a ceiling
+/// that only one party enforces is not enforced.
+///
+/// Zero means no turn has reported a figure yet — the session is as empty as it
+/// will ever be, so there is nothing to make room for.
+bool needsCompaction({required int usedTokens, required int engineWindow}) =>
+    usedTokens > 0 && usedTokens >= agentContextCeiling(engineWindow);
+
 /// What to run a model against when no source has named its window.
 ///
 /// The three sources can all be missing at once: the grid advertises a figure

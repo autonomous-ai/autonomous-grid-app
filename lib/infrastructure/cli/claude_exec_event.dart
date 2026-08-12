@@ -43,6 +43,24 @@ class ClaudeActivityEvent extends ClaudeExecEvent {
   final AgentActivity activity;
 }
 
+/// How full the model's context was when Claude last called it, in tokens.
+///
+/// Emitted once per request Claude makes — several times in an agentic turn —
+/// so the last one seen is where the session stands. The sender keeps it on the
+/// session's slot, which is what lets the *next* turn know whether it has to
+/// make room before it sends.
+///
+/// The app has to measure this itself because nothing else here does. Claude
+/// Code is handed the model's real ceiling
+/// (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`, see `claudeCodeEnv`) and its own
+/// auto-compact demonstrably did not act on it: a session on a grid model
+/// advertising 200k was refused at 230145 input tokens, far past the 160000
+/// that ceiling names.
+class ClaudeContextUsed extends ClaudeExecEvent {
+  const ClaudeContextUsed(this.tokens);
+  final int tokens;
+}
+
 /// The answer so far — the full assembled text, not a delta, so the sender
 /// replaces rather than appends.
 class ClaudeMessageEvent extends ClaudeExecEvent {

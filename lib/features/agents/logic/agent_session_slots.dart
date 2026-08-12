@@ -20,6 +20,17 @@ class AgentSessionSlot {
   /// history next time is a continuation (and everything past this mark goes
   /// with the next turn); anything else restarts.
   int seen;
+
+  /// How full the model's context was at the end of this session's last turn,
+  /// in tokens. Zero until a turn has reported one.
+  ///
+  /// **On the slot, not per model.** A slot is one conversation, on one model,
+  /// in one folder — exactly the scope a session's context has. Filed per model
+  /// instead, a long chat sitting at 80% would follow the user into a chat they
+  /// just opened and have its first turn summarize a session holding nothing.
+  /// Here it resets by construction: a new conversation is a new slot, and a new
+  /// slot starts at zero.
+  int usedTokens = 0;
 }
 
 /// What one turn should send, and how.

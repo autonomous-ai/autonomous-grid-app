@@ -83,6 +83,31 @@ void main() {
     expect(friendlyClaudeError(_refusal), kClaudeContextFull);
   });
 
+  group('needsCompaction — the app asking the ceiling it already handed over', () {
+    test('a session under the ceiling sends as it is', () {
+      expect(
+        needsCompaction(usedTokens: 159999, engineWindow: 200000),
+        isFalse,
+      );
+    });
+
+    test('a session at the ceiling makes room first', () {
+      expect(needsCompaction(usedTokens: 160000, engineWindow: 200000), isTrue);
+    });
+
+    test('the turn that was actually refused would have been caught', () {
+      // The measured failure: a grid model advertising 200000, refused by the
+      // engine at 230145 input tokens — well past the 160000 Claude Code was
+      // handed as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and did not act on.
+      expect(needsCompaction(usedTokens: 230145, engineWindow: 200000), isTrue);
+    });
+
+    test('a session that has reported nothing yet is left alone — no figure is '
+        'not the same as a full one', () {
+      expect(needsCompaction(usedTokens: 0, engineWindow: 200000), isFalse);
+    });
+  });
+
   group('LearnedModelContext', () {
     ProviderContainer containerOn(File file) {
       final container = ProviderContainer(
