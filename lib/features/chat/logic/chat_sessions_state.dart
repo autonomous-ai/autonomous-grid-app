@@ -74,6 +74,7 @@ class ChatSessionsState {
     this.awaitingPlanIds = const {},
     this.outOfStepsIds = const {},
     this.runningAgentIds = const {},
+    this.laneQueuedIds = const {},
     this.queued = const {},
     this.loading = false,
   });
@@ -105,6 +106,17 @@ class ChatSessionsState {
   /// running, and a plain "waiting" cue on one still queued behind another in
   /// its own project.
   final Set<String> runningAgentIds;
+
+  /// The conversations whose agent turn is **committed but waiting for its
+  /// project's lane** — another chat in the same folder is mid-turn.
+  ///
+  /// Recorded rather than inferred from "in [SendBusy] and not running": that
+  /// gap also covers the moment before a turn is dispatched at all, which under
+  /// the Auto agent is a live call to the grid asking which assistant should
+  /// answer. Read as "queued", the chat told the user it was finishing another
+  /// chat in this project — when there was no other chat, and nothing was
+  /// waiting on anything but the router. Only this set knows the difference.
+  final Set<String> laneQueuedIds;
 
   /// In-flight send phase per conversation id — absent means idle.
   final Map<String, SendPhase> phases;
@@ -173,6 +185,10 @@ class ChatSessionsState {
   /// to finish.
   bool agentRunningIn(String? id) => id != null && runningAgentIds.contains(id);
 
+  /// Whether the chat with [id] is waiting for its project's lane — the one
+  /// case where "finishing another chat in this project" is true.
+  bool laneQueuedIn(String? id) => id != null && laneQueuedIds.contains(id);
+
   /// The last error on the chat with [id], or null.
   String? errorFor(String? id) => id == null ? null : errors[id];
 
@@ -217,6 +233,7 @@ class ChatSessionsState {
     Set<String>? awaitingPlanIds,
     Set<String>? outOfStepsIds,
     Set<String>? runningAgentIds,
+    Set<String>? laneQueuedIds,
     Map<String, List<QueuedTurn>>? queued,
     bool? loading,
   }) => ChatSessionsState(
@@ -231,6 +248,7 @@ class ChatSessionsState {
     awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
     outOfStepsIds: outOfStepsIds ?? this.outOfStepsIds,
     runningAgentIds: runningAgentIds ?? this.runningAgentIds,
+    laneQueuedIds: laneQueuedIds ?? this.laneQueuedIds,
     queued: queued ?? this.queued,
   );
 
@@ -280,6 +298,18 @@ class ChatSessionsState {
     return copyWith(awaitingPlanIds: next);
   }
 
+  /// This state with the chat [id] marked as waiting for its project's lane, or
+  /// no longer waiting (it dispatched, or the send was cancelled).
+  ChatSessionsState withLaneQueued(String id, bool queuedInLane) {
+    final next = Set<String>.from(laneQueuedIds);
+    if (queuedInLane) {
+      next.add(id);
+    } else {
+      next.remove(id);
+    }
+    return copyWith(laneQueuedIds: next);
+  }
+
   /// This state with the chat [id]'s out-of-steps flag set or cleared.
   ChatSessionsState withOutOfSteps(String id, bool outOfSteps) {
     final next = Set<String>.from(outOfStepsIds);
@@ -292,7 +322,7 @@ class ChatSessionsState {
   }
 
   /// Drop every trace of the chats in [ids] — their in-flight phase, error, plan
-  /// flag and out-of-steps flag — for when they're deleted.
+  /// flag, out-of-steps flag and lane wait — for when they're deleted.
   ChatSessionsState withoutInFlight(Set<String> ids) => copyWith(
     phases: {
       for (final e in phases.entries)
@@ -308,6 +338,10 @@ class ChatSessionsState {
     },
     outOfStepsIds: {
       for (final id in outOfStepsIds)
+        if (!ids.contains(id)) id,
+    },
+    laneQueuedIds: {
+      for (final id in laneQueuedIds)
         if (!ids.contains(id)) id,
     },
   );

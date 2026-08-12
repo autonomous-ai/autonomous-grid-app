@@ -35,7 +35,9 @@ mixin _ChatSettle on _ChatSessions {
     // Not while the controller is being torn down: `_cancelAll` runs from
     // `ref.onDispose`, and Riverpod forbids touching state there. The queue is
     // in-memory anyway, so a disposal takes it with it.
-    if (!_disposed) state = state.withQueue(id, const []);
+    if (!_disposed) {
+      state = state.withQueue(id, const []).withLaneQueued(id, false);
+    }
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);

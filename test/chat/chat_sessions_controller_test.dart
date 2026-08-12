@@ -783,6 +783,11 @@ void main() {
         reason: 'B waits in its busy state',
       );
       expect(read().agentRunningIn(bId), isFalse);
+      // Only B is waiting on the lane, and the transcript's "finishing another
+      // chat in this project…" is drawn from exactly this. A is running, so it
+      // must not claim to be waiting on itself.
+      expect(read().laneQueuedIn(bId), isTrue);
+      expect(read().laneQueuedIn(aId), isFalse);
 
       // A finishes. Only now does B reach the agent — and A never hung.
       answering.emit(
@@ -801,6 +806,11 @@ void main() {
         reason: 'B dispatches once the lane frees',
       );
       expect(read().agentRunningIn(bId), isTrue);
+      expect(
+        read().laneQueuedIn(bId),
+        isFalse,
+        reason: 'it is no longer waiting for anything — it is answering',
+      );
 
       answering.emit(
         bId,
@@ -2252,6 +2262,39 @@ void main() {
       expect(h.codex.planFirsts, [true, false]);
       expect(h.hermes.history, isNull);
     });
+
+    test(
+      'while the grid is choosing, the chat is not waiting on a lane',
+      () async {
+        // The transcript draws "finishing another chat in this project…" from
+        // this fact alone. Routing leaves the turn committed but undispatched —
+        // read as "queued", that line went under a chat in a project where
+        // nothing else was running, and the user read it as the app doing
+        // something it wasn't.
+        final h = autoHarness();
+        final chats = h.container.read(chatSessionsProvider.notifier);
+        final project = h.container
+            .read(projectsProvider.notifier)
+            .add('${tmp.path}/api');
+        chats.newChat(projectId: project.id);
+        h.grid.hold();
+
+        final sending = chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'refactor this module',
+        );
+        await pumpEventQueue();
+
+        final waiting = h.container.read(chatSessionsProvider);
+        expect(waiting.sending, isTrue, reason: 'the turn is in flight');
+        expect(waiting.laneQueuedIn(waiting.activeId), isFalse);
+        expect(waiting.agentRunningIn(waiting.activeId), isFalse);
+
+        h.grid.release();
+        await sending;
+      },
+    );
 
     test('Stop while the grid is still choosing sends nothing', () async {
       // Routing is the one long await between committing the turn and sending
