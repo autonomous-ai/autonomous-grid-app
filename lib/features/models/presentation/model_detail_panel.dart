@@ -176,14 +176,59 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   /// Every part goes down in one call: the controller takes one spec per line
   /// and stops at the first that fails, so a split model arrives whole or the
   /// user is told which part didn't.
-  void _startDownload() {
+  ///
+  /// **Any** version may be downloaded, not only the one the ranking would have
+  /// picked. `status` is advice, not permission: a quant below the quality floor
+  /// ([VersionStatus.lowQuality]) or one that won't quite hit interactive speed
+  /// ([VersionStatus.partial]) still loads and still answers. Gating the button
+  /// on [VersionStatus.runnable] left every *smaller* version in the list —
+  /// exactly the ones a modest machine wants — visible, selectable, and
+  /// impossible to install, with no word on screen saying why.
+  ///
+  /// [VersionStatus.tooLarge] is the one that asks first: those weights cannot
+  /// load here at all, and it is several GB to find that out.
+  Future<void> _startDownload(BuildContext context) async {
     final specs = _specsFor(_selected);
     if (specs.isEmpty) return;
+    if (!(_selected.status?.canRunHere ?? true) &&
+        !await _confirmTooLarge(context)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       _error = null;
       _awaitingOutcome = true;
     });
     ref.read(modelPullControllerProvider.notifier).pull(specs.join('\n'));
+  }
+
+  /// Confirms a download of weights this computer can't hold. Anything but an
+  /// explicit yes — Cancel, Escape, a tap outside — returns false, so a stray
+  /// dismissal never starts a multi-gigabyte transfer that can't be run.
+  Future<bool> _confirmTooLarge(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Download anyway?'),
+        content: Text(
+          '${_selected.version ?? 'This version'} '
+          '(${_sizeLabel(_selected.sizeBytes)}) needs more memory than this '
+          'computer has, so it won\'t start here. You can still download it — '
+          'to share from another computer on your grid, or for later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   Future<void> _confirmAndDelete(BuildContext context) async {
@@ -252,6 +297,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
         tone: switch (status) {
           VersionStatus.runnable => AppBadgeTone.positive,
           VersionStatus.partial => AppBadgeTone.warning,
+          VersionStatus.lowQuality => AppBadgeTone.warning,
           VersionStatus.tooLarge => AppBadgeTone.danger,
         },
       ),
@@ -455,12 +501,13 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
                 cancellable: cancellable,
                 isDownloaded: _isDownloaded,
                 progressText: pulling == null ? null : _progressText(pulling),
+                // Disabled only for reasons the button itself can't resolve:
+                // nothing to fetch, a transfer already running, or it's already
+                // here. A version's verdict is never one of them — see
+                // [_startDownload].
                 onPressed:
-                    (_selected.status == VersionStatus.runnable &&
-                        specs.isNotEmpty &&
-                        pulling == null &&
-                        !_isDownloaded)
-                    ? _startDownload
+                    (specs.isNotEmpty && pulling == null && !_isDownloaded)
+                    ? () => _startDownload(context)
                     : null,
               ),
             ],

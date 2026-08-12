@@ -45,10 +45,19 @@ class ModelVersion {
   );
 }
 
-/// Per-version runnability verdict (`runnable` | `partial` | `too_large`).
+/// Per-version runnability verdict, as the catalog engine grades it:
+/// `runnable` | `partial` | `low_quality` | `too_large`.
+///
+/// [lowQuality] is the one that isn't about this machine: the version fits and
+/// runs at interactive speed, but its quantisation sits below the engine's
+/// size-and-sparsity quality floor, so `suggest` will never pick it. It was
+/// missing here until the small quants of a model — the ones a modest Mac most
+/// wants — came back with a verdict this enum couldn't name, and so arrived
+/// with no badge and a dead Download button.
 enum VersionStatus {
   runnable('runnable'),
   partial('partial'),
+  lowQuality('low_quality'),
   tooLarge('too_large');
 
   const VersionStatus(this.wire);
@@ -66,8 +75,14 @@ enum VersionStatus {
   String get label => switch (this) {
     VersionStatus.runnable => 'Runs on this Mac',
     VersionStatus.partial => 'Partial — slow',
+    VersionStatus.lowQuality => 'Runs — lower quality',
     VersionStatus.tooLarge => 'Too large for memory',
   };
+
+  /// Whether the weights can load on this machine at all. Only [tooLarge] says
+  /// they can't — the other three all run, they just differ in how well. What
+  /// the download button is allowed to refuse hangs on this, not on [runnable].
+  bool get canRunHere => this != VersionStatus.tooLarge;
 }
 
 /// Full model record from `GET /v1/grid/catalog/{repo_id}`. [versions] is empty
