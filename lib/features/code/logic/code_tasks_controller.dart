@@ -10,8 +10,9 @@ import 'code_task.dart';
 import 'code_write_results.dart';
 import 'poll_cadence.dart';
 
-/// Every member's tasks in a project, newest first — refreshed on a timer while
-/// the screen is open.
+/// Every member's tasks in a project, oldest first — the order the grid returns
+/// them (`created_at` ascending), which the transcript shows as-is. Refreshed on
+/// a timer while the screen is open.
 ///
 /// The whole team's, not only this member's: a project is shared, and "what is
 /// the team running right now" is the question this list exists to answer.
