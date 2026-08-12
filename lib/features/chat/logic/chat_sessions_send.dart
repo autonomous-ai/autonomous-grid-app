@@ -195,6 +195,9 @@ mixin _ChatSend on _ChatSessions {
     final lane = conversation.projectId;
     if (viaAgent && lane != null && _laneBusy(lane, except: id)) {
       (_agentQueues[lane] ??= []).add((id: id, dispatch: dispatch));
+      // Said out loud in the state, because the transcript's "finishing another
+      // chat in this project…" is only true here — see [laneQueuedIds].
+      state = state.withLaneQueued(id, true);
     } else {
       dispatch();
     }
@@ -238,6 +241,8 @@ mixin _ChatSend on _ChatSessions {
     required Completer<void> done,
   }) {
     final id = conversation.id;
+    // Whatever it was waiting for, it isn't waiting now.
+    if (state.laneQueuedIn(id)) state = state.withLaneQueued(id, false);
     // Take this project's lane — released on finish/stop, which then starts the
     // next turn waiting in it — and mark where this turn's file changes begin,
     // so "what did it just do?" answers for this turn and not the chat's whole

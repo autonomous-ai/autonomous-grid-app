@@ -1082,8 +1082,8 @@ class _TrailingBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final phase = ref.watch(chatSessionsProvider.select((s) => s.phase));
     final chatId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
-    final running = ref.watch(
-      chatSessionsProvider.select((s) => s.agentRunningIn(s.activeId)),
+    final laneQueued = ref.watch(
+      chatSessionsProvider.select((s) => s.laneQueuedIn(s.activeId)),
     );
     if (chatId == null) return const SizedBox.shrink();
     return switch (phase) {
@@ -1094,10 +1094,15 @@ class _TrailingBubble extends ConsumerWidget {
         showActivity: agentMode,
       ),
       SendStreaming() => AgentWorkingBubble(chatId: chatId),
-      SendBusy() when agentMode && running => AgentWorkingBubble(
-        chatId: chatId,
-      ),
-      SendBusy() when agentMode => const _QueuedBubble(),
+      SendBusy() when agentMode && laneQueued => const _QueuedBubble(),
+      // Committed, not queued: the turn is being set up — under Auto that is a
+      // live call asking the grid which assistant should answer. The feed's
+      // "Thinking…" line is what that is, and it is the same cue the turn keeps
+      // showing once the agent takes over, so nothing flickers when it does.
+      // Asking "is an agent running yet?" here instead put the queue's line —
+      // "finishing another chat in this project…" — under a chat that was
+      // waiting on nothing of the sort.
+      SendBusy() when agentMode => AgentWorkingBubble(chatId: chatId),
       _ => const SizedBox.shrink(),
     };
   }
