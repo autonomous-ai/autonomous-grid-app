@@ -39,26 +39,32 @@ class _TypingDotsState extends State<TypingDots>
     final color =
         widget.color ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return ExcludeSemantics(
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < 3; i++) ...[
-              if (i > 0) SizedBox(width: widget.dotSize * 0.6),
-              Opacity(
-                opacity: _opacityFor(i),
-                child: Container(
-                  width: widget.dotSize,
-                  height: widget.dotSize,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
+      // Its own layer: the wave runs for the whole length of a reply, and one of
+      // the two call sites is the sidebar's chat row — which sits in the shell's
+      // single layer, so an unbounded repaint here drags the rail and the pane
+      // through every frame of a stream. See the note in `status_dot.dart`.
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < 3; i++) ...[
+                if (i > 0) SizedBox(width: widget.dotSize * 0.6),
+                Opacity(
+                  opacity: _opacityFor(i),
+                  child: Container(
+                    width: widget.dotSize,
+                    height: widget.dotSize,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

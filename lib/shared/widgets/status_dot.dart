@@ -95,25 +95,39 @@ class _PulseHaloState extends State<_PulseHalo>
         alignment: Alignment.center,
         clipBehavior: Clip.none,
         children: [
-          IgnorePointer(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                final t = _controller.value; // 0..1
-                final scale = 1 + t * 1.6;
-                final opacity = (1 - t) * 0.45;
-                return Transform.scale(
-                  scale: scale,
-                  child: Container(
-                    width: widget.size,
-                    height: widget.size,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: widget.color.withValues(alpha: opacity),
+          // Its own layer, and the top bar is why.
+          //
+          // The halo repaints every frame for as long as the dot is on screen,
+          // and `GridPowerPill` — the one call site that sets `pulsing` — lives
+          // in `AppTopBar`, which is mounted for the whole session. The shell
+          // puts the sidebar, this bar and the open pane in one layer
+          // (`home_shell.dart`: a plain Row/Column, no boundary anywhere), so
+          // without this the breathing dot dirtied all three sixty times a
+          // second, forever, and the engine never got to idle.
+          //
+          // Outside the Transform on purpose: the layer has to hold the scaled
+          // halo, which deliberately overflows the dot's box.
+          RepaintBoundary(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  final t = _controller.value; // 0..1
+                  final scale = 1 + t * 1.6;
+                  final opacity = (1 - t) * 0.45;
+                  return Transform.scale(
+                    scale: scale,
+                    child: Container(
+                      width: widget.size,
+                      height: widget.size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: widget.color.withValues(alpha: opacity),
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
           widget.child,

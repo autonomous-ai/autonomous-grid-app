@@ -77,11 +77,17 @@ class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _curved,
-      builder: (context, child) =>
-          widget.builder(context, _curved.value, child),
-      child: widget.child,
+    // Its own layer. This is the app's one heartbeat primitive, so the boundary
+    // belongs here rather than at each call site — every visual built on it is
+    // long-running by definition, and the shell keeps the rail, the bar and the
+    // pane in a single layer. See the note in `status_dot.dart`.
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _curved,
+        builder: (context, child) =>
+            widget.builder(context, _curved.value, child),
+        child: widget.child,
+      ),
     );
   }
 }

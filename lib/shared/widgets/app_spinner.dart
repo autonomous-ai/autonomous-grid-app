@@ -57,9 +57,15 @@ class AppSpinner extends StatelessWidget {
     return SizedBox(
       width: size.extent,
       height: size.extent,
-      child: CircularProgressIndicator(
-        strokeWidth: size.strokeWidth,
-        color: color ?? AppPalette.accent,
+      // Its own layer, and cheaply so — the box above pins it to at most 22px.
+      // A spinner spins for as long as whatever it reports is running, and with
+      // 60-odd call sites it turns up inside rows, buttons and panes that all
+      // share the shell's one layer. See the note in `status_dot.dart`.
+      child: RepaintBoundary(
+        child: CircularProgressIndicator(
+          strokeWidth: size.strokeWidth,
+          color: color ?? AppPalette.accent,
+        ),
       ),
     );
   }
@@ -121,11 +127,16 @@ class AppProgressBar extends StatelessWidget {
     AppTheme.watch(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
-      child: LinearProgressIndicator(
-        value: value,
-        minHeight: 4,
-        color: color ?? AppPalette.accent,
-        backgroundColor: AppPalette.divider,
+      // Indeterminate (`value` null) sweeps forever, and the determinate form
+      // still repaints on every progress tick — a model download reports those
+      // for minutes. Either way it shouldn't take the pane with it.
+      child: RepaintBoundary(
+        child: LinearProgressIndicator(
+          value: value,
+          minHeight: 4,
+          color: color ?? AppPalette.accent,
+          backgroundColor: AppPalette.divider,
+        ),
       ),
     );
   }
