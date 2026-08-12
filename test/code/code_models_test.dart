@@ -131,6 +131,25 @@ void main() {
       expect(empty.needsImport, isTrue);
       expect(status.needsImport, isFalse);
     });
+
+    test('a distance nobody can compute is never reported as "up to date"', () {
+      // The line above the transcript is the only place this is said. `0 / 0`
+      // there reads as "you are level with the team", and the next thing
+      // somebody does on that belief is publish a branch that does not exist.
+      final fresh = ProjectStatus.fromJson({
+        'project_id': 'P1',
+        'branch': 'wip/def456',
+      })!;
+      expect(distanceSummary(fresh), isNot(contains('matches')));
+      expect(distanceSummary(fresh), contains('Nothing of yours'));
+    });
+
+    test('both directions are said, because they need opposite actions', () {
+      // 3 to publish and 2 to take: naming only one of them hides the half
+      // that has to happen first.
+      expect(distanceSummary(status), contains('3 of yours'));
+      expect(distanceSummary(status), contains('2 from the team'));
+    });
   });
 
   group('why work is not moving', () {
@@ -241,6 +260,20 @@ void main() {
 
     test('a task with no prompt is still listed, under a name', () {
       expect(CodeTask.fromJson({'id': 't'})!.summary, 'Untitled task');
+    });
+
+    test('the transcript shows the request as it was typed, not flattened', () {
+      // A rail row had to be one line; a turn in a conversation is the message
+      // somebody wrote, and a task prompt runs to paragraphs far more often
+      // than a chat message does.
+      final task = CodeTask.fromJson({
+        'id': 't',
+        'state': 'queued',
+        'prompt': 'add a retry\n\n  to the upload path\n',
+      })!;
+      expect(task.asked, 'add a retry\n\n  to the upload path');
+      // Nothing to show still falls back to a name rather than a blank bubble.
+      expect(CodeTask.fromJson({'id': 't', 'prompt': '  '})!.asked, isNotEmpty);
     });
   });
 

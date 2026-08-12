@@ -6,18 +6,16 @@ import '../../../shared/layouts/widgets/rail_section_header.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../logic/code_project.dart';
 import '../logic/code_projects_controller.dart';
-import '../logic/project_status_controller.dart';
-import 'widgets/code_task_rows.dart';
 import 'widgets/new_project_dialog.dart';
-import 'widgets/new_task_dialog.dart';
 import 'widgets/rail_note.dart';
 
-/// The sidebar in Code mode: the one thing you do, the repositories you share
-/// with your team, and what has been run against the open one.
+/// The sidebar in Code mode: the one thing you do, and the repositories you
+/// share with your team.
 ///
-/// It mirrors the Home rail deliberately — an action on top, groups under it —
-/// so switching halves changes what the rows *are* and never how the rail
-/// works.
+/// It mirrors the Home rail deliberately — an action on top, one group under it
+/// — so switching halves changes what the rows *are* and never how the rail
+/// works. The tasks a project has run are not in here: they are the project's
+/// conversation, and they live in it.
 class CodeRail extends ConsumerWidget {
   const CodeRail({super.key});
 
@@ -31,18 +29,19 @@ class CodeRail extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: _PrimaryAction(projectId: openId),
+          child: SidebarItem(
+            icon: LucideIcons.folderPlus300,
+            label: 'New project',
+            emphasized: true,
+            onTap: () => showNewProjectDialog(context),
+          ),
         ),
         const SizedBox(height: 6),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.only(bottom: 12),
             children: [
-              RailSectionHeader(
-                label: 'Projects',
-                onAdd: () => showNewProjectDialog(context),
-                addTooltip: 'Start a new shared project',
-              ),
+              const RailSectionHeader(label: 'Projects'),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: switch (projects) {
@@ -57,7 +56,6 @@ class CodeRail extends ConsumerWidget {
                   _ => const RailNote('Loading your projects…'),
                 },
               ),
-              if (openId != null) CodeTaskRows(projectId: openId),
             ],
           ),
         ),
@@ -76,48 +74,6 @@ String _shortFailure(Object error) {
   final text = '$error'.replaceAll(RegExp(r'\s+'), ' ').trim();
   final stop = text.indexOf('. ');
   return stop == -1 ? text : text.substring(0, stop + 1);
-}
-
-/// The rail's primary action, which always does something.
-///
-/// It changes with what is open rather than greying out: with no project there
-/// is no task to create, and an accent-washed row that reads as the screen's
-/// main action while refusing every click is the worst of both. The one case
-/// that *is* disabled is a task slot already held — there the grid's rule is
-/// the reason, and the tooltip gives it.
-class _PrimaryAction extends ConsumerWidget {
-  const _PrimaryAction({required this.projectId});
-
-  final String? projectId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final id = projectId;
-    if (id == null) {
-      return SidebarItem(
-        icon: LucideIcons.folderPlus300,
-        label: 'New project',
-        emphasized: true,
-        onTap: () => showNewProjectDialog(context),
-      );
-    }
-    final holder = ref
-        .watch(projectStatusProvider(id))
-        .asData
-        ?.value
-        .slotHolder;
-    return SidebarItem(
-      icon: LucideIcons.squarePen300,
-      label: 'New task',
-      emphasized: true,
-      enabled: holder == null,
-      tooltip: holder == null
-          ? null
-          : 'A task of yours is still going here. One at a time in a project — '
-                'open it to watch or stop it.',
-      onTap: () => showNewTaskDialog(context, projectId: id),
-    );
-  }
 }
 
 /// Every project on this grid, the open one highlighted.

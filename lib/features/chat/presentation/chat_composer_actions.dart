@@ -1,25 +1,5 @@
 part of 'chat_composer.dart';
 
-/// Kills the Material ink ripple on a button.
-///
-/// The app's ThemeData sets `splashFactory: InkRipple.splashFactory` app-wide —
-/// a circle that expands from the click point over ~600ms. That is an Android
-/// gesture idiom: on macOS a click lands instantly and the pointer is already
-/// telling you where it is, so the hover tint carries the whole affordance and
-/// the ripple only adds a wave the platform never makes. It also runs 4× longer
-/// than every other animation in this composer (120–160ms).
-/// A getter, not a `final`: [AppSurface.hoverFill] resolves against the live
-/// brightness at read time, so a top-level `final` would freeze whichever theme
-/// happened to be up when this library was first touched.
-ButtonStyle get _noSplash => ButtonStyle(
-  splashFactory: NoSplash.splashFactory,
-  overlayColor: WidgetStateProperty.resolveWith(
-    (states) => states.contains(WidgetState.hovered)
-        ? AppSurface.hoverFill
-        : Colors.transparent,
-  ),
-);
-
 class _Actions extends StatelessWidget {
   const _Actions({
     required this.canAttach,
@@ -136,10 +116,10 @@ class _Actions extends StatelessWidget {
                 // by a follow-up waiting to be queued; the rest of the time the
                 // one round button is both.
                 if (sending && canSend) ...[
-                  _StopButton(onStop: onStop),
+                  ComposerStopButton(onStop: onStop),
                   const SizedBox(width: 6),
                 ],
-                _SendButton(
+                ComposerSendButton(
                   sending: sending,
                   canSend: canSend,
                   onSend: onSend,
@@ -154,6 +134,7 @@ class _Actions extends StatelessWidget {
   }
 }
 
+/// Takes a picture or a document onto the message being typed.
 class _AttachButton extends StatelessWidget {
   const _AttachButton({required this.canAttach, required this.onAttach});
 
@@ -161,32 +142,16 @@ class _AttachButton extends StatelessWidget {
   final VoidCallback onAttach;
 
   @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(
-      context,
-    ); // reads AppPalette.textSecondary — follow theme flips
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: IconButton(
-        // What it takes, in the words of the person attaching it: pictures and
-        // office files, or a paste of either.
-        tooltip: canAttach
-            ? 'Attach a picture or a document'
-            : 'Up to $maxChatImages pictures and $maxChatFiles files',
-        iconSize: AppControl.iconSize,
-        visualDensity: VisualDensity.compact,
-        color: AppPalette.textSecondary,
-        // No ripple: the app's ThemeData opts into InkRipple globally, which is
-        // an Android idiom — a circle spreading from the click point. macOS
-        // answers a click with an instant state change, so the hover tint is the
-        // whole response.
-        style: _noSplash,
-        icon: const Icon(Icons.add_rounded),
-        onPressed: canAttach ? onAttach : null,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ComposerIconButton(
+    icon: Icons.add_rounded,
+    // What it takes, in the words of the person attaching it: pictures and
+    // office files, or a paste of either. Full says how much fits rather than
+    // going quiet.
+    tooltip: canAttach
+        ? 'Attach a picture or a document'
+        : 'Up to $maxChatImages pictures and $maxChatFiles files',
+    onPressed: canAttach ? onAttach : null,
+  );
 }
 
 /// Opens the saved-prompt menu, or saves the current draft as a prompt.
@@ -206,142 +171,11 @@ class _PromptsButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(
-      context,
-    ); // reads AppPalette.textSecondary — follow theme flips
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: IconButton(
-        tooltip: savesInput ? 'Save as a prompt' : 'Insert a saved prompt',
-        iconSize: AppControl.iconSize,
-        visualDensity: VisualDensity.compact,
-        color: AppPalette.textSecondary,
-        style: _noSplash,
-        icon: Icon(
-          savesInput
-              ? Icons.bookmark_add_outlined
-              : Icons.bookmark_outline_rounded,
-        ),
-        onPressed: enabled ? onPressed : null,
-      ),
-    );
-  }
-}
-
-/// Send — and, while an answer is coming, Stop.
-///
-/// It used to spin here, disabled, with no way out: a reply that had gone the
-/// wrong way had to be waited out. The button that started the turn is the one
-/// you reach for to end it, so it becomes Stop for as long as the turn runs.
-/// That the transcript already shows the work in flight is what frees this
-/// button to be an action instead of a progress light.
-///
-/// With one exception, which is the whole point of the follow-up queue: once
-/// there is something typed, this goes back to being Send — the message joins
-/// the queue instead of going out now — and Stop moves to its own button beside
-/// it. Both actions stay reachable; neither is hidden behind clearing the box.
-class _SendButton extends StatelessWidget {
-  const _SendButton({
-    required this.sending,
-    required this.canSend,
-    required this.onSend,
-    required this.onStop,
-  });
-
-  final bool sending;
-  final bool canSend;
-  final VoidCallback onSend;
-  final VoidCallback onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(
-      context,
-    ); // reads AppTheme.pick/AppPalette tokens — follow theme flips
-    final stops = sending && !canSend;
-    return Tooltip(
-      message: stops
-          ? 'Stop'
-          : (sending ? 'Send when this answer finishes' : 'Send'),
-      child: SizedBox(
-        width: 32,
-        height: 32,
-        child: FilledButton(
-          onPressed: stops ? onStop : (canSend ? onSend : null),
-          style: FilledButton.styleFrom(
-            shape: const CircleBorder(),
-            padding: EdgeInsets.zero,
-            splashFactory: NoSplash.splashFactory,
-            // A high-contrast knob: dark-on-light in light mode, light-on-dark in
-            // dark mode. Using textPrimary as the fill made a near-white circle
-            // with a white icon in dark mode — the button vanished.
-            backgroundColor: AppTheme.pick(
-              AppPalette.textPrimary,
-              const Color(0xFFF5F5F5),
-            ),
-            foregroundColor: AppTheme.pick(
-              Colors.white,
-              const Color(0xFF0A0A0A),
-            ),
-            // Disabled reads as *quiet*, not as a heavy grey knob: a soft fill
-            // that sits a step off the composer's own surface, with a faint icon
-            // — so "can't send yet" is legible without pulling the eye. The old
-            // #9B9B9B was a dark solid grey that looked like an active button
-            // dimmed. Warm-biased in light to match the app's paper tone.
-            disabledBackgroundColor: AppTheme.pick(
-              const Color(0xFFE7E7E4),
-              const Color(0xFF2A2A2A),
-            ),
-            disabledForegroundColor: AppTheme.pick(
-              const Color(0xFFB7B6AF),
-              const Color(0xFF5C5C57),
-            ),
-          ),
-          child: Icon(
-            stops ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-            size: AppControl.iconSize,
-            semanticLabel: stops ? 'Stop' : 'Send',
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Stop, as its own control — shown only while a turn is running *and* the
-/// composer holds a follow-up, since that is when [_SendButton] is busy being
-/// Send. Quieter than Send: ending a turn is the secondary action there.
-class _StopButton extends StatelessWidget {
-  const _StopButton({required this.onStop});
-
-  final VoidCallback onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Tooltip(
-      message: 'Stop',
-      child: SizedBox(
-        width: 32,
-        height: 32,
-        child: OutlinedButton(
-          onPressed: onStop,
-          style: OutlinedButton.styleFrom(
-            shape: const CircleBorder(),
-            padding: EdgeInsets.zero,
-            splashFactory: NoSplash.splashFactory,
-            foregroundColor: AppPalette.textSecondary,
-            side: BorderSide(color: AppPalette.divider),
-          ),
-          child: const Icon(
-            Icons.stop_rounded,
-            size: AppControl.iconSize,
-            semanticLabel: 'Stop',
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ComposerIconButton(
+    icon: savesInput
+        ? Icons.bookmark_add_outlined
+        : Icons.bookmark_outline_rounded,
+    tooltip: savesInput ? 'Save as a prompt' : 'Insert a saved prompt',
+    onPressed: enabled ? onPressed : null,
+  );
 }

@@ -9,19 +9,17 @@ import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../logic/code_cli.dart';
 import '../logic/code_projects_controller.dart';
-import '../logic/code_tasks_controller.dart';
 import 'widgets/cli_too_old_view.dart';
+import 'widgets/code_failure.dart';
 import 'widgets/new_project_dialog.dart';
-import 'widgets/project_overview.dart';
-import 'widgets/task_detail.dart';
+import 'widgets/project_view.dart';
 
 /// The right-hand pane in Code mode.
 ///
-/// Four things can be true, in this order: the grid tool on this computer may
-/// not know about shared projects at all, there may be no grid selected, there
-/// may be no project open, and there may or may not be a task open inside it.
-/// Each has its own screen with its own next step — none of them is a blank
-/// pane.
+/// Three things can be true, in this order: the grid tool on this computer may
+/// not know about shared projects at all, there may be no grid selected, and
+/// there may be no project open. Each has its own screen with its own next step
+/// — none of them is a blank pane.
 class CodePane extends ConsumerWidget {
   const CodePane({super.key});
 
@@ -50,10 +48,7 @@ class _Workspace extends ConsumerWidget {
 
     final projectId = ref.watch(selectedCodeProjectProvider);
     if (projectId == null) return const _NoProjectOpen();
-
-    final taskId = ref.watch(selectedCodeTaskProvider);
-    if (taskId == null) return ProjectOverview(projectId: projectId);
-    return TaskDetail(projectId: projectId, taskId: taskId);
+    return ProjectView(projectId: projectId);
   }
 }
 
@@ -116,7 +111,7 @@ class _NoProjectOpen extends ConsumerWidget {
               'Pick one from the list on the left to see where it is and '
               'what has been run against it.',
         ),
-        AsyncError(:final error) => _Failed(
+        AsyncError(:final error) => CodeFailure(
           message: '$error',
           onRetry: () => ref.invalidate(codeProjectsProvider),
         ),
@@ -124,27 +119,4 @@ class _NoProjectOpen extends ConsumerWidget {
       },
     );
   }
-}
-
-/// A failure with the one action that can clear it.
-///
-/// The grid's commands are not retried behind the user's back — a refusal is a
-/// verdict, and asking again ten times only spends processes — so the way out
-/// has to be a button they can see.
-class _Failed extends StatelessWidget {
-  const _Failed({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      ErrorBox(message: message),
-      const SizedBox(height: 10),
-      OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
-    ],
-  );
 }

@@ -130,6 +130,16 @@ class CodeTask {
     return (text == null || text.isEmpty) ? 'Untitled task' : text;
   }
 
+  /// What was asked, as it was written — paragraphs and all.
+  ///
+  /// [summary] flattens it for a one-line row; the transcript shows a request
+  /// the way its author typed it, since a task prompt runs to paragraphs far
+  /// more often than a chat message does.
+  String get asked {
+    final text = prompt?.trimRight();
+    return (text == null || text.trim().isEmpty) ? summary : text;
+  }
+
   static CodeTask? fromJson(Map<String, dynamic> json) {
     final id = wireString(json, 'id');
     if (id == null) return null;

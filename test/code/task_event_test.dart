@@ -186,5 +186,36 @@ void main() {
         contains('the agent exited 1'),
       );
     });
+
+    test('a listed task ends the same way the stream said it did', () {
+      // The transcript describes a finished task from the row the grid lists,
+      // and its live view describes the same run from the last event. Two
+      // spellings of one verdict is how a run comes to be "timed out" while it
+      // is watched and "failed" a minute later.
+      final task = CodeTask.fromJson({
+        'id': 't',
+        'state': 'failed',
+        'error': 'the agent exited 1',
+      })!;
+      expect(
+        taskVerdict(task),
+        terminalLine(
+          const TaskTerminal(
+            1,
+            state: TaskState.failed,
+            error: 'the agent exited 1',
+          ),
+        ),
+      );
+    });
+
+    test('a task nobody ever claimed says so, not that it hung', () {
+      final task = CodeTask.fromJson({
+        'id': 't',
+        'state': 'timed_out',
+        'error': 'queue_expired',
+      })!;
+      expect(taskVerdict(task), contains('short of machines'));
+    });
   });
 }
