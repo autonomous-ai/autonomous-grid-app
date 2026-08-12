@@ -1027,6 +1027,14 @@ abstract final class AppMotion {
   /// Content being replaced in place: a list swapping to another grid's models.
   static const Duration swap = Duration(milliseconds: 160);
 
+  /// A panel folding or unfolding — the sidebar collapsing to its glyphs.
+  ///
+  /// Longer than [swap], and it has to be: what moves is the window's left
+  /// edge and everything to the right of it, over 212px. At [swap] that reads
+  /// as the layout jumping rather than the rail folding, which is the one thing
+  /// the animation exists to prevent.
+  static const Duration fold = Duration(milliseconds: 220);
+
   /// The app's curve. Fast to start, settling at the end — the thing arrives
   /// under the pointer rather than drifting toward it.
   static const Curve curve = Curves.easeOut;
