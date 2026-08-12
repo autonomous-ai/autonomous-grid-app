@@ -9,6 +9,7 @@ import '../../../../infrastructure/cli/hermes_acp_setup.dart';
 import '../../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../../shared/copy/setup_hints.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
@@ -134,10 +135,7 @@ class HermesChatSender implements ChatSender {
       return;
     }
     if (_ref.read(hermesAcpServiceProvider) == null) {
-      yield const ChatSendFailure(
-        "This computer isn't set up to answer chats yet. Open the account menu "
-        '▸ This computer to finish setting it up.',
-      );
+      yield ChatSendFailure(notSetUpToMessage('answer chats'));
       return;
     }
     if (history.isEmpty || history.last.text.trim().isEmpty) {

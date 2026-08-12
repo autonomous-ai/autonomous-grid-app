@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_task_policy.dart';
 import '../../agents/logic/adapters/hermes_tool.dart';
+import '../../../shared/copy/setup_hints.dart';
 
 /// The seam onto Hermes's own scheduler settings, or null when there's no agent
 /// on this computer to schedule anything on.
@@ -55,7 +56,5 @@ class TaskPowerController extends AsyncNotifier<TaskPower> {
     }
   }
 
-  static const _noAgent =
-      "This computer isn't set up to run tasks yet. Open the account menu ▸ "
-      'This computer to finish setting it up.';
+  static final _noAgent = notSetUpToMessage('run tasks');
 }

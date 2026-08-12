@@ -244,6 +244,18 @@ final playgroundModelsProvider =
       );
     });
 
+/// Whether this grid serves the `auto` router ([kAutoModelId]) — the one model
+/// every agent can be pointed at, whichever the grid's router then picks.
+///
+/// One provider rather than the same `any(...)` written wherever it is needed:
+/// the send path swaps the turn's model to `auto` on the strength of this, and
+/// the Auto agent's classifier asks `auto` on the strength of it too. Two copies
+/// of that question can disagree, and the pair that disagrees sends a turn to a
+/// model the grid refuses.
+final gridServesAutoModelProvider = Provider.autoDispose<bool>(
+  (ref) => ref.watch(playgroundModelsProvider).any((o) => o.id == kAutoModelId),
+);
+
 /// Whether the option list is still waiting on its **first** answer.
 ///
 /// Both sources are asked, because the options are built from both: one arriving

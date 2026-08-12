@@ -49,7 +49,8 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
     }
 
     return const SectionScaffold(
-      title: 'Model Engines',
+      // The sidebar row's own words — one screen, one name (§5).
+      title: 'Model engines',
       // _ServeSection owns its own scrolling: the running engine fills the
       // height (only its log scrolls), other states scroll as a page.
       child: _ServeSection(),
@@ -57,7 +58,7 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
   }
 }
 
-/// The "This computer" body. A machine serves a *union* of engines on a grid
+/// The "Model engines" body. A machine serves a *union* of engines on a grid
 /// (ADR 0010), so this is a page, not a single running card: auto-routing at the
 /// top (owner-only), then what's already serving (each engine stoppable on its
 /// own), then the always-available ways to add another engine.
@@ -87,10 +88,9 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     // in a developer build, where several grids are open at once and which one
     // is selected is a thing to check. A shipped user has one grid and no Grids
     // tab beside it, so the strip asks them to hold a distinction they never
-    // make.
-    // TODO(BE): with it hidden, nothing on this page names the grid (Settings
-    // mounts no top bar) and the only switcher left in a release build is the
-    // Chat composer's model pill.
+    // make. Hiding it no longer leaves the page nameless: this screen moved out
+    // of Settings into the app shell, so the top bar's grid pill sits above it
+    // and says which grid these sentences are about.
     final children = <Widget>[
       if (AppEnvironment.isDeveloperMode) ...[
         GridScopeBar(network: network),
@@ -201,7 +201,7 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     // (Grids tab), because it is a property of the *grid*, not of this computer:
     // every router command carries `--grid <id>` and none carries a node, so
     // turning it on here changed how every machine on the grid is routed and
-    // outlived this app being closed. On a page called "This computer", where
+    // outlived this app being closed. On a page about this computer, where
     // everything else stops when the machine does, it was the one control that
     // didn't — and once the add-engine paths became tabs, it had to repeat under
     // all three, which is what made the mismatch visible.

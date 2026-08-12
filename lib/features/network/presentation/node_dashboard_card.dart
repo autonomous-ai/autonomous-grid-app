@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../playground/logic/playground_models.dart' show nodeServingModel;
 import '../../provider_node/logic/local_throughput.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
+import '../logic/grid_overview_provider.dart' show gridOverviewSnapshot;
 import '../logic/node_display.dart';
 import '../logic/node_metrics.dart';
 
@@ -75,10 +77,16 @@ class NodeDashboardCard extends StatelessWidget {
 ///
 /// The relay only advertises a node's rate once it has served a real request, so
 /// a machine that just started serving reads "—" until someone uses it. For the
-/// local node that gap is closed by [localThroughputProvider] — a "hi" sent to
-/// the engine the moment it's up. Only the local card is filled this way: the
-/// app can measure the engine on *this* computer, not one across the grid, so a
-/// remote node keeps the relay's own answer (or its honest blank).
+/// local node that gap is closed by [localThroughputProvider] — a "hi" sent
+/// through the grid the moment this machine is up.
+///
+/// Two things have to be true before that number goes on a card, because it is
+/// printed beside rates the relay measured and must mean the same thing. This
+/// card has to be *this machine's*; and this machine has to be the only one
+/// serving the model the warm-up asked for — the relay picks between nodes
+/// serving the same model and doesn't say which it picked, so with a second one
+/// the honest answer is that we don't know whose speed we timed
+/// (see [nodeServingModel]). Either way the relay's own blank stands.
 class _ThroughputForNode extends ConsumerWidget {
   const _ThroughputForNode({required this.node});
 
@@ -93,7 +101,16 @@ class _ThroughputForNode extends ConsumerWidget {
     final isLocal = node.name == ref.watch(nodeNameProvider);
     if (!isLocal) return _ThroughputFooter(value: relay);
 
-    final measured = ref.watch(localThroughputProvider);
+    final warmup = ref.watch(throughputWarmupTargetProvider);
+    final answered = warmup == null
+        ? null
+        : nodeServingModel(
+            ref.watch(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[],
+            warmup.model,
+          );
+    if (answered != node.name) return _ThroughputFooter(value: relay);
+
+    final measured = ref.watch(localThroughputProvider).value;
     if (measured == null || measured <= 0) {
       return _ThroughputFooter(value: relay);
     }

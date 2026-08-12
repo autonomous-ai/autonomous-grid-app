@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/logging/app_log.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../models/logic/advertise_name.dart';
 import 'provider_run_controller.dart';
 import 'throughput_probe.dart';
 
@@ -20,78 +21,48 @@ final throughputWarmupTargetProvider =
       if (network == null || serving == null || serving.isEmpty) return null;
       // The union joins several models with commas; a single engine serves one,
       // so the warm-up asks the first.
-      final model = serving.split(',').first.trim();
-      if (model.isEmpty) return null;
+      final file = serving.split(',').first.trim();
+      if (file.isEmpty) return null;
       return (
         endpoint: '${network.relayBaseUrl}/chat/completions',
         apiKey: network.relayApiKey,
-        model: model,
+        // A local engine's entry is the gguf **filename**; the grid advertises
+        // the name `--advertise-as` derived from it. Sending the filename asks
+        // the relay for a model it has never heard of, which fails as quietly as
+        // a machine that is simply slow.
+        model: deriveAdvertiseName(file),
       );
     });
 
 /// This machine's measured decode rate for the model it is serving, or null
-/// until a warm-up has answered.
+/// until a warm-up has answered with a rate it measured itself.
 ///
 /// The relay advertises a node's throughput, but not until it has served a real
 /// request — so a machine that just started serving shows a blank "— tok/s"
 /// until someone happens to use it. This closes that gap by *being* that first
 /// request: the moment this machine is serving, the app sends one "hi" through
-/// the grid to its model, and the grid times it. The card shows the number
-/// straight away, and once the relay's own overview catches up its figure takes
-/// over (the card prefers it — see `_ThroughputForNode`).
+/// the grid to its model, and the grid times it. Once the relay's own overview
+/// catches up its figure takes over (the card prefers it — see
+/// `_ThroughputForNode`).
 ///
-/// Measured once per `(endpoint, model)`: a warm-up is a small cost, and it
-/// resets when serving stops or the model changes, so the card never shows the
-/// last model's speed against this one.
-final localThroughputProvider = NotifierProvider<LocalThroughput, double?>(
-  LocalThroughput.new,
-);
-
-class LocalThroughput extends Notifier<double?> {
-  /// The `endpoint|model` the current value was measured for, so a rebuild that
-  /// leaves both unchanged keeps the number instead of re-probing.
-  String? _measuredFor;
-
-  @override
-  double? build() {
-    final target = ref.watch(throughputWarmupTargetProvider);
-    if (target == null) {
-      _measuredFor = null;
-      return null;
-    }
-    final key = '${target.endpoint}|${target.model}';
-    if (key == _measuredFor) return state;
-
-    _measuredFor = key;
-    // The probe is async and this runs during build, so it is fired after the
-    // frame rather than awaited — the card shows the blank until the number
-    // lands, then updates.
-    Future.microtask(() => _measure(target, key));
-    return null;
-  }
-
-  Future<void> _measure(
-    ({String endpoint, String apiKey, String model}) target,
-    String key,
-  ) async {
-    final tokS = await ref
-        .read(throughputProbeProvider)
-        .measure(
-          endpoint: target.endpoint,
-          apiKey: target.apiKey,
-          model: target.model,
-        );
-    // Serving may have changed while the warm-up was out; only the current one's
-    // answer is worth keeping.
-    if (!ref.mounted || _measuredFor != key) return;
-    state = tokS;
-    if (tokS != null) {
-      ref
-          .read(appLogProvider)
-          .info(
-            'engine',
-            'Grid measured ${target.model} at ${tokS.round()} tok/s',
-          );
-    }
-  }
-}
+/// A [FutureProvider] rather than a notifier firing a request from `build()`:
+/// the probe *is* this provider's value, so Riverpod runs it once per
+/// `(endpoint, model)` — the target is a record, compared by value — re-runs it
+/// when serving changes, and drops it when nothing is serving. The probe never
+/// throws (it answers null), so there is no failure for Riverpod 3 to retry.
+final localThroughputProvider = FutureProvider<double?>((ref) async {
+  final target = ref.watch(throughputWarmupTargetProvider);
+  if (target == null) return null;
+  final tokS = await ref
+      .read(throughputProbeProvider)
+      .measure(
+        endpoint: target.endpoint,
+        apiKey: target.apiKey,
+        model: target.model,
+      );
+  if (tokS == null) return null;
+  ref
+      .read(appLogProvider)
+      .info('engine', 'Grid measured ${target.model} at ${tokS.round()} tok/s');
+  return tokS;
+});

@@ -185,6 +185,10 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 
   /// Send a turn — implemented by [_ChatSend], called by the queue, the goal
   /// loop and the plan-approval bar.
+  ///
+  /// [continuing] marks a turn the app is sending on the user's behalf to carry
+  /// on work an agent has already started, so it stays with that agent instead
+  /// of being routed afresh. See `_ChatSend.send`.
   Future<void> send({
     required NetworkCredential network,
     required String model,
@@ -195,6 +199,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     List<ChatContext> contexts,
     bool? planFirst,
     String? into,
+    bool continuing,
   });
 
   /// Hold a turn typed while the chat was busy — [_ChatQueue].
@@ -583,6 +588,8 @@ class ChatSessionsController extends _ChatSessions
       model: active.model,
       message: 'The plan looks good — go ahead and carry it out.',
       planFirst: false,
+      // The agent that wrote the plan is the only one that has it.
+      continuing: true,
     );
   }
 
@@ -601,6 +608,8 @@ class ChatSessionsController extends _ChatSessions
       network: network,
       model: active.model,
       message: 'Carry on from where you stopped — finish the steps still open.',
+      // "Where you stopped" only means something to the agent that stopped.
+      continuing: true,
     );
   }
 

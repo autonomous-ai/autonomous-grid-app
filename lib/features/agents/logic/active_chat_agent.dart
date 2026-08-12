@@ -52,10 +52,10 @@ final chatAgentForProjectProvider = Provider.family<AgentTool, String?>((
 ) {
   // The chosen agent, if it's one we know and it can answer here.
   final chosen = agentToolById(ref.watch(chatAgentChoiceProvider(projectId)));
-  if (chosen != null && _canAnswer(ref, chosen)) return chosen;
+  if (chosen != null && canAnswerChatsHere(ref, chosen)) return chosen;
   // The choice isn't available — fall back to any agent that can answer.
   for (final tool in AgentTool.values) {
-    if (_canAnswer(ref, tool)) return tool;
+    if (canAnswerChatsHere(ref, tool)) return tool;
   }
   return kChatAgent;
 });
@@ -91,7 +91,7 @@ final blockedChatAgentProvider = Provider<AgentTool?>((ref) {
 final alternativeChatAgentProvider = Provider<AgentTool?>((ref) {
   final active = ref.watch(activeChatAgentProvider);
   for (final tool in AgentTool.values) {
-    if (tool != active && _canAnswer(ref, tool)) return tool;
+    if (tool != active && canAnswerChatsHere(ref, tool)) return tool;
   }
   return null;
 });
@@ -126,7 +126,12 @@ final chatModelAgentProvider = Provider<AgentTool?>(
 );
 
 /// Installed on this computer, and runnable on the grid that's open.
-bool _canAnswer(Ref ref, AgentTool tool) =>
+///
+/// The one definition of "this agent could take a chat here", shared rather than
+/// restated: the fallback above, the "use something else" offer and the Auto
+/// agent's candidate pool all ask it, and a second copy is a pool that quietly
+/// stops agreeing with the agent the chat actually resolved to.
+bool canAnswerChatsHere(Ref ref, AgentTool tool) =>
     ref.watch(agentInstalledProvider(tool)) &&
     ref.watch(agentRunsOnGridProvider(tool));
 

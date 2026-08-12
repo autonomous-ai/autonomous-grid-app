@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../agents/logic/agent_extensions.dart';
 import '../../agents/logic/agent_extensions_registry.dart';
 import '../../agents/logic/agent_plugin.dart';
+import '../../../shared/copy/setup_hints.dart';
 
 /// The plugins the selected agent knows about, read straight from its plugins
 /// plane — the app keeps no second list, so the screen and the agent can't
@@ -53,7 +54,5 @@ class PluginsController extends AsyncNotifier<List<AgentPlugin>> {
     return null;
   }
 
-  static const _noAgent =
-      "This computer isn't set up to run the assistant yet. Open the account "
-      'menu ▸ This computer to finish setting it up.';
+  static final _noAgent = notSetUpToMessage('run the assistant');
 }

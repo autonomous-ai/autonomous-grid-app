@@ -7,6 +7,7 @@ import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/adapters/hermes_grid_link.dart';
 import '../../network/logic/node_display.dart';
 import '../../projects/logic/project_tasks_store.dart';
+import '../../../shared/copy/setup_hints.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'task_inbox_store.dart';
@@ -348,7 +349,5 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     return null;
   }
 
-  static const _noAgent =
-      "This computer isn't set up to run tasks yet. Open the account menu ▸ "
-      'This computer to finish setting it up.';
+  static final _noAgent = notSetUpToMessage('run tasks');
 }

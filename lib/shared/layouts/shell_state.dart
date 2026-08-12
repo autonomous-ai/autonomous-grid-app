@@ -115,7 +115,12 @@ enum ShellSection {
     devOnly: true,
   ),
   grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300, devOnly: true),
-  engines(LucideIcons.server, 'This computer', thinIcon: LucideIcons.server300),
+  // "Model engines", not "This computer": the rail names what a row *is*, and
+  // a row called after a place tells a first-time user nothing about the thing
+  // this app exists to do. The screen's own title says the same words — it was
+  // "Model Engines" there and "This computer" in the nav, which is one concept
+  // wearing two names (§5).
+  engines(LucideIcons.server, 'Model engines', thinIcon: LucideIcons.server300),
   guide(
     LucideIcons.circleHelp,
     'How to use',
@@ -175,7 +180,14 @@ enum ShellSection {
 /// Agents isn't either: picking which assistant answers is setup you do once,
 /// and the composer already switches it per chat — so it sits in Settings with
 /// the rest of what shapes the answer.
-const kSidebarSections = [ShellSection.scheduled];
+///
+/// [ShellSection.engines] leads, and it is the one row here that isn't a
+/// convenience: running a model is what the product *is*, and it used to be
+/// three clicks deep behind the account menu ▸ Settings, on a screen that took
+/// the whole window. Every other way in was a dead end reacting to a failure —
+/// "Start an engine" on an empty chat, the failed-download pill — so a user who
+/// simply wanted to host had nowhere to click.
+const kSidebarSections = [ShellSection.engines, ShellSection.scheduled];
 
 /// One labelled run of rows in the settings nav.
 ///
@@ -207,8 +219,12 @@ class SettingsGroup {
 /// point the assistant at something outside the app (a Telegram gateway, the
 /// skills/MCP it may call) — even though both are developer-gated today.
 const kSettingsGroups = [
+  // No "This computer" row: [ShellSection.engines] moved out to the sidebar (see
+  // [kSidebarSections]). It was never plumbing you set up once — it is the
+  // screen a host comes back to every time they add a model or stop an engine,
+  // and Settings takes the whole window, so arriving there dropped the grid and
+  // the chat behind it.
   SettingsGroup('Personal', [
-    ShellSection.engines,
     ShellSection.appearance,
     // Between Appearance and the guide: it is about this user's own data on
     // this computer, which is what the rest of this group is about. It is not
@@ -272,9 +288,10 @@ List<SettingsGroup> visibleSettingsGroups({
 
 /// Where Settings opens when the user asked for Settings rather than for one
 /// screen inside it (the account menu, ⌘K) — the first screen every build shows.
-/// This computer, not Grids: Grids is developer-only now, so it can't be the
-/// landing screen an end user would get.
-const kDefaultSettingsSection = ShellSection.engines;
+/// Appearance, not Grids: Grids is developer-only now, so it can't be the
+/// landing screen an end user would get. It was Model engines until that screen
+/// left Settings for the sidebar.
+const kDefaultSettingsSection = ShellSection.appearance;
 
 /// The open section. Chat on launch — that's what the app is for.
 ///

@@ -9,8 +9,7 @@ import '../../playground/logic/one_shot_target.dart';
 import '../../playground/logic/playground_models.dart';
 import 'active_chat_agent.dart';
 import 'agent_catalog.dart';
-import 'agent_grid_support.dart';
-import 'agent_status.dart';
+import 'agent_model_support.dart';
 import 'auto_agent.dart';
 
 /// Whether the chats in [projectId] are set to **Auto** — the stored choice is
@@ -30,18 +29,36 @@ final isAutoAgentChosenProvider = Provider<bool>(
   ),
 );
 
-/// The installed agents this grid can actually run — the pool Auto chooses from.
+/// The agents Auto may choose between for a turn that will be sent with
+/// [model] — installed here, runnable on this grid, *and* able to answer with
+/// the model the turn actually carries.
 ///
-/// Both bars, the same ones [chatAgentForProjectProvider] uses: an agent the
-/// user removed can't answer, and neither can one this grid serves no model
-/// for. Watched so the pool follows an install finishing or a grid switch.
-final runnableChatAgentsProvider = Provider<List<AgentTool>>((ref) {
-  return [
+/// The first two bars are [canAnswerChatsHere], the same ones
+/// [chatAgentForProjectProvider] uses. The third is the one Auto adds and had
+/// to: the composer's wall is computed against the agent *it* resolved, so a
+/// grid serving only `claude:opus` would let Auto hand the turn to Codex and
+/// dead-end it at the relay with "no model Codex can use" — after sending, on a
+/// pair the user never picked. On a grid serving `auto` this bar excludes
+/// nobody, since every agent can be pointed at the router.
+///
+/// Keyed by the wire model so the pool is asked about the model that will be
+/// sent, not the one showing in the composer. When no candidate clears the model
+/// bar the runnable ones stand: Auto then picks as it did before and the turn
+/// meets the composer's existing wall, which is a failure the user has seen and
+/// the chat's notice explains — rather than a second, emptier one Auto invented.
+final autoAgentCandidatesProvider = Provider.family<List<AgentTool>, String>((
+  ref,
+  model,
+) {
+  final runnable = [
     for (final tool in AgentTool.values)
-      if (ref.watch(agentInstalledProvider(tool)) &&
-          ref.watch(agentRunsOnGridProvider(tool)))
-        tool,
+      if (canAnswerChatsHere(ref, tool)) tool,
   ];
+  final withModel = [
+    for (final tool in runnable)
+      if (agentSupportsModel(tool, model)) tool,
+  ];
+  return List.unmodifiable(withModel.isEmpty ? runnable : withModel);
 });
 
 /// Picks the installed assistant best suited to a question, by asking the grid.
@@ -73,7 +90,7 @@ class AutoAgentRouter {
     required String question,
     required List<AgentTool> candidates,
   }) async {
-    if (candidates.isEmpty) return AgentTool.hermes;
+    if (candidates.isEmpty) return kChatAgent;
     if (candidates.length == 1) return candidates.first;
 
     final log = _ref.read(appLogProvider);
@@ -135,9 +152,7 @@ class AutoAgentRouter {
   /// the question just as well, so the shared [resolveOneShotTarget] fills in.
   OneShotTarget? _classifierTarget() {
     final network = _ref.read(selectedNetworkProvider);
-    final servesAuto = _ref
-        .read(playgroundModelsProvider)
-        .any((option) => option.id == kAutoModelId);
+    final servesAuto = _ref.read(gridServesAutoModelProvider);
     if (network != null && servesAuto) {
       return (
         endpoint: '${network.relayBaseUrl}/chat/completions',

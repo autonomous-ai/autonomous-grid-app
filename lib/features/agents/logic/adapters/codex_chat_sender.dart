@@ -8,6 +8,7 @@ import '../../../../infrastructure/cli/codex_exec_service.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../../shared/copy/setup_hints.dart';
 import '../../../network/logic/app_guide_snippets.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
@@ -84,10 +85,7 @@ class CodexChatSender implements ChatSender {
       return;
     }
     if (_ref.read(codexExecServiceProvider) == null) {
-      yield const ChatSendFailure(
-        "This computer isn't set up to answer chats yet. Open the account menu "
-        '▸ This computer to finish setting it up.',
-      );
+      yield ChatSendFailure(notSetUpToMessage('answer chats'));
       return;
     }
     if (history.isEmpty || history.last.text.trim().isEmpty) {
