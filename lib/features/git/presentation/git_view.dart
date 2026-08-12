@@ -81,6 +81,10 @@ class _GitCard extends ConsumerWidget {
           'Git ${gitVersionLabel(version)} is still too old for Grid.',
           ToastSeverity.warning,
         ),
+        GitCannotCarryCredential(:final version) => (
+          "Git ${gitVersionLabel(version)} still can't sign in to your grid.",
+          ToastSeverity.warning,
+        ),
         GitMissing() => (
           'Still no Git this computer can run.',
           ToastSeverity.warning,
@@ -163,6 +167,18 @@ class _Status extends ConsumerWidget {
             'newer. It can fetch its own copy and use that inside Grid, '
             'leaving yours where it is.',
       ),
+      // Never "too old": this Git may be newer than the floor and still not
+      // sign in, and a user sent to upgrade would install what they have. Say
+      // which copy it is and where it lives — on the machine this was found on,
+      // an old one at /usr/local/bin was hiding a newer one at /usr/bin, and the
+      // path is the only part of this that points at the fix.
+      GitCannotCarryCredential(:final version, :final path) => (
+        AppPalette.warn,
+        "Git ${gitVersionLabel(version)} can't sign in to your grid",
+        'The Git at $path can\'t carry Grid\'s sign-in, so getting a copy of a '
+            'project would fail. Grid can fetch its own copy and use that '
+            'inside Grid, leaving yours where it is.',
+      ),
       GitMissing() => (
         AppPalette.offline,
         'No Git on this computer',
@@ -207,7 +223,10 @@ class _Status extends ConsumerWidget {
             _Action(status: status),
           ],
         ),
-        if (status case GitReady(:final path) || GitTooOld(:final path)) ...[
+        if (status
+            case GitReady(:final path) ||
+                GitTooOld(:final path) ||
+                GitCannotCarryCredential(:final path)) ...[
           const SizedBox(height: 12),
           _Where(path: path),
         ],
