@@ -182,8 +182,9 @@ class _SidePanelToggle extends ConsumerWidget {
     if (ref.watch(codeProjectIsOpenProvider)) {
       // A project with no repository in it has nothing to browse, review or run
       // a terminal in — see [openProjectHasCodeProvider].
-      if (!ref.watch(openProjectHasCodeProvider))
+      if (!ref.watch(openProjectHasCodeProvider)) {
         return const SizedBox.shrink();
+      }
       final open = ref.watch(codeSidePanelOpenProvider);
       return PanelToggle(
         icon: LucideIcons.panelRight,

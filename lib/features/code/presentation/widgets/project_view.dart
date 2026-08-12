@@ -10,7 +10,6 @@ import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../playground/presentation/transcript_view.dart';
-import '../../logic/code_project.dart';
 import '../../logic/code_projects_controller.dart';
 import '../../logic/code_side_panel.dart';
 import '../../logic/project_flow.dart';
@@ -43,22 +42,17 @@ class ProjectView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final project = ref
-        .watch(codeProjectsProvider)
-        .asData
-        ?.value
-        .where((candidate) => candidate.id == projectId)
-        .firstOrNull;
+    final project = ref.watch(openCodeProjectProvider);
     final status = ref.watch(projectStatusProvider(projectId));
 
     // The side panel — the clone browsed, its diff reviewed, a terminal in it —
     // only earns its place once the project has code to work on, and only when
-    // the user has asked for it.
-    final hasCode = switch (status) {
-      AsyncData(:final value) => !value.needsImport,
-      _ => false,
-    };
-    final panelOpen = ref.watch(codeSidePanelOpenProvider) && hasCode;
+    // the user has asked for it. Read from the same provider the top bar's
+    // toggle asks, so the button and the panel can't disagree about whether
+    // there is anything to show.
+    final panelOpen =
+        ref.watch(codeSidePanelOpenProvider) &&
+        ref.watch(openProjectHasCodeProvider);
     // Asked for, not yet granted: expanding means the panel takes the pane, and
     // whether it can depends on a width this build hasn't measured yet.
     final expandWanted =
@@ -71,7 +65,7 @@ class ProjectView extends ConsumerWidget {
       AsyncData(:final value) when value.needsImport => _NeedsImport(
         projectId: projectId,
       ),
-      AsyncData(:final value) => _Conversation(status: value, project: project),
+      AsyncData(:final value) => _Conversation(status: value),
       AsyncError(:final error) => CodeFailure(
         message: '$error',
         onRetry: () => ref.invalidate(projectStatusProvider(projectId)),
@@ -186,10 +180,9 @@ class _NeedsImport extends StatelessWidget {
 /// The working screen: what can be done to the project, what has been run
 /// against it, and the box for the next thing.
 class _Conversation extends ConsumerWidget {
-  const _Conversation({required this.status, required this.project});
+  const _Conversation({required this.status});
 
   final ProjectStatus status;
-  final GridProject? project;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

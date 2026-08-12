@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
+import '../../features/code/logic/code_projects_controller.dart';
 import '../../features/code/presentation/code_pane.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/git/logic/background_git_installer.dart';
@@ -191,12 +192,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// and Files are read next to what you are asking about, while a terminal is
   /// watched under it, wide and short. Code has no panel below, so its terminal
   /// opens in the one panel it does have.
-  void _openTerminal() => _reveal(
-    ref.read(shellModeProvider) == ShellMode.code
-        ? PanelHost.code
-        : PanelHost.bottom,
-    PanelFeature.terminal,
-  );
+  void _openTerminal() {
+    if (ref.read(shellModeProvider) != ShellMode.code) {
+      _reveal(PanelHost.bottom, PanelFeature.terminal);
+      return;
+    }
+    _revealBeside(PanelFeature.terminal);
+  }
 
   /// Open [feature] in whichever panel sits beside the conversation the user is
   /// actually looking at: the chat's, or a Code project's.
@@ -207,7 +209,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// else.
   void _revealBeside(PanelFeature feature) {
     if (ref.read(shellModeProvider) == ShellMode.code) {
-      _reveal(PanelHost.code, feature);
+      // Nothing to open it beside: Code with no project open is a list, and a
+      // panel opened onto that is a tab waiting behind a screen the user cannot
+      // see it from.
+      if (ref.read(codeProjectIsOpenProvider)) _reveal(PanelHost.code, feature);
       return;
     }
     // Back to Chat first: the panel lives there, so firing this from Settings

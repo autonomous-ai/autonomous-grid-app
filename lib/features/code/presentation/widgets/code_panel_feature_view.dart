@@ -10,6 +10,7 @@ import '../../../review/logic/review_controller.dart';
 import '../../../review/presentation/review_surface.dart';
 import '../../../terminal/presentation/terminal_panel_view.dart';
 import '../../logic/code_side_panel.dart';
+import '../../logic/project_flow.dart';
 
 /// The one place a [PanelTab] beside a Code project becomes a widget — the
 /// project's twin of the chat's `panelFeatureView`.
@@ -160,6 +161,11 @@ class _ReviewTabState extends ConsumerState<_ReviewTab> {
   /// provider's own first read is already on its way.
   bool _wasVisible = true;
 
+  /// Read the repository again — the folder on screen has moved.
+  void _lookAgain() {
+    ref.read(reviewProvider(widget.clonePath).notifier).refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     // On screen means *this tab* is the one showing and the panel holding it is
@@ -169,14 +175,26 @@ class _ReviewTabState extends ConsumerState<_ReviewTab> {
         PanelTabVisible.of(context) &&
         ref.watch(panelOpenProvider(PanelHost.code));
 
-    // Coming back to the tab is the moment the answer may be stale: a task that
-    // landed while it was hidden, or a `git` typed into the Terminal tab beside
-    // it. Asked on arrival rather than polled, so a tab nobody is looking at
-    // costs nothing.
+    // A task of this member's has finished being published, and the flow
+    // re-clones the copy on this computer as the last step of that — so every
+    // file this diff was counted from has just been written again underneath
+    // it. The chat's Review re-reads at the end of a turn for exactly this
+    // reason; a project's turn ends here.
+    ref.listen(
+      projectFlowProvider(widget.projectId).select((s) => s.isPublishing),
+      (was, now) {
+        if (was == true && now == false && visible) _lookAgain();
+      },
+    );
+
+    // Coming back to the tab is the other moment the answer may be stale: a
+    // task that landed while it was hidden, or a `git` typed into the Terminal
+    // tab beside it. Asked on arrival rather than polled, so a tab nobody is
+    // looking at costs nothing.
     if (visible && !_wasVisible) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        ref.read(reviewProvider(widget.clonePath).notifier).refresh();
+        _lookAgain();
       });
     }
     _wasVisible = visible;

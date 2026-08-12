@@ -54,12 +54,7 @@ class ProjectHeader extends ConsumerWidget {
     AppTheme.watch(context);
     final projectId = ref.watch(selectedCodeProjectProvider);
     if (projectId == null) return const SizedBox.shrink();
-    final project = ref
-        .watch(codeProjectsProvider)
-        .asData
-        ?.value
-        .where((candidate) => candidate.id == projectId)
-        .firstOrNull;
+    final project = ref.watch(openCodeProjectProvider);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -125,6 +120,10 @@ class _ProjectHeaderMenuButtonState
   final _menu = MenuController();
 
   /// Held while the clone is out, so a second press cannot start a second one.
+  ///
+  /// Not `setState`d: nothing on screen reads it — the menu that carries the row
+  /// is already closed by then — and a rebuild for a field no build looks at is
+  /// a frame nobody asked for.
   bool _busy = false;
 
   /// The fixed, app-owned place this project's code lives on disk. No folder
@@ -141,7 +140,7 @@ class _ProjectHeaderMenuButtonState
   Future<void> _openCopy() async {
     _menu.close();
     if (_busy) return;
-    setState(() => _busy = true);
+    _busy = true;
     try {
       final result = await ref
           .read(projectActionsProvider)
@@ -165,7 +164,7 @@ class _ProjectHeaderMenuButtonState
         ToastSpec(message: '$error', severity: ToastSeverity.error),
       );
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _busy = false;
     }
   }
 
@@ -219,10 +218,13 @@ class _ProjectHeaderMenuButtonState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // No "Opening…" state on the row: the menu closes the moment it
+              // is pressed, so a label swapped underneath is a label nobody can
+              // read. [_busy] is still what stops a second clone starting — the
+              // row can be pressed again as soon as the menu reopens.
               AppMenuRow(
                 icon: LucideIcons.folderOpen300,
-                // What it does, and that it may take a moment the first time.
-                label: _busy ? 'Opening the copy…' : 'Open the copy',
+                label: 'Open the copy',
                 onPressed: _openCopy,
               ),
               AppMenuRow(

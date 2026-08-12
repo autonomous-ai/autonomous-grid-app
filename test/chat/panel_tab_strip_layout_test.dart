@@ -44,4 +44,84 @@ void main() {
     expect(tabStripTabWidth(available: 40, count: 3), isNonNegative);
     expect(tabStripScrolls(available: 40, count: 3), isTrue);
   });
+
+  // The width the same panel is drawn at beside a chat and beside a project.
+  // Untested while it lived in the chat pane, and it is the one piece of this
+  // that can put a composer below its own floor — where the failure is a row
+  // striped yellow and black, not a screen that merely looks tight.
+  group('how wide the panel beside the conversation is drawn', () {
+    const main = 440.0;
+
+    test('it takes a share of the pane rather than a fixed width', () {
+      final size = resolveSidePanel(
+        paneWidth: 1400,
+        mainMinWidth: main,
+        override: null,
+      );
+
+      expect(size.fits, isTrue);
+      expect(size.width, 1400 * 0.45);
+    });
+
+    test('a wide monitor does not open it onto half the world', () {
+      final size = resolveSidePanel(
+        paneWidth: 3000,
+        mainMinWidth: main,
+        override: null,
+      );
+
+      expect(size.width, kSidePanelMaxWidth);
+    });
+
+    test('a drag is not capped by that share, only by what is beside it', () {
+      // Past the app's own ceiling on purpose: the user took hold of the seam,
+      // so the only thing left to protect is the conversation's floor.
+      final size = resolveSidePanel(
+        paneWidth: 1400,
+        mainMinWidth: main,
+        override: 1200,
+      );
+
+      expect(size.width, 1400 - main);
+    });
+
+    test('it never leaves the conversation under its floor', () {
+      final size = resolveSidePanel(
+        paneWidth: 900,
+        mainMinWidth: main,
+        override: 800,
+      );
+
+      expect(900 - size.width, greaterThanOrEqualTo(main));
+    });
+
+    test('a pane with no room for it says so, and it floats instead', () {
+      // Docking here would squeeze the composer; the caller answers with the
+      // floating panel, which keeps its full width over the conversation.
+      final size = resolveSidePanel(
+        paneWidth: 700,
+        mainMinWidth: main,
+        override: null,
+      );
+
+      expect(size.fits, isFalse);
+      expect(size.width, greaterThanOrEqualTo(kSidePanelMinWidth));
+    });
+
+    test(
+      'a pane narrower than the panel itself degrades instead of throwing',
+      () {
+        // Mid-animation, and on a window dragged smaller than either floor.
+        final size = resolveSidePanel(
+          paneWidth: 300,
+          mainMinWidth: main,
+          override: null,
+        );
+
+        expect(size.fits, isFalse);
+        expect(size.width, isNonNegative);
+        expect(size.width, lessThanOrEqualTo(300));
+      },
+    );
+  });
 }

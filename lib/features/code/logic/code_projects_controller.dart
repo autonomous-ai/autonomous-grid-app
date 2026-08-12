@@ -131,6 +131,23 @@ class SelectedCodeProject extends Notifier<String?> {
   void select(String? projectId) => state = projectId;
 }
 
+/// The open project as the grid describes it — null until one is picked, and
+/// while the list is still coming.
+///
+/// Derived once here rather than at each screen: the pane, its header and its
+/// panel all need the same project, and three copies of "find the id in the
+/// list" is three places to get the fallback name wrong.
+final openCodeProjectProvider = Provider<GridProject?>((ref) {
+  final projectId = ref.watch(selectedCodeProjectProvider);
+  if (projectId == null) return null;
+  return ref
+      .watch(codeProjectsProvider)
+      .asData
+      ?.value
+      .where((candidate) => candidate.id == projectId)
+      .firstOrNull;
+});
+
 /// Whether a project's screen is the one actually on screen.
 ///
 /// The twin of `chatIsOpenProvider`, and asked for the same reason: everything
