@@ -8,7 +8,10 @@ import '../../../playground/presentation/chat_minimap.dart';
 import '../../../playground/presentation/transcript_view.dart';
 import '../../logic/code_task.dart';
 import '../../logic/code_tasks_controller.dart';
+import '../../logic/outgoing_task.dart';
+import '../../logic/project_flow.dart';
 import 'code_failure.dart';
+import 'outgoing_turn.dart';
 import 'task_turn.dart';
 
 /// How many frames the landing scroll gets to converge on the real end of a
@@ -84,6 +87,14 @@ class _TaskTranscriptState extends ConsumerState<TaskTranscript> {
     });
   }
 
+  /// Follow a turn the user themselves just put up, whether or not they were at
+  /// the bottom — unlike a task landing, this one is the direct answer to the
+  /// Enter they pressed a frame ago, and leaving it out of sight up the
+  /// transcript is exactly the "did that send?" it exists to settle.
+  void _followOwnTurn() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
   void _scrollToBottom({bool animated = false}) {
     if (!_scroll.hasClients) return;
     final target = _scroll.position.maxScrollExtent;
@@ -122,15 +133,30 @@ class _TaskTranscriptState extends ConsumerState<TaskTranscript> {
   @override
   Widget build(BuildContext context) {
     final tasks = ref.watch(codeTasksProvider(widget.projectId));
+    // The task the user has just sent, which the grid has not given an id yet —
+    // it is drawn under the list rather than in it. See [OutgoingTask].
+    final outgoing = ref.watch(
+      projectFlowProvider(widget.projectId).select((flow) => flow.outgoing),
+    );
     // Followed off a listener, not in build: scrolling is a side effect, and
     // this build runs on every rebuild of the pane around it.
     ref.listen(codeTasksProvider(widget.projectId), (_, next) {
       final value = next.value;
       if (value != null) _followIfChanged(value);
     });
+    ref.listen(
+      projectFlowProvider(widget.projectId).select((flow) => flow.outgoing),
+      (before, after) {
+        if (before == null && after != null) _followOwnTurn();
+      },
+    );
     return switch (tasks) {
-      AsyncData(:final value) when value.isEmpty => const _NothingYet(),
-      AsyncData(:final value) => _build(value),
+      // An outgoing turn is something to show, so a project whose very first
+      // task is still on the wire gets the transcript rather than the "nothing
+      // has been run here yet" the user has just disproved.
+      AsyncData(:final value) when value.isEmpty && outgoing == null =>
+        const _NothingYet(),
+      AsyncData(:final value) => _build(value, outgoing),
       AsyncError(:final error) => CodeFailure(
         message: '$error',
         onRetry: () => ref.invalidate(codeTasksProvider(widget.projectId)),
@@ -139,7 +165,7 @@ class _TaskTranscriptState extends ConsumerState<TaskTranscript> {
     };
   }
 
-  Widget _build(List<CodeTask> tasks) {
+  Widget _build(List<CodeTask> tasks, OutgoingTask? outgoing) {
     // As the grid returns them: oldest at the top, newest at the bottom — the
     // way a conversation reads, and where the landing scroll and follow aim.
     return TranscriptView(
@@ -161,7 +187,20 @@ class _TaskTranscriptState extends ConsumerState<TaskTranscript> {
             builder: (_) => TaskTurn(projectId: widget.projectId, task: task),
           ),
       ],
-      trailing: null,
+      // The outgoing turn goes in the slot the chat's streaming reply uses, for
+      // the same reason: it is the one row that changes while everything above
+      // it stands still, so it must not be cached with them.
+      trailing: outgoing == null
+          ? null
+          : OutgoingTurn(
+              outgoing: outgoing,
+              onRetry: () => ref
+                  .read(projectFlowProvider(widget.projectId).notifier)
+                  .retryOutgoing(),
+              onDiscard: () => ref
+                  .read(projectFlowProvider(widget.projectId).notifier)
+                  .discardOutgoing(),
+            ),
     );
   }
 

@@ -8,6 +8,7 @@ import 'code_workdir.dart';
 import 'code_task.dart';
 import 'code_tasks_controller.dart';
 import 'integration.dart';
+import 'outgoing_task.dart';
 import 'project_actions.dart';
 import 'project_status_controller.dart';
 
@@ -40,6 +41,7 @@ class ProjectFlowState {
   const ProjectFlowState({
     this.awaitingPublish = const {},
     this.publishing = const {},
+    this.outgoing,
     this.notice,
   });
 
@@ -50,19 +52,30 @@ class ProjectFlowState {
   /// Tasks whose promote is in flight right now.
   final Set<String> publishing;
 
+  /// The task typed a moment ago that the grid has not taken yet, drawn at the
+  /// foot of the transcript. Null the rest of the time — one at a time, because
+  /// a member gets one task slot per project.
+  final OutgoingTask? outgoing;
+
   /// The last thing the flow did on its own, for the screen to surface.
   final FlowNotice? notice;
 
   /// A task of this member's is being published to the team right now.
   bool get isPublishing => publishing.isNotEmpty;
 
+  /// [clearOutgoing] rather than passing null, which `??` cannot tell from "not
+  /// given" — and this is the field that has to be *un*set, on the frame the
+  /// real task appears in the list.
   ProjectFlowState copyWith({
     Set<String>? awaitingPublish,
     Set<String>? publishing,
+    OutgoingTask? outgoing,
+    bool clearOutgoing = false,
     FlowNotice? notice,
   }) => ProjectFlowState(
     awaitingPublish: awaitingPublish ?? this.awaitingPublish,
     publishing: publishing ?? this.publishing,
+    outgoing: clearOutgoing ? null : (outgoing ?? this.outgoing),
     notice: notice ?? this.notice,
   );
 }
@@ -116,33 +129,98 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
     return const ProjectFlowState();
   }
 
-  /// Catch up, then hand the grid the task. Throws — with a message a person can
-  /// read — when catching up conflicts, because the merge that resolves it takes
-  /// this member's one slot and the task cannot be sent behind it.
-  Future<void> submit({
-    required String prompt,
-    required List<String> files,
-  }) async {
-    await _catchUp();
-    final task = await ref
-        .read(codeTasksProvider(projectId).notifier)
-        .create(prompt: prompt, files: files);
-    // Skipped catch-up means the status wasn't reloaded, so the composer's Send
-    // wouldn't know the slot is taken; make it so before returning.
-    await ref.read(projectStatusProvider(projectId).notifier).refresh();
-    // The user may have left the project mid-round-trip, disposing this
-    // provider. Touching `ref` or `state` after that throws, so stop here — the
-    // task is on the grid either way, and this flow just won't watch it.
-    if (!ref.mounted) return;
+  /// Put the task on screen, then catch up and hand it to the grid behind it.
+  ///
+  /// Returns the instant the turn is in [ProjectFlowState.outgoing], which is
+  /// the whole point: catching up, creating and re-reading the status are three
+  /// round trips through the `grid` CLI, and holding the user's paragraph in the
+  /// composer for all of them is what made sending look broken. Pressing Enter
+  /// now does what it does in the chat half — the question goes up, the work
+  /// happens under it.
+  ///
+  /// **Nothing here throws.** A refusal lands on the outgoing turn instead, so
+  /// the text is still on screen with a button to send it again — the box was
+  /// cleared, and this is now the only place that paragraph exists.
+  ///
+  /// Sending while a refused turn is still up replaces it: the user is looking
+  /// at both and has typed a fresh one, and two questions in the same place is
+  /// the worse answer.
+  void submit({required String prompt, required List<String> files}) {
     state = state.copyWith(
-      awaitingPublish: {...state.awaitingPublish, task.id},
+      outgoing: OutgoingTask(
+        prompt: prompt,
+        files: files,
+        phase: const TaskSending(),
+      ),
     );
-    // A task can be finished the instant it is registered — a trivial one that
-    // ran while the create round-trip was in flight. Check the list we already
-    // have rather than wait up to a poll for the next one, so "publish when it
-    // lands" doesn't sit idle on a task that has already landed.
-    final tasks = ref.read(codeTasksProvider(projectId)).value;
-    if (tasks != null) _onTasks(tasks);
+    unawaited(_send(prompt, files));
+  }
+
+  /// Send the refused turn again, unchanged — the button under it.
+  void retryOutgoing() {
+    final outgoing = state.outgoing;
+    if (outgoing == null || outgoing.phase is! TaskSendFailed) return;
+    submit(prompt: outgoing.prompt, files: outgoing.files);
+  }
+
+  /// Take a refused turn off the transcript. Only a refused one: a task on its
+  /// way is going to arrive, and dropping its bubble would hide a question that
+  /// is about to become real.
+  void discardOutgoing() {
+    if (state.outgoing == null || state.outgoing!.phase is TaskSending) return;
+    state = state.copyWith(clearOutgoing: true);
+  }
+
+  Future<void> _send(String prompt, List<String> files) async {
+    // Pressing Enter and walking straight back to Home disposes this provider
+    // mid-flight, and a task dropped because somebody changed screen is the
+    // worst possible answer to "I sent it". Hold the flow — and the task list it
+    // listens to — alive until the grid has taken the task or refused it.
+    final link = ref.keepAlive();
+    try {
+      final task = await _create(prompt, files);
+      if (task == null) return;
+      // `create` re-read the list before returning, so the real turn is already
+      // in the transcript: dropping the outgoing one now swaps the two in a
+      // single frame rather than blinking the question off screen and back.
+      state = state.copyWith(
+        clearOutgoing: true,
+        awaitingPublish: {...state.awaitingPublish, task.id},
+      );
+      // Skipped catch-up means the status wasn't reloaded, so the composer's
+      // Send wouldn't know the slot is taken; make it so. After the swap above,
+      // because it is one more round trip and nothing on screen waits for it.
+      await ref.read(projectStatusProvider(projectId).notifier).refresh();
+      // A task can be finished the instant it is registered — a trivial one that
+      // ran while the create round-trip was in flight. Check the list we already
+      // have rather than wait up to a poll for the next one, so "publish when it
+      // lands" doesn't sit idle on a task that has already landed.
+      final tasks = ref.read(codeTasksProvider(projectId)).value;
+      if (tasks != null) _onTasks(tasks);
+    } finally {
+      link.close();
+    }
+  }
+
+  /// Catch up and hand the task over, or leave the reason on the outgoing turn
+  /// and return null.
+  ///
+  /// The catch is here rather than around the whole send so that a status
+  /// re-read failing *after* the grid took the task cannot resurrect a bubble
+  /// for a task that already exists — the user would be looking at their
+  /// question twice, one of them claiming it never went.
+  Future<CodeTask?> _create(String prompt, List<String> files) async {
+    try {
+      await _catchUp();
+      return await ref
+          .read(codeTasksProvider(projectId).notifier)
+          .create(prompt: prompt, files: files);
+    } on Object catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(outgoing: state.outgoing?.refused('$error'));
+      }
+      return null;
+    }
   }
 
   Future<void> _catchUp() async {
@@ -154,8 +232,10 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
     final result = await actions.integrate(projectId);
     if (result.status != IntegrationStatus.mergeTask) return;
     // A merge task is now running in this member's one slot, so the task they
-    // asked for cannot be created behind it. Their text is kept — this throws
-    // rather than half-sends — and the merge is already in the transcript.
+    // asked for cannot be created behind it. This throws rather than
+    // half-sends; the text is kept on the outgoing turn, which shows this
+    // sentence under it with "Send it again" beside — and the merge is already
+    // in the transcript above.
     throw const CodeGridException(
       'You and the team changed the same files, so a task is merging them '
       'first — it has taken your one task slot. Your request wasn’t sent; '

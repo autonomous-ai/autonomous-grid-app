@@ -23,7 +23,15 @@ final projectStatusProvider = AsyncNotifierProvider.autoDispose
 /// first repository — there is nothing to open, review or run a terminal in, so
 /// the panel and its toggle stay away rather than offering a button that shows
 /// an empty room. Read by the top bar, which cannot see the pane's own state.
-final openProjectHasCodeProvider = Provider<bool>((ref) {
+///
+/// **`autoDispose` is load-bearing, not tidiness.** It watches
+/// [projectStatusProvider], which is `autoDispose` so its poll timer stops when
+/// the screen closes — and a provider that is NOT `autoDispose` pins everything
+/// it watches alive for the rest of the session (measured: the pinned leaf never
+/// disposes, an unpinned one does). Left plain, this made a `grid project
+/// status` fire every 30s — every 6s with work in flight — from a Code screen
+/// nobody was looking at, for as long as the app stayed open.
+final openProjectHasCodeProvider = Provider.autoDispose<bool>((ref) {
   final projectId = ref.watch(selectedCodeProjectProvider);
   if (projectId == null) return false;
   return switch (ref.watch(projectStatusProvider(projectId))) {
