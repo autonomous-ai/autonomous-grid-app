@@ -15,12 +15,39 @@ import '../../core/app_environment.dart';
 /// pair to be renamed into something nobody says out loud.
 enum ShellMode {
   /// Chatting, and everything that shapes how the assistant answers.
-  home,
+  home(LucideIcons.house300, 'Home'),
 
   /// Handing coding work to the grid: shared repositories, and the agent runs
   /// against them.
-  code,
+  ///
+  /// Developer-only for now: the half is built, but the relay in production
+  /// serves no projects plane, so a shipped build would offer a whole side of
+  /// the app whose every screen answers "nothing here" — and the switch above
+  /// it would be the first thing a new user clicked.
+  code(LucideIcons.codeXml300, 'Code', devOnly: true);
+
+  const ShellMode(this.icon, this.label, {this.devOnly = false});
+
+  /// The switch's glyph and word. Carried here rather than typed into the
+  /// segmented control, so a half that is hidden takes its label with it — the
+  /// same reason [ShellSection] carries its own.
+  final IconData icon;
+  final String label;
+
+  /// Internal half — offered only in developer builds, like
+  /// [ShellSection.devOnly].
+  final bool devOnly;
+
+  /// Whether this half is offered in the current build.
+  bool get isVisibleForBuild => !devOnly || AppEnvironment.isDeveloperMode;
 }
+
+/// The halves this build offers, in order — what the switch draws, and the only
+/// modes [ShellModeNotifier.select] accepts.
+List<ShellMode> get visibleShellModes => [
+  for (final mode in ShellMode.values)
+    if (mode.isVisibleForBuild) mode,
+];
 
 /// Which half is open. Session state — the app opens on [ShellMode.home], which
 /// is what it is for.
@@ -32,7 +59,16 @@ class ShellModeNotifier extends Notifier<ShellMode> {
   @override
   ShellMode build() => ShellMode.home;
 
-  void select(ShellMode mode) => state = mode;
+  /// Open [mode], unless this build doesn't offer it.
+  ///
+  /// The guard rather than trusting the switch to be the only way in: the switch
+  /// is hidden in a release build, so anything that ever reaches here with a
+  /// dev-only half would strand the user in a side of the app with no control to
+  /// leave it by.
+  void select(ShellMode mode) {
+    if (!mode.isVisibleForBuild) return;
+    state = mode;
+  }
 }
 
 /// Whether the left rail is folded away to give the pane the whole window.
