@@ -121,6 +121,9 @@ mixin _ChatGoals on _ChatSessions {
       // check-ins, and plan mode would stop for approval on every step.
       planFirst: false,
       into: id,
+      // Every step continues the work of the step before it, so a goal stays
+      // with one agent rather than being handed between them mid-objective.
+      continuing: true,
     );
   }
 

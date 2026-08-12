@@ -51,13 +51,18 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     _menu.close();
   }
 
-  /// The trigger's tooltip — under Auto it names the assistant *currently*
-  /// answering too, so the row doesn't just say "Auto" while a real agent
-  /// replies underneath it.
+  /// The trigger's tooltip.
+  ///
+  /// Under Auto it names no agent. It used to add "(now: …)" from
+  /// [activeChatAgentProvider], which under Auto is only the fallback that
+  /// resolves an unknown id — it would say "now: Hermes" and then Codex would
+  /// answer the coding question. There is no agent answering *between* turns
+  /// either: the pick is made per send, and the reply's own footer names who
+  /// made it.
   String _triggerTooltip(bool autoChosen, AgentTool active, String? project) {
     if (autoChosen) {
       final where = project == null ? '' : ' in $project';
-      return 'Auto$where · the grid picks per question (now: ${active.name})';
+      return 'Auto$where · the grid picks the best assistant for each question';
     }
     return project == null
         ? 'Which agent answers · ${active.name}'
@@ -121,8 +126,8 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
           _AgentItem(
             tool: tool,
             // A concrete agent is ticked only when it's the *chosen* one — under
-            // Auto none is, even though one is currently answering, or the list
-            // would show two ticks and hide that the grid is choosing.
+            // Auto the choice is Auto, and ticking an agent as well would show
+            // two ticks and hide that the grid picks a fresh one per question.
             selected: !autoChosen && tool == active,
             unavailable: _unavailableNote(tool),
             onTap: () => _select(tool),
@@ -180,8 +185,8 @@ class _ScopeNote extends StatelessWidget {
 }
 
 /// The Auto row at the top of the list: a wand, the word "Auto", and the line
-/// that says what it does. Reuses the same box as [_AgentItem] so it reads as a
-/// peer of the agents it chooses between, not a setting bolted above them.
+/// that says what it does. The same box as an agent row, so it reads as a peer
+/// of the agents it chooses between, not a setting bolted above them.
 class _AutoItem extends StatelessWidget {
   const _AutoItem({required this.selected, required this.onTap});
 
@@ -191,77 +196,18 @@ class _AutoItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return MenuItemButton(
-      onPressed: onTap,
-      style: ButtonStyle(
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-        overlayColor: WidgetStatePropertyAll(AppSurface.hoverFill),
-        splashFactory: NoSplash.splashFactory,
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: _rowRadius),
-        ),
+    return _MenuRow(
+      // A 20px box like AgentMark, so the wand lines up with the agent icons
+      // under it rather than sitting a few pixels off.
+      leading: SizedBox(
+        width: 20,
+        height: 20,
+        child: Icon(Icons.auto_awesome, size: 18, color: AppPalette.accent),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: _rowGutter,
-          vertical: 3,
-        ),
-        child: Container(
-          width: _menuWidth - _rowGutter * 2,
-          padding: const EdgeInsets.fromLTRB(_rowInnerPad, 8, 8, 8),
-          decoration: BoxDecoration(
-            color: selected ? AppSurface.accentWash : Colors.transparent,
-            borderRadius: _rowRadius,
-          ),
-          child: Row(
-            children: [
-              // A 20px box like AgentMark, so the wand lines up with the agent
-              // icons under it rather than sitting a few pixels off.
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: Icon(
-                  Icons.auto_awesome,
-                  size: 18,
-                  color: AppPalette.accent,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Auto',
-                      style: TextStyle(
-                        color: AppPalette.textPrimary,
-                        fontSize: 13,
-                        fontWeight: AppFont.medium,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      kAutoAgentTagline,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppPalette.textSecondary,
-                        fontSize: 11.5,
-                        height: 1.25,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (selected) ...[
-                const SizedBox(width: 8),
-                Icon(Icons.check_rounded, size: 16, color: AppPalette.accent),
-              ],
-            ],
-          ),
-        ),
-      ),
+      title: 'Auto',
+      subtitle: kAutoAgentTagline,
+      selected: selected,
+      onTap: onTap,
     );
   }
 }
@@ -290,6 +236,48 @@ class _AgentItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    return _MenuRow(
+      leading: AgentMark(tool: tool, size: 20),
+      title: tool.name,
+      subtitle: unavailable ?? tool.tagline,
+      warn: unavailable != null,
+      selected: selected,
+      onTap: onTap,
+    );
+  }
+}
+
+/// The box every row in this menu is drawn in: a mark, a name over one line of
+/// explanation, and a tick when it's the one in force.
+///
+/// One shell rather than one per row kind. The gutters, the row width, the
+/// selected wash, the type sizes and the tick are the menu's own look — written
+/// twice, a change to the look lands in one row and the other drifts, which on a
+/// list whose whole job is to be comparable is exactly the wrong place for it.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+    this.warn = false,
+  });
+
+  final Widget leading;
+  final String title;
+  final String subtitle;
+
+  /// Whether [subtitle] is a reason this row can't be used, rather than a
+  /// description of it — said in the warning tone.
+  final bool warn;
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
     return MenuItemButton(
       onPressed: onTap,
       style: ButtonStyle(
@@ -315,14 +303,14 @@ class _AgentItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              AgentMark(tool: tool, size: 20),
+              leading,
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      tool.name,
+                      title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -333,13 +321,13 @@ class _AgentItem extends StatelessWidget {
                     ),
                     const SizedBox(height: 1),
                     Text(
-                      unavailable ?? tool.tagline,
+                      subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: unavailable == null
-                            ? AppPalette.textSecondary
-                            : AppPalette.warn,
+                        color: warn
+                            ? AppPalette.warn
+                            : AppPalette.textSecondary,
                         fontSize: 11.5,
                         height: 1.25,
                       ),

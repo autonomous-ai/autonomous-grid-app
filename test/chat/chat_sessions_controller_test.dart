@@ -11,10 +11,15 @@ import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/agents/logic/agent_session_title.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
+import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
+import 'package:grid_app/features/agents/logic/auto_agent.dart';
+import 'package:grid_app/features/chat/logic/chat_scope.dart';
+import 'package:grid_app/features/playground/logic/playground_models.dart';
+import 'package:grid_app/infrastructure/api/chat_transport.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
@@ -2127,6 +2132,183 @@ void main() {
       expect(_userTurns(h.container, chat.id), hasLength(2));
     });
   });
+
+  group('the Auto agent', () {
+    ({
+      ProviderContainer container,
+      _FakeSender hermes,
+      _FakeSender codex,
+      _FakeClassifier grid,
+    })
+    autoHarness({String routeTo = 'codex', bool servesAuto = true}) {
+      final hermes = _FakeSender(_kOneReply);
+      final codex = _FakeSender(_kOneReply);
+      final grid = _FakeClassifier(routeTo);
+      final container = ProviderContainer(
+        overrides: [
+          chatStoreProvider.overrideWithValue(ChatStore(directory: tmp)),
+          chatSenderProvider.overrideWithValue(_FakeSender(_kOneReply)),
+          hermesChatSenderProvider.overrideWithValue(hermes),
+          codexChatSenderProvider.overrideWithValue(codex),
+          agentSessionTitleProvider.overrideWithValue(_FakeAgentTitle(null)),
+          mediaOutputsDirProvider.overrideWithValue(
+            Directory('${tmp.path}/outputs'),
+          ),
+          // Two agents installed: with one, Auto has nothing to choose between
+          // and short-circuits before the grid is asked.
+          hermesPathProvider.overrideWithValue('/bin/hermes'),
+          codexPathProvider.overrideWithValue('/bin/codex'),
+          claudePathProvider.overrideWithValue(null),
+          piPathProvider.overrideWithValue(null),
+          gridOverviewProvider.overrideWith((ref) => _overview()),
+          gridServesAutoModelProvider.overrideWith((ref) => servesAuto),
+          chatTransportProvider.overrideWithValue(grid),
+          chatPrefsStoreProvider.overrideWithValue(
+            ChatPrefsStore(file: File('${tmp.path}/chat_prefs.json')),
+          ),
+          projectsStoreProvider.overrideWithValue(
+            ProjectsStore(file: File('${tmp.path}/projects.json')),
+          ),
+          selectedNetworkProvider.overrideWith(_FixedNetwork.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(chatScopePrefsProvider).setAgent(kAutoAgentId);
+      return (container: container, hermes: hermes, codex: codex, grid: grid);
+    }
+
+    test('the agent the grid named is the one that answers', () async {
+      final h = autoHarness(routeTo: 'codex');
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(
+            network: _credential(),
+            model: 'qwen',
+            message: 'refactor this module',
+          );
+
+      expect(h.codex.history, isNotNull);
+      expect(h.hermes.history, isNull);
+      // On a grid that serves it, the turn runs on the router model — the one
+      // every agent can be pointed at.
+      expect(h.codex.model, 'auto');
+    });
+
+    test('the chat keeps the model the user picked, not `auto`', () async {
+      // The composer is restored from the conversation's model, so writing the
+      // router's id there replaces their choice — and it stays replaced after
+      // they go back to a named agent.
+      final h = autoHarness();
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.model, 'qwen');
+      expect((await ChatStore(directory: tmp).loadAll()).single.model, 'qwen');
+    });
+
+    test('a turn carrying a picture is never routed', () async {
+      // It goes to the grid's chat API whoever is picked, so classifying it
+      // spends a relay call and seconds of the turn on an answer thrown away.
+      final h = autoHarness();
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(
+            network: _credential(),
+            model: 'vision',
+            message: 'what is this?',
+            attachments: [
+              MediaAttachment(
+                filename: 'pic.png',
+                bytes: Uint8List.fromList([1, 2, 3]),
+              ),
+            ],
+          );
+
+      expect(h.grid.calls, 0);
+    });
+
+    test('approving a plan stays with the agent that wrote it', () async {
+      // The plan lives in that agent's session; handing the execute turn to
+      // whoever the classifier likes next asks an agent to carry out a plan it
+      // has never seen.
+      final h = autoHarness(routeTo: 'codex');
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'refactor this module',
+        planFirst: true,
+      );
+      // The grid changes its mind — the approve turn must not follow it.
+      h.grid.reply = 'hermes';
+      await chats.approvePlan();
+
+      expect(h.codex.planFirsts, [true, false]);
+      expect(h.hermes.history, isNull);
+    });
+
+    test('Stop while the grid is still choosing sends nothing', () async {
+      // Routing is the one long await between committing the turn and sending
+      // it. Stop settles the send; dispatching afterwards would start an agent
+      // the user has already stopped.
+      final h = autoHarness();
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      h.grid.hold();
+
+      final sending = chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'refactor this module',
+      );
+      await Future<void>.delayed(Duration.zero);
+      chats.stop();
+      h.grid.release();
+      await sending;
+
+      expect(h.codex.history, isNull);
+      expect(h.hermes.history, isNull);
+      expect(h.container.read(chatSessionsProvider).sending, isFalse);
+    });
+  });
+}
+
+const _kOneReply = [
+  ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'done')),
+];
+
+/// The grid's classifier: names an agent, and can be held mid-call so a test can
+/// do something (press Stop) while the turn is still waiting on it.
+class _FakeClassifier implements ChatTransport {
+  _FakeClassifier(this.reply);
+
+  String reply;
+  int calls = 0;
+  Completer<void>? _gate;
+
+  /// Make the next call wait until [release].
+  void hold() => _gate = Completer<void>();
+
+  void release() => _gate?.complete();
+
+  @override
+  Stream<ChatStreamEvent> stream({
+    required String endpoint,
+    required String apiKey,
+    required String model,
+    required List<Map<String, dynamic>> messages,
+  }) async* {
+    calls++;
+    final gate = _gate;
+    if (gate != null) await gate.future;
+    yield ChatDelta(reply);
+    yield const ChatDone();
+  }
 }
 
 /// The user's own messages in the chat [id], in order — what actually got sent.

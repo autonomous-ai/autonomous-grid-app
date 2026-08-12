@@ -23,6 +23,7 @@ mixin _ChatSend on _ChatSessions {
     List<ChatContext> contexts = const [],
     bool? planFirst,
     String? into,
+    bool continuing = false,
   }) async {
     final text = message.trim();
     if (text.isEmpty) return;
@@ -53,22 +54,29 @@ mixin _ChatSend on _ChatSessions {
     // on the grid's auto model — the one model every agent can use, so the
     // routed one never dead-ends on a pair the composer left showing. The agent
     // itself is chosen below, once the message is on screen. [effectiveModel] is
-    // what actually goes on the wire and is stamped on the turn; [model] stays
-    // whatever the composer sent, for the queue path above.
+    // what actually goes on the wire; the conversation keeps the model the user
+    // picked, so leaving Auto doesn't leave `auto` behind in their composer.
     final autoChosen = ref.read(
       isAutoAgentChosenForProjectProvider(target.projectId),
     );
     // Only swap to `auto` on a grid that actually serves it — a grid with no
     // auto-routing would refuse `auto` outright. Where it isn't served the
-    // composer's own model stands, and the routed agent runs on that (every
-    // agent handles a plain grid model; only a foreign vendor seat would clash,
-    // which is the composer's existing wall, not one Auto adds).
-    final gridServesAuto = ref
-        .read(playgroundModelsProvider)
-        .any((option) => option.id == kAutoModelId);
-    final effectiveModel = (autoChosen && gridServesAuto)
+    // composer's own model stands, and the candidate pool below is narrowed to
+    // the agents that can answer with it.
+    final effectiveModel = (autoChosen && ref.read(gridServesAutoModelProvider))
         ? kAutoModelId
         : model;
+
+    // Plain text goes through the agent (it can use tools and keeps the
+    // conversation's context); pictures — generating one, or a turn that carries
+    // attachments — go straight to the grid's chat API, which is the only one
+    // that can see or make them. Decided here, before anything is committed,
+    // because it also decides whether the turn is worth routing at all.
+    final viaAgent = agentAnswersTurn(
+      modality: modality,
+      hasAttachments: attachments.isNotEmpty,
+      agentInstalled: ref.read(anyAgentInstalledProvider),
+    );
 
     // What this chat lets the agent do — its own choice when it has one, else
     // the app's standing one. Read once here so the turn runs under the mode
@@ -80,12 +88,21 @@ mixin _ChatSend on _ChatSessions {
     // the caller forced it — the approve path forces it off) and the agent is
     // the one answering, since a relay/media turn has no plan/act split.
     final planTurn =
-        (planFirst ?? approval == AgentApprovalMode.plan) &&
-        agentAnswersTurn(
-          modality: modality,
-          hasAttachments: attachments.isNotEmpty,
-          agentInstalled: ref.read(anyAgentInstalledProvider),
-        );
+        (planFirst ?? approval == AgentApprovalMode.plan) && viaAgent;
+
+    // A follow-up that has to land on the **same** agent as the turn before it:
+    // approving a plan, carrying on after a turn ran out of steps, the next step
+    // of a goal. Each continues a session that agent alone holds, and each is
+    // sent by the app rather than typed, so under Auto they would be classified
+    // afresh — and a plan handed to a second agent is a plan it never wrote.
+    //
+    // Only under Auto: where the user has named an agent, their pick still
+    // stands, because changing it is something they did on purpose and the
+    // handover bar says so. A message they typed themselves is a fresh question
+    // and is routed like any other.
+    final continuedAgent = (continuing && autoChosen)
+        ? _agentOfLastReply(target)
+        : null;
 
     // Append the user turn and persist it up front, so an interrupted reply
     // never loses what the user typed. A new compose becomes a real, saved
@@ -98,8 +115,12 @@ mixin _ChatSend on _ChatSessions {
       contexts: contexts,
       outputsDir: ref.read(mediaOutputsDirProvider),
     );
+    // The chat remembers the model the *user* chose, never the one Auto swapped
+    // in: the composer is restored from it, so writing `auto` here would replace
+    // their pick with the router's — and leave it there after they had gone back
+    // to a named agent, with nothing to say what had changed it.
     final withUser = target.copyWith(
-      model: effectiveModel,
+      model: model,
       updatedAt: DateTime.now(),
       messages: [...target.messages, userTurn],
     );
@@ -129,24 +150,26 @@ mixin _ChatSend on _ChatSessions {
     // returns a usable agent — one candidate, an unreachable grid, an unreadable
     // reply all fall back — so the reply footer still names who actually
     // answered while the picker keeps saying "Auto".
-    var agent = ref.read(chatAgentForProjectProvider(conversation.projectId));
-    if (autoChosen) {
+    //
+    // Only for a turn an agent will answer: a picture goes to the grid's chat
+    // API whoever is picked, so routing it would spend a relay call and up to
+    // the router's whole timeout on an answer thrown away.
+    AgentTool agent =
+        continuedAgent ??
+        ref.read(chatAgentForProjectProvider(conversation.projectId));
+    if (autoChosen && viaAgent && continuedAgent == null) {
       agent = await ref
           .read(autoAgentRouterProvider)
           .route(
             question: text,
-            candidates: ref.read(runnableChatAgentsProvider),
+            candidates: ref.read(autoAgentCandidatesProvider(effectiveModel)),
           );
+      // Routing is the one await between committing the turn and sending it, and
+      // seconds long. Stop or Delete during it settles the send — [_cancel] drops
+      // this completer — and dispatching anyway would start an agent the user
+      // just stopped, in a chat they may have deleted.
+      if (!identical(_dones[id], done)) return;
     }
-    // Plain text goes through the agent (it can use tools and keeps the
-    // conversation's context); pictures — generating one, or a turn that carries
-    // attachments — go straight to the grid's chat API, which is the only one
-    // that can see or make them.
-    final viaAgent = agentAnswersTurn(
-      modality: modality,
-      hasAttachments: attachments.isNotEmpty,
-      agentInstalled: ref.read(anyAgentInstalledProvider),
-    );
 
     void dispatch() => _dispatch(
       conversation: conversation,
@@ -176,6 +199,22 @@ mixin _ChatSend on _ChatSessions {
       dispatch();
     }
     return done.future;
+  }
+
+  /// The agent that wrote [chat]'s most recent reply, or null when the last one
+  /// came from the grid itself (no agent stamp) or from an agent this build no
+  /// longer ships.
+  ///
+  /// Read off the transcript rather than remembered in a field: the stamp is
+  /// already persisted with the reply, so approving a plan still continues the
+  /// right agent after a restart, and a chat that has never had an agent reply
+  /// falls back to being routed like any other.
+  AgentTool? _agentOfLastReply(Conversation chat) {
+    for (final message in chat.messages.reversed) {
+      if (message.role != ChatRole.assistant) continue;
+      return agentToolById(message.agent);
+    }
+    return null;
   }
 
   /// Send [conversation]'s turn to its [ChatSender] and fold the reply back in.

@@ -558,11 +558,19 @@ class DefaultChatSender implements ChatSender {
 
   /// Whether this turn actually carried an image the model was asked to read —
   /// the precondition for [_friendlyChatError]'s vision message.
-  static bool _turnHasImages(List<ChatMessage> history) => history.any(
-    (m) =>
-        m.role == ChatRole.user &&
-        m.media.any((md) => md.kind == MediaKind.image),
-  );
+  ///
+  /// The **last** user message, not any of them: it is the turn being sent. A
+  /// chat that once carried a picture goes on carrying it in its history, and
+  /// asking `any` there told a user whose plain-text turn hit a 400 for some
+  /// other reason — context length, a bad model id — to "remove the picture"
+  /// from a message that had none, hiding the real reason behind it.
+  static bool _turnHasImages(List<ChatMessage> history) {
+    for (final message in history.reversed) {
+      if (message.role != ChatRole.user) continue;
+      return message.media.any((md) => md.kind == MediaKind.image);
+    }
+    return false;
+  }
 
   /// Normalizes the relay's progress number to 0–1, tolerating either a percent
   /// (0–100, as the CLI prints) or an already-fractional value.
