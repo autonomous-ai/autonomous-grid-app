@@ -83,7 +83,7 @@ class _Body extends StatelessWidget {
       children: [
         ProjectStatusCard(status: status),
         const SizedBox(height: 20),
-        ProjectActionsBar(status: status),
+        ProjectActionsBar(status: status, projectName: project?.name),
         const SizedBox(height: 24),
         MembersCard(
           projectId: status.projectId,

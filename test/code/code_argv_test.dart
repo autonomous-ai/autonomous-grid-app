@@ -196,4 +196,60 @@ void main() {
       );
     });
   });
+
+  group('where a clone lands', () {
+    test('the project gets a folder of its own inside the chosen one', () {
+      // The picker asks where to *put* the copy. Handing that answer straight
+      // through aimed the clone at a working directory full of other things,
+      // and the CLI refused it — "it already has files in it and was not
+      // created by `grid project clone`" — naming a folder nobody chose as a
+      // destination.
+      expect(
+        cloneDestination(
+          parent: '/Users/me/WorkPlace/Grid',
+          projectName: 'mac-e2e',
+          projectId: _project,
+        ),
+        '/Users/me/WorkPlace/Grid/mac-e2e',
+      );
+    });
+
+    test('a folder already named after the project is the clone itself', () {
+      // Re-cloning in place is how a member refreshes their copy; picking it
+      // again must not nest one inside itself.
+      expect(
+        cloneDestination(
+          parent: '/Users/me/code/mac-e2e',
+          projectName: 'mac-e2e',
+          projectId: _project,
+        ),
+        '/Users/me/code/mac-e2e',
+      );
+      // Trailing separators are the same folder.
+      expect(
+        cloneDestination(
+          parent: '/Users/me/code/mac-e2e/',
+          projectName: 'mac-e2e',
+          projectId: _project,
+        ),
+        '/Users/me/code/mac-e2e',
+      );
+    });
+
+    test('a name that cannot be a folder still lands somewhere findable', () {
+      // A project name is free text on the grid: a slash in it would clone
+      // somewhere other than where the user chose.
+      expect(
+        cloneFolderName(projectName: 'team/api', projectId: _project),
+        'team-api',
+      );
+      // Nothing usable left — the id names the folder rather than a blank.
+      expect(
+        cloneFolderName(projectName: '   ', projectId: 'abc12345-def'),
+        'project-abc12345',
+      );
+      // Windows can't open a folder whose name ends in a dot or a space.
+      expect(cloneFolderName(projectName: 'api. ', projectId: _project), 'api');
+    });
+  });
 }
