@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
-import '../../features/chat/logic/panel_tabs.dart';
 import '../../features/code/presentation/code_pane.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/git/logic/background_git_installer.dart';
@@ -16,6 +15,7 @@ import '../../features/scheduled/logic/task_delivery.dart';
 import '../../features/scheduled/logic/task_conversation_id.dart';
 import '../../features/scheduled/logic/task_unread_store.dart';
 import '../../infrastructure/platform/desktop_notifier.dart';
+import '../panels/panel_tabs.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
 import 'shell_state.dart';
@@ -175,43 +175,51 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref.read(shellSectionProvider.notifier).select(kDefaultSettingsSection);
   }
 
-  /// Show what changed in the open chat's project, beside the conversation.
+  /// Show what changed in the project on screen, beside the conversation.
   ///
-  /// Also brings the user back to Chat: the panel lives there, so firing this
-  /// from Settings would open something they can't see.
-  void _openReview() {
+  /// Whose conversation depends on which half of the app is open — see
+  /// [_revealBeside].
+  void _openReview() => _revealBeside(PanelFeature.review);
+
+  /// Browse the folder the conversation works in, beside it.
+  void _openFiles() => _revealBeside(PanelFeature.files);
+
+  /// A shell in the folder the conversation is about.
+  ///
+  /// In Home that is the panel *below*, where the other two open beside — which
+  /// is what ⌃` means everywhere else and is the right shape here too: Review
+  /// and Files are read next to what you are asking about, while a terminal is
+  /// watched under it, wide and short. Code has no panel below, so its terminal
+  /// opens in the one panel it does have.
+  void _openTerminal() => _reveal(
+    ref.read(shellModeProvider) == ShellMode.code
+        ? PanelHost.code
+        : PanelHost.bottom,
+    PanelFeature.terminal,
+  );
+
+  /// Open [feature] in whichever panel sits beside the conversation the user is
+  /// actually looking at: the chat's, or a Code project's.
+  ///
+  /// The keys are labels on the launcher rows of *both* panels, so they have to
+  /// answer in both halves — pointed at Chat unconditionally, ⌃⇧G in Code threw
+  /// the user out of the project they were reading to show a diff of something
+  /// else.
+  void _revealBeside(PanelFeature feature) {
+    if (ref.read(shellModeProvider) == ShellMode.code) {
+      _reveal(PanelHost.code, feature);
+      return;
+    }
+    // Back to Chat first: the panel lives there, so firing this from Settings
+    // would open something the user can't see.
     ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-    // Reveal, not open: pressing the shortcut again should bring the Review
-    // already on screen to the front rather than stack another one behind it.
-    ref
-        .read(panelTabsProvider(PanelHost.preview).notifier)
-        .reveal(PanelFeature.review);
+    _reveal(PanelHost.preview, feature);
   }
 
-  /// Browse the folder the open chat works in, beside the conversation.
-  ///
-  /// Same two moves as [_openReview] and for the same two reasons: back to Chat,
-  /// because that is where the panel lives, and reveal rather than open, because
-  /// pressing a shortcut twice means "show me that" both times.
-  void _openFiles() {
-    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-    ref
-        .read(panelTabsProvider(PanelHost.preview).notifier)
-        .reveal(PanelFeature.files);
-  }
-
-  /// A shell in the folder the conversation is about, under the conversation.
-  ///
-  /// The panel *below*, where the other two open beside — which is what ⌃`
-  /// means everywhere else and is the right shape here too: Review and Files are
-  /// read next to what you are asking about, while a terminal is watched under
-  /// it, wide and short.
-  void _openTerminal() {
-    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-    ref
-        .read(panelTabsProvider(PanelHost.bottom).notifier)
-        .reveal(PanelFeature.terminal);
-  }
+  /// Reveal, not open: pressing the shortcut again should bring the tab already
+  /// on screen to the front rather than stack another one behind it.
+  void _reveal(PanelHost host, PanelFeature feature) =>
+      ref.read(panelTabsProvider(host).notifier).reveal(feature);
 }
 
 class _MainShellBody extends StatelessWidget {

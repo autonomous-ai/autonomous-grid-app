@@ -2,44 +2,16 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// The three things the Code side panel can show, rooted at the project's local
-/// clone — the same trio the chat's panel carries, in the same order.
-enum CodePanelTab {
-  files('Files'),
-  review('Review'),
-  terminal('Terminal');
-
-  const CodePanelTab(this.label);
-
-  final String label;
-}
+import '../../../shared/panels/panel_tabs.dart';
 
 /// Whether the Code side panel is open. Off by default: the conversation is what
 /// the screen is for, and a panel that lets itself in takes a third of the pane
 /// before anyone has read a line.
-final codeSidePanelOpenProvider = NotifierProvider<CodeSidePanelOpen, bool>(
-  CodeSidePanelOpen.new,
-);
-
-class CodeSidePanelOpen extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void toggle() => state = !state;
-
-  void close() => state = false;
-}
-
-/// Which tab the side panel is showing.
-final codeSidePanelTabProvider =
-    NotifierProvider<CodeSidePanelTab, CodePanelTab>(CodeSidePanelTab.new);
-
-class CodeSidePanelTab extends Notifier<CodePanelTab> {
-  @override
-  CodePanelTab build() => CodePanelTab.files;
-
-  void select(CodePanelTab tab) => state = tab;
-}
+///
+/// The shared panel flag, under the name Code's own files use — the panel beside
+/// a project is the same panel as the one beside a chat, tabs, launcher and all
+/// (see [PanelHost.code]).
+final codeSidePanelOpenProvider = panelOpenProvider(PanelHost.code);
 
 /// Whether the project's working copy exists on disk yet, so the panel can offer
 /// to fetch it rather than open a terminal onto nothing. Keyed by the clone

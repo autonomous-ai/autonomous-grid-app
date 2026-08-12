@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/panels/panel_tab_strip.dart';
+import '../../../shared/panels/panel_tabs.dart';
 import '../logic/bottom_panel.dart';
-import '../logic/panel_tabs.dart';
 import 'panel_feature_view.dart';
-import 'panel_tab_strip.dart';
 
 /// The strip under the conversation: the same panel as the one beside the chat,
 /// on the other edge.

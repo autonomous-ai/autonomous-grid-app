@@ -9,6 +9,10 @@ import '../../../features/chat/logic/chat_rail.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/logic/preview_panel.dart';
 import '../../../features/chat/presentation/chat_header.dart';
+import '../../../features/code/logic/code_projects_controller.dart';
+import '../../../features/code/logic/code_side_panel.dart';
+import '../../../features/code/logic/project_status_controller.dart';
+import '../../../features/code/presentation/widgets/project_header.dart';
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
@@ -43,16 +47,21 @@ class AppTopBar extends ConsumerWidget {
     // reachable, and the chat is past its starters screen).
     final showChatHeader =
         ref.watch(chatIsOpenProvider) && ref.watch(chatHeaderVisibleProvider);
+    // The other half's header, in the same slot: a project is named here the
+    // way a conversation is, rather than under a headline of its own inside the
+    // pane.
+    final showProjectHeader = ref.watch(codeProjectIsOpenProvider);
+    final showHeader = showChatHeader || showProjectHeader;
     return DragToMoveArea(
       child: DecoratedBox(
-        // Only under a named conversation. The bar is otherwise seamless with
-        // the pane, and a rule under an empty bar would divide nothing; but a
-        // transcript needs to start against an edge rather than float up into
-        // the window chrome.
+        // Only under a named conversation — a chat's or a project's. The bar is
+        // otherwise seamless with the pane, and a rule under an empty bar would
+        // divide nothing; but a transcript needs to start against an edge rather
+        // than float up into the window chrome.
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: showChatHeader ? AppPalette.divider : Colors.transparent,
+              color: showHeader ? AppPalette.divider : Colors.transparent,
             ),
           ),
         ),
@@ -80,18 +89,20 @@ class AppTopBar extends ConsumerWidget {
                 // its own content; the pills sit at their intrinsic width on
                 // the right.
                 Expanded(
-                  child: showChatHeader
-                      ? const Align(
-                          alignment: Alignment.centerLeft,
-                          child: ChatHeader(),
-                        )
-                      : const SizedBox.shrink(),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: switch ((showChatHeader, showProjectHeader)) {
+                      (true, _) => const ChatHeader(),
+                      (_, true) => const ProjectHeader(),
+                      _ => const SizedBox.shrink(),
+                    },
+                  ),
                 ),
                 const _ModelDownloadPill(),
                 const GridPowerPill(),
                 const _ProjectRailToggle(),
                 const _BottomPanelToggle(),
-                const _PreviewPanelToggle(),
+                const _SidePanelToggle(),
               ],
             ),
           ),
@@ -156,15 +167,33 @@ class _BottomPanelToggle extends ConsumerWidget {
   }
 }
 
-/// Opens and closes the preview panel — the work surface beside the
-/// conversation.
-class _PreviewPanelToggle extends ConsumerWidget {
-  const _PreviewPanelToggle();
+/// Opens and closes the panel beside the conversation — the chat's, or the one
+/// beside a Code project.
+///
+/// One button for both, because it is one panel: the same tabs, the same
+/// launcher, the same three surfaces, rooted at whichever folder the screen is
+/// about. A second toggle inside the project's pane was the same control in a
+/// different place wearing a different style.
+class _SidePanelToggle extends ConsumerWidget {
+  const _SidePanelToggle();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!_chatWithGrid(ref)) return const SizedBox.shrink();
+    if (ref.watch(codeProjectIsOpenProvider)) {
+      // A project with no repository in it has nothing to browse, review or run
+      // a terminal in — see [openProjectHasCodeProvider].
+      if (!ref.watch(openProjectHasCodeProvider))
+        return const SizedBox.shrink();
+      final open = ref.watch(codeSidePanelOpenProvider);
+      return PanelToggle(
+        icon: LucideIcons.panelRight,
+        open: open,
+        label: 'code panel',
+        onPressed: () => ref.read(codeSidePanelOpenProvider.notifier).toggle(),
+      );
+    }
 
+    if (!_chatWithGrid(ref)) return const SizedBox.shrink();
     final open = ref.watch(previewPanelOpenProvider);
     return PanelToggle(
       icon: LucideIcons.panelRight,

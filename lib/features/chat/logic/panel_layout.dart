@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/panels/panel_metrics.dart';
+import '../../../shared/panels/panel_tabs.dart';
+
 /// What the conversation keeps for itself before the preview panel may dock
 /// beside it.
 ///
@@ -26,50 +29,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// failure mode is stripes, not a layout that merely looks tight.
 const double kChatMinWidth = 440;
 
-/// The preview panel takes a share of what's left rather than a fixed width: it
-/// is a work surface, so on a wide window it should be worth working in, and on
-/// a narrow one it shouldn't be the reason the chat is cramped.
-const double kPreviewMinWidth = 420;
-
-/// The widest share the app will hand the panel *by itself*, so a large monitor
-/// doesn't open it onto half the world.
-///
-/// Not a limit on dragging. Once the user has taken hold of the seam they have
-/// said what they want, and the only thing left to protect is the composer's
-/// floor — which is why the chat can be pulled down to [kChatMinWidth] on a
-/// wide window even though 45% of it would never have gone that far.
-const double kPreviewMaxWidth = 760;
-
 /// The same deal vertically, against a transcript that still has to be worth
 /// reading above it.
 const double kChatMinHeight = 260;
 const double kBottomMinHeight = 180;
 
 /// The tallest share the app picks on its own — a ceiling on the default, not
-/// on the drag. See [kPreviewMaxWidth].
+/// on the drag. See [kSidePanelMaxWidth].
 const double kBottomMaxHeight = 420;
 
-/// The width the user dragged the preview panel to, or null to follow the share
-/// the app picks.
-///
-/// Null is the resting state, not a number: a stored default would stop
-/// answering to the window's width, so a panel sized on a large monitor would
-/// arrive fixed and wrong on a laptop. Once dragged it sticks for the session —
-/// long enough to be a decision, not so long that a bad drag outlives it.
-final previewWidthOverrideProvider =
-    NotifierProvider<PreviewWidthOverride, double?>(PreviewWidthOverride.new);
-
-class PreviewWidthOverride extends Notifier<double?> {
-  @override
-  double? build() => null;
-
-  void set(double width) => state = width;
-
-  void reset() => state = null;
-}
+/// The width the user dragged the preview panel to — the shared side-panel
+/// width, named here so the chat's own files don't each have to say which panel
+/// they mean.
+final previewWidthOverrideProvider = panelWidthOverrideProvider(
+  PanelHost.preview,
+);
 
 /// The height the user dragged the bottom panel to, or null to follow the
-/// share — see [previewWidthOverrideProvider] for why null is the default.
+/// share — see [panelWidthOverrideProvider] for why null is the default.
+///
+/// Its own provider rather than a third member of that family: the family is
+/// widths, and this panel is the one that grows the other way.
 final bottomHeightOverrideProvider =
     NotifierProvider<BottomHeightOverride, double?>(BottomHeightOverride.new);
 
@@ -109,9 +89,9 @@ class PanelSizes {
 /// with each other, and it was already the fiddliest thing in the pane before
 /// dragging gave two of them a second source.
 ///
-/// The clamps are what make dragging safe — a drag is only a *request*, and a
-/// request that would overflow the composer or leave no transcript is met with
-/// the nearest size that doesn't.
+/// The width half is [resolveSidePanel] — the same arithmetic the Code pane
+/// runs for the panel beside a project, so the two panels can't drift into
+/// different ideas of how wide a work surface should be.
 PanelSizes resolvePanelSizes({
   required double paneWidth,
   required double paneHeight,
@@ -119,22 +99,11 @@ PanelSizes resolvePanelSizes({
   required double? previewOverride,
   required double? bottomOverride,
 }) {
-  final free = paneWidth - railWidth;
-  // What's left for the panel once the conversation has its floor. Negative on
-  // a narrow window, which is the same answer as "it doesn't fit".
-  final widthRoom = free - kChatMinWidth;
-  final previewFits = widthRoom >= kPreviewMinWidth;
-  // The app's own share is capped; a dragged width is not. Only the chat's
-  // floor bounds it from here.
-  final wantedWidth =
-      previewOverride ??
-      _clamp(free * 0.45, kPreviewMinWidth, kPreviewMaxWidth);
-  final previewWidth = previewFits
-      // Docked: never past what the chat can spare.
-      ? _clamp(wantedWidth, kPreviewMinWidth, widthRoom)
-      // Floating: the chat keeps its full width underneath, so the only limit
-      // is the pane it floats in.
-      : _clamp(wantedWidth, kPreviewMinWidth, free);
+  final preview = resolveSidePanel(
+    paneWidth: paneWidth - railWidth,
+    mainMinWidth: kChatMinWidth,
+    override: previewOverride,
+  );
 
   final heightRoom = _max(paneHeight - kChatMinHeight, 0);
   final wantedHeight =
@@ -143,46 +112,10 @@ PanelSizes resolvePanelSizes({
   final bottomHeight = _clamp(wantedHeight, kBottomMinHeight, heightRoom);
 
   return PanelSizes(
-    previewWidth: previewWidth,
-    previewFits: previewFits,
+    previewWidth: preview.width,
+    previewFits: preview.fits,
     bottomHeight: bottomHeight,
   );
-}
-
-/// What one tab takes when the strip has room for every tab at full width.
-const double kTabMaxWidth = 180;
-
-/// The width a tab shrinks to before the strip gives up and scrolls instead.
-///
-/// Below this the label runs out before "Terminal 2" and "Terminal 3" differ,
-/// which is the only job the label has.
-const double kTabMinWidth = 96;
-
-/// The gap after each tab. The last one's is the space before the "+".
-const double kTabGap = 4;
-
-/// How wide each tab is in a strip [available] px across holding [count] of
-/// them — the same for all of them, so the row can't come out ragged.
-///
-/// Shrinks with the count rather than scrolling straight away: in a panel this
-/// narrow the fourth tab used to push the "+" out of sight, and a control you
-/// have to scroll to reach is one people conclude is missing. Past
-/// [kTabMinWidth] the row scrolls instead, which is what [tabStripScrolls]
-/// answers.
-double tabStripTabWidth({required double available, required int count}) {
-  if (count <= 0) return kTabMaxWidth;
-  return _clamp(
-    (available - kTabGap * count) / count,
-    kTabMinWidth,
-    kTabMaxWidth,
-  );
-}
-
-/// Whether the tabs, already as narrow as they may go, still overrun the strip.
-bool tabStripScrolls({required double available, required int count}) {
-  if (count <= 0) return false;
-  final width = tabStripTabWidth(available: available, count: count);
-  return (width + kTabGap) * count > available;
 }
 
 /// `clamp` asserts low <= high, so a pane laid out shorter than a floor would

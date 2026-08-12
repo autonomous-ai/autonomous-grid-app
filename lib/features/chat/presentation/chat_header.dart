@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
+import '../../../shared/widgets/header_hover_button.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/chat_sessions_controller.dart';
@@ -248,74 +249,11 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
           onDelete: _delete,
         ),
       ],
-      builder: (context, controller, _) => _HeaderHoverButton(
+      builder: (context, controller, _) => HeaderHoverButton(
         icon: LucideIcons.ellipsis300,
         tooltip: 'Chat options',
         semanticsLabel: 'Chat options',
         onTap: () => _toggle(context, controller),
-      ),
-    );
-  }
-}
-
-/// A quiet 24px square icon target that warms and fills under the pointer — the
-/// header's hover treatment, shared by the files button and the "…" menu so they
-/// read as one family of controls instead of two hand-styled buttons.
-class _HeaderHoverButton extends StatefulWidget {
-  const _HeaderHoverButton({
-    required this.icon,
-    required this.tooltip,
-    required this.semanticsLabel,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final String semanticsLabel;
-  final VoidCallback onTap;
-
-  @override
-  State<_HeaderHoverButton> createState() => _HeaderHoverButtonState();
-}
-
-class _HeaderHoverButtonState extends State<_HeaderHoverButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Semantics(
-      button: true,
-      label: widget.semanticsLabel,
-      child: Tooltip(
-        message: widget.tooltip,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() => _hovered = false),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onTap,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              curve: Curves.easeOut,
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(7),
-                color: _hovered ? AppSurface.hoverFill : Colors.transparent,
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                widget.icon,
-                size: 17,
-                color: _hovered
-                    ? AppPalette.textPrimary
-                    : AppPalette.textSecondary,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

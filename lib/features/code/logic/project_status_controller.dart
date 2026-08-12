@@ -17,6 +17,21 @@ final projectStatusProvider = AsyncNotifierProvider.autoDispose
       retry: neverRetryCodeCommand,
     );
 
+/// Whether the open project holds code yet.
+///
+/// False while the status is still coming and for a project waiting on its
+/// first repository — there is nothing to open, review or run a terminal in, so
+/// the panel and its toggle stay away rather than offering a button that shows
+/// an empty room. Read by the top bar, which cannot see the pane's own state.
+final openProjectHasCodeProvider = Provider<bool>((ref) {
+  final projectId = ref.watch(selectedCodeProjectProvider);
+  if (projectId == null) return false;
+  return switch (ref.watch(projectStatusProvider(projectId))) {
+    AsyncData(:final value) => !value.needsImport,
+    _ => false,
+  };
+});
+
 class ProjectStatusController extends AsyncNotifier<ProjectStatus> {
   ProjectStatusController(this.projectId);
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/panels/panel_tabs.dart';
 import '../../../shared/widgets/panel_visibility.dart';
 import '../../agents/logic/agent_changes.dart';
 import '../../files/logic/files_browser.dart';
@@ -11,13 +12,10 @@ import '../../review/logic/review_controller.dart';
 import '../../review/presentation/review_surface.dart';
 import '../../terminal/presentation/terminal_panel_view.dart';
 import '../logic/active_workdir.dart';
-import '../logic/bottom_panel.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/composer_file_request.dart';
 import '../logic/composer_prefill.dart';
 import '../logic/composer_snippet.dart';
-import '../logic/panel_tabs.dart';
-import '../logic/preview_panel.dart';
 
 /// The one place a [PanelTab] becomes a widget.
 ///
@@ -63,10 +61,7 @@ class _TerminalTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final panelOpen = switch (host) {
-      PanelHost.preview => ref.watch(previewPanelOpenProvider),
-      PanelHost.bottom => ref.watch(bottomPanelOpenProvider),
-    };
+    final panelOpen = ref.watch(panelOpenProvider(host));
     return TerminalPanelView(
       tabId: tabId,
       workdir: ref.watch(activeChatWorkdirProvider),
@@ -228,10 +223,7 @@ class _ReviewTabState extends ConsumerState<_ReviewTab> {
     // half the answer.
     final visible =
         PanelTabVisible.of(context) &&
-        ref.watch(switch (widget.host) {
-          PanelHost.preview => previewPanelOpenProvider,
-          PanelHost.bottom => bottomPanelOpenProvider,
-        });
+        ref.watch(panelOpenProvider(widget.host));
 
     // The assistant has finished a turn while Review was being watched. It may
     // have written files, staged them, or committed the lot — so the list on

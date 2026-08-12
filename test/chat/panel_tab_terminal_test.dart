@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/chat/logic/panel_tabs.dart';
+import 'package:grid_app/shared/panels/panel_tabs.dart';
 import 'package:grid_app/features/terminal/logic/terminal_sessions_controller.dart';
 
 void main() {

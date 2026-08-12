@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../../shared/panels/panel_metrics.dart';
+import '../../../../shared/panels/panel_slots.dart';
+import '../../../../shared/panels/panel_tabs.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
-import '../../../../shared/widgets/section_scaffold.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../../playground/presentation/transcript_view.dart';
 import '../../logic/code_project.dart';
@@ -18,9 +20,14 @@ import 'code_failure.dart';
 import 'code_notice.dart';
 import 'code_side_panel.dart';
 import 'import_repo_dialog.dart';
-import 'project_header_actions.dart';
 import 'task_composer.dart';
 import 'task_transcript.dart';
+
+/// What the conversation keeps for itself before the side panel may dock beside
+/// it — the chat pane's floor, for the same reason: below it the box at the foot
+/// is laid out narrower than its own controls, and the failure mode is stripes
+/// across the composer rather than a screen that merely looks tight.
+const double kProjectMinWidth = 440;
 
 /// The open project: everything the team has run against it, as a conversation,
 /// with the box to ask for the next thing at its foot.
@@ -52,49 +59,108 @@ class ProjectView extends ConsumerWidget {
       _ => false,
     };
     final panelOpen = ref.watch(codeSidePanelOpenProvider) && hasCode;
+    // Asked for, not yet granted: expanding means the panel takes the pane, and
+    // whether it can depends on a width this build hasn't measured yet.
+    final expandWanted =
+        ref.watch(panelExpandedProvider(PanelHost.code)) && panelOpen;
+    // Null until the user drags the seam; the resolver falls back to a share of
+    // the pane, which keeps answering to the window's size.
+    final override = ref.watch(panelWidthOverrideProvider(PanelHost.code));
 
-    return SectionScaffold(
-      title: project?.name ?? 'Project',
-      subtitle:
-          'Ask for a change. A computer on the grid runs it and pushes the '
-          'result to your own branch — nobody works on top of anybody else.',
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: switch (status) {
-              AsyncData(:final value) when value.needsImport => _NeedsImport(
-                projectId: projectId,
-              ),
-              AsyncData(:final value) => _Conversation(
-                status: value,
-                project: project,
-              ),
-              AsyncError(:final error) => CodeFailure(
-                message: '$error',
-                onRetry: () => ref.invalidate(projectStatusProvider(projectId)),
-              ),
-              _ => const LoadingView(),
-            },
-          ),
-          if (panelOpen) ...[
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 460,
-              child: CodeSidePanel(
-                // Keyed so its Files/Review/Terminal belong to the open project
-                // and a switch re-roots them at the new one's copy.
-                key: ValueKey(projectId),
-                projectId: projectId,
-                projectName: project?.name,
+    final conversation = switch (status) {
+      AsyncData(:final value) when value.needsImport => _NeedsImport(
+        projectId: projectId,
+      ),
+      AsyncData(:final value) => _Conversation(status: value, project: project),
+      AsyncError(:final error) => CodeFailure(
+        message: '$error',
+        onRetry: () => ref.invalidate(projectStatusProvider(projectId)),
+      ),
+      _ => const LoadingView(),
+    };
+    // No headline and no subtitle: the project is named in the top bar, the way
+    // the open chat is, and the transcript starts against that bar's edge
+    // instead of a third of the way down the pane. The same slots the chat pane
+    // lays its panel out in, so the panel docks, slides, resizes and expands
+    // here the way it does there.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = resolveSidePanel(
+          paneWidth: constraints.maxWidth,
+          mainMinWidth: kProjectMinWidth,
+          override: override,
+        );
+        // Granted only where there is a docked panel to give the pane to. A
+        // floating panel already covers the conversation, so there is nothing
+        // to expand *into*.
+        final expanded = expandWanted && size.fits;
+        // What the conversation is worth with the panel at its normal width.
+        // Laid out at this throughout and clipped to its slot, so the panel
+        // opening slides the conversation left instead of squeezing it.
+        final mainWidth = _atLeast(
+          constraints.maxWidth - (panelOpen && size.fits ? size.width : 0),
+          kProjectMinWidth,
+        );
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: PanelMainSlot(
+                width: mainWidth,
+                hidden: expanded,
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: conversation),
+                    if (!size.fits)
+                      Positioned.fill(
+                        child: PanelFloatSlot(
+                          host: PanelHost.code,
+                          open: panelOpen,
+                          width: size.width,
+                          child: CodeSidePanel(
+                            projectId: projectId,
+                            projectName: project?.name,
+                            onRaisedSurface: true,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
+            if (size.fits)
+              PanelDockSlot(
+                open: panelOpen,
+                // Expanded, the slot *is* the pane: the conversation's own
+                // slot is flexible, so it takes what is left, which is
+                // nothing.
+                width: expanded ? constraints.maxWidth : size.width,
+                // The panel is on the right, so dragging the seam left — a
+                // negative delta — makes it wider. Each report resizes from
+                // the width just resolved, which is what makes the clamps
+                // hold.
+                onResize: (dx) => ref
+                    .read(panelWidthOverrideProvider(PanelHost.code).notifier)
+                    .set(size.width - dx),
+                onResetSize: ref
+                    .read(panelWidthOverrideProvider(PanelHost.code).notifier)
+                    .reset,
+                child: CodeSidePanel(
+                  projectId: projectId,
+                  projectName: project?.name,
+                ),
+              ),
           ],
-        ],
-      ),
+        );
+      },
     );
   }
 }
+
+/// `a`, but never below `floor`. `clamp` asserts low ≤ high, so a pane laid out
+/// narrower than the composer's floor would throw rather than degrade.
+double _atLeast(double a, double floor) => a > floor ? a : floor;
 
 /// The project exists but has no code in it. Nothing else here can work until
 /// somebody imports a repository, so nothing else is offered.
@@ -149,20 +215,6 @@ class _Conversation extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(child: _Distance(status: status)),
-            ProjectHeaderActions(
-              status: status,
-              projectName: project?.name,
-              // Admitting people is the owner's call, so the invite behind
-              // "Who is in it" only appears where pressing it would work.
-              canInvite: project?.isOwner ?? false,
-            ),
-            const _PanelToggle(),
-          ],
-        ),
-        const SizedBox(height: 12),
         Expanded(
           child: TaskTranscript(
             // Keyed by the project so its scroll and follow state belong to the
@@ -171,68 +223,64 @@ class _Conversation extends ConsumerWidget {
             projectId: status.projectId,
           ),
         ),
-        // What the flow is doing on its own, and why the next thing may not go
-        // as expected — above the box that starts it, in the order each bites:
-        // a publish in flight, then your own slot, then nobody to run it.
-        if (publishing) ...[
-          const SizedBox(height: 10),
-          const CodeNotice(
-            icon: Icons.cloud_upload_outlined,
-            message: 'Publishing your finished task to the team…',
-          ),
-        ],
-        if (holder != null) ...[
-          const SizedBox(height: 10),
-          CodeNotice(
-            icon: Icons.hourglass_empty_rounded,
-            message:
-                'Your last task is still '
-                '${holder.state.label.toLowerCase()} — a project runs one of '
-                'yours at a time. Stop it above to start another.',
-          ),
-        ],
-        if (fleetNotice(status) case final notice?) ...[
-          const SizedBox(height: 10),
-          CodeNotice(message: notice),
-        ],
-        const SizedBox(height: 12),
         Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: kTranscriptColumnWidth),
-            child: TaskComposer(
-              // Keyed by the project so the box belongs to the one on screen.
-              // Without it the same state is reused across a switch, and a
-              // half-written request would be sitting in another project's
-              // composer with Send under it.
-              key: ValueKey(status.projectId),
-              projectId: status.projectId,
-              slotHeld: holder != null,
+            child: Padding(
+              // The chat's inset around the same stack, so the two composers sit
+              // the same distance off the foot of the window.
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Where this member's work stands against the team's — a line
+                  // rather than a heading, in the run of notices above the box
+                  // that changes it. It sat at the top of the pane until the
+                  // project's name moved to the top bar, and a lone status line
+                  // up there would have been a header made of one fact.
+                  _Distance(status: status),
+                  // What the flow is doing on its own, and why the next thing may
+                  // not go as expected — in the order each bites: a publish in
+                  // flight, then your own slot, then nobody to run it.
+                  if (publishing) ...[
+                    const SizedBox(height: 10),
+                    const CodeNotice(
+                      icon: Icons.cloud_upload_outlined,
+                      message: 'Publishing your finished task to the team…',
+                    ),
+                  ],
+                  if (holder != null) ...[
+                    const SizedBox(height: 10),
+                    CodeNotice(
+                      icon: Icons.hourglass_empty_rounded,
+                      message:
+                          'Your last task is still '
+                          '${holder.state.label.toLowerCase()} — a project runs '
+                          'one of yours at a time. Stop it above to start '
+                          'another.',
+                    ),
+                  ],
+                  if (fleetNotice(status) case final notice?) ...[
+                    const SizedBox(height: 10),
+                    CodeNotice(message: notice),
+                  ],
+                  const SizedBox(height: 10),
+                  TaskComposer(
+                    // Keyed by the project so the box belongs to the one on
+                    // screen. Without it the same state is reused across a
+                    // switch, and a half-written request would be sitting in
+                    // another project's composer with Send under it.
+                    key: ValueKey(status.projectId),
+                    projectId: status.projectId,
+                    slotHeld: holder != null,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Opens the side panel — the project's copy on this computer, browsable, its
-/// changes reviewable, a terminal in it. The same right-panel toggle the chat's
-/// top bar carries, here beside the project's own tools.
-class _PanelToggle extends ConsumerWidget {
-  const _PanelToggle();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(context);
-    final open = ref.watch(codeSidePanelOpenProvider);
-    return IconButton(
-      tooltip: open ? 'Hide the code panel' : 'Open the code panel',
-      iconSize: 18,
-      visualDensity: VisualDensity.compact,
-      isSelected: open,
-      color: AppPalette.textSecondary,
-      icon: const Icon(LucideIcons.panelRight300),
-      onPressed: () => ref.read(codeSidePanelOpenProvider.notifier).toggle(),
     );
   }
 }

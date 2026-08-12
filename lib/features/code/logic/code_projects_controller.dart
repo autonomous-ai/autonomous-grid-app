@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/layouts/shell_state.dart';
 import '../../auth/logic/session_controller.dart';
 import 'code_argv.dart';
 import 'code_cli.dart';
@@ -129,3 +130,15 @@ class SelectedCodeProject extends Notifier<String?> {
 
   void select(String? projectId) => state = projectId;
 }
+
+/// Whether a project's screen is the one actually on screen.
+///
+/// The twin of `chatIsOpenProvider`, and asked for the same reason: everything
+/// that decorates a project — the top bar's header, its panel toggle — has to
+/// agree on when it applies, and a selected project is not enough on its own
+/// (Code can be selected while the user is looking at Home).
+final codeProjectIsOpenProvider = Provider<bool>(
+  (ref) =>
+      ref.watch(shellModeProvider) == ShellMode.code &&
+      ref.watch(selectedCodeProjectProvider) != null,
+);

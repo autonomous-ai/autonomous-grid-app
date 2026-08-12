@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
+import '../../../shared/panels/panel_slots.dart';
+import '../../../shared/panels/panel_tabs.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/panel_splitter.dart';
 import '../../auth/logic/session_controller.dart';
@@ -134,7 +136,7 @@ class ChatPane extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: _ChatSlot(
+              child: PanelMainSlot(
                 width: chatWidth,
                 hidden: expanded,
                 child: Stack(
@@ -159,9 +161,11 @@ class ChatPane extends ConsumerWidget {
                     ],
                     if (!previewFits)
                       Positioned.fill(
-                        child: _PreviewOverlay(
+                        child: PanelFloatSlot(
+                          host: PanelHost.preview,
                           open: previewOpen,
                           width: sizes.previewWidth,
+                          child: const PreviewPanel(onRaisedSurface: true),
                         ),
                       ),
                   ],
@@ -179,7 +183,7 @@ class ChatPane extends ConsumerWidget {
               ),
             ],
             if (previewFits)
-              _PreviewSlot(
+              PanelDockSlot(
                 open: previewOpen,
                 // Expanded, the slot *is* the pane: the chat's own slot is
                 // flexible, so it takes what is left, which is nothing.
@@ -195,6 +199,7 @@ class ChatPane extends ConsumerWidget {
                 onResetSize: ref
                     .read(previewWidthOverrideProvider.notifier)
                     .reset,
+                child: const PreviewPanel(),
               ),
           ],
         );
@@ -222,113 +227,7 @@ class ChatPane extends ConsumerWidget {
   }
 }
 
-/// The conversation, laid out at [width] however wide its slot happens to be.
-///
-/// The slot is flexible and gives way to the panel beside it, down to nothing
-/// when that panel takes the pane. The chat inside keeps [width] throughout and
-/// is pinned to the slot's *trailing* edge, so as that edge travels left the
-/// conversation travels with it and leaves past the window's left side — the
-/// mirror of what [_PreviewSlot] does coming the other way.
-///
-/// Two things this buys, both of which were bugs waiting: a composer that is
-/// never laid out below its own floor (a squeezed one stripes yellow and black
-/// for the length of the animation), and a chat that is *hidden* rather than
-/// unbuilt, so the draft in the box and the answer still streaming in are both
-/// there when it comes back.
-class _ChatSlot extends StatelessWidget {
-  const _ChatSlot({
-    required this.width,
-    required this.hidden,
-    required this.child,
-  });
-
-  final double width;
-
-  /// The panel has the pane and the conversation is off the left edge. It stays
-  /// mounted so it can slide back with everything in it, which is exactly why it
-  /// must not keep the keyboard: the same rule the panel obeys while closed,
-  /// pointing the other way — a message typed at a full-screen terminal must not
-  /// land in a composer nobody can see.
-  final bool hidden;
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => ClipRect(
-    child: OverflowBox(
-      alignment: Alignment.centerRight,
-      minWidth: width,
-      maxWidth: width,
-      child: ExcludeFocus(excluding: hidden, child: child),
-    ),
-  );
-}
-
-/// The preview panel docked beside the conversation — the layout opening rather
-/// than a panel appearing in it.
-///
-/// The panel is laid out at its full width the whole way through and the slot
-/// widens under it, with the panel pinned to the slot's *leading* edge: as that
-/// edge travels left the panel travels with it, entering from the window's
-/// right. Pinning it to the trailing edge instead would hold it still and wipe
-/// it into view, and animating the panel's own width would squash its rows flat
-/// and stretch them back out.
-///
-/// The chat column only ever shrinks *to* its final width, never through
-/// something narrower, so its composer can't overflow mid-animation.
-class _PreviewSlot extends StatelessWidget {
-  const _PreviewSlot({
-    required this.open,
-    required this.width,
-    required this.onResize,
-    required this.onResetSize,
-  });
-
-  final bool open;
-  final double width;
-  final ValueChanged<double> onResize;
-  final VoidCallback onResetSize;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRect(
-      child: AnimatedContainer(
-        duration: AppMotion.swap,
-        curve: AppMotion.curve,
-        width: open ? width : 0,
-        child: OverflowBox(
-          alignment: Alignment.centerLeft,
-          minWidth: width,
-          maxWidth: width,
-          // Fades with the slide. Closing the last tab empties the panel in the
-          // same frame the slide begins, so without this the launcher flashes
-          // up at full width and *then* leaves.
-          child: AnimatedOpacity(
-            duration: AppMotion.swap,
-            curve: AppMotion.curve,
-            opacity: open ? 1 : 0,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // The seam doubles as the handle. It rides inside the slot so
-                // it slides in with the panel rather than appearing under the
-                // pointer a frame before the panel it belongs to.
-                PanelSplitter(
-                  axis: Axis.vertical,
-                  onDrag: onResize,
-                  onReset: onResetSize,
-                ),
-                const Expanded(child: PreviewPanel()),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The bottom panel's slot, doing vertically what [_PreviewSlot] does
+/// The bottom panel's slot, doing vertically what [PanelDockSlot] does
 /// horizontally: the panel is laid out at full height throughout and pinned to
 /// the slot's top edge, so as that edge rises the panel rises with it, sliding
 /// up from under the window.
@@ -370,79 +269,6 @@ class _BottomSlot extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// The preview panel floated over the conversation, on a window too narrow to
-/// dock it — the fallback the project rail already takes, for the same reason.
-///
-/// Stays mounted while closed so it can slide both ways; [IgnorePointer] keeps
-/// the invisible panel from swallowing clicks meant for the chat behind it.
-class _PreviewOverlay extends ConsumerWidget {
-  const _PreviewOverlay({required this.open, required this.width});
-
-  final bool open;
-  final double width;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return IgnorePointer(
-      ignoring: !open,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: AnimatedOpacity(
-              duration: AppMotion.swap,
-              curve: AppMotion.curve,
-              opacity: open ? 1 : 0,
-              child: GestureDetector(
-                onTap: () =>
-                    ref.read(previewPanelOpenProvider.notifier).close(),
-                child: const ColoredBox(color: Color(0x33000000)),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: width,
-            child: AnimatedSlide(
-              duration: AppMotion.swap,
-              curve: AppMotion.curve,
-              offset: open ? Offset.zero : const Offset(1, 0),
-              child: const _SlideOverSurface(
-                child: PreviewPanel(onRaisedSurface: true),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The surface a panel floated over the conversation sits on — its own edge and
-/// lift, so it reads as a layer above the chat rather than part of it.
-class _SlideOverSurface extends StatelessWidget {
-  const _SlideOverSurface({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        // A layer above the page takes the raised fill, not the window's own:
-        // in dark they would be the same colour and the panel would have no
-        // edge at all.
-        color: AppGlass.surfaceFill,
-        border: Border(left: BorderSide(color: AppPalette.divider)),
-        boxShadow: AppSurface.composerShadow,
-      ),
-      child: child,
     );
   }
 }

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/chat/logic/panel_layout.dart';
+import 'package:grid_app/shared/panels/panel_metrics.dart';
 
 void main() {
   // A preview panel at its usual docked width, minus the "+" beside the tabs.

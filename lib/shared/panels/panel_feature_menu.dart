@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/anchored_menu_position.dart';
-import '../../../shared/widgets/app_icon_button.dart';
-import '../../../shared/widgets/labeled_field.dart';
-import '../logic/panel_tabs.dart';
+import '../theme/app_theme.dart';
+import '../widgets/anchored_menu_position.dart';
+import '../widgets/app_icon_button.dart';
+import '../widgets/labeled_field.dart';
+import 'panel_tabs.dart';
 
 const _menuWidth = 200.0;
 const _rowHeight = 34.0;

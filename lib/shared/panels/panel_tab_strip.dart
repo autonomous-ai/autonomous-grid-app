@@ -2,21 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../shared/chat_drop.dart';
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_icon_button.dart';
-import '../logic/panel_layout.dart';
-import '../logic/panel_tabs.dart';
-import '../logic/preview_panel.dart';
+import '../chat_drop.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_icon_button.dart';
 import 'panel_feature_menu.dart';
+import 'panel_metrics.dart';
+import 'panel_tabs.dart';
 
 /// A panel's header: one tab per thing open in it, plus the way to open
 /// another.
 ///
-/// Shared by every feature *and* by both panels — the strip is the panel's own
-/// chrome, so switching tabs never moves it, and the panel under the chat works
-/// the way the one beside it does rather than being a lookalike with its own
-/// habits.
+/// Shared by every feature *and* by every panel — the strip is the panel's own
+/// chrome, so switching tabs never moves it, and the panel beside a project
+/// works the way the one beside a chat does rather than being a lookalike with
+/// its own habits.
 ///
 /// Tabs share the width they have: they shrink as more open, down to a floor,
 /// and only past that floor does the row start scrolling. A strip that never
@@ -38,9 +37,10 @@ class PanelTabStrip extends ConsumerWidget {
   /// Which panel's tabs this is showing.
   final PanelHost host;
 
-  /// Set when the panel is floating over the chat instead of docked beside it —
-  /// the selected tab's fill is tuned against the page and matches the raised
-  /// surface exactly, so it needs the raised variant. See [AppGlass.bubbleFill].
+  /// Set when the panel is floating over the conversation instead of docked
+  /// beside it — the selected tab's fill is tuned against the page and matches
+  /// the raised surface exactly, so it needs the raised variant. See
+  /// [AppGlass.bubbleFill].
   final bool onRaisedSurface;
 
   static const double height = 38;
@@ -99,7 +99,7 @@ class PanelTabStrip extends ConsumerWidget {
                 },
               ),
             ),
-            if (host == PanelHost.preview) const _ExpandButton(),
+            if (host != PanelHost.bottom) _ExpandButton(host: host),
             PanelFeatureMenu(onSelected: controller.open),
           ],
         ),
@@ -110,21 +110,22 @@ class PanelTabStrip extends ConsumerWidget {
 
 /// Hands this panel the whole pane, and gives the conversation back.
 ///
-/// Only in the panel beside the chat. Expanding is "take the room the chat is
-/// using", and the panel *under* the chat has no chat beside it to take room
-/// from — a button there would need a different meaning, which is a different
-/// button.
+/// Only in a panel beside the conversation. Expanding is "take the room the
+/// conversation is using", and the panel *under* it has none to take — a button
+/// there would need a different meaning, which is a different button.
 ///
 /// Quiet rather than lit-when-active, unlike the top bar's toggles: the icon
 /// already flips, and a permanently accent-coloured glyph beside a neutral "+"
 /// reads as something being wrong rather than as a state.
 class _ExpandButton extends ConsumerWidget {
-  const _ExpandButton();
+  const _ExpandButton({required this.host});
+
+  final PanelHost host;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final expanded = ref.watch(previewPanelExpandedProvider);
+    final expanded = ref.watch(panelExpandedProvider(host));
     return Padding(
       padding: const EdgeInsets.only(right: 2),
       child: AppIconButton(
@@ -133,7 +134,7 @@ class _ExpandButton extends ConsumerWidget {
         // Not "Show/Hide": nothing appears or goes away, the panel changes size.
         tooltip: expanded ? 'Restore panel' : 'Expand panel',
         onPressed: () =>
-            ref.read(previewPanelExpandedProvider.notifier).toggle(),
+            ref.read(panelExpandedProvider(host).notifier).toggle(),
       ),
     );
   }
