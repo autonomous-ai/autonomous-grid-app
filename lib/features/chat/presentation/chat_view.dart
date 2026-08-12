@@ -3,7 +3,6 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/composer_text.dart';
@@ -32,7 +31,9 @@ import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/chat_bubble.dart';
+import '../../playground/presentation/chat_minimap.dart';
 import '../../playground/presentation/no_model_yet.dart';
+import '../../playground/presentation/transcript_view.dart';
 import '../../prompts/logic/prompt_slash.dart';
 import '../../prompts/presentation/prompt_dialog.dart';
 import '../../prompts/presentation/prompt_slash_menu.dart';
@@ -55,15 +56,10 @@ import 'agent_handover_bar.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
 import 'chat_header.dart';
-import 'chat_minimap.dart';
 import 'chat_starters.dart';
 import 'grid_model_picker.dart';
 import 'out_of_steps_bar.dart';
 import 'plan_approve_bar.dart';
-
-/// How close to the end (px) still counts as "at the bottom" — within this, new
-/// messages auto-follow and the jump-to-latest button hides.
-const double _atBottomThreshold = 120;
 
 /// How many frames [_ChatViewState._snapToBottom] gets to converge on the real
 /// end of a transcript it can only estimate. Six is a tenth of a second, and each
@@ -71,25 +67,7 @@ const double _atBottomThreshold = 120;
 /// while we chase it ends the chase rather than the frame budget.
 const int _snapFrames = 6;
 
-/// How wide the conversation column gets on a big window. Long lines are hard to
-/// read; the transcript and the composer share this so they line up.
-///
-/// Wider than the 760 it started at: on a big window that left a broad empty
-/// margin either side, and the content — tables above all — was cramped into a
-/// column far narrower than the room available.
-///
-/// This stays the *outer* bound, the one wide content is allowed to fill. Prose
-/// is held to the narrower `proseWidth` (in `chat_bubble.dart`) inside it, so
-/// widening this again for tables doesn't drag body copy back out to 110+
-/// characters a line.
-const double _columnWidth = 1000;
-
 const double _composerWidth = 1020;
-
-/// How much taller than the window the conversation has to be before the minimap
-/// rail appears. A chat you can almost see all of doesn't need a table of
-/// contents — the rail would just be clutter beside it.
-const double _railMinContentRatio = 1.5;
 
 /// The open conversation: the transcript (or, on a fresh chat, a greeting and a
 /// few things to try), with the composer at the foot. The composer owns the model
@@ -180,7 +158,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _onScroll() {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
-    final atBottom = pos.pixels >= pos.maxScrollExtent - _atBottomThreshold;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - kAtBottomThreshold;
     if (atBottom != _atBottom && mounted) {
       setState(() => _atBottom = atBottom);
     }
@@ -880,9 +858,21 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           projectName: openProject?.name,
                           onPick: _useStarter,
                         )
-                      : _Transcript(
+                      : TranscriptView(
                           scroll: _scroll,
-                          messages: messages,
+                          rows: [
+                            for (final message in messages)
+                              TranscriptRow(
+                                // A committed message is immutable and carried
+                                // across rebuilds by the controller, so its own
+                                // identity is both a stable scroll key and a
+                                // content key — it never changes in place.
+                                scrollId: message,
+                                cacheId: message,
+                                builder: (_) => ChatBubble(message: message),
+                              ),
+                          ],
+                          marksOf: () => minimapMarks(messages),
                           trailing: hasTrailing
                               ? _TrailingBubble(
                                   agentMode: agentMode,
@@ -1231,7 +1221,7 @@ class _StreamingReplyState extends State<_StreamingReply> {
   /// and it re-splits the text and rebuilds the markdown stylesheet before
   /// `MarkdownBody` gets to notice its `data` is unchanged. An identical child
   /// widget makes the framework skip the subtree outright — the same trick
-  /// [_TranscriptState] uses to keep committed turns still (see its `_turn`).
+  /// `TranscriptView` uses to keep committed turns still (its row cache).
   Widget? _bubble;
 
   @override
@@ -1346,366 +1336,6 @@ class _QueuedBubble extends StatelessWidget {
               style: theme.textTheme.bodyMedium,
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The scrolling conversation: the minimap rail down the left, the turns in a
-/// centred column, and a "jump to latest" button while the user has scrolled up
-/// into the history.
-///
-/// The ListView spans the *full* pane and each turn is centred within it, rather
-/// than the list itself being boxed to [_columnWidth]. A scrollbar hangs off its
-/// list's right edge — boxing the list put that edge in the middle of the window,
-/// leaving the bar floating in open space instead of riding the window edge.
-class _Transcript extends StatefulWidget {
-  const _Transcript({
-    required this.scroll,
-    required this.messages,
-    required this.trailing,
-    required this.atBottom,
-    required this.onJumpToLatest,
-  });
-
-  final ScrollController scroll;
-  final List<ChatMessage> messages;
-  final Widget? trailing;
-  final bool atBottom;
-  final VoidCallback onJumpToLatest;
-
-  @override
-  State<_Transcript> createState() => _TranscriptState();
-}
-
-class _TranscriptState extends State<_Transcript> {
-  /// One key per message, so the minimap can scroll a turn into view by its own
-  /// rendered position — the turns are wildly uneven in height (a one-line
-  /// question against a long reply), so there's no arithmetic that maps an index
-  /// to an offset.
-  ///
-  /// Keyed by the message rather than by its index: an index-keyed global key
-  /// would be handed to a *different* turn the moment the user switches chats,
-  /// which is exactly when both the old and new widget are briefly in flight.
-  ///
-  /// Identity, not equality: two turns holding the same text are still two
-  /// turns, and sharing one global key between them would put a duplicate in
-  /// the tree.
-  final _itemKeys = Map<ChatMessage, GlobalKey>.identity();
-
-  /// The built row for each turn, so a rebuild of the view above — a keystroke
-  /// in the composer, a streamed token, a chat switch — doesn't re-derive every
-  /// visible turn. Rebuilding one means re-splitting its text into segments and
-  /// tables and rebuilding its markdown stylesheet; returning the identical
-  /// widget instead lets Flutter skip the subtree outright.
-  ///
-  /// Identity-keyed for the same reason as [_itemKeys] — a row carries one.
-  final _rows = Map<ChatMessage, Widget>.identity();
-
-  /// The rail's ticks, derived once per transcript rather than per build.
-  ///
-  /// [minimapMarks] walks every turn and cuts a preview from each, so it scales
-  /// with the *whole* conversation's text — and this build runs on every
-  /// keystroke in the composer. Null until the first build that needs it.
-  List<MinimapMark>? _marks;
-
-  /// The message index the rail marks as "where you are", or null before the
-  /// first frame has measured anything.
-  int? _currentIndex;
-
-  /// Whether the transcript is long enough to be worth a rail.
-  bool _railVisible = false;
-
-  GlobalKey _keyFor(ChatMessage message) =>
-      _itemKeys.putIfAbsent(message, GlobalKey.new);
-
-  @override
-  void initState() {
-    super.initState();
-    widget.scroll.addListener(_onScroll);
-    // The list hasn't been laid out yet, so nothing is measurable until after the
-    // first frame — resolve both the rail's visibility and the current turn then.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
-  }
-
-  @override
-  void didUpdateWidget(_Transcript old) {
-    super.didUpdateWidget(old);
-    if (old.scroll != widget.scroll) {
-      old.scroll.removeListener(_onScroll);
-      widget.scroll.addListener(_onScroll);
-    }
-    if (old.messages != widget.messages) _onTranscriptChanged();
-    // A new turn changes the content's height, which can cross the rail's
-    // threshold — and lands a new message to mark. Re-measure once it's laid out.
-    if (old.messages.length != widget.messages.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
-    }
-  }
-
-  /// Drop what was derived from the old transcript: the rows and keys of turns
-  /// that are no longer in it — a chat switch replaces the lot — and the rail's
-  /// ticks. Appending a turn keeps every earlier one's row and key, since the
-  /// messages themselves are carried over.
-  void _onTranscriptChanged() {
-    final kept = Set<ChatMessage>.identity()..addAll(widget.messages);
-    _rows.removeWhere((message, _) => !kept.contains(message));
-    _itemKeys.removeWhere((message, _) => !kept.contains(message));
-    _marks = null;
-  }
-
-  @override
-  void dispose() {
-    widget.scroll.removeListener(_onScroll);
-    super.dispose();
-  }
-
-  /// Track what the rail should show: whether it's worth showing at all, and
-  /// which turn the user is currently reading.
-  void _onScroll() {
-    if (!mounted || !widget.scroll.hasClients) return;
-    final pos = widget.scroll.position;
-    // The rail earns its place only on a transcript worth navigating: total
-    // content at least [_railMinContentRatio] of the viewport. maxScrollExtent is
-    // the *overflow*, so the content is that plus the viewport itself.
-    final visible =
-        pos.hasContentDimensions &&
-        pos.maxScrollExtent + pos.viewportDimension >=
-            pos.viewportDimension * _railMinContentRatio;
-    // At the very bottom the reading line can't be reached by the last turns —
-    // the list has run out of scroll, so a short final message sits below it
-    // forever and the mark would stall an item or two early. Scrolled to the end
-    // *is* being at the last turn, so say so directly.
-    final atEnd =
-        pos.hasContentDimensions &&
-        pos.pixels >= pos.maxScrollExtent - _atBottomThreshold;
-    // A null reading means nothing measurable has passed the line *this frame* —
-    // mid-fling, say, with the turns around the line not yet built. Keep the last
-    // answer rather than dropping the mark back to the top of the rail.
-    //
-    // Only worth measuring while the rail is up: the mark is the one thing that
-    // reads it, and walking every built turn on each scroll tick of a chat with
-    // no rail bought nothing.
-    final current = !visible
-        ? _currentIndex
-        : atEnd
-        ? widget.messages.length - 1
-        : (_currentMessage() ?? _currentIndex);
-    if (visible != _railVisible || current != _currentIndex) {
-      setState(() {
-        _railVisible = visible;
-        _currentIndex = current;
-      });
-    }
-  }
-
-  /// The message the user is reading: the last one whose top has passed the
-  /// viewport's reading line. Turns are far taller than the rail's ticks, so
-  /// "which one is on screen" has to be measured from the laid-out items rather
-  /// than interpolated from the scroll offset.
-  ///
-  /// Only *built* items can be measured: the list is lazy, so the turns scrolled
-  /// far off either end have no render object. That's why the answer is the
-  /// highest match rather than the first miss — an unbuilt item above the
-  /// viewport is above the line whether or not it can say so, and an early exit
-  /// on one would pin the answer to the top of the transcript forever.
-  int? _currentMessage() {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return null;
-    // A hair below the top edge: what you're reading is what sits at the top of
-    // the viewport, not what's level with its middle.
-    final line = box.size.height * 0.2;
-    int? found;
-    for (var i = 0; i < widget.messages.length; i++) {
-      final itemContext = _itemKeys[widget.messages[i]]?.currentContext;
-      if (itemContext == null) continue;
-      final item = itemContext.findRenderObject() as RenderBox?;
-      if (item == null || !item.hasSize || !item.attached) continue;
-      final top = item.localToGlobal(Offset.zero, ancestor: box).dy;
-      if (top <= line) found = i;
-    }
-    // Everything built sits below the line: the user is above the first measured
-    // turn, so nothing is being read yet.
-    return found;
-  }
-
-  /// The transcript row for [message] — built once and handed back unchanged on
-  /// every later rebuild, so Flutter skips the whole subtree instead of
-  /// re-deriving markdown the user is already looking at.
-  Widget _turn(ChatMessage message) => _rows[message] ??= _TurnColumn(
-    key: _keyFor(message),
-    child: ChatBubble(message: message),
-  );
-
-  /// Bring message [index] to the top of the viewport. Built turns scroll via
-  /// their key; one that's been recycled out of the lazy list has no context, so
-  /// it falls back to an estimate from its position in the transcript.
-  void _jumpTo(int index) {
-    // The rail is painted from the previous build's marks, so a tap that lands
-    // just after the transcript shrank (a chat switch) can name a turn that's
-    // gone — and the lookup below indexes the list to find its key.
-    if (index < 0 || index >= widget.messages.length) return;
-    final context = _itemKeys[widget.messages[index]]?.currentContext;
-    if (context != null) {
-      Scrollable.ensureVisible(
-        context,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-        // Land the turn just below the pane's top edge rather than dead-centre:
-        // a question is a heading for what follows, so what the user wants to
-        // read is underneath it.
-        alignment: 0.05,
-      );
-      return;
-    }
-    if (!widget.scroll.hasClients || widget.messages.length <= 1) return;
-    final pos = widget.scroll.position;
-    final t = index / (widget.messages.length - 1);
-    widget.scroll.animateTo(
-      (pos.maxScrollExtent * t).clamp(0.0, pos.maxScrollExtent),
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  /// Take any open tooltip down the moment the transcript starts moving.
-  ///
-  /// A tooltip has no idea the thing it points at is scrolling away — it stays
-  /// pinned where it opened, over rows it no longer describes. And one left open
-  /// across a scroll is how the app froze on 2026-08-06: Flutter hit-tests the
-  /// tooltip's overlay before that overlay has been laid out, which throws inside
-  /// the mouse tracker's own update and then re-throws on every frame after.
-  ///
-  /// Returns false — the notification is still the scrollbar's business too.
-  bool _dismissTooltips(ScrollStartNotification _) {
-    // A scroll can begin *during* layout (new content dimensions handing the
-    // position to a ballistic activity), and dismissing rebuilds the tooltip's
-    // state — which that phase forbids. Wait out the frame when we're in one.
-    if (SchedulerBinding.instance.schedulerPhase ==
-        SchedulerPhase.persistentCallbacks) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => Tooltip.dismissAllToolTips(),
-      );
-      return false;
-    }
-    Tooltip.dismissAllToolTips();
-    return false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final count = widget.messages.length + (widget.trailing != null ? 1 : 0);
-    return Stack(
-      children: [
-        NotificationListener<ScrollStartNotification>(
-          onNotification: _dismissTooltips,
-          child: ListView.builder(
-            controller: widget.scroll,
-            // No horizontal padding: the list spans the pane so its scrollbar
-            // sits on the window edge. The column below insets its own content.
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            itemCount: count,
-            itemBuilder: (context, i) => i < widget.messages.length
-                ? _turn(widget.messages[i])
-                // Not cached: the in-flight bubble is what changes on every
-                // streamed token, which is the whole reason the turns above it
-                // must not.
-                : _TurnColumn(
-                    child: widget.trailing ?? const SizedBox.shrink(),
-                  ),
-          ),
-        ),
-        // The rail hugs the pane's left edge, clear of the centred column. It
-        // shows only once the conversation is long enough to be worth navigating.
-        if (_railVisible)
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: ChatMinimap(
-              marks: _marks ??= minimapMarks(widget.messages),
-              currentIndex: _currentIndex,
-              onJumpTo: _jumpTo,
-            ),
-          ),
-        if (!widget.atBottom)
-          Positioned(
-            right: 20,
-            bottom: 12,
-            child: _JumpToLatestButton(onTap: widget.onJumpToLatest),
-          ),
-      ],
-    );
-  }
-}
-
-/// One row of the transcript: a turn (or the in-flight bubble) held to the
-/// conversation column and optically centred in the pane.
-///
-/// The list spans the whole pane so its scrollbar rides the window edge, so the
-/// measure has to be applied per row rather than by boxing the list.
-class _TurnColumn extends StatelessWidget {
-  const _TurnColumn({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: _columnWidth),
-      child: Padding(
-        // The rail's width on the left, mirrored on the right, so the column
-        // stays optically centred instead of nudged off-axis.
-        padding: const EdgeInsets.symmetric(horizontal: chatMinimapWidth),
-        child: child,
-      ),
-    ),
-  );
-}
-
-/// A round "jump to latest" button shown while the user has scrolled up. Tapping
-/// animates back to the newest message so they never have to drag to the bottom
-/// by hand.
-class _JumpToLatestButton extends StatelessWidget {
-  const _JumpToLatestButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    // Reads AppPalette/AppGlass tokens — follow theme flips. Without this the
-    // button keeps whichever theme's colours it was first built under: it's a
-    // const child of the transcript, so nothing else rebuilds it on a flip.
-    AppTheme.watch(context);
-    return Tooltip(
-      message: 'Jump to latest',
-      // The lift comes from the app's own shadow token, not Material's
-      // elevation: a hard-coded black shadow reads as grime on a dark pane.
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: AppGlass.cardShadow,
-        ),
-        child: Material(
-          // The app's own surface tokens rather than the Material scheme's: this
-          // floats over the transcript, so it has to match the composer and the
-          // menus it sits beside, on either theme.
-          color: AppGlass.surfaceFill,
-          shape: CircleBorder(side: BorderSide(color: AppGlass.lift)),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 24,
-                color: AppPalette.textPrimary,
-                semanticLabel: 'Jump to latest',
-              ),
-            ),
-          ),
         ),
       ),
     );

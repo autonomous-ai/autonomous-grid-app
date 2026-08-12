@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../playground/logic/chat_message.dart';
+import '../logic/chat_message.dart';
 
 /// How wide the rail's hit area is. Wide enough to hold the inset plus a tick at
 /// the wave's crest, and a little over — the surplus is grab room, so a user
@@ -38,6 +38,11 @@ class MinimapMark {
   /// turn nothing has answered yet (the last one, mid-flight).
   final String? reply;
 }
+
+/// A single-line preview of [text], clipped for a rail tick — the same
+/// treatment a chat turn gets, for a caller building marks from something other
+/// than a [ChatMessage] (a task's prompt and result).
+String minimapPreview(String text) => _clip(text);
 
 /// The user's turns in [messages], in order, each paired with the reply it drew.
 /// Only user messages get a tick: the rail is for finding the question you asked,

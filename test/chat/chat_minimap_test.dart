@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/chat/presentation/chat_minimap.dart';
+import 'package:grid_app/features/playground/presentation/chat_minimap.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 
 ChatMessage _user(String text) => ChatMessage(role: ChatRole.user, text: text);
