@@ -4,6 +4,7 @@ import '../../../infrastructure/cli/hermes_gateway_service.dart';
 import '../../../infrastructure/cli/hermes_platform_policy.dart';
 import '../../agents/logic/adapters/hermes_grid_link.dart';
 import '../../agents/logic/adapters/hermes_tool.dart';
+import '../../../shared/copy/setup_hints.dart';
 import 'messaging_platform.dart';
 import 'messaging_state.dart';
 
@@ -188,7 +189,5 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     await policy.unpin(_platform.key);
   }
 
-  static const _noAgent =
-      "This computer isn't set up to answer chats yet. Open the account menu ▸ "
-      'This computer to finish setting it up.';
+  static final _noAgent = notSetUpToMessage('answer chats');
 }

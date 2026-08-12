@@ -8,6 +8,7 @@ import '../../../agents/logic/adapters/hermes_tool.dart';
 import '../../../scheduled/logic/scheduled_job.dart';
 import '../../../scheduled/logic/scheduled_jobs_controller.dart';
 import '../../../scheduled/presentation/widgets/new_job_dialog.dart';
+import '../../../../shared/copy/setup_hints.dart';
 import '../../logic/project.dart';
 import '../../logic/project_tasks_store.dart';
 import 'rail_card.dart';
@@ -42,8 +43,8 @@ class ProjectScheduledCard extends ConsumerWidget {
       child: installed
           ? _body(context, ref)
           : const RailHint(
-              'Scheduling needs this computer set up to run tasks. Open the '
-              'account menu ▸ This computer to finish setting it up.',
+              'Scheduling needs this computer set up to run tasks. Open '
+              '$kModelEnginesPlace to finish setting it up.',
             ),
     );
   }

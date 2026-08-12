@@ -21,6 +21,7 @@ import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_task_policy.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
+import 'package:grid_app/shared/copy/setup_hints.dart';
 
 /// The id Hermes's store gives the task the controller just saved — what the
 /// pin and the project link are applied to.
@@ -686,7 +687,9 @@ void main() {
           ),
         );
 
-    expect(result.error, contains('This computer'));
+    // Names the screen that fixes it — the point of the refusal is the way out,
+    // and that screen has moved before (it was in the account menu).
+    expect(result.error, contains(kModelEnginesPlace));
     expect(h.cron.created, isNull);
   });
 

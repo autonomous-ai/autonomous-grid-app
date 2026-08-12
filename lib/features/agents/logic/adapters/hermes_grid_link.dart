@@ -9,6 +9,7 @@ import '../../../../infrastructure/cli/hermes_cron_watchdog.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
+import '../../../../shared/copy/setup_hints.dart';
 import '../../../auth/logic/session_controller.dart';
 import '../../../network/logic/client_app_configurator.dart';
 import '../../../network/logic/client_app_detector.dart';
@@ -186,12 +187,12 @@ class HermesGridLink {
       if (servesAnything) {
         return 'This grid only shares AI that Claude Code or Codex answers, so '
             'the Hermes assistant has nothing to run on here. Switch the '
-            'assistant, or share a model on this computer (Settings ▸ This '
-            'computer).';
+            'assistant, or share a model on this computer '
+            '($kModelEnginesPlace).';
       }
       return "This grid isn't sharing any AI yet, so the assistant would have "
-          'nothing to answer with. Start sharing on this computer (Settings ▸ '
-          'This computer), then try again.';
+          'nothing to answer with. Start sharing on this computer '
+          '($kModelEnginesPlace), then try again.';
     }
     return point(grid, model);
   }
