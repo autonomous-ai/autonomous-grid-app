@@ -197,15 +197,15 @@ class CodeTask {
   );
 }
 
-/// One page of `grid task list --json`.
+/// The tasks in `grid task list --json`.
 ///
-/// [nextAfter] is said out loud on screen for the reason the CLI prints it: a
-/// page that silently stops at the limit reads as the project's whole history.
+/// Not a page any more: the transcript reads a project as one conversation, so
+/// it asks with no `--limit` and shows the whole history the relay returns
+/// rather than a first page with a cursor to the next.
 class TaskPage {
-  const TaskPage({required this.tasks, this.nextAfter});
+  const TaskPage({required this.tasks});
 
   final List<CodeTask> tasks;
-  final String? nextAfter;
 
   /// Whether the reply carried a task list at all.
   ///
@@ -218,6 +218,5 @@ class TaskPage {
     tasks: [
       for (final entry in wireObjects(json, 'tasks')) ?CodeTask.fromJson(entry),
     ],
-    nextAfter: wireString(json, 'next_after'),
   );
 }

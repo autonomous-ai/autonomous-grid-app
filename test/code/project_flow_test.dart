@@ -40,7 +40,7 @@ List<String> _create(String prompt) =>
 List<String> get _promote =>
     projectPromoteArgs(projectId: _project, memberKey: _member, grid: _grid);
 List<String> get _list =>
-    taskListArgs(projectId: _project, grid: _grid, all: true, limit: 50);
+    taskListArgs(projectId: _project, grid: _grid, all: true);
 List<String> get _status => projectStatusArgs(projectId: _project, grid: _grid);
 
 /// A status the flow can read a member key out of — what promote needs.
