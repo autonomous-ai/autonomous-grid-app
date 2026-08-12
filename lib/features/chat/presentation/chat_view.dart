@@ -617,6 +617,26 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = TextSelection.collapsed(offset: result.cursor);
   }
 
+  /// Follow a streamed redraw that grew the transcript **outside** a state
+  /// change, so the newest words don't end up below the fold.
+  ///
+  /// The listener at the top of [build] is what normally keeps a live reply in
+  /// view, and it works because it measures *after* the frame the new text was
+  /// laid out in. A throttled redraw ([_StreamingReply]) breaks that pairing: it
+  /// lands on its own timer, tens of milliseconds after the state change whose
+  /// follow-up scroll has already measured the old height. Nothing else covers
+  /// it — a grown `maxScrollExtent` alone does not notify a `ScrollController`,
+  /// so `_onScroll` never runs and `_atBottom` is never even re-read. Left
+  /// unpaired, a paragraph drawn just before the agent went off to run a command
+  /// sat off-screen for the length of that command, with no jump-to-latest cue
+  /// (`_atBottom` being stale-true is exactly what hides the button).
+  void _followRedraw() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_atBottom) return;
+      _scrollToBottom();
+    });
+  }
+
   void _scrollToBottom({bool animated = false}) {
     if (!_scroll.hasClients) return;
     final target = _scroll.position.maxScrollExtent;
@@ -864,7 +884,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           scroll: _scroll,
                           messages: messages,
                           trailing: hasTrailing
-                              ? _TrailingBubble(agentMode: agentMode)
+                              ? _TrailingBubble(
+                                  agentMode: agentMode,
+                                  onRedrawn: _followRedraw,
+                                )
                               : null,
                           atBottom: _atBottom,
                           onJumpToLatest: () => _scrollToBottom(animated: true),
@@ -1072,11 +1095,16 @@ bool _bubbleShows(SendPhase phase, bool agentMode) => switch (phase) {
 /// the working feed and a plain waiting cue — a chat queued behind another in
 /// its project has a feed, but nothing in it yet.
 class _TrailingBubble extends ConsumerWidget {
-  const _TrailingBubble({required this.agentMode});
+  const _TrailingBubble({required this.agentMode, this.onRedrawn});
 
   /// Whether an agent is answering this turn — a media turn bypasses it, so the
   /// bubble shows progress rather than "the agent is working".
   final bool agentMode;
+
+  /// Called when the streaming reply redraws off its own timer rather than off a
+  /// state change — the transcript grew with nothing to follow it. See
+  /// `_ChatViewState._followRedraw`.
+  final VoidCallback? onRedrawn;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1092,6 +1120,7 @@ class _TrailingBubble extends ConsumerWidget {
         chatId: chatId,
         text: text,
         showActivity: agentMode,
+        onRedrawn: onRedrawn,
       ),
       SendStreaming() => AgentWorkingBubble(chatId: chatId),
       SendBusy() when agentMode && laneQueued => const _QueuedBubble(),
@@ -1118,14 +1147,32 @@ class _TrailingBubble extends ConsumerWidget {
 /// and are dropped.
 ///
 /// Reuses [ChatBubble] rather than re-laying-out the text, so a half-streamed
-/// reply and the same reply once committed are pixel-identical — no reflow at
-/// the moment the cue drops away. The cue sits at the content's left edge (the
-/// assistant column starts there), a touch below.
-class _StreamingReply extends StatelessWidget {
+/// reply and the same reply once committed are drawn identically — the cue
+/// dropping away is the only change at that moment, give or take the last
+/// [_redrawInterval] of text the throttle below had still to draw. The cue sits
+/// at the content's left edge (the assistant column starts there), a touch below.
+///
+/// **Redraws at most once per [_redrawInterval], not once per token**, and that
+/// is the difference between a long answer that streams and one that stutters.
+/// Drawing markdown is not cheap: every rebuild re-splits the text, rebuilds the
+/// stylesheet, and re-parses the whole reply into an AST and a widget tree. Paid
+/// per token on a growing string it is quadratic — measured at 434µs a token on
+/// a short reply and 1.7ms on a 9k one, against 3.5ms to parse that same reply
+/// once at the end.
+///
+/// The throttle is here, in the widget, and deliberately **not** in the
+/// controller. `stop()` and a failed turn both recover the half-written answer by
+/// reading `SendStreaming.text` back out of the state — hold deltas there and a
+/// user who stops mid-sentence loses the words they stopped *because* they had
+/// read (`chat_sessions_controller_test.dart` asserts exactly that, on disk as
+/// well as in state), and the turn's first-token timing goes with it. So state
+/// still sees every token; only the drawing is rationed.
+class _StreamingReply extends StatefulWidget {
   const _StreamingReply({
     required this.chatId,
     required this.text,
     this.showActivity = false,
+    this.onRedrawn,
   });
 
   /// The conversation being answered — the feed under the text is that chat's.
@@ -1139,19 +1186,123 @@ class _StreamingReply extends StatelessWidget {
   /// has no steps to show.
   final bool showActivity;
 
+  /// Called after a redraw that the throttle deferred — the one case where the
+  /// transcript grows with no state change to follow it. See
+  /// `_ChatViewState._followRedraw`.
+  final VoidCallback? onRedrawn;
+
+  @override
+  State<_StreamingReply> createState() => _StreamingReplyState();
+}
+
+/// How long the drawn text is allowed to lag the streamed text.
+///
+/// 50ms is 20 redraws a second — past the rate at which text arriving reads as
+/// continuous, and well inside the ~100ms that would start to feel like a pause.
+///
+/// It is a ceiling on how much work a fast stream can ask for, **not** a delay
+/// added to a slow one, and that takes a leading edge to be true: a token that
+/// arrives when nothing has been drawn for this long is drawn straight away, in
+/// the frame its own state change triggered. Only a token arriving inside the
+/// interval waits, and then only for the remainder of it. A purely trailing
+/// throttle would have been simpler and wrong — under 20 tokens a second every
+/// token arrives with nothing pending, so *every* redraw would have been held
+/// back the full 50ms, making the slowest models feel the laggiest.
+const Duration _redrawInterval = Duration(milliseconds: 50);
+
+class _StreamingReplyState extends State<_StreamingReply> {
+  /// The text currently drawn, which trails [_StreamingReply.text] by at most
+  /// [_redrawInterval]. The first chunk is drawn as it arrives — a turn only
+  /// reaches this widget once it has text, so there is nothing to ration yet.
+  late String _shown = widget.text;
+
+  /// Pending redraw, or null when the drawn text is already current.
+  Timer? _redraw;
+
+  /// Time since the last redraw, for the leading edge — monotonic, so it can't
+  /// be thrown by the clock changing under a long agent turn.
+  final _sinceDrawn = Stopwatch()..start();
+
+  /// The built bubble, held so a rebuild that doesn't change [_shown] hands the
+  /// **same widget instance** back.
+  ///
+  /// Throttling `_shown` alone would not have been enough: `MessageContent` is a
+  /// `StatelessWidget`, so the parent rebuilding on every token rebuilds it too,
+  /// and it re-splits the text and rebuilds the markdown stylesheet before
+  /// `MarkdownBody` gets to notice its `data` is unchanged. An identical child
+  /// widget makes the framework skip the subtree outright — the same trick
+  /// [_TranscriptState] uses to keep committed turns still (see its `_turn`).
+  Widget? _bubble;
+
+  @override
+  void didUpdateWidget(_StreamingReply old) {
+    super.didUpdateWidget(old);
+    // A different conversation is not a continuation of this one. Switching
+    // between two chats that are both streaming reuses this element, so a
+    // pending redraw here would paint the other chat's words into this one.
+    // Nothing is set through setState: the framework rebuilds us right after
+    // this returns.
+    if (widget.chatId != old.chatId) {
+      _redraw?.cancel();
+      _redraw = null;
+      _draw();
+      return;
+    }
+    if (widget.text == _shown || _redraw != null) return;
+    // Leading edge: nothing drawn for a whole interval, so draw in this frame —
+    // the one the state change is already building, which is also the frame the
+    // follow-scroll measures. No setState, and none needed: the framework
+    // rebuilds us as soon as this returns.
+    if (_sinceDrawn.elapsed >= _redrawInterval) {
+      _draw();
+      return;
+    }
+    // Inside the interval: wait out the remainder. Later tokens arriving
+    // meanwhile only update `widget.text` and the timer draws the newest of
+    // them, so a burst costs one redraw rather than one per token. The timer is
+    // always armed while text is outstanding, so the last token of a reply is
+    // never left undrawn.
+    _redraw = Timer(_redrawInterval - _sinceDrawn.elapsed, () {
+      _redraw = null;
+      if (!mounted) return;
+      setState(_draw);
+      // This redraw grew the transcript outside any state change, so it has to
+      // ask for the follow-scroll the provider listener would otherwise have
+      // done for it.
+      widget.onRedrawn?.call();
+    });
+  }
+
+  /// Adopt the newest streamed text and drop the cached bubble built from the
+  /// old one. Call inside `setState` when outside a build, bare when the
+  /// framework is about to rebuild anyway.
+  void _draw() {
+    _shown = widget.text;
+    _bubble = null;
+    _sinceDrawn.reset();
+  }
+
+  @override
+  void dispose() {
+    _redraw?.cancel();
+    _sinceDrawn.stop();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    _bubble ??= ChatBubble(
+      message: ChatMessage(role: ChatRole.assistant, text: _shown),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ChatBubble(
-          message: ChatMessage(role: ChatRole.assistant, text: text),
-        ),
+        _bubble!,
         // Agent turn: the feed's own spinner is the "still going" cue, so no
         // dots. Plain reply: no feed, so the dots carry it.
-        if (showActivity)
-          AgentActivityFeed(chatId: chatId)
+        if (widget.showActivity)
+          AgentActivityFeed(chatId: widget.chatId)
         else
           const Padding(
             padding: EdgeInsets.only(left: 2, bottom: 10),
