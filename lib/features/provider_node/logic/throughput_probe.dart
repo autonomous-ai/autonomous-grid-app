@@ -43,16 +43,25 @@ double? parseTokensPerSecond(Map<String, dynamic> body, Duration wall) {
 /// Sends one tiny message to a model and measures how fast it answers.
 ///
 /// The seam behind [throughputProbeProvider], so the local-throughput watcher
-/// can be tested with a fake instead of a live engine.
+/// can be tested with a fake instead of a live grid.
 abstract interface class ThroughputProbe {
-  /// tok/s for [model] at [endpoint] (a base URL like `http://localhost:8080`),
-  /// or null when it couldn't be measured. Never throws.
-  Future<double?> measure({required String endpoint, required String model});
+  /// tok/s for [model] at [endpoint] (a full `chat/completions` URL), or null
+  /// when it couldn't be measured. Never throws.
+  ///
+  /// [apiKey] is the grid's bearer token — the warm-up goes to the **grid URL**,
+  /// not the local engine, so the relay routes it to whichever machine serves
+  /// [model] and the *grid* is the one that times the answer. Empty for a
+  /// keyless endpoint.
+  Future<double?> measure({
+    required String endpoint,
+    required String apiKey,
+    required String model,
+  });
 }
 
-/// Real probe over `dart:io`. Posts "hi" to `{endpoint}/v1/chat/completions`
-/// with streaming off, so the whole body — timings and usage included — arrives
-/// as one JSON object to read the rate out of.
+/// Real probe over `dart:io`. Posts "hi" to [endpoint] with streaming off, so
+/// the whole body — timings and usage included — arrives as one JSON object to
+/// read the rate out of.
 class HttpThroughputProbe implements ThroughputProbe {
   const HttpThroughputProbe();
 
@@ -63,15 +72,17 @@ class HttpThroughputProbe implements ThroughputProbe {
   @override
   Future<double?> measure({
     required String endpoint,
+    required String apiKey,
     required String model,
   }) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
       final stopwatch = Stopwatch()..start();
-      final request = await client.postUrl(
-        Uri.parse('$endpoint/v1/chat/completions'),
-      );
+      final request = await client.postUrl(Uri.parse(endpoint));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      if (apiKey.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+      }
       request.add(
         utf8.encode(
           jsonEncode({

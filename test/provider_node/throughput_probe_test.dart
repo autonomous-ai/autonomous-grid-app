@@ -1,20 +1,52 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/provider_node/logic/local_throughput.dart';
 import 'package:grid_app/features/provider_node/logic/provider_run_controller.dart';
 import 'package:grid_app/features/provider_node/logic/throughput_probe.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
+
+NetworkCredential _credential() => const NetworkCredential(
+  networkId: 'net',
+  name: 'Test grid',
+  networkType: 'permissioned',
+  lanSignalingUrl: 'https://grid.example/g1',
+  accessToken: 'tok',
+  refreshToken: '',
+  email: '',
+  nodeId: '',
+  deviceId: '',
+  roles: [],
+  scopes: [],
+  memberEpoch: 1,
+  networkEpoch: 1,
+  expiresAt: 0,
+);
+
+/// A [SelectedNetwork] pinned to the test grid, so the target builder resolves a
+/// relay base without wiring the credentials store.
+class _FixedNetwork extends SelectedNetwork {
+  @override
+  NetworkCredential? build() => _credential();
+}
 
 class _FakeProbe implements ThroughputProbe {
   _FakeProbe(this.value);
   final double? value;
   int calls = 0;
   String? lastEndpoint;
+  String? lastApiKey;
   String? lastModel;
 
   @override
-  Future<double?> measure({required String endpoint, required String model}) {
+  Future<double?> measure({
+    required String endpoint,
+    required String apiKey,
+    required String model,
+  }) {
     calls++;
     lastEndpoint = endpoint;
+    lastApiKey = apiKey;
     lastModel = model;
     return Future.value(value);
   }
@@ -62,16 +94,14 @@ void main() {
     });
   });
 
-  group('the local warm-up', () {
+  group('the grid warm-up', () {
     ProviderContainer container({
-      String? endpoint,
-      String? model,
+      ({String endpoint, String apiKey, String model})? target,
       required _FakeProbe probe,
     }) {
       final c = ProviderContainer(
         overrides: [
-          localProviderEndpointProvider.overrideWithValue(endpoint),
-          servingModelProvider.overrideWithValue(model),
+          throughputWarmupTargetProvider.overrideWithValue(target),
           throughputProbeProvider.overrideWithValue(probe),
         ],
       );
@@ -79,45 +109,74 @@ void main() {
       return c;
     }
 
-    test('measures once the engine is up and keeps the number', () async {
-      final probe = _FakeProbe(180);
-      final c = container(
-        endpoint: 'http://localhost:9',
-        model: 'qwen3.6-35b-a3b',
-        probe: probe,
-      );
+    test(
+      'sends the warm-up to the grid URL with its key, and keeps the number',
+      () async {
+        final probe = _FakeProbe(180);
+        final c = container(
+          target: (
+            endpoint: 'https://grid.example/g1/relay/v1/chat/completions',
+            apiKey: 'tok',
+            model: 'qwen3.6-35b-a3b',
+          ),
+          probe: probe,
+        );
 
-      // Nothing to show until the warm-up answers.
-      expect(c.read(localThroughputProvider), isNull);
-      await Future<void>.delayed(Duration.zero);
+        // Nothing to show until the warm-up answers.
+        expect(c.read(localThroughputProvider), isNull);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(c.read(localThroughputProvider), 180);
-      expect(probe.calls, 1);
-      // The union may join models with commas; the warm-up asks the first.
-      expect(probe.lastModel, 'qwen3.6-35b-a3b');
-      expect(probe.lastEndpoint, 'http://localhost:9');
-    });
-
-    test('asks the first model when several are joined', () async {
-      final probe = _FakeProbe(60);
-      final c = container(
-        endpoint: 'http://localhost:9',
-        model: 'first-model, second-model',
-        probe: probe,
-      );
-      // Read to instantiate the lazy provider — that's what the visible card
-      // does, and what kicks the warm-up off.
-      c.read(localThroughputProvider);
-      await Future<void>.delayed(Duration.zero);
-      expect(probe.lastModel, 'first-model');
-    });
+        expect(c.read(localThroughputProvider), 180);
+        expect(probe.calls, 1);
+        // The grid times it, not localhost: the request carries the grid URL and
+        // its bearer token, so the relay can route it to the serving machine.
+        expect(
+          probe.lastEndpoint,
+          'https://grid.example/g1/relay/v1/chat/completions',
+        );
+        expect(probe.lastApiKey, 'tok');
+        expect(probe.lastModel, 'qwen3.6-35b-a3b');
+      },
+    );
 
     test('nothing serving means no measurement and no number', () async {
       final probe = _FakeProbe(180);
-      final c = container(endpoint: null, model: null, probe: probe);
+      final c = container(target: null, probe: probe);
       await Future<void>.delayed(Duration.zero);
       expect(c.read(localThroughputProvider), isNull);
       expect(probe.calls, 0);
+    });
+  });
+
+  group('the grid warm-up target', () {
+    ({String endpoint, String apiKey, String model})? targetFor(
+      String? serving,
+    ) {
+      final c = ProviderContainer(
+        overrides: [
+          selectedNetworkProvider.overrideWith(_FixedNetwork.new),
+          servingModelProvider.overrideWithValue(serving),
+        ],
+      );
+      addTearDown(c.dispose);
+      return c.read(throughputWarmupTargetProvider);
+    }
+
+    test('points at the grid relay, carries its key, asks the first model', () {
+      final target = targetFor('first-model, second-model')!;
+      // The grid's own chat endpoint, so the relay times the answer.
+      expect(
+        target.endpoint,
+        'https://grid.example/g1/relay/v1/chat/completions',
+      );
+      expect(target.apiKey, 'tok');
+      // The union joins several with commas; a single engine serves one.
+      expect(target.model, 'first-model');
+    });
+
+    test('is null when this machine is serving nothing', () {
+      expect(targetFor(null), isNull);
+      expect(targetFor(''), isNull);
     });
   });
 }
