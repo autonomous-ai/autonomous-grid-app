@@ -125,6 +125,10 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
     // Skipped catch-up means the status wasn't reloaded, so the composer's Send
     // wouldn't know the slot is taken; make it so before returning.
     await ref.read(projectStatusProvider(projectId).notifier).refresh();
+    // The user may have left the project mid-round-trip, disposing this
+    // provider. Touching `ref` or `state` after that throws, so stop here — the
+    // task is on the grid either way, and this flow just won't watch it.
+    if (!ref.mounted) return;
     state = state.copyWith(
       awaitingPublish: {...state.awaitingPublish, task.id},
     );
@@ -157,7 +161,9 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
   /// A poll arrived: publish anything this flow was waiting on that has just
   /// finished, and drop anything that finished badly.
   void _onTasks(List<CodeTask> tasks) {
-    if (state.awaitingPublish.isEmpty) return;
+    // The listener that calls this is torn down on dispose, but `submit` calls
+    // it directly after its own awaits — where the provider may already be gone.
+    if (!ref.mounted || state.awaitingPublish.isEmpty) return;
     final byId = {for (final task in tasks) task.id: task};
     final stillWaiting = <String>{};
     final landed = <String>[];
@@ -186,6 +192,9 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
   }
 
   Future<void> _publish(String taskId) async {
+    // Scheduled from `_onTasks` and run later, so the project may have closed in
+    // between.
+    if (!ref.mounted) return;
     final memberKey = ref
         .read(projectStatusProvider(projectId))
         .value
@@ -203,6 +212,10 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
       final result = await ref
           .read(projectActionsProvider)
           .promote(projectId, memberKey);
+      // Left the project while the promote was out: the trunk still moved on the
+      // relay — this only can't say so — so stop rather than write a disposed
+      // provider's state.
+      if (!ref.mounted) return;
       _notify(
         result.advanced
             ? 'Published to the team.'
@@ -213,16 +226,24 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
       // Most often the team's main moved while the task ran, so a fast-forward
       // is refused. Not swallowed and not retried behind their back: publish has
       // no undo, and the honest thing is to hand it back.
+      if (!ref.mounted) return;
       _notify(
         'Your task finished but couldn’t be published on its own: $error',
         FlowLevel.error,
       );
     } finally {
-      state = state.copyWith(publishing: state.publishing.difference({taskId}));
+      if (ref.mounted) {
+        state = state.copyWith(
+          publishing: state.publishing.difference({taskId}),
+        );
+      }
     }
   }
 
   void _notify(String message, FlowLevel level) {
+    // A last guard for every path that reports something: some run after an
+    // await, where this provider may already be disposed.
+    if (!ref.mounted) return;
     state = state.copyWith(
       notice: FlowNotice(seq: _seq++, message: message, level: level),
     );

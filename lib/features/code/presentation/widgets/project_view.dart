@@ -7,6 +7,7 @@ import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/section_scaffold.dart';
 import '../../../../shared/widgets/toast.dart';
+import '../../../playground/presentation/transcript_view.dart';
 import '../../logic/code_project.dart';
 import '../../logic/code_projects_controller.dart';
 import '../../logic/project_flow.dart';
@@ -130,7 +131,14 @@ class _Conversation extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Expanded(child: TaskTranscript(projectId: status.projectId)),
+        Expanded(
+          child: TaskTranscript(
+            // Keyed by the project so its scroll and follow state belong to the
+            // one on screen, and a switch lands at the new project's newest turn.
+            key: ValueKey(status.projectId),
+            projectId: status.projectId,
+          ),
+        ),
         // What the flow is doing on its own, and why the next thing may not go
         // as expected — above the box that starts it, in the order each bites:
         // a publish in flight, then your own slot, then nobody to run it.
@@ -158,7 +166,7 @@ class _Conversation extends ConsumerWidget {
         const SizedBox(height: 12),
         Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: kTaskColumnWidth),
+            constraints: const BoxConstraints(maxWidth: kTranscriptColumnWidth),
             child: TaskComposer(
               // Keyed by the project so the box belongs to the one on screen.
               // Without it the same state is reused across a switch, and a
