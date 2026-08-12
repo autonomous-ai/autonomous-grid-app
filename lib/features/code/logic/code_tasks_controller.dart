@@ -10,11 +10,6 @@ import 'code_task.dart';
 import 'code_write_results.dart';
 import 'poll_cadence.dart';
 
-/// How many tasks one page holds. The relay's own maximum is 200; a screen
-/// showing a project's recent work does not need that much history, and the
-/// page after this one is a click away.
-const _pageSize = 50;
-
 /// Every member's tasks in a project, newest first — refreshed on a timer while
 /// the screen is open.
 ///
@@ -34,11 +29,6 @@ class CodeTasksController extends AsyncNotifier<List<CodeTask>> {
 
   Timer? _timer;
 
-  /// The page cursor the last read handed back, or null when this is the whole
-  /// list. Said out loud on screen: a page that silently stops at the limit
-  /// reads as the project's entire history.
-  String? nextAfter;
-
   @override
   Future<List<CodeTask>> build() async {
     ref.onDispose(() => _timer?.cancel());
@@ -48,13 +38,11 @@ class CodeTasksController extends AsyncNotifier<List<CodeTask>> {
   }
 
   Future<List<CodeTask>> _read() async {
+    // No `--limit`: the project reads as one conversation, so the transcript
+    // wants the project's whole history, not a first page of it. The relay caps
+    // the answer at its own maximum, and there is no "more" to page to here.
     final json = await requireCodeCli(ref).object(
-      taskListArgs(
-        projectId: projectId,
-        grid: requireCodeGrid(ref),
-        all: true,
-        limit: _pageSize,
-      ),
+      taskListArgs(projectId: projectId, grid: requireCodeGrid(ref), all: true),
     );
     if (!TaskPage.carriesTasks(json)) {
       // Checked on presence, not truthiness. An empty list is a real answer; a
@@ -65,9 +53,7 @@ class CodeTasksController extends AsyncNotifier<List<CodeTask>> {
         'one. Try again in a moment.',
       );
     }
-    final page = TaskPage.fromJson(json);
-    nextAfter = page.nextAfter;
-    return page.tasks;
+    return TaskPage.fromJson(json).tasks;
   }
 
   void _schedule(List<CodeTask> tasks) {
