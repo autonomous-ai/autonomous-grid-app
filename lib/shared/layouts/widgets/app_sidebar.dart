@@ -111,25 +111,31 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
 /// A segmented control rather than two nav rows, because the choice is
 /// exclusive and changes what every row *under* it means — a nav row that
 /// replaced the whole rail would be the only one in the list that did.
+///
+/// Drawn only when this build has more than one half to offer (see
+/// [visibleShellModes]). With Code developer-gated, a shipped build has just
+/// Home — and a switch with one segment is a control that answers a question
+/// nobody was asked, above a rail it cannot change.
 class _ModeSwitch extends ConsumerWidget {
   const _ModeSwitch();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final modes = visibleShellModes;
+    if (modes.length < 2) return const SizedBox.shrink();
     final mode = ref.watch(shellModeProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: Align(
         alignment: Alignment.centerLeft,
         child: AppSegmented(
-          segments: const [
-            SegmentSpec(label: 'Home', icon: LucideIcons.house300),
-            SegmentSpec(label: 'Code', icon: LucideIcons.codeXml300),
+          segments: [
+            for (final half in modes)
+              SegmentSpec(label: half.label, icon: half.icon),
           ],
-          selected: mode.index,
-          onChanged: (index) => ref
-              .read(shellModeProvider.notifier)
-              .select(ShellMode.values[index]),
+          selected: modes.indexOf(mode),
+          onChanged: (index) =>
+              ref.read(shellModeProvider.notifier).select(modes[index]),
         ),
       ),
     );
