@@ -71,12 +71,17 @@ class ShellModeNotifier extends Notifier<ShellMode> {
   }
 }
 
-/// Whether the left rail is folded away to give the pane the whole window.
+/// Whether the left rail is folded down to its glyphs to give the pane more of
+/// the window.
+///
+/// Folded, **not gone**: `AppSidebarMini` takes the wide rail's place, so the
+/// app keeps its navigation at every width and the fold costs only what needs
+/// words (the chat list, the project tree). A rail that vanished left the whole
+/// nav behind one borrowed button in the top bar.
 ///
 /// Session state, like [shellModeProvider]: a rail you collapsed to read a wide
 /// diff should come back on the next launch, which is what the app is *for*.
-/// The toggle lives on the rail's own header when open, and moves to the top
-/// bar when closed — the two are the same [toggle].
+/// The toggle lives on the rail's own head in both states — the same [toggle].
 final sidebarCollapsedProvider =
     NotifierProvider<SidebarCollapsedNotifier, bool>(
       SidebarCollapsedNotifier.new,

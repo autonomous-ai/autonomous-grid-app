@@ -19,10 +19,10 @@ import '../../infrastructure/platform/desktop_notifier.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
 import 'shell_state.dart';
-import 'widgets/app_sidebar.dart';
 import 'widgets/app_top_bar.dart';
 import 'widgets/section_view.dart';
 import 'widgets/session_expired_banner.dart';
+import 'widgets/sidebar_fold.dart';
 
 /// The main app frame: the sidebar on the left, the open section on the right.
 ///
@@ -214,28 +214,29 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 }
 
-class _MainShellBody extends ConsumerWidget {
+class _MainShellBody extends StatelessWidget {
   const _MainShellBody();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Collapsed: the rail is dropped from the Row entirely rather than shrunk to
-    // a sliver. Its content doesn't reflow into a narrow strip — it's a fixed
-    // 284px — so animating the width would just clip it, and a zero-width child
-    // still lays out. The top bar grows an expand button in its place.
-    final collapsed = ref.watch(sidebarCollapsedProvider);
-    // No cast shadow between the rail and the pane — the sidebar's own right
+  Widget build(BuildContext context) {
+    // Collapsing narrows the rail, it never drops it — [SidebarFold] owns both
+    // widths and the animation between them, and watches the collapsed flag
+    // itself. That is why this widget reads no provider at all any more: the
+    // fold has to rebuild 60 times a second while it runs, and it must not drag
+    // the pane's whole subtree through those rebuilds with it.
+    //
+    // No cast shadow between the rail and the pane — the rail's own right
     // hairline is the separator, the way Codex draws it. Flat and clean.
-    return Row(
+    return const Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!collapsed) const AppSidebar(),
+        SidebarFold(),
         Expanded(
           child: Column(
             children: [
-              const AppTopBar(),
-              const SessionExpiredBanner(),
-              const Expanded(child: _SectionView()),
+              AppTopBar(),
+              SessionExpiredBanner(),
+              Expanded(child: _SectionView()),
             ],
           ),
         ),

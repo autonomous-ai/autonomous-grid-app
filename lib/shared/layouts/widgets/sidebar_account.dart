@@ -12,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/anchored_menu_position.dart';
 import '../../widgets/labeled_field.dart';
 import '../shell_state.dart';
+import 'app_sidebar_mini.dart';
 
 const _accountMenuWidth = 232.0;
 
@@ -61,7 +62,12 @@ Size _accountMenuSize({required bool updater, required bool version}) => Size(
 /// having to be hunted for. Check outcomes are toasted app-wide by
 /// `UpdateToastScope`.
 class SidebarAccount extends ConsumerStatefulWidget {
-  const SidebarAccount({super.key});
+  const SidebarAccount({super.key, this.compact = false});
+
+  /// The avatar alone, for the folded rail: there is no room beside it for a
+  /// name and an email, and both are already in the menu it opens. Same anchor,
+  /// same menu — only the face of it changes.
+  final bool compact;
 
   @override
   ConsumerState<SidebarAccount> createState() => _SidebarAccountState();
@@ -99,6 +105,27 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     // _AccountMenuContent: they live in a detached overlay this build can't reach
     // once the menu is open.)
     AppTheme.watch(context);
+
+    // The padding sits *outside* the anchor on purpose: MenuAnchor measures its
+    // whole subtree, so a padded wrapper would make it hang off a box 15px taller
+    // than the pill you can see — and the menu would float above nothing.
+    //
+    // Folded, the same rule sends the [Center] outside too: it hands the anchor
+    // loose constraints so the tile measures 40px rather than being stretched to
+    // the rail's width, and a 72px-wide anchor would hang the menu off a box
+    // wider than anything drawn.
+    return Padding(
+      padding: widget.compact
+          ? const EdgeInsets.fromLTRB(0, 6, 0, 9)
+          : const EdgeInsets.fromLTRB(10, 6, 10, 9),
+      child: widget.compact ? Center(child: _anchor()) : _anchor(),
+    );
+  }
+
+  /// The account pill and the menu hanging off it — built here rather than
+  /// inline so [build] can wrap it in a [Center] when the rail is folded without
+  /// duplicating the whole anchor.
+  Widget _anchor() {
     final session = ref.watch(sessionProvider);
     final email = session.userEmail ?? '—';
     final name = session.user['name'] as String? ?? email;
@@ -111,42 +138,42 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
       version: version != null,
     );
 
-    // The padding sits *outside* the anchor on purpose: MenuAnchor measures its
-    // whole subtree, so a padded wrapper would make it hang off a box 15px taller
-    // than the pill you can see — and the menu would float above nothing.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 9),
-      child: MenuAnchor(
-        controller: _menu,
-        // `appMenuStyle()` is the app's one menu-panel recipe: a fill lifted
-        // clear of *both* grounds a menu can open over, a hairline rim, and a
-        // deeper shadow. This used to pass `AppPalette.cardBg` — #1E1E1E, which
-        // sits at 1.02:1 against a #202020 block and is pure white on white in
-        // light, so the panel had no edge and the rows floated loose on the
-        // page. Only the width is ours; everything else is the shared recipe.
-        style: appMenuStyle().copyWith(
-          minimumSize: const WidgetStatePropertyAll(Size(_accountMenuWidth, 0)),
+    return MenuAnchor(
+      controller: _menu,
+      // `appMenuStyle()` is the app's one menu-panel recipe: a fill lifted
+      // clear of *both* grounds a menu can open over, a hairline rim, and a
+      // deeper shadow. This used to pass `AppPalette.cardBg` — #1E1E1E, which
+      // sits at 1.02:1 against a #202020 block and is pure white on white in
+      // light, so the panel had no edge and the rows floated loose on the
+      // page. Only the width is ours; everything else is the shared recipe.
+      style: appMenuStyle().copyWith(
+        minimumSize: const WidgetStatePropertyAll(Size(_accountMenuWidth, 0)),
+      ),
+      menuChildren: [
+        _AccountMenuContent(
+          version: version,
+          updateAvailable: available,
+          updaterSupported: updater.isSupported,
+          onSelected: (value) => _onSelected(context, ref, updater, value),
         ),
-        menuChildren: [
-          _AccountMenuContent(
-            version: version,
-            updateAvailable: available,
-            updaterSupported: updater.isSupported,
-            onSelected: (value) => _onSelected(context, ref, updater, value),
-          ),
-        ],
-        builder: (context, controller, _) => Semantics(
-          button: true,
-          label: 'Account',
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _toggleMenu(context, controller, menuSize),
-            child: _AccountRow(
-              name: name,
-              email: email,
-              updateAvailable: available != null,
-            ),
-          ),
+      ],
+      builder: (context, controller, _) => Semantics(
+        button: true,
+        label: 'Account',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _toggleMenu(context, controller, menuSize),
+          child: widget.compact
+              ? _AccountTile(
+                  name: name,
+                  email: email,
+                  updateAvailable: available != null,
+                )
+              : _AccountRow(
+                  name: name,
+                  email: email,
+                  updateAvailable: available != null,
+                ),
         ),
       ),
     );
@@ -494,6 +521,62 @@ class _AccountRowState extends State<_AccountRow> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The same account button folded to its avatar, for [AppSidebarMini].
+///
+/// Not the pill with the email hidden: at 72px the recessed pill would be a
+/// rounded box hugging a circle, which reads as a second ring around the avatar.
+/// So the tile borrows the folded rail's own recipe instead — a 40px square that
+/// takes [AppSurface.hoverFill] under the pointer — and the email it can no
+/// longer show moves into the tooltip.
+class _AccountTile extends StatefulWidget {
+  const _AccountTile({
+    required this.name,
+    required this.email,
+    required this.updateAvailable,
+  });
+
+  final String name;
+  final String email;
+  final bool updateAvailable;
+
+  @override
+  State<_AccountTile> createState() => _AccountTileState();
+}
+
+class _AccountTileState extends State<_AccountTile> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final name = widget.name.trim();
+    final initial = name.isEmpty ? '?' : name[0].toUpperCase();
+    return Tooltip(
+      message: widget.email,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: AnimatedContainer(
+          duration: AppMotion.hover,
+          curve: AppMotion.curve,
+          width: MiniRailItem.box,
+          height: MiniRailItem.box,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _hovered ? AppSurface.hoverFill : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppControl.radius),
+          ),
+          child: _Avatar(
+            initial: initial,
+            updateAvailable: widget.updateAvailable,
           ),
         ),
       ),

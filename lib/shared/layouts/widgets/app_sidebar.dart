@@ -46,15 +46,21 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
 
   @override
   Widget build(BuildContext context) {
-    // Subscribe to the app brightness so the rail re-colours the instant the
-    // theme flips. Without this the sidebar is `const`-mounted and reads its
-    // colours from a global the element tree can't see, so it only repainted
-    // when some *other* change (clicking a row) happened to rebuild it.
+    // Subscribe to the app brightness even though the surface moved out to
+    // [SidebarFold]: this is where the rail's `const` children are constructed,
+    // and a `const` child is not rebuilt by an ancestor's rebuild. Dropping the
+    // subscription here would leave anything below that *isn't* watching for
+    // itself painted in the palette it first mounted with.
     AppTheme.watch(context);
     final mode = ref.watch(shellModeProvider);
 
-    // Codex keeps the rail flat and quiet: a near-white fill set apart from the
-    // content by a single hairline on its right edge — no gradient, no cast
+    // Contents only — the fill and the hairline against the pane belong to
+    // [SidebarFold], which draws one surface under whichever rail is showing so
+    // the fold doesn't stack two translucent fills or strand a second hairline
+    // mid-animation.
+    //
+    // Codex keeps that surface flat and quiet: a near-white fill set apart from
+    // the content by a single hairline on its right edge — no gradient, no cast
     // shadow.
     //
     // No backdrop blur either, and it was never doing anything: the rail is the
@@ -66,39 +72,33 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
     // boundary that would otherwise keep one row's animation to that one row.
     // Selecting a chat re-blurred the entire sidebar, every frame.
     return ClipRect(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppGlass.sidebarFill,
-          border: Border(right: BorderSide(color: AppPalette.divider)),
-        ),
-        child: SizedBox(
-          width: AppSidebar.width,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _Brand(
-                onSearch: () => showCommandPalette(context),
-                onCollapse: () =>
-                    ref.read(sidebarCollapsedProvider.notifier).toggle(),
-              ),
-              const _ModeSwitch(),
-              // The two halves keep their own rails. Nothing is shared between
-              // them below this line except the account at the foot — which is
-              // the point: they are two places to work, not two filters over
-              // one list.
-              Expanded(
-                child: switch (mode) {
-                  ShellMode.home => _HomeRail(onNewChat: _newChat),
-                  ShellMode.code => const CodeRail(),
-                },
-              ),
-              // A full-width hairline sets the account off as the rail's foot,
-              // the way Codex separates its signed-in user from the list above.
-              const Divider(height: 1, thickness: 1),
-              const SizedBox(height: 4),
-              const SidebarAccount(),
-            ],
-          ),
+      child: SizedBox(
+        width: AppSidebar.width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Brand(
+              onSearch: () => showCommandPalette(context),
+              onCollapse: () =>
+                  ref.read(sidebarCollapsedProvider.notifier).toggle(),
+            ),
+            const _ModeSwitch(),
+            // The two halves keep their own rails. Nothing is shared between
+            // them below this line except the account at the foot — which is
+            // the point: they are two places to work, not two filters over
+            // one list.
+            Expanded(
+              child: switch (mode) {
+                ShellMode.home => _HomeRail(onNewChat: _newChat),
+                ShellMode.code => const CodeRail(),
+              },
+            ),
+            // A full-width hairline sets the account off as the rail's foot,
+            // the way Codex separates its signed-in user from the list above.
+            const Divider(height: 1, thickness: 1),
+            const SizedBox(height: 4),
+            const SidebarAccount(),
+          ],
         ),
       ),
     );
