@@ -41,6 +41,28 @@ class GitTooOld extends GitStatus {
   final String version;
 }
 
+/// A Git new enough by its version number, but which cannot carry the grid's
+/// sign-in: `git credential capability` doesn't report `authtype`.
+///
+/// Its own state rather than one more [GitTooOld], because the sentence the two
+/// deserve is different — this Git may be *newer* than the floor and still not
+/// clone a grid project, and telling that user to "upgrade" sends them to
+/// install something they already have. `authtype` is the only way a credential
+/// helper can name a scheme; without it git sends Basic, which the relay
+/// refuses, so `grid project clone` stops before writing anything (its own
+/// `require_credential_capability`).
+///
+/// Measured on this machine, and the reason this state exists: a git 2.33 left
+/// behind by an old installer at `/usr/local/bin` shadowed the git 2.50 at
+/// `/usr/bin`, and every clone failed with advice to upgrade a Git that was
+/// already installed.
+class GitCannotCarryCredential extends GitStatus {
+  const GitCannotCarryCredential({required this.path, required this.version});
+
+  final String path;
+  final String version;
+}
+
 /// How long a probe may take. A `git --version` answers in milliseconds; the
 /// bound is here because a stub or a stalled network drive must not hang the
 /// caller (`HermesAcpSetup` bounds its own check for the same reason).
@@ -68,13 +90,54 @@ Future<GitStatus> probeGit() async {
   return _classify(theirs.path, theirs.version, ours: false);
 }
 
-GitStatus _classify(String path, String version, {required bool ours}) {
+Future<GitStatus> _classify(
+  String path,
+  String version, {
+  required bool ours,
+}) async {
   final parsed = parseGitVersion(version);
   if (parsed != null && !isSupportedGitVersion(parsed)) {
     return GitTooOld(path: path, version: version);
   }
+  if (!await _carriesBearer(path)) {
+    return GitCannotCarryCredential(path: path, version: version);
+  }
   return GitReady(path: path, version: version, ours: ours);
 }
+
+/// Whether the Git at [path] can hand the relay a `Bearer` credential.
+///
+/// The same question `grid project clone` asks before it writes anything, asked
+/// here so the answer arrives on the Git screen rather than as a failed clone.
+/// A version number can't stand in for it: this is a capability a build either
+/// announces or doesn't, and reading it off the release number would be a guess
+/// about every vendor build in the world.
+///
+/// Unreadable answers read as **no**: an old Git has no `credential capability`
+/// subcommand at all and prints its usage line to stderr, which is exactly the
+/// case this exists to catch.
+Future<bool> _carriesBearer(String path) async {
+  try {
+    final result = await Process.run(path, [
+      'credential',
+      'capability',
+    ]).timeout(kGitProbeTimeout);
+    if (result.exitCode != 0) return false;
+    return reportsAuthtype(result.stdout as String);
+  } on Object {
+    return false;
+  }
+}
+
+/// Whether `git credential capability` [output] announces `authtype`.
+///
+/// Pure, so `test/code/` can pin it without a Git on the machine. The shape is
+/// a `version 0` line followed by one `capability <name>` line each — measured
+/// on git 2.50.1: `version 0` / `capability authtype` / `capability state`.
+bool reportsAuthtype(String output) => output
+    .split('\n')
+    .map((line) => line.trim())
+    .any((line) => line == 'capability authtype');
 
 /// The Git the app unpacked, whether or not it is there yet.
 String _ourGitPath() {

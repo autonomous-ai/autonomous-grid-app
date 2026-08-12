@@ -52,6 +52,16 @@ class BackgroundGitInstaller {
         // than here. Ours goes in beside it; the log keeps the reason, because
         // from here on the user's own git is not the one being run.
         log.warn('git', 'Git at $path is too old ($version) — installing ours');
+      case GitCannotCarryCredential(:final version, :final path):
+        // Runs, and may even be recent, but cannot hand the relay a `Bearer`
+        // credential — so every `grid project clone` would fail on a machine
+        // whose Git looks perfectly healthy. Ours can, and it goes ahead of
+        // this one on the PATH the app hands its children.
+        log.warn(
+          'git',
+          'Git at $path ($version) cannot carry the grid credential '
+              '(no `authtype`) — installing ours',
+        );
       case GitMissing():
         log.info('git', 'No Git on this computer — installing ours');
     }
