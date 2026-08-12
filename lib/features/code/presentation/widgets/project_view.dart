@@ -10,11 +10,13 @@ import '../../../../shared/widgets/toast.dart';
 import '../../../playground/presentation/transcript_view.dart';
 import '../../logic/code_project.dart';
 import '../../logic/code_projects_controller.dart';
+import '../../logic/code_side_panel.dart';
 import '../../logic/project_flow.dart';
 import '../../logic/project_status.dart';
 import '../../logic/project_status_controller.dart';
 import 'code_failure.dart';
 import 'code_notice.dart';
+import 'code_side_panel.dart';
 import 'import_repo_dialog.dart';
 import 'project_header_actions.dart';
 import 'task_composer.dart';
@@ -42,25 +44,54 @@ class ProjectView extends ConsumerWidget {
         .firstOrNull;
     final status = ref.watch(projectStatusProvider(projectId));
 
+    // The side panel — the clone browsed, its diff reviewed, a terminal in it —
+    // only earns its place once the project has code to work on, and only when
+    // the user has asked for it.
+    final hasCode = switch (status) {
+      AsyncData(:final value) => !value.needsImport,
+      _ => false,
+    };
+    final panelOpen = ref.watch(codeSidePanelOpenProvider) && hasCode;
+
     return SectionScaffold(
       title: project?.name ?? 'Project',
       subtitle:
           'Ask for a change. A computer on the grid runs it and pushes the '
           'result to your own branch — nobody works on top of anybody else.',
-      child: switch (status) {
-        AsyncData(:final value) when value.needsImport => _NeedsImport(
-          projectId: projectId,
-        ),
-        AsyncData(:final value) => _Conversation(
-          status: value,
-          project: project,
-        ),
-        AsyncError(:final error) => CodeFailure(
-          message: '$error',
-          onRetry: () => ref.invalidate(projectStatusProvider(projectId)),
-        ),
-        _ => const LoadingView(),
-      },
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: switch (status) {
+              AsyncData(:final value) when value.needsImport => _NeedsImport(
+                projectId: projectId,
+              ),
+              AsyncData(:final value) => _Conversation(
+                status: value,
+                project: project,
+              ),
+              AsyncError(:final error) => CodeFailure(
+                message: '$error',
+                onRetry: () => ref.invalidate(projectStatusProvider(projectId)),
+              ),
+              _ => const LoadingView(),
+            },
+          ),
+          if (panelOpen) ...[
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 460,
+              child: CodeSidePanel(
+                // Keyed so its Files/Review/Terminal belong to the open project
+                // and a switch re-roots them at the new one's copy.
+                key: ValueKey(projectId),
+                projectId: projectId,
+                projectName: project?.name,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -128,6 +159,7 @@ class _Conversation extends ConsumerWidget {
               // "Who is in it" only appears where pressing it would work.
               canInvite: project?.isOwner ?? false,
             ),
+            const _PanelToggle(),
           ],
         ),
         const SizedBox(height: 12),
@@ -179,6 +211,28 @@ class _Conversation extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Opens the side panel — the project's copy on this computer, browsable, its
+/// changes reviewable, a terminal in it. The same right-panel toggle the chat's
+/// top bar carries, here beside the project's own tools.
+class _PanelToggle extends ConsumerWidget {
+  const _PanelToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final open = ref.watch(codeSidePanelOpenProvider);
+    return IconButton(
+      tooltip: open ? 'Hide the code panel' : 'Open the code panel',
+      iconSize: 18,
+      visualDensity: VisualDensity.compact,
+      isSelected: open,
+      color: AppPalette.textSecondary,
+      icon: const Icon(LucideIcons.panelRight300),
+      onPressed: () => ref.read(codeSidePanelOpenProvider.notifier).toggle(),
     );
   }
 }

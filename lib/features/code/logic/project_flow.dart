@@ -2,10 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/grid_paths.dart';
-import 'code_argv.dart';
 import 'code_errors.dart';
 import 'code_projects_controller.dart';
+import 'code_workdir.dart';
 import 'code_task.dart';
 import 'code_tasks_controller.dart';
 import 'integration.dart';
@@ -270,9 +269,8 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
     }
   }
 
-  /// Where this project's working copy lives on disk. The folder is named after
-  /// the project, falling back to its id — the CLI owns the folder, and re-clones
-  /// into the one a previous clone of *this* project made.
+  /// Where this project's working copy lives on disk — the fixed, app-owned path
+  /// the header button opens and the side panel browses.
   String _localCopyDir() {
     final name = ref
         .read(codeProjectsProvider)
@@ -280,11 +278,7 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
         ?.where((project) => project.id == projectId)
         .map((project) => project.name)
         .firstOrNull;
-    final folder = cloneFolderName(
-      projectName: name ?? '',
-      projectId: projectId,
-    );
-    return GridPaths.projectCodeDir(folder).path;
+    return projectClonePath(projectName: name ?? '', projectId: projectId);
   }
 
   void _notify(String message, FlowLevel level) {
