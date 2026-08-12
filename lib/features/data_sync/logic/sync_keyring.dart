@@ -132,7 +132,12 @@ class SyncKeyBlob {
       nonce: _bytes(json['nonce'], 'nonce'),
       wrapped: _bytes(json['wrapped'], 'wrapped'),
       memoryKib: _cost(json['m'], syncKdfMemoryKib, syncKdfMaxMemoryKib, 'm'),
-      iterations: _cost(json['t'], syncKdfIterations, syncKdfMaxIterations, 't'),
+      iterations: _cost(
+        json['t'],
+        syncKdfIterations,
+        syncKdfMaxIterations,
+        't',
+      ),
       parallelism: _cost(
         json['p'],
         syncKdfParallelism,

@@ -34,7 +34,10 @@ Future<List<String>> readRecentAppErrors({
     );
     if (!await file.exists()) return const [];
     final tail = await _readTail(file);
-    return recentErrorLines(sanitize == null ? tail : sanitize(tail), keep: keep);
+    return recentErrorLines(
+      sanitize == null ? tail : sanitize(tail),
+      keep: keep,
+    );
   } on Object {
     return const [];
   }
