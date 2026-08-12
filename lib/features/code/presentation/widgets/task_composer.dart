@@ -10,6 +10,7 @@ import '../../../../shared/widgets/composer_keys.dart';
 import '../../../../shared/widgets/liquid_glass.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../logic/code_argv.dart';
+import '../../logic/code_side_panel.dart';
 import '../../logic/project_flow.dart';
 
 /// The box at the foot of a project: say what should be done, attach anything
@@ -110,6 +111,15 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    // Review's "ask about this" drops its message here rather than sending it,
+    // the same way the chat's panels hand a message to its composer. Put in the
+    // box, ready to edit, so the request is still the user's to word and send.
+    ref.listen(codeComposerPrefillProvider, (_, text) {
+      if (text == null) return;
+      _prompt.text = text;
+      _prompt.selection = TextSelection.collapsed(offset: text.length);
+      ref.read(codeComposerPrefillProvider.notifier).taken();
+    });
     return LiquidGlass(
       borderRadius: BorderRadius.circular(18),
       fill: AppGlass.surfaceFill,

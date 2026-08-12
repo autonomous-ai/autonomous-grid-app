@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/grid_paths.dart';
 import '../../../../infrastructure/cli/host_shell_service.dart';
 import '../../../../shared/widgets/toast.dart';
-import '../../logic/code_argv.dart';
+import '../../logic/code_workdir.dart';
 import '../../logic/project_actions.dart';
 import '../../logic/project_status.dart';
 import 'members_dialog.dart';
@@ -50,13 +49,10 @@ class _ProjectHeaderActionsState extends ConsumerState<ProjectHeaderActions> {
   /// The fixed, app-owned place this project's code lives on disk. No folder
   /// picker: the copy is not the user's to file away, it is the app's to keep
   /// current — the same path [ProjectFlow] refreshes after a task ships.
-  String get _copyDir {
-    final folder = cloneFolderName(
-      projectName: widget.projectName ?? '',
-      projectId: widget.status.projectId,
-    );
-    return GridPaths.projectCodeDir(folder).path;
-  }
+  String get _copyDir => projectClonePath(
+    projectName: widget.projectName ?? '',
+    projectId: widget.status.projectId,
+  );
 
   /// Make sure the copy exists and is current, then open it. `clone` creates the
   /// folder the first time and re-clones into its own the times after, so this
