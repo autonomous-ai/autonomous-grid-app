@@ -6,14 +6,16 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/section_scaffold.dart';
+import '../../../../shared/widgets/toast.dart';
 import '../../logic/code_project.dart';
 import '../../logic/code_projects_controller.dart';
+import '../../logic/project_flow.dart';
 import '../../logic/project_status.dart';
 import '../../logic/project_status_controller.dart';
 import 'code_failure.dart';
 import 'code_notice.dart';
 import 'import_repo_dialog.dart';
-import 'project_actions_bar.dart';
+import 'project_header_actions.dart';
 import 'task_composer.dart';
 import 'task_transcript.dart';
 
@@ -85,32 +87,60 @@ class _NeedsImport extends StatelessWidget {
 
 /// The working screen: what can be done to the project, what has been run
 /// against it, and the box for the next thing.
-class _Conversation extends StatelessWidget {
+class _Conversation extends ConsumerWidget {
   const _Conversation({required this.status, required this.project});
 
   final ProjectStatus status;
   final GridProject? project;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final holder = status.slotHolder;
+    // The flow catches up and publishes on its own; the one thing the user has
+    // to be told is what it did without them, so a promote that failed doesn't
+    // pass in silence. Toasted here rather than in the flow, which has no
+    // context of its own.
+    ref.listen(projectFlowProvider(status.projectId).select((s) => s.notice), (
+      _,
+      notice,
+    ) {
+      if (notice == null || !context.mounted) return;
+      ToastScope.show(
+        context,
+        ToastSpec(message: notice.message, severity: _severity(notice.level)),
+      );
+    });
+    final publishing = ref.watch(
+      projectFlowProvider(status.projectId).select((s) => s.isPublishing),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ProjectActionsBar(
-          status: status,
-          projectName: project?.name,
-          // Admitting people is the owner's call, so the button only appears
-          // where pressing it would work.
-          canInvite: project?.isOwner ?? false,
+        Row(
+          children: [
+            Expanded(child: _Distance(status: status)),
+            ProjectHeaderActions(
+              status: status,
+              projectName: project?.name,
+              // Admitting people is the owner's call, so the invite behind
+              // "Who is in it" only appears where pressing it would work.
+              canInvite: project?.isOwner ?? false,
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        _Distance(status: status),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         Expanded(child: TaskTranscript(projectId: status.projectId)),
-        // Everything that says why the next thing may not go as expected sits
-        // directly above the box that starts it, in the order it would bite:
-        // your own slot first, then the grid having nobody to run it.
+        // What the flow is doing on its own, and why the next thing may not go
+        // as expected — above the box that starts it, in the order each bites:
+        // a publish in flight, then your own slot, then nobody to run it.
+        if (publishing) ...[
+          const SizedBox(height: 10),
+          const CodeNotice(
+            icon: Icons.cloud_upload_outlined,
+            message: 'Publishing your finished task to the team…',
+          ),
+        ],
         if (holder != null) ...[
           const SizedBox(height: 10),
           CodeNotice(
@@ -156,7 +186,17 @@ class _Distance extends StatelessWidget {
     AppTheme.watch(context);
     return Text(
       distanceSummary(status),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
       style: TextStyle(fontSize: 12.5, color: AppPalette.textFaint),
     );
   }
 }
+
+/// The toast tier for a thing the flow reported.
+ToastSeverity _severity(FlowLevel level) => switch (level) {
+  FlowLevel.info => ToastSeverity.info,
+  FlowLevel.success => ToastSeverity.success,
+  FlowLevel.warning => ToastSeverity.warning,
+  FlowLevel.error => ToastSeverity.error,
+};
