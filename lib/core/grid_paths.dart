@@ -121,6 +121,19 @@ class GridPaths {
   /// with `/`. App-owned; the CLI never touches it.
   static File get promptsFile => File('${home.path}/app/prompts.json');
 
+  /// Working checkouts of the shared code projects, one folder each
+  /// (`~/.grid/app/code/<project>`). The app keeps them here rather than asking
+  /// the user where to put them, and refreshes each after one of their tasks
+  /// ships — so "the code on this computer" is a place, not a chore. Written by
+  /// `grid project clone`, which owns the folder and is the only thing that may
+  /// re-clone into it.
+  static Directory get codeDir => Directory('${home.path}/app/code');
+
+  /// Where the working checkout of the project in [folder] lives — a folder name
+  /// built by `cloneFolderName`, not a raw project name.
+  static Directory projectCodeDir(String folder) =>
+      Directory('${codeDir.path}/$folder');
+
   /// How much context each model turned out to have (`{"<model id>": 96000}`),
   /// learned from the engines themselves. App-owned; the CLI never touches it.
   static File get modelContextFile =>

@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/grid_paths.dart';
+import 'code_argv.dart';
 import 'code_errors.dart';
+import 'code_projects_controller.dart';
 import 'code_task.dart';
 import 'code_tasks_controller.dart';
 import 'integration.dart';
@@ -77,6 +80,9 @@ class ProjectFlowState {
 ///      agent builds on the team's latest rather than on stale code — which is
 ///      also what lets the publish afterwards be a fast-forward at all.
 ///   2. **After it completes**, move the trunk to the result.
+///   3. **Once it has shipped**, refresh the working copy the app keeps on this
+///      computer (`~/.grid/app/code/<project>`), so the code on disk is the code
+///      that just landed — the third button, "Get a copy", made automatic too.
 ///
 /// ⚠️ **Publish has no undo, and this does it with no review.** Every task a
 /// member runs lands on the team's `main` the moment it finishes. That is the
@@ -222,6 +228,11 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
             : 'Your task changed nothing to publish.',
         result.advanced ? FlowLevel.success : FlowLevel.info,
       );
+      // New code shipped, so bring the on-disk copy up to it. Fire-and-forget:
+      // it is a git transfer that can take minutes, and it must not hold up the
+      // "Published" the user is waiting on. Only when something actually moved —
+      // a no-op publish left the copy already current.
+      if (result.advanced) unawaited(_syncLocalCopy());
     } on Object catch (error) {
       // Most often the team's main moved while the task ran, so a fast-forward
       // is refused. Not swallowed and not retried behind their back: publish has
@@ -238,6 +249,42 @@ class ProjectFlow extends Notifier<ProjectFlowState> {
         );
       }
     }
+  }
+
+  /// Bring the app's working copy of this project up to what just shipped —
+  /// `~/.grid/app/code/<project>`, the same fixed place the "Get a copy" button
+  /// opens. Silent on success: the copy is a place the user opens when they want
+  /// it, not an event. Only a failure is worth a word, and it does not touch the
+  /// publish that already succeeded.
+  Future<void> _syncLocalCopy() async {
+    final dir = _localCopyDir();
+    try {
+      await ref.read(projectActionsProvider).clone(projectId, dir);
+    } on Object catch (error) {
+      if (!ref.mounted) return;
+      _notify(
+        'Published, but couldn’t refresh your copy on this computer '
+        '($error). Open it again to update it.',
+        FlowLevel.warning,
+      );
+    }
+  }
+
+  /// Where this project's working copy lives on disk. The folder is named after
+  /// the project, falling back to its id — the CLI owns the folder, and re-clones
+  /// into the one a previous clone of *this* project made.
+  String _localCopyDir() {
+    final name = ref
+        .read(codeProjectsProvider)
+        .value
+        ?.where((project) => project.id == projectId)
+        .map((project) => project.name)
+        .firstOrNull;
+    final folder = cloneFolderName(
+      projectName: name ?? '',
+      projectId: projectId,
+    );
+    return GridPaths.projectCodeDir(folder).path;
   }
 
   void _notify(String message, FlowLevel level) {

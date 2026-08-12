@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/core/grid_paths.dart';
 import 'package:grid_app/features/code/logic/code_argv.dart';
 import 'package:grid_app/features/code/logic/code_errors.dart';
 import 'package:grid_app/features/code/logic/code_projects_controller.dart';
@@ -15,6 +16,18 @@ import 'package:grid_app/infrastructure/providers.dart';
 const _grid = 'grid-1';
 const _project = 'P1';
 const _member = 'MK';
+const _projectName = 'mac-e2e';
+
+/// Where the flow keeps this project's working copy — the fixed, app-owned path
+/// it clones into after a task ships. Computed the same way the flow does, from
+/// the project's name.
+String get _copyDir => GridPaths.projectCodeDir(
+  cloneFolderName(projectName: _projectName, projectId: _project),
+).path;
+
+List<String> get _clone =>
+    projectCloneArgs(projectId: _project, directory: _copyDir, grid: _grid);
+List<String> get _projectList => projectListArgs(grid: _grid);
 
 CliResult _ok(Object body) =>
     CliResult(exitCode: 0, stdout: jsonEncode(body), stderr: '');
@@ -47,6 +60,18 @@ FakeGridCliService _cli() => FakeGridCliService()
   ..stubResult(_status, _statusReply())
   ..stubResult(_list, _tasks([]))
   ..stubResult(
+    _projectList,
+    _ok({
+      'projects': [
+        {'id': _project, 'name': _projectName},
+      ],
+    }),
+  )
+  ..stubResult(
+    _clone,
+    _ok({'path': _copyDir, 'branch': 'wip/$_member', 'trunk': 'main'}),
+  )
+  ..stubResult(
     _promote,
     _ok({
       'branch': 'main',
@@ -64,11 +89,14 @@ Future<ProviderContainer> _open(FakeGridCliService cli) async {
     ],
   );
   addTearDown(container.dispose);
-  // Build the flow (which listens to the task list) and prime both polled
-  // reads, so a submit runs against a settled screen.
+  // Build the flow (which listens to the task list) and prime the reads a
+  // submit runs against: the two polled ones, and the project list the flow
+  // reads the name out of to place the on-disk copy.
   container.listen(projectFlowProvider(_project), (_, _) {});
+  container.listen(codeProjectsProvider, (_, _) {});
   await container.read(codeTasksProvider(_project).future);
   await container.read(projectStatusProvider(_project).future);
+  await container.read(codeProjectsProvider.future);
   return container;
 }
 
@@ -169,6 +197,40 @@ void main() {
         container.read(projectFlowProvider(_project)).notice?.level,
         FlowLevel.success,
       );
+    });
+
+    test('shipping a task refreshes the copy at ~/.grid/app/code', () async {
+      // The third button, made automatic: once code lands on the team, the
+      // on-disk copy is brought up to it, at the app's own fixed path.
+      final cli = _cli()
+        ..stubResult(_create('go'), _ok({'id': 'T1', 'state': 'queued'}))
+        ..stubResult(_list, _tasks([_done('T1')]));
+      final container = await _open(cli);
+
+      await _flow(container).submit(prompt: 'go', files: const []);
+      await _settle();
+
+      expect(_ran(cli, _clone), isTrue);
+      expect(_copyDir, endsWith('/app/code/$_projectName'));
+    });
+
+    test('a publish that moved nothing does not re-clone', () async {
+      // A no-op publish (the task wrote nothing new) leaves the copy already
+      // current, so there is nothing to fetch.
+      final cli = _cli()
+        ..stubResult(_create('go'), _ok({'id': 'T1', 'state': 'queued'}))
+        ..stubResult(_list, _tasks([_done('T1')]))
+        ..stubResult(
+          _promote,
+          _ok({'branch': 'main', 'advanced': false, 'commit': 'b' * 40}),
+        );
+      final container = await _open(cli);
+
+      await _flow(container).submit(prompt: 'go', files: const []);
+      await _settle();
+
+      expect(_ran(cli, _promote), isTrue);
+      expect(_ran(cli, _clone), isFalse);
     });
 
     test('a task that failed is never published', () async {
