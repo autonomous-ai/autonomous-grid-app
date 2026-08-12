@@ -116,12 +116,6 @@ class CodeTask {
   /// the grid is short of capacity, and the task itself is not at fault.
   bool get queueExpired => error == kQueueExpired;
 
-  /// There is something on the relay to fetch. A cancelled task qualifies: its
-  /// branch is left where the agent got to, which is the promise `cancel`
-  /// makes on screen.
-  bool get hasFetchableBranch =>
-      state.isTerminal && branch != null && !branchPruned;
-
   /// The first line of the prompt, for a list row. Whitespace is collapsed the
   /// way the CLI's own table does it — a prompt pasted from an editor arrives
   /// full of newlines and would otherwise make one row as tall as the list.

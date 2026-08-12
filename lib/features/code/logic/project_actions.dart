@@ -121,30 +121,6 @@ class ProjectActions {
     return result;
   }
 
-  /// One task's result on disk, for reading what an agent did.
-  ///
-  /// [into] must be a new or previously-fetched folder: checking a branch out
-  /// over somebody's own work overwrites a file of the same name without
-  /// complaining, so the CLI refuses anything else — including a folder that
-  /// merely has a `.git` in it, which is how that guard once destroyed
-  /// uncommitted work.
-  Future<FetchResult> fetch({
-    required String taskId,
-    required String into,
-  }) async {
-    final json = await requireCodeCli(_ref).object(
-      taskFetchArgs(taskId: taskId, into: into, grid: requireCodeGrid(_ref)),
-      timeout: kTransferTimeout,
-    );
-    final result = FetchResult.fromJson(json);
-    if (result == null) {
-      throw const CodeGridException(
-        'The grid did not say where the result landed. Nothing was opened.',
-      );
-    }
-    return result;
-  }
-
   /// Land files without running an agent — "the agent got it 90% right, let me
   /// fix the last line".
   ///

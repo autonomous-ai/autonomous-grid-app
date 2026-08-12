@@ -19,66 +19,31 @@ import 'task_feed_view.dart';
 /// app. The transcript widgets are borrowed from the playground for exactly that
 /// reason: a question typed here and a question typed in Chat must not look like
 /// two different kinds of thing.
-class TaskTurn extends StatefulWidget {
+class TaskTurn extends StatelessWidget {
   const TaskTurn({super.key, required this.projectId, required this.task});
 
   final String projectId;
   final CodeTask task;
 
   @override
-  State<TaskTurn> createState() => _TaskTurnState();
-}
-
-class _TaskTurnState extends State<TaskTurn> {
-  /// Whether this finished turn is showing every step the agent ran.
-  ///
-  /// Off by default, and that is the point of the answer being separate from the
-  /// working-out: a finished task is read for what it decided, and the hundreds
-  /// of tool calls behind it are there when the answer doesn't explain itself.
-  /// Turning it on is also what opens the replay stream, so a project's history
-  /// costs one process per turn somebody actually opens.
-  bool _showSteps = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final task = widget.task;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ChatBubble(
-          message: ChatMessage(role: ChatRole.user, text: task.asked),
-        ),
-        _Answer(
-          projectId: widget.projectId,
-          task: task,
-          showSteps: _showSteps,
-          // Only a task that has genuinely stopped has a "what it did" to
-          // unfold — anything still going is already showing it, and a state
-          // this build has never heard of counts as still going (see
-          // [TaskState.unknown]).
-          onToggleSteps: task.state.isTerminal
-              ? () => setState(() => _showSteps = !_showSteps)
-              : null,
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      ChatBubble(
+        message: ChatMessage(role: ChatRole.user, text: task.asked),
+      ),
+      _Answer(projectId: projectId, task: task),
+    ],
+  );
 }
 
 /// What came back: the steps while it runs, the agent's closing words when it
 /// is done, and whatever has to be said about how it ended.
 class _Answer extends ConsumerWidget {
-  const _Answer({
-    required this.projectId,
-    required this.task,
-    required this.showSteps,
-    required this.onToggleSteps,
-  });
+  const _Answer({required this.projectId, required this.task});
 
   final String projectId;
   final CodeTask task;
-  final bool showSteps;
-  final VoidCallback? onToggleSteps;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,12 +53,11 @@ class _Answer extends ConsumerWidget {
     // still be running, so it is watched rather than summed up.
     final finished = task.state.isTerminal;
     final said = task.resultText?.trim() ?? '';
-    // Only an unfinished task holds a `grid task follow` open. A finished one
-    // is replayed from the relay on demand — every turn opening its own stream
-    // would put one process per task in the project on the machine.
-    final feed = (!finished || showSteps)
-        ? ref.watch(taskFollowProvider(task.id))
-        : null;
+    // A finished task is read for what it decided — its result text — not the
+    // hundreds of tool calls behind it, so it opens no stream at all. Only an
+    // unfinished one holds a `grid task follow`, showing its steps as they
+    // happen; the moment it lands, the feed is dropped for the answer.
+    final feed = finished ? null : ref.watch(taskFollowProvider(task.id));
 
     return Align(
       alignment: Alignment.centerLeft,
@@ -104,7 +68,7 @@ class _Answer extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (feed != null) ...[
-              TaskFeedView(feed: feed, tail: finished ? null : kLiveTaskLines),
+              TaskFeedView(feed: feed, tail: kLiveTaskLines),
               if (said.isNotEmpty) const SizedBox(height: 10),
             ],
             if (said.isNotEmpty)
@@ -131,12 +95,7 @@ class _Answer extends ConsumerWidget {
                     'is still recorded here.',
               ),
             ],
-            TaskActions(
-              projectId: projectId,
-              task: task,
-              showSteps: showSteps,
-              onToggleSteps: onToggleSteps,
-            ),
+            TaskActions(projectId: projectId, task: task),
           ],
         ),
       ),
