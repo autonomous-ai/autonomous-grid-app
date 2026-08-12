@@ -10,8 +10,7 @@ import '../../../../shared/widgets/composer_keys.dart';
 import '../../../../shared/widgets/liquid_glass.dart';
 import '../../../../shared/widgets/toast.dart';
 import '../../logic/code_argv.dart';
-import '../../logic/code_tasks_controller.dart';
-import '../../logic/project_status_controller.dart';
+import '../../logic/project_flow.dart';
 
 /// The box at the foot of a project: say what should be done, attach anything
 /// the agent will need, and the grid runs it.
@@ -74,27 +73,24 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
     setState(() => _files.add(file.path));
   }
 
-  /// Hand the task to the grid.
+  /// Hand the task to the grid, catching up first.
   ///
-  /// The box is cleared on the way *out*, not on the way in: nothing is written
-  /// into the transcript until the relay has taken the task, so clearing early
-  /// would throw away a paragraph somebody typed the moment the grid refused it.
+  /// The box is cleared on the way *out*, not on the way in: nothing goes into
+  /// the transcript until the flow has caught up and the relay has taken the
+  /// task, so clearing early would throw away a paragraph somebody typed the
+  /// moment either step refused it. A conflict on catch-up is one such refusal —
+  /// the flow throws, the text stays, and the message says a merge is running
+  /// first.
   Future<void> _send() async {
     if (!_canSend) return;
     setState(() => _busy = true);
     try {
       await ref
-          .read(codeTasksProvider(widget.projectId).notifier)
-          .create(
+          .read(projectFlowProvider(widget.projectId).notifier)
+          .submit(
             prompt: _prompt.text.trim(),
             files: [for (final path in _files) fileSpec(path)],
           );
-      // This member's one slot is taken now. Read it back rather than waiting
-      // for the next poll, so Send goes quiet as the turn appears instead of a
-      // few seconds later.
-      await ref
-          .read(projectStatusProvider(widget.projectId).notifier)
-          .refresh();
       if (!mounted) return;
       setState(() {
         _prompt.clear();
@@ -180,7 +176,7 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
                   // turn in the transcript, where the thing being stopped is
                   // visible.
                   onStop: null,
-                  busyTooltip: 'Handing this to the grid…',
+                  busyTooltip: 'Catching up, then sending…',
                 ),
               ],
             ),

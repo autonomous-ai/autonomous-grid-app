@@ -166,11 +166,6 @@ class ProjectStatus {
   }
 }
 
-/// A commit as a person reads it. Full oids are forty characters of noise in a
-/// line whose job is "did this move".
-String shortCommit(String commit) =>
-    commit.length <= 8 ? commit : commit.substring(0, 8);
-
 /// How far this member's work is from the team's, in a sentence.
 ///
 /// Absent counts are said as "nothing to compare", never as `0 / 0` — that

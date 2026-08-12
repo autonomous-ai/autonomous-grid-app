@@ -57,9 +57,6 @@ class IntegrationPreview {
   /// have to be dug out of a sentence.
   final List<String> files;
 
-  /// Whether integrating would cost an agent run.
-  bool get wouldQueueAgent => status == IntegrationStatus.mergeTask;
-
   static IntegrationPreview? fromJson(Map<String, dynamic> json) {
     final status = IntegrationStatus.fromWire(wireString(json, 'status'));
     if (status == IntegrationStatus.unknown) return null;
