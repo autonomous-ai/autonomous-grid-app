@@ -29,7 +29,6 @@ void main() {
         memberRemoveArgs(projectId: _project, memberKey: 'k', grid: _grid),
         taskListArgs(projectId: _project, grid: _grid),
         taskCreateArgs(projectId: _project, prompt: 'go', grid: _grid),
-        taskGetArgs(taskId: 't', grid: _grid),
         taskFollowArgs(taskId: 't', grid: _grid),
         taskFetchArgs(taskId: 't', into: '/d', grid: _grid),
         taskCancelArgs(taskId: 't', grid: _grid),

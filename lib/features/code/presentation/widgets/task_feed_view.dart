@@ -4,14 +4,26 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../logic/task_event_lines.dart';
 import '../../logic/task_follow_controller.dart';
 
-/// A task's live view: what the agent said, and what it did, as it happens.
+/// How many lines a running task shows under its turn.
 ///
-/// Newest last and scrolled to the bottom, the way a terminal reads — a task is
-/// watched, not browsed.
+/// The tail, not the lot: "what is it doing" is answered by the last handful of
+/// steps, and a task that makes three hundred tool calls would otherwise push
+/// the question that started it off the top of the screen.
+const int kLiveTaskLines = 14;
+
+/// What a task's agent said and did, line by line.
+///
+/// Not a scroller. It sits inside the transcript, under the turn that asked for
+/// it, so it grows that turn rather than trapping a second scrollbar inside one
+/// — which is also why [tail] exists: a live task shows its last few lines, and
+/// a finished one shows the lot only when somebody asks to see it.
 class TaskFeedView extends StatelessWidget {
-  const TaskFeedView({super.key, required this.feed});
+  const TaskFeedView({super.key, required this.feed, this.tail});
 
   final TaskFeed feed;
+
+  /// How many lines from the end to show, or null for all of them.
+  final int? tail;
 
   @override
   Widget build(BuildContext context) {
@@ -21,16 +33,28 @@ class TaskFeedView extends StatelessWidget {
         if (taskEventLine(event) case final line?) (event.seq, line),
     ];
 
-    if (lines.isEmpty) {
-      return _Waiting(status: feed.status);
-    }
-    return ListView.builder(
-      reverse: true,
-      itemCount: lines.length,
-      itemBuilder: (context, index) {
-        final (seq, line) = lines[lines.length - 1 - index];
-        return _Line(key: ValueKey(seq), text: line.text, tone: line.tone);
-      },
+    if (lines.isEmpty) return _Waiting(status: feed.status);
+
+    final limit = tail;
+    final hidden = (limit == null || lines.length <= limit)
+        ? 0
+        : lines.length - limit;
+    final shown = hidden == 0 ? lines : lines.sublist(hidden);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Said rather than silently dropped: a feed that starts mid-run reads
+        // as a run that started there.
+        if (hidden > 0)
+          _Line(
+            text: '$hidden earlier ${hidden == 1 ? 'step' : 'steps'}',
+            tone: TaskLineTone.note,
+          ),
+        for (final (seq, line) in shown)
+          _Line(key: ValueKey(seq), text: line.text, tone: line.tone),
+      ],
     );
   }
 }
@@ -54,20 +78,7 @@ class _Waiting extends StatelessWidget {
       FollowFinished() => 'This finished with nothing to show.',
       FollowLost(:final message) => message,
     };
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            height: 1.5,
-            color: AppPalette.textFaint,
-          ),
-        ),
-      ),
-    );
+    return _Line(text: message, tone: TaskLineTone.note);
   }
 }
 

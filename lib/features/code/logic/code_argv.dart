@@ -232,14 +232,6 @@ List<String> taskCreateArgs({
   ..._grid(grid),
 ];
 
-/// `grid task get <id>` — one shot: state, provider, error, result text.
-List<String> taskGetArgs({required String taskId, required String grid}) => [
-  'task',
-  'get',
-  taskId,
-  ..._grid(grid),
-];
-
 /// `grid task follow <id>` — one JSON event per line until a terminal one.
 ///
 /// [afterSeq] is the cursor: every event carries its `seq`, so a stream that

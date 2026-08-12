@@ -154,39 +154,3 @@ class CodeTasksController extends AsyncNotifier<List<CodeTask>> {
     if (tasks != null) _schedule(tasks);
   }
 }
-
-/// The task open in the Code pane, or null when the project overview is shown.
-/// Cleared when the project changes — a task id belongs to one project.
-final selectedCodeTaskProvider = NotifierProvider<SelectedCodeTask, String?>(
-  SelectedCodeTask.new,
-);
-
-class SelectedCodeTask extends Notifier<String?> {
-  @override
-  String? build() {
-    ref.watch(selectedCodeProjectProvider);
-    return null;
-  }
-
-  void select(String? taskId) => state = taskId;
-}
-
-/// One task, read fresh — the whole row, including the result text a list row
-/// does not carry.
-final codeTaskProvider = FutureProvider.autoDispose.family<CodeTask, String>((
-  ref,
-  taskId,
-) async {
-  final grid = requireCodeGrid(ref);
-  final json = await requireCodeCli(
-    ref,
-  ).object(taskGetArgs(taskId: taskId, grid: grid));
-  final task = CodeTask.fromJson(json);
-  if (task == null) {
-    throw const CodeGridException(
-      'The grid did not send this task back. It may have been cleaned up after '
-      "the project's retention window.",
-    );
-  }
-  return task;
-});

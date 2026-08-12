@@ -101,21 +101,43 @@ enum TaskLineTone {
 /// `queue_expired` gets its own, because "ran out of time" reads as "the task
 /// hung" and this one never started: the grid was short of computers, and the
 /// action is to add one rather than to fix the prompt.
-String terminalLine(TaskTerminal event) {
-  if (event.queueExpired) {
+///
+/// Taken apart from both shapes that carry the same three facts — the live
+/// stream's last event and the listed task — so a run cannot be described one
+/// way while it is watched and another way afterwards.
+String taskEndedLine({
+  required TaskState state,
+  required bool queueExpired,
+  String? error,
+}) {
+  if (queueExpired) {
     return 'No computer picked this up in time. The grid is short of machines '
         'to run tasks — nothing was wrong with the task itself.';
   }
-  final reason = event.error;
-  return switch (event.state) {
+  return switch (state) {
     TaskState.completed => 'Done.',
-    TaskState.failed => 'It failed${reason == null ? '' : ': $reason'}.',
+    TaskState.failed => 'It failed${error == null ? '' : ': $error'}.',
     TaskState.timedOut => 'It ran out of time while working.',
     TaskState.queued ||
     TaskState.running ||
-    TaskState.unknown => 'It stopped${reason == null ? '' : ': $reason'}.',
+    TaskState.unknown => 'It stopped${error == null ? '' : ': $error'}.',
   };
 }
+
+/// How the stream said it ended.
+String terminalLine(TaskTerminal event) => taskEndedLine(
+  state: event.state,
+  queueExpired: event.queueExpired,
+  error: event.error,
+);
+
+/// How a finished task ended, for a turn whose agent left no closing words —
+/// the transcript would otherwise show the question and nothing under it.
+String taskVerdict(CodeTask task) => taskEndedLine(
+  state: task.state,
+  queueExpired: task.queueExpired,
+  error: task.error,
+);
 
 /// " (12 turns, 34.5s)" — each part dropped unless it is usable.
 String _effort(int? turns, int? durationMs) {

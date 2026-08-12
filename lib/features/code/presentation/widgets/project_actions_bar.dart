@@ -9,17 +9,22 @@ import '../../logic/integration.dart';
 import '../../logic/project_actions.dart';
 import '../../logic/project_status.dart';
 import 'confirm_dialogs.dart';
-import 'project_status_card.dart';
+import 'members_dialog.dart';
 
 /// What a member can do to the project itself: take the team's changes, share
-/// their own, and get a working copy on this computer.
+/// their own, get a working copy on this computer, and see who else is in it.
 ///
 /// The two that move refs are guarded differently and on purpose. Catching up
 /// is asked about first — the grid answers "would this conflict" for free, and
 /// the paid answer is an agent run. Publishing is confirmed loudly, because it
 /// is the one action here with **no undo**.
 class ProjectActionsBar extends ConsumerStatefulWidget {
-  const ProjectActionsBar({super.key, required this.status, this.projectName});
+  const ProjectActionsBar({
+    super.key,
+    required this.status,
+    this.projectName,
+    this.canInvite = false,
+  });
 
   final ProjectStatus status;
 
@@ -27,6 +32,10 @@ class ProjectActionsBar extends ConsumerStatefulWidget {
   /// named. Null when the grid hasn't said — the copy then lands in a folder
   /// named after the project's id, which is still a folder of its own.
   final String? projectName;
+
+  /// Whether this member may admit people — the owner's call, so the invite
+  /// button behind "Who is in it" only appears where pressing it would work.
+  final bool canInvite;
 
   @override
   ConsumerState<ProjectActionsBar> createState() => _ProjectActionsBarState();
@@ -178,6 +187,14 @@ class _ProjectActionsBarState extends ConsumerState<ProjectActionsBar> {
         OutlinedButton(
           onPressed: _busy ? null : _getCopy,
           child: const Text('Get a copy on this computer'),
+        ),
+        TextButton(
+          onPressed: () => showMembersDialog(
+            context,
+            projectId: _status.projectId,
+            canInvite: widget.canInvite,
+          ),
+          child: const Text('Who is in it'),
         ),
       ],
     );

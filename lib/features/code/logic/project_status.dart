@@ -166,6 +166,30 @@ class ProjectStatus {
   }
 }
 
+/// A commit as a person reads it. Full oids are forty characters of noise in a
+/// line whose job is "did this move".
+String shortCommit(String commit) =>
+    commit.length <= 8 ? commit : commit.substring(0, 8);
+
+/// How far this member's work is from the team's, in a sentence.
+///
+/// Absent counts are said as "nothing to compare", never as `0 / 0` — that
+/// reads as up to date, and the next thing somebody does on that belief is
+/// publish a branch that does not exist.
+String distanceSummary(ProjectStatus status) {
+  final ahead = status.ahead;
+  final behind = status.behind;
+  if (ahead == null || behind == null) {
+    return 'Nothing of yours here yet — ask for something below.';
+  }
+  if (ahead == 0 && behind == 0) return 'Your copy matches the team’s.';
+  final parts = [
+    if (ahead > 0) '$ahead of yours not shared yet',
+    if (behind > 0) '$behind from the team you don’t have',
+  ];
+  return parts.join(' · ');
+}
+
 /// Why the project's work isn't moving, in one sentence — or null when nothing
 /// is wrong.
 ///
