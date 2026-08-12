@@ -20,8 +20,9 @@ const int _snapFrames = 6;
 /// Everything the team has run in this project, as a conversation — the same
 /// scrolling shell the chat uses, so the two halves of the app read the same.
 ///
-/// The grid sends tasks newest-first; a conversation reads oldest-first, newest
-/// at the bottom, so the list is reversed before it goes in. The scroll
+/// The grid already returns tasks oldest-first (measured: `created_at` ascends
+/// down the array, newest last), which is exactly conversation order — oldest at
+/// the top, newest at the bottom — so the list goes in as it arrives. The scroll
 /// behaviour lives here rather than in [TranscriptView] because the two halves
 /// land new turns differently — a chat streams a reply token by token, a project
 /// polls a task list — and each drives its own follow.
@@ -138,17 +139,16 @@ class _TaskTranscriptState extends ConsumerState<TaskTranscript> {
     };
   }
 
-  Widget _build(List<CodeTask> newestFirst) {
-    // Oldest at the top, newest at the bottom — the way a conversation reads,
-    // and where the landing scroll and follow both aim.
-    final ordered = newestFirst.reversed.toList();
+  Widget _build(List<CodeTask> tasks) {
+    // As the grid returns them: oldest at the top, newest at the bottom — the
+    // way a conversation reads, and where the landing scroll and follow aim.
     return TranscriptView(
       scroll: _scroll,
       atBottom: _atBottom,
       onJumpToLatest: () => _scrollToBottom(animated: true),
-      marksOf: () => _marks(ordered),
+      marksOf: () => _marks(tasks),
       rows: [
-        for (final task in ordered)
+        for (final task in tasks)
           TranscriptRow(
             // Stable across the task's life, for the minimap to scroll to.
             scrollId: task.id,
