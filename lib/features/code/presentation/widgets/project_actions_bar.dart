@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/host_shell_service.dart';
 import '../../../../shared/widgets/toast.dart';
+import '../../logic/code_argv.dart';
 import '../../logic/integration.dart';
 import '../../logic/project_actions.dart';
 import '../../logic/project_status.dart';
@@ -18,9 +19,14 @@ import 'project_status_card.dart';
 /// the paid answer is an agent run. Publishing is confirmed loudly, because it
 /// is the one action here with **no undo**.
 class ProjectActionsBar extends ConsumerStatefulWidget {
-  const ProjectActionsBar({super.key, required this.status});
+  const ProjectActionsBar({super.key, required this.status, this.projectName});
 
   final ProjectStatus status;
+
+  /// What the project is called, which is what its folder on this computer is
+  /// named. Null when the grid hasn't said — the copy then lands in a folder
+  /// named after the project's id, which is still a folder of its own.
+  final String? projectName;
 
   @override
   ConsumerState<ProjectActionsBar> createState() => _ProjectActionsBarState();
@@ -121,10 +127,19 @@ class _ProjectActionsBarState extends ConsumerState<ProjectActionsBar> {
   Future<void> _getCopy() async {
     final folder = await getDirectoryPath(confirmButtonText: 'Put it here');
     if (folder == null || !mounted) return;
+    // The picker asks where to *put* the copy, and the CLI takes the clone's own
+    // directory — so the project gets a folder of its own inside what they
+    // chose, the way `git clone` does. Handing the chosen folder straight
+    // through pointed the clone at whatever else was already in it.
+    final destination = cloneDestination(
+      parent: folder,
+      projectName: widget.projectName ?? '',
+      projectId: _status.projectId,
+    );
     await _guard(() async {
       final result = await ref
           .read(projectActionsProvider)
-          .clone(_status.projectId, folder);
+          .clone(_status.projectId, destination);
       await ref.read(hostShellServiceProvider).openFolder(result.path);
       if (!mounted) return;
       ToastScope.show(

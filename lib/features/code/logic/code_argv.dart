@@ -13,6 +13,8 @@
 /// screen is showing.
 library;
 
+import 'dart:io' show Platform;
+
 /// `--json` on every command: the app parses stdout here, unlike the lifecycle
 /// calls elsewhere that only read an exit code.
 const _json = '--json';
@@ -88,6 +90,60 @@ List<String> projectCloneArgs({
   required String directory,
   required String grid,
 }) => ['project', 'clone', projectId, directory, ..._grid(grid)];
+
+/// Where a clone of [projectName] goes when the user picked [parent] as the
+/// place to put it: a folder of its own, named after the project.
+///
+/// `grid project clone` takes **the clone's own directory**, and refuses one
+/// that already holds files it didn't put there — the guard that stops a
+/// `checkout -B` resetting somebody's repository. The folder picker asks where
+/// to *put* the copy, so handing its answer straight through pointed the clone
+/// at a working directory full of other things: picking `~/WorkPlace/Grid` gave
+/// "it already has files in it and was not created by `grid project clone`",
+/// naming a folder the user never meant as the destination.
+///
+/// A parent already named after the project is taken as the clone's own folder
+/// rather than nested inside itself, so re-cloning to refresh a copy is a matter
+/// of picking it again.
+///
+/// Pure so `test/code/` can pin it: this decides where files land on someone's
+/// computer, which is not a thing to find out by running it.
+String cloneDestination({
+  required String parent,
+  required String projectName,
+  required String projectId,
+}) {
+  final folder = cloneFolderName(
+    projectName: projectName,
+    projectId: projectId,
+  );
+  final trimmed = parent.replaceFirst(RegExp(r'[/\\]+$'), '');
+  final base = trimmed.split(RegExp(r'[/\\]')).last;
+  if (base == folder) return trimmed;
+  return '$trimmed${Platform.pathSeparator}$folder';
+}
+
+/// The folder name a clone of this project takes.
+///
+/// The project's own name, with everything a path can't carry replaced — a name
+/// is free text on the grid and may hold a slash, which would silently clone
+/// somewhere other than where the user chose. A name with nothing usable left
+/// falls back to the id, so the folder is always something the user can find.
+String cloneFolderName({
+  required String projectName,
+  required String projectId,
+}) {
+  final safe = projectName
+      .trim()
+      .replaceAll(RegExp(r'[\x00-\x1f/\\:*?"<>|]'), '-')
+      // Trailing dots and spaces are legal here and not on Windows; a copy
+      // taken on a Mac and synced across shouldn't arrive unopenable.
+      .replaceAll(RegExp(r'[. ]+$'), '')
+      .trim();
+  if (safe.isNotEmpty) return safe;
+  final id = projectId.trim();
+  return id.isEmpty ? 'project' : 'project-${id.split('-').first}';
+}
 
 /// `grid project commit <id> -m <msg>` — land files without running an agent.
 ///
