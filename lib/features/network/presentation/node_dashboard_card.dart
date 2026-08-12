@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../provider_node/logic/local_throughput.dart';
+import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/node_display.dart';
 import '../logic/node_metrics.dart';
 
@@ -59,11 +62,42 @@ class NodeDashboardCard extends StatelessWidget {
             // one line instead of floating at three different heights.
             const Spacer(),
             const SizedBox(height: 12),
-            _ThroughputFooter(value: throughputLabel(node)),
+            _ThroughputForNode(node: node),
           ],
         ),
       ),
     );
+  }
+}
+
+/// The throughput figure for [node], filling the relay's blank on **this
+/// machine** with the app's own warm-up measurement.
+///
+/// The relay only advertises a node's rate once it has served a real request, so
+/// a machine that just started serving reads "—" until someone uses it. For the
+/// local node that gap is closed by [localThroughputProvider] — a "hi" sent to
+/// the engine the moment it's up. Only the local card is filled this way: the
+/// app can measure the engine on *this* computer, not one across the grid, so a
+/// remote node keeps the relay's own answer (or its honest blank).
+class _ThroughputForNode extends ConsumerWidget {
+  const _ThroughputForNode({required this.node});
+
+  final OverviewNode node;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final relay = throughputLabel(node);
+    if (relay != kUnmeasured) return _ThroughputFooter(value: relay);
+
+    // The local node is the one this machine joined under.
+    final isLocal = node.name == ref.watch(nodeNameProvider);
+    if (!isLocal) return _ThroughputFooter(value: relay);
+
+    final measured = ref.watch(localThroughputProvider);
+    if (measured == null || measured <= 0) {
+      return _ThroughputFooter(value: relay);
+    }
+    return _ThroughputFooter(value: measured.round().toString());
   }
 }
 
