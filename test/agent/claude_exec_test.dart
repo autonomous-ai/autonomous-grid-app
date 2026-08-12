@@ -17,10 +17,14 @@ Map<String, dynamic> _delta(String text) => {
 };
 
 /// One completed assistant content block.
-Map<String, dynamic> _assistant(Map<String, dynamic> block) => {
+Map<String, dynamic> _assistant(
+  Map<String, dynamic> block, {
+  Map<String, dynamic>? usage,
+}) => {
   'type': 'assistant',
   'message': {
     'content': [block],
+    'usage': ?usage,
   },
 };
 
@@ -291,6 +295,60 @@ void main() {
 
     test('nothing to quote still gives the user a next step', () {
       expect(friendlyClaudeError('   '), contains('try again'));
+    });
+  });
+
+  group('claudeContextTokens — how full the window is, per request', () {
+    test('both cache halves count: they occupy the window, they were just '
+        'cheaper to send', () {
+      // Reading `input_tokens` alone is the trap — on a cache-heavy agentic
+      // turn it reports a few thousand while the session really holds 230k.
+      expect(
+        claudeContextTokens({
+          'input_tokens': 4,
+          'cache_read_input_tokens': 228000,
+          'cache_creation_input_tokens': 2000,
+          'output_tokens': 141,
+        }),
+        230145,
+      );
+    });
+
+    test('a shape with no figure leaves the last one standing rather than '
+        'calling a full session empty', () {
+      expect(claudeContextTokens(null), isNull);
+      expect(claudeContextTokens('nonsense'), isNull);
+      expect(claudeContextTokens(const <String, dynamic>{}), isNull);
+      expect(claudeContextTokens({'something_else': 10}), isNull);
+    });
+  });
+
+  group('the stream reports how full the window is', () {
+    test('an assistant message carries its request usage', () {
+      final events = _read(
+        ClaudeStreamParser(),
+        _assistant(
+          {'type': 'text', 'text': 'Done'},
+          usage: {'input_tokens': 1000, 'cache_read_input_tokens': 199000},
+        ),
+      );
+      final used = events.whereType<ClaudeContextUsed>().single;
+      expect(used.tokens, 200000);
+    });
+
+    test('a message without usage adds nothing — the figure is only ever '
+        'replaced by a real one', () {
+      final events = _read(
+        ClaudeStreamParser(),
+        _assistant({'type': 'text', 'text': 'Done'}),
+      );
+      expect(events.whereType<ClaudeContextUsed>(), isEmpty);
+    });
+
+    test("a tool result is Claude talking to itself and reports nobody's "
+        'usage', () {
+      final events = _read(ClaudeStreamParser(), _toolResult('t1'));
+      expect(events.whereType<ClaudeContextUsed>(), isEmpty);
     });
   });
 }
