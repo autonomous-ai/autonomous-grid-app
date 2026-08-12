@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/core/grid_paths.dart';
 import 'package:grid_app/features/code/logic/code_argv.dart';
-import 'package:grid_app/features/code/logic/code_errors.dart';
 import 'package:grid_app/features/code/logic/code_projects_controller.dart';
 import 'package:grid_app/features/code/logic/code_tasks_controller.dart';
+import 'package:grid_app/features/code/logic/outgoing_task.dart';
 import 'package:grid_app/features/code/logic/project_flow.dart';
 import 'package:grid_app/features/code/logic/project_status_controller.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
@@ -108,11 +108,43 @@ ProjectFlow _flow(ProviderContainer c) =>
 bool _ran(FakeGridCliService cli, List<String> args) =>
     cli.runCalls.any((call) => call.join(' ') == args.join(' '));
 
-/// Let the unawaited publish that `_onTasks` fires run to completion.
+/// Let the send — and the unawaited publish that `_onTasks` fires — run to
+/// completion. Everything past `submit` happens in the background now, so a test
+/// that wants the round trips has to wait for them here rather than on the call.
 Future<void> _settle() =>
     Future<void>.delayed(const Duration(milliseconds: 10));
 
 void main() {
+  group('sending a task', () {
+    test('the question is in the transcript before the grid has it', () async {
+      // The whole point of the outgoing turn: sending is three round trips deep,
+      // and holding the user's paragraph in the box for them read as an app that
+      // had swallowed the Enter key.
+      final cli = _cli()
+        ..stubResult(_create('go'), _ok({'id': 'T1', 'state': 'queued'}));
+      final container = await _open(cli);
+
+      _flow(container).submit(prompt: 'go', files: const []);
+
+      final outgoing = container.read(projectFlowProvider(_project)).outgoing;
+      expect(outgoing?.prompt, 'go');
+      expect(outgoing?.phase, isA<TaskSending>());
+      expect(
+        cli.runCalls.any((c) => c.contains('create')),
+        isFalse,
+        reason: 'nothing has been sent yet — that is the point',
+      );
+
+      await _settle();
+
+      expect(
+        container.read(projectFlowProvider(_project)).outgoing,
+        isNull,
+        reason: 'the real task has taken its place in the list',
+      );
+    });
+  });
+
   group('catching up before the task', () {
     test('the trunk is brought in before the task is created', () async {
       final cli = _cli()
@@ -131,7 +163,8 @@ void main() {
         ..stubResult(_create('go'), _ok({'id': 'T1', 'state': 'queued'}));
       final container = await _open(cli);
 
-      await _flow(container).submit(prompt: 'go', files: const []);
+      _flow(container).submit(prompt: 'go', files: const []);
+      await _settle();
 
       final integrateAt = cli.runCalls.indexWhere(
         (c) => c.contains('integrate'),
@@ -148,15 +181,17 @@ void main() {
         ..stubResult(_create('go'), _ok({'id': 'T1', 'state': 'queued'}));
       final container = await _open(cli);
 
-      await _flow(container).submit(prompt: 'go', files: const []);
+      _flow(container).submit(prompt: 'go', files: const []);
+      await _settle();
 
       expect(cli.runCalls.any((c) => c.contains('integrate')), isFalse);
     });
 
-    test('a conflict on catch-up is thrown, and the task is not sent', () async {
+    test('a conflict on catch-up refuses the turn, and sends nothing', () async {
       // The merge that resolves a conflict takes this member's one slot, so the
-      // task they asked for cannot be created behind it — the flow hands the
-      // text back rather than half-sending it.
+      // task they asked for cannot be created behind it. The composer has
+      // already cleared, so the text lives on the outgoing turn — losing it here
+      // would lose a paragraph somebody typed.
       final cli = _cli()
         ..stubResult(
           _check,
@@ -173,11 +208,59 @@ void main() {
         ..stubResult(_create('go'), _ok({'id': 'T1', 'state': 'queued'}));
       final container = await _open(cli);
 
-      await expectLater(
-        _flow(container).submit(prompt: 'go', files: const []),
-        throwsA(isA<CodeGridException>()),
-      );
+      _flow(container).submit(prompt: 'go', files: const []);
+      await _settle();
+
       expect(cli.runCalls.any((c) => c.contains('create')), isFalse);
+      final outgoing = container.read(projectFlowProvider(_project)).outgoing;
+      expect(outgoing?.prompt, 'go', reason: 'the text is kept');
+      expect(
+        outgoing?.phase,
+        isA<TaskSendFailed>().having(
+          (phase) => phase.message,
+          'message',
+          contains('merging'),
+        ),
+      );
+    });
+
+    test('a refused turn can be sent again, unchanged', () async {
+      // The button under it. What was refused is a whole task — prompt and the
+      // files that ride with it — so sending again has to send that, not a
+      // second attempt at half of it.
+      final cli = _cli()
+        ..stubResult(
+          _check,
+          _ok({'status': 'merge_task', 'branch': 'wip/$_member'}),
+        )
+        ..stubResult(
+          _integrate,
+          _ok({
+            'status': 'merge_task',
+            'branch': 'wip/$_member',
+            'task_id': 'M1',
+          }),
+        );
+      final container = await _open(cli);
+      _flow(container).submit(prompt: 'go', files: const ['a.txt']);
+      await _settle();
+
+      // The merge landed, so the same task goes out this time.
+      cli.stubResult(_check, _ok({'status': 'up_to_date', 'branch': 'w'}));
+      cli.stubResult(
+        taskCreateArgs(
+          projectId: _project,
+          prompt: 'go',
+          grid: _grid,
+          files: const ['a.txt'],
+        ),
+        _ok({'id': 'T1', 'state': 'queued'}),
+      );
+      _flow(container).retryOutgoing();
+      await _settle();
+
+      expect(container.read(projectFlowProvider(_project)).outgoing, isNull);
+      expect(cli.runCalls.any((c) => c.contains('a.txt')), isTrue);
     });
   });
 
@@ -189,7 +272,7 @@ void main() {
         ..stubResult(_list, _tasks([_done('T1')]));
       final container = await _open(cli);
 
-      await _flow(container).submit(prompt: 'go', files: const []);
+      _flow(container).submit(prompt: 'go', files: const []);
       await _settle();
 
       expect(_ran(cli, _promote), isTrue);
@@ -207,7 +290,7 @@ void main() {
         ..stubResult(_list, _tasks([_done('T1')]));
       final container = await _open(cli);
 
-      await _flow(container).submit(prompt: 'go', files: const []);
+      _flow(container).submit(prompt: 'go', files: const []);
       await _settle();
 
       expect(_ran(cli, _clone), isTrue);
@@ -226,7 +309,7 @@ void main() {
         );
       final container = await _open(cli);
 
-      await _flow(container).submit(prompt: 'go', files: const []);
+      _flow(container).submit(prompt: 'go', files: const []);
       await _settle();
 
       expect(_ran(cli, _promote), isTrue);
@@ -244,7 +327,7 @@ void main() {
         );
       final container = await _open(cli);
 
-      await _flow(container).submit(prompt: 'go', files: const []);
+      _flow(container).submit(prompt: 'go', files: const []);
       await _settle();
 
       expect(_ran(cli, _promote), isFalse);
@@ -269,7 +352,7 @@ void main() {
           );
         final container = await _open(cli);
 
-        await _flow(container).submit(prompt: 'go', files: const []);
+        _flow(container).submit(prompt: 'go', files: const []);
         await _settle();
 
         expect(_ran(cli, _promote), isFalse);
@@ -297,7 +380,7 @@ void main() {
         );
       final container = await _open(cli);
 
-      await _flow(container).submit(prompt: 'go', files: const []);
+      _flow(container).submit(prompt: 'go', files: const []);
       await _settle();
 
       final notice = container.read(projectFlowProvider(_project)).notice;

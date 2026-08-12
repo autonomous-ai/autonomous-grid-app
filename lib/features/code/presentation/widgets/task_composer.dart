@@ -8,9 +8,9 @@ import '../../../../shared/widgets/chip_remove_button.dart';
 import '../../../../shared/widgets/composer_buttons.dart';
 import '../../../../shared/widgets/composer_keys.dart';
 import '../../../../shared/widgets/liquid_glass.dart';
-import '../../../../shared/widgets/toast.dart';
 import '../../logic/code_argv.dart';
 import '../../logic/code_side_panel.dart';
+import '../../logic/outgoing_task.dart';
 import '../../logic/project_flow.dart';
 
 /// The box at the foot of a project: say what should be done, attach anything
@@ -46,8 +46,6 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
   /// provider can claim it — so the agent always finds them.
   final _files = <String>[];
 
-  bool _busy = false;
-
   @override
   void initState() {
     super.initState();
@@ -65,8 +63,8 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
 
   void _onChanged() => setState(() {});
 
-  bool get _canSend =>
-      !_busy && !widget.slotHeld && _prompt.text.trim().isNotEmpty;
+  bool _canSend(bool sending) =>
+      !sending && !widget.slotHeld && _prompt.text.trim().isNotEmpty;
 
   Future<void> _attach() async {
     final file = await openFile();
@@ -74,43 +72,49 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
     setState(() => _files.add(file.path));
   }
 
-  /// Hand the task to the grid, catching up first.
+  /// Hand the task to the grid — into the transcript now, onto the wire behind
+  /// it.
   ///
-  /// The box is cleared on the way *out*, not on the way in: nothing goes into
-  /// the transcript until the flow has caught up and the relay has taken the
-  /// task, so clearing early would throw away a paragraph somebody typed the
-  /// moment either step refused it. A conflict on catch-up is one such refusal —
-  /// the flow throws, the text stays, and the message says a merge is running
-  /// first.
-  Future<void> _send() async {
-    if (!_canSend) return;
-    setState(() => _busy = true);
-    try {
-      await ref
-          .read(projectFlowProvider(widget.projectId).notifier)
-          .submit(
-            prompt: _prompt.text.trim(),
-            files: [for (final path in _files) fileSpec(path)],
-          );
-      if (!mounted) return;
-      setState(() {
-        _prompt.clear();
-        _files.clear();
-      });
-    } on Object catch (error) {
-      if (!mounted) return;
-      ToastScope.show(
-        context,
-        ToastSpec(message: '$error', severity: ToastSeverity.error),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+  /// The box is cleared on the way *in*. Sending is three round trips deep — the
+  /// flow catches up, the relay takes the task, the status is re-read — and a
+  /// paragraph left sitting in the box for those seconds reads as an app that
+  /// swallowed the Enter key, which is exactly what it looked like.
+  ///
+  /// Clearing early does not risk the text: [ProjectFlow.submit] holds it as an
+  /// outgoing turn at the foot of the transcript and never throws, so a refusal
+  /// — a merge that has taken this member's one slot, a grid that didn't
+  /// answer — arrives under the question rather than in a toast over an empty
+  /// box. The same shape as the chat half's send, for the same reason.
+  void _send() {
+    final prompt = _prompt.text.trim();
+    final flow = ref.read(projectFlowProvider(widget.projectId));
+    if (!_canSend(flow.outgoing?.phase is TaskSending)) return;
+    ref
+        .read(projectFlowProvider(widget.projectId).notifier)
+        .submit(
+          prompt: prompt,
+          files: [for (final path in _files) fileSpec(path)],
+        );
+    setState(() {
+      _prompt.clear();
+      _files.clear();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    // One task in flight per member, so a second Send while the first is still
+    // being registered has nowhere to go. It is a second or two, and it ends
+    // where `slotHeld` takes over.
+    final sending =
+        ref.watch(
+              projectFlowProvider(
+                widget.projectId,
+              ).select((flow) => flow.outgoing?.phase),
+            )
+            is TaskSending;
+    final canSend = _canSend(sending);
     // Review's "ask about this" drops its message here rather than sending it,
     // the same way the chat's panels hand a message to its composer. Put in the
     // box, ready to edit, so the request is still the user's to word and send.
@@ -147,7 +151,7 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
               ),
             ),
           ComposerKeys(
-            canSend: _canSend,
+            canSend: canSend,
             onSend: _send,
             builder: (context, focusNode) => TextField(
               controller: _prompt,
@@ -176,11 +180,11 @@ class _TaskComposerState extends ConsumerState<TaskComposer> {
                 ComposerIconButton(
                   icon: LucideIcons.paperclip300,
                   tooltip: 'Send a file along with the task',
-                  onPressed: _busy ? null : _attach,
+                  onPressed: sending ? null : _attach,
                 ),
                 ComposerSendButton(
-                  sending: _busy,
-                  canSend: _canSend,
+                  sending: sending,
+                  canSend: canSend,
                   onSend: _send,
                   // Nothing to stop from here: a task is stopped from its own
                   // turn in the transcript, where the thing being stopped is
