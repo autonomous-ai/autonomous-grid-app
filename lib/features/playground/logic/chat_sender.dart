@@ -296,7 +296,9 @@ class DefaultChatSender implements ChatSender {
           yield ChatSendStreaming(answer.toString());
         case ChatFailed(:final error):
           log.finish(id, exitCode: error.statusCode ?? 0, error: error.message);
-          yield ChatSendFailure(_friendlyChatError(error));
+          yield ChatSendFailure(
+            _friendlyChatError(error, hadImages: _turnHasImages(history)),
+          );
           return;
         case ChatDone():
           break;
@@ -350,7 +352,9 @@ class DefaultChatSender implements ChatSender {
     );
 
     if (error != null) {
-      yield ChatSendFailure(_friendlyChatError(error));
+      yield ChatSendFailure(
+        _friendlyChatError(error, hadImages: _turnHasImages(history)),
+      );
       return;
     }
     final answer = (reply == null || reply.isEmpty)
@@ -499,7 +503,18 @@ class DefaultChatSender implements ChatSender {
   /// Turns a transport failure into one plain line; the raw detail stays in the
   /// Debug log. We surface the relay's actual reason (out of credit, expired
   /// session) rather than a blanket "is a model running?" guess.
-  static String _friendlyChatError(ChatTransportError error) {
+  ///
+  /// [hadImages] is what lets the one genuinely confusing failure read plainly:
+  /// a picture sent to a text-only model. There's no per-model "can see images"
+  /// flag on the grid to check before sending, so the request goes out and the
+  /// backend rejects it — as a 400/422, or with an "image"/"content" complaint
+  /// whose wording is different on every engine. Rather than show any of those,
+  /// when the turn carried an image *and* the failure looks like that rejection,
+  /// say the one thing the user can act on.
+  static String _friendlyChatError(
+    ChatTransportError error, {
+    bool hadImages = false,
+  }) {
     if (error.statusCode == 401 || error.statusCode == 403) {
       return 'Your session expired — please sign in again.';
     }
@@ -508,12 +523,46 @@ class DefaultChatSender implements ChatSender {
       return "You're out of credit on this grid — top up your balance, then "
           'try again.';
     }
+    if (hadImages && _looksLikeNoVision(error)) {
+      return "This model can't read images. Remove the picture and ask in "
+          'text, or pick a model that can see images, then send again.';
+    }
     if (detail.isEmpty) {
       return "Couldn't get a reply. Make sure a model is running on this grid, "
           'then try again.';
     }
     return "Couldn't get a reply: $detail";
   }
+
+  /// Whether a failed image turn failed *because the model can't take images*.
+  ///
+  /// Two signals, either enough: the backend named it (its wording varies, so
+  /// this matches the words that recur — image, vision, multimodal, content
+  /// type), or it answered a plain 400/422 — the "bad request" a text model
+  /// returns when handed image parts it doesn't understand. A 5xx, a timeout or
+  /// a rate-limit is a different problem and keeps its own message, so those are
+  /// deliberately left out.
+  static bool _looksLikeNoVision(ChatTransportError error) {
+    final lower = error.message.toLowerCase();
+    const phrases = [
+      'image',
+      'vision',
+      'multimodal',
+      'content type',
+      'unsupported content',
+      'invalid content',
+    ];
+    if (phrases.any(lower.contains)) return true;
+    return error.statusCode == 400 || error.statusCode == 422;
+  }
+
+  /// Whether this turn actually carried an image the model was asked to read —
+  /// the precondition for [_friendlyChatError]'s vision message.
+  static bool _turnHasImages(List<ChatMessage> history) => history.any(
+    (m) =>
+        m.role == ChatRole.user &&
+        m.media.any((md) => md.kind == MediaKind.image),
+  );
 
   /// Normalizes the relay's progress number to 0–1, tolerating either a percent
   /// (0–100, as the CLI prints) or an already-fractional value.

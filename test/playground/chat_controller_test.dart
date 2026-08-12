@@ -270,6 +270,74 @@ void main() {
       },
     );
 
+    test(
+      'a picture sent to a text-only model reads as "can\'t read images"',
+      () async {
+        final tmp = await Directory.systemTemp.createTemp('grid_media_test');
+        addTearDown(() => tmp.delete(recursive: true));
+        // A text model handed image parts answers a plain 400 — no per-model
+        // "can see images" flag exists to check before sending, so this is the
+        // shape the user actually hits.
+        final chat = _FakeChatTransport(
+          null,
+          const ChatTransportError(
+            'Invalid request: image input',
+            statusCode: 400,
+          ),
+        );
+        final container = _container(chat: chat, outputs: tmp);
+
+        await container
+            .read(chatControllerProvider.notifier)
+            .send(
+              network: _credential(),
+              model: 'ds4f',
+              message: 'what is this?',
+              attachments: [
+                MediaAttachment(
+                  filename: 'pic.png',
+                  bytes: Uint8List.fromList([1, 2, 3]),
+                ),
+              ],
+            );
+
+        final error = container.read(chatControllerProvider).error!;
+        expect(error, contains("can't read images"));
+        // The cryptic backend wording never reaches the user.
+        expect(error.toLowerCase(), isNot(contains('invalid request')));
+      },
+    );
+
+    test('a 5xx on an image turn is not blamed on vision', () async {
+      // A grid with no provider is a different problem — telling the user to
+      // remove their picture would send them fixing the wrong thing.
+      final tmp = await Directory.systemTemp.createTemp('grid_media_test');
+      addTearDown(() => tmp.delete(recursive: true));
+      final chat = _FakeChatTransport(
+        null,
+        const ChatTransportError('no provider available', statusCode: 503),
+      );
+      final container = _container(chat: chat, outputs: tmp);
+
+      await container
+          .read(chatControllerProvider.notifier)
+          .send(
+            network: _credential(),
+            model: 'ds4f',
+            message: 'what is this?',
+            attachments: [
+              MediaAttachment(
+                filename: 'pic.png',
+                bytes: Uint8List.fromList([1, 2, 3]),
+              ),
+            ],
+          );
+
+      final error = container.read(chatControllerProvider).error!;
+      expect(error, isNot(contains('read images')));
+      expect(error, contains('no provider'));
+    });
+
     test('maps a 401 to a sign-in prompt', () async {
       final chat = _FakeChatTransport(
         null,
