@@ -30,7 +30,6 @@ void main() {
         taskListArgs(projectId: _project, grid: _grid),
         taskCreateArgs(projectId: _project, prompt: 'go', grid: _grid),
         taskFollowArgs(taskId: 't', grid: _grid),
-        taskFetchArgs(taskId: 't', into: '/d', grid: _grid),
         taskCancelArgs(taskId: 't', grid: _grid),
       ];
       for (final command in commands) {

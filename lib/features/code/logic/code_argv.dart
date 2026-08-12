@@ -243,14 +243,6 @@ List<String> taskFollowArgs({
   int afterSeq = -1,
 }) => ['task', 'follow', taskId, '--after-seq', '$afterSeq', ..._grid(grid)];
 
-/// `grid task fetch <id> --into <dir>` — the result on disk. Refused unless the
-/// task has stopped, because until then the branch still holds only the input.
-List<String> taskFetchArgs({
-  required String taskId,
-  required String into,
-  required String grid,
-}) => ['task', 'fetch', taskId, '--into', into, ..._grid(grid)];
-
 /// `grid task cancel <id>` — frees the slot at once; the agent stops within
 /// about half a minute. Nothing is rewound, so the branch stays fetchable.
 List<String> taskCancelArgs({required String taskId, required String grid}) => [

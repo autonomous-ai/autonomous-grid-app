@@ -202,40 +202,37 @@ void main() {
   });
 
   group('tasks', () {
-    test(
-      'a state this build has never heard of is not treated as finished',
-      () {
-        // Conservative on purpose: fetching an unfinished task hands back its
-        // input files as though they were the result.
-        final task = CodeTask.fromJson({'id': 't', 'state': 'reticulating'})!;
-        expect(task.state, TaskState.unknown);
-        expect(task.state.isTerminal, isFalse);
-        expect(task.hasFetchableBranch, isFalse);
-      },
-    );
+    test('a state this build has never heard of is watched, not summed up', () {
+      // Conservative on purpose: a task in a state this build cannot read may
+      // still be running, so it is not terminal — the transcript keeps its
+      // live view open rather than printing "It stopped." over a working one.
+      final task = CodeTask.fromJson({'id': 't', 'state': 'reticulating'})!;
+      expect(task.state, TaskState.unknown);
+      expect(task.state.isTerminal, isFalse);
+    });
 
-    test(
-      'a collected branch is not fetchable, whatever else the row still says',
-      () {
-        final task = CodeTask.fromJson({
-          'id': 't',
-          'state': 'completed',
-          'branch': 'task/t',
-          'branch_pruned': true,
-        })!;
-        expect(task.hasFetchableBranch, isFalse);
-      },
-    );
+    test('a collected branch is flagged, so its notice can be shown', () {
+      // The transcript says a task's files were cleared after the retention
+      // window; that line hangs on this flag.
+      final task = CodeTask.fromJson({
+        'id': 't',
+        'state': 'completed',
+        'branch': 'task/t',
+        'branch_pruned': true,
+      })!;
+      expect(task.branchPruned, isTrue);
+    });
 
     test('an absent branch_pruned means the branch is still there', () {
       // A relay predating branch collection sends no such key; reading absence
-      // the other way would refuse every fetch against every older relay.
+      // the other way would flag every finished task on every older relay as
+      // cleared.
       final task = CodeTask.fromJson({
         'id': 't',
         'state': 'completed',
         'branch': 'task/t',
       })!;
-      expect(task.hasFetchableBranch, isTrue);
+      expect(task.branchPruned, isFalse);
     });
 
     test('queue_expired is told apart from any other failure', () {

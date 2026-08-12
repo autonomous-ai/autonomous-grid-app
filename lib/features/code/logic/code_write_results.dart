@@ -94,39 +94,6 @@ class CloneResult {
   }
 }
 
-/// Where `grid task fetch` put one task's result.
-class FetchResult {
-  const FetchResult({
-    required this.path,
-    required this.state,
-    this.resultCommit,
-    this.branch,
-  });
-
-  final String path;
-  final TaskState state;
-
-  /// Absent means the branch holds only what the task started from — a
-  /// cancelled run that never wrote anything. Said out loud, because a folder
-  /// of the task's own input files reads as a result.
-  final String? resultCommit;
-
-  final String? branch;
-
-  bool get isInputOnly => resultCommit == null;
-
-  static FetchResult? fromJson(Map<String, dynamic> json) {
-    final path = wireString(json, 'path');
-    if (path == null) return null;
-    return FetchResult(
-      path: path,
-      state: TaskState.fromWire(wireString(json, 'state')),
-      resultCommit: wireString(json, 'result_commit'),
-      branch: wireString(json, 'branch'),
-    );
-  }
-}
-
 /// What `grid task cancel` left behind.
 ///
 /// The slot is free immediately; the agent itself stops within about half a
