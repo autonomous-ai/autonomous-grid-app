@@ -136,6 +136,14 @@ mixin _ChatSend on _ChatSessions {
     _commit(conversation, phase: const SendBusy(), makeActive: into == null);
 
     final id = conversation.id;
+    // Empty this chat's live feed the moment the turn is committed, not when its
+    // sender finally starts. The working bubble is on screen from here, and
+    // everything between here and the sender — the grid being asked which
+    // assistant answers, a wait for the project's lane — is time it would spend
+    // showing the *previous* turn's commands under the new question. The sender
+    // resets again as it starts, because it is reached from the Playground too;
+    // this is the earlier of the two, not a second copy of the rule.
+    if (viaAgent) ref.read(agentRunsProvider.notifier).reset(id);
     final done = _dones[id] = Completer<void>();
     final project = ref.read(projectByIdProvider(conversation.projectId));
     // Who answers this turn, read here for the same reason [approval] is: the
