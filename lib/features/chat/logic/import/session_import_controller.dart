@@ -47,6 +47,14 @@ class ImportableSession {
   bool get isActionable => status != ImportStatus.imported;
 }
 
+/// What a finished sync did — the material for saying so out loud.
+///
+/// A count of failures rather than a bool, because the screen has to be able to
+/// say "184 brought over, 3 couldn't be read". Announcing a flat success over a
+/// run that skipped three is the shape of dishonest copy the conventions call a
+/// bug rather than a wording problem.
+typedef SyncOutcome = ({int imported, int failed, bool stopped});
+
 /// A sync in flight: which tool, how far through, and how many were skipped.
 ///
 /// Its own state rather than the screen's, because the run outlives the screen.
@@ -229,7 +237,10 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
   /// Failures do not stop the run. One unreadable session out of two hundred is
   /// a count in the summary, not a reason to abandon the other hundred and
   /// ninety-nine.
-  Future<void> syncAll(ImportedAgent agent, {required bool linkProject}) async {
+  Future<SyncOutcome> syncAll(
+    ImportedAgent agent, {
+    required bool linkProject,
+  }) async {
     final pending = [
       for (final row in state.value ?? const <ImportableSession>[])
         if (row.session.agent == agent && row.isActionable) row.session,
@@ -237,28 +248,38 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
     final progress = ref.read(importProgressProvider.notifier);
     if (pending.isEmpty) {
       progress.finish();
-      return;
+      return (imported: 0, failed: 0, stopped: false);
     }
 
     progress.begin(agent: agent, total: pending.length);
     final ledger = ref.read(sessionImportLedgerProvider);
     final records = await ledger.load();
+    var imported = 0;
     var failed = 0;
+    var stopped = false;
     for (final session in pending) {
       // Stop is a real stop: what has already been imported stays, and the
       // ledger below records exactly that much.
-      if (progress.isCancelled) break;
+      if (progress.isCancelled) {
+        stopped = true;
+        break;
+      }
       final failure = await _importOne(
         session,
         linkProject: linkProject,
         records: records,
       );
-      if (failure != null) failed++;
+      if (failure == null) {
+        imported++;
+      } else {
+        failed++;
+      }
       progress.advance(failed: failed);
     }
     await ledger.save(records.values);
     await _settle();
     progress.finish();
+    return (imported: imported, failed: failed, stopped: stopped);
   }
 
   /// One session, written to disk and noted in [records] — with no re-reading

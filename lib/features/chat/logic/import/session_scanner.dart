@@ -147,16 +147,19 @@ class SessionScanner {
       String? title;
       String? firstUserLine;
       var startedHere = false;
+      var sawTurn = false;
       await for (final line in _head(file)) {
         final json = _decodeObject(line);
         if (json == null) continue;
         workdir ??= _string(json['cwd']);
-        if (json['type'] == 'ai-title') {
+        final type = json['type'];
+        if (type == 'ai-title') {
           title = _string(json['aiTitle']) ?? title;
           continue;
         }
+        if (type == 'user' || type == 'assistant') sawTurn = true;
         if (firstUserLine == null &&
-            json['type'] == 'user' &&
+            type == 'user' &&
             json['isSidechain'] != true &&
             json['isMeta'] != true) {
           startedHere = _startedInThisApp(json['message']);
@@ -174,6 +177,22 @@ class SessionScanner {
       // — follow these for everything you do in…", because that is the line
       // this app puts at the top of a project's opening turn.
       if (startedHere) return null;
+
+      // A session that was opened and never talked in. Claude Code writes one
+      // of these whenever a window is opened and abandoned: 1.3 KB of `mode`,
+      // `permission-mode`, `system` and `last-prompt` lines, and not a single
+      // `user` or `assistant` turn.
+      //
+      // Dropped here rather than left to fail at import, because a row that
+      // *can never* be imported is worse than a missing one: it is offered
+      // forever, it is counted in "Sync 5" forever, and every sync fails on it
+      // again. Three of them are why this build still said "Sync 5" after a
+      // sync that had nothing left to do.
+      //
+      // Only when the whole file was read. A session too big for the head
+      // window whose first 512 KB happen to hold no turn is a different thing
+      // entirely, and guessing about it would hide a real conversation.
+      if (!sawTurn && stat.size <= _headBytes) return null;
 
       return DiscoveredSession(
         agent: ImportedAgent.claude,
@@ -201,15 +220,32 @@ class SessionScanner {
     if (!sessions.existsSync()) return const [];
     final names = await _codexThreadNames();
 
-    final out = <DiscoveredSession>[];
+    // One entry per *thread*, keyed by the id inside the file.
+    //
+    // A Codex thread is not one file. Resuming or forking one writes another
+    // rollout carrying the same `session_id`, and two of the threads on this
+    // machine had three files and two. Listed per file that is three rows for
+    // one conversation — and worse than untidy: every row imports to the same
+    // chat id, so they overwrite each other, and the ledger (also keyed by
+    // thread) can only remember one, leaving the rest permanently "not
+    // imported". That is what "Sync 3" was, on a Codex history with nothing
+    // left to bring over.
+    final newest = <String, DiscoveredSession>{};
     await for (final entry in sessions.list(recursive: true)) {
       if (entry is! File) continue;
       final name = _basename(entry.path);
       if (!name.startsWith('rollout-') || !name.endsWith('.jsonl')) continue;
       final session = await _describeCodex(entry, names);
-      if (session != null) out.add(session);
+      if (session == null) continue;
+      // The most recently written file is the thread as it stands: it is the
+      // one Codex itself resumes, and on both threads here it was also the
+      // longest. Ties keep the first seen, which is arbitrary but stable.
+      final held = newest[session.sessionId];
+      if (held == null || session.updatedAt.isAfter(held.updatedAt)) {
+        newest[session.sessionId] = session;
+      }
     }
-    return out;
+    return newest.values.toList();
   }
 
   Future<DiscoveredSession?> _describeCodex(

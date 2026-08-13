@@ -136,14 +136,33 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
     );
     if (!ok || !mounted) return;
 
-    await ref
+    final outcome = await ref
         .read(sessionImportProvider.notifier)
         .syncAll(agent, linkProject: _linkProjects);
     if (!mounted) return;
-    ToastScope.show(
-      context,
-      ToastSpec(message: 'Your ${agent.label} conversations are in your chats'),
-    );
+    ToastScope.show(context, ToastSpec(message: _syncSummary(outcome)));
+  }
+
+  /// What the sync actually did, in one line.
+  ///
+  /// The failures are named rather than folded into a cheerful total. A run
+  /// that skipped three sessions and said "all your conversations are here" is
+  /// the exact shape of copy the conventions call a bug rather than a wording
+  /// problem — and the three would sit in the list afterwards, contradicting it.
+  String _syncSummary(SyncOutcome outcome) {
+    final brought = outcome.imported == 1
+        ? '1 conversation'
+        : '${outcome.imported} conversations';
+    final stopped = outcome.stopped ? 'Stopped — ' : '';
+    if (outcome.failed == 0) {
+      return outcome.imported == 0
+          ? '${stopped}Nothing was brought over'
+          : '$stopped$brought brought over';
+    }
+    final skipped = outcome.failed == 1
+        ? "1 couldn't be read"
+        : "${outcome.failed} couldn't be read";
+    return '$stopped$brought brought over  ·  $skipped';
   }
 
   void _openSource(ImportedAgent agent) {
