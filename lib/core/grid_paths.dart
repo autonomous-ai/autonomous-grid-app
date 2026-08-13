@@ -145,6 +145,13 @@ class GridPaths {
   /// App-owned; the CLI never touches it.
   static File get onboardingFile => File('${home.path}/app/onboarding.json');
 
+  /// Whether the one-time welcome screen has already been shown
+  /// (`~/.grid/app/welcome.json`). Its own file rather than a field on
+  /// [onboardingFile]: that one records a *choice the user made* and is read to
+  /// decide where they land, while this only records that a screen was seen.
+  /// App-owned; the CLI never touches it.
+  static File get welcomeFile => File('${home.path}/app/welcome.json');
+
   /// Which scheduled-task results have already been put into Chat, so a finished
   /// run is delivered once and not again on every launch. App-owned.
   static File get taskDeliveryFile =>
