@@ -36,7 +36,11 @@ ParsedSession? parseClaudeSession({
   required List<String> lines,
   String? preferredTitle,
 }) {
-  final messages = <ChatMessage>[];
+  final drafts = <TurnDraft>[];
+  // Steps waiting on their outcome, by the tool call's own id. Claude answers a
+  // `tool_use` with a `tool_result` in the *next* message, so a step is always
+  // built before the thing that says how it went.
+  final pending = <String, StepDraft>{};
   String? title;
   String? workdir;
   String? model;
@@ -86,31 +90,28 @@ ParsedSession? parseClaudeSession({
     final content = message['content'];
 
     if (type == _kUser) {
+      // A user line carries two unrelated things: what the person typed, and
+      // the output of every tool the agent just ran. The results go to the
+      // steps waiting on them; only the typing is a turn.
+      _settleResults(content, pending);
       final text = _userText(content);
       if (text.isEmpty) continue;
-      messages.add(ChatMessage(role: ChatRole.user, text: text));
+      drafts.add(TurnDraft(ChatRole.user)..say(text));
       continue;
     }
 
     final turnModel = _stringOrNull(message['model']);
     if (turnModel != null) model = turnModel;
-    final (text: text, steps: steps) = _assistantText(content);
-    toolCalls += steps;
-    if (text.isEmpty) continue;
-    messages.add(
-      ChatMessage(
-        role: ChatRole.assistant,
-        text: text,
-        agent: ImportedAgent.claude.id,
-        model: turnModel,
-      ),
-    );
+    final draft = TurnDraft(ChatRole.assistant, model: turnModel);
+    _fillAssistant(draft, content, pending);
+    if (draft.isEmpty) continue;
+    toolCalls += draft.items.whereType<StepDraft>().length;
+    drafts.add(draft);
   }
 
-  // Clipped here, on whole turns, not on the lines they were assembled from —
-  // see [finishTurns].
-  final (messages: merged, clipped: truncated) = finishTurns(
-    mergeTurns(messages),
+  final (messages: merged, clipped: truncated) = finishDrafts(
+    mergeDrafts(drafts),
+    agentId: ImportedAgent.claude.id,
   );
   if (merged.isEmpty) return null;
 
@@ -173,64 +174,94 @@ String _userText(Object? content) {
   return parts.join('\n\n').trim();
 }
 
-/// The prose of an assistant turn, with each tool call folded in where it
-/// happened, and the number of calls folded.
+/// Fill [draft] from an assistant line's content blocks, in order.
 ///
-/// Order is kept: the agent says a sentence, runs a command, then says the next
-/// sentence, and reading it back in that order is the only way the transcript
-/// explains itself. `thinking` blocks are dropped — they are the model's
-/// private reasoning, they are the longest thing in the file, and neither tool
-/// shows them by default in its own UI.
-({String text, int steps}) _assistantText(Object? content) {
-  if (content is String) return (text: content.trim(), steps: 0);
-  if (content is! List) return (text: '', steps: 0);
-  final parts = <String>[];
-  var steps = 0;
+/// Order is kept because it is the whole point: the agent says a sentence, runs
+/// a command, reads what came back, says the next sentence — and reading it in
+/// that order is the only way the transcript explains itself.
+///
+/// `thinking` blocks are dropped. They are the model's private reasoning, they
+/// are the longest thing in the file, and neither tool shows them by default in
+/// its own UI.
+void _fillAssistant(
+  TurnDraft draft,
+  Object? content,
+  Map<String, StepDraft> pending,
+) {
+  if (content is String) {
+    draft.say(content);
+    return;
+  }
+  if (content is! List) return;
   for (final block in content) {
     if (block is! Map<String, dynamic>) continue;
     switch (block['type']) {
       case 'text':
         final text = _stringOrNull(block['text']);
-        if (text != null && text.trim().isNotEmpty) parts.add(text.trim());
+        if (text != null) draft.say(text);
       case 'tool_use':
-        steps++;
-        parts.add(
-          foldedToolCall(
-            tool: _stringOrNull(block['name']) ?? 'tool',
-            detail: _toolDetail(block['input']),
-          ),
+        final id = _stringOrNull(block['id']) ?? '';
+        final tool = _stringOrNull(block['name']) ?? 'tool';
+        final step = StepDraft(
+          id: id,
+          tool: tool,
+          kind: stepKindFor(tool),
+          request: _request(block['input']),
         );
+        draft.ran(step);
+        // Keyless steps can still be shown; they just never learn how they
+        // went, which [StepDraft.build] reports as `unknown` rather than
+        // guessing.
+        if (id.isNotEmpty) pending[id] = step;
     }
   }
-  return (text: parts.join('\n\n').trim(), steps: steps);
 }
 
-/// The one field of a tool's input worth showing on a folded line.
+/// Hand each `tool_result` in [content] to the step it belongs to.
+void _settleResults(Object? content, Map<String, StepDraft> pending) {
+  if (content is! List) return;
+  for (final block in content) {
+    if (block is! Map<String, dynamic>) continue;
+    if (block['type'] != 'tool_result') continue;
+    final step = pending.remove(_stringOrNull(block['tool_use_id']));
+    if (step == null) continue;
+    step.result = _resultText(block['content']);
+    // Written by the CLI as a real bool on some builds and the string "False"
+    // on others, so only an explicit truth counts as a failure.
+    step.failed = block['is_error'] == true || block['is_error'] == 'True';
+  }
+}
+
+/// A tool result's content as text. It arrives as a plain string, or as the
+/// same block list a message uses.
+String? _resultText(Object? content) {
+  if (content is String) return content.trim().isEmpty ? null : content;
+  if (content is! List) return null;
+  final parts = <String>[];
+  for (final block in content) {
+    if (block is Map<String, dynamic> && block['type'] == 'text') {
+      final text = _stringOrNull(block['text']);
+      if (text != null) parts.add(text);
+    }
+  }
+  return parts.isEmpty ? null : parts.join('\n');
+}
+
+/// What the agent asked the tool to do, as text a person can read.
 ///
-/// Named fields first, in the order they identify the call: what was run, what
-/// was touched, what was searched for. The fallback is the first string in the
-/// map rather than the whole JSON — a `Write` call carries an entire file in
-/// `content`, and dumping that into the transcript is exactly the wall of text
-/// folding exists to avoid.
-String? _toolDetail(Object? input) {
+/// The named field where the tool has one — the command, the path, the pattern
+/// — because that is the request. Everything else falls back to the arguments
+/// as JSON, which is what the field is documented to hold and is still readable
+/// when the row is opened.
+String? _request(Object? input) {
   if (input is! Map<String, dynamic>) return null;
-  for (final key in const [
-    'command',
-    'file_path',
-    'path',
-    'pattern',
-    'url',
-    'query',
-    'description',
-    'prompt',
-  ]) {
+  for (final key in const ['command', 'file_path', 'path', 'pattern', 'url']) {
     final value = input[key];
     if (value is String && value.trim().isNotEmpty) return value;
   }
-  for (final value in input.values) {
-    if (value is String && value.trim().isNotEmpty) return value;
-  }
-  return null;
+  return input.isEmpty
+      ? null
+      : const JsonEncoder.withIndent('  ').convert(input);
 }
 
 String? _stringOrNull(Object? raw) =>

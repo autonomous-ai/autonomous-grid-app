@@ -34,9 +34,10 @@ class WhatComesOver extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            'Messages come across in full. Each command the assistant ran '
-            'becomes a one-line note — what it printed, and any images, stay '
-            'in the original.',
+            'Messages come across in full, and so does the work: every command '
+            'the assistant ran arrives as a step you can open, with the start '
+            "of what it printed. Long output is trimmed, and images stay in "
+            'the original.',
             style: TextStyle(
               color: AppPalette.textFaint,
               fontSize: 12.5,

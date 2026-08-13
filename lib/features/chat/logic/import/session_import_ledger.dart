@@ -15,7 +15,7 @@ import 'parsed_session.dart';
 /// monospace, every chat imported before that day kept the wall forever.
 ///
 /// Bump it whenever the shape of an imported transcript changes.
-const int kImportFormatVersion = 2;
+const int kImportFormatVersion = 3;
 
 /// One session this machine has already imported.
 ///

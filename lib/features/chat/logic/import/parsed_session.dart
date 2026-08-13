@@ -1,3 +1,4 @@
+import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../conversation.dart';
 
@@ -224,92 +225,209 @@ String clipImported(String text) {
   return text.substring(0, kMaxImportedMessageChars) + kTruncationNotice;
 }
 
-/// [merged] finished: adjacent step blocks joined, then every turn clipped.
+/// How much of a step's output an *import* keeps.
 ///
-/// **After merging, never before.** Both tools write one line per API
-/// round-trip, so a turn arrives in pieces and [mergeTurns] joins them — clip
-/// the pieces and the join puts them straight back over the limit. Measured on
-/// a real Codex rollout that way: a cap of 12,000 produced turns of 52,705 and
-/// 84,138 characters, because seven clipped pieces are one turn seven times too
-/// long. The cap has to be applied to the thing it is a cap on.
-({List<ChatMessage> messages, int clipped}) finishTurns(
-  List<ChatMessage> merged,
-) {
+/// Far less than the live transcript's `kStoredResultLimit`, and for a reason
+/// that branch's own note spells out: on disk a result is one row of one step
+/// of a turn from weeks ago. It sizes that limit for a turn running "twenty-odd
+/// commands" — a fair description of a live turn, and not of an imported
+/// session. The largest here holds **2,089** steps, whose outputs come to 2 MB
+/// raw; kept at the live limit they were 1.6 MB of shell output in one chat
+/// file, re-encoded every time that chat is spoken in.
+///
+/// Enough to see what came back — a few lines — which is what the row is for.
+/// The rest was never going to be read out of a transcript; it is still in the
+/// tool's own session file, which this import never touches.
+const int kImportedResultLimit = 240;
+
+/// One step of a turn, still being assembled.
+///
+/// Mutable, and that is the whole point: a tool call and its outcome arrive as
+/// two separate things on both streams — Claude answers a `tool_use` block with
+/// a `tool_result` in the *next* message, Codex a `function_call` with a
+/// `function_call_output` further down. [TurnStep] holds an immutable
+/// [AgentActivity], so the parsers assemble here and build once the outcome is
+/// known.
+class StepDraft {
+  StepDraft({
+    required this.id,
+    required this.tool,
+    required this.kind,
+    this.request,
+  });
+
+  /// The tool call's own id on the stream — what its result is keyed to.
+  final String id;
+
+  /// The tool's name as the agent calls it: `Bash`, `Read`, `exec_command`.
+  final String tool;
+
+  final AgentActivityKind kind;
+
+  /// What was asked of the tool — the command line, or the arguments.
+  final String? request;
+
+  /// What came back. Null while unmatched, which is how a step ends up
+  /// [AgentActivityStatus.unknown].
+  String? result;
+
+  /// Whether the tool reported the call as failed.
+  bool failed = false;
+
+  /// This step as the transcript stores it.
+  ///
+  /// A step with no result settles as `unknown`, never as done: the file said
+  /// nothing about how it went, and a tick would vouch for a command that may
+  /// have failed — the same reasoning [AgentActivityStatus.unknown] was added
+  /// for on a live turn that was stopped mid-tool.
+  AgentActivity build() => AgentActivity(
+    id: id,
+    kind: kind,
+    label: stepLabel(tool: tool, request: request),
+    status: result == null
+        ? AgentActivityStatus.unknown
+        : (failed ? AgentActivityStatus.failed : AgentActivityStatus.done),
+    tool: tool,
+    request: request,
+    result: _trimResult(result),
+  );
+
+  /// [text] cut to [kImportedResultLimit], saying so rather than trailing off.
+  static String? _trimResult(String? text) {
+    if (text == null || text.length <= kImportedResultLimit) return text;
+    return '${text.substring(0, kImportedResultLimit).trimRight()}\n…';
+  }
+}
+
+/// One turn under construction: what was said and what was run, in order.
+class TurnDraft {
+  TurnDraft(this.role, {this.model});
+
+  final ChatRole role;
+
+  /// The model that answered, on an assistant turn.
+  String? model;
+
+  /// Prose passages ([String]) and steps ([StepDraft]), interleaved in the
+  /// order they happened — which is the order the chat replays them in.
+  final List<Object> items = [];
+
+  void say(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isNotEmpty) items.add(trimmed);
+  }
+
+  void ran(StepDraft step) => items.add(step);
+
+  bool get isEmpty => items.isEmpty;
+
+  /// Whether anything here needs the timeline view at all. A turn that only
+  /// spoke is stored the plain way, exactly as every reply saved before turns
+  /// recorded their own order — see `ChatBubble`, which draws `parts` only when
+  /// they are there.
+  bool get hasSteps => items.any((item) => item is StepDraft);
+
+  /// The prose alone, which is what search, the sidebar preview and the model
+  /// itself read. The steps are *shown* from [parts]; they are not what the
+  /// turn said.
+  String get prose => items.whereType<String>().join('\n\n').trim();
+
+  List<TurnPart> get parts => [
+    for (final item in items)
+      if (item is StepDraft)
+        TurnStep(item.build())
+      else
+        TurnText(item as String),
+  ];
+}
+
+/// [drafts] with empty turns dropped and neighbours of one role merged.
+///
+/// Both tools write one line per API round-trip, so a single turn arrives as
+/// several: the agent says a sentence, calls a tool, reads the result, says the
+/// next sentence — four lines, one turn. Left as they are, the transcript draws
+/// four bubbles from the same speaker and reads as an agent talking to itself.
+List<TurnDraft> mergeDrafts(List<TurnDraft> drafts) {
+  final out = <TurnDraft>[];
+  for (final draft in drafts) {
+    if (draft.isEmpty) continue;
+    final last = out.isEmpty ? null : out.last;
+    if (last == null || last.role != draft.role) {
+      out.add(draft);
+      continue;
+    }
+    last.items.addAll(draft.items);
+    // The later half of a merged turn carries the stamps — an early line has no
+    // model on it yet.
+    last.model = draft.model ?? last.model;
+  }
+  return out;
+}
+
+/// [drafts] as the messages a chat is made of, and how many were clipped.
+///
+/// The prose is capped here, on whole turns, not on the lines they were
+/// assembled from. Measured the other way round: a cap of 12,000 produced turns
+/// of 52,705 and 84,138 characters, because seven clipped pieces are one turn
+/// seven times too long. The cap has to be applied to the thing it is a cap on.
+///
+/// The steps are *not* capped here — each one caps its own payload as it is
+/// written to disk (`kStoredResultLimit`), which is the right place for it: the
+/// limit belongs to the row, not to the turn holding the rows.
+({List<ChatMessage> messages, int clipped}) finishDrafts(
+  List<TurnDraft> drafts, {
+  required String agentId,
+}) {
   final out = <ChatMessage>[];
   var clipped = 0;
-  for (final message in merged) {
-    final joined = _joinStepBlocks(message.text);
-    final text = clipImported(joined);
-    if (text.length != joined.length) clipped++;
-    out.add(text == message.text ? message : message.copyWith(text: text));
+  for (final draft in drafts) {
+    final prose = clipImported(draft.prose);
+    if (prose.length != draft.prose.length) clipped++;
+    if (draft.role == ChatRole.user) {
+      out.add(ChatMessage(role: ChatRole.user, text: prose));
+      continue;
+    }
+    out.add(
+      ChatMessage(
+        role: ChatRole.assistant,
+        text: prose,
+        parts: draft.hasSteps ? draft.parts : const [],
+        agent: agentId,
+        model: draft.model,
+      ),
+    );
   }
   return (messages: out, clipped: clipped);
 }
 
-/// Runs of tool steps, welded into one block.
-///
-/// Every step is emitted as a one-line fenced block of its own (see
-/// [foldedToolCall]) because the parsers meet them one at a time — Claude's
-/// arrive as blocks inside a turn, Codex's as separate stream items joined
-/// later. This closes the seam afterwards, so a turn that ran eighty-five
-/// commands draws *one* block of eighty-five lines instead of eighty-five
-/// blocks. That count is real: it is the worst turn in the largest session on
-/// this machine, and as separate blocks it was a wall.
-String _joinStepBlocks(String text) => text.replaceAll('```\n\n```\n', '');
-
-/// The longest a step's detail runs before it is cut.
-const int _maxToolDetail = 110;
+/// The longest a step's label runs before it is cut. The label is the one line
+/// the row shows folded; the full command stays in [StepDraft.request].
+const int _maxLabel = 110;
 
 /// A path longer than this is shown by its last two segments alone.
 const int _maxPathLength = 44;
 
-/// One tool step, as a line the transcript can show.
+/// The one line a step's row shows when it is folded shut.
 ///
-/// This app's own transcript draws a step as a row with an icon and a status —
-/// but that shape (`TurnPart`) does not exist on this branch, so an imported
-/// step becomes markdown. A **fenced block**, not a blockquote with the command
-/// in inline code, which is what this did first and what made an imported chat
-/// look wrong beside the tool it came from:
-///
-/// - Inline code does not survive a line break, so a multi-line command had to
-///   be flattened. A heredoc script came out as one unreadable run of tokens,
-///   cut mid-word at the cap — the single worst thing on the screen.
-/// - A run of them was a run of quoted paragraphs, each with its own margins.
-///   Monospace lines in one block read as a list of commands, which is what
-///   they are, and [_joinStepBlocks] is what welds the run together.
-///
-/// The result of the call is deliberately not carried. It is the bulk of every
-/// session file — thousands of characters per step, most of it a directory
-/// listing the agent has long since acted on — and a transcript is read to
-/// follow what happened, not to re-read what the tools printed.
-String foldedToolCall({required String tool, String? detail}) {
-  final name = tool.trim().isEmpty ? 'tool' : tool.trim();
-  final line = _stepDetail(detail);
-  if (line.isEmpty) return '```\n$name\n```';
-  // Padded so the details line up down the block once several steps join. A
-  // name longer than the pad simply keeps its two spaces.
-  return '```\n${name.padRight(7)}  $line\n```';
-}
-
-/// The one line that says what a step did.
-///
-/// The *first* line of the detail rather than all of it flattened: a shell
+/// The *first* line of the request rather than all of it flattened: a shell
 /// heredoc or a multi-line patch says what it is in its opening words, and the
-/// rest only becomes noise once the newlines are gone. An ellipsis marks that
-/// there was more, so nothing is quietly dropped.
-String _stepDetail(Object? raw) {
-  if (raw is! String) return '';
-  final trimmed = raw.trim();
-  if (trimmed.isEmpty) return '';
-  final lines = trimmed.split('\n');
+/// rest only becomes noise once the newlines are gone. Opening the row shows
+/// the request whole, so nothing is lost by keeping this short.
+String stepLabel({required String tool, String? request}) {
+  final name = tool.trim().isEmpty ? 'tool' : tool.trim();
+  final raw = request?.trim() ?? '';
+  if (raw.isEmpty) return name;
+  final lines = raw.split('\n');
   var head = _oneLine(lines.first);
   if (head.startsWith('/') && head.length > _maxPathLength) {
     head = _shortPath(head);
   }
-  if (head.length > _maxToolDetail) {
-    return '${head.substring(0, _maxToolDetail).trimRight()}…';
+  if (head.length > _maxLabel) {
+    head = '${head.substring(0, _maxLabel).trimRight()}…';
+  } else if (lines.length > 1) {
+    head = '$head …';
   }
-  return lines.length > 1 ? '$head …' : head;
+  return '$name  $head';
 }
 
 /// The tail of a long absolute path — the two segments a person reads.
@@ -317,44 +435,29 @@ String _stepDetail(Object? raw) {
 /// `/Users/…/lib/features/plugins/logic/plugins_controller.dart` becomes
 /// `logic/plugins_controller.dart`. The full path identifies the file to a
 /// machine; these two identify it to the person who wrote it, and the same
-/// ninety-character prefix repeated across two thousand steps identifies
-/// nothing at all.
+/// ninety-character prefix repeated across two thousand rows identifies nothing
+/// at all.
 String _shortPath(String path) {
   final parts = path.split('/')..removeWhere((p) => p.isEmpty);
   if (parts.length <= 2) return path;
   return parts.sublist(parts.length - 2).join('/');
 }
 
-/// [text] as a single line fit for a step: runs of whitespace collapse to one
-/// space, and any backtick is defused — three in a row would close the fence
-/// the line sits in and spill the rest of the turn onto the page.
-String _oneLine(String text) =>
-    text.replaceAll('`', "'").replaceAll(RegExp(r'\s+'), ' ').trim();
-
-/// The message list with empty turns dropped and neighbours of one role merged.
+/// Which icon the row gets, from the tool's name.
 ///
-/// Both tools write one line per API round-trip, so a single turn arrives as
-/// several: the agent says a sentence, calls a tool, reads the result, says the
-/// next sentence — four lines, one turn. Left as they are, the transcript draws
-/// four bubbles from the same speaker and reads as an agent talking to itself.
-List<ChatMessage> mergeTurns(List<ChatMessage> messages) {
-  final out = <ChatMessage>[];
-  for (final message in messages) {
-    if (message.text.trim().isEmpty && message.media.isEmpty) continue;
-    final last = out.isEmpty ? null : out.last;
-    if (last == null || last.role != message.role) {
-      out.add(message);
-      continue;
-    }
-    out[out.length - 1] = last.copyWith(
-      text: '${last.text}\n\n${message.text}'.trim(),
-      // The later half of a merged turn is the one that carries the finished
-      // turn's stamps — an early line has no model on it yet.
-      model: message.model ?? last.model,
-    );
-  }
-  return out;
+/// Named rather than guessed from the payload: every agent words its tools
+/// differently, and the name is the one thing each of them does report.
+AgentActivityKind stepKindFor(String tool) {
+  final name = tool.toLowerCase();
+  const shell = ['bash', 'exec', 'shell', 'terminal', 'command', 'run'];
+  const web = ['web', 'search', 'fetch', 'browser'];
+  if (shell.any(name.contains)) return AgentActivityKind.command;
+  if (web.any(name.contains)) return AgentActivityKind.web;
+  return AgentActivityKind.tool;
 }
+
+/// [text] as a single line: runs of whitespace collapse to one space.
+String _oneLine(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// A title for a session the tool never named, from the first thing the user
 /// said — the same rule the app's own chats follow, so an imported chat sits in

@@ -31,7 +31,10 @@ ParsedSession? parseCodexSession({
   required List<String> lines,
   String? preferredTitle,
 }) {
-  final messages = <ChatMessage>[];
+  final drafts = <TurnDraft>[];
+  // Steps waiting on their outcome, by `call_id` — a Codex call and its output
+  // are two separate items on the stream, often far apart.
+  final pending = <String, StepDraft>{};
   String? sessionId;
   String? workdir;
   String? model;
@@ -73,25 +76,16 @@ ParsedSession? parseCodexSession({
           firstAt ??= at;
           lastAt = at;
         }
-        final message = _itemToMessage(payload, model: model);
-        if (message == null) continue;
-        if (message.isStep) toolCalls++;
-        messages.add(
-          message.role == ChatRole.user
-              ? ChatMessage(role: ChatRole.user, text: message.text)
-              : ChatMessage(
-                  role: ChatRole.assistant,
-                  text: message.text,
-                  agent: ImportedAgent.codex.id,
-                  model: message.model,
-                ),
-        );
+        final draft = _itemToDraft(payload, model: model, pending: pending);
+        if (draft == null) continue;
+        toolCalls += draft.items.whereType<StepDraft>().length;
+        drafts.add(draft);
     }
   }
 
-  // Whole turns, not the lines they were assembled from — see [finishTurns].
-  final (messages: merged, clipped: truncated) = finishTurns(
-    mergeTurns(messages),
+  final (messages: merged, clipped: truncated) = finishDrafts(
+    mergeDrafts(drafts),
+    agentId: ImportedAgent.codex.id,
   );
   if (merged.isEmpty) return null;
   final started = firstAt ?? lastAt;
@@ -113,14 +107,16 @@ ParsedSession? parseCodexSession({
   );
 }
 
-/// A `response_item` as one transcript message, or null when it carries nothing
-/// the user should read.
+/// A `response_item` as one turn's worth of draft, or null when it carries
+/// nothing the user should read.
 ///
-/// [isStep] marks the ones that were a tool call rather than something said, so
-/// the caller can count them without inspecting the text it just built.
-({ChatRole role, String text, String? model, bool isStep})? _itemToMessage(
+/// One draft per item, even for a single step: consecutive assistant drafts are
+/// merged afterwards ([mergeDrafts]), which keeps the item order without this
+/// having to track which turn is open.
+TurnDraft? _itemToDraft(
   Map<String, dynamic> payload, {
   required String? model,
+  required Map<String, StepDraft> pending,
 }) {
   switch (payload['type']) {
     case 'message':
@@ -131,52 +127,72 @@ ParsedSession? parseCodexSession({
       final text = _messageText(payload['content']);
       if (text.isEmpty) return null;
       return role == 'user'
-          ? (role: ChatRole.user, text: text, model: null, isStep: false)
-          : (role: ChatRole.assistant, text: text, model: model, isStep: false);
+          ? (TurnDraft(ChatRole.user)..say(text))
+          : (TurnDraft(ChatRole.assistant, model: model)..say(text));
 
     case 'function_call':
-      return (
-        role: ChatRole.assistant,
-        text: foldedToolCall(
-          tool: _stringOrNull(payload['name']) ?? 'tool',
-          detail: _argumentsDetail(payload['arguments']),
-        ),
+      return _stepDraft(
+        payload,
         model: model,
-        isStep: true,
+        pending: pending,
+        tool: _stringOrNull(payload['name']) ?? 'tool',
+        request: _requestText(payload['arguments']),
       );
 
     case 'custom_tool_call':
-      return (
-        role: ChatRole.assistant,
-        text: foldedToolCall(
-          tool: _stringOrNull(payload['name']) ?? 'tool',
-          detail: _stringOrNull(payload['input']),
-        ),
+      return _stepDraft(
+        payload,
         model: model,
-        isStep: true,
+        pending: pending,
+        tool: _stringOrNull(payload['name']) ?? 'tool',
+        request: _stringOrNull(payload['input']),
       );
 
     case 'tool_search_call':
       final arguments = payload['arguments'];
-      return (
-        role: ChatRole.assistant,
-        text: foldedToolCall(
-          tool: 'tool search',
-          detail: arguments is Map<String, dynamic>
-              ? _stringOrNull(arguments['query'])
-              : null,
-        ),
+      return _stepDraft(
+        payload,
         model: model,
-        isStep: true,
+        pending: pending,
+        tool: 'tool search',
+        request: arguments is Map<String, dynamic>
+            ? _stringOrNull(arguments['query'])
+            : null,
       );
 
-    // `function_call_output`, `tool_search_output` and `reasoning` are all
-    // dropped: the first two are the tool output this import doesn't carry (see
-    // [foldedToolCall]), and reasoning is an encrypted blob with nothing
-    // readable in it.
+    // The other half of a call. It carries no turn of its own — it fills in the
+    // step already on the timeline.
+    case 'function_call_output':
+    case 'custom_tool_call_output':
+    case 'tool_search_output':
+      final step = pending.remove(_stringOrNull(payload['call_id']));
+      step?.result = _stringOrNull(payload['output']);
+      return null;
+
+    // `reasoning` is an encrypted blob with nothing readable in it.
     default:
       return null;
   }
+}
+
+/// A one-step draft, registered so its output can find it later.
+TurnDraft _stepDraft(
+  Map<String, dynamic> payload, {
+  required String? model,
+  required Map<String, StepDraft> pending,
+  required String tool,
+  required String? request,
+}) {
+  final id =
+      _stringOrNull(payload['call_id']) ?? _stringOrNull(payload['id']) ?? '';
+  final step = StepDraft(
+    id: id,
+    tool: tool,
+    kind: stepKindFor(tool),
+    request: request,
+  );
+  if (id.isNotEmpty) pending[id] = step;
+  return TurnDraft(ChatRole.assistant, model: model)..ran(step);
 }
 
 /// The readable text of a message's content blocks.
@@ -202,39 +218,27 @@ String _messageText(Object? content) {
   return parts.join('\n\n').trim();
 }
 
-/// The one field of a call's arguments worth showing on a folded line.
+/// What was asked of the tool, as text a person can read.
 ///
-/// The arguments arrive as a JSON *string*, so a call that can't be decoded
-/// falls back to the raw text — clipped like everything else, and still more
-/// use than showing nothing.
-String? _argumentsDetail(Object? raw) {
+/// The arguments arrive as a JSON *string*. The named field wins where the call
+/// has one — `cmd` is the command, and a command is what the row is about —
+/// and anything else is re-indented rather than shown as one packed line, since
+/// the row can be opened to read it.
+String? _requestText(Object? raw) {
   if (raw is! String || raw.trim().isEmpty) return null;
-  Object? decoded;
+  final Object? decoded;
   try {
     decoded = jsonDecode(raw);
   } on FormatException {
     return raw;
   }
   if (decoded is! Map<String, dynamic>) return raw;
-  for (final key in const [
-    'cmd',
-    'command',
-    'file_path',
-    'path',
-    'query',
-    'pattern',
-    'url',
-    'description',
-  ]) {
+  for (final key in const ['cmd', 'command', 'file_path', 'path', 'query']) {
     final value = decoded[key];
     if (value is String && value.trim().isNotEmpty) return value;
-    // `exec_command` sometimes carries the command as its argv list.
     if (value is List && value.isNotEmpty) return value.join(' ');
   }
-  for (final value in decoded.values) {
-    if (value is String && value.trim().isNotEmpty) return value;
-  }
-  return raw;
+  return const JsonEncoder.withIndent('  ').convert(decoded);
 }
 
 String? _stringOrNull(Object? raw) =>
