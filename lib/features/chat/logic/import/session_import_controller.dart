@@ -47,6 +47,76 @@ class ImportableSession {
   bool get isActionable => status != ImportStatus.imported;
 }
 
+/// A sync in flight: which tool, how far through, and how many were skipped.
+///
+/// Its own state rather than the screen's, because the run outlives the screen.
+/// Two hundred sessions take long enough that the user will click away, and a
+/// counter held in a widget would restart the moment they came back — or, worse,
+/// carry on invisibly with nothing on screen saying the history was still
+/// growing.
+class ImportProgress {
+  const ImportProgress({
+    required this.agent,
+    required this.done,
+    required this.total,
+    this.failed = 0,
+  });
+
+  final ImportedAgent agent;
+
+  /// How many have been *attempted*, which is what a progress bar measures.
+  /// [failed] is the part of that which didn't land.
+  final int done;
+  final int total;
+  final int failed;
+
+  double get fraction => total == 0 ? 0 : (done / total).clamp(0.0, 1.0);
+}
+
+/// The sync running now, or null when none is.
+final importProgressProvider =
+    NotifierProvider<ImportProgressNotifier, ImportProgress?>(
+      ImportProgressNotifier.new,
+    );
+
+class ImportProgressNotifier extends Notifier<ImportProgress?> {
+  @override
+  ImportProgress? build() => null;
+
+  bool _cancelled = false;
+
+  /// Whether Stop has been pressed on the run in flight. Read between sessions
+  /// by [SessionImportController.syncAll].
+  bool get isCancelled => _cancelled;
+
+  void begin({required ImportedAgent agent, required int total}) {
+    _cancelled = false;
+    state = ImportProgress(agent: agent, done: 0, total: total);
+  }
+
+  void advance({required int failed}) {
+    final current = state;
+    if (current == null) return;
+    state = ImportProgress(
+      agent: current.agent,
+      done: current.done + 1,
+      total: current.total,
+      failed: failed,
+    );
+  }
+
+  /// Ask the run to stop after the session it is on.
+  ///
+  /// Not mid-session: a half-written chat file is worse than one more chat, and
+  /// the longest session on this machine takes under a quarter of a second.
+  void cancel() => _cancelled = true;
+
+  void finish() {
+    _cancelled = false;
+    state = null;
+  }
+}
+
 /// The scanner, overridable so a test or a probe can point it at fixtures
 /// instead of at the user's real history.
 final sessionScannerProvider = Provider<SessionScanner>(
@@ -116,8 +186,8 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
         : ImportStatus.changed;
   }
 
-  /// Bring [session] in as a chat, and return null — or a line to show the user
-  /// when it couldn't be done.
+  /// Bring [session] in as a chat, and return null — or a line to show the
+  /// user when it couldn't be done.
   ///
   /// Failures come back as a message rather than an exception because every
   /// caller is a button, and a button needs something to say (the same contract
@@ -131,6 +201,77 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
   Future<String?> import(
     DiscoveredSession session, {
     required bool linkProject,
+  }) async {
+    final ledger = ref.read(sessionImportLedgerProvider);
+    final records = await ledger.load();
+    final failure = await _importOne(
+      session,
+      linkProject: linkProject,
+      records: records,
+    );
+    if (failure != null) return failure;
+    await ledger.save(records.values);
+    await _settle();
+    return null;
+  }
+
+  /// Bring over every session of [agent] that has anything to bring.
+  ///
+  /// Sessions already imported and unchanged are skipped, so running this a
+  /// second time costs a directory scan and nothing else — that is what the
+  /// ledger is for, and it is what makes this a *sync* rather than a re-import.
+  ///
+  /// One at a time, deliberately. Each session is a whole file read and parsed
+  /// (230 ms for the biggest on this machine), and running them together would
+  /// hold every transcript in memory at once for no gain — the work is disk and
+  /// CPU bound, not waiting on anything.
+  ///
+  /// Failures do not stop the run. One unreadable session out of two hundred is
+  /// a count in the summary, not a reason to abandon the other hundred and
+  /// ninety-nine.
+  Future<void> syncAll(ImportedAgent agent, {required bool linkProject}) async {
+    final pending = [
+      for (final row in state.value ?? const <ImportableSession>[])
+        if (row.session.agent == agent && row.isActionable) row.session,
+    ];
+    final progress = ref.read(importProgressProvider.notifier);
+    if (pending.isEmpty) {
+      progress.finish();
+      return;
+    }
+
+    progress.begin(agent: agent, total: pending.length);
+    final ledger = ref.read(sessionImportLedgerProvider);
+    final records = await ledger.load();
+    var failed = 0;
+    for (final session in pending) {
+      // Stop is a real stop: what has already been imported stays, and the
+      // ledger below records exactly that much.
+      if (progress.isCancelled) break;
+      final failure = await _importOne(
+        session,
+        linkProject: linkProject,
+        records: records,
+      );
+      if (failure != null) failed++;
+      progress.advance(failed: failed);
+    }
+    await ledger.save(records.values);
+    await _settle();
+    progress.finish();
+  }
+
+  /// One session, written to disk and noted in [records] — with no re-reading
+  /// of the chat folder afterwards.
+  ///
+  /// That last part is the whole reason this is split out. Re-reading the
+  /// history and re-scanning the session folders after *every* session turns a
+  /// sync of two hundred into two hundred full re-reads of a history that is
+  /// growing by one chat each time. The callers do both once, at the end.
+  Future<String?> _importOne(
+    DiscoveredSession session, {
+    required bool linkProject,
+    required Map<String, ImportRecord> records,
   }) async {
     final file = File(session.path);
     final String content;
@@ -180,33 +321,30 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
         );
 
     ref.read(chatStoreProvider).save(conversation);
-    await _remember(session, conversation.id, digestOfText(content));
-    // Fold the new chat into the sidebar. The store is the source of truth and
-    // the controller re-reads it — the same path a restored cloud backup takes.
-    await ref.read(chatSessionsProvider.notifier).reloadFromDisk();
-    await refresh();
-    return null;
-  }
-
-  /// Note that [session] is now [conversationId], keeping every other record.
-  Future<void> _remember(
-    DiscoveredSession session,
-    String conversationId,
-    String digest,
-  ) async {
-    final ledger = ref.read(sessionImportLedgerProvider);
-    final records = await ledger.load();
     records[_key(session)] = ImportRecord(
       agent: session.agent.id,
       sessionId: session.sessionId,
-      conversationId: conversationId,
+      conversationId: conversation.id,
       sourcePath: session.path,
-      digest: digest,
+      digest: digestOfText(content),
       sourceSize: session.sizeBytes,
       sourceModified: session.updatedAt,
       importedAt: DateTime.now(),
     );
-    await ledger.save(records.values);
+    return null;
+  }
+
+  /// Fold what was imported into the sidebar, and re-mark the list.
+  ///
+  /// The store is the source of truth and the chat controller re-reads it — the
+  /// same path a restored cloud backup takes.
+  Future<void> _settle() async {
+    await ref.read(chatSessionsProvider.notifier).reloadFromDisk();
+    // Re-scanned *without* going through a loading state, unlike [refresh].
+    // The list is already on screen and every row on it is still true; blanking
+    // it to a spinner for the moment it takes to re-stat the folders would make
+    // a finished import look like the screen had been thrown away and rebuilt.
+    state = await AsyncValue.guard(_scan);
   }
 
   /// The project id for a session that ran in [workdir].

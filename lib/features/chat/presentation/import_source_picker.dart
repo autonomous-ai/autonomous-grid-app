@@ -16,13 +16,28 @@ class SourcePicker extends StatelessWidget {
   const SourcePicker({
     super.key,
     required this.rows,
+    required this.progress,
     required this.onRefresh,
     required this.onPick,
+    required this.onSync,
+    required this.onStop,
   });
 
   final List<ImportableSession> rows;
+
+  /// The sync running now, or null. Only one runs at a time — two would fight
+  /// over the same chat folder and the same ledger file.
+  final ImportProgress? progress;
+
   final VoidCallback onRefresh;
+
+  /// Open this tool's list, to pick conversations one at a time.
   final ValueChanged<ImportedAgent> onPick;
+
+  /// Bring over everything this tool has that isn't here yet.
+  final ValueChanged<ImportedAgent> onSync;
+
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +53,15 @@ class SourcePicker extends StatelessWidget {
               agent: agent,
               total: countFor(rows, agent.filter),
               imported: _importedCount(agent),
+              pending: _pendingCount(agent),
+              // The run in flight, but only on the card it belongs to — the
+              // other one keeps its own numbers rather than borrowing a
+              // progress bar for work it isn't doing.
+              progress: progress?.agent == agent ? progress : null,
+              busyElsewhere: progress != null && progress?.agent != agent,
               onTap: () => onPick(agent),
+              onSync: () => onSync(agent),
+              onStop: onStop,
             ),
           ),
         const SizedBox(height: 6),
@@ -50,6 +73,17 @@ class SourcePicker extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// How many of this tool's sessions a sync would actually bring over — new
+  /// ones and ones talked in since. It is the number on the button, because
+  /// "Sync 191" and "Sync 3" are very different decisions.
+  int _pendingCount(ImportedAgent agent) {
+    var count = 0;
+    for (final row in rows) {
+      if (row.session.agent == agent && row.isActionable) count++;
+    }
+    return count;
   }
 
   int _importedCount(ImportedAgent agent) {
@@ -72,13 +106,27 @@ class _SourceCard extends StatefulWidget {
     required this.agent,
     required this.total,
     required this.imported,
+    required this.pending,
+    required this.progress,
+    required this.busyElsewhere,
     required this.onTap,
+    required this.onSync,
+    required this.onStop,
   });
 
   final ImportedAgent agent;
   final int total;
   final int imported;
+  final int pending;
+  final ImportProgress? progress;
+
+  /// The other card is syncing. Only one run at a time, so this card's own
+  /// button is out of action until that one is done.
+  final bool busyElsewhere;
+
   final VoidCallback onTap;
+  final VoidCallback onSync;
+  final VoidCallback onStop;
 
   @override
   State<_SourceCard> createState() => _SourceCardState();
@@ -151,6 +199,19 @@ class _SourceCardState extends State<_SourceCard> {
               ),
               if (!empty) ...[
                 const SizedBox(width: 12),
+                // The card's own action, which is not the card's tap: pressing
+                // *Sync* brings everything over, while the card itself opens
+                // the list to pick from. Two targets, but the same pair the
+                // Archived screen already uses — the row opens the thing, the
+                // button does the thing.
+                _SyncButton(
+                  pending: widget.pending,
+                  progress: widget.progress,
+                  disabled: widget.busyElsewhere,
+                  onSync: widget.onSync,
+                  onStop: widget.onStop,
+                ),
+                const SizedBox(width: 4),
                 Icon(
                   LucideIcons.chevronRight300,
                   size: 18,
@@ -169,8 +230,12 @@ class _SourceCardState extends State<_SourceCard> {
   }
 
   /// What is behind the card, in a line: how many conversations, and how many
-  /// of them are already here.
+  /// of them are already here — or, while a sync runs, how far it has got.
   String _subtitle() {
+    if (widget.progress case final run?) {
+      final failed = run.failed == 0 ? '' : '  ·  ${run.failed} skipped';
+      return 'Bringing over ${run.done} of ${run.total}$failed';
+    }
     if (widget.total == 0) {
       return 'Nothing from ${widget.agent.label} on this computer yet';
     }
@@ -179,6 +244,113 @@ class _SourceCardState extends State<_SourceCard> {
         : '${widget.total} conversations';
     if (widget.imported == 0) return '$conversations on this computer';
     return '$conversations  ·  ${widget.imported} already imported';
+  }
+}
+
+/// The card's action: bring everything over, or stop the run that is doing it.
+///
+/// It names the number rather than saying "Sync all", because the number *is*
+/// the decision — 191 conversations is a different thing to agree to than 3,
+/// and the second is what this button says every time after the first run.
+class _SyncButton extends StatelessWidget {
+  const _SyncButton({
+    required this.pending,
+    required this.progress,
+    required this.disabled,
+    required this.onSync,
+    required this.onStop,
+  });
+
+  final int pending;
+  final ImportProgress? progress;
+  final bool disabled;
+  final VoidCallback onSync;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+
+    if (progress case final run?) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 92,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: run.fraction,
+                minHeight: 4,
+                backgroundColor: AppCard.inset,
+                valueColor: AlwaysStoppedAnimation(AppPalette.accent),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          _CardButton(label: 'Stop', primary: false, onPressed: onStop),
+        ],
+      );
+    }
+
+    // Everything this tool has is already here. Not a disabled button — there
+    // is genuinely nothing to do, and a greyed "Sync 0" invites a click that
+    // would report nothing happened.
+    if (pending == 0) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.check300, size: 15, color: AppPalette.online),
+          const SizedBox(width: 6),
+          Text(
+            'All here',
+            style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
+          ),
+        ],
+      );
+    }
+
+    return _CardButton(
+      label: 'Sync $pending',
+      primary: true,
+      onPressed: disabled ? null : onSync,
+    );
+  }
+}
+
+/// A button on a source card. Primary is the accent fill under white text —
+/// the one use that token has.
+class _CardButton extends StatelessWidget {
+  const _CardButton({
+    required this.label,
+    required this.primary,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool primary;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final enabled = onPressed != null;
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: primary ? Colors.white : AppPalette.textPrimary,
+        disabledForegroundColor: AppPalette.textFaint,
+        backgroundColor: primary
+            ? (enabled ? AppPalette.accent : AppCard.inset)
+            : AppCard.inset,
+        minimumSize: const Size(0, AppControl.heightSmall),
+        padding: AppControl.paddingSmall,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppControl.radius),
+        ),
+      ),
+      child: Text(label),
+    );
   }
 }
 

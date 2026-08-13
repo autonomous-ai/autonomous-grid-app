@@ -109,6 +109,43 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
     return null;
   }
 
+  /// Bring over everything that tool has, after saying how much that is.
+  ///
+  /// The confirmation is not ceremony. Every imported chat is read back into
+  /// memory on every launch (see `ChatStore.loadAll`), so agreeing to two
+  /// hundred of them is agreeing to carry them at every start — a cost the user
+  /// pays later and should be told about now, with the number in front of them.
+  Future<void> _syncAll(ImportedAgent agent) async {
+    final rows = ref.read(sessionImportProvider).value ?? const [];
+    final pending = [
+      for (final row in rows)
+        if (row.session.agent == agent && row.isActionable) row.session,
+    ];
+    if (pending.isEmpty) return;
+
+    var bytes = 0;
+    for (final session in pending) {
+      bytes += session.sizeBytes;
+    }
+    final ok = await _confirmSync(
+      context,
+      agent: agent,
+      count: pending.length,
+      bytes: bytes,
+      linkProjects: _linkProjects,
+    );
+    if (!ok || !mounted) return;
+
+    await ref
+        .read(sessionImportProvider.notifier)
+        .syncAll(agent, linkProject: _linkProjects);
+    if (!mounted) return;
+    ToastScope.show(
+      context,
+      ToastSpec(message: 'Your ${agent.label} conversations are in your chats'),
+    );
+  }
+
   void _openSource(ImportedAgent agent) {
     _search.clear();
     setState(() {
@@ -162,8 +199,11 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
         ),
         AsyncValue(:final value) when source == null => SourcePicker(
           rows: value ?? const [],
+          progress: ref.watch(importProgressProvider),
           onRefresh: () => ref.read(sessionImportProvider.notifier).refresh(),
           onPick: _openSource,
+          onSync: _syncAll,
+          onStop: () => ref.read(importProgressProvider.notifier).cancel(),
         ),
         AsyncValue(:final value) => _Body(
           rows: value ?? const [],
@@ -740,4 +780,88 @@ class _ActionButton extends StatelessWidget {
       child: Text(label),
     );
   }
+}
+
+/// Ask before a sync, naming what it will bring and what it will cost.
+///
+/// The size is the *source* size, which overstates the chats by roughly a
+/// quarter — the transcripts drop tool output and reasoning. Overstating is the
+/// right direction for a number in a confirmation: the surprise it prevents is
+/// "this took more than you said", never the reverse.
+Future<bool> _confirmSync(
+  BuildContext context, {
+  required ImportedAgent agent,
+  required int count,
+  required int bytes,
+  required bool linkProjects,
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      AppTheme.watch(context);
+      final theme = Theme.of(context);
+      return AlertDialog(
+        // Lifted off the window, like the app's other dialogs.
+        backgroundColor: appMenuFill(),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppGlass.hair),
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
+        contentPadding: const EdgeInsets.fromLTRB(28, 12, 28, 4),
+        actionsPadding: const EdgeInsets.fromLTRB(28, 16, 22, 22),
+        title: Text(
+          count == 1
+              ? 'Bring over 1 conversation?'
+              : 'Bring over $count conversations?',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Everything ${agent.label} has on this computer that is not '
+                'already here — about ${sizeLabel(bytes)} of transcripts. They '
+                'become chats you can read, search and carry on, and your app '
+                'reads all of them each time it starts.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppPalette.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              if (linkProjects) ...[
+                const SizedBox(height: 10),
+                Text(
+                  "Each conversation's folder is added to your projects, so you "
+                  'can carry it on where it left off.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppPalette.textFaint,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          const SizedBox(width: 4),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Bring them over'),
+          ),
+        ],
+      );
+    },
+  );
+  return ok ?? false;
 }

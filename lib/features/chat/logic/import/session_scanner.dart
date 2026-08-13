@@ -324,7 +324,8 @@ class SessionScanner {
       List() => _firstText(content),
       _ => null,
     };
-    return text != null && text.trimLeft().startsWith(kProjectInstructionsHeader);
+    return text != null &&
+        text.trimLeft().startsWith(kProjectInstructionsHeader);
   }
 
   /// The opening line of a message's text, clipped for a row.
