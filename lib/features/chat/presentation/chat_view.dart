@@ -338,6 +338,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return match.isEmpty ? PlaygroundModality.text : match.first.modality;
   }
 
+  /// The option matching the model field, or null when the id isn't in the
+  /// list (the list hasn't landed, or the user typed an id by hand). Read for
+  /// vision capability — a model the list doesn't know can't be trusted to
+  /// read images.
+  PlaygroundModelOption? _selectedOption(List<PlaygroundModelOption> options) {
+    final id = _model.text.trim();
+    if (id.isEmpty) return null;
+    for (final option in options) {
+      if (option.id == id) return option;
+    }
+    return null;
+  }
+
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
@@ -772,6 +785,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
       agentInstalled: ref.watch(anyAgentInstalledProvider),
     );
     final needsImage = modality == PlaygroundModality.video;
+    // An image pasted into a chat whose model can't read images. Locked until
+    // the user switches to a vision-capable text model (or drops the image): a
+    // text model without vision would reject the send, so the app asks for the
+    // switch before the relay does.
+    final selectedModel = _selectedOption(options);
+    final visionLocked =
+        !noModel &&
+        modality == PlaygroundModality.text &&
+        _attachments.isNotEmpty &&
+        (selectedModel == null || !selectedModel.vision);
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];
@@ -920,7 +943,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           final canSend =
                               !noModel &&
                               _message.text.trim().isNotEmpty &&
-                              (!needsImage || _attachments.isNotEmpty);
+                              (!needsImage || _attachments.isNotEmpty) &&
+                              !visionLocked;
                           // A leading "/" (with no space yet) opens the
                           // saved-prompt menu; an "@" token opens the file menu.
                           // Only one shows at a time, prompts first.
@@ -1007,6 +1031,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 modelPicker: GridModelPicker(
                                   currentModelId: _model.text,
                                   onSelect: _pickGridModel,
+                                  visionBlocked: visionLocked,
+                                  selectedModel: selectedModel,
                                 ),
                                 onAddAttachment: (a) =>
                                     setState(() => _attachments.add(a)),

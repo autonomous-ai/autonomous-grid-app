@@ -138,6 +138,7 @@ class OverviewModel {
     this.contextLength,
     this.pricing,
     this.status,
+    this.vision,
   });
 
   final String id;
@@ -147,6 +148,12 @@ class OverviewModel {
   final int? contextLength;
   final ModelPricing? pricing;
   final String? status;
+
+  /// Whether the model can read attached images (vision chat). **Null means the
+  /// relay didn't say** — an older relay omits it, and reading absence as
+  /// `false` would misreport every model from one. Callers that need a definite
+  /// answer decide what to do with unknown.
+  final bool? vision;
 
   factory OverviewModel.fromJson(Map<String, dynamic> j) => OverviewModel(
     id: '${j['id'] ?? ''}',
@@ -158,6 +165,7 @@ class OverviewModel {
         ? ModelPricing.fromJson((j['pricing'] as Map).cast<String, dynamic>())
         : null,
     status: j['status'] as String?,
+    vision: j['vision'] is bool ? j['vision'] as bool : null,
   );
 
   @override
@@ -169,11 +177,20 @@ class OverviewModel {
       other.modality == modality &&
       other.contextLength == contextLength &&
       other.pricing == pricing &&
-      other.status == status;
+      other.status == status &&
+      other.vision == vision;
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, maker, modality, contextLength, pricing, status);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    maker,
+    modality,
+    contextLength,
+    pricing,
+    status,
+    vision,
+  );
 }
 
 class ModelPricing {

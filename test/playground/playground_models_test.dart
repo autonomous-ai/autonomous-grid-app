@@ -84,6 +84,37 @@ void main() {
       ], const []);
       expect(options.map((o) => o.id).toList(), ['a', 'b']);
     });
+
+    test('carries vision for a text model the overview says can read images',
+        () {
+      final options = playgroundOptionsFrom(const [
+        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+        OverviewModel(id: 'deepseek-v4', vision: false),
+      ], const [], vision: visionByModel(const [
+        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+        OverviewModel(id: 'deepseek-v4', vision: false),
+      ]));
+      expect(options.firstWhere((o) => o.id == 'qwen2.5-vl-7b').vision, isTrue);
+      expect(options.firstWhere((o) => o.id == 'deepseek-v4').vision, isFalse);
+    });
+
+    test('defaults vision to false for a model the overview does not name', () {
+      final options = playgroundOptionsFrom(const [
+        OverviewModel(id: 'a'),
+      ], const []);
+      expect(options.single.vision, isFalse);
+    });
+
+    test('visionByModel ignores raw media capabilities and unknown models', () {
+      final byModel = visionByModel(const [
+        OverviewModel(id: 'comfyui:image_generation', vision: true),
+        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+        OverviewModel(id: 'deepseek-v4'),
+      ]);
+      expect(byModel, {
+        'qwen2.5-vl-7b': true,
+      });
+    });
   });
 
   test('OverviewNode parses the capability list beside the primary model', () {

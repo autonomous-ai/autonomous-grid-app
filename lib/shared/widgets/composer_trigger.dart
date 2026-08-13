@@ -19,6 +19,7 @@ class ComposerTrigger extends StatelessWidget {
     required this.onTap,
     this.leading,
     this.tooltip,
+    this.borderColor,
   });
 
   /// The mark shown before the label — a small [Icon], or an agent's logo. Null
@@ -30,17 +31,25 @@ class ComposerTrigger extends StatelessWidget {
   /// Hover text; the button carries none when null.
   final String? tooltip;
 
+  /// A rim colour for the pill, when it needs to read as "fix me" rather than a
+  /// quiet choice — e.g. a model pill with an image attached the model can't
+  /// read. Null (the norm) leaves the pill rimless.
+  final Color? borderColor;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads AppPalette tokens — follow theme flips.
+    final border = borderColor;
     final button = OutlinedButton(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
         foregroundColor: AppPalette.textPrimary,
         backgroundColor: Colors.transparent,
-        side: BorderSide.none,
+        side: border == null
+            ? BorderSide.none
+            : BorderSide(color: border.withValues(alpha: 0.6)),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppControl.radius),
         ),
@@ -64,14 +73,21 @@ class ComposerTrigger extends StatelessWidget {
               label,
               overflow: TextOverflow.ellipsis,
               softWrap: false,
-              style: const TextStyle(fontSize: 12),
+              style: TextStyle(
+                fontSize: 12,
+                color: border == null
+                    ? null
+                    : Theme.of(context).colorScheme.error,
+              ),
             ),
           ),
           const SizedBox(width: 1),
           Icon(
             Icons.keyboard_arrow_down_rounded,
             size: 15,
-            color: AppPalette.textFaint,
+            color: border == null
+                ? AppPalette.textFaint
+                : Theme.of(context).colorScheme.error,
           ),
         ],
       ),

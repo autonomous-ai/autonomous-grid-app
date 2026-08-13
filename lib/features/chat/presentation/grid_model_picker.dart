@@ -95,10 +95,20 @@ class GridModelPicker extends ConsumerStatefulWidget {
     super.key,
     required this.currentModelId,
     required this.onSelect,
+    this.visionBlocked = false,
+    this.selectedModel,
   });
 
   final String currentModelId;
   final GridModelSelected onSelect;
+
+  /// True when an image is attached but the selected model can't read images —
+  /// highlights the pill and prompts for a vision-capable model. Only ever for a
+  /// text model: media modes take images via their own endpoints.
+  final bool visionBlocked;
+
+  /// The picked model, or null while nothing is / the list hasn't landed.
+  final PlaygroundModelOption? selectedModel;
 
   @override
   ConsumerState<GridModelPicker> createState() => _GridModelPickerState();
@@ -176,6 +186,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
           currentModelId: widget.currentModelId,
           onSelect: widget.onSelect,
           onClose: _menu.close,
+          visionBlocked: widget.visionBlocked,
         ),
       ],
       builder: (context, controller, _) {
@@ -189,21 +200,33 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         // tooltip, not the pill's face — a question asked once a session.
         final grid = ref.watch(selectedNetworkProvider)?.name;
         final label = _triggerLabel(widget.currentModelId);
+        // An attached image the model can't read: the pill warns instead of
+        // reporting the choice, so "why won't Send?" is answered by the control
+        // that needs to change.
+        final blocked = widget.visionBlocked;
         return ComposerTrigger(
           label: label,
-          tooltip: grid == null || option == null
+          tooltip: blocked
+              ? "You attached an image — pick a model that can read it to send"
+              : grid == null || option == null
               ? 'Choose which model answers'
               : '$label\non $grid',
           // The same mark you picked by, so "am I about to chat or to draw?" is
           // answerable at a glance. Null while nothing's picked — the pill then
-          // prompts rather than reports.
+          // prompts rather than reports. While vision-blocked, the mark (and the
+          // warning frame) are drawn in the error tone so the eye lands on it.
           leading: option == null
               ? null
               : Icon(
                   modelIcon(option),
                   size: 13,
-                  color: modalityTone(option.modality),
+                  color: blocked
+                      ? Theme.of(context).colorScheme.error
+                      : modalityTone(option.modality),
                 ),
+          // The composer trigger normally has no rim; a vision-blocked model gets
+          // one in the error tone so it reads as "fix me", not as a quiet choice.
+          borderColor: blocked ? Theme.of(context).colorScheme.error : null,
           onTap: () => _toggleMenu(context, controller),
         );
       },
@@ -256,11 +279,16 @@ class _ModelMenu extends ConsumerStatefulWidget {
     required this.currentModelId,
     required this.onSelect,
     required this.onClose,
+    this.visionBlocked = false,
   });
 
   final String currentModelId;
   final GridModelSelected onSelect;
   final VoidCallback onClose;
+
+  /// Set while an image is attached but the picked model can't read it — rows
+  /// then mark every model by whether it can carry the turn.
+  final bool visionBlocked;
 
   @override
   ConsumerState<_ModelMenu> createState() => _ModelMenuState();
@@ -353,6 +381,10 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
             blockedFor: agent != null && !agentSupportsModel(agent, option.id)
                 ? agent
                 : null,
+            // While an image is attached that the picked model can't read, every
+            // text-model row says whether it can carry the turn, so switching is
+            // one readable tap instead of a hunt.
+            visionContext: widget.visionBlocked,
             onTap: () {
               widget.onSelect(group.grid, option);
               widget.onClose();
@@ -378,6 +410,7 @@ class _OptionRow extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.blockedFor,
+    this.visionContext = false,
   });
 
   final PlaygroundModelOption option;
@@ -390,10 +423,20 @@ class _OptionRow extends StatelessWidget {
   /// "unavailable" is a mystery.
   final AgentTool? blockedFor;
 
+  /// True while an image is attached and the picked model can't read it. Every
+  /// text-model row then says whether it can carry the turn, so the switch
+  /// that unlocks Send is one readable tap.
+  final bool visionContext;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context); // reads colour tokens; follow theme flips.
     final blocked = blockedFor;
+    // This row is a text model that can't read the attached image — the very
+    // thing blocking Send when it is the picked row.
+    final visionBlocked = visionContext &&
+        option.modality == PlaygroundModality.text &&
+        !option.vision;
     final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: _rowGutter, vertical: 1),
       child: Material(
@@ -456,7 +499,9 @@ class _OptionRow extends StatelessWidget {
                 ),
                 // Who is refusing, where the tick would sit — the two never
                 // collide, since a model the agent can't use is not one the
-                // composer is on.
+                // composer is on. While the picked model is vision-blocked, rows
+                // instead say whether a text model can read the image, so the
+                // one tap that unlocks Send is marked.
                 if (blocked != null) ...[
                   const SizedBox(width: 8),
                   Text(
@@ -465,6 +510,16 @@ class _OptionRow extends StatelessWidget {
                       fontSize: 11,
                       height: 1.2,
                       color: AppPalette.textFaint,
+                    ),
+                  ),
+                ] else if (visionBlocked) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    "Can't read images",
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.2,
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ),
                 ] else if (selected) ...[
@@ -481,6 +536,22 @@ class _OptionRow extends StatelessWidget {
                       Icons.check_rounded,
                       size: 11,
                       color: Colors.white,
+                    ),
+                  ),
+                  // A candidate worth switching to, or one that would not help —
+                  // marked once an image is attached and the current pick can't
+                  // read it.
+                ] else if (visionContext &&
+                    option.modality == PlaygroundModality.text) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    option.vision ? 'Reads images' : 'No vision',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.2,
+                      color: option.vision
+                          ? AppPalette.textSecondary
+                          : AppPalette.textFaint,
                     ),
                   ),
                 ],

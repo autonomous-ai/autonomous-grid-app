@@ -43,11 +43,13 @@ final gridModelCatalogProvider = Provider.autoDispose<List<GridModelGroup>>((
 ) {
   final grid = ref.watch(selectedNetworkProvider);
   if (grid == null) return const [];
+  final overview = ref.watch(gridOverviewForProvider(grid.networkId));
   return [
     gridModelGroupFrom(
       grid,
       ref.watch(networkModelsForProvider(grid.networkId)),
-      nodesOf(ref.watch(gridOverviewForProvider(grid.networkId))),
+      nodesOf(overview),
+      overviewModels: overview.value?.models ?? const [],
     ),
   ];
 });
@@ -85,8 +87,9 @@ void refreshGridModelCatalog(WidgetRef ref) {
 GridModelGroup gridModelGroupFrom(
   NetworkCredential grid,
   AsyncValue<List<String>> models,
-  List<OverviewNode> nodes,
-) => models.when(
+  List<OverviewNode> nodes, {
+  Iterable<OverviewModel> overviewModels = const [],
+}) => models.when(
   // A refresh keeps the models it already had. Only a grid with nothing cached
   // reads as loading — every open would otherwise blink the menu (and the pill
   // beside it) to a skeleton for the length of a round trip, which is a worse
@@ -98,6 +101,9 @@ GridModelGroup gridModelGroupFrom(
       [for (final id in ids) OverviewModel(id: id)],
       [for (final node in nodes) ...node.models],
       hosting: hostingByModel(nodes),
+      // Which models can read an attached image comes from the overview's richer
+      // entries, joined by the same lower-cased id as hosting.
+      vision: visionByModel(overviewModels),
     ),
     status: GridModelStatus.ready,
   ),

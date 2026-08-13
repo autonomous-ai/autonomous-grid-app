@@ -18,6 +18,7 @@ class PlaygroundModelOption {
     required this.label,
     required this.modality,
     this.hosting = ModelHosting.unknown,
+    this.vision = false,
   });
 
   final String id;
@@ -26,6 +27,13 @@ class PlaygroundModelOption {
 
   /// Where the answer actually comes from — see [ModelHosting].
   final ModelHosting hosting;
+
+  /// Whether the model can read attached images (vision chat). Media modes take
+  /// images as their *input* only ever via their own endpoints, so this stays
+  /// false for them; only a text modality model that can read an image carries
+  /// true. Defaults false when the overview didn't say (an older relay), which
+  /// makes the vision lock block rather than let a refusal through.
+  final bool vision;
 }
 
 /// Where a model runs, which is the difference between "a machine on this grid
@@ -187,6 +195,20 @@ List<PlaygroundModelOption> mediaModeOptions(Iterable<String> capabilities) {
   ];
 }
 
+/// Which of the grid's chat models can read an attached image, keyed by the
+/// same lower-cased id [hostingByModel] uses, so the two cross-source lookups
+/// match case the same way. A model the overview doesn't name (an older relay,
+/// or an id only `/models` serves) is simply absent.
+Map<String, bool> visionByModel(Iterable<OverviewModel> models) => {
+  for (final model in models)
+    if (model.vision != null && !isMediaCapability(model.id))
+      modelKey(model.id): model.vision!,
+};
+
+/// Whether a model id is a `comfyui:*` media capability rather than a chat
+/// model — the raw capability rows the overview may leak alongside real models.
+bool isMediaCapability(String id) => mediaCapabilityLabel(id) != null;
+
 /// Everything the Playground can target on a grid: its text models plus the
 /// media modes its comfyui [capabilities] offer. A raw `comfyui:*` capability
 /// that leaked into [models] is dropped from the text options — you can't drive
@@ -198,6 +220,7 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
   List<OverviewModel> models,
   Iterable<String> capabilities, {
   Map<String, ModelHosting> hosting = const {},
+  Map<String, bool> vision = const {},
 }) {
   final textOptions = [
     for (final model in models)
@@ -212,6 +235,7 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
           hosting: modelKey(model.id) == kAutoModelId
               ? ModelHosting.routed
               : hosting[modelKey(model.id)] ?? ModelHosting.unknown,
+          vision: vision[modelKey(model.id)] ?? false,
         ),
   ];
   final existingModalities = textOptions.map((o) => o.modality).toSet();
@@ -237,10 +261,16 @@ final playgroundModelsProvider =
       final ids = ref.watch(servedModelIdsProvider);
       final nodes =
           ref.watch(gridOverviewSnapshot)?.nodes ?? const <OverviewNode>[];
+      final overviewModels =
+          ref.watch(gridOverviewSnapshot)?.models ?? const <OverviewModel>[];
       return playgroundOptionsFrom(
         [for (final id in ids) OverviewModel(id: id)],
         [for (final node in nodes) ...node.models],
         hosting: hostingByModel(nodes),
+        // Vision rides on the overview's richer model entries — `/models` only
+        // returns ids, so the two are joined by the lower-cased id the same way
+        // hosting is. A model the overview doesn't name keeps vision=false.
+        vision: visionByModel(overviewModels),
       );
     });
 
