@@ -6,6 +6,17 @@ import 'package:crypto/crypto.dart';
 import '../../../../core/grid_paths.dart';
 import 'parsed_session.dart';
 
+/// How the importer renders a transcript, as a number that goes up.
+///
+/// A record made by an older importer describes a chat built by rules this
+/// build has since improved on — and the chat is *already there*, unchanged on
+/// disk, so nothing else would ever offer to rebuild it. Without this, the day
+/// tool steps stopped being a wall of quoted lines and became one block of
+/// monospace, every chat imported before that day kept the wall forever.
+///
+/// Bump it whenever the shape of an imported transcript changes.
+const int kImportFormatVersion = 2;
+
 /// One session this machine has already imported.
 ///
 /// The point of writing these down is that importing is not a one-off: a
@@ -24,6 +35,7 @@ class ImportRecord {
     required this.sourceSize,
     required this.sourceModified,
     required this.importedAt,
+    this.formatVersion = 0,
   });
 
   /// The [ImportedAgent.id] that wrote the session.
@@ -53,6 +65,13 @@ class ImportRecord {
 
   final DateTime importedAt;
 
+  /// The [kImportFormatVersion] in force when this was imported. Zero for a
+  /// record written before the field existed, which is older than anything.
+  final int formatVersion;
+
+  /// Whether the chat this made was built by the importer this build ships.
+  bool get isCurrentFormat => formatVersion >= kImportFormatVersion;
+
   /// The key both sides of the ledger agree on. Not the path: Codex moves its
   /// files, and a moved session is the same session.
   String get key => ledgerKey(agent, sessionId);
@@ -77,6 +96,7 @@ class ImportRecord {
     'sourceSize': sourceSize,
     'sourceModified': sourceModified.toUtc().toIso8601String(),
     'importedAt': importedAt.toUtc().toIso8601String(),
+    'formatVersion': formatVersion,
   };
 
   static ImportRecord? fromJson(Object? raw) {
@@ -103,6 +123,9 @@ class ImportRecord {
           : 0,
       sourceModified: modified.toLocal(),
       importedAt: imported.toLocal(),
+      formatVersion: raw['formatVersion'] is num
+          ? (raw['formatVersion'] as num).toInt()
+          : 0,
     );
   }
 }

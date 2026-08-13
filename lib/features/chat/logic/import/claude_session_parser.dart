@@ -108,8 +108,8 @@ ParsedSession? parseClaudeSession({
   }
 
   // Clipped here, on whole turns, not on the lines they were assembled from —
-  // see [clipTurns].
-  final (messages: merged, clipped: truncated) = clipTurns(
+  // see [finishTurns].
+  final (messages: merged, clipped: truncated) = finishTurns(
     mergeTurns(messages),
   );
   if (merged.isEmpty) return null;

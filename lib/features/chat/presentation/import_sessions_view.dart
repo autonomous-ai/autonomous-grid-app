@@ -730,23 +730,20 @@ class _RowAction extends StatelessWidget {
       // Imported, then talked in again over there. "Update" rather than
       // "Import again", because the chat it made is not replaced by a second
       // one — it grows by whatever was said since.
-      ImportStatus.changed => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Tooltip(
-            message: 'This session has been talked in since it was imported',
-            child: Text(
-              'New messages',
-              style: TextStyle(
-                color: AppPalette.accentOnSurface,
-                fontSize: 12.5,
-                fontWeight: AppFont.medium,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          _ActionButton(label: 'Update', primary: true, onPressed: onImport),
-        ],
+      ImportStatus.changed => _PendingAction(
+        note: 'New messages',
+        tooltip: 'This session has been talked in since it was imported',
+        onPressed: onImport,
+      ),
+      // Imported, unchanged, but by an older importer. The note says what is
+      // actually on offer — not "new messages", which would be a lie about a
+      // file nobody has touched.
+      ImportStatus.outdated => _PendingAction(
+        note: 'Better import available',
+        tooltip:
+            'This chat was brought over by an older version of the importer — '
+            'updating rebuilds it, and keeps the same chat',
+        onPressed: onImport,
       ),
       // Nothing to do — so the row says so and offers the way to the chat
       // instead of a button that would rewrite an identical file.
@@ -764,6 +761,45 @@ class _RowAction extends StatelessWidget {
         ],
       ),
     };
+  }
+}
+
+/// A row that has already been imported but has something more on offer: a note
+/// saying what, and the button that takes it.
+class _PendingAction extends StatelessWidget {
+  const _PendingAction({
+    required this.note,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final String note;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Tooltip(
+          message: tooltip,
+          child: Text(
+            note,
+            style: TextStyle(
+              // Accent *on a surface*, never the flat accent — that one is a
+              // fill under white text and reads at 2.6:1 as text on dark.
+              color: AppPalette.accentOnSurface,
+              fontSize: 12.5,
+              fontWeight: AppFont.medium,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _ActionButton(label: 'Update', primary: true, onPressed: onPressed),
+      ],
+    );
   }
 }
 

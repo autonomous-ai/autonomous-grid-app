@@ -224,7 +224,7 @@ String clipImported(String text) {
   return text.substring(0, kMaxImportedMessageChars) + kTruncationNotice;
 }
 
-/// [merged] with every turn clipped, and how many needed it.
+/// [merged] finished: adjacent step blocks joined, then every turn clipped.
 ///
 /// **After merging, never before.** Both tools write one line per API
 /// round-trip, so a turn arrives in pieces and [mergeTurns] joins them — clip
@@ -232,34 +232,51 @@ String clipImported(String text) {
 /// a real Codex rollout that way: a cap of 12,000 produced turns of 52,705 and
 /// 84,138 characters, because seven clipped pieces are one turn seven times too
 /// long. The cap has to be applied to the thing it is a cap on.
-({List<ChatMessage> messages, int clipped}) clipTurns(
+({List<ChatMessage> messages, int clipped}) finishTurns(
   List<ChatMessage> merged,
 ) {
   final out = <ChatMessage>[];
   var clipped = 0;
   for (final message in merged) {
-    final text = clipImported(message.text);
-    if (text.length == message.text.length) {
-      out.add(message);
-      continue;
-    }
-    clipped++;
-    out.add(message.copyWith(text: text));
+    final joined = _joinStepBlocks(message.text);
+    final text = clipImported(joined);
+    if (text.length != joined.length) clipped++;
+    out.add(text == message.text ? message : message.copyWith(text: text));
   }
   return (messages: out, clipped: clipped);
 }
 
-/// The longest a folded tool call's detail runs before it is cut.
-const int _maxToolDetail = 160;
-
-/// One tool step, folded into the prose of the turn that ran it.
+/// Runs of tool steps, welded into one block.
 ///
-/// This app's own transcript keeps a step as a row with an icon and a status —
+/// Every step is emitted as a one-line fenced block of its own (see
+/// [foldedToolCall]) because the parsers meet them one at a time — Claude's
+/// arrive as blocks inside a turn, Codex's as separate stream items joined
+/// later. This closes the seam afterwards, so a turn that ran eighty-five
+/// commands draws *one* block of eighty-five lines instead of eighty-five
+/// blocks. That count is real: it is the worst turn in the largest session on
+/// this machine, and as separate blocks it was a wall.
+String _joinStepBlocks(String text) => text.replaceAll('```\n\n```\n', '');
+
+/// The longest a step's detail runs before it is cut.
+const int _maxToolDetail = 110;
+
+/// A path longer than this is shown by its last two segments alone.
+const int _maxPathLength = 44;
+
+/// One tool step, as a line the transcript can show.
+///
+/// This app's own transcript draws a step as a row with an icon and a status —
 /// but that shape (`TurnPart`) does not exist on this branch, so an imported
-/// step becomes a line of markdown instead. A blockquote rather than a plain
-/// paragraph: it has to read as an aside about what the agent *did*, never as
-/// something the agent *said*, and quoting it is the one distinction that
-/// survives being copied out as plain text.
+/// step becomes markdown. A **fenced block**, not a blockquote with the command
+/// in inline code, which is what this did first and what made an imported chat
+/// look wrong beside the tool it came from:
+///
+/// - Inline code does not survive a line break, so a multi-line command had to
+///   be flattened. A heredoc script came out as one unreadable run of tokens,
+///   cut mid-word at the cap — the single worst thing on the screen.
+/// - A run of them was a run of quoted paragraphs, each with its own margins.
+///   Monospace lines in one block read as a list of commands, which is what
+///   they are, and [_joinStepBlocks] is what welds the run together.
 ///
 /// The result of the call is deliberately not carried. It is the bulk of every
 /// session file — thousands of characters per step, most of it a directory
@@ -267,21 +284,52 @@ const int _maxToolDetail = 160;
 /// follow what happened, not to re-read what the tools printed.
 String foldedToolCall({required String tool, String? detail}) {
   final name = tool.trim().isEmpty ? 'tool' : tool.trim();
-  final line = _oneLine(detail ?? '');
-  if (line.isEmpty) return '> **$name**';
-  final clipped = line.length > _maxToolDetail
-      ? '${line.substring(0, _maxToolDetail).trimRight()}…'
-      : line;
-  // The detail goes in inline code, so a command reads as a command — and any
-  // backticks inside it are stripped by [_oneLine] first, since one stray
-  // backtick would otherwise close the span and spill the rest into the prose.
-  return '> **$name** — `$clipped`';
+  final line = _stepDetail(detail);
+  if (line.isEmpty) return '```\n$name\n```';
+  // Padded so the details line up down the block once several steps join. A
+  // name longer than the pad simply keeps its two spaces.
+  return '```\n${name.padRight(7)}  $line\n```';
 }
 
-/// [text] as a single line fit for inline code: newlines and runs of whitespace
-/// collapse to one space, and backticks are dropped.
+/// The one line that says what a step did.
+///
+/// The *first* line of the detail rather than all of it flattened: a shell
+/// heredoc or a multi-line patch says what it is in its opening words, and the
+/// rest only becomes noise once the newlines are gone. An ellipsis marks that
+/// there was more, so nothing is quietly dropped.
+String _stepDetail(Object? raw) {
+  if (raw is! String) return '';
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '';
+  final lines = trimmed.split('\n');
+  var head = _oneLine(lines.first);
+  if (head.startsWith('/') && head.length > _maxPathLength) {
+    head = _shortPath(head);
+  }
+  if (head.length > _maxToolDetail) {
+    return '${head.substring(0, _maxToolDetail).trimRight()}…';
+  }
+  return lines.length > 1 ? '$head …' : head;
+}
+
+/// The tail of a long absolute path — the two segments a person reads.
+///
+/// `/Users/…/lib/features/plugins/logic/plugins_controller.dart` becomes
+/// `logic/plugins_controller.dart`. The full path identifies the file to a
+/// machine; these two identify it to the person who wrote it, and the same
+/// ninety-character prefix repeated across two thousand steps identifies
+/// nothing at all.
+String _shortPath(String path) {
+  final parts = path.split('/')..removeWhere((p) => p.isEmpty);
+  if (parts.length <= 2) return path;
+  return parts.sublist(parts.length - 2).join('/');
+}
+
+/// [text] as a single line fit for a step: runs of whitespace collapse to one
+/// space, and any backtick is defused — three in a row would close the fence
+/// the line sits in and spill the rest of the turn onto the page.
 String _oneLine(String text) =>
-    text.replaceAll('`', '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    text.replaceAll('`', "'").replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// The message list with empty turns dropped and neighbours of one role merged.
 ///

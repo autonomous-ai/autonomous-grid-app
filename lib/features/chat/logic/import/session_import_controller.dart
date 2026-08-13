@@ -24,6 +24,11 @@ enum ImportStatus {
   /// Imported, but the session has been talked in again since — there are
   /// messages here this app hasn't got.
   changed,
+
+  /// Imported, unchanged, but by an older importer than this build ships — so
+  /// the chat it made is not the chat this build would make. Re-importing
+  /// rebuilds it in place; see [kImportFormatVersion].
+  outdated,
 }
 
 /// A session as the import screen shows it: what was found on disk, and what
@@ -186,12 +191,17 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
     final record = ledger[_key(session)];
     if (record == null) return ImportStatus.fresh;
     if (!chats.contains(record.conversationId)) return ImportStatus.fresh;
-    return record.matchesFile(
-          size: session.sizeBytes,
-          modified: session.updatedAt,
-        )
+    if (!record.matchesFile(
+      size: session.sizeBytes,
+      modified: session.updatedAt,
+    )) {
+      return ImportStatus.changed;
+    }
+    // The file is untouched, so nothing was said — but this build builds a
+    // different transcript out of it than the one on disk.
+    return record.isCurrentFormat
         ? ImportStatus.imported
-        : ImportStatus.changed;
+        : ImportStatus.outdated;
   }
 
   /// Bring [session] in as a chat, and return null — or a line to show the
@@ -351,6 +361,7 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
       sourceSize: session.sizeBytes,
       sourceModified: session.updatedAt,
       importedAt: DateTime.now(),
+      formatVersion: kImportFormatVersion,
     );
     return null;
   }

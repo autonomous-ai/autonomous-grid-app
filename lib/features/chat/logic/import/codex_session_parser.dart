@@ -89,8 +89,8 @@ ParsedSession? parseCodexSession({
     }
   }
 
-  // Whole turns, not the lines they were assembled from — see [clipTurns].
-  final (messages: merged, clipped: truncated) = clipTurns(
+  // Whole turns, not the lines they were assembled from — see [finishTurns].
+  final (messages: merged, clipped: truncated) = finishTurns(
     mergeTurns(messages),
   );
   if (merged.isEmpty) return null;
