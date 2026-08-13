@@ -19,6 +19,16 @@ enum ImportAgentFilter {
   };
 }
 
+/// The filter that shows only this tool's sessions — what picking a source
+/// card sets, so "which tool" is a choice already made rather than a control
+/// repeated above the list.
+extension ImportedAgentFilter on ImportedAgent {
+  ImportAgentFilter get filter => switch (this) {
+    ImportedAgent.claude => ImportAgentFilter.claude,
+    ImportedAgent.codex => ImportAgentFilter.codex,
+  };
+}
+
 /// What the import screen's controls are set to.
 class ImportQuery {
   const ImportQuery({

@@ -105,9 +105,18 @@ List<String> _newestWithin(List<String> turns, int budget) {
 String withProjectInstructions(String prompt, String? instructions) {
   final rules = instructions?.trim() ?? '';
   if (rules.isEmpty) return prompt;
-  return 'Project instructions — follow these for everything you do in this '
-      'project:\n$rules\n\n$prompt';
+  return '$kProjectInstructionsHeader\n$rules\n\n$prompt';
 }
+
+/// The line [withProjectInstructions] opens with.
+///
+/// A constant because it is read as well as written: it lands in the session
+/// file the agent keeps on disk, which makes it the one reliable mark of a
+/// session **this app started** — see the session scanner, which uses it to
+/// keep chats that already exist here out of the import list.
+const String kProjectInstructionsHeader =
+    'Project instructions — follow these for everything you do in this '
+    'project:';
 
 /// Wraps [prompt] so the agent plans first instead of acting — used for the
 /// planning turn of Plan mode. It's a belt to the read-only permission gate's

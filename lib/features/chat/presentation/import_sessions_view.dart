@@ -4,7 +4,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_segmented.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_box.dart';
@@ -17,6 +16,8 @@ import '../logic/import/import_filter.dart';
 import '../logic/import/parsed_session.dart';
 import '../logic/import/session_import_controller.dart';
 import '../logic/import/session_scanner.dart';
+import 'import_source_picker.dart';
+import 'import_widgets.dart';
 
 /// Settings › Import chats: the conversations Claude Code and Codex have left
 /// on this computer, and the one button that turns one into a chat here.
@@ -37,6 +38,15 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
   final _search = TextEditingController();
   final _scrollController = ScrollController();
   ImportQuery _query = const ImportQuery();
+
+  /// The tool whose sessions are being listed, or null on the picker.
+  ///
+  /// The screen is two states rather than one dense list. There are 286
+  /// sessions on this computer, and a wall of them behind a segmented control
+  /// asks the user to filter before they have been told what this screen even
+  /// does. The picker says that in two cards; the list is one click in, already
+  /// narrowed to the tool they picked.
+  ImportedAgent? _source;
 
   /// Add the folder each imported session ran in to the user's projects.
   ///
@@ -99,6 +109,24 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
     return null;
   }
 
+  void _openSource(ImportedAgent agent) {
+    _search.clear();
+    setState(() {
+      _source = agent;
+      // The list is *of* that tool, so the agent filter is the choice already
+      // made rather than a control to repeat.
+      _query = ImportQuery(agent: agent.filter);
+    });
+  }
+
+  void _backToSources() {
+    _search.clear();
+    setState(() {
+      _source = null;
+      _query = const ImportQuery();
+    });
+  }
+
   void _open(String? conversationId) {
     if (conversationId == null) return;
     ref.read(chatSessionsProvider.notifier).select(conversationId);
@@ -111,12 +139,16 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
     AppTheme.watch(context);
     final sessions = ref.watch(sessionImportProvider);
 
+    final source = _source;
     return SectionScaffold(
-      title: 'Import chats',
-      subtitle:
-          'Conversations you have already had with Claude Code and Codex on '
-          'this computer. Bring one in and it becomes a chat here — with the '
-          'thread it came from, so you can carry on where you left off.',
+      title: source == null ? 'Import chats' : source.label,
+      subtitle: source == null
+          ? 'Conversations you have already had with Claude Code and Codex on '
+                'this computer. Bring one in and it becomes a chat here — with '
+                'the thread it came from, so you can carry on where you left '
+                'off.'
+          : 'Pick the conversations to bring over. Each one becomes a chat you '
+                'can read, search and carry on.',
       child: switch (sessions) {
         AsyncLoading() => const Center(
           child: AppSpinner(size: SpinnerSize.large),
@@ -128,8 +160,14 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
                 "Couldn't read the session folders on this computer: $error",
           ),
         ),
+        AsyncValue(:final value) when source == null => SourcePicker(
+          rows: value ?? const [],
+          onRefresh: () => ref.read(sessionImportProvider.notifier).refresh(),
+          onPick: _openSource,
+        ),
         AsyncValue(:final value) => _Body(
           rows: value ?? const [],
+          onBack: _backToSources,
           query: _query,
           search: _search,
           scrollController: _scrollController,
@@ -152,6 +190,7 @@ class _ImportSessionsViewState extends ConsumerState<ImportSessionsView> {
 class _Body extends StatelessWidget {
   const _Body({
     required this.rows,
+    required this.onBack,
     required this.query,
     required this.search,
     required this.scrollController,
@@ -166,6 +205,7 @@ class _Body extends StatelessWidget {
   });
 
   final List<ImportableSession> rows;
+  final VoidCallback onBack;
   final ImportQuery query;
   final TextEditingController search;
   final ScrollController scrollController;
@@ -185,14 +225,15 @@ class _Body extends StatelessWidget {
     // The controls are hidden rather than disabled, for the same reason the
     // Archived screen hides its own: a filter that can only narrow nothing to
     // nothing is an invitation to a dead end.
-    if (rows.isEmpty) return const _NothingFound();
+    if (rows.isEmpty) return const NothingFound();
 
     final matches = filterImportable(rows, query);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _BackRow(onBack: onBack),
+        const SizedBox(height: 14),
         _Controls(
-          rows: rows,
           query: query,
           search: search,
           linkProjects: linkProjects,
@@ -200,8 +241,6 @@ class _Body extends StatelessWidget {
           onLinkProjectsChanged: onLinkProjectsChanged,
           onRefresh: onRefresh,
         ),
-        const SizedBox(height: 12),
-        const _WhatComesOver(),
         const SizedBox(height: 14),
         Expanded(
           child: matches.isEmpty
@@ -234,10 +273,9 @@ class _Body extends StatelessWidget {
   }
 }
 
-/// Search, the two filters, the project switch, and a re-scan.
+/// Search, what to hide, whether to link folders, and a re-scan.
 class _Controls extends StatelessWidget {
   const _Controls({
-    required this.rows,
     required this.query,
     required this.search,
     required this.linkProjects,
@@ -246,7 +284,6 @@ class _Controls extends StatelessWidget {
     required this.onRefresh,
   });
 
-  final List<ImportableSession> rows;
   final ImportQuery query;
   final TextEditingController search;
   final bool linkProjects;
@@ -257,7 +294,6 @@ class _Controls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    const filters = ImportAgentFilter.values;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -288,7 +324,7 @@ class _Controls extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            _RefreshButton(onPressed: onRefresh),
+            RefreshButton(onPressed: onRefresh),
           ],
         ),
         const SizedBox(height: 12),
@@ -299,18 +335,6 @@ class _Controls extends StatelessWidget {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            AppSegmented(
-              segments: [
-                for (final filter in filters)
-                  SegmentSpec(
-                    label: filter.label,
-                    count: countFor(rows, filter),
-                  ),
-              ],
-              selected: filters.indexOf(query.agent),
-              onChanged: (index) =>
-                  onChanged(query.copyWith(agent: filters[index])),
-            ),
             PillChoice(
               label: const Text('Hide imported'),
               selected: query.hideImported,
@@ -323,10 +347,9 @@ class _Controls extends StatelessWidget {
                         'what lets you carry the conversation on'
                   : 'Chats come in without a project — you can read them, but '
                         'a new message starts a fresh session',
-              child: PillChoice(
-                label: const Text('Add folder to Projects'),
-                icon: LucideIcons.folderPlus300,
-                selected: linkProjects,
+              child: _CheckRow(
+                label: 'Add folder to Projects',
+                checked: linkProjects,
                 onTap: () => onLinkProjectsChanged(!linkProjects),
               ),
             ),
@@ -337,92 +360,149 @@ class _Controls extends StatelessWidget {
   }
 }
 
-/// What an import does and does not bring with it.
-///
-/// Said before the button is pressed rather than discovered afterwards: an
-/// imported transcript is *not* byte-for-byte what the other tool shows, and a
-/// user who finds that out by scrolling one has been misled by omission. Muted
-/// and one line, because it is a caveat, not a warning — nothing here goes
-/// wrong, some of it simply doesn't come across.
-class _WhatComesOver extends StatelessWidget {
-  const _WhatComesOver();
+/// The way back to the two cards.
+class _BackRow extends StatefulWidget {
+  const _BackRow({required this.onBack});
+
+  final VoidCallback onBack;
 
   @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 1),
-          child: Icon(
-            LucideIcons.info300,
-            size: 14,
-            color: AppPalette.textFaint,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'Messages come across in full. Each command the assistant ran '
-            'becomes a one-line note — what it printed, and any images, stay '
-            'in the original.',
-            style: TextStyle(
-              color: AppPalette.textFaint,
-              fontSize: 12.5,
-              height: 1.35,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  State<_BackRow> createState() => _BackRowState();
 }
 
-/// Re-run the scan. The other tools are running while this screen is open, so
-/// what it lists goes stale as the user reads it.
-class _RefreshButton extends StatefulWidget {
-  const _RefreshButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  State<_RefreshButton> createState() => _RefreshButtonState();
-}
-
-class _RefreshButtonState extends State<_RefreshButton> {
+class _BackRowState extends State<_BackRow> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return Tooltip(
-      message: 'Look for sessions again',
+    return Align(
+      alignment: Alignment.centerLeft,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: widget.onPressed,
+          onTap: widget.onBack,
           child: AnimatedContainer(
             duration: AppMotion.hover,
             curve: AppMotion.curve,
-            height: AppControl.heightField,
-            width: AppControl.heightField,
-            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
             decoration: BoxDecoration(
-              color: _hovered ? AppSurface.hoverFill : AppPalette.cardBg,
-              borderRadius: BorderRadius.circular(AppControl.radius),
+              color: _hovered ? AppSurface.hoverFill : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              LucideIcons.refreshCw300,
-              size: AppControl.iconSize,
-              // Full colour under the pointer — an icon that stays faint while
-              // it is being pointed at reads as decoration.
-              color: _hovered
-                  ? AppPalette.textPrimary
-                  : AppPalette.textSecondary,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  LucideIcons.chevronLeft300,
+                  size: 15,
+                  color: _hovered
+                      ? AppPalette.textPrimary
+                      : AppPalette.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'All sources',
+                  style: TextStyle(
+                    color: _hovered
+                        ? AppPalette.textPrimary
+                        : AppPalette.textSecondary,
+                    fontSize: 13,
+                    fontWeight: AppFont.medium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A setting, not an action.
+///
+/// It was a filled accent pill, which put it beside the row buttons in weight
+/// and read as the screen's primary call to action — the thing you press. It
+/// governs what the *Import* buttons do, so it has to look like a switch that
+/// is on, not like a button competing with them.
+class _CheckRow extends StatefulWidget {
+  const _CheckRow({
+    required this.label,
+    required this.checked,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool checked;
+  final VoidCallback onTap;
+
+  @override
+  State<_CheckRow> createState() => _CheckRowState();
+}
+
+class _CheckRowState extends State<_CheckRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Semantics(
+      checked: widget.checked,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: AppMotion.hover,
+            curve: AppMotion.curve,
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 11),
+            decoration: BoxDecoration(
+              color: _hovered ? AppSurface.hoverFill : AppGlass.surfaceFill,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // The box is the only accent on the control, and it is a fill
+                // under a white tick — the one use `AppPalette.accent` is for.
+                AnimatedContainer(
+                  duration: AppMotion.hover,
+                  curve: AppMotion.curve,
+                  width: 15,
+                  height: 15,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: widget.checked ? AppPalette.accent : AppCard.inset,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: widget.checked
+                      ? const Icon(
+                          LucideIcons.check300,
+                          size: 11,
+                          color: Colors.white,
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: widget.checked
+                        ? AppPalette.textPrimary
+                        : AppPalette.textSecondary,
+                    fontSize: 13,
+                    fontWeight: AppControl.fontWeight,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -660,47 +740,4 @@ class _ActionButton extends StatelessWidget {
       child: Text(label),
     );
   }
-}
-
-/// Neither tool has left anything on this computer.
-class _NothingFound extends StatelessWidget {
-  const _NothingFound();
-
-  @override
-  Widget build(BuildContext context) {
-    return const EmptyState(
-      icon: Icons.download_outlined,
-      title: 'No sessions to import',
-      message:
-          'Nothing was found in the folders Claude Code and Codex keep their '
-          'conversations in. Once you have used either of them on this '
-          'computer, their chats show up here.',
-    );
-  }
-}
-
-/// A file size in the units a person reads — no decimals below a megabyte,
-/// where the digit after the point is noise.
-String sizeLabel(int bytes) {
-  const kb = 1024;
-  const mb = kb * 1024;
-  if (bytes >= mb) return '${(bytes / mb).toStringAsFixed(1)} MB';
-  return '${(bytes / kb).round()} KB';
-}
-
-/// When a session was last talked in, in words.
-String whenLabel(DateTime at) {
-  final now = DateTime.now();
-  final days = DateTime(
-    now.year,
-    now.month,
-    now.day,
-  ).difference(DateTime(at.year, at.month, at.day)).inDays;
-  return switch (days) {
-    <= 0 => 'today',
-    1 => 'yesterday',
-    < 7 => '$days days ago',
-    < 30 => '${days ~/ 7} ${days ~/ 7 == 1 ? 'week' : 'weeks'} ago',
-    _ => '${at.day}/${at.month}/${at.year}',
-  };
 }

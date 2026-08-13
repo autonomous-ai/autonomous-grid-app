@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../../../core/grid_paths.dart';
+import '../../../agents/logic/agent_prompt.dart';
 import 'parsed_session.dart';
 
 /// One session found on disk, described well enough to choose from a list —
@@ -145,6 +146,7 @@ class SessionScanner {
       String? workdir;
       String? title;
       String? firstUserLine;
+      var startedHere = false;
       await for (final line in _head(file)) {
         final json = _decodeObject(line);
         if (json == null) continue;
@@ -157,6 +159,7 @@ class SessionScanner {
             json['type'] == 'user' &&
             json['isSidechain'] != true &&
             json['isMeta'] != true) {
+          startedHere = _startedInThisApp(json['message']);
           firstUserLine = _openingLine(json['message']);
         }
         // Everything a row shows. The title Claude Code picked can be written
@@ -164,6 +167,13 @@ class SessionScanner {
         // waiting for it here would mean reading every session to the end.
         if (workdir != null && firstUserLine != null) break;
       }
+      // A session this app opened by driving Claude Code in a project. It is
+      // already a chat here, so offering it back would import a duplicate of a
+      // conversation the user can see in their own sidebar — which is exactly
+      // what the first build did: three rows, all titled "Project instructions
+      // — follow these for everything you do in…", because that is the line
+      // this app puts at the top of a project's opening turn.
+      if (startedHere) return null;
 
       return DiscoveredSession(
         agent: ImportedAgent.claude,
@@ -296,6 +306,26 @@ class SessionScanner {
       .openRead(0, _headBytes)
       .transform(const Utf8Decoder(allowMalformed: true))
       .transform(const LineSplitter());
+
+  /// Whether this app opened the session, rather than the tool's own CLI.
+  ///
+  /// Told by the header this app puts on a project chat's opening turn
+  /// ([kProjectInstructionsHeader]) — the one thing in the file that could only
+  /// have been written from here.
+  ///
+  /// It only catches sessions opened *inside a project*, which is the case that
+  /// matters: a chat with no project runs in the app's own workspace folder,
+  /// and that folder is not somewhere a user runs `claude` by hand.
+  static bool _startedInThisApp(Object? message) {
+    if (message is! Map<String, dynamic>) return false;
+    final content = message['content'];
+    final text = switch (content) {
+      String() => content,
+      List() => _firstText(content),
+      _ => null,
+    };
+    return text != null && text.trimLeft().startsWith(kProjectInstructionsHeader);
+  }
 
   /// The opening line of a message's text, clipped for a row.
   static String? _openingLine(Object? message) {
