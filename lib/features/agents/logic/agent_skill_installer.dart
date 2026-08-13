@@ -152,15 +152,20 @@ class AgentSkillInstaller {
   /// Put every built-in skill that applies to [agent] where that agent reads,
   /// and keep a copy in the library.
   ///
-  /// **A skill whose folder is already there is left completely alone.** This
-  /// runs on every launch and again before chats, and rewriting each time
-  /// churned the disk and moved every card's timestamp — which is what the
-  /// Skills screen shows as "Last updated" and sorts by, so a skill nobody had
-  /// touched in a month read as changed a second ago.
+  /// **A skill whose card or scripts differ from this build is overwritten.**
+  /// Grid owns these folders, so what is in them has to be what this build
+  /// ships: for ten days `grid-serve`, `grid-host` and `grid-web` sat on disk
+  /// with front-matter Codex rejects — dropping all three from the skill list it
+  /// shows the model — and a fixed build could not have reached a single machine
+  /// that already had them, because this checked only whether the folder
+  /// existed.
   ///
-  /// The check is the folder's own existence, nothing finer. So a card whose
-  /// wording changed in a new build does *not* reach an agent that already has
-  /// the skill; only a folder that was deleted is put back.
+  /// It compares contents rather than rewriting blindly, which is what the old
+  /// existence check was protecting: this runs on every launch and again before
+  /// chats, and writing each time moved every card's timestamp — the "Last
+  /// updated" the Skills screen shows and sorts by — so a skill nobody had
+  /// touched in a month read as changed a second ago. An unchanged skill is
+  /// still not written.
   Future<void> install(AgentTool agent) async {
     final skillHome = AgentSkillHome(agent, home: _home);
     // An older build pointed Hermes at the app's library; this one doesn't,
@@ -177,13 +182,37 @@ class AgentSkillInstaller {
         skillHome.libraryGridDir(skill.name),
         skillHome.gridDir(skill.name),
       ]) {
-        if (await dir.exists()) continue;
-        await writeSkillFolder(dir, skill.build(dir));
+        final files = skill.build(dir);
+        if (await _isCurrent(dir, files)) continue;
+        await writeSkillFolder(dir, files);
       }
     }
     await _removeRetired(skillHome);
     if (agent == AgentTool.hermes) {
       await _removeSupersededCopies(skillHome.home);
+    }
+  }
+
+  /// Whether what sits at [dir] is already exactly what this build ships.
+  ///
+  /// Every file, not just the card: a skill's script is where its behaviour
+  /// lives, and a card that still matches while `serve.py` is three builds old
+  /// is the same silent staleness one level down.
+  Future<bool> _isCurrent(Directory dir, GridSkillFiles skill) async {
+    try {
+      final card = File('${dir.path}/SKILL.md');
+      if (!await card.exists()) return false;
+      if (await card.readAsString() != skill.card) return false;
+      for (final entry in skill.files.entries) {
+        final file = File('${dir.path}/${entry.key}');
+        if (!await file.exists()) return false;
+        if (await file.readAsString() != entry.value) return false;
+      }
+      return true;
+    } on FileSystemException {
+      // Unreadable counts as stale: rewriting is the recovery, and this runs on
+      // every launch, where a throw would take the whole install down with it.
+      return false;
     }
   }
 

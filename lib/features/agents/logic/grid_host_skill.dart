@@ -29,14 +29,7 @@ String gridHostSkillMd({required String uvPath}) =>
     '''
 ---
 name: $kGridHostSkillName
-description: What this computer has installed, and what to use instead when something is missing — check here before reaching for timeout, gh, rg, setsid, tmux, a system python, or any installer. Use whenever a command comes back "command not found", when you need a time limit on a command, and before you install anything.
-tags: [environment, tooling, macos, path, grid]
-triggers:
-  - a command failed with "command not found"
-  - you are about to use timeout / gtimeout, gh, rg, setsid, tmux
-  - you are about to install something (brew install, npm -g, pip install)
-  - you need to run a command with a time limit, or in the background
-  - "sao lệnh này không chạy", "cài giúp tao", "máy có sẵn gì"
+description: What this computer has installed, and what to use instead when something is missing — check here before reaching for timeout, gh, rg, setsid, tmux, a system python, or any installer. Use whenever a command comes back "command not found", when you need a time limit on a command or want to run one in the background, and before you install anything. "why won't this command run", "install it for me", "what does this machine already have".
 ---
 
 # This computer, before you guess
