@@ -475,6 +475,58 @@ class _HermesAcpSession implements HermesAcpSession {
     return details.isEmpty ? summary : '$summary: $details';
   }
 
+  /// Stop claiming that earlier tool calls are still running.
+  ///
+  /// Hermes does not reliably close a tool call. Its ACP adapter ignores the
+  /// agent's own `tool.completed` event outright — `_tool_progress` returns
+  /// unless the event is `tool.started` — and closes calls only from
+  /// `step_callback`, which fires when the model makes its *next* request and
+  /// matches ids through a FIFO queue keyed by **tool name**. So a call whose
+  /// name is reported differently on the way out, and every call in the last
+  /// round before the turn ends, never gets its update.
+  ///
+  /// Measured on one saved turn: of nine steps, every one of the five `read`
+  /// calls was left running, against two of four `execute` calls. On screen
+  /// that is a spinner that turns for the rest of the conversation.
+  ///
+  /// So the app settles them itself, as [AgentActivityStatus.unknown] — not
+  /// done. Nothing here knows how they went, and a tick would vouch for a tool
+  /// that may have failed.
+  ///
+  /// Safe against the case where they really *are* still running: Hermes can
+  /// run tools in parallel, and a step that does report back later simply
+  /// overwrites this — the feed keys rows by id, so the real outcome wins
+  /// whenever it arrives. Guessing early costs a corrected row; not guessing
+  /// costs a spinner that never stops.
+  /// [except] is the call that has just started, which is genuinely running.
+  /// Null when the trigger is the agent writing rather than a new call.
+  ///
+  /// Returns early when nothing is running, because the message-chunk caller
+  /// reaches this on **every token** of the answer: the common case has to cost
+  /// a map scan and no allocation.
+  void _retireRunning(
+    StreamController<HermesAcpEvent> events, {
+    String? except,
+  }) {
+    var running = false;
+    for (final step in _tools.values) {
+      if (step.status == AgentActivityStatus.running && step.id != except) {
+        running = true;
+        break;
+      }
+    }
+    if (!running) return;
+
+    for (final entry in _tools.entries.toList()) {
+      final step = entry.value;
+      if (entry.key == except) continue;
+      if (step.status != AgentActivityStatus.running) continue;
+      final settled = step.settled(status: AgentActivityStatus.unknown);
+      _tools[entry.key] = settled;
+      events.add(HermesAcpActivity(settled));
+    }
+  }
+
   void _handleUpdate(Object? raw) {
     if (raw is! Map) return;
     final events = _events;
@@ -482,6 +534,8 @@ class _HermesAcpSession implements HermesAcpSession {
     switch (raw['sessionUpdate']) {
       case 'tool_call':
         final id = _str(raw['toolCallId']);
+        // A new call means the ones before it are no longer the step in hand.
+        _retireRunning(events, except: id);
         final activity = AgentActivity(
           id: id,
           kind: _activityKind(raw['kind']),
@@ -540,6 +594,12 @@ class _HermesAcpSession implements HermesAcpSession {
       case 'agent_message_chunk':
         final content = raw['content'];
         if (content is Map && content['text'] is String) {
+          // The model is writing again, so the round of tools it was waiting on
+          // has come back. This is the half [_retireRunning] cannot catch from
+          // a later `tool_call`: the tools of the *last* round have no call
+          // after them, and without this their spinners turn all the way
+          // through the answer being written over them.
+          _retireRunning(events);
           events.add(HermesAcpMessage(content['text'] as String));
         }
     }
