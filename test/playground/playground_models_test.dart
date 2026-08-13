@@ -115,6 +115,33 @@ void main() {
         'qwen2.5-vl-7b': true,
       });
     });
+
+    test("the auto router can read images when any chat model can", () {
+      final options = playgroundOptionsFrom(const [
+        OverviewModel(id: 'auto'),
+        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+      ], const [], vision: visionByModel(const [
+        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+      ]));
+      expect(options.firstWhere((o) => o.id == 'auto').vision, isTrue);
+    });
+
+    test("the auto router stays text-only when no chat model reads images", () {
+      final options = playgroundOptionsFrom(const [
+        OverviewModel(id: 'auto'),
+        OverviewModel(id: 'deepseek-v4'),
+      ], const [], vision: visionByModel(const [
+        OverviewModel(id: 'deepseek-v4', vision: false),
+      ]));
+      expect(options.firstWhere((o) => o.id == 'auto').vision, isFalse);
+    });
+
+    test("a lone auto router stays text-only (nothing to route to)", () {
+      final options = playgroundOptionsFrom(const [
+        OverviewModel(id: 'auto'),
+      ], const []);
+      expect(options.single.vision, isFalse);
+    });
   });
 
   test('OverviewNode parses the capability list beside the primary model', () {

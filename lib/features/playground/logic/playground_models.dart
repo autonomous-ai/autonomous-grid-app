@@ -222,6 +222,19 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
   Map<String, ModelHosting> hosting = const {},
   Map<String, bool> vision = const {},
 }) {
+  // Vision per chat model id, defaulting any model the overview did not name to
+  // false. The overview is the only source that knows; `/models` just lists ids.
+  final visionById = <String, bool>{
+    for (final model in models)
+      if (mediaCapabilityLabel(model.id) == null)
+        modelKey(model.id): vision[modelKey(model.id)] ?? false,
+  };
+  // The `auto` router forwards each turn to whichever model suits it, so it can
+  // carry an attached image whenever the grid has at least one vision-capable
+  // chat model to route to — even though the overview never stamps `auto` with
+  // a modality that is really its delegates'. A lone `auto` (an empty grid
+  // wearing a model's clothes) has nothing to route to and so stays text-only.
+  final routerReadsImages = visionById.values.any((reads) => reads);
   final textOptions = [
     for (final model in models)
       if (mediaCapabilityLabel(model.id) == null)
@@ -235,7 +248,9 @@ List<PlaygroundModelOption> playgroundOptionsFrom(
           hosting: modelKey(model.id) == kAutoModelId
               ? ModelHosting.routed
               : hosting[modelKey(model.id)] ?? ModelHosting.unknown,
-          vision: vision[modelKey(model.id)] ?? false,
+          vision: modelKey(model.id) == kAutoModelId
+              ? routerReadsImages
+              : visionById[modelKey(model.id)] ?? false,
         ),
   ];
   final existingModalities = textOptions.map((o) => o.modality).toSet();
