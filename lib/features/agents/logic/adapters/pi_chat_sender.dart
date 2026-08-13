@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/grid_paths.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/cli/pi_exec_service.dart';
 import '../../../../infrastructure/logging/app_log.dart';
@@ -83,6 +84,10 @@ class PiChatSender implements ChatSender {
     // Pi has no permission channel at all — it never stops to ask, so there is
     // nothing here to hold it to. See `agentSupportsApproval`.
     AgentApprovalMode? approval,
+    // Pi resumes by `--session <id>`, but the app has never written one of its
+    // ids down and nothing imports Pi sessions — so there is never a point to
+    // adopt here. Accepted to satisfy the interface, deliberately unused.
+    AgentResumePoint? resume,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');

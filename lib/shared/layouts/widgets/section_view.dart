@@ -4,6 +4,7 @@ import '../../../features/agents/presentation/agents_view.dart';
 import '../../../features/appearance/presentation/appearance_view.dart';
 import '../../../features/chat/presentation/archived_chats_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
+import '../../../features/chat/presentation/import_sessions_view.dart';
 import '../../../features/connectors/presentation/connectors_view.dart';
 import '../../../features/data_sync/presentation/data_sync_view.dart';
 import '../../../features/debug/presentation/debug_view.dart';
@@ -49,6 +50,7 @@ class SectionView extends StatelessWidget {
       ShellSection.guide => const HowToUseView(),
       ShellSection.appearance => const AppearanceView(),
       ShellSection.dataSync => const DataSyncView(),
+      ShellSection.importChats => const ImportSessionsView(),
       ShellSection.archived => const ArchivedChatsView(),
       ShellSection.debug => const DebugView(),
     };

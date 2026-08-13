@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/features/playground/logic/chat_controller.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
@@ -135,6 +136,7 @@ class _OpenStreamSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) => controller.stream;
 }
 

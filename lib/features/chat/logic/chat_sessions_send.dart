@@ -265,6 +265,13 @@ mixin _ChatSend on _ChatSessions {
       ref.read(agentChangesProvider.notifier).beginTurn(id);
     }
 
+    // The folder the agent will actually run in — the chat's project, or the
+    // app's own workspace when it has none. Resolved here as well as inside the
+    // sender because a resume point is only adopted when its folder matches the
+    // turn's, and a point written down as "no folder" would never match the
+    // workspace path the sender falls back to. Same rule, same answer.
+    final root = workdir ?? ref.read(agentWorkspaceDirProvider).path;
+
     // How long the answer takes, timed from here rather than from `send`: an
     // agent turn can sit in the queue behind another chat, and charging it for
     // that wait would tell the user this model is slow when another chat was
@@ -322,6 +329,11 @@ mixin _ChatSend on _ChatSessions {
       // This chat's own permission level, not the app's — a turn dispatched
       // into a background chat must run under that chat's rules.
       approval: approval,
+      // The session this chat was last having, so quitting the app — or
+      // importing the chat from the tool that opened it — doesn't cost the
+      // agent everything it had worked out. The sender ignores a point that
+      // isn't its own agent's, in its own folder.
+      resume: conversation.resume,
     );
 
     String? agentSessionId;
@@ -345,11 +357,25 @@ mixin _ChatSend on _ChatSessions {
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
           case ChatSendSuccess(:final reply, :final outOfSteps):
+            final messages = [...current.messages, stamp(reply)];
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
               // Stamp the reply with who and what answered, so the transcript
               // still says so even after switching agent or model mid-chat.
-              messages: [...current.messages, stamp(reply)],
+              messages: messages,
+              // Where this chat can pick up from next time. Written on every
+              // successful agent turn — the session id and how much of the
+              // transcript it holds both move — so the answer survives a quit.
+              // Null leaves whatever was already there: a relay turn (a
+              // picture) has no session of its own and must not erase the one
+              // the agent is still holding.
+              resume: _resumePointFor(
+                viaAgent: viaAgent,
+                agent: agent,
+                sessionId: agentSessionId,
+                root: root,
+                seen: messages.length,
+              ),
             );
             // A planning turn's reply is a plan waiting on approval — light the
             // "approve & run" bar for this chat. Any other reply leaves it dark.
@@ -456,6 +482,33 @@ mixin _ChatSend on _ChatSessions {
               opens: conversation.id,
             ),
           ),
+    );
+  }
+
+  /// Where this chat picks up next time, or null to leave whatever is already
+  /// written down.
+  ///
+  /// Null rather than a cleared point in three cases, and each would be a
+  /// regression if it wiped one: a turn the grid's chat API answered (a
+  /// picture) has no session; an agent that reported no session id has nothing
+  /// to record; and Hermes's id names a live process that will be gone by the
+  /// next launch (see [AgentTool.resumesBySessionId]).
+  AgentResumePoint? _resumePointFor({
+    required bool viaAgent,
+    required AgentTool agent,
+    required String? sessionId,
+    required String root,
+    required int seen,
+  }) {
+    if (!viaAgent || sessionId == null) return null;
+    if (!agent.resumesBySessionId) return null;
+    return AgentResumePoint(
+      agent: agent.id,
+      sessionId: sessionId,
+      // Everything in the chat now, this reply included: the agent has just
+      // been handed the turn and has answered it, so it holds all of it.
+      seen: seen,
+      workdir: root,
     );
   }
 

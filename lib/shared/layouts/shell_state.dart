@@ -172,6 +172,13 @@ enum ShellSection {
   // as a contrast/accessibility toggle at nav size.)
   appearance(LucideIcons.sun, 'Appearance', thinIcon: LucideIcons.sun300),
   dataSync(LucideIcons.cloud, 'Sync & Backup', thinIcon: LucideIcons.cloud300),
+  // The arrow-into-a-tray, not a cloud: nothing is downloaded here. The chats
+  // are already on this computer, in another tool's folder.
+  importChats(
+    LucideIcons.import,
+    'Import chats',
+    thinIcon: LucideIcons.import300,
+  ),
   archived(
     LucideIcons.archive,
     'Archived chats',
@@ -272,6 +279,10 @@ const kSettingsGroups = [
     // a Grid you talk to (Developer) nor something that shapes an answer
     // (Customize).
     ShellSection.dataSync,
+    // Beside Sync & Backup because it is the same kind of thing — this user's
+    // own chat history, moving. Sync carries it between their machines; this
+    // brings it in from the tools they were using before this app existed.
+    ShellSection.importChats,
     ShellSection.guide,
   ]),
   // What the assistant is and what it can do — mirrors the mental model of

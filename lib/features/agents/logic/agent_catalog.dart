@@ -80,6 +80,22 @@ enum AgentTool {
   /// classifier reasons over, so it names the kinds of work each agent wins on.
   final String strengths;
 
+  /// Whether a conversation with this agent survives the app being quit.
+  ///
+  /// True for the two that run one process per turn and keep the conversation
+  /// in a file of their own, resumed by id: `claude --resume <id>` and
+  /// `codex exec resume <id>`. Their sessions outlive both the process that
+  /// made them and this app, which is what lets a chat pick one back up — and
+  /// what lets a session started in those tools be imported and carried on
+  /// (see `AgentResumePoint`).
+  ///
+  /// False for Hermes, whose session *is* a live ACP process: when it exits the
+  /// session is gone, and an id written down for it would name nothing. Pi
+  /// resumes by id too, but the app has never recorded one and nothing imports
+  /// Pi sessions, so there would be no point to write.
+  bool get resumesBySessionId =>
+      this == AgentTool.claude || this == AgentTool.codex;
+
   /// The recipe the app runs to put this agent on the machine, or null for an
   /// agent that ships its own installer (Claude Code — see
   /// `ClaudeInstaller`). `AgentInstaller` reads this to pick the route; every

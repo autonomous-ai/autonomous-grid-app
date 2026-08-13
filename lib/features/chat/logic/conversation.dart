@@ -1,4 +1,5 @@
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_resume_point.dart';
 import 'chat_goal.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/message_media.dart';
@@ -21,6 +22,7 @@ class Conversation {
     this.approval,
     this.pinned = false,
     this.goal,
+    this.resume,
   });
 
   final String id;
@@ -83,6 +85,17 @@ class Conversation {
   /// ordinary back-and-forth. See [ChatGoal].
   final ChatGoal? goal;
 
+  /// The agent session this chat can carry on from, or null when the next
+  /// message has to start a fresh one. See [AgentResumePoint].
+  ///
+  /// Two chats need this and they are the same need. A chat *imported* from
+  /// Claude Code or Codex has a session this app never opened, and continuing
+  /// it is the difference between a transcript and a conversation. A chat this
+  /// app started has one too — but only in memory, so quitting the app used to
+  /// throw it away and replay the entire history into a new session on the next
+  /// message.
+  final AgentResumePoint? resume;
+
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -111,6 +124,10 @@ class Conversation {
     // A goal is *removed*, not merely changed, when the user drops it — which
     // the `?? this` idiom can't say.
     bool clearGoal = false,
+    // Only ever *set*: a session that can be resumed goes on being resumable
+    // until it is replaced by a newer one. It is dropped by the sender at the
+    // moment it fails, not by a caller here.
+    AgentResumePoint? resume,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -124,6 +141,7 @@ class Conversation {
     approval: approval ?? this.approval,
     pinned: pinned ?? this.pinned,
     goal: clearGoal ? null : (goal ?? this.goal),
+    resume: resume ?? this.resume,
   );
 
   Map<String, dynamic> toJson() => {
@@ -149,6 +167,9 @@ class Conversation {
     // byte-identical to what every build before pinning existed wrote.
     if (pinned) 'pinned': true,
     if (goal != null) 'goal': goal!.toJson(),
+    // Same rule again: absent means "start a fresh session", which is what
+    // every chat saved before this field existed did.
+    if (resume != null) 'resume': resume!.toJson(),
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -189,6 +210,9 @@ class Conversation {
       // which is what they all were.
       pinned: json['pinned'] == true,
       goal: ChatGoal.fromJson(json['goal']),
+      // A point that won't parse reads as none, which costs a replay — the same
+      // thing that happens to every chat written before this existed.
+      resume: AgentResumePoint.fromJson(json['resume']),
       messages: [
         if (rawMessages is List)
           for (final m in rawMessages)

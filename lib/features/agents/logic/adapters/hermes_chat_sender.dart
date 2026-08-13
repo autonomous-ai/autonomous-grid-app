@@ -14,6 +14,7 @@ import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../agent_changes.dart';
 import '../agent_server_error.dart';
 import '../agent_permissions.dart';
@@ -129,6 +130,10 @@ class HermesChatSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    // Hermes holds its conversation in a live ACP process rather than in a file
+    // it can be pointed back at, so there is no session here to resume: when
+    // that process is gone, so is the session.
+    AgentResumePoint? resume,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
