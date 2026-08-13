@@ -106,11 +106,37 @@ final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
           for (final id in ref.watch(servedModelIdsProvider))
             OverviewModel(id: id),
         ];
-  return [
+  return distinctOverviewModels([
     for (final model in source)
       if (model.id != kAutoModelId) model,
-  ];
+  ]);
 });
+
+/// Collapse duplicate model ids to ONE entry, keeping the richest row for each.
+///
+/// The relay's overview lists one entry per (provider, model), so a model served
+/// by several providers with different pricing can appear multiple times. Tiles
+/// and the model count should show a model once. "Richest" = has pricing, then
+/// a known context length, then a definite vision flag — an entry that only
+/// carries an id loses to one that can label the tile.
+List<OverviewModel> distinctOverviewModels(List<OverviewModel> models) {
+  final best = <String, OverviewModel>{};
+  for (final model in models) {
+    final prev = best[model.id];
+    if (prev == null || _isRicher(model, prev)) best[model.id] = model;
+  }
+  return best.values.toList(growable: false);
+}
+
+bool _isRicher(OverviewModel a, OverviewModel b) {
+  int score(
+    OverviewModel m,
+  ) =>
+      (m.pricing != null ? 1 : 0) +
+      (m.contextLength != null ? 1 : 0) +
+      (m.vision != null ? 1 : 0);
+  return score(a) > score(b);
+}
 
 /// Whether the grid serves at least one real chat/text model. A media capability
 /// (`comfyui:*`) and the virtual `auto` router don't count as "chat", so a
