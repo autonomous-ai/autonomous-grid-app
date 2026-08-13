@@ -234,4 +234,15 @@ AgentActivityStatus aggregateActivityStatus(List<AgentActivity> steps) {
 /// way to keep a live run from swallowing the answer, and it is gone now that
 /// folding shows one row and a long run folds itself the moment it finishes: a
 /// fold that leaves five rows behind reads as a fold that didn't work.
-const int kFoldedStepLimit = 5;
+///
+/// **Three, measured.** At five this almost never fired: across the 8,172 runs
+/// in this machine's imported Claude history the median run is *one* step, 94%
+/// are three or fewer, and only 3% ran past five — so the fold was a feature
+/// nobody saw. Three is where it starts paying: it folds 7% of runs and takes
+/// 13,922 drawn rows down to 10,688, while a pair of steps — the shape of
+/// nearly every run — still reads at a glance, which is what this limit is for.
+///
+/// It only changes *finished* turns. A live run is expanded regardless
+/// (`_expanded ?? live` in `AgentStepList`), so nothing folds under the user
+/// while they are watching it work.
+const int kFoldedStepLimit = 3;
