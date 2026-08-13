@@ -274,6 +274,11 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
     'sources': [for (final s in message.sources) s.toJson()],
   if (message.plan.isNotEmpty)
     'plan': [for (final p in message.plan) p.toJson()],
+  // The turn's own order — what it said, and where the steps it ran sat between
+  // those passages. Written only when an agent actually ran something, so a
+  // plain reply's file is byte-identical to what every build before this wrote.
+  if (message.parts.isNotEmpty)
+    'parts': [for (final p in message.parts) turnPartToJson(p)],
   if (message.agent != null) 'agent': message.agent,
   if (message.model != null) 'model': message.model,
   if (message.node != null) 'node': message.node,
@@ -290,6 +295,7 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
   final rawContexts = json['contexts'];
   final rawSources = json['sources'];
   final rawPlan = json['plan'];
+  final rawParts = json['parts'];
   return ChatMessage(
     role: json['role'] == ChatRole.assistant.name
         ? ChatRole.assistant
@@ -318,6 +324,10 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
       if (rawPlan is List)
         for (final p in rawPlan)
           if (p is Map<String, dynamic>) ?AgentPlanEntry.fromJson(p),
+    ],
+    parts: [
+      if (rawParts is List)
+        for (final p in rawParts) ?turnPartFromJson(p),
     ],
     agent: json['agent'] is String ? json['agent'] as String : null,
     model: json['model'] is String ? json['model'] as String : null,

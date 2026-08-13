@@ -196,7 +196,9 @@ class CodexChatSender implements ChatSender {
             slot.sessionId = threadId;
           case CodexActivityEvent(:final activity):
             if (isAgentWork(activity)) workedAtAll = true;
-            runs.upsertStep(chat, activity);
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            runs.upsertStep(chat, activity, answer: answer.toString());
           case CodexPlanEvent(:final entries):
             runs.setPlan(chat, entries);
           case CodexFileChangeEvent(:final changes):

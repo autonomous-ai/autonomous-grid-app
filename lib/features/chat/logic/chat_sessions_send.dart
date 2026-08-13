@@ -143,7 +143,12 @@ mixin _ChatSend on _ChatSessions {
     // showing the *previous* turn's commands under the new question. The sender
     // resets again as it starts, because it is reached from the Playground too;
     // this is the earlier of the two, not a second copy of the rule.
-    if (viaAgent) ref.read(agentRunsProvider.notifier).reset(id);
+    // Every turn, not only an agent's. A turn the grid answers directly (a
+    // picture, a computer with no agent) writes nothing to this feed — so
+    // leaving the last turn's steps standing meant a relay turn the user stopped
+    // half-way was committed carrying the *previous* turn's commands, which it
+    // had not run.
+    ref.read(agentRunsProvider.notifier).reset(id);
     final done = _dones[id] = Completer<void>();
     final project = ref.read(projectByIdProvider(conversation.projectId));
     // Who answers this turn, read here for the same reason [approval] is: the
@@ -283,6 +288,12 @@ mixin _ChatSend on _ChatSessions {
     // facts, stamped onto whatever the turn produced (a whole reply, or the
     // part-answer a failure left behind).
     ChatMessage stamp(ChatMessage reply) => reply.copyWith(
+      // And how the turn went, so the finished transcript keeps the order the
+      // user watched it in. Here rather than in each sender: this is the one
+      // place every landing goes through — the answer, the part-answer a failure
+      // left, the half-turn Stop kept — and four copies of it would be four
+      // chances for one of them to drop the steps.
+      parts: _timelineOf(id, reply.text, viaAgent: viaAgent),
       // Only when the agent actually answered: a picture, or a computer with no
       // agent installed, goes straight to the grid's chat API.
       agent: viaAgent ? agent.id : null,
@@ -398,6 +409,27 @@ mixin _ChatSend on _ChatSessions {
     );
   }
 
+  /// How the turn in chat [id] went — its passages and steps in order, with
+  /// [text] closed off as the last thing it said.
+  ///
+  /// Empty for a turn no agent answered, and for one that ran no steps at all:
+  /// there the timeline would be the answer and nothing else, which is what the
+  /// message's own text already says. Nothing to store, nothing to draw
+  /// differently, and a chat file that stays exactly as it was.
+  List<TurnPart> _timelineOf(String id, String text, {required bool viaAgent}) {
+    if (!viaAgent) return const [];
+    // Asked before the closing words are placed, so a turn with nothing to
+    // interleave leaves the run untouched rather than filing prose against a
+    // chat whose feed nobody will read.
+    if (!hasSteps(ref.read(agentRunProvider(id)).parts)) return const [];
+    // The closing words haven't been placed yet — only a step closes a passage,
+    // and after the last one the agent went on talking.
+    ref.read(agentRunsProvider.notifier).say(id, text);
+    // Nothing may be left spinning in a turn that has ended (see
+    // [settledParts]) — the live feed is gone by the time this is read.
+    return settledParts(ref.read(agentRunProvider(id)).parts);
+  }
+
   /// Tell the desktop that [conversation] is done, unless the user is already
   /// watching it happen.
   ///
@@ -491,7 +523,15 @@ mixin _ChatSend on _ChatSessions {
         updatedAt: DateTime.now(),
         messages: [
           ...current.messages,
-          ChatMessage(role: ChatRole.assistant, text: partial),
+          ChatMessage(
+            role: ChatRole.assistant,
+            text: partial,
+            // The steps it ran before it was stopped are half the account of
+            // what happened — a turn cut off after six commands and one cut off
+            // before it did anything are different turns, and the transcript is
+            // all that is left to say which this was.
+            parts: _timelineOf(id, partial, viaAgent: true),
+          ),
         ],
       ),
       phase: const SendIdle(),

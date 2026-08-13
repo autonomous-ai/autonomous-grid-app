@@ -375,7 +375,9 @@ class HermesChatSender implements ChatSender {
           case HermesAcpActivity(:final activity):
             armIdle();
             if (isAgentWork(activity)) workedAtAll = true;
-            runs.upsertStep(chat, activity);
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            runs.upsertStep(chat, activity, answer: answer.toString());
           case HermesAcpPermission(:final request):
             // The agent has stopped and is waiting on the user; pause the idle
             // watch (their time isn't a hang) and re-arm it once they answer.

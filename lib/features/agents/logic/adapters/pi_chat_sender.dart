@@ -193,8 +193,15 @@ class PiChatSender implements ChatSender {
           case PiSessionStarted(:final sessionId):
             slot.sessionId = sessionId;
           case PiActivityEvent(:final activity):
-            runs.upsertStep(chat, activity);
-          case PiFileChangeEvent(:final paths):
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            runs.upsertStep(chat, activity, answer: answer.toString());
+          case PiFileChangeEvent(:final paths, :final step):
+            // The write's own row rides on this event — nothing else reports it
+            // finished (see [PiFileChangeEvent.step]).
+            if (step != null) {
+              runs.upsertStep(chat, step, answer: answer.toString());
+            }
             _recordAddedFiles(chat, paths);
           case PiMessageEvent(:final text):
             answer

@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_turn_part.dart';
+
+export '../../../infrastructure/cli/agent_turn_part.dart';
 
 /// How many conversations keep a live agent session at once.
 ///
@@ -27,16 +30,17 @@ final agentWorkspaceDirProvider = Provider<Directory>((ref) {
   return dir;
 });
 
-/// What one conversation's in-flight agent turn is doing right now: the steps it
-/// is running (newest last), the pages it has cited, and the to-do plan it is
-/// working through.
+/// What one conversation's in-flight agent turn is doing right now: what it has
+/// said and run so far in the order it happened, the pages it has cited, and the
+/// to-do plan it is working through.
 ///
 /// One object rather than three feeds because it is one turn's live state, and
 /// keeping the three in step was the whole difficulty: they are reset together,
 /// they belong to the same chat, and the bubble shows all three at once.
 class AgentRun {
   const AgentRun({
-    this.steps = const [],
+    this.parts = const [],
+    this.said = '',
     this.sources = const [],
     this.plan = const [],
   });
@@ -44,9 +48,22 @@ class AgentRun {
   /// Nothing running (or nothing said yet) — what a chat with no turn reads as.
   static const empty = AgentRun();
 
+  /// The turn as it happened: the passages the agent has written and the steps
+  /// it has run, interleaved in order. See [TurnPart].
+  final List<TurnPart> parts;
+
+  /// How much of the agent's answer is already folded into [parts].
+  ///
+  /// Agents report their answer cumulatively, so this prefix is what tells the
+  /// newest passage from the ones already placed — see [unsaidTail]. Held rather
+  /// than recomputed from the text parts, because the two aren't the same string:
+  /// the parts are trimmed for display, the prefix has to match what the agent
+  /// itself sent.
+  final String said;
+
   /// The shell commands and tool calls the agent has run this turn, each with
-  /// its status.
-  final List<AgentActivity> steps;
+  /// its status — [parts] with the prose taken out.
+  List<AgentActivity> get steps => stepsOf(parts);
 
   /// The web pages this turn has cited so far, deduplicated by url and kept in
   /// the order they were found. Pinned onto the answer when the turn lands, so
@@ -59,11 +76,13 @@ class AgentRun {
   final List<AgentPlanEntry> plan;
 
   AgentRun copyWith({
-    List<AgentActivity>? steps,
+    List<TurnPart>? parts,
+    String? said,
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
   }) => AgentRun(
-    steps: steps ?? this.steps,
+    parts: parts ?? this.parts,
+    said: said ?? this.said,
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
   );
@@ -111,16 +130,50 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
 
   /// Insert a step, or replace the existing one with the same id (a `started`
   /// step transitioning to `completed`).
-  void upsertStep(String chatId, AgentActivity activity) {
-    final steps = _run(chatId).steps;
-    final index = steps.indexWhere((step) => step.id == activity.id);
-    final next = [...steps];
-    if (index == -1) {
-      next.add(activity);
+  ///
+  /// [answer] is the agent's whole reply as it stands — the senders have it in
+  /// hand, and a step is exactly the boundary that closes a passage of it: what
+  /// the agent had said before it ran this belongs *above* the row, not under
+  /// the lot of them. Only a **new** step closes a passage; a result landing on
+  /// a row that is already there changes its status where it sits, and nothing
+  /// was said in between. Passing nothing (the refusal row, which is raised from
+  /// outside a turn's stream) leaves the prose untouched.
+  void upsertStep(String chatId, AgentActivity activity, {String answer = ''}) {
+    final existing = _run(chatId).parts.indexWhere(
+      (part) => part is TurnStep && part.step.id == activity.id,
+    );
+    if (existing == -1 && answer.isNotEmpty) say(chatId, answer);
+    final parts = _run(chatId).parts;
+    final next = [...parts];
+    if (existing == -1) {
+      next.add(TurnStep(activity));
     } else {
-      next[index] = activity;
+      next[existing] = TurnStep(activity);
     }
-    _write(chatId, _run(chatId).copyWith(steps: List.unmodifiable(next)));
+    _write(chatId, _run(chatId).copyWith(parts: List.unmodifiable(next)));
+  }
+
+  /// Close off everything of [answer] the timeline hasn't placed yet as the
+  /// turn's newest passage.
+  ///
+  /// Called when a step arrives (the passage before it has ended) and once more
+  /// as the turn lands, so the closing words are in the timeline before it is
+  /// pinned onto the message. Text is only ever *added* here — the streaming
+  /// bubble draws the open passage straight from the send phase, so this runs a
+  /// handful of times a turn rather than once per token.
+  void say(String chatId, String answer) {
+    final run = _run(chatId);
+    if (answer.isEmpty || answer == run.said) return;
+    final tail = unsaidTail(said: run.said, answer: answer);
+    _write(
+      chatId,
+      run.copyWith(
+        said: answer,
+        parts: tail.isEmpty
+            ? run.parts
+            : List.unmodifiable([...run.parts, TurnText(tail)]),
+      ),
+    );
   }
 
   /// Append [sources], skipping any url already collected this turn.
@@ -154,6 +207,8 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
 /// [AgentActivityStatus.running] wins while any step is still going (the run is
 /// live, so the summary spins); otherwise [AgentActivityStatus.failed] if any
 /// failed (a settled run with a problem to surface); otherwise
+/// [AgentActivityStatus.unknown] if any step never reported, since a summary
+/// may not vouch for a run holding a step nobody can vouch for; otherwise
 /// [AgentActivityStatus.done]. Empty reads as done.
 AgentActivityStatus aggregateActivityStatus(List<AgentActivity> steps) {
   if (steps.any((s) => s.status == AgentActivityStatus.running)) {
@@ -162,37 +217,21 @@ AgentActivityStatus aggregateActivityStatus(List<AgentActivity> steps) {
   if (steps.any((s) => s.status == AgentActivityStatus.failed)) {
     return AgentActivityStatus.failed;
   }
+  if (steps.any((s) => s.status == AgentActivityStatus.unknown)) {
+    return AgentActivityStatus.unknown;
+  }
   return AgentActivityStatus.done;
 }
 
-/// How many steps a folded run shows at once, and the length past which a run
-/// folds at all. A short run reads at a glance; a long one — an agent that opens
-/// three dozen files before it says a word — would otherwise push the answer,
-/// the plan and the "Thinking…" line off the screen entirely.
-const int kFoldedStepLimit = 5;
-
-/// The rows a folded run shows: what is running *now*, filled up to
-/// [kFoldedStepLimit] with the steps that ran most recently, in the order they
-/// ran.
+/// The length past which a run of steps gets a summary line it can fold into.
 ///
-/// Both halves are needed. Running-only goes blank between tool calls, so a
-/// thinking agent looks like it has done nothing; newest-only can bury a slow
-/// command under five quick reads that started after it and finished first. The
-/// cap is what makes it a summary: an agent may have thirty reads in flight at
-/// once, and thirty spinning rows say no more than five do.
-List<AgentActivity> foldedActivitySteps(List<AgentActivity> steps) {
-  if (steps.length <= kFoldedStepLimit) return steps;
-  final picked = <int>{};
-  // Newest first, so what fills the remaining room is the latest work.
-  void take(bool Function(AgentActivity step) wanted) {
-    for (var i = steps.length - 1; i >= 0; i--) {
-      if (picked.length == kFoldedStepLimit) return;
-      if (wanted(steps[i])) picked.add(i);
-    }
-  }
-
-  take((step) => step.status == AgentActivityStatus.running);
-  take((_) => true);
-  final order = picked.toList()..sort();
-  return List.unmodifiable([for (final i in order) steps[i]]);
-}
+/// A short run reads at a glance and is left alone; a long one — an agent that
+/// opens three dozen files before it says a word — would otherwise push the
+/// answer, the plan and the "Thinking…" line off the screen entirely.
+///
+/// There used to be a `foldedActivitySteps` beside this, which kept the latest
+/// five rows on screen *while folded*. It was written when folding was the only
+/// way to keep a live run from swallowing the answer, and it is gone now that
+/// folding shows one row and a long run folds itself the moment it finishes: a
+/// fold that leaves five rows behind reads as a fold that didn't work.
+const int kFoldedStepLimit = 5;

@@ -4,7 +4,21 @@
 enum AgentActivityKind { command, web, tool, thinking }
 
 /// Lifecycle of one agent step, driving its live status indicator.
-enum AgentActivityStatus { running, done, failed }
+enum AgentActivityStatus {
+  running,
+  done,
+  failed,
+
+  /// The turn ended without this step ever reporting how it went.
+  ///
+  /// It exists because the alternatives both lie. A tick claims the step
+  /// succeeded; a red mark claims it failed — and a saved transcript full of red
+  /// marks says an agent's work went wrong when all that is known is that the
+  /// app stopped hearing about it. Reached two ways: the user pressed Stop
+  /// mid-tool, and a transport that simply doesn't always send a closing update
+  /// (Hermes over ACP).
+  unknown,
+}
 
 /// One agent step in the live activity feed — a shell command or a tool call the
 /// agent ran while answering. Keyed by [id] so a `started` event and its later
@@ -19,6 +33,10 @@ class AgentActivity {
     required this.kind,
     required this.label,
     required this.status,
+    this.tool,
+    this.request,
+    this.result,
+    this.parent,
   });
 
   final String id;
@@ -27,7 +45,95 @@ class AgentActivity {
   /// Short human label — the shell command, or the tool name.
   final String label;
   final AgentActivityStatus status;
+
+  /// The tool's own name, as the agent calls it (`Bash`, `Read`, `terminal`,
+  /// `command_execution`), or null on a row that isn't a tool call.
+  ///
+  /// Kept beside [label] rather than parsed back out of it: the label is written
+  /// for a person and each agent words it differently, so a row that wants to
+  /// say "Read conventions.md" has no reliable way to recover which tool ran.
+  final String? tool;
+
+  /// What the agent asked the tool to do, as text the user can read — the
+  /// command line, or the call's arguments as JSON. Null when the transport
+  /// doesn't carry it (see the per-agent notes on each parser).
+  ///
+  /// Capped at [kToolPayloadLimit]: this is shown in a fold and saved with the
+  /// conversation, and a step that read a 200KB file must not put 200KB into a
+  /// chat file that is rewritten on every turn.
+  final String? request;
+
+  /// What came back, same terms as [request]. Null while the step is still
+  /// running, and on a transport that reports no result.
+  final String? result;
+
+  /// The tool call this step ran *inside*, or null when the agent itself ran it.
+  ///
+  /// Claude Code's `Task` tool starts a sub-agent, and that sub-agent's whole
+  /// working life — its thoughts, its file reads, its commands — comes back in
+  /// the same stream as the main agent's, tagged with the id of the `Task` call
+  /// that started it. So a step is not always the agent's own: it can belong to
+  /// something the agent delegated, and the chat has to be able to tell, or a
+  /// sub-agent reading thirty files reads as the agent doing it.
+  final String? parent;
+
+  /// Whether this step belongs to a sub-agent rather than to the agent itself.
+  bool get isNested => parent != null;
+
+  /// Whether there is anything to show if the user opens this row.
+  bool get hasPayload =>
+      (request?.isNotEmpty ?? false) || (result?.isNotEmpty ?? false);
+
+  /// This step with its outcome filled in, keeping what the call itself said.
+  ///
+  /// The two halves arrive as separate events — the call announces the request,
+  /// a later event carries the result — and the feed keys them to one row, so
+  /// the second must not overwrite the first with nulls.
+  AgentActivity settled({
+    required AgentActivityStatus status,
+    String? result,
+  }) => AgentActivity(
+    id: id,
+    kind: kind,
+    label: label,
+    status: status,
+    tool: tool,
+    request: request,
+    result: clipToolPayload(result) ?? this.result,
+    parent: parent,
+  );
 }
+
+/// How much of a tool's request or result is worth keeping.
+///
+/// It is read in a fold under one step of one turn, and written into
+/// `~/.grid/app/chats/<id>.json`, which is rewritten whole on every turn. A
+/// single `cat` of a large file would otherwise outweigh the entire
+/// conversation around it — and nobody reads the 40th screen of a build log out
+/// of a chat bubble anyway.
+const int kToolPayloadLimit = 4000;
+
+/// [raw] trimmed and capped at [kToolPayloadLimit], or null when there is
+/// nothing to show. The cut says how much was dropped rather than trailing off
+/// into an ellipsis: a payload that stops mid-word reads as a bug unless the
+/// line under it says it was cut on purpose.
+String? clipToolPayload(String? raw) {
+  final text = raw?.trim();
+  if (text == null || text.isEmpty) return null;
+  if (text.length <= kToolPayloadLimit) return text;
+  // Never cut between the two halves of a surrogate pair. Dart counts UTF-16
+  // code units, and an emoji is two of them — landing between them leaves a lone
+  // high surrogate, which is not valid text: it survives `jsonEncode` but comes
+  // back as a replacement glyph, and a payload can be anything (a log, a diff, a
+  // file full of them).
+  final end = _isHighSurrogate(text.codeUnitAt(kToolPayloadLimit - 1))
+      ? kToolPayloadLimit - 1
+      : kToolPayloadLimit;
+  final dropped = text.length - end;
+  return '${text.substring(0, end)}\n\n… $dropped more characters';
+}
+
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
 
 /// A web page the agent consulted while answering — one citation shown under the
 /// reply, so an answer built from the web says where it came from instead of

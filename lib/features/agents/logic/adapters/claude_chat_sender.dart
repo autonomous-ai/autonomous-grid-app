@@ -428,6 +428,9 @@ class ClaudeChatSender implements ChatSender {
         );
 
     final answer = StringBuffer();
+    // The answer up to its last finished block — where the turn may be divided.
+    // See [ClaudeMessageEvent.settled].
+    var settledText = '';
     final updates = StreamController<ChatSendUpdate>();
     // What each file Claude is about to write held beforehand, so a landed write
     // can be shown as a real before/after and undone. Captured from the tool
@@ -448,7 +451,14 @@ class ClaudeChatSender implements ChatSender {
             if (chrome) _checkBrowserServer(statuses);
           case ClaudeActivityEvent(:final activity):
             if (isAgentWork(activity)) workedAtAll = true;
-            runs.upsertStep(chat, activity);
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            //
+            // The *settled* text, not the streaming one: a step — a sub-agent's,
+            // usually — can arrive between two deltas of a sentence Claude is
+            // still typing, and dividing the turn there would split that
+            // sentence around it.
+            runs.upsertStep(chat, activity, answer: settledText);
           case ClaudePlanEvent(:final entries):
             runs.setPlan(chat, entries);
           case ClaudeFileWriteStarted(:final path):
@@ -462,10 +472,11 @@ class ClaudeChatSender implements ChatSender {
           // many times and the last call is where the session actually stands.
           case ClaudeContextUsed(:final tokens):
             slot.usedTokens = tokens;
-          case ClaudeMessageEvent(:final text):
+          case ClaudeMessageEvent(:final text, settled: final blocks):
             answer
               ..clear()
               ..write(text);
+            settledText = blocks;
             updates.add(ChatSendStreaming(text));
           case ClaudeTurnFailed(:final message):
             failure = friendlyClaudeError(message);
