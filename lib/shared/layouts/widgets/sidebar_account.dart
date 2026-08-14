@@ -6,6 +6,7 @@ import '../../../features/app_update/logic/app_updater_service.dart';
 import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/feedback/presentation/feedback_dialog.dart';
+import '../../../features/network/presentation/share_grid_dialog.dart';
 import '../../../features/provider_node/logic/provider_run_controller.dart';
 import '../../app_info.dart';
 import '../../theme/app_theme.dart';
@@ -38,25 +39,33 @@ final _menuRowRadius = BorderRadius.circular(AppControl.radius);
 
 /// The menu entries that aren't a section — kept apart from `ShellSection.name`
 /// so a section can never collide with one.
+const _inviteValue = 'invite';
 const _settingsValue = 'settings';
 const _feedbackValue = 'feedback';
 const _updatesValue = 'check_updates';
 const _logoutValue = 'logout';
 
-/// What the menu will actually measure, given what it's about to show: Settings,
-/// Send feedback, the update row (not on platforms without an updater), the
-/// version (only once it's read), Sign out.
-Size _accountMenuSize({required bool updater, required bool version}) => Size(
+/// What the menu will actually measure, given what it's about to show: the
+/// invite row (only on a grid the user owns), Settings, Send feedback, the
+/// update row (not on platforms without an updater), the version (only once
+/// it's read), Sign out.
+Size _accountMenuSize({
+  required bool invite,
+  required bool updater,
+  required bool version,
+}) => Size(
   _accountMenuWidth,
   _menuPadding * 2 +
+      (invite ? _menuRowHeight : 0) +
       _menuRowHeight * 2 +
       (updater ? _menuRowHeight : 0) +
       (version ? _menuVersionHeight : 0) +
       _menuRowHeight,
 );
 
-/// The sidebar's foot: who's signed in, and the menu that hangs off it — check
-/// for updates, the app version, sign out.
+/// The sidebar's foot: who's signed in, and the menu that hangs off it — invite
+/// someone onto the grid in scope, settings, feedback, check for updates, the
+/// app version, sign out.
 ///
 /// Wears a dot while a newer build is waiting, so an update is noticed instead of
 /// having to be hunted for. Check outcomes are toasted app-wide by
@@ -133,7 +142,15 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     final version = ref.watch(appVersionProvider).asData?.value;
     final status = ref.watch(appUpdateStatusProvider).asData?.value;
     final available = status is UpdateAvailable ? status : null;
+    // Inviting someone is member management, and the control plane only lets a
+    // grid's owner do that — see [NetworkCredential.isOwner], which is
+    // deliberately narrower than `canManageProvider`. So the row appears only
+    // when the grid in scope is one this account owns; for a joined grid there
+    // is nothing behind the row but a 403.
+    final grid = ref.watch(selectedNetworkProvider);
+    final invitable = grid != null && grid.isOwner ? grid : null;
     final menuSize = _accountMenuSize(
+      invite: invitable != null,
       updater: updater.isSupported,
       version: version != null,
     );
@@ -151,6 +168,7 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
       ),
       menuChildren: [
         _AccountMenuContent(
+          canInvite: invitable != null,
           version: version,
           updateAvailable: available,
           updaterSupported: updater.isSupported,
@@ -186,6 +204,16 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     String value,
   ) async {
     _menu.close();
+    if (value == _inviteValue) {
+      // The same dialog the grid's own header opens, on the same grid — one
+      // invite flow, so the two entry points can't drift apart. Re-read the
+      // selection rather than trusting the one the menu was built from: the
+      // menu outlives a `grid sync` that can swap it underneath.
+      final grid = ref.read(selectedNetworkProvider);
+      if (grid == null || !grid.isOwner) return;
+      await ShareGridDialog.show(context, grid);
+      return;
+    }
     if (value == _updatesValue) {
       await updater.checkForUpdates();
       return;
@@ -239,11 +267,17 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
 
 class _AccountMenuContent extends StatelessWidget {
   const _AccountMenuContent({
+    required this.canInvite,
     required this.version,
     required this.updateAvailable,
     required this.updaterSupported,
     required this.onSelected,
   });
+
+  /// Whether the grid in scope is one this account can add members to. False
+  /// drops the invite row entirely rather than disabling it: a row you can't
+  /// use explains nothing about why.
+  final bool canInvite;
 
   final String? version;
   final UpdateAvailable? updateAvailable;
@@ -263,6 +297,17 @@ class _AccountMenuContent extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Bringing someone onto the grid is the one thing here you do *for*
+          // other people, so it leads. The row doesn't name the grid because
+          // [ShareGridDialog] does, in its title — which matters more from here
+          // than from the grid's own page, since this menu is the one place in
+          // the app that isn't already grid-scoped.
+          if (canInvite)
+            _AccountMenuItem(
+              icon: LucideIcons.userPlus300,
+              label: 'Invite members',
+              onPressed: () => onSelected(_inviteValue),
+            ),
           // One door to the setup screens — grids, this computer, Telegram, the
           // guide. They were four loose menu entries; a menu is a bad place to
           // keep things you have to come back to.
