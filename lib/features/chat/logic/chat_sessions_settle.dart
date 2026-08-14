@@ -27,6 +27,7 @@ mixin _ChatSettle on _ChatSessions {
   /// what is waiting, so this is something the user can see go.
   @override
   void _cancel(String id) {
+    _retryableTurns.remove(id);
     final sub = _subs.remove(id);
     sub?.cancel();
     for (final waiting in _agentQueues.values) {

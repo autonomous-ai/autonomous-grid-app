@@ -781,10 +781,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // An image/video model, or a turn carrying attachments, bypasses the
     // (text-only) agent — so the in-flight bubble must show the media progress
     // bar, not "the agent is working".
+    final agentInstalled = ref.watch(anyAgentInstalledProvider);
     final agentMode = agentAnswersTurn(
       modality: modality,
       hasAttachments: _attachments.isNotEmpty,
-      agentInstalled: ref.watch(anyAgentInstalledProvider),
+      agentInstalled: agentInstalled,
     );
     final needsImage = modality == PlaygroundModality.video;
     // An image pasted into a chat whose model can't read images. Locked until
@@ -1005,18 +1006,38 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 sending: sending,
                                 canSend: canSend,
                                 error: error,
-                                // Any turn the agent couldn't finish gets the way out
-                                // offered beside it. Keying this to one known message
-                                // meant the failure people actually hit (a 503 from
-                                // the grid) arrived with no button at all — and the
-                                // message is the wrong thing to hang it on anyway:
-                                // what makes the swap worth offering is that an agent
-                                // failed, not which sentence it failed with.
-                                errorAction: agentMode
-                                    ? const SwitchAgentButton()
-                                    : null,
-                                // Only the agent can touch this computer — a picture is made
-                                // by the grid, so there'd be nothing to approve.
+                                // Retry reuses the committed turn, including
+                                // its picture, after the user picks a model
+                                // that can answer it. Agent failures keep their
+                                // one-click handover beside that universal exit.
+                                errorAction: error == null
+                                    ? null
+                                    : Wrap(
+                                        spacing: 4,
+                                        runSpacing: 4,
+                                        children: [
+                                          TextButton(
+                                            onPressed: () => unawaited(
+                                              ref
+                                                  .read(
+                                                    chatSessionsProvider
+                                                        .notifier,
+                                                  )
+                                                  .retry(
+                                                    network: widget.network,
+                                                    model: _model.text.trim(),
+                                                    modality: modality,
+                                                  ),
+                                            ),
+                                            child: const Text('Retry'),
+                                          ),
+                                          if (agentMode)
+                                            const SwitchAgentButton(),
+                                        ],
+                                      ),
+                                // Only the agent can touch this computer — a
+                                // picture is made by the grid, so there'd be
+                                // nothing to approve.
                                 approvalPicker: agentMode
                                     ? ApprovalPicker(
                                         value: approval,
@@ -1025,9 +1046,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                             .setApproval,
                                       )
                                     : null,
-                                // Which agent answers, beside the model it runs — only
-                                // when an agent is the one answering this turn.
-                                agentPicker: agentMode
+                                // An attached picture bypasses the agent for
+                                // this turn, but must not hide or reset the
+                                // conversation's agent choice while composing.
+                                agentPicker:
+                                    modality == PlaygroundModality.text &&
+                                        agentInstalled
                                     ? const AgentPicker()
                                     : null,
                                 modelPicker: GridModelPicker(
