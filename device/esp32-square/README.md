@@ -15,12 +15,20 @@ halves drift — and drift here means a device in the field that connects and th
 | Framing codec (Dart + C, shared vectors) | ✅ built and tested |
 | Message layer (Dart) | ✅ built and tested |
 | `tool/panel_tap.dart` — drive a real device with no app build | ✅ |
-| Firmware app (UI, boot flow, link client) | ⬜ not started |
+| Firmware skeleton (board, display, touch, boot flow, USB link) | 🟨 builds — **never run on hardware** |
+| Firmware app (screens, message layer) | ⬜ not started |
 | grid-app service (projects, turn events, stop) | ⬜ not started |
 | Voice (capture → STT → dispatch) | ⬜ not started |
 
 Nothing on the device runs this protocol yet. The board currently ships someone else's firmware;
 see [`docs/overview.md`](docs/overview.md) for what that is and why it matters.
+
+**The firmware skeleton has never been flashed.** It compiles, and that is genuinely all that is
+known about it: whether the panel lights, whether touch is the right way up, and whether the native
+USB port carries clean bytes are each a measurement nobody has taken. The board layer is lifted from
+firmware that does run on this exact board, which makes it likely rather than verified — and every
+one of those three fails silently, so "it booted" is not evidence any of them worked. `display.c`
+logs the panel's real refresh rate ~2 s in; that line is the first thing to look for.
 
 ## Docs
 
@@ -34,14 +42,28 @@ see [`docs/overview.md`](docs/overview.md) for what that is and why it matters.
 ## Layout
 
 ```
-main/          firmware sources — panel_frame.{c,h} is the only finished part
+main/          app_main.c (boot flow) · panel_frame.{c,h} (codec) · panel_link.{c,h} (USB transport)
+main/board/    pins, I2C, TCA9554 expander, AXP2101 — lifted from the reference firmware
+main/ui/       display (ST7701+LVGL), touch (GT911), screens, fonts, icons
 scripts/       gen_vectors.py (shared test vectors) · test_frame.sh (host test)
 test/          host tests + vectors/panel_frame.txt
 docs/          this
 ```
 
+`main/panel_frame.c` is compiled twice: into the firmware, and by `scripts/test_frame.sh` with a
+plain host compiler. That is why it contains no ESP-IDF header and must not gain one — the moment it
+does, the only cheap check on the wire format goes with it.
+
 The Dart half lives in the app: `lib/infrastructure/panel/`, tested in `test/panel/`, with a manual
 probe at `tool/panel_tap.dart`.
+
+## Building the firmware
+
+```bash
+source ~/esp/esp-idf/export.sh                # ESP-IDF v5.5
+idf.py set-target esp32s3 && idf.py build
+idf.py -p /dev/cu.usbmodem<serial> flash monitor   # the CH343 port — the console, NOT the protocol
+```
 
 ## Running the tests
 

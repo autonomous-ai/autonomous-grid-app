@@ -51,10 +51,21 @@ The cause is visible in the reference firmware's `sdkconfig`: console goes to UA
 (`CONFIG_ESP_CONSOLE_UART_DEFAULT=y`) **and** `CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y`
 mirrors it to the native port.
 
-**When this firmware's `sdkconfig.defaults` is written, that second flag must be off** — it is not
-yet, because the firmware application does not exist yet. Left on, every log line lands in the
-middle of the protocol stream and the reader spends its life resyncing. It is one line of config:
-no TinyUSB work, no framing log output as messages, no second CDC interface.
+**This firmware turns it off**, in `sdkconfig.defaults`. Left on, every log line lands in the
+middle of the protocol stream and the reader spends its life resyncing.
+
+⚠️ **And the obvious way to turn it off does nothing.** `CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG`
+is one arm of a Kconfig **choice**, and a defaults file cannot *deselect* an arm — writing `…=n`
+is silently ignored and you get a build that looks configured and still mirrors the console. The
+fix is to select the other arm:
+
+```
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+```
+
+Verify in the *generated* `sdkconfig`, never in the defaults file — it should read
+`# CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG is not set`.
 
 A residue remains and is by design: the ROM and second-stage bootloader print before the app can
 disable anything, so **port 2 still carries some text at every boot.** The framing handles it — see
@@ -78,7 +89,9 @@ From the telemetry line above, on the reference firmware with everything running
 | PSRAM | ~2.6 MB — *after* the 2 MB voice buffer is reserved |
 | LVGL pool | ~462 KB of 525 KB, 1% fragmentation |
 
-Comfortable. The largest static structure this protocol adds is the decoder's 8.2 KB buffer.
+Comfortable. The protocol's transport costs about **16.4 KB of internal RAM** — the decoder's
+8.2 KB buffer plus a send buffer of the same size, since a frame is encoded whole before it
+goes out.
 
 Also visible in that line: `stack_free_min=1392B` on the refresh task, which matches the reference
 firmware's own comment about measuring 1,332 B free at a 6 KiB stack and raising it to 7 KiB. Their
@@ -159,5 +172,8 @@ microphone delivers nothing.
   stages a whole image into PSRAM before writing flash. Reflashing over USB therefore only has to
   replace the *source of the bytes* — the staging, SHA-256 verification, slot switch and
   rollback-cancel logic already exist and are reusable as they stand.
-- Its `partitions.csv` header names the wrong board (a copy-paste from the round AMOLED sibling).
-  Cosmetic, but fix it when lifting the file.
+- **The reference's comments carry round-board leftovers in more than one file**, so read them
+  against the code rather than trusting them. Found so far: `partitions.csv`'s header names the
+  wrong board; `board_i2c.h` documents `SDA=15 / SCL=14` and a `CST9217` touch controller, when
+  this board is `47 / 48` and GT911; and the backlight note above. Each was corrected on the way
+  in — but the pattern is the point, and the next file lifted deserves the same suspicion.

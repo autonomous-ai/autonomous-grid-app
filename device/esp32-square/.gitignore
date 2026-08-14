@@ -1,0 +1,17 @@
+# ESP-IDF build output.
+#
+# The repo root's .gitignore only ignores /build (Flutter's, at the top level), so this directory needs
+# its own — an ESP-IDF build tree is tens of thousands of files.
+build/
+
+# sdkconfig is GENERATED from sdkconfig.defaults and is per-checkout: it holds absolute toolchain paths
+# and whatever the last `idf.py menuconfig` did. sdkconfig.defaults is the tracked, reviewable statement
+# of intent; see the stamp logic in CMakeLists.txt for how the two are kept in step.
+sdkconfig
+sdkconfig.old
+sdkconfig.superseded
+sdkconfig.defaults.stamp
+
+# Fetched by the IDF Component Manager from the versions pinned in dependencies.lock, which IS tracked.
+managed_components/
+.cache/
