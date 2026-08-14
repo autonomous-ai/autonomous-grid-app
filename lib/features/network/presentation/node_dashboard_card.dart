@@ -25,8 +25,8 @@ Color _toneColor(MetricTone tone) => switch (tone) {
 /// publish no thermal sensor at all.
 const String _unmeasuredHint = 'This machine does not report this reading.';
 
-/// One node's live readings: its identity, its gauges, the figures beside them,
-/// and its measured decode rate.
+/// One node's live readings: its identity — what it is called *and what it is* —
+/// its gauges, the figures beside them, and its measured decode rate.
 ///
 /// Every row is always present, so two cards side by side line up label for
 /// label and the eye can compare figures instead of re-reading the layout. Rows
@@ -125,36 +125,65 @@ class _CardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final hardware = nodeHardwareName(node);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // `Expanded`, so the name absorbs every spare pixel and the summary is
-        // pushed flush to the card's right edge. This was two `Flexible`s, which
-        // both defaulted to flex 1 and so split the row in half — leaving the
-        // summary right-aligned within its own half, floating in the middle.
-        Expanded(
-          child: Text(
-            node.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: AppPalette.textPrimary,
+        Row(
+          children: [
+            // `Expanded`, so the name absorbs every spare pixel and the summary
+            // is pushed flush to the card's right edge. This was two
+            // `Flexible`s, which both defaulted to flex 1 and so split the row
+            // in half — leaving the summary right-aligned within its own half,
+            // floating in the middle.
+            Expanded(
+              child: Text(
+                node.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.textPrimary,
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            // Capped rather than flexible: it is laid out before the name takes
+            // the remainder, so an unusually long summary would otherwise push
+            // the row past the card instead of ellipsizing.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: Text(
+                nodeRoleSummary(node),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 11, color: AppPalette.textFaint),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        // Capped rather than flexible: it is laid out before the name takes the
-        // remainder, so an unusually long summary would otherwise push the row
-        // past the card instead of ellipsizing.
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 150),
-          child: Text(
-            nodeRoleSummary(node),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.right,
-            style: TextStyle(fontSize: 11, color: AppPalette.textFaint),
+        const SizedBox(height: 3),
+        // What the machine is, under what it's called. A hostname says nothing
+        // about capability — "Grid-Relay" is the same word for a laptop and for
+        // a 192 GB Mac Studio — and this card exists to be read beside other
+        // cards, where the chip is the first thing worth comparing.
+        //
+        // Always drawn, [kUnmeasured] when the node described neither chip nor
+        // card, because the dashboard levels its cards by height: a line that
+        // came and went would knock every gauge below it out of line with the
+        // card beside it, which is the alignment this whole file protects.
+        Text(
+          hardware.isEmpty ? kUnmeasured : hardware,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11,
+            color: hardware.isEmpty
+                ? AppPalette.textFaint
+                : AppPalette.textSecondary,
           ),
         ),
       ],

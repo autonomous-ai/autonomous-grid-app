@@ -173,8 +173,11 @@ class GridNodesList extends ConsumerWidget {
       trailing: '${nodes.length}',
       emptyText: 'No computer is online on this grid right now.',
       itemCount: nodes.length,
-      // Taller than the other two panels: its rows are three lines, not one.
-      maxHeight: 322,
+      // Taller than the other two panels: its rows are four lines, not one. The
+      // cap still bites well before a long grid could outgrow the window — past
+      // it the list scrolls, which is the right trade for a panel that hangs
+      // over the page it opened from.
+      maxHeight: 360,
       itemBuilder: (context, i) => _NodeRow(name: labels[i], node: nodes[i]),
     );
   }
@@ -191,14 +194,22 @@ class _NodeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final machine = nodeMachineLine(node);
+    final serving = nodeServingLine(node);
     final activity = nodeActivityLine(node);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // What it's called, what it is, what it offers, what it has done — in
+          // that order, because that is the order the questions get asked. Each
+          // on its own line: the machine name is the one string here whose
+          // length nothing bounds, and every fact sharing its line was a fact
+          // that disappeared when a box turned out to be an EPYC.
           _PanelRow(label: name, trailing: _nodeDetail(node), dense: true),
-          if (machine.isNotEmpty) _NodeDetailLine(text: machine, live: false),
+          if (machine.isNotEmpty)
+            _NodeDetailLine(text: machine, live: false, maxLines: 2),
+          if (serving.isNotEmpty) _NodeDetailLine(text: serving, live: false),
           if (activity.isNotEmpty) _NodeDetailLine(text: activity, live: true),
         ],
       ),
@@ -211,10 +222,24 @@ class _NodeRow extends StatelessWidget {
 /// numbers move, and digits of differing width would make the row twitch on
 /// every refresh.
 class _NodeDetailLine extends StatelessWidget {
-  const _NodeDetailLine({required this.text, required this.live});
+  const _NodeDetailLine({
+    required this.text,
+    required this.live,
+    this.maxLines = 1,
+  });
 
   final String text;
   final bool live;
+
+  /// How far this line may wrap before it ellipsizes.
+  ///
+  /// Two for the machine line, one for the live one. The machine line's length
+  /// is set by strings the app doesn't control — a server CPU brand runs half
+  /// again as long as any GPU name, even after the boilerplate is stripped — and
+  /// what gets cut there is the tail, where the model count lives. The live line
+  /// is figures the app formats itself, so it is bounded by construction and a
+  /// second row would only ever be empty space.
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -223,7 +248,7 @@ class _NodeDetailLine extends StatelessWidget {
       padding: const EdgeInsets.only(top: 2),
       child: Text(
         text,
-        maxLines: 1,
+        maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: 10.5,

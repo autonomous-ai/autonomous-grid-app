@@ -260,10 +260,10 @@ void main() {
       );
     });
 
-    test('names what the machine serves', () {
+    test('names what the machine serves, on its own line', () {
       expect(
-        nodeMachineLine(_machine(chip: 'M3 Ultra', models: ['a', 'b'])),
-        'M3 Ultra · 2 chat models',
+        nodeServingLine(_machine(chip: 'M3 Ultra', models: ['a', 'b'])),
+        '2 chat models',
       );
     });
 
@@ -292,7 +292,7 @@ void main() {
             concurrency: 4,
           ),
         ),
-        '24h: 1.2M output tokens · 340 requests · ~34 tok/s · 4 parallel',
+        '24h: 1.2M output tokens · 340 requests · ~34 tok/s',
       );
     });
 
@@ -339,11 +339,129 @@ void main() {
       );
     });
 
-    test('drops a throughput of zero and a concurrency of one', () {
-      // Both are "nothing to say" rather than readings: every node runs at least
-      // one request at a time, and 0 tok/s is what a node that never answered
-      // reports.
-      expect(nodeActivityLine(_machine(throughput: 0, concurrency: 1)), '');
+    test('drops a throughput of zero', () {
+      // "Nothing to say" rather than a reading: 0 tok/s is what a node that has
+      // never answered reports, and printing it would libel a working machine.
+      expect(nodeActivityLine(_machine(throughput: 0)), '');
+    });
+
+    test('capacity is not activity, so it is not on this line', () {
+      // A static config figure among figures that move, and the one that got
+      // ellipsized away on a busy node. It sits with what the node offers.
+      expect(nodeActivityLine(_machine(concurrency: 16)), '');
+      expect(nodeServingLine(_machine(concurrency: 16)), '16 parallel');
+      // One request at a time is every node's floor — nothing to report.
+      expect(nodeServingLine(_machine(concurrency: 1)), '');
+    });
+  });
+
+  group('a machine is named the way its owner would name it', () {
+    // Built from the relay's own payload shape rather than the Dart constructor: these three
+    // fields are produced by a CLI in another repo, and the only thing keeping the two sides
+    // agreeing is that the names match. A rename there shows up here as an unnamed machine.
+    OverviewNode fromRelay(Map<String, dynamic> node) =>
+        OverviewNode.fromJson({'name': 'n', 'online': true, ...node});
+
+    test('Apple Silicon is named by its chip, not its enclosure', () {
+      // The GPU is part of the SoC and has no name of its own, so the chip is what a person would
+      // say about the machine. The provider sends the model too ("Mac Studio") and the line must
+      // not read "Mac Studio · Apple M4 Pro" — that says the same thing twice and costs the row
+      // the width its numbers need.
+      final node = fromRelay({
+        'platform': 'macos-arm64',
+        'device': 'Mac Studio',
+        'chip': 'Apple M4 Pro',
+        'models': ['glm-4.6'],
+      });
+
+      expect(nodeMachineLine(node), 'Apple M4 Pro · macOS');
+    });
+
+    test('a GPU box is named by its card', () {
+      // What decides what the box can run. Its CPU brand is noise beside it, and the provider
+      // sends no chip at all for this kind of machine.
+      final node = fromRelay({
+        'platform': 'linux',
+        'device': 'NVIDIA GeForce RTX 4090 ×2',
+        'models': ['glm-4.6'],
+      });
+
+      expect(nodeMachineLine(node), 'NVIDIA GeForce RTX 4090 ×2 · Linux');
+    });
+
+    test('an Intel Mac is named by its card too, not by its chip', () {
+      // It has both a CPU and a discrete GPU, and the GPU is the one that matters — so the
+      // provider deliberately leaves `chip` null here rather than filling it with the CPU brand.
+      final node = fromRelay({
+        'platform': 'macos-x86_64',
+        'device': 'Radeon Pro 560X',
+        'models': ['glm-4.6'],
+      });
+
+      expect(nodeMachineLine(node), 'Radeon Pro 560X · macOS');
+    });
+
+    test('the name is one phrase, shared by every surface that shows it', () {
+      // The node list and the dashboard card both print this. Deriving it twice
+      // would let the same machine read "Apple M4 Pro" in one and "Mac Studio"
+      // in the other — a mismatch the eye catches instantly and nothing else
+      // would flag.
+      final apple = fromRelay({
+        'platform': 'macos-arm64',
+        'device': 'Mac Studio',
+        'chip': 'Apple M4 Pro',
+      });
+      final box = fromRelay({
+        'platform': 'linux',
+        'device': 'NVIDIA GeForce RTX 4090 ×2',
+      });
+
+      expect(nodeHardwareName(apple), 'Apple M4 Pro');
+      expect(nodeHardwareName(box), 'NVIDIA GeForce RTX 4090 ×2');
+      expect(nodeHardwareName(fromRelay({})), isEmpty);
+      // And the list line is built from it, so the two cannot drift.
+      expect(
+        nodeMachineLine(apple).startsWith(nodeHardwareName(apple)),
+        isTrue,
+      );
+    });
+
+    test('a hardware name is reported verbatim, boilerplate and all', () {
+      // An earlier version stripped "(R)" and the core count to make the row
+      // fit. That solved the wrong problem — the row was long because it
+      // carried four facts — and it made the app the judge of which half of
+      // somebody's hardware was worth reading.
+      for (final name in const [
+        'AMD EPYC 9124 16-Core Processor',
+        'Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz',
+        'NVIDIA GeForce RTX 4090 ×2',
+        'Apple M4 Pro',
+      ]) {
+        expect(nodeHardwareName(fromRelay({'device': name})), name);
+      }
+    });
+
+    test('the full name still fits, because it no longer shares its line', () {
+      final node = fromRelay({
+        'platform': 'linux',
+        'device': 'AMD EPYC 9124 16-Core Processor',
+        'models': ['a'],
+        'max_concurrency': 16,
+      });
+
+      expect(nodeMachineLine(node), 'AMD EPYC 9124 16-Core Processor · Linux');
+      expect(nodeServingLine(node), '1 chat model · 16 parallel');
+    });
+
+    test('a node that described neither is a blank line, not a placeholder', () {
+      // Every provider in the field before this shipped. One honest blank beats "Unknown GPU",
+      // which a reader would take as something the machine actually reported.
+      final node = fromRelay({
+        'platform': 'macos-arm64',
+        'models': ['glm-4.6'],
+      });
+
+      expect(nodeMachineLine(node), 'macOS');
     });
   });
 

@@ -121,32 +121,78 @@ String? nodePlatformLabel(String? platform) {
   return null;
 }
 
-/// What kind of machine a node is: the chip when it named one ("M3 Ultra"),
-/// otherwise the device the provider described itself as ("NVIDIA GeForce RTX
-/// 4090 ×2"), then the OS, then what it serves — "M3 Ultra · macOS · 3 chat
-/// models".
+/// What kind of machine a node is, and nothing else — "Apple M4 Pro · macOS",
+/// "AMD EPYC 9124 16-Core Processor · Linux".
 ///
-/// Chip *or* device, never both: on Apple Silicon the provider sends both and
-/// they say the same thing twice ("Mac Studio · M3 Ultra"), while a GPU box
-/// sends only the device. So the more specific of the two wins and the row keeps
-/// its width for the numbers.
+/// The hardware name (see [nodeHardwareName]) and the OS, in full. What the node
+/// *serves* used to ride along here and now has its own line: the name is the
+/// one part of this row whose length the app does not control, so anything
+/// appended to it is what gets cut when a machine turns out to be called
+/// something long.
 ///
-/// Empty when the node described neither itself nor its models — one honest
-/// blank line rather than a row of placeholders.
+/// Empty when the node described neither itself nor its OS — one honest blank
+/// line rather than a row of placeholders.
 String nodeMachineLine(OverviewNode node) {
-  final chip = (node.chip ?? '').trim();
-  final device = (node.device ?? '').trim();
-  final hardware = chip.isNotEmpty ? chip : device;
-  final role = nodeRoleSummary(node);
+  final hardware = nodeHardwareName(node);
   return [
     if (hardware.isNotEmpty) hardware,
     ?nodePlatformLabel(node.platform),
-    if (role != 'No models yet') role,
   ].join(' · ');
 }
 
-/// What a node has actually done, and how fast it does it — "24h: 1.2M tokens ·
-/// 340 requests · ~34 tok/s · 4 parallel".
+/// What the node offers: how many models, and how many requests it takes at
+/// once — "1 chat model · 16 parallel".
+///
+/// Its own line rather than a tail on [nodeMachineLine], because the machine's
+/// name is the part the app cannot bound. A server CPU brand runs to forty
+/// characters ("AMD EPYC 9124 16-Core Processor", "Intel(R) Core(TM) i7-9750H
+/// CPU @ 2.60GHz") and appending anything to it pushed the row past its width,
+/// where what got cut was this — the tail. Splitting keeps the full name *and*
+/// the capacity, instead of trading one for the other.
+///
+/// Empty when there is nothing to offer yet, so a node still coming up shows no
+/// line rather than a line saying nothing.
+String nodeServingLine(OverviewNode node) {
+  final role = nodeRoleSummary(node);
+  final parallel = node.maxConcurrency;
+  return [
+    if (role != 'No models yet') role,
+    // One at a time is every node's floor, so it reports nothing.
+    if (parallel != null && parallel > 1) '$parallel parallel',
+  ].join(' · ');
+}
+
+/// What the machine is, in one phrase — "Apple M4 Pro", "NVIDIA GeForce RTX
+/// 4090 ×2" — or empty when it described neither.
+///
+/// **Chip or device, never both.** On Apple Silicon the provider sends both and
+/// they say the same thing twice ("Mac Studio · Apple M4 Pro"), so the more
+/// specific wins. Everywhere else `chip` is deliberately null — an Intel Mac or
+/// a GPU box is named by its card, because that is what decides what it can run,
+/// while its CPU brand is noise beside it.
+///
+/// Its own function because two surfaces show it (the node list and the
+/// dashboard card) and they must not drift: the same machine reading "M4 Pro" in
+/// one place and "Mac Studio" in the other is a bug the eye catches immediately.
+/// Reported verbatim, boilerplate and all. An earlier version stripped the
+/// trademark noise and core count off a CPU brand to make the row fit, and that
+/// was solving the wrong problem: the row was long because it carried four
+/// facts, not because the name was. With the model count and capacity moved to
+/// [nodeServingLine] the full string fits, and "AMD EPYC 9124 16-Core Processor"
+/// is what the machine calls itself — trimming it is the app deciding which half
+/// of somebody's hardware is worth reading.
+String nodeHardwareName(OverviewNode node) {
+  final chip = (node.chip ?? '').trim();
+  return chip.isNotEmpty ? chip : (node.device ?? '').trim();
+}
+
+/// What a node has actually done, and how fast it does it — "24h: 1.2M output
+/// tokens · 340 requests · ~34 tok/s".
+///
+/// Three facts, and three is the ceiling: at the panel's width a busy node's
+/// figures already fill the row, and a fourth was ellipsized away to "· 16…" —
+/// costing the tail on exactly the machines whose numbers people came to read.
+/// Capacity ("4 parallel") moved to [nodeMachineLine], where it belongs anyway.
 ///
 /// The work comes first because it is the question the list is opened to answer:
 /// which of these machines is carrying the grid. GPU utilisation and free memory
@@ -170,12 +216,10 @@ String nodeMachineLine(OverviewNode node) {
 /// go.
 String nodeActivityLine(OverviewNode node) {
   final speed = node.throughputTokS;
-  final parallel = node.maxConcurrency;
   final answered = answeredSummary(node.answered);
   return [
     if (answered.isNotEmpty) answered,
     if (speed != null && speed > 0) '~${speed.round()} tok/s',
-    if (parallel != null && parallel > 1) '$parallel parallel',
   ].join(' · ');
 }
 
