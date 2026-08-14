@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/composer_keys.dart';
+import '../../../shared/widgets/toast.dart';
+import '../logic/recording_controller.dart';
 
-/// The message composer — a multiline field plus a circular send button that
-/// spins while a request is in flight. [canSend] gates both Enter-to-send and
-/// the button (e.g. a video needs an attached image first). Shared by the
-/// Playground dialog and the Chat tab.
+/// The message composer — a multiline field, a mic button that transcribes a
+/// voice clip straight into the field and sends it, and a circular send
+/// button that spins while a request is in flight. [canSend] gates both
+/// Enter-to-send and the send button (e.g. a video needs an attached image
+/// first). Shared by the Playground dialog and the Chat tab.
 class ChatInputBar extends StatelessWidget {
   const ChatInputBar({
     super.key,
@@ -69,6 +73,8 @@ class ChatInputBar extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
+        _MicButton(controller: controller, sending: sending, onSend: onSend),
+        const SizedBox(width: 10),
         SizedBox(
           width: 48,
           height: 48,
@@ -92,4 +98,81 @@ class ChatInputBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: color, width: width),
       );
+}
+
+/// Tap to record, tap again to stop, transcribe and send — a successful
+/// non-empty transcript goes straight into [controller] and out through
+/// [onSend], the same way a voice message sends itself once you let go.
+class _MicButton extends ConsumerWidget {
+  const _MicButton({
+    required this.controller,
+    required this.sending,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final bool sending;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final phase = ref.watch(recordingControllerProvider);
+    final theme = Theme.of(context);
+    final recording = phase is RecordingActive;
+    final busy = sending || phase is RecordingTranscribing;
+    return Tooltip(
+      message: switch (phase) {
+        RecordingActive() => 'Stop recording',
+        RecordingTranscribing() => 'Transcribing…',
+        RecordingIdle() || RecordingFailed() => 'Voice input',
+      },
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: OutlinedButton(
+          onPressed: busy ? null : () => _tap(context, ref),
+          style: OutlinedButton.styleFrom(
+            shape: const CircleBorder(),
+            padding: EdgeInsets.zero,
+            side: BorderSide(
+              color: recording ? theme.colorScheme.error : AppPalette.divider,
+            ),
+          ),
+          child: switch (phase) {
+            RecordingTranscribing() => const AppSpinner(
+              size: SpinnerSize.medium,
+            ),
+            RecordingActive() => Icon(
+              Icons.stop_rounded,
+              size: 20,
+              color: theme.colorScheme.error,
+            ),
+            RecordingIdle() || RecordingFailed() => const Icon(
+              Icons.mic_none_rounded,
+              size: 20,
+            ),
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _tap(BuildContext context, WidgetRef ref) async {
+    final transcript = await ref
+        .read(recordingControllerProvider.notifier)
+        .toggle();
+    if (!context.mounted) return;
+    final phase = ref.read(recordingControllerProvider);
+    if (phase case RecordingFailed(:final message)) {
+      ToastScope.show(
+        context,
+        ToastSpec(message: message, severity: ToastSeverity.error),
+      );
+      return;
+    }
+    final text = transcript?.trim();
+    if (text == null || text.isEmpty) return;
+    controller.text = text;
+    onSend();
+  }
 }

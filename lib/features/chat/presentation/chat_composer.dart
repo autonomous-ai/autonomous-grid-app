@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/composer_buttons.dart';
 import '../../../shared/widgets/composer_keys.dart';
 import '../../../shared/widgets/context_chip.dart';
 import '../../../shared/widgets/liquid_glass.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_request.dart';
+import '../../playground/logic/recording_controller.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/file_chip.dart';
 import '../logic/composer_snippet.dart';
@@ -217,6 +221,7 @@ class ComposerSection extends StatelessWidget {
                 onAttachFile: onAttachFile,
                 onOpenPrompts: onOpenPrompts,
                 promptsSaveInput: promptsSaveInput,
+                messageController: messageController,
                 onSend: onSend,
                 onStop: onStop,
               ),
