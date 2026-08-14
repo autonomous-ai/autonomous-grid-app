@@ -6,6 +6,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/layouts/widgets/rail_section_header.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/layouts/widgets/sidebar_show_more.dart';
+import '../../../shared/layouts/widgets/sidebar_timeline.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
@@ -115,13 +116,20 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
                 if (projects.isEmpty)
                   const _AddFirstProjectHint()
                 else ...[
-                  for (final project in projects.take(shownProjects))
+                  // Indexed rather than iterated: the guide line running down
+                  // this block needs to know which group starts it and which
+                  // one ends it, or it dangles up into the "Projects" header
+                  // and down into the loose chats — two places the tree does
+                  // not reach.
+                  for (var i = 0; i < shownProjects; i++)
                     _ProjectGroup(
-                      project: project,
+                      project: projects[i],
                       chats: [
                         for (final c in matches)
-                          if (c.projectId == project.id) c,
+                          if (c.projectId == projects[i].id) c,
                       ],
+                      isFirst: i == 0,
+                      isLast: i == shownProjects - 1,
                     ),
                   // Out at the rail's edge, not indented like the chats just
                   // above it: this reveals more *projects*, and a row sharing
@@ -207,10 +215,21 @@ class _ProjectsHeader extends StatelessWidget {
 /// One project and the chats inside it. Collapsible, because a folder you're not
 /// working in today shouldn't cost you half the rail.
 class _ProjectGroup extends ConsumerStatefulWidget {
-  const _ProjectGroup({required this.project, required this.chats});
+  const _ProjectGroup({
+    required this.project,
+    required this.chats,
+    required this.isFirst,
+    required this.isLast,
+  });
 
   final Project project;
   final List<Conversation> chats;
+
+  /// Where this group sits in the Projects block, which is all the guide line
+  /// needs to know to start and stop in the right place: the first group has
+  /// nothing above it to join, and only the last one may end the line.
+  final bool isFirst;
+  final bool isLast;
 
   @override
   ConsumerState<_ProjectGroup> createState() => _ProjectGroupState();
@@ -238,43 +257,62 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
     final missing = watchProjectMissing(ref, widget.project);
     final chats = widget.chats;
     final shown = sidebarPageCount(_pages, chats.length);
+    // How many rows hang off the trunk under this project — its chats, or the
+    // "Show more" closing them, or the one line saying there are none. Counted
+    // up front because only the *last* of them may end the guide line, and a
+    // collapsed group has none at all: the line then stops at the folder icon.
+    final branches = !open
+        ? 0
+        : chats.isEmpty
+        ? 1
+        : shown + (shown < chats.length ? 1 : 0);
+    // The last branch of the last group is where the tree ends. Everything
+    // above it carries the line on to whatever comes next.
+    final endsAt = widget.isLast ? branches - 1 : -1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SidebarItem(
-          // Lucide's outline folders — thinner and rounder than Material's, and
-          // the shape the design mocks use: closed while collapsed, open once
-          // expanded (folderX for a folder that's gone missing) so the icon
-          // itself tells you the group's state.
-          icon: missing
-              ? LucideIcons.folderX300
-              : (open ? LucideIcons.folderOpen300 : LucideIcons.folder300),
-          label: widget.project.name,
-          tooltip: missing
-              ? "This folder isn't there any more: ${widget.project.path}"
-              : widget.project.path,
-          onTap: () => setState(() => _open = !_open),
-          // Two actions here (options menu + new chat), so reserve room for both.
-          trailingWidth: 48,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ProjectMenuButton(project: widget.project),
-              IconButton(
-                tooltip: 'New chat in ${widget.project.name}',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 24,
-                  height: 24,
+        SidebarTimeline(
+          role: SidebarTimelineRole.node,
+          above: !widget.isFirst,
+          // Only carry the line on if there is something down there to carry it
+          // to: another project, or this one's own chats unfolded beneath it.
+          below: !widget.isLast || branches > 0,
+          child: SidebarItem(
+            // Lucide's outline folders — thinner and rounder than Material's, and
+            // the shape the design mocks use: closed while collapsed, open once
+            // expanded (folderX for a folder that's gone missing) so the icon
+            // itself tells you the group's state.
+            icon: missing
+                ? LucideIcons.folderX300
+                : (open ? LucideIcons.folderOpen300 : LucideIcons.folder300),
+            label: widget.project.name,
+            tooltip: missing
+                ? "This folder isn't there any more: ${widget.project.path}"
+                : widget.project.path,
+            onTap: () => setState(() => _open = !_open),
+            // Two actions here (options menu + new chat), so reserve room for both.
+            trailingWidth: 48,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ProjectMenuButton(project: widget.project),
+                IconButton(
+                  tooltip: 'New chat in ${widget.project.name}',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 24,
+                    height: 24,
+                  ),
+                  iconSize: 17,
+                  splashRadius: 14,
+                  color: AppPalette.textSecondary,
+                  icon: const Icon(LucideIcons.plus300),
+                  onPressed: _newChatHere,
                 ),
-                iconSize: 17,
-                splashRadius: 14,
-                color: AppPalette.textSecondary,
-                icon: const Icon(LucideIcons.plus300),
-                onPressed: _newChatHere,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         // Expanding/collapsing animates the group's height so the rows below
@@ -289,26 +327,43 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // The guide sits outside the reveal, not inside it: the
+                    // line belongs to the group and is already there, while the
+                    // rows are what arrive. Fading and sliding it with them
+                    // would break the trunk into drifting pieces for the half
+                    // second a project takes to open.
                     if (chats.isEmpty)
-                      const _RevealItem(
-                        index: 0,
-                        child: _Hint(text: 'No chats yet', indented: true),
+                      SidebarTimeline(
+                        role: SidebarTimelineRole.branch,
+                        below: endsAt != 0,
+                        child: const _RevealItem(
+                          index: 0,
+                          child: _Hint(text: 'No chats yet', indented: true),
+                        ),
                       )
                     else ...[
                       for (var i = 0; i < shown; i++)
-                        _RevealItem(
-                          // Staggered within its page, not within the whole
-                          // list: a page revealed later arrives as its own wave,
-                          // and the stagger never runs off the end of the curve
-                          // table on a project with a hundred chats.
-                          index: i % kSidebarPageSize,
-                          child: _ChatRow(chat: chats[i], indented: true),
+                        SidebarTimeline(
+                          role: SidebarTimelineRole.branch,
+                          below: endsAt != i,
+                          child: _RevealItem(
+                            // Staggered within its page, not within the whole
+                            // list: a page revealed later arrives as its own
+                            // wave, and the stagger never runs off the end of
+                            // the curve table on a project with a hundred chats.
+                            index: i % kSidebarPageSize,
+                            child: _ChatRow(chat: chats[i], indented: true),
+                          ),
                         ),
                       if (shown < chats.length)
-                        SidebarShowMore(
-                          remaining: chats.length - shown,
-                          indented: true,
-                          onTap: () => setState(() => _pages++),
+                        SidebarTimeline(
+                          role: SidebarTimelineRole.branch,
+                          below: endsAt != shown,
+                          child: SidebarShowMore(
+                            remaining: chats.length - shown,
+                            indented: true,
+                            onTap: () => setState(() => _pages++),
+                          ),
                         ),
                     ],
                   ],
