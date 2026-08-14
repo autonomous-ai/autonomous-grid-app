@@ -11,6 +11,7 @@ class _Actions extends StatelessWidget {
     required this.onAttachFile,
     required this.onOpenPrompts,
     required this.promptsSaveInput,
+    required this.messageController,
     required this.onSend,
     required this.onStop,
   });
@@ -31,6 +32,9 @@ class _Actions extends StatelessWidget {
   final VoidCallback onAttachFile;
   final VoidCallback onOpenPrompts;
   final bool promptsSaveInput;
+
+  /// Where a transcribed voice clip lands — see [_MicButton].
+  final TextEditingController messageController;
   final VoidCallback onSend;
 
   /// Cuts the reply off where it is. The same button as Send, because the thing
@@ -111,7 +115,13 @@ class _Actions extends StatelessWidget {
                 // box a `SizedBox` gives way to the box, which is the whole
                 // point of putting it in a [Flexible].
                 Flexible(child: SizedBox(width: 140, child: modelPicker)),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
+                _MicButton(
+                  sending: sending,
+                  messageController: messageController,
+                  onSend: onSend,
+                ),
+                const SizedBox(width: 4),
                 // Stop only gets its own button when Send has been taken over
                 // by a follow-up waiting to be queued; the rest of the time the
                 // one round button is both.
@@ -178,4 +188,77 @@ class _PromptsButton extends StatelessWidget {
     tooltip: savesInput ? 'Save as a prompt' : 'Insert a saved prompt',
     onPressed: enabled ? onPressed : null,
   );
+}
+
+/// Tap to record, tap again to stop, transcribe and send — sits right beside
+/// [ComposerSendButton] so voice input reads as another way to fill the same
+/// box, not a separate feature bolted on elsewhere.
+class _MicButton extends ConsumerWidget {
+  const _MicButton({
+    required this.sending,
+    required this.messageController,
+    required this.onSend,
+  });
+
+  final bool sending;
+  final TextEditingController messageController;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context); // reads AppPalette.textSecondary — follow flips
+    final phase = ref.watch(recordingControllerProvider);
+    final recording = phase is RecordingActive;
+    final busy = sending || phase is RecordingTranscribing;
+    return Tooltip(
+      message: switch (phase) {
+        RecordingActive() => 'Stop recording',
+        RecordingTranscribing() => 'Transcribing…',
+        RecordingIdle() || RecordingFailed() => 'Voice input',
+      },
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: IconButton(
+          iconSize: AppControl.iconSize,
+          visualDensity: VisualDensity.compact,
+          color: recording
+              ? Theme.of(context).colorScheme.error
+              : AppPalette.textSecondary,
+          style: composerNoSplash,
+          icon: switch (phase) {
+            RecordingTranscribing() => const SizedBox(
+              width: AppControl.iconSize,
+              height: AppControl.iconSize,
+              child: AppSpinner(size: SpinnerSize.small),
+            ),
+            RecordingActive() => const Icon(Icons.stop_rounded),
+            RecordingIdle() || RecordingFailed() => const Icon(
+              Icons.mic_none_rounded,
+            ),
+          },
+          onPressed: busy ? null : () => _tap(context, ref),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _tap(BuildContext context, WidgetRef ref) async {
+    final transcript = await ref
+        .read(recordingControllerProvider.notifier)
+        .toggle();
+    if (!context.mounted) return;
+    final phase = ref.read(recordingControllerProvider);
+    if (phase case RecordingFailed(:final message)) {
+      ToastScope.show(
+        context,
+        ToastSpec(message: message, severity: ToastSeverity.error),
+      );
+      return;
+    }
+    final text = transcript?.trim();
+    if (text == null || text.isEmpty) return;
+    messageController.text = text;
+    onSend();
+  }
 }
