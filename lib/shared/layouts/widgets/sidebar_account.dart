@@ -142,13 +142,20 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     final version = ref.watch(appVersionProvider).asData?.value;
     final status = ref.watch(appUpdateStatusProvider).asData?.value;
     final available = status is UpdateAvailable ? status : null;
-    // Inviting someone is member management, and the control plane only lets a
-    // grid's owner do that — see [NetworkCredential.isOwner], which is
-    // deliberately narrower than `canManageProvider`. So the row appears only
-    // when the grid in scope is one this account owns; for a joined grid there
-    // is nothing behind the row but a 403.
-    final grid = ref.watch(selectedNetworkProvider);
-    final invitable = grid != null && grid.isOwner ? grid : null;
+    // Offered to anyone on the grid, not just its owner: bringing a colleague
+    // onto a grid you already work on is the normal way a team grows, and
+    // making everyone route that through whoever created the grid is friction
+    // the product doesn't want. Being in `credentials.toml` at all *is* the
+    // membership test, so a grid in scope is the whole condition.
+    //
+    // TODO(BE): the control plane does not agree yet — `POST …/members` is
+    // owner-only and answers 403 to everyone else (`_memberErrorFor`, and the
+    // note on [NetworkCredential.isOwner]). A member therefore reaches the
+    // dialog and gets a clear refusal from the server rather than a silent
+    // failure, which is the honest half of shipping this early. The same rule
+    // gates the Grids tab's Share button; keep the two in step.
+    // `.claude/share-grid-plan.md` §7.
+    final invitable = ref.watch(selectedNetworkProvider);
     final menuSize = _accountMenuSize(
       invite: invitable != null,
       updater: updater.isSupported,
@@ -210,7 +217,7 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
       // selection rather than trusting the one the menu was built from: the
       // menu outlives a `grid sync` that can swap it underneath.
       final grid = ref.read(selectedNetworkProvider);
-      if (grid == null || !grid.isOwner) return;
+      if (grid == null) return;
       await ShareGridDialog.show(context, grid);
       return;
     }

@@ -18,9 +18,27 @@ import '../logic/member_providers.dart';
 /// unrelated jobs stacked (invite, list, access mode), and the list is the one
 /// with its own async states and its own per-row menu.
 class SharePeopleList extends ConsumerStatefulWidget {
-  const SharePeopleList({super.key, required this.networkId});
+  const SharePeopleList({
+    super.key,
+    required this.networkId,
+    required this.canRemove,
+  });
 
   final String networkId;
+
+  /// Whether **the viewer** may take someone's access away — i.e. whether they
+  /// own this grid (`NetworkCredential.isOwner`).
+  ///
+  /// Not to be confused with `ManagedNetworkMember.isOwner`, which is about the
+  /// person *in a row*. The two read almost the same and mean opposite sides of
+  /// the same relationship, so this one is named for the permission rather than
+  /// for the role.
+  ///
+  /// Inviting is open to every member (see the note in `sidebar_account.dart`)
+  /// but removing is not, and deliberately: adding someone is reversible by the
+  /// person who did it, while removing cuts off a colleague's access to a grid
+  /// they may be mid-task on. Different blast radius, different rule.
+  final bool canRemove;
 
   /// The tallest the list draws before it scrolls inside itself. A grid can
   /// hold hundreds of people; a dialog that grows with them runs off the
@@ -98,6 +116,7 @@ class _SharePeopleListState extends ConsumerState<SharePeopleList> {
                 itemBuilder: (context, i) => _PersonRow(
                   member: people[i],
                   isYou: people[i].email.toLowerCase() == me,
+                  canRemove: widget.canRemove,
                   removing: _removing.contains(people[i].email),
                   onRemove: () => _remove(people[i]),
                 ),
@@ -112,12 +131,17 @@ class _PersonRow extends StatelessWidget {
   const _PersonRow({
     required this.member,
     required this.isYou,
+    required this.canRemove,
     required this.removing,
     required this.onRemove,
   });
 
   final ManagedNetworkMember member;
   final bool isYou;
+
+  /// The viewer owns this grid — see [SharePeopleList.canRemove].
+  final bool canRemove;
+
   final bool removing;
   final VoidCallback onRemove;
 
@@ -190,7 +214,12 @@ class _PersonRow extends StatelessWidget {
           // `destructive` keeps the glyph neutral at rest and turns it red
           // only under the pointer: a column of red buttons sitting idle reads
           // as an error state rather than a list of people.
-          else
+          //
+          // Owner-only, and drawn *away* rather than disabled: a member has no
+          // action to take on this row at all, so a greyed button would be a
+          // whole column of controls that never do anything. Disabled says
+          // "not yet"; absent says "not yours", and the second one is true.
+          else if (canRemove)
             AppIconButton(
               icon: LucideIcons.trash2300,
               tooltip: 'Remove access',

@@ -4,12 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/grid_access.dart';
+import '../logic/invite_email.dart';
 import '../logic/member_providers.dart';
 import 'share_grid_people.dart';
 
@@ -44,13 +44,8 @@ class ShareGridDialog extends ConsumerStatefulWidget {
 
 class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
   final _email = TextEditingController();
-  ManagedMemberRole _role = ManagedMemberRole.both;
   bool _inviting = false;
   String? _error;
-
-  /// What the invite row is showing: empty until someone types, so the resting
-  /// dialog is a single field rather than a form.
-  bool _typing = false;
 
   String get _networkId => widget.network.networkId;
 
@@ -62,8 +57,9 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
 
   Future<void> _invite() async {
     final email = _email.text.trim();
-    if (!looksLikeEmail(email)) {
-      setState(() => _error = 'Enter a valid email address.');
+    final invalid = inviteEmailError(email);
+    if (invalid != null) {
+      setState(() => _error = invalid);
       return;
     }
 
@@ -72,10 +68,15 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
       _error = null;
     });
 
+    // Always `both` while the role picker is hidden: it is the choice the
+    // picker defaulted to, and the widest one — a person invited to use the
+    // grid and to share a machine with it can do either or neither, whereas
+    // guessing narrower would silently withhold something the inviter meant to
+    // give. Restore the picker and this reads `_role.wire` again.
     final error = await ref.read(addMemberActionProvider)(
       networkId: _networkId,
       email: email,
-      roles: [_role.wire],
+      roles: [ManagedMemberRole.both.wire],
     );
 
     if (!mounted) return;
@@ -93,7 +94,6 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
     ref.invalidate(networkMembersProvider(_networkId));
     setState(() {
       _inviting = false;
-      _typing = false;
       _email.clear();
     });
     ToastScope.show(
@@ -124,40 +124,76 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            LabeledField(
-              label: 'Add people',
-              controller: _email,
-              hint: 'teammate@example.com',
-              enabled: !_inviting,
-              autofocus: true,
-              // The field sits on the dialog's raised surface, not the page, so
-              // the page-tuned default fill would measure 1.023:1 against it in
-              // dark and vanish. See [LabeledField.fill].
-              fill: AppCard.inset,
-              onChanged: (value) {
-                final typing = value.trim().isNotEmpty;
-                if (typing != _typing) setState(() => _typing = typing);
-              },
-              onSubmitted: (_) => _invite(),
+            // [FieldLabel] + a hand-built field rather than [LabeledField],
+            // which stacks its own label above its own box: inside a Row the
+            // button would then centre against label *and* field and sit too
+            // high. This is the split the label was extracted for.
+            const FieldLabel('Add people'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _email,
+                    enabled: !_inviting,
+                    autofocus: true,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    // Enter still sends. The button is what says so now — a
+                    // line of prose explaining how to submit a form is a
+                    // missing button with extra steps.
+                    onSubmitted: (_) => _invite(),
+                    // Validation fires on submit, never per keystroke: every
+                    // half-typed address is invalid, so live checking would sit
+                    // there scolding from the first character. But once a
+                    // verdict is on screen it clears the moment the user starts
+                    // fixing it — an error that outlives the mistake reads as
+                    // the app being stuck. Guarded, so the common case (no
+                    // error) costs no rebuild.
+                    onChanged: (_) {
+                      if (_error != null) setState(() => _error = null);
+                    },
+                    style: const TextStyle(fontSize: 14, height: 1.4),
+                    // The field sits on the dialog's raised surface, not the
+                    // page, so the page-tuned default fill would measure
+                    // 1.023:1 against it in dark and vanish. See
+                    // [labeledFieldDecoration].
+                    decoration: labeledFieldDecoration(
+                      'teammate@example.com',
+                      fill: AppCard.inset,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Rebuilt on every keystroke, but only this subtree — the
+                // button has to dim while the field is empty (that dimming is
+                // the affordance the prose line was standing in for) and
+                // `setState` on the dialog would rebuild the members list under
+                // it for nothing.
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _email,
+                  builder: (context, value, _) => FilledButton(
+                    onPressed: _inviting || value.text.trim().isEmpty
+                        ? null
+                        : _invite,
+                    child: _inviting
+                        ? const AppSpinner.onAccent()
+                        : const Text('Invite'),
+                  ),
+                ),
+              ],
             ),
-            // Google reveals the role picker and Send only once there is
-            // someone to send to. Same here: a resting dialog that is one field
-            // reads as "type an email", which is what it wants.
-            if (_typing) ...[
-              const SizedBox(height: 10),
-              _InviteControls(
-                role: _role,
-                busy: _inviting,
-                onRole: (role) => setState(() => _role = role),
-                onInvite: _invite,
-              ),
-            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               ErrorBox(message: _error!, maxHeight: 96),
             ],
             const _Heading('People with access'),
-            SharePeopleList(networkId: _networkId),
+            // Removing is the owner's alone — see [SharePeopleList.canRemove].
+            // `widget.network.isOwner` is about *this viewer*, not about the
+            // people in the rows.
+            SharePeopleList(
+              networkId: _networkId,
+              canRemove: widget.network.isOwner,
+            ),
             const _Heading('General access'),
             _GeneralAccess(network: widget.network),
           ],
@@ -175,71 +211,6 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
       // invite link — a token someone can be sent that joins them to the grid.
       // Membership is by email only today, so there is nothing to copy.
       // `.claude/share-grid-plan.md` §7.
-    );
-  }
-}
-
-/// The row that appears under the email field: what the invited person may do,
-/// and the button that sends it.
-class _InviteControls extends StatelessWidget {
-  const _InviteControls({
-    required this.role,
-    required this.busy,
-    required this.onRole,
-    required this.onInvite,
-  });
-
-  final ManagedMemberRole role;
-  final bool busy;
-  final ValueChanged<ManagedMemberRole> onRole;
-  final VoidCallback onInvite;
-
-  /// The three roles the control plane accepts, in plain language. `admin` is
-  /// absent because the API rejects it — the owner is the only one.
-  static const _options = [
-    AppSelectOption(
-      value: ManagedMemberRole.both,
-      label: 'Use and share',
-      detail: 'Send work to the grid, and share their computer with it',
-    ),
-    AppSelectOption(
-      value: ManagedMemberRole.consumer,
-      label: 'Use models only',
-      detail: 'Send work to the grid',
-    ),
-    AppSelectOption(
-      value: ManagedMemberRole.provider,
-      label: 'Share a computer only',
-      detail: 'Let this grid run work on their computer',
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Row(
-      children: [
-        Expanded(
-          child: AppSelectField<ManagedMemberRole>(
-            label: 'They can',
-            showLabel: false,
-            value: role,
-            options: _options,
-            // Each role's detail is a clause, and this field shares its row
-            // with the Invite button — so the closed field clipped it to
-            // "Send work to the grid, an…". The menu shows it whole, which is
-            // where it's read anyway. Google shows the role name alone here too.
-            showDetailInField: false,
-            fill: AppCard.inset,
-            onChanged: onRole,
-          ),
-        ),
-        const SizedBox(width: 10),
-        FilledButton(
-          onPressed: busy ? null : onInvite,
-          child: busy ? const AppSpinner.onAccent() : const Text('Invite'),
-        ),
-      ],
     );
   }
 }

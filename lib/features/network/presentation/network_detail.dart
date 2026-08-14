@@ -175,13 +175,15 @@ class _Header extends ConsumerWidget {
                 ],
               ),
             ),
-            // Owner/provider header action: managing members. Using the grid is
-            // the body's "Use this grid" card (for every role), so the header
-            // carries no test/try button.
-            if (network.canManageProvider) ...[
-              const SizedBox(width: 12),
-              _AddMemberButton(network: network),
-            ],
+            // Sharing the grid, offered to everyone on it — the same rule the
+            // account menu's "Invite members" row uses, so the two entry points
+            // into [ShareGridDialog] can't disagree about who gets to see it.
+            // It used to gate on `canManageProvider`, which let a provider in
+            // but kept a pure consumer out: a third answer, and one nobody had
+            // decided on. Using the grid is the body's "Use this grid" card, so
+            // the header carries no test/try button.
+            const SizedBox(width: 12),
+            _AddMemberButton(network: network),
           ],
         ),
         const SizedBox(height: 8),

@@ -36,10 +36,3 @@ GridAccess gridAccessFor(String networkType) {
   if (type.contains('providers')) return GridAccess.anyone;
   return GridAccess.restricted;
 }
-
-/// A light client-side sanity check — the server is the real validator, this
-/// just spares an obvious round-trip.
-bool looksLikeEmail(String value) {
-  final at = value.indexOf('@');
-  return at > 0 && at < value.length - 1 && !value.contains(' ');
-}
