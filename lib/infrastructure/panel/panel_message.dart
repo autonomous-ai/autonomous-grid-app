@@ -163,6 +163,33 @@ class PanelProject {
   };
 }
 
+/// One slice of a turn as the panel draws it — a passage the agent wrote, or a
+/// step it ran, in the order it happened.
+///
+/// The panel's own projection of `TurnPart`, kept separate on purpose. The app's
+/// type carries each step's request and result for the transcript; a 480px tile
+/// draws a line of text and a spinner, and shipping the rest would spend the
+/// frame budget on characters this screen cannot show.
+class PanelTurnPart {
+  /// A passage the agent wrote.
+  const PanelTurnPart.text(String text) : label = text, status = null;
+
+  /// A step the agent ran, with where it has got to.
+  const PanelTurnPart.step({required this.label, required String this.status});
+
+  /// The prose, or the step's one-line label.
+  final String label;
+
+  /// The step's status, or null when this is prose.
+  final String? status;
+
+  bool get isStep => status != null;
+
+  Map<String, Object?> toJson() => status == null
+      ? {'k': 't', 'text': label}
+      : {'k': 's', 'label': label, 'status': status};
+}
+
 /// Messages this app sends to the panel.
 ///
 /// Plain builders rather than a sealed family: the app is the only producer,
@@ -192,16 +219,29 @@ abstract final class PanelOutbound {
   static String turnStarted(String projectId) =>
       jsonEncode({'t': 'turn.started', 'projectId': projectId});
 
-  /// One step of the agent's work — a command, a search, a tool call.
-  static String turnStep({
+  /// The turn so far, as one ordered timeline.
+  ///
+  /// Mirrors `AgentRun.parts` (`lib/infrastructure/cli/agent_turn_part.dart`):
+  /// an agent says a sentence, runs a command, reads the result, says the next
+  /// sentence, and the order is the point. Sending steps as separate events
+  /// would make the panel reassemble that sequence itself and get it wrong
+  /// whenever a message was dropped or reordered.
+  ///
+  /// Sent **whole on every change**, not as a delta, because `AgentRun` is
+  /// replaced wholesale upstream and a step mutates in place as it finishes —
+  /// there is no append-only stream underneath to mirror.
+  ///
+  /// Deliberately NOT `turnPartToJson`: that is the on-disk shape, and it
+  /// carries each step's request and result clipped at 800 characters. A tile
+  /// draws a label and a spinner, so that payload would spend the frame budget
+  /// on text no one on this screen can read.
+  static String turnParts({
     required String projectId,
-    required String label,
-    required String status,
+    required List<PanelTurnPart> parts,
   }) => jsonEncode({
-    't': 'turn.step',
+    't': 'turn.parts',
     'projectId': projectId,
-    'label': label,
-    'status': status,
+    'parts': [for (final p in parts) p.toJson()],
   });
 
   static String turnDone({required String projectId, required String recap}) =>

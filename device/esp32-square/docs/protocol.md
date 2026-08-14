@@ -143,9 +143,30 @@ whole message — a peer with an extra field is not a broken peer.
 | `projects` | `items[]` of the project shape below |
 | `project.updated` | `item` — one project |
 | `turn.started` | `projectId` |
-| `turn.step` | `projectId`, `label`, `status` |
+| `turn.parts` | `projectId`, `parts[]` — the turn so far as one ordered timeline (below) |
 | `turn.done` | `projectId`, `recap` |
 | `turn.error` | `projectId`, `message` |
+
+#### `turn.parts`
+
+```json
+{ "t": "turn.parts", "projectId": "p-1", "parts": [
+    { "k": "t", "text": "Reading the config" },
+    { "k": "s", "label": "grep -n foo lib/", "status": "running" } ] }
+```
+
+`k` is `"t"` for a passage the agent wrote and `"s"` for a step it ran. **The order is the
+message.** An agent says a sentence, runs a command, reads the result, says the next sentence;
+sending steps as separate events would make the panel reassemble that sequence itself and get it
+wrong the first time one was dropped or arrived late.
+
+Sent **whole on every change, not as a delta** — the app's `AgentRun` is replaced wholesale
+upstream and a step mutates in place as it finishes, so there is no append-only stream underneath
+to mirror.
+
+A step carries only `label` and `status`. The app also holds each step's request and result for its
+own transcript; a 480×480 tile draws a line and a spinner, and shipping the rest would spend the
+frame budget on characters this screen cannot show.
 
 ### The project shape
 
