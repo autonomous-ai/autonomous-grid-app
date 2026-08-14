@@ -143,7 +143,12 @@ mixin _ChatSend on _ChatSessions {
     // showing the *previous* turn's commands under the new question. The sender
     // resets again as it starts, because it is reached from the Playground too;
     // this is the earlier of the two, not a second copy of the rule.
-    if (viaAgent) ref.read(agentRunsProvider.notifier).reset(id);
+    // Every turn, not only an agent's. A turn the grid answers directly (a
+    // picture, a computer with no agent) writes nothing to this feed — so
+    // leaving the last turn's steps standing meant a relay turn the user stopped
+    // half-way was committed carrying the *previous* turn's commands, which it
+    // had not run.
+    ref.read(agentRunsProvider.notifier).reset(id);
     final done = _dones[id] = Completer<void>();
     final project = ref.read(projectByIdProvider(conversation.projectId));
     // Who answers this turn, read here for the same reason [approval] is: the
@@ -260,6 +265,13 @@ mixin _ChatSend on _ChatSessions {
       ref.read(agentChangesProvider.notifier).beginTurn(id);
     }
 
+    // The folder the agent will actually run in — the chat's project, or the
+    // app's own workspace when it has none. Resolved here as well as inside the
+    // sender because a resume point is only adopted when its folder matches the
+    // turn's, and a point written down as "no folder" would never match the
+    // workspace path the sender falls back to. Same rule, same answer.
+    final root = workdir ?? ref.read(agentWorkspaceDirProvider).path;
+
     // How long the answer takes, timed from here rather than from `send`: an
     // agent turn can sit in the queue behind another chat, and charging it for
     // that wait would tell the user this model is slow when another chat was
@@ -283,6 +295,12 @@ mixin _ChatSend on _ChatSessions {
     // facts, stamped onto whatever the turn produced (a whole reply, or the
     // part-answer a failure left behind).
     ChatMessage stamp(ChatMessage reply) => reply.copyWith(
+      // And how the turn went, so the finished transcript keeps the order the
+      // user watched it in. Here rather than in each sender: this is the one
+      // place every landing goes through — the answer, the part-answer a failure
+      // left, the half-turn Stop kept — and four copies of it would be four
+      // chances for one of them to drop the steps.
+      parts: _timelineOf(id, reply.text, viaAgent: viaAgent),
       // Only when the agent actually answered: a picture, or a computer with no
       // agent installed, goes straight to the grid's chat API.
       agent: viaAgent ? agent.id : null,
@@ -311,6 +329,11 @@ mixin _ChatSend on _ChatSessions {
       // This chat's own permission level, not the app's — a turn dispatched
       // into a background chat must run under that chat's rules.
       approval: approval,
+      // The session this chat was last having, so quitting the app — or
+      // importing the chat from the tool that opened it — doesn't cost the
+      // agent everything it had worked out. The sender ignores a point that
+      // isn't its own agent's, in its own folder.
+      resume: conversation.resume,
     );
 
     String? agentSessionId;
@@ -334,11 +357,25 @@ mixin _ChatSend on _ChatSessions {
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
           case ChatSendSuccess(:final reply, :final outOfSteps):
+            final messages = [...current.messages, stamp(reply)];
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
               // Stamp the reply with who and what answered, so the transcript
               // still says so even after switching agent or model mid-chat.
-              messages: [...current.messages, stamp(reply)],
+              messages: messages,
+              // Where this chat can pick up from next time. Written on every
+              // successful agent turn — the session id and how much of the
+              // transcript it holds both move — so the answer survives a quit.
+              // Null leaves whatever was already there: a relay turn (a
+              // picture) has no session of its own and must not erase the one
+              // the agent is still holding.
+              resume: _resumePointFor(
+                viaAgent: viaAgent,
+                agent: agent,
+                sessionId: agentSessionId,
+                root: root,
+                seen: messages.length,
+              ),
             );
             // A planning turn's reply is a plan waiting on approval — light the
             // "approve & run" bar for this chat. Any other reply leaves it dark.
@@ -398,6 +435,27 @@ mixin _ChatSend on _ChatSessions {
     );
   }
 
+  /// How the turn in chat [id] went — its passages and steps in order, with
+  /// [text] closed off as the last thing it said.
+  ///
+  /// Empty for a turn no agent answered, and for one that ran no steps at all:
+  /// there the timeline would be the answer and nothing else, which is what the
+  /// message's own text already says. Nothing to store, nothing to draw
+  /// differently, and a chat file that stays exactly as it was.
+  List<TurnPart> _timelineOf(String id, String text, {required bool viaAgent}) {
+    if (!viaAgent) return const [];
+    // Asked before the closing words are placed, so a turn with nothing to
+    // interleave leaves the run untouched rather than filing prose against a
+    // chat whose feed nobody will read.
+    if (!hasSteps(ref.read(agentRunProvider(id)).parts)) return const [];
+    // The closing words haven't been placed yet — only a step closes a passage,
+    // and after the last one the agent went on talking.
+    ref.read(agentRunsProvider.notifier).say(id, text);
+    // Nothing may be left spinning in a turn that has ended (see
+    // [settledParts]) — the live feed is gone by the time this is read.
+    return settledParts(ref.read(agentRunProvider(id)).parts);
+  }
+
   /// Tell the desktop that [conversation] is done, unless the user is already
   /// watching it happen.
   ///
@@ -424,6 +482,33 @@ mixin _ChatSend on _ChatSessions {
               opens: conversation.id,
             ),
           ),
+    );
+  }
+
+  /// Where this chat picks up next time, or null to leave whatever is already
+  /// written down.
+  ///
+  /// Null rather than a cleared point in three cases, and each would be a
+  /// regression if it wiped one: a turn the grid's chat API answered (a
+  /// picture) has no session; an agent that reported no session id has nothing
+  /// to record; and Hermes's id names a live process that will be gone by the
+  /// next launch (see [AgentTool.resumesBySessionId]).
+  AgentResumePoint? _resumePointFor({
+    required bool viaAgent,
+    required AgentTool agent,
+    required String? sessionId,
+    required String root,
+    required int seen,
+  }) {
+    if (!viaAgent || sessionId == null) return null;
+    if (!agent.resumesBySessionId) return null;
+    return AgentResumePoint(
+      agent: agent.id,
+      sessionId: sessionId,
+      // Everything in the chat now, this reply included: the agent has just
+      // been handed the turn and has answered it, so it holds all of it.
+      seen: seen,
+      workdir: root,
     );
   }
 
@@ -491,7 +576,15 @@ mixin _ChatSend on _ChatSessions {
         updatedAt: DateTime.now(),
         messages: [
           ...current.messages,
-          ChatMessage(role: ChatRole.assistant, text: partial),
+          ChatMessage(
+            role: ChatRole.assistant,
+            text: partial,
+            // The steps it ran before it was stopped are half the account of
+            // what happened — a turn cut off after six commands and one cut off
+            // before it did anything are different turns, and the transcript is
+            // all that is left to say which this was.
+            parts: _timelineOf(id, partial, viaAgent: true),
+          ),
         ],
       ),
       phase: const SendIdle(),

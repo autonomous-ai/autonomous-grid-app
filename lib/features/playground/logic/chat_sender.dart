@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/media_event.dart';
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
@@ -129,6 +130,15 @@ abstract interface class ChatSender {
     /// the app's standing choice, for callers with no conversation at all (the
     /// Playground); the relay sender ignores it, having no agent to constrain.
     AgentApprovalMode? approval,
+
+    /// The agent session this conversation can carry on from, written down when
+    /// its last turn opened one — or when it was imported from the tool that
+    /// opened it. Read by the two senders that resume by id (Claude Code,
+    /// Codex), and only when it names their own agent and their own folder.
+    ///
+    /// Null for a chat with no session behind it, for the Playground, and for
+    /// the relay sender, which has nothing to resume.
+    AgentResumePoint? resume,
   });
 }
 
@@ -201,6 +211,8 @@ class DefaultChatSender implements ChatSender {
     bool planFirst = false,
     // The relay has no agent, so there are no permissions to constrain.
     AgentApprovalMode? approval,
+    // Nothing to resume: every relay call is a whole request on its own.
+    AgentResumePoint? resume,
   }) {
     // The local smoke test and relay text both hit chat/completions; only the
     // base URL differs (the local engine has no `/relay/v1` prefix).

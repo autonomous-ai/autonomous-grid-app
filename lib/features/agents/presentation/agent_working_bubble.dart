@@ -5,12 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
-import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../playground/presentation/message_plan.dart';
 import '../../playground/presentation/message_sources.dart';
 import '../logic/agent_providers.dart';
-import '../logic/agent_step_label.dart';
+import 'agent_turn_view.dart';
 
 /// The "agent is working" bubble shown in the chat while the agent is answering
 /// but before it has streamed any text.
@@ -45,28 +44,35 @@ class AgentWorkingBubble extends StatelessWidget {
   }
 }
 
-/// The live feed under an in-flight agent turn: its to-do plan, the steps it is
-/// running (each shell command or tool call, with status), and a "Thinking…"
-/// line — carrying its own spinner — while it composes the next step.
+/// The live feed under an in-flight agent turn: the turn as it happens — what it
+/// has said and the steps it has run, in order — then its to-do plan, a
+/// "Thinking…" line carrying its own spinner while it composes the next step,
+/// and the pages it has cited.
 ///
 /// The shared body of both [AgentWorkingBubble] and the chat's streaming reply,
 /// so a turn that has *already begun narrating* still shows what it is doing —
 /// before this was extracted, the moment the agent streamed a first sentence the
 /// chat swapped the working bubble for plain text and the steps vanished behind a
 /// row of dots. [leadingGap] leaves room above the first row when the feed
-/// follows other content (a streaming reply); it is off when the feed is the
-/// whole bubble.
+/// follows other content; it is off when the feed is the whole bubble.
+///
+/// [answer] is the passage still streaming in, drawn at the end of the timeline
+/// — the one part of a turn that changes on every token, so the chat hands it
+/// down ready-built (and throttled) rather than watching it from here.
 class AgentActivityFeed extends ConsumerWidget {
   const AgentActivityFeed({
     super.key,
     required this.chatId,
     this.leadingGap = true,
+    this.answer,
   });
 
   /// The conversation whose live run this feed shows.
   final String chatId;
 
   final bool leadingGap;
+
+  final Widget? answer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -76,25 +82,30 @@ class AgentActivityFeed extends ConsumerWidget {
     final plan = run.plan;
     // How much of the working-out to show. At [AgentDetailMode.answer] the feed
     // is only the "Thinking…" line and whatever the answer cites — the user
-    // asked not to be shown the machinery.
+    // asked not to be shown the machinery. The steps themselves are dropped by
+    // [AgentTurnView], which owns that rule for a live turn and a saved one
+    // alike; the plan is a different thing and follows it here.
     final detail = ref.watch(chatPrefsProvider.select((p) => p.detail));
     final showSteps = detail != AgentDetailMode.answer;
-    // This feed only exists during an in-flight turn, so when nothing is
-    // actively running the model is composing its next step. Show that, with a
-    // live count, so a long pause reads as work rather than a stall.
-    final thinking = steps.every(
-      (step) => step.status != AgentActivityStatus.running,
-    );
+    // The step the turn is waiting on, if any. The *last* running one: a step
+    // that starts a sub-agent stays running while the work it delegated goes
+    // on, so the newest is the one actually happening.
+    AgentActivity? running;
+    for (final step in steps) {
+      if (step.status == AgentActivityStatus.running) running = step;
+    }
     final sections = <Widget>[
+      if (run.parts.isNotEmpty || answer != null)
+        AgentTurnView(parts: run.parts, trailing: answer),
       if (showSteps && plan.isNotEmpty) MessagePlan(entries: plan),
-      if (showSteps && steps.isNotEmpty)
-        _StepList(steps: steps, detail: detail),
-      if (thinking)
-        // Reset the elapsed count each time the step list changes, so it reads
-        // as time since the last action, not since the turn began.
-        _ThinkingRow(key: ValueKey(steps.length)),
       if (sources.isNotEmpty) MessageSources(sources: sources),
     ];
+    // The status line carries its own gap and sits outside the separated run
+    // above, because one of its two states draws nothing at all for the first
+    // seconds of a step — and a zero-height section still takes its separator,
+    // which would open and close an 8px hole under every bubble. The same trap
+    // [AgentTurnView] documents for a hidden step block.
+    final gap = sections.isEmpty && !leadingGap ? 0.0 : 8.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -103,145 +114,161 @@ class AgentActivityFeed extends ConsumerWidget {
           if (i > 0 || leadingGap) SizedBox(height: i == 0 ? 10 : 8),
           sections[i],
         ],
+        // Something is running: its own row already says *what*, and nothing
+        // says *for how long* — see [_StillWorkingRow], which stays out of the
+        // way until the wait is long enough to be worth reporting.
+        if (running case final step?)
+          _StillWorkingRow(
+            key: ValueKey(step.id),
+            step: step,
+            named: showSteps,
+            gap: gap,
+          )
+        else
+          // Nothing running, so the model is composing its next step. Show
+          // that, with a live count, so a long pause reads as work rather than
+          // a stall. Reset the elapsed count each time the step list changes,
+          // so it reads as time since the last action, not since the turn
+          // began.
+          Padding(
+            padding: EdgeInsets.only(top: gap),
+            child: _ThinkingRow(key: ValueKey(steps.length)),
+          ),
       ],
     );
   }
 }
 
-/// The run's steps: shown in full when there are few, or folded behind a tappable
-/// "N steps" summary when there are many.
+/// How long one step may run before the feed says so out loud.
 ///
-/// Folded, it still shows the latest handful (see [foldedActivitySteps]), so a
-/// live turn never looks stalled — only the history tucks away. The choice is
-/// per run: this widget lives only while the feed holds steps, so the next turn
-/// (which starts empty) gets a fresh, default view rather than inheriting the
-/// last one's.
-class _StepList extends StatefulWidget {
-  const _StepList({required this.steps, required this.detail});
+/// Long enough that an ordinary step never trips it — a command or a file read
+/// is seconds — and short enough to arrive before the user starts wondering.
+const Duration _quietRunNotice = Duration(seconds: 20);
 
-  final List<AgentActivity> steps;
-  final AgentDetailMode detail;
+/// The tools that hand the work to something else.
+///
+/// A step running one of these is not a command taking its time: the agent has
+/// delegated, and what it delegated to writes its notes to *the agent*, not to
+/// the user — the Claude stream parser drops that prose on purpose, because
+/// folding it in left the reply switching voice mid-turn. So the screen can go
+/// quiet for minutes with nothing but tool rows on it, which reads as broken. It
+/// isn't; this row is what says so.
+///
+/// Measured, not imagined: a "review my codebase" turn handed the whole job to a
+/// Skill and sat there for seven minutes showing nine finished commands and no
+/// words at all. The agent was working the entire time.
+const _delegatingTools = {'Task': 'sub-agent', 'Skill': 'skill'};
 
-  @override
-  State<_StepList> createState() => _StepListState();
-}
-
-class _StepListState extends State<_StepList> {
-  /// The user's explicit open/closed choice, or null to follow the default
-  /// (folded once the run is long).
-  bool? _expanded;
-
-  @override
-  Widget build(BuildContext context) {
-    final steps = widget.steps;
-    if (steps.length <= kFoldedStepLimit) {
-      return _StepColumn(steps: steps, detail: widget.detail);
-    }
-
-    final expanded = _expanded ?? false;
-    final shown = expanded ? steps : foldedActivitySteps(steps);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _StepsHeader(
-          count: steps.length,
-          status: aggregateActivityStatus(steps),
-          expanded: expanded,
-          onTap: () => setState(() => _expanded = !expanded),
-        ),
-        _StepColumn(steps: shown, detail: widget.detail),
-      ],
-    );
-  }
-}
-
-/// A plain column of step rows — the shape shared by the short-run view and the
-/// expanded long-run view.
-class _StepColumn extends StatelessWidget {
-  const _StepColumn({required this.steps, required this.detail});
-
-  final List<AgentActivity> steps;
-  final AgentDetailMode detail;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    children: [for (final step in steps) _StepRow(step: step, detail: detail)],
-  );
-}
-
-/// The tappable summary row for a folded run: its overall status, the step count,
-/// and a chevron that flips as it opens.
-class _StepsHeader extends StatelessWidget {
-  const _StepsHeader({
-    required this.count,
-    required this.status,
-    required this.expanded,
-    required this.onTap,
+/// A step that has been running long enough to be worth a word.
+///
+/// Draws nothing at all until [_quietRunNotice] has passed, so a normal turn
+/// never sees it. Past that it reports how long — and, when the agent has handed
+/// the work to a skill or a sub-agent, *why* nothing is being said meanwhile.
+class _StillWorkingRow extends StatefulWidget {
+  const _StillWorkingRow({
+    super.key,
+    required this.step,
+    required this.named,
+    required this.gap,
   });
 
-  final int count;
-  final AgentActivityStatus status;
-  final bool expanded;
-  final VoidCallback onTap;
+  final AgentActivity step;
+
+  /// Whether the row may name what is running. False at
+  /// [AgentDetailMode.answer], where the user asked not to be shown the
+  /// machinery — the wait is still worth reporting, the mechanism isn't.
+  final bool named;
+
+  /// The space above the row — carried here rather than left to the feed,
+  /// because the row spends its first seconds drawing nothing and a gap left
+  /// behind by an invisible row is a hole that opens and closes on its own.
+  final double gap;
+
+  @override
+  State<_StillWorkingRow> createState() => _StillWorkingRowState();
+}
+
+class _StillWorkingRowState extends State<_StillWorkingRow> {
+  Timer? _tick;
+  int _seconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _seconds += 1);
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  /// What the delegated work is called, or null when this step runs it itself.
+  String? get _delegate =>
+      widget.named ? _delegatingTools[widget.step.tool ?? ''] : null;
 
   @override
   Widget build(BuildContext context) {
+    if (_seconds < _quietRunNotice.inSeconds) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final radius = BorderRadius.circular(8);
-    return Semantics(
-      button: true,
-      label: expanded ? 'Hide steps' : 'Show all $count steps',
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: radius,
-        child: InkWell(
-          borderRadius: radius,
-          onTap: onTap,
-          // A menu-style click, not the app's Android ripple spreading across the
-          // row; the hover wash is the whole feedback.
-          splashFactory: NoSplash.splashFactory,
-          hoverColor: AppSurface.hoverFill,
-          child: Padding(
-            // No left inset, so the summary's status dot lines up with the step
-            // rows' dots below it (they start at the column's left edge); a touch
-            // on the right just keeps the hover wash off the chevron.
-            padding: const EdgeInsets.fromLTRB(0, 3, 6, 3),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _StatusDot(status: status),
-                const SizedBox(width: 8),
-                Text(
-                  '$count steps',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: AppFont.medium,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  expanded
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-                  size: 15,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
+    final delegate = _delegate;
+    final elapsed = _elapsedLabel(_seconds);
+    final row = Padding(
+      padding: EdgeInsets.fromLTRB(0, widget.gap + 3, 0, 3),
+      child: Row(
+        children: [
+          const AppSpinner(size: SpinnerSize.small),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.hourglass_empty_rounded,
+            size: 14,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              delegate == null
+                  ? 'Still working — $elapsed'
+                  : 'A $delegate is doing this — $elapsed',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
+    if (delegate == null) return row;
+    return Tooltip(
+      message:
+          'It works as its own assistant, so what it writes to itself is not '
+          'shown here. The answer arrives when it finishes.',
+      child: row,
+    );
   }
+}
+
+/// Seconds as a person counts them: `45s`, `1m 05s`, `6m 48s`.
+String _elapsedLabel(int seconds) {
+  if (seconds < 60) return '${seconds}s';
+  final minutes = seconds ~/ 60;
+  final rest = (seconds % 60).toString().padLeft(2, '0');
+  return '${minutes}m ${rest}s';
 }
 
 /// The "the model is composing its next step" line, shown in the feed while a
 /// turn is in flight but nothing is running — a small spinner and the seconds
 /// elapsed, so a pause between commands (long when the context is large) reads
 /// as work in progress rather than a hang.
+///
+/// Its counterpart is [_StillWorkingRow], which covers the other half of the
+/// same question: this one is the pause *between* steps, that one is a step
+/// that has gone on too long to leave unexplained.
 class _ThinkingRow extends StatefulWidget {
   const _ThinkingRow({super.key});
 
@@ -292,70 +319,5 @@ class _ThinkingRowState extends State<_ThinkingRow> {
         ],
       ),
     );
-  }
-}
-
-/// One line in the feed: a status indicator, a kind icon, and the step label.
-class _StepRow extends StatelessWidget {
-  const _StepRow({required this.step, required this.detail});
-
-  final AgentActivity step;
-  final AgentDetailMode detail;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final icon = switch (step.kind) {
-      AgentActivityKind.command => Icons.terminal,
-      AgentActivityKind.web => Icons.public,
-      AgentActivityKind.tool => Icons.build_outlined,
-      AgentActivityKind.thinking => Icons.psychology_outlined,
-    };
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          _StatusDot(status: step.status),
-          const SizedBox(width: 8),
-          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              agentStepLabel(step, detail),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A per-step status glyph: a spinner while running, a check when done, an
-/// error mark when it failed.
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({required this.status});
-
-  final AgentActivityStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // rebuild on theme flip — reads AppPalette.online
-    switch (status) {
-      case AgentActivityStatus.running:
-        return const AppSpinner(size: SpinnerSize.small);
-      case AgentActivityStatus.done:
-        return Icon(Icons.check_circle, size: 14, color: AppPalette.online);
-      case AgentActivityStatus.failed:
-        return Icon(
-          Icons.error_outline,
-          size: 14,
-          color: Theme.of(context).colorScheme.error,
-        );
-    }
   }
 }

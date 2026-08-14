@@ -67,11 +67,22 @@ class MessageContent extends StatelessWidget {
     required this.text,
     required this.color,
     this.media = const [],
+    this.wrapSelection = true,
   });
 
   final String text;
   final Color color;
   final List<ChatMedia> media;
+
+  /// Whether this opens its own selection region.
+  ///
+  /// Off when the caller already opened one around something larger. An agent
+  /// turn is drawn as several of these with the steps it ran between them (see
+  /// `AgentTurnView`), and a region per passage would stop a drag at the end of
+  /// each paragraph — the very thing the region below was introduced to fix.
+  /// Nesting them instead of turning them off is not the answer: the inner one
+  /// would capture the drag and do the same.
+  final bool wrapSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -92,22 +103,21 @@ class MessageContent extends StatelessWidget {
     // A SelectionArea over plain text gets the same capability from ordinary
     // paragraphs — and gets it *better*: a drag now takes the whole message
     // rather than stopping at the end of one paragraph.
-    return SelectionArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < segments.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
-            _segment(context, segments[i]),
-          ],
-          for (var i = 0; i < media.length; i++) ...[
-            if (i > 0 || segments.isNotEmpty) const SizedBox(height: 8),
-            LocalMediaView(media: media[i]),
-          ],
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < segments.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _segment(context, segments[i]),
         ],
-      ),
+        for (var i = 0; i < media.length; i++) ...[
+          if (i > 0 || segments.isNotEmpty) const SizedBox(height: 8),
+          LocalMediaView(media: media[i]),
+        ],
+      ],
     );
+    return wrapSelection ? SelectionArea(child: body) : body;
   }
 
   Widget _segment(BuildContext context, MessageSegment segment) {

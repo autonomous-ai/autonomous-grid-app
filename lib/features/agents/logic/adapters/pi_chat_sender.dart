@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/grid_paths.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/cli/pi_exec_service.dart';
 import '../../../../infrastructure/logging/app_log.dart';
@@ -83,6 +84,10 @@ class PiChatSender implements ChatSender {
     // Pi has no permission channel at all — it never stops to ask, so there is
     // nothing here to hold it to. See `agentSupportsApproval`.
     AgentApprovalMode? approval,
+    // Pi resumes by `--session <id>`, but the app has never written one of its
+    // ids down and nothing imports Pi sessions — so there is never a point to
+    // adopt here. Accepted to satisfy the interface, deliberately unused.
+    AgentResumePoint? resume,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
@@ -193,8 +198,15 @@ class PiChatSender implements ChatSender {
           case PiSessionStarted(:final sessionId):
             slot.sessionId = sessionId;
           case PiActivityEvent(:final activity):
-            runs.upsertStep(chat, activity);
-          case PiFileChangeEvent(:final paths):
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            runs.upsertStep(chat, activity, answer: answer.toString());
+          case PiFileChangeEvent(:final paths, :final step):
+            // The write's own row rides on this event — nothing else reports it
+            // finished (see [PiFileChangeEvent.step]).
+            if (step != null) {
+              runs.upsertStep(chat, step, answer: answer.toString());
+            }
             _recordAddedFiles(chat, paths);
           case PiMessageEvent(:final text):
             answer

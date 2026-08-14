@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_goal.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
@@ -80,6 +81,7 @@ class _FakeSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) {
     this.history = history;
     this.model = model;
@@ -119,6 +121,7 @@ class _ScriptedSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) {
     final turn = turns[calls.clamp(0, turns.length - 1)];
     calls++;
@@ -150,6 +153,7 @@ class _OpenEndedSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) => _controller.stream;
 }
 
@@ -179,6 +183,7 @@ class _PerChatSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) {
     final id = conversationId!;
     final controller = controllers[id] = StreamController<ChatSendUpdate>(

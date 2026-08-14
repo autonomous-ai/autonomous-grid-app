@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/codex_exec_service.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
@@ -13,6 +14,7 @@ import '../../../network/logic/app_guide_snippets.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
+import '../agent_catalog.dart';
 import '../agent_changes.dart';
 import '../agent_prompt.dart';
 import '../agent_session_slots.dart';
@@ -64,6 +66,17 @@ class CodexChatSender implements ChatSender {
 
   final _slots = AgentSessionSlots();
 
+  /// [resume] when it is a Codex thread opened in [root], else null — the same
+  /// two-part check the Claude sender makes, and for the same reason: an id
+  /// from the other agent is meaningless here, and the right id in the wrong
+  /// folder is worse than no id at all.
+  static AgentResumePoint? _adoptable(AgentResumePoint? resume, String root) {
+    if (resume == null) return null;
+    return resume.matches(thisAgent: AgentTool.codex.id, thisWorkdir: root)
+        ? resume
+        : null;
+  }
+
   @override
   Stream<ChatSendUpdate> send({
     required NetworkCredential network,
@@ -79,6 +92,7 @@ class CodexChatSender implements ChatSender {
     // Codex has no permission channel at all — it never stops to ask, so
     // there is nothing here to hold it to. See `agentSupportsApproval`.
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
@@ -105,6 +119,7 @@ class CodexChatSender implements ChatSender {
       key: '${network.networkId}|$model|$conversationId|$root',
       conversationId: conversationId,
       history: history,
+      adopt: _adoptable(resume, root),
     );
     final prompt = planFirst ? withPlanPreamble(turn.text) : turn.text;
 
@@ -196,7 +211,9 @@ class CodexChatSender implements ChatSender {
             slot.sessionId = threadId;
           case CodexActivityEvent(:final activity):
             if (isAgentWork(activity)) workedAtAll = true;
-            runs.upsertStep(chat, activity);
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            runs.upsertStep(chat, activity, answer: answer.toString());
           case CodexPlanEvent(:final entries):
             runs.setPlan(chat, entries);
           case CodexFileChangeEvent(:final changes):

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
@@ -518,5 +519,6 @@ class _NeverSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) => throw StateError('a delivered result must not call the model');
 }

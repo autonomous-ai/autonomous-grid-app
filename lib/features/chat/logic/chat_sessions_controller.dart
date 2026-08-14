@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/text_preview.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/platform/desktop_notifier.dart';
 import '../../../infrastructure/platform/window_focus.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';

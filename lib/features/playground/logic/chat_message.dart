@@ -1,8 +1,10 @@
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_turn_part.dart';
 import 'chat_context.dart';
 import 'chat_file.dart';
 import 'message_media.dart';
 
+export '../../../infrastructure/cli/agent_turn_part.dart';
 export 'chat_context.dart';
 export 'chat_file.dart';
 
@@ -30,6 +32,7 @@ class ChatMessage {
     this.contexts = const [],
     this.sources = const [],
     this.plan = const [],
+    this.parts = const [],
     this.agent,
     this.model,
     this.node,
@@ -40,6 +43,18 @@ class ChatMessage {
   final ChatRole role;
   final String text;
   final List<ChatMedia> media;
+
+  /// How the turn actually went: the passages the agent wrote and the steps it
+  /// ran between them, in order (see [TurnPart]).
+  ///
+  /// [text] stays the whole answer, because that is what everything *reading* the
+  /// turn wants — the model it is sent back to, the chat's title, the
+  /// notification's preview. This is what *drawing* it wants: the same words with
+  /// the work back in the places it happened.
+  ///
+  /// Empty unless an agent ran at least one step, so a plain reply is stored (and
+  /// drawn) exactly as it was before this existed.
+  final List<TurnPart> parts;
 
   /// Documents the user attached to this turn — a report, a spreadsheet, a
   /// contract. Kept apart from [text] so the bubble shows them as files while the
@@ -115,6 +130,7 @@ class ChatMessage {
     List<ChatContext>? contexts,
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
+    List<TurnPart>? parts,
     String? agent,
     String? model,
     String? node,
@@ -128,6 +144,7 @@ class ChatMessage {
     contexts: contexts ?? this.contexts,
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
+    parts: parts ?? this.parts,
     agent: agent ?? this.agent,
     model: model ?? this.model,
     node: node ?? this.node,
