@@ -552,21 +552,34 @@ mixin _ChatSend on _ChatSessions {
       ? ref.read(agentChatSenderProvider(agent))
       : ref.read(chatSenderProvider);
 
-  /// Stop the **open** chat's in-flight reply, keeping whatever the assistant had
-  /// already said. A reply streaming in another chat is left running.
+  /// Stop the **open** chat's in-flight reply. A reply streaming in another
+  /// chat is left running — this is the Stop button, and it means the one the
+  /// user is looking at.
+  void stop() {
+    final id = state.activeId;
+    if (id == null) return;
+    stopChat(id);
+  }
+
+  /// Stop the chat [id]'s in-flight reply, keeping whatever the assistant had
+  /// already said.
   ///
   /// The user's turn is persisted up front, but a half-written answer lives only
   /// in [SendStreaming] — dropping it would wipe text the user is reading, and
   /// they usually stop *because* they've read enough of it. Nothing streamed yet
   /// (the agent still thinking) means there's nothing to keep.
-  void stop() {
-    final id = state.activeId;
-    if (id == null || !state.sendingFor(id)) return;
+  ///
+  /// Named per conversation rather than reading [ChatSessionsState.activeId]
+  /// because the Grid Panel stops a project the desktop may not have open, and
+  /// a chat that isn't in flight is a no-op.
+  @override
+  void stopChat(String id) {
+    if (!state.sendingFor(id)) return;
     final phase = state.phaseFor(id);
     _cancel(id);
 
     final partial = phase is SendStreaming ? phase.text.trim() : '';
-    final current = state.active;
+    final current = _find(id);
     if (partial.isEmpty || current == null) {
       state = state.withPhase(id, const SendIdle());
       return;

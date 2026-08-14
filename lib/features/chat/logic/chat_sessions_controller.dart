@@ -218,6 +218,14 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Cancel one chat's send — [_ChatSettle].
   void _cancel(String id);
 
+  /// Stop the chat [id]'s in-flight reply, keeping what was already said —
+  /// [_ChatSend], and what [_ChatSend.stop] does to the open chat.
+  ///
+  /// Public and per conversation because the Grid Panel interrupts a *project*,
+  /// which is very often not the chat the desktop has open — and on a desk with
+  /// a panel on it, nobody is looking at the window.
+  void stopChat(String id);
+
   /// Whether a project's agent lane is taken — [_ChatSettle], read by
   /// [_ChatSend] to decide between dispatching a turn and queueing it.
   bool _laneBusy(String lane, {required String except});
