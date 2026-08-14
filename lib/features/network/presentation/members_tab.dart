@@ -210,6 +210,11 @@ class _MemberTile extends StatelessWidget {
           // The owner is a permanent member — show a badge, never a remove button.
           if (isOwner)
             const _OwnerBadge()
+          // So is anyone here by email domain: this grid admits everyone at that
+          // domain, so a Remove would delete nothing and they'd still be here on
+          // the next refresh. The badge says why instead.
+          else if (member.isDomainMember)
+            const _DomainBadge()
           else if (removing)
             const Padding(padding: EdgeInsets.all(8), child: AppSpinner())
           else
@@ -234,6 +239,27 @@ class _OwnerBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BadgePill(label: 'Owner', color: AppPalette.teal);
+  }
+}
+
+/// Pill marking someone who is on the grid through their email address, not
+/// through an invitation.
+///
+/// It stands where a Remove button would be, and that is the point: this grid
+/// takes everyone at its email domain, so removing the person would change
+/// nothing — they sign in and are admitted again. Quiet grey rather than the
+/// owner's teal: it explains an absent button, it doesn't rank the member.
+class _DomainBadge extends StatelessWidget {
+  const _DomainBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message:
+          'On this grid because of their work email — '
+          'so they can’t be removed from it here.',
+      child: BadgePill(label: 'Work email', color: AppPalette.textSecondary),
+    );
   }
 }
 

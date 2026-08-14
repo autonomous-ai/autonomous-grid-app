@@ -22,10 +22,17 @@ class ManagedNetworkMember {
     required this.roles,
     this.status,
     this.paymentStatus,
+    this.source,
   });
 
   final String email;
   final List<String> roles;
+
+  /// Where the membership comes from: `allowlist` — someone added them, so they
+  /// can be removed — or `domain`, meaning the grid admits every account on its
+  /// email domain and this person is on it by their address alone. Null from a
+  /// control plane too old to say.
+  final String? source;
 
   /// `active` / `inactive` — only active members are listed, but kept so the UI
   /// can render a badge without guessing.
@@ -41,6 +48,11 @@ class ManagedNetworkMember {
   /// currently viewing the list.
   bool get isOwner => roles.contains('admin');
 
+  /// Whether this person is on the grid because their email is on its domain,
+  /// rather than because anyone added them. Removing such a member takes nothing
+  /// away — they'd still sign in and be admitted — so the UI offers no Remove.
+  bool get isDomainMember => source == 'domain';
+
   factory ManagedNetworkMember.fromJson(Map<String, dynamic> json) {
     final rawRoles = json['roles'];
     return ManagedNetworkMember(
@@ -50,6 +62,7 @@ class ManagedNetworkMember {
           : const [],
       status: json['status'] as String?,
       paymentStatus: json['payment_status'] as String?,
+      source: json['source'] as String?,
     );
   }
 }
