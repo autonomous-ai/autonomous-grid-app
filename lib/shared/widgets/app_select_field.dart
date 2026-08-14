@@ -66,8 +66,21 @@ class AppSelectField<T> extends StatefulWidget {
     required this.onChanged,
     this.placeholder = 'Choose…',
     this.showLabel = true,
+    this.showDetailInField = true,
     this.fill,
   });
+
+  /// Whether the closed field repeats the picked option's
+  /// [AppSelectOption.detail] beside its label.
+  ///
+  /// On by default, because the control was built for details that are a
+  /// *verdict* — "2.5 GB", "runnable" — which are worth a glance without
+  /// opening anything. Turn it off when the detail is a **sentence**: the
+  /// closed field is only as wide as the control, so a clause arrives clipped
+  /// to "Send work to the grid, an…", which reads as a rendering bug rather
+  /// than as help. The open menu still shows it whole, which is where it's
+  /// needed — while choosing, not after.
+  final bool showDetailInField;
 
   /// Overrides the closed field's surface — see [labeledFieldDecoration].
   ///
@@ -157,7 +170,7 @@ class _AppSelectFieldState<T> extends State<AppSelectField<T>> {
                 summary: _summary,
                 muted: !_hasSelection,
                 fill: widget.fill,
-                detail: _detail,
+                detail: widget.showDetailInField ? _detail : null,
                 badges: _badges,
                 onTap: controller.isOpen ? controller.close : controller.open,
               ),
