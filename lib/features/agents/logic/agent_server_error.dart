@@ -106,6 +106,21 @@ String friendlyAgentStartupError(String raw) {
       'Agents screen, then try again.';
 }
 
+/// The grid refused the key the assistant was given (relay `401`). Recoverable
+/// without the user doing anything but sending again — see the 401 branch of
+/// [friendlyAgentServerError].
+const String kGridKeyRefused =
+    'The grid turned down the assistant\'s key, so Grid has reset it. Send '
+    'again.';
+
+/// The saved sign-in for this grid has run out, and Grid is renewing it in the
+/// background ([SessionExpiryController.onExpired]). Says "send again" rather
+/// than "sign in": the renewal reuses the saved session and needs no browser in
+/// the common case, and the banner takes over when it doesn't.
+const String kGridSignInStale =
+    'This grid\'s sign-in expired. Grid is renewing it — send again in a '
+    'moment.';
+
 /// The grid's own refusal, as Hermes hands it over: the assistant's whole answer
 /// is the failed HTTP call, verbatim — `HTTP 400: {"detail":"No active provider
 /// for this model supports tools"}`.
@@ -129,12 +144,33 @@ String? friendlyAgentServerError(String reply) {
     return "Nobody on this grid is running that model right now. Pick another "
         'model, or share one from this computer.';
   }
-  if (status == 401 || status == 403) {
-    return "This grid turned the assistant away. Sign out and back in, then "
-        'try again.';
+  // 401 is the grid refusing the *key* the assistant presented — expired,
+  // superseded, or minted for a different grid. The app can repair every one of
+  // those on its own ([HermesGridLink.forget] drops what it wrote and the next
+  // message writes it again from `~/.grid`), so the line asks for the one thing
+  // it needs: another send. It used to say "sign out and back in", which was
+  // both a chore and a lie — signing in doesn't rewrite the assistant's config.
+  if (status == 401) return kGridKeyRefused;
+  // 403 is the grid refusing the *person*: removed from it, or holding a token
+  // with no inference scope. Nothing local repairs that, so it points at the
+  // only two things the user can act on.
+  if (status == 403) {
+    return "This grid isn't letting the assistant in. Check you still have "
+        'access to it, or pick another grid.';
   }
   return 'The grid couldn\'t answer the assistant (error $status). Try again, '
       'or pick another model.';
+}
+
+/// Whether [raw] is the grid turning the assistant's *key* away (relay `401`) —
+/// the one failure the app repairs by rewriting what it wrote.
+///
+/// Matched on the status alone, deliberately: the reasons behind a 401 (an
+/// expired signature, a bumped epoch, an audience naming another grid) all have
+/// the same repair, and the relay is free to add another one.
+bool isGridKeyRefusal(String raw) {
+  final match = _envelope.firstMatch(raw.trim());
+  return match != null && match.group(1) == '401';
 }
 
 /// The model gave the agent's loop nothing it could read — an empty or non-JSON

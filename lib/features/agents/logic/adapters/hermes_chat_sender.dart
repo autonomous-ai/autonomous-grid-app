@@ -492,6 +492,16 @@ class HermesChatSender implements ChatSender {
                   kAgentTurnFailed);
         final failure =
             refused ?? failed ?? (reply.isEmpty ? kAgentNoAnswer : null);
+        // The grid turned this key away. Whatever the reason, the config the app
+        // wrote for Hermes is the suspect — so drop the memo that says it's
+        // current, and the next message rewrites it from `~/.grid` (and clears
+        // out credentials left behind for other grids on the way). Reached from
+        // both halves: Hermes reports the failed call as the answer on some
+        // paths and as the turn's error on others.
+        if (isGridKeyRefusal(reply) ||
+            (turnError != null && isGridKeyRefusal(turnError!))) {
+          _ref.read(hermesGridLinkProvider).forgetPointing();
+        }
 
         log.finish(logId, error: failure);
         // The answer is about to be appended to the chat, and the agent wrote it

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/hermes_config_file.dart';
@@ -11,11 +13,13 @@ import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../../shared/copy/setup_hints.dart';
 import '../../../auth/logic/session_controller.dart';
+import '../../../auth/logic/session_expiry_controller.dart';
 import '../../../network/logic/client_app_configurator.dart';
 import '../../../network/logic/client_app_detector.dart';
 import '../../../network/logic/network_models_provider.dart';
 import '../agent_catalog.dart';
 import '../agent_model_support.dart';
+import '../agent_server_error.dart';
 import 'hermes_tool.dart';
 
 /// The line shown instead of pointing Hermes at a model it can't serve — see
@@ -37,19 +41,46 @@ String? hermesModelRefusal(String model) =>
     ? null
     : kHermesCannotServeSeatModel;
 
-/// The `networkId|model` Hermes's config was last pointed at, so we only rewrite
-/// `~/.hermes` when the target grid or model changes. ACP reads the model from
-/// config (no inline endpoint/model flag), so the config must carry the current
-/// selection.
+/// What Hermes's config was last pointed at, so we only rewrite `~/.hermes` when
+/// something about the target changed. ACP reads the model from config (no
+/// inline endpoint/model flag), so the config must carry the current selection.
+///
+/// The memo covers the grid, the model **and the credential** ([pointingKey]).
+/// The token was the missing third: it rotates under the app — a sign-out and
+/// sign-in on the same grid, the serve loop's refresh-on-401, `grid sync` — and
+/// while the memo only knew `networkId|model`, every one of those left Hermes
+/// answering with the key it had been handed hours earlier, until the app was
+/// restarted. Watching [sessionProvider] is the other half: any re-read of
+/// `~/.grid/credentials.toml` resets the memo, so the next message re-points
+/// even if the token is unchanged and the repair passes ([HermesAuthStore]) get
+/// to run again.
 final hermesConfiguredProvider = NotifierProvider<HermesConfigured, String?>(
   HermesConfigured.new,
 );
 
 class HermesConfigured extends Notifier<String?> {
   @override
-  String? build() => null;
+  String? build() {
+    ref.watch(sessionProvider);
+    return null;
+  }
 
   void set(String? key) => state = key;
+
+  /// Forget what was written, so the next [HermesGridLink.point] rewrites the
+  /// config from scratch. Called when the grid turned the assistant's key away
+  /// — the config on disk is the suspect, so nothing may be taken on trust.
+  void forget() => state = null;
+}
+
+/// The memo key for one (grid, model, credential) target.
+///
+/// The token is reduced to a short digest: this is change detection, not a
+/// secret store, and the whole token in memory (and in a debugger's view of it)
+/// buys nothing the first bytes of a hash don't.
+String pointingKey(NetworkCredential network, String model) {
+  final digest = sha256.convert(utf8.encode(network.relayApiKey));
+  return '${network.networkId}|$model|${digest.toString().substring(0, 12)}';
 }
 
 /// Writes the grid Hermes should answer with into Hermes's own config.
@@ -79,7 +110,16 @@ class HermesGridLink {
     // scheduler down with it (see [_letTasksFollow]).
     final refusal = hermesModelRefusal(model);
     if (refusal != null) return refusal;
-    final key = '${network.networkId}|$model';
+    // A credential that is already dead is not worth writing anywhere. Left to
+    // run, it reaches the user as the assistant failing mid-turn on a relay 401
+    // — so it hands the problem to the app's own recovery instead, which renews
+    // the grid tokens from the saved session without a browser. The message
+    // says "send again" because that is all the user has to do once it lands.
+    if (network.isExpired(DateTime.now())) {
+      unawaited(_ref.read(sessionExpiryProvider.notifier).onExpired());
+      return kGridSignInStale;
+    }
+    final key = pointingKey(network, model);
     if (_ref.read(hermesConfiguredProvider) == key) return null;
     final result = await _ref.read(clientAppConfiguratorProvider).apply(
       ClientApp.hermes,
@@ -111,6 +151,20 @@ class HermesGridLink {
     unawaited(_letTasksFollow(model));
     _ref.read(hermesConfiguredProvider.notifier).set(key);
     return null;
+  }
+
+  /// The grid turned the assistant's key away — so distrust what was written for
+  /// it. The next [point] rewrites `~/.hermes` from `~/.grid`, which also re-runs
+  /// the clean-up of credentials left behind for other grids ([HermesAuthStore]).
+  ///
+  /// This is what makes the failure self-repairing on a machine already in the
+  /// broken state: nobody has to be talked through editing a hidden file, and
+  /// the user's next message does it.
+  void forgetPointing() {
+    _ref.read(hermesConfiguredProvider.notifier).forget();
+    _ref
+        .read(appLogProvider)
+        .warn('agent', 'grid refused the assistant key — will re-point Hermes');
   }
 
   /// Re-arm the saved tasks against [model]. Best-effort by design: a task that

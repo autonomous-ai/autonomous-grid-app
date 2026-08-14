@@ -135,7 +135,101 @@ mixin _ChatSend on _ChatSessions {
     // and nothing the app sends on its own may pull them back to it.
     _commit(conversation, phase: const SendBusy(), makeActive: into == null);
 
+    return _startCommittedTurn(
+      conversation: conversation,
+      network: network,
+      effectiveModel: effectiveModel,
+      modality: modality,
+      attachments: attachments,
+      planTurn: planTurn,
+      approval: approval,
+      viaAgent: viaAgent,
+      autoChosen: autoChosen,
+      continuedAgent: continuedAgent,
+      question: text,
+    );
+  }
+
+  /// Repeat the open chat's failed turn with the model currently selected.
+  ///
+  /// The original user turn is already persisted, including its pictures and
+  /// files. Retry sends that same turn again instead of appending a duplicate;
+  /// any partial assistant answer from the failed attempt is replaced.
+  Future<void> retry({
+    required NetworkCredential network,
+    required String model,
+    PlaygroundModality modality = PlaygroundModality.text,
+  }) async {
+    final active = state.active;
+    if (active == null || state.sending || state.error == null) return;
+    final retryable = _retryableTurns[active.id];
+    if (retryable == null || retryable.messageCount > active.messages.length) {
+      return;
+    }
+    final messages = active.messages.take(retryable.messageCount).toList();
+    if (messages.isEmpty || messages.last.role != ChatRole.user) return;
+
+    final conversation = active.copyWith(
+      model: model,
+      updatedAt: DateTime.now(),
+      messages: messages,
+    );
+    final autoChosen = ref.read(
+      isAutoAgentChosenForProjectProvider(conversation.projectId),
+    );
+    final effectiveModel = (autoChosen && ref.read(gridServesAutoModelProvider))
+        ? kAutoModelId
+        : model;
+    final viaAgent = agentAnswersTurn(
+      modality: modality,
+      hasAttachments: retryable.attachments.isNotEmpty,
+      agentInstalled: ref.read(anyAgentInstalledProvider),
+    );
+    final approval = approvalFor(
+      conversation,
+      ref.read(chatPrefsProvider).approval,
+    );
+
+    _commit(conversation, phase: const SendBusy());
+    return _startCommittedTurn(
+      conversation: conversation,
+      network: network,
+      effectiveModel: effectiveModel,
+      modality: modality,
+      attachments: retryable.attachments,
+      planTurn: retryable.planTurn && viaAgent,
+      approval: approval,
+      viaAgent: viaAgent,
+      autoChosen: autoChosen,
+      continuedAgent: retryable.continuedAgent,
+      question: messages.last.text,
+    );
+  }
+
+  /// Start a turn whose user message is already present in [conversation].
+  ///
+  /// Both a new Send and Retry land here, so agent routing, project queues and
+  /// cancellation behave identically for the two paths.
+  Future<void> _startCommittedTurn({
+    required Conversation conversation,
+    required NetworkCredential network,
+    required String effectiveModel,
+    required PlaygroundModality modality,
+    required List<MediaAttachment> attachments,
+    required bool planTurn,
+    required AgentApprovalMode approval,
+    required bool viaAgent,
+    required bool autoChosen,
+    required AgentTool? continuedAgent,
+    required String question,
+  }) async {
     final id = conversation.id;
+    _retryableTurns[id] = _RetryableTurn(
+      messageCount: conversation.messages.length,
+      attachments: List.unmodifiable(attachments),
+      planTurn: planTurn,
+      continuedAgent: continuedAgent,
+    );
     // Empty this chat's live feed the moment the turn is committed, not when its
     // sender finally starts. The working bubble is on screen from here, and
     // everything between here and the sender — the grid being asked which
@@ -174,7 +268,7 @@ mixin _ChatSend on _ChatSessions {
       agent = await ref
           .read(autoAgentRouterProvider)
           .route(
-            question: text,
+            question: question,
             candidates: ref.read(autoAgentCandidatesProvider(effectiveModel)),
           );
       // Routing is the one await between committing the turn and sending it, and
@@ -291,6 +385,12 @@ mixin _ChatSend on _ChatSessions {
       model,
     );
 
+    // Which models actually answer this turn — the grid is the only party that
+    // knows, since the agent makes its own relay calls and only ever knows the
+    // name it was handed (`auto`, or a tier alias). Watched from here so the
+    // working bubble can show it changing while a long task runs.
+    ref.read(turnModelUsageProvider.notifier).begin(id, network);
+
     // Who answered, with what, where, and how long it took — the footer's four
     // facts, stamped onto whatever the turn produced (a whole reply, or the
     // part-answer a failure left behind).
@@ -306,6 +406,9 @@ mixin _ChatSend on _ChatSessions {
       agent: viaAgent ? agent.id : null,
       model: model,
       node: node,
+      // What has been polled so far. The final reading lands a moment later and
+      // patches this message — see `_settleModelShares`.
+      modelShares: ref.read(turnModelUsageProvider)[id] ?? const [],
       took: clock.elapsed,
       firstToken: firstToken,
     );
@@ -377,6 +480,11 @@ mixin _ChatSend on _ChatSessions {
                 seen: messages.length,
               ),
             );
+            // The last reading of what served this turn. Fired rather than
+            // awaited: a caption is not worth holding the answer back for, so
+            // the bubble shows what was polled and this corrects it a moment
+            // later.
+            unawaited(_settleModelShares(id, network, messages.length - 1));
             // A planning turn's reply is a plan waiting on approval — light the
             // "approve & run" bar for this chat. Any other reply leaves it dark.
             // Does not steal focus: a reply landing in a background chat leaves
@@ -390,6 +498,7 @@ mixin _ChatSend on _ChatSessions {
               awaitingPlan: planTurn,
               outOfSteps: outOfSteps,
             );
+            _retryableTurns.remove(id);
             _adoptAgentName(answered, agentSessionId);
             _announceTurn(answered, body: firstLinePreview(reply.text));
             _lastTurn[id] = (reply: reply.text, failure: null);
@@ -588,6 +697,36 @@ mixin _ChatSend on _ChatSessions {
         ],
       ),
       phase: const SendIdle(),
+    );
+  }
+
+  /// Take the final reading of which models served [chat]'s turn and write it
+  /// onto the message at [index].
+  ///
+  /// Separate from the stamp because the stamp cannot wait: the reply is already
+  /// on screen, and the last poll may still be a few seconds behind the turn's
+  /// closing requests. A read that fails, a grid that answers 404 (its master
+  /// predating the endpoint), or a chat deleted meanwhile all leave the stamped
+  /// value alone — this only ever corrects upward, never blanks.
+  Future<void> _settleModelShares(
+    String chat,
+    NetworkCredential network,
+    int index,
+  ) async {
+    final shares = await ref
+        .read(turnModelUsageProvider.notifier)
+        .end(chat, network);
+    if (shares.isEmpty) return;
+    final current = _find(chat);
+    if (current == null || index < 0 || index >= current.messages.length) return;
+    final messages = [...current.messages];
+    messages[index] = messages[index].copyWith(modelShares: shares);
+    // Whatever the chat is doing now, not an assumed idle: the user may already
+    // have asked the next question, and a correction to the last turn's caption
+    // must not knock that turn's "answering" state off the screen.
+    _commit(
+      current.copyWith(messages: messages),
+      phase: state.phaseFor(chat),
     );
   }
 }

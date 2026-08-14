@@ -66,6 +66,15 @@ const _listPadding = 6.0;
 /// while the catalog is in flight matches the panel that actually draws.
 const _loadingRowCount = 3;
 
+/// What [_EmptyNote] occupies: 22 above and 24 below a single 12.5/1.3 line.
+///
+/// Its own number because it is nothing like an option row. Counted as one
+/// `_optionRowHeight` the estimate came out ~29px short, and a panel placed
+/// 29px low grows down over the pill it hangs off — which is what a grid
+/// serving no models looked like: the "isn't serving a model" panel sitting on
+/// top of the composer instead of above it.
+const _emptyNoteHeight = 63.0;
+
 /// What the menu will measure for a catalog of [rows] options.
 ///
 /// Summed from the row's own parts rather than guessed, so
@@ -77,10 +86,10 @@ const _loadingRowCount = 3;
 /// Capped by [_menuMaxListHeight] at exactly what the panel can draw, so a grid
 /// serving twenty models places the same as one serving three.
 Size _menuSize(int rows) {
-  final list = (_optionRowHeight * rows + _listPadding * 2).clamp(
-    0.0,
-    _menuMaxListHeight,
-  );
+  // `rows == 0` is the empty state, which draws one [_EmptyNote] rather than no
+  // rows at all — see [_emptyNoteHeight].
+  final content = rows == 0 ? _emptyNoteHeight : _optionRowHeight * rows;
+  final list = (content + _listPadding * 2).clamp(0.0, _menuMaxListHeight);
   return Size(_menuWidth, _menuPadding * 2 + list);
 }
 
@@ -163,7 +172,9 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
       }
       rows += group.options.length;
     }
-    return rows == 0 ? 1 : rows;
+    // Zero is meaningful, not a floor to clamp away: [_menuSize] reads it as the
+    // empty state, whose one note is taller than an option row.
+    return rows;
   }
 
   @override

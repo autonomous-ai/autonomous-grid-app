@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/composer_trigger.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../chat/logic/chat_scope.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
@@ -33,6 +35,36 @@ const _menuWidth = 260.0;
 const _rowGutter = 8.0;
 const _rowInnerPad = 10.0;
 final _rowRadius = BorderRadius.circular(AppControl.radius);
+
+/// What one row occupies, by whether it carries a second line.
+///
+/// Measured off the drawn rows rather than added up from the source: the inner
+/// padding is 8 top and bottom, the title is a 13pt line box, and a note wraps
+/// to two 11pt lines. These only decide placement *below* the panel's cap — past
+/// [AppControl.menuMaxHeight] every estimate clamps to the same number, and this
+/// menu is over it whenever more than two agents are installed.
+const _plainRowHeight = 40.0;
+const _notedRowHeight = 64.0;
+const _autoRowHeight = 56.0;
+const _scopeNoteHeight = 44.0;
+
+/// What the menu will measure, so [anchoredMenuPosition] lands the panel on the
+/// pill rather than near it.
+///
+/// The alternative — `MenuStyle.alignment` plus an `alignmentOffset` — reads as
+/// "put the menu's top-left on the pill's top-left and grow *down*", which sends
+/// a tall panel through the composer; Flutter then shoves it up and sideways to
+/// fit the window, and where it lands is the clamp's choice, not the pill's.
+/// That is what drifted this menu ~20px left of the pill it belongs to. See the
+/// same note in `grid_model_picker`.
+Size _menuSize({required bool offerAuto, required int plain, required int noted}) {
+  final rows =
+      (offerAuto ? _autoRowHeight : 0) +
+      _plainRowHeight * plain +
+      _notedRowHeight * noted +
+      _scopeNoteHeight;
+  return Size(_menuWidth, rows.clamp(0.0, AppControl.menuMaxHeight));
+}
 
 class _AgentPickerState extends ConsumerState<AgentPicker> {
   final _menu = MenuController();
@@ -89,7 +121,7 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
 
   @override
   Widget build(BuildContext context) {
-    // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
+    // `appMenuStyle` reads palette tokens; follow theme flips.
     AppTheme.watch(context);
     final active = ref.watch(activeChatAgentProvider);
     final autoChosen = ref.watch(isAutoAgentChosenProvider);
@@ -105,31 +137,24 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     // is that project's and changes nothing anywhere else, which is the whole
     // point of it — and it explains why the agent changed when they switched.
     final project = ref.watch(openChatProjectProvider);
+    final notes = [for (final tool in installed) _unavailableNote(tool)];
     return MenuAnchor(
       controller: _menu,
-      alignmentOffset: const Offset(0, -8),
-      style: MenuStyle(
-        alignment: Alignment.topLeft,
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 6),
-        ),
-        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(8),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-      ),
+      // The shared recipe, not a hand-rolled one. This carried its own
+      // `AppPalette.cardBg` at elevation 8 / radius 14: cardBg is picked to be
+      // read *on the page*, so as a panel floating over the composer it had no
+      // edge, and its lift disagreed with every other menu in the app.
+      style: appMenuStyle(),
       menuChildren: [
         if (offerAuto) _AutoItem(selected: autoChosen, onTap: _selectAuto),
-        for (final tool in installed)
+        for (final (index, tool) in installed.indexed)
           _AgentItem(
             tool: tool,
             // A concrete agent is ticked only when it's the *chosen* one — under
             // Auto the choice is Auto, and ticking an agent as well would show
             // two ticks and hide that the grid picks a fresh one per question.
             selected: !autoChosen && tool == active,
-            unavailable: _unavailableNote(tool),
+            unavailable: notes[index],
             onTap: () => _select(tool),
           ),
         _ScopeNote(projectName: project?.name),
@@ -140,7 +165,24 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
         leading: autoChosen
             ? Icon(Icons.auto_awesome, size: 14, color: AppPalette.accent)
             : AgentMark(tool: active, size: 14),
-        onTap: () => controller.isOpen ? controller.close() : controller.open(),
+        onTap: () => controller.isOpen
+            ? controller.close()
+            : controller.open(
+                // Positioned, not aligned — see [_menuSize] for why.
+                position: anchoredMenuPosition(
+                  context,
+                  menuSize: _menuSize(
+                    offerAuto: offerAuto,
+                    plain: notes.where((n) => n == null).length,
+                    noted: notes.where((n) => n != null).length,
+                  ),
+                  margin: 8,
+                  gap: AppControl.menuGap,
+                  // The pill sits at the bottom of the window, so the menu opens
+                  // upward; `anchoredMenuPosition` drops back below if it won't fit.
+                  preferAbove: true,
+                ),
+              ),
       ),
     );
   }
