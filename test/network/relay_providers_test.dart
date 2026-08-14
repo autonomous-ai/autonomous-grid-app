@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/chat/logic/turn_model_share.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/network/logic/network_models_provider.dart';
@@ -51,6 +52,20 @@ class _FakeRelayApiClient implements RelayApiClient {
     this.error,
   }) : _models = models ?? const [],
        _overview = overview;
+
+  /// These tests are about the model and overview polls; `/usage` answers
+  /// nothing, which is also what a grid whose master predates the endpoint
+  /// does — so the app's degrade path is what runs here.
+  @override
+  Future<List<ModelShare>> usage({
+    required String baseUrl,
+    required String apiKey,
+    required DateTime since,
+    DateTime? until,
+  }) async {
+    if (error != null) throw error!;
+    return const [];
+  }
 
   final List<String> _models;
   final GridOverview? _overview;

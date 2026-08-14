@@ -248,9 +248,9 @@ class _ReplyFooter extends StatelessWidget {
     ].join(' ');
     // Every model, with its count — the footer names at most three, so "+2 more"
     // is never where the story ends.
-    final breakdown = modelShares.length > 1
-        ? '\n${modelShareDetail(modelShares, label: modelShortLabel)}'
-        : '';
+    final breakdown = modelShares.isEmpty
+        ? ''
+        : '\n${modelShareDetail(modelShares, label: modelShortLabel)}';
     if (took == null || firstToken == null) return '$where.$breakdown';
     return '$where.$breakdown\nStarted answering after '
         '${formatTurnDuration(firstToken!)}, '

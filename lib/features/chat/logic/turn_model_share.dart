@@ -103,10 +103,19 @@ List<int> percentages(List<ModelShare> shares) {
 
 /// The footer's phrase for [shares], or null when there is nothing to say.
 ///
-/// Null — not an empty string — in the two cases where the plain model name is
-/// the honest line: nothing served the turn (an agent that answered from its own
-/// cache made no grid calls), or exactly one model did, where `qwen 100%` is
-/// noise. The caller keeps its existing single-model label for both.
+/// Shows from the FIRST request rather than waiting for a second model: on a
+/// long turn the caption is the only place the user can see what `auto` is
+/// spending, and staying blank until a second model happens to appear left it
+/// silent through the opening minute.
+///
+/// Null — not an empty string — only when the phrase would add nothing: no
+/// requests recorded (an agent answering from its own cache makes no grid
+/// calls), or one model that answered once, where `×1` is a longer way to write
+/// the model name the caller already has.
+///
+/// **A lone model is always counted, never percented.** It would read `100%`
+/// whatever it did, and a percentage with nothing to compare against invents a
+/// precision the line does not have.
 ///
 /// [label] renders the model id the way the rest of the app does; passing it in
 /// keeps this file free of the display layer.
@@ -115,12 +124,13 @@ String? modelShareLabel(
   required String Function(String) label,
 }) {
   final ranked = rankedShares(shares);
-  if (ranked.length < 2) return null;
+  if (ranked.isEmpty) return null;
   final total = ranked.fold(0, (sum, s) => sum + s.requests);
+  if (ranked.length == 1 && total == 1) return null;
   final named = ranked.take(kNamedModels).toList();
   final rest = ranked.length - named.length;
   final parts = <String>[];
-  if (total >= kPercentFloor) {
+  if (ranked.length > 1 && total >= kPercentFloor) {
     final percents = percentages(ranked);
     for (var i = 0; i < named.length; i++) {
       parts.add('${label(named[i].model)} ${percents[i]}%');
