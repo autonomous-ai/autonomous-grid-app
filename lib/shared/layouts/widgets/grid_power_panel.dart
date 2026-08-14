@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/node_display.dart';
+import '../../../features/network/logic/node_metrics.dart'
+    show answeredWindowLabel, formatCount;
 import '../../../features/network/presentation/node_dashboard_dialog.dart';
 import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
@@ -11,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
 import '../shell_state.dart';
 import 'memory_split_bar.dart';
+import 'pill_panel_shell.dart';
 
 /// The panel behind the top bar's grid pill: the grid's hardware, the machines
 /// providing it, and the way to put this computer among them.
@@ -96,7 +99,7 @@ class GridPowerPanel extends ConsumerWidget {
           onExit: (_) => onExit(),
           child: TapRegion(
             groupId: tapGroupId,
-            child: _PanelSurface(
+            child: PillPanelSurface(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -106,7 +109,7 @@ class GridPowerPanel extends ConsumerWidget {
                   // node reports VRAM) above one row per machine.
                   if (localNodes.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    _SectionLabel(
+                    PillPanelLabel(
                       label: 'Self-host',
                       trailing: vram != null ? formatVram(vram) : null,
                     ),
@@ -121,7 +124,7 @@ class GridPowerPanel extends ConsumerWidget {
                   // each click-expandable to its usage bars.
                   if (subNodes.isNotEmpty) ...[
                     const SizedBox(height: 13),
-                    const _SectionLabel(label: 'Codex subscription'),
+                    const PillPanelLabel(label: 'Codex subscription'),
                     const SizedBox(height: 8),
                     _NodeBreakdown(nodes: subNodes, totalGb: null),
                   ],
@@ -133,29 +136,6 @@ class GridPowerPanel extends ConsumerWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PanelSurface extends StatelessWidget {
-  const _PanelSurface({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Material(
-      type: MaterialType.transparency,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppGlass.surfaceFill,
-          borderRadius: BorderRadius.circular(AppCard.radius),
-          border: Border.all(color: AppGlass.hair),
-          boxShadow: AppGlass.shadow,
-        ),
-        child: Padding(padding: const EdgeInsets.all(13), child: child),
       ),
     );
   }
@@ -306,8 +286,44 @@ class _FooterStats extends StatelessWidget {
       children: [
         Container(height: 1, color: AppGlass.hair),
         const SizedBox(height: 7),
+        // What the grid handled, above what it can do. Labelled, because these
+        // four rows are a *window* while the two below them are right-now —
+        // unlabelled they read as one list of current facts, and "1294M input
+        // tokens" as a live reading is a very different claim from a day's
+        // total.
+        //
+        // Input is the *fresh* half: cached prefill is a share of input, not a
+        // fourth kind ([AnsweredTokens]), so these three rows add up to exactly
+        // what the grid handled. `tokensIn` raw would sum to more than that.
+        if (power.answered case final answered?) ...[
+          _AnsweredHeading(windowSeconds: answered.windowSeconds),
+          PillPanelStatRow(
+            label: 'Input',
+            value: formatCount(answered.freshInputTokens),
+            unit: 'tokens',
+          ),
+          // Kept at zero: a grid whose cache never hits should be able to see
+          // that, and a row that vanishes at zero makes the rest look like the
+          // whole story.
+          PillPanelStatRow(
+            label: 'Cached',
+            value: formatCount(answered.tokensCached),
+            unit: 'tokens',
+          ),
+          PillPanelStatRow(
+            label: 'Output',
+            value: formatCount(answered.tokensOut),
+            unit: 'tokens',
+          ),
+          PillPanelStatRow(
+            label: 'Answered',
+            value: formatCount(answered.requests),
+            unit: plural(answered.requests, 'request'),
+          ),
+          const SizedBox(height: 4),
+        ],
         if (parallel != null)
-          _StatRow(
+          PillPanelStatRow(
             label: 'Runs at once',
             value: '$parallel',
             unit: plural(parallel, 'task'),
@@ -315,12 +331,31 @@ class _FooterStats extends StatelessWidget {
         // No grid-wide "Speed" row: a single tok/s for the whole grid is the
         // average of machines that differ by an order of magnitude, so it
         // describes none of them. The dashboard shows each node's own figure.
-        _StatRow(
+        PillPanelStatRow(
           label: 'Models',
           value: '${power.models}',
           unit: plural(power.models, 'model'),
         ),
       ],
+    );
+  }
+}
+
+/// Names the span the token rows under it cover — "TOKENS · LAST 24H", or plain
+/// "TOKENS" when the relay reported no window to name.
+class _AnsweredHeading extends StatelessWidget {
+  const _AnsweredHeading({required this.windowSeconds});
+
+  final int windowSeconds;
+
+  @override
+  Widget build(BuildContext context) {
+    final window = answeredWindowLabel(windowSeconds);
+    return Padding(
+      padding: const EdgeInsets.only(top: 3, bottom: 5),
+      child: PillPanelLabel(
+        label: window.isEmpty ? 'Tokens' : 'Tokens · last $window',
+      ),
     );
   }
 }
@@ -447,52 +482,6 @@ class _PanelLink extends StatelessWidget {
   }
 }
 
-class _StatRow extends StatelessWidget {
-  const _StatRow({required this.label, required this.value, this.unit});
-
-  final String label;
-  final String value;
-  final String? unit;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3.5),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: AppFont.medium,
-              color: AppPalette.textPrimary,
-              fontFeatures: AppFont.tabularFigures,
-            ),
-          ),
-          if (unit != null) ...[
-            const SizedBox(width: 4),
-            Text(
-              unit!,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: AppPalette.textFaint,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 /// Every online machine as one row, each carrying its *own* metric: a hardware
 /// node its GPU-memory share (coloured to match its slice up in the bar), a
 /// subscription seat its plan, and a VRAM-less hardware node whatever spec it
@@ -529,7 +518,7 @@ class _NodeBreakdown extends StatelessWidget {
             color: sliceColor(vramIndex),
           ),
           totalGb: total,
-          memoryKind: _isUnifiedMemory(node.platform) ? 'RAM' : 'VRAM',
+          memoryKind: nodeMemoryKind(node),
         );
         vramIndex++;
       } else if (nodePlanLabel(node) case final plan?) {
@@ -708,7 +697,7 @@ class _CodexUsageDisclosureState extends State<_CodexUsageDisclosure> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const _SectionLabel(label: 'Usage'),
+                const PillPanelLabel(label: 'Usage'),
                 for (final w in windows) ...[
                   const SizedBox(height: 8),
                   _UsageBar(window: w),
@@ -788,11 +777,6 @@ class _UsageBar extends StatelessWidget {
   }
 }
 
-/// Apple Silicon shares one unified memory pool, so a node's "GPU memory" there
-/// is really system RAM; discrete GPUs (Windows/Linux/Intel Mac) have their own
-/// VRAM. `macos-arm64` is the Apple Silicon tag the provider reports.
-bool _isUnifiedMemory(String? platform) => (platform ?? '') == 'macos-arm64';
-
 /// "Session (5hr)" / "Weekly (7d)" / "Monthly (30d)" — a name for the window's
 /// length plus the length itself, matching how the seat's own client frames it.
 String _windowTitle(int? minutes) {
@@ -827,36 +811,4 @@ String _resetsShort(int seconds) {
     return mins > 0 ? '${hours}hr ${mins}m' : '${hours}hr';
   }
   return '${seconds ~/ 60}m';
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.label, this.trailing});
-
-  final String label;
-  final String? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final style = TextStyle(
-      fontSize: 10.5,
-      fontWeight: AppFont.medium,
-      letterSpacing: 0.5,
-      color: AppPalette.textFaint,
-    );
-    return Row(
-      children: [
-        Expanded(child: Text(label.toUpperCase(), style: style)),
-        if (trailing != null)
-          Text(
-            trailing!,
-            style: style.copyWith(
-              color: AppPalette.textSecondary,
-              letterSpacing: 0,
-              fontFeatures: AppFont.tabularFigures,
-            ),
-          ),
-      ],
-    );
-  }
 }

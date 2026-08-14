@@ -172,4 +172,152 @@ void main() {
       },
     );
   });
+
+  group('what a node has answered', () {
+    test(
+      'a relay that reported nothing is unmeasured, not an idle machine',
+      () {
+        // The distinction this whole file exists to protect. An older master
+        // computes no such figure, and printing `0` there would tell a person
+        // their machine served nobody today.
+        final silent = _node();
+        expect(answeredTokensMetric(silent).measured, isFalse);
+        expect(answeredTokensMetric(silent).value, kUnmeasured);
+        expect(answeredRequestsMetric(silent).measured, isFalse);
+      },
+    );
+
+    test('cached input is a share of input, never a fourth bucket', () {
+      // The relay bills `(in − cached)·input + cached·cache + out·output`, so
+      // the three legs a card draws must be fresh-input / cache / output. Using
+      // `tokensIn` raw would print three figures that add up to more than the
+      // machine handled — and the error grows with how well the cache works.
+      final node = _answering(
+        tokensIn: 1000,
+        tokensCached: 400,
+        tokensOut: 150,
+      );
+      final answered = node.answered!;
+
+      expect(answered.freshInputTokens, 600);
+      expect(answered.totalTokens, 1150); // in + out, NOT in + cached + out
+      expect(
+        answered.freshInputTokens + answered.tokensCached + answered.tokensOut,
+        answered.totalTokens,
+      );
+      expect(answeredInputMetric(node).value, '600');
+      expect(answeredCachedMetric(node).value, '400');
+      expect(answeredTokensMetric(node).value, '150');
+    });
+
+    test('a grid with no cache hits still shows every leg', () {
+      // A zero cache row is a fact about the grid worth seeing; dropping it
+      // would make the remaining rows look like the whole story.
+      final node = _answering(tokensIn: 800, tokensOut: 200);
+
+      expect(answeredCachedMetric(node).measured, isTrue);
+      expect(answeredCachedMetric(node).value, '0');
+      expect(answeredInputMetric(node).value, '800');
+    });
+
+    test('input and cache are unmeasured when the relay reported nothing', () {
+      expect(answeredInputMetric(_node()).measured, isFalse);
+      expect(answeredCachedMetric(_node()).measured, isFalse);
+    });
+
+    test('a machine measured and found idle prints a real zero', () {
+      final idle = _answering(tokensOut: 0, requests: 0);
+      expect(answeredTokensMetric(idle).measured, isTrue);
+      expect(answeredTokensMetric(idle).value, '0');
+    });
+
+    test('counts shorten so two cards stay comparable at a glance', () {
+      // A busy node and a quiet one are six orders of magnitude apart, and the
+      // column is sized for "59.4 GB".
+      expect(formatCount(0), '0');
+      expect(formatCount(940), '940');
+      expect(formatCount(1500), '1.5K');
+      expect(formatCount(12300), '12.3K');
+      expect(formatCount(180000), '180K');
+      expect(formatCount(1000000), '1M');
+      expect(formatCount(1240000), '1.2M');
+      expect(formatCount(12400000), '12.4M');
+    });
+
+    test('the label names the span the relay actually counted', () {
+      // Hardcoding "24h" would go quietly wrong the moment an operator retuned
+      // NODE_ANSWERED_WINDOW_SECONDS, and a dashboard must not be wrong that way.
+      expect(answeredWindowLabel(86400), '24h');
+      expect(answeredWindowLabel(604800), '7d');
+      expect(answeredWindowLabel(21600), '6h');
+      expect(answeredWindowLabel(1800), '30m');
+      expect(
+        answeredTokensMetric(
+          _answering(tokensOut: 5, windowSeconds: 21600),
+        ).label,
+        'Output · 6h',
+      );
+    });
+
+    test('a relay that sent no window leaves no dangling separator', () {
+      expect(
+        answeredTokensMetric(_answering(tokensOut: 5, windowSeconds: 0)).label,
+        'Output',
+      );
+    });
+
+    test('the per-model split is offered only where the totals hide one', () {
+      // One model's total IS the node's total, and the card already prints its
+      // name in its own field — a hint repeating that earns nothing.
+      expect(
+        answeredByModelHint(
+          _answering(
+            tokensOut: 300,
+            byModel: const [
+              AnsweredModel(model: 'glm-4.6', tokensOut: 300, requests: 4),
+            ],
+          ),
+        ),
+        isEmpty,
+      );
+      expect(
+        answeredByModelHint(
+          _answering(
+            tokensOut: 1420000,
+            byModel: const [
+              AnsweredModel(
+                model: 'glm-4.6',
+                tokensOut: 1240000,
+                requests: 340,
+              ),
+              AnsweredModel(model: 'qwen3', tokensOut: 180000, requests: 22),
+            ],
+          ),
+        ),
+        'glm-4.6 — 1.2M output tokens · 340 requests\n'
+        'qwen3 — 180K output tokens · 22 requests',
+      );
+    });
+  });
 }
+
+/// A node whose relay reported an answered rollup.
+OverviewNode _answering({
+  int tokensIn = 0,
+  int tokensCached = 0,
+  int tokensOut = 0,
+  int requests = 0,
+  int windowSeconds = 86400,
+  List<AnsweredModel> byModel = const [],
+}) => OverviewNode(
+  name: 'spark-1',
+  online: true,
+  answered: NodeAnswered(
+    windowSeconds: windowSeconds,
+    tokensIn: tokensIn,
+    tokensCached: tokensCached,
+    tokensOut: tokensOut,
+    requests: requests,
+    byModel: byModel,
+  ),
+);

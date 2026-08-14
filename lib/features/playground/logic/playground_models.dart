@@ -132,9 +132,6 @@ Map<String, ModelHosting> hostingByModel(Iterable<OverviewNode> nodes) {
   return byModel;
 }
 
-/// One model id, in the form the app compares by. See [hostingByModel].
-String modelKey(String id) => id.trim().toLowerCase();
-
 /// The machine that serves [model] on this grid, by the name the overview shows
 /// for it — or **null when that can't be told**, which is often.
 ///
