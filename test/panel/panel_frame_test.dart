@@ -184,6 +184,18 @@ void main() {
     );
   });
 
+  test('reset keeps the counters, because they are a trend not a tally', () {
+    // A link that reconnects often is exactly the one worth measuring. Zeroing
+    // on every reconnect would erase the history that tells "the bootloader
+    // said hello again" from "these two disagree about the format".
+    final decoder = PanelFrameDecoder()..feed(utf8.encode('rst:0x1 noise'));
+    final discarded = decoder.discardedBytes;
+    expect(discarded, greaterThan(0));
+
+    decoder.reset();
+    expect(decoder.discardedBytes, discarded);
+  });
+
   test('reset drops a half-frame so a reopened port starts clean', () {
     // The bytes left over belong to a session that has ended; carrying them
     // across would put a stale half-frame in front of the new device's first.

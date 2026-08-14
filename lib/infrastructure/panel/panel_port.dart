@@ -145,7 +145,18 @@ class PanelPort implements PanelTransport {
 
   final _incoming = StreamController<List<int>>();
   StreamSubscription<List<int>>? _reader;
-  IOSink? _writer;
+
+  /// A [RandomAccessFile] rather than the [IOSink] from `openWrite`, and the
+  /// reason is measured rather than stylistic: **both `openWrite` and
+  /// `open(FileMode.writeOnlyAppend)` fail on this device with
+  /// `Illegal seek, errno = 29`.** Append asks the OS to seek to the end, and a
+  /// character device has no end to seek to.
+  ///
+  /// The failure is late and looks like something else. Opening succeeds, the
+  /// panel's `hello` arrives and parses, and only the *reply* throws — so the
+  /// symptom is a link that connects, reads correctly, answers nothing, and
+  /// reconnects a few seconds later forever.
+  RandomAccessFile? _writer;
   Timer? _retryTimer;
   bool _running = false;
   String? _port;
@@ -178,10 +189,13 @@ class PanelPort implements PanelTransport {
     final writer = _writer;
     if (writer == null) return;
     try {
-      writer.add(bytes);
-    } on StateError catch (e) {
-      // The sink is already broken — the cable went before the write did.
-      _detach('write failed: $e');
+      // Synchronous on purpose: a frame is at most 8 KB to a local character
+      // device, and an async write would let a second `send` interleave with
+      // this one and split a frame down the middle on the wire.
+      writer.writeFromSync(bytes);
+    } on FileSystemException catch (e) {
+      // The cable went before the write did.
+      _detach('write failed: ${e.message}');
     }
   }
 
@@ -216,9 +230,10 @@ class PanelPort implements PanelTransport {
 
     final file = File(port);
     try {
-      // Append rather than write: a `write` truncates, which is meaningless on
-      // a character device and is refused on some of them.
-      _writer = file.openWrite(mode: FileMode.writeOnlyAppend);
+      // writeOnly, NOT writeOnlyAppend — see the field's own note. Truncation
+      // is what `writeOnly` would do to a regular file and is a no-op on a
+      // character device, while append needs a seek this device refuses.
+      _writer = file.openSync(mode: FileMode.writeOnly);
       _reader = file.openRead().listen(
         _onBytes,
         onError: (Object e) => _detach('read failed: $e'),
@@ -230,12 +245,8 @@ class PanelPort implements PanelTransport {
       await _release();
       return _retryLater();
     }
-    // An IOSink reports a failed write on its `done` future and nowhere else;
-    // unwatched, the panel being unplugged mid-write is an uncaught async
-    // error rather than a reconnect.
-    unawaited(
-      _writer?.done.catchError((Object e) => _detach('write failed: $e')),
-    );
+    // No `done` future to watch, unlike an IOSink: a RandomAccessFile reports a
+    // failed write to the caller, which [send] already turns into a reconnect.
 
     _port = port;
     _log('attached to $port');

@@ -223,11 +223,13 @@ class PanelFrameDecoder {
   /// Called when the port is reopened: the bytes left over belong to a session
   /// that has ended, and carrying them across would put a stale half-frame in
   /// front of the new device's first real one.
-  void reset() {
-    _pending.clear();
-    _corruptFrames = 0;
-    _discardedBytes = 0;
-  }
+  /// The counters deliberately survive. They exist to show a *trend* — a
+  /// handful of discarded bytes at every boot is the bootloader and is expected,
+  /// while a steady trickle means the two sides disagree about the format or the
+  /// cable is bad. Zeroing them on every reconnect would erase exactly the
+  /// history that tells those two apart, and a link that reconnects often is
+  /// precisely the one worth measuring.
+  void reset() => _pending.clear();
 
   /// Decode one frame off the front, or null when more bytes are needed.
   ///
