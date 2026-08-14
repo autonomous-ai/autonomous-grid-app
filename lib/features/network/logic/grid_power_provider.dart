@@ -19,6 +19,7 @@ class GridPower {
     this.vramGb,
     this.parallel,
     this.throughputTokS,
+    this.answered,
   });
 
   /// Nodes currently online. The headline count.
@@ -43,6 +44,15 @@ class GridPower {
   /// Combined tokens/second across online nodes. Null when no node reports it.
   final double? throughputTokS;
 
+  /// What the whole grid has answered inside the relay's window, summed over its
+  /// online nodes. Null when **no** node reported the rollup — an older relay —
+  /// and the pill then shows no such figure rather than a zero.
+  ///
+  /// Unlike [throughputTokS] this is a total of totals, so its own `byModel` is
+  /// left empty: the per-model split of a grid comes from [answeredByModel],
+  /// which keys by model across nodes rather than summing whole nodes.
+  final NodeAnswered? answered;
+
   /// Whether there is anything worth showing. The pill unmounts on false rather
   /// than rendering an empty capsule or a row of dashes.
   bool get isEmpty => onlineNodes == 0 && models == 0;
@@ -64,11 +74,18 @@ class GridPower {
       other.models == models &&
       other.vramGb == vramGb &&
       other.parallel == parallel &&
-      other.throughputTokS == throughputTokS;
+      other.throughputTokS == throughputTokS &&
+      other.answered == answered;
 
   @override
-  int get hashCode =>
-      Object.hash(onlineNodes, models, vramGb, parallel, throughputTokS);
+  int get hashCode => Object.hash(
+    onlineNodes,
+    models,
+    vramGb,
+    parallel,
+    throughputTokS,
+    answered,
+  );
 }
 
 /// GPU memory a node contributes to the grid pool, in GB, or null when it brings
@@ -118,6 +135,14 @@ GridPower gridPowerFrom(
   double? vram;
   int? summedConcurrency;
   double? throughput;
+  // Null until some node actually reports a rollup, so a grid of older relays
+  // shows no figure at all. Zeros here would be indistinguishable from a real
+  // measurement of an idle grid, which is the one thing this must not do.
+  int? answeredOut;
+  int answeredIn = 0;
+  int answeredCached = 0;
+  int answeredRequests = 0;
+  int answeredWindow = 0;
   for (final node in online) {
     final gb = nodeVramGb(node);
     if (gb != null) vram = (vram ?? 0) + gb;
@@ -129,6 +154,17 @@ GridPower gridPowerFrom(
 
     final toks = node.throughputTokS;
     if (toks != null && toks > 0) throughput = (throughput ?? 0) + toks;
+
+    final answered = node.answered;
+    if (answered != null) {
+      answeredOut = (answeredOut ?? 0) + answered.tokensOut;
+      answeredIn += answered.tokensIn;
+      answeredCached += answered.tokensCached;
+      answeredRequests += answered.requests;
+      // One window setting on one relay, so every node agrees; the first one
+      // seen is the one reported.
+      if (answeredWindow == 0) answeredWindow = answered.windowSeconds;
+    }
   }
 
   return GridPower(
@@ -137,6 +173,15 @@ GridPower gridPowerFrom(
     vramGb: vram,
     parallel: (capacity != null && capacity > 0) ? capacity : summedConcurrency,
     throughputTokS: throughput,
+    answered: answeredOut == null
+        ? null
+        : NodeAnswered(
+            windowSeconds: answeredWindow,
+            tokensIn: answeredIn,
+            tokensCached: answeredCached,
+            tokensOut: answeredOut,
+            requests: answeredRequests,
+          ),
   );
 }
 

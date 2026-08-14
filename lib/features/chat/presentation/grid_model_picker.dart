@@ -13,6 +13,7 @@ import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
+import '../../network/logic/node_display.dart' show modelKey;
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../logic/grid_model_catalog.dart';
@@ -445,7 +446,8 @@ class _OptionRow extends StatelessWidget {
     final blocked = blockedFor;
     // This row is a text model that can't read the attached image — the very
     // thing blocking Send when it is the picked row.
-    final visionBlocked = visionContext &&
+    final visionBlocked =
+        visionContext &&
         option.modality == PlaygroundModality.text &&
         !option.vision;
     final row = Padding(

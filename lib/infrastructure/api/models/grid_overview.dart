@@ -304,6 +304,159 @@ class CodexRateLimits {
   int get hashCode => Object.hash(planType, activeLimit, primary, secondary);
 }
 
+/// What one model produced on one node inside the overview's rollup window —
+/// the relay's `answered.by_model[]`.
+/// The three token figures the relay reports for a stretch of work, and the
+/// arithmetic that keeps them honest.
+///
+/// **`tokensCached` is part of `tokensIn`, never additional to it.** The relay's
+/// settlement is explicit about this — it bills
+/// `(in − cached)·input + cached·cache + out·output` — so a grand total is
+/// [totalTokens] = in + out, and anything adding cache on top counts the cached
+/// prefill twice. Use [freshInputTokens] for the "input" leg of a three-way
+/// split, which is what makes the three legs add up to the total.
+mixin AnsweredTokens {
+  /// Tokens read. Includes [tokensCached].
+  int get tokensIn;
+
+  /// The share of [tokensIn] that came from a prompt cache — nearly free, and
+  /// the reason input and output can't be one number.
+  int get tokensCached;
+
+  /// Tokens generated. Where the time actually goes.
+  int get tokensOut;
+
+  /// Input that was not served from cache — the leg a three-way split needs.
+  int get freshInputTokens => tokensIn - tokensCached;
+
+  /// Everything that passed through, counted once.
+  int get totalTokens => tokensIn + tokensOut;
+}
+
+/// What one model produced on one node inside the overview's rollup window —
+/// the relay's `answered.by_model[]`.
+class AnsweredModel with AnsweredTokens {
+  const AnsweredModel({
+    required this.model,
+    this.tokensIn = 0,
+    this.tokensCached = 0,
+    required this.tokensOut,
+    required this.requests,
+  });
+
+  final String model;
+
+  @override
+  final int tokensIn;
+
+  @override
+  final int tokensCached;
+
+  @override
+  final int tokensOut;
+
+  /// How many answered requests those tokens came from. Shown beside them
+  /// because the token count alone can't tell 300 ordinary replies from three
+  /// enormous ones.
+  final int requests;
+
+  factory AnsweredModel.fromJson(Map<String, dynamic> j) => AnsweredModel(
+    model: '${j['model'] ?? ''}',
+    tokensIn: (j['tokens_in'] as num?)?.toInt() ?? 0,
+    tokensCached: (j['tokens_cached'] as num?)?.toInt() ?? 0,
+    tokensOut: (j['tokens_out'] as num?)?.toInt() ?? 0,
+    requests: (j['requests'] as num?)?.toInt() ?? 0,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnsweredModel &&
+      other.model == model &&
+      other.tokensIn == tokensIn &&
+      other.tokensCached == tokensCached &&
+      other.tokensOut == tokensOut &&
+      other.requests == requests;
+
+  @override
+  int get hashCode =>
+      Object.hash(model, tokensIn, tokensCached, tokensOut, requests);
+}
+
+/// How much a node has answered lately: the totals, the per-model split, and
+/// the span they cover.
+///
+/// **Present with zeros is not the same as absent.** A node the relay measured
+/// and found idle sends real zeros here, and the dashboard prints `0` — a true
+/// statement about a machine that served nothing today. A relay too old to
+/// compute this, or one whose rollup has never succeeded, sends no `answered`
+/// object at all and the field is null, which the dashboard prints as `—`. The
+/// distinction is the whole reason this is a nullable object rather than a pair
+/// of int fields defaulting to 0 — see the telemetry note on [OverviewNode].
+class NodeAnswered with AnsweredTokens {
+  const NodeAnswered({
+    required this.windowSeconds,
+    this.tokensIn = 0,
+    this.tokensCached = 0,
+    required this.tokensOut,
+    required this.requests,
+    this.byModel = const [],
+  });
+
+  /// The span these figures cover, as the relay reported it. Carried rather
+  /// than assumed: the window is an operator knob, and a label hardcoded to
+  /// "24h" would go quietly wrong the moment someone retuned it.
+  final int windowSeconds;
+
+  @override
+  final int tokensIn;
+
+  @override
+  final int tokensCached;
+
+  @override
+  final int tokensOut;
+
+  final int requests;
+
+  /// The same totals split by model, biggest first. Empty on a node that
+  /// answered nothing in the window.
+  final List<AnsweredModel> byModel;
+
+  factory NodeAnswered.fromJson(Map<String, dynamic> j) => NodeAnswered(
+    windowSeconds: (j['window_seconds'] as num?)?.toInt() ?? 0,
+    tokensIn: (j['tokens_in'] as num?)?.toInt() ?? 0,
+    tokensCached: (j['tokens_cached'] as num?)?.toInt() ?? 0,
+    tokensOut: (j['tokens_out'] as num?)?.toInt() ?? 0,
+    requests: (j['requests'] as num?)?.toInt() ?? 0,
+    byModel: j['by_model'] is List
+        ? [
+            for (final m in j['by_model'] as List)
+              if (m is Map) AnsweredModel.fromJson(m.cast<String, dynamic>()),
+          ]
+        : const [],
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is NodeAnswered &&
+      other.windowSeconds == windowSeconds &&
+      other.tokensIn == tokensIn &&
+      other.tokensCached == tokensCached &&
+      other.tokensOut == tokensOut &&
+      other.requests == requests &&
+      listEquals(other.byModel, byModel);
+
+  @override
+  int get hashCode => Object.hash(
+    windowSeconds,
+    tokensIn,
+    tokensCached,
+    tokensOut,
+    requests,
+    Object.hashAll(byModel),
+  );
+}
+
 class OverviewNode {
   const OverviewNode({
     required this.name,
@@ -328,6 +481,7 @@ class OverviewNode {
     this.gpuPowerLimitW,
     this.diskTotalGb,
     this.diskUsedGb,
+    this.answered,
     required this.online,
   });
 
@@ -386,6 +540,12 @@ class OverviewNode {
   final double? diskTotalGb;
   final double? diskUsedGb;
 
+  /// How much this node has answered inside the relay's rollup window. **Null
+  /// means the relay didn't say** — an older master computes no such figure —
+  /// and is rendered as unmeasured, never as an idle machine. See
+  /// [NodeAnswered] for why zeros and null must stay distinguishable.
+  final NodeAnswered? answered;
+
   /// The codex seat's rate-limit snapshot, when this node serves a codex engine
   /// (`engine == 'codex'`). Null for every other engine. Stale between the
   /// provider's served requests — the relay only refreshes it on a response/seed.
@@ -420,6 +580,9 @@ class OverviewNode {
     gpuPowerLimitW: (j['gpu_power_limit_w'] as num?)?.toDouble(),
     diskTotalGb: (j['disk_total_gb'] as num?)?.toDouble(),
     diskUsedGb: (j['disk_used_gb'] as num?)?.toDouble(),
+    answered: j['answered'] is Map
+        ? NodeAnswered.fromJson((j['answered'] as Map).cast<String, dynamic>())
+        : null,
     online: j['online'] == true,
   );
 
@@ -458,6 +621,7 @@ class OverviewNode {
       other.gpuPowerLimitW == gpuPowerLimitW &&
       other.diskTotalGb == diskTotalGb &&
       other.diskUsedGb == diskUsedGb &&
+      other.answered == answered &&
       other.online == online;
 
   // `Object.hashAll` rather than `Object.hash`: the latter takes at most 20
@@ -486,6 +650,7 @@ class OverviewNode {
     gpuPowerLimitW,
     diskTotalGb,
     diskUsedGb,
+    answered,
     online,
   ]);
 }
