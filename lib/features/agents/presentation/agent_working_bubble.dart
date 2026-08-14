@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../chat/logic/turn_model_share.dart';
+import '../../chat/logic/turn_model_usage.dart';
+import '../../playground/logic/chat_message.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -132,7 +135,7 @@ class AgentActivityFeed extends ConsumerWidget {
           // began.
           Padding(
             padding: EdgeInsets.only(top: gap),
-            child: _ThinkingRow(key: ValueKey(steps.length)),
+            child: _ThinkingRow(key: ValueKey(steps.length), chatId: chatId),
           ),
       ],
     );
@@ -270,7 +273,10 @@ String _elapsedLabel(int seconds) {
 /// same question: this one is the pause *between* steps, that one is a step
 /// that has gone on too long to leave unexplained.
 class _ThinkingRow extends StatefulWidget {
-  const _ThinkingRow({super.key});
+  const _ThinkingRow({super.key, required this.chatId});
+
+  /// Whose turn this is — the models serving it are keyed by chat.
+  final String chatId;
 
   @override
   State<_ThinkingRow> createState() => _ThinkingRowState();
@@ -316,7 +322,44 @@ class _ThinkingRowState extends State<_ThinkingRow> {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          // What is actually answering, while it is answering. Under `auto` the
+          // pill above says "auto", which is a routing instruction and not a
+          // model — on a task that runs for minutes this is the only place the
+          // user can see which models the grid is really spending.
+          _LiveModels(chatId: widget.chatId),
         ],
+      ),
+    );
+  }
+}
+
+/// The models serving the open turn, appended to the thinking line.
+///
+/// Draws nothing at all until at least two models have answered: one model is
+/// what the pill already says, and a caption that appears and disappears as the
+/// second one lands would be noisier than the fact is worth.
+class _LiveModels extends ConsumerWidget {
+  const _LiveModels({required this.chatId});
+
+  final String chatId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final shares = ref.watch(openTurnModelsProvider(chatId));
+    final label = modelShareLabel(shares, label: modelShortLabel);
+    if (label == null) return const SizedBox.shrink();
+    return Flexible(
+      child: Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: Text(
+          '· $label',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
       ),
     );
   }

@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/composer_trigger.dart';
+import '../../../shared/widgets/labeled_field.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
 ///
@@ -44,6 +46,25 @@ const _rowInnerPad = 10.0;
 /// the same widget for the row's shape and its decoration.
 final _rowRadius = BorderRadius.circular(AppControl.radius);
 
+/// What the heading and one mode row occupy. Measured off the drawn rows: each
+/// row is a title plus a two-line detail inside 10px of inner padding. Four
+/// modes put this menu past [AppControl.menuMaxHeight], where every estimate
+/// clamps to the same number — the parts are spelled out anyway so a fifth mode,
+/// or a shorter list, still places on the pill.
+const _headingHeight = 30.0;
+const _modeRowHeight = 70.0;
+
+/// What the menu will measure, so [anchoredMenuPosition] lands it on the pill.
+///
+/// `MenuStyle.alignment` + `alignmentOffset` — what this used before — reads as
+/// "top-left on the pill's top-left, then grow *down*", which drives a tall panel
+/// through the composer; Flutter shoves it up and sideways to fit the window and
+/// the result sits wherever the clamp left it. Same note in `agent_picker`.
+Size _menuSize(int modes) {
+  final rows = _headingHeight + _modeRowHeight * modes;
+  return Size(_menuWidth, rows.clamp(0.0, AppControl.menuMaxHeight));
+}
+
 class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
   final _menu = MenuController();
 
@@ -57,34 +78,29 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
       controller.close();
       return;
     }
-    controller.open();
+    controller.open(
+      // Positioned, not aligned — see [_menuSize] for why.
+      position: anchoredMenuPosition(
+        context,
+        menuSize: _menuSize(AgentApprovalMode.values.length),
+        margin: 8,
+        gap: AppControl.menuGap,
+        // The pill sits at the bottom of the window, so the menu opens upward;
+        // `anchoredMenuPosition` drops back below if it won't fit.
+        preferAbove: true,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
+    // `appMenuStyle` reads palette tokens; follow theme flips.
     AppTheme.watch(context);
     final current = widget.value;
     return MenuAnchor(
       controller: _menu,
-      // Hang the menu off the pill's top edge and let MenuAnchor measure it.
-      // Passing a hand-computed position meant declaring a height before the
-      // menu existed, and the rows are detail-text tall — they wrap differently
-      // per row, per theme and per window width, so every guess was wrong: too
-      // short dropped the menu onto the pill, too tall floated it far above.
-      alignmentOffset: const Offset(0, -8),
-      style: MenuStyle(
-        alignment: Alignment.topLeft,
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 6),
-        ),
-        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(8),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-      ),
+      // The shared recipe — see the same note on the agent pill beside this one.
+      style: appMenuStyle(),
       menuChildren: [
         const SizedBox(width: _menuWidth, child: _MenuHeading()),
         for (final mode in AgentApprovalMode.values)

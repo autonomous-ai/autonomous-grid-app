@@ -1,5 +1,6 @@
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_turn_part.dart';
+import '../../chat/logic/turn_model_share.dart';
 import 'chat_context.dart';
 import 'chat_file.dart';
 import 'message_media.dart';
@@ -36,6 +37,7 @@ class ChatMessage {
     this.agent,
     this.model,
     this.node,
+    this.modelShares = const [],
     this.took,
     this.firstToken,
   });
@@ -102,6 +104,15 @@ class ChatMessage {
   /// leaves the name out rather than naming a machine that may not have answered.
   final String? node;
 
+  /// Which models actually served this turn, busiest first — empty when nothing
+  /// was recorded (an old transcript, a grid whose master predates
+  /// `/relay/v1/usage`, or a turn the grid never saw).
+  ///
+  /// Separate from [model], which is what was *asked for*. On an `auto` turn
+  /// that is a routing instruction rather than a model, and even a named turn
+  /// fans out across an agent's lead / small-fast / subagent models.
+  final List<ModelShare> modelShares;
+
   /// How long this reply took to arrive — from the moment the turn was sent to
   /// the answer landing, so a queued agent turn isn't charged for the wait.
   ///
@@ -134,6 +145,7 @@ class ChatMessage {
     String? agent,
     String? model,
     String? node,
+    List<ModelShare>? modelShares,
     Duration? took,
     Duration? firstToken,
   }) => ChatMessage(
@@ -148,6 +160,7 @@ class ChatMessage {
     agent: agent ?? this.agent,
     model: model ?? this.model,
     node: node ?? this.node,
+    modelShares: modelShares ?? this.modelShares,
     took: took ?? this.took,
     firstToken: firstToken ?? this.firstToken,
   );

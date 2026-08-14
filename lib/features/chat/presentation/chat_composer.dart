@@ -85,9 +85,9 @@ class ComposerSection extends StatelessWidget {
   /// turn nothing can (a picture is made by the grid, which has no filesystem).
   final Widget? approvalPicker;
 
-  /// The control for which agent answers, shown beside the model on an
-  /// agent-answered turn. Null when the grid (not an agent) answers, so it isn't
-  /// offered where picking an agent would change nothing.
+  /// The control for which agent answers text-only turns. It stays visible when
+  /// a picture is attached even though that turn goes straight to the grid, so
+  /// attaching something never hides or resets the conversation's agent choice.
   final Widget? agentPicker;
   final Widget modelPicker;
   final ValueChanged<MediaAttachment> onAddAttachment;

@@ -303,5 +303,17 @@ class CommandLogNotifier extends Notifier<List<GridCommandLog>> {
   /// call can be kicked off from inside another provider's build (e.g.
   /// preflight), and Riverpod forbids mutating a provider during another's
   /// initialization — deferring sidesteps that without losing ordering.
-  void _schedule(void Function() update) => Future.microtask(update);
+  ///
+  /// The deferral is also what makes the [ref.mounted] check necessary: between
+  /// scheduling and running, the provider can be disposed — a grid closed while
+  /// its overview poll is still on the wire, which is exactly what
+  /// `gridOverviewForProvider` does on teardown. Writing `state` then throws
+  /// "Cannot use the Ref ... after it has been disposed", and the throw lands in
+  /// a microtask with no caller to catch it: it took down six unrelated tests
+  /// and would, in the app, surface as an unhandled error from a log line
+  /// nobody was reading.
+  void _schedule(void Function() update) => Future.microtask(() {
+    if (!ref.mounted) return;
+    update();
+  });
 }
