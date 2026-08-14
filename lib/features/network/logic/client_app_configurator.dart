@@ -7,7 +7,9 @@ import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/env_file.dart';
+import '../../../infrastructure/cli/hermes_auth_store.dart';
 import '../../../infrastructure/cli/hermes_config_file.dart';
+import '../../../core/relay_identity.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'app_guide_snippets.dart';
 import 'client_app_detector.dart';
@@ -50,6 +52,21 @@ class ClientAppConfigurator {
     String key,
     List<String> models,
   ) {
+    // Never write a pair that can't work. A key minted for one grid and the URL
+    // of another is accepted by every config file involved and only refused at
+    // the far end — `401 Invalid Grid token: Audience doesn't match`, minutes
+    // later, inside somebody's chat. Caught here it names both grids, in the
+    // one place that has both halves. Fails open when either half can't be read
+    // (a LAN relay, an API-engine key that is no JWT) — see [relayIdentityDoc].
+    final mismatch = relayCredentialMismatch(base: base, key: key);
+    if (mismatch != null) {
+      return Future.value(
+        ApplyError(
+          "Grid didn't write this connection because $mismatch. Pick the grid "
+          'again, or sign out and back in.',
+        ),
+      );
+    }
     // Guarantee a non-empty list so every downstream write has a default.
     final ids = models.isEmpty ? const [kGuideDefaultModel] : models;
     switch (app) {
@@ -155,7 +172,27 @@ class ClientAppConfigurator {
     }
   }
 
-  Future<ApplyResult> _applyHermes(
+  /// Serialises Hermes's config write across the whole app.
+  ///
+  /// [_applyHermes] is a read-modify-write over two files, and three unattended
+  /// callers reach it — a chat message, a scheduled task and the chat-platform
+  /// bot ([HermesGridLink]) — so two of them starting at once could each read
+  /// the same config and write half of their own on top of it. The half that
+  /// survives is `model:` from one grid and `custom_providers:` from another:
+  /// a key and an endpoint that don't belong together, which the relay refuses
+  /// with `401 Invalid Grid token: Audience doesn't match`. Static because the
+  /// file is: two [ClientAppConfigurator] instances still share `~/.hermes`.
+  static Future<void> _hermesWrites = Future<void>.value();
+
+  Future<ApplyResult> _applyHermes(String base, String key, String model) {
+    final queued = _hermesWrites.then((_) => _writeHermes(base, key, model));
+    // The queue must survive a failed write, or one error deadlocks every later
+    // point-at-a-grid; the result still reaches the caller through `queued`.
+    _hermesWrites = queued.then((_) {}, onError: (_) {});
+    return queued;
+  }
+
+  Future<ApplyResult> _writeHermes(
     String base,
     String key,
     String model,
@@ -220,6 +257,13 @@ class ClientAppConfigurator {
         'OPENAI_BASE_URL': base,
         'OPENAI_API_KEY': key,
       }, 'Hermes');
+
+      // The config now names one grid; Hermes's own credential store may still
+      // hold keys minted for the ones before it, and it will rotate to them on
+      // its own. Clearing them here is the only repair a machine this has
+      // already happened on can get — nobody is going to hand-edit
+      // `~/.hermes/auth.json` (see [HermesAuthStore]).
+      await HermesAuthStore(home: _home).pruneForeignGrids(base);
       return ApplyOk(
         'Pointed Hermes at this grid (${_display(config)} + ${_display(env)}).',
         note:
@@ -320,12 +364,16 @@ class ClientAppConfigurator {
   ) => EnvFile(env).upsert(vars, addedBy: 'points $appName at this grid');
 
   /// Registers this grid as a Hermes named provider under `custom_providers`,
-  /// upserting by provider **name** (the grid host, e.g. `grid.autonomous.ai`) so
-  /// a config file only ever holds one Grid entry: re-applying — or repointing at
-  /// a new relay under the same grid — overwrites it in place instead of stacking
-  /// a duplicate. Base_url is a secondary match so a manually-renamed entry still
-  /// gets reused. Other providers the user set stay intact; the list is created
-  /// when it's absent.
+  /// and makes sure it is the **only** grid in the list.
+  ///
+  /// Ours is matched by the relay it points at, then by provider name
+  /// ([hermesProviderName], the grid id) so a hand-renamed entry is still
+  /// reused rather than duplicated. Every *other* entry pointing at some grid's
+  /// relay ([isGridRelayBase]) is dropped: they are grids the app pointed at
+  /// before, and leaving one behind gives Hermes a second Grid credential to
+  /// rotate onto — with the wrong grid's key for the endpoint it is calling
+  /// (`401 Invalid Grid token: Audience doesn't match`). Providers the user set
+  /// up themselves never match either test and are left exactly as they are.
   void _upsertCustomProvider(
     YamlEditor editor, {
     required String base,
@@ -352,31 +400,54 @@ class ClientAppConfigurator {
       editor.update(['custom_providers'], [entry]);
       return;
     }
-    final normBase = base.replaceFirst(RegExp(r'/+$'), '');
+
+    int? mine;
+    final foreign = <int>[];
     for (var i = 0; i < existing.length; i++) {
       final e = existing[i];
       if (e is! Map) continue;
-      final eBase = '${e['base_url'] ?? ''}'.replaceFirst(RegExp(r'/+$'), '');
-      // Same Grid entry — matched by name, or by the relay it points at → replace
-      // in place so there's only ever one Grid config in the file.
-      if ('${e['name'] ?? ''}' == name || eBase == normBase) {
-        // Key by key rather than `update([..., i], entry)`: replacing a whole
-        // map inside a 4-space-indented list trips a yaml_edit bug (it emits
-        // mis-indented YAML, then asserts it can't re-parse its own output).
-        // Hermes writes this file with 4-space indent, so that path always
-        // blows up when re-pointing an existing Grid entry. Leaf writes are
-        // indent-safe; drop the keys this entry no longer carries first, so a
-        // stale `api_mode`/`provider_key` can't survive the swap.
-        for (final k in e.keys) {
-          if (!entry.containsKey('$k')) {
-            editor.remove(['custom_providers', i, '$k']);
-          }
-        }
-        entry.forEach((k, v) => editor.update(['custom_providers', i, k], v));
-        return;
+      final eBase = '${e['base_url'] ?? ''}';
+      if (sameRelayBase(eBase, base) || '${e['name'] ?? ''}' == name) {
+        mine ??= i;
+        continue;
+      }
+      if (isGridRelayBase(eBase)) foreign.add(i);
+    }
+
+    // Another grid is in the list — rebuild it whole, which is the only way to
+    // remove a list element without the indent bug described below. Foreign
+    // entries are dropped; everything else is carried over verbatim.
+    if (foreign.isNotEmpty) {
+      final rebuilt = <Object>[];
+      for (var i = 0; i < existing.length; i++) {
+        if (foreign.contains(i)) continue;
+        rebuilt.add(
+          i == mine ? entry : _plainYaml(existing[i]) ?? <String, Object>{},
+        );
+      }
+      if (mine == null) rebuilt.add(entry);
+      editor.update(['custom_providers'], rebuilt);
+      return;
+    }
+
+    if (mine == null) {
+      editor.appendToList(['custom_providers'], entry);
+      return;
+    }
+    // Key by key rather than `update([..., i], entry)`: replacing a whole
+    // map inside a 4-space-indented list trips a yaml_edit bug (it emits
+    // mis-indented YAML, then asserts it can't re-parse its own output).
+    // Hermes writes this file with 4-space indent, so that path always
+    // blows up when re-pointing an existing Grid entry. Leaf writes are
+    // indent-safe; drop the keys this entry no longer carries first, so a
+    // stale `api_mode`/`provider_key` can't survive the swap.
+    final current = existing[mine] as Map;
+    for (final k in current.keys) {
+      if (!entry.containsKey('$k')) {
+        editor.remove(['custom_providers', mine, '$k']);
       }
     }
-    editor.appendToList(['custom_providers'], entry);
+    entry.forEach((k, v) => editor.update(['custom_providers', mine!, k], v));
   }
 
   Future<Map<String, dynamic>> _readJsonObject(File file) async {
@@ -413,6 +484,16 @@ class ClientAppConfigurator {
 
   String _reason(Object e) => e is FormatException ? e.message : '$e';
 }
+
+/// A `YamlMap`/`YamlList` as the plain Dart collections `yaml_edit` can write
+/// back out. Needed only when a list is rebuilt whole (see
+/// [ClientAppConfigurator._upsertCustomProvider]): the nodes it hands back carry
+/// their source, and re-wrapping them keeps the values without the anchors.
+Object? _plainYaml(Object? node) => switch (node) {
+  final Map m => {for (final e in m.entries) '${e.key}': _plainYaml(e.value)},
+  final List l => l.map(_plainYaml).toList(),
+  _ => node,
+};
 
 /// The Hermes toolsets the agent needs to do the job this app hands it.
 ///

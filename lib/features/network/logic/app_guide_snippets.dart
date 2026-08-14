@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 
+import '../../../core/relay_identity.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'client_app_detector.dart';
 
@@ -71,11 +72,25 @@ String openClawSnippet(String base, String key, List<String> models) {
       '}';
 }
 
-/// The Hermes `custom_providers` name for a grid — its relay host (e.g.
-/// `grid.autonomous.ai`), so the grid registers as a named provider in Hermes's
-/// model picker. Falls back to the brand host if [base] can't be parsed.
+/// The Hermes `custom_providers` name for a grid — **its grid id**, so the grid
+/// registers as a named provider Hermes can tell apart from the user's other
+/// grids. Falls back to the relay host for an endpoint that names no grid (a LAN
+/// relay), and to the brand host if [base] can't be parsed at all.
+///
+/// The id, not the host, and this is not cosmetic: every grid on a deployment
+/// shares one host, while Hermes keys its credential pool by this name
+/// (`custom:<name>`, `agent/credential_pool.py`). Naming by host filed every
+/// grid the user belongs to under one identity, so a credential minted for one
+/// could be handed to another's endpoint — which the relay rejects with
+/// `401 Invalid Grid token: Audience doesn't match`. See [relayIdentityDoc].
 String hermesProviderName(String base) =>
-    Uri.tryParse(base)?.host ?? 'grid.autonomous.ai';
+    gridIdFromRelayBase(base) ??
+    Uri.tryParse(base)?.host ??
+    'grid.autonomous.ai';
+
+/// Pointer to where the grid-identity rules are written down, so the name above
+/// doesn't get "simplified" back to a host by the next reader.
+const String relayIdentityDoc = 'core/relay_identity.dart';
 
 /// The `~/.hermes/config.yaml` blocks that point Hermes at a grid: the active
 /// `model:` selection (`base_url`/`api_key`, the `default` model, and a
