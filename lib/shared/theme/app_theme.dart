@@ -928,6 +928,15 @@ abstract final class AppControl {
   /// louder tells that a desktop app was drawn to phone conventions.
   static const double menuRadius = 6;
 
+  /// The air between a menu panel and the control it hangs off.
+  ///
+  /// One number for every menu in the app, in both directions: a downward menu
+  /// passes `Offset(0, menuGap)`, an upward one `Offset(0, -menuGap)`. It was
+  /// three numbers before — 6 nearly everywhere, 8 on the composer's agent and
+  /// approval pills, and none at all on its model pill, so the three menus that
+  /// open off the *same* toolbar each sat at a different height.
+  static const double menuGap = 6;
+
   /// The tallest a menu panel ever draws, whatever it lists — `appMenuStyle`
   /// caps every menu here.
   ///

@@ -16,7 +16,10 @@ Offset anchoredMenuPosition(
   BuildContext context, {
   required Size menuSize,
   double margin = 12,
-  double gap = 8,
+  // Every one of the ten callers passed `gap: 6` to override the 8 that used
+  // to sit here, so the default was a number nobody wanted and the next
+  // caller would have inherited it silently. One token — [AppControl.menuGap].
+  double gap = AppControl.menuGap,
   bool alignEnd = false,
   bool preferAbove = false,
   double maxHeight = AppControl.menuMaxHeight,
@@ -60,7 +63,10 @@ Offset anchoredMenuOffset({
   required Size overlaySize,
   required Size menuSize,
   double margin = 12,
-  double gap = 8,
+  // Every one of the ten callers passed `gap: 6` to override the 8 that used
+  // to sit here, so the default was a number nobody wanted and the next
+  // caller would have inherited it silently. One token — [AppControl.menuGap].
+  double gap = AppControl.menuGap,
   bool alignEnd = false,
   bool preferAbove = false,
   double maxHeight = AppControl.menuMaxHeight,

@@ -190,12 +190,6 @@ class _ReplyFooter extends StatelessWidget {
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          Icons.auto_awesome_outlined,
-          size: 12,
-          color: AppPalette.textFaint,
-        ),
-        const SizedBox(width: 5),
         // The names can ellipsis; the times can't. A long model id or machine
         // name on a narrow window has to give way to the numbers, not swallow
         // them — and they give way together, so the line never breaks mid-`·`.

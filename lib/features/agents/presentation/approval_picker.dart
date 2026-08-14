@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/composer_trigger.dart';
+import '../../../shared/widgets/labeled_field.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
 ///
@@ -62,7 +63,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
 
   @override
   Widget build(BuildContext context) {
-    // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
+    // `appMenuStyle` reads palette tokens; follow theme flips.
     AppTheme.watch(context);
     final current = widget.value;
     return MenuAnchor(
@@ -72,18 +73,11 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
       // menu existed, and the rows are detail-text tall — they wrap differently
       // per row, per theme and per window width, so every guess was wrong: too
       // short dropped the menu onto the pill, too tall floated it far above.
-      alignmentOffset: const Offset(0, -8),
-      style: MenuStyle(
+      alignmentOffset: const Offset(0, -AppControl.menuGap),
+      // The shared recipe — see the same note on the agent pill beside this one.
+      // Only the upward alignment is ours.
+      style: appMenuStyle().copyWith(
         alignment: Alignment.topLeft,
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 6),
-        ),
-        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(8),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
       ),
       menuChildren: [
         const SizedBox(width: _menuWidth, child: _MenuHeading()),

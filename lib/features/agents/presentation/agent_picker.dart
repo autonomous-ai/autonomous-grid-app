@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/composer_trigger.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../chat/logic/chat_scope.dart';
 import '../logic/active_chat_agent.dart';
 import '../logic/agent_catalog.dart';
@@ -89,7 +90,7 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
 
   @override
   Widget build(BuildContext context) {
-    // The anchor's MenuStyle reads a token (cardBg); follow theme flips.
+    // `appMenuStyle` reads palette tokens; follow theme flips.
     AppTheme.watch(context);
     final active = ref.watch(activeChatAgentProvider);
     final autoChosen = ref.watch(isAutoAgentChosenProvider);
@@ -107,18 +108,15 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     final project = ref.watch(openChatProjectProvider);
     return MenuAnchor(
       controller: _menu,
-      alignmentOffset: const Offset(0, -8),
-      style: MenuStyle(
+      // Upward, so the gap is negative — see [AppControl.menuGap].
+      alignmentOffset: const Offset(0, -AppControl.menuGap),
+      // The shared recipe, not a hand-rolled one. This carried its own
+      // `AppPalette.cardBg` at elevation 8 / radius 14: cardBg is picked to be
+      // read *on the page*, so as a panel floating over the composer it had no
+      // edge, and its lift disagreed with every other menu in the app. Only the
+      // upward alignment is ours — everything else is `appMenuStyle`.
+      style: appMenuStyle().copyWith(
         alignment: Alignment.topLeft,
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 6),
-        ),
-        backgroundColor: WidgetStatePropertyAll(AppPalette.cardBg),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(8),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
       ),
       menuChildren: [
         if (offerAuto) _AutoItem(selected: autoChosen, onTap: _selectAuto),
