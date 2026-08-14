@@ -121,14 +121,21 @@ are **deliberate** — don't "fix" them back.
   left to copy from either: the last 21 files went on 2026-08-11, and the pure
   functions a few of them also covered moved to files named after what they test.
   `grep -rl 'testWidgets\|pumpWidget\|WidgetTester' test` must stay empty.
-- **Only the grid and the agents are tested.** `test/` holds exactly these areas and
-  no others: `agent`, `agents`, `network`, `chat`, `playground`, `connectors`,
-  `skills`, `scheduled`, `mcp`, `models`, `node_setup`, `provider`, `provider_node`,
-  `auto_router`. Everything else went on 2026-08-11 (~700 tests: review, projects,
-  onboarding, messaging, terminal, prompts, appearance, layouts, logging, core, and
-  the CLI/credentials/store/wire-parse plumbing under `cli`, `auth`, `state`, `api`,
-  `infrastructure`). Don't add a folder back — if a change outside these areas needs
-  proving, prove it by running the app.
+- **Only the grid, the agents, and wire formats are tested.** `test/` holds exactly
+  these areas and no others: `agent`, `agents`, `network`, `chat`, `code`,
+  `playground`, `connectors`, `skills`, `scheduled`, `mcp`, `models`, `node_setup`,
+  `panel`, `provider`, `provider_node`, `auto_router`. Everything else went on
+  2026-08-11 (~700 tests: review, projects, onboarding, messaging, terminal, prompts,
+  appearance, layouts, logging, core, and the CLI/credentials/store/wire-parse
+  plumbing under `cli`, `auth`, `state`, `api`, `infrastructure`). Don't add a folder
+  back — if a change outside these areas needs proving, prove it by running the app.
+  **The one thing that earns a new folder is a byte format we have to agree on with
+  something outside this repo**, which is why `panel` exists (2026-08-13, the USB
+  framing shared with `device/esp32-square`). The reason §8 cuts tests is that UI
+  rots faster than tests catch it; a codec is the opposite — it never rots, it is
+  pure, and it fails as a desync three layers away from the mistake, which running
+  the app diagnoses very badly. Adding an area is still a decision to argue for
+  here, not a habit.
   **TODO(BE): that cut is not free**, and it took real guards with it —
   `GridCliService`'s argv and logging, `credentials.toml` parsing, `GridHomeStore`,
   and `GridOverview.fromJson` are now checked by nobody. Those are exactly the
@@ -165,8 +172,14 @@ are **deliberate** — don't "fix" them back.
 
 ## 10. Tooling & git
 
-- Flutter SDK isn't on the default `PATH` here:
-  `export PATH="$HOME/WorkPlace/Flutter/flutter/bin:$PATH"`.
+- **The SDK floor is real and `pubspec.yaml` is the only place that states it**
+  (currently Dart `^3.10.0`). CI pins nothing but `channel: stable`, so the target is
+  simply *current stable*. Check with `dart --version` before blaming your code: a
+  too-old SDK fails at `pub get` with a version-solving error that never mentions
+  Flutter, and `flutter upgrade` is usually the whole fix.
+  This line used to hardcode one machine's SDK path. It was wrong on the next machine
+  someone worked from, which meant `which flutter` quietly kept resolving to an
+  ancient copy while the doc insisted otherwise — so locate yours, don't copy a path.
 - `dart format` (80-col) + `dart fix`; lints from `flutter_lints`.
 - Commits: imperative summary. An AI agent adds its own `Co-Authored-By:` trailer —
   each tool's root pointer file says which.
