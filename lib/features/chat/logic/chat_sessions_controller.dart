@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'turn_model_usage.dart';
 import '../../../core/text_preview.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/cli/agent_event.dart';

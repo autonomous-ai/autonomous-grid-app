@@ -1,3 +1,4 @@
+import 'turn_model_share.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import 'chat_goal.dart';
@@ -306,6 +307,10 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   if (message.agent != null) 'agent': message.agent,
   if (message.model != null) 'model': message.model,
   if (message.node != null) 'node': message.node,
+  // Persisted so a transcript re-read next week still says what served the turn
+  // — the same reason `node` is written down rather than re-derived.
+  if (message.modelShares.isNotEmpty)
+    'model_shares': [for (final s in message.modelShares) s.toJson()],
   // Milliseconds, not a formatted string: the transcript re-renders it in
   // whatever shape the footer wants today, and a saved "8.4s" couldn't.
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
@@ -356,6 +361,9 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
     agent: json['agent'] is String ? json['agent'] as String : null,
     model: json['model'] is String ? json['model'] as String : null,
     node: json['node'] is String ? json['node'] as String : null,
+    modelShares: json['model_shares'] is List
+        ? [for (final row in json['model_shares'] as List) ?ModelShare.fromJson(row)]
+        : const [],
     took: json['took_ms'] is num
         ? Duration(milliseconds: (json['took_ms'] as num).toInt())
         : null,

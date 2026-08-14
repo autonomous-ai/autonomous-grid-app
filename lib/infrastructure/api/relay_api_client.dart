@@ -3,10 +3,12 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/chat/logic/turn_model_share.dart';
 import 'models/grid_overview.dart';
 
-/// The relay's read APIs the app polls for a grid: the OpenAI-style model list
-/// and the richer grid overview.
+/// The relay's read APIs the app polls for a grid: the OpenAI-style model list,
+/// the richer grid overview, and which models actually served a window of
+/// requests.
 ///
 /// A seam (interface + [HttpRelayApiClient]) so the providers that consume it
 /// can be unit-tested against a fake instead of a live relay — mirroring how the
@@ -26,6 +28,21 @@ abstract interface class RelayApiClient {
   Future<GridOverview> overview({
     required String baseUrl,
     required String apiKey,
+  });
+
+  /// `GET {baseUrl}/usage?since=&until=` → which models served this consumer's
+  /// requests in the window, and how many each.
+  ///
+  /// The only way to learn what an `auto` turn actually ran on: the agent CLI
+  /// makes the relay calls, so the app never sees their responses. Throws
+  /// [RelayUnavailable] like the others — including **404 on a grid whose master
+  /// predates the endpoint**, which is the common case while the fleet is mid
+  /// rollout and must read as "no data", never as an error the user sees.
+  Future<List<ModelShare>> usage({
+    required String baseUrl,
+    required String apiKey,
+    required DateTime since,
+    DateTime? until,
   });
 }
 
@@ -85,6 +102,33 @@ class HttpRelayApiClient implements RelayApiClient {
     final decoded = jsonDecode(body);
     if (decoded is! Map) throw const RelayUnavailable();
     return GridOverview.fromJson(decoded.cast<String, dynamic>());
+  }
+
+  @override
+  Future<List<ModelShare>> usage({
+    required String baseUrl,
+    required String apiKey,
+    required DateTime since,
+    DateTime? until,
+  }) async {
+    final query = {
+      'since': '${since.toUtc().millisecondsSinceEpoch ~/ 1000}',
+      if (until != null) 'until': '${until.toUtc().millisecondsSinceEpoch ~/ 1000}',
+    };
+    final body = await _get(
+      Uri.parse('$baseUrl/usage').replace(queryParameters: query),
+      apiKey,
+      // Tighter than the overview's: this runs on a timer while a turn is open,
+      // and a caption that is late is worth less than one that never blocks.
+      connect: const Duration(seconds: 2),
+      request: const Duration(seconds: 3),
+      response: const Duration(seconds: 4),
+    );
+    final decoded = jsonDecode(body);
+    if (decoded is! Map || decoded['models'] is! List) return const [];
+    return [
+      for (final row in decoded['models'] as List) ?ModelShare.fromJson(row),
+    ];
   }
 
   /// Shared GET: bearer auth, per-stage timeouts, 2xx-or-throw, always closes the

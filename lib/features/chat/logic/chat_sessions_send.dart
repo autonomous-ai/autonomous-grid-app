@@ -291,6 +291,12 @@ mixin _ChatSend on _ChatSessions {
       model,
     );
 
+    // Which models actually answer this turn — the grid is the only party that
+    // knows, since the agent makes its own relay calls and only ever knows the
+    // name it was handed (`auto`, or a tier alias). Watched from here so the
+    // working bubble can show it changing while a long task runs.
+    ref.read(turnModelUsageProvider.notifier).begin(id, network);
+
     // Who answered, with what, where, and how long it took — the footer's four
     // facts, stamped onto whatever the turn produced (a whole reply, or the
     // part-answer a failure left behind).
@@ -306,6 +312,9 @@ mixin _ChatSend on _ChatSessions {
       agent: viaAgent ? agent.id : null,
       model: model,
       node: node,
+      // What has been polled so far. The final reading lands a moment later and
+      // patches this message — see `_settleModelShares`.
+      modelShares: ref.read(turnModelUsageProvider)[id] ?? const [],
       took: clock.elapsed,
       firstToken: firstToken,
     );
@@ -377,6 +386,11 @@ mixin _ChatSend on _ChatSessions {
                 seen: messages.length,
               ),
             );
+            // The last reading of what served this turn. Fired rather than
+            // awaited: a caption is not worth holding the answer back for, so
+            // the bubble shows what was polled and this corrects it a moment
+            // later.
+            unawaited(_settleModelShares(id, network, messages.length - 1));
             // A planning turn's reply is a plan waiting on approval — light the
             // "approve & run" bar for this chat. Any other reply leaves it dark.
             // Does not steal focus: a reply landing in a background chat leaves
@@ -588,6 +602,36 @@ mixin _ChatSend on _ChatSessions {
         ],
       ),
       phase: const SendIdle(),
+    );
+  }
+
+  /// Take the final reading of which models served [chat]'s turn and write it
+  /// onto the message at [index].
+  ///
+  /// Separate from the stamp because the stamp cannot wait: the reply is already
+  /// on screen, and the last poll may still be a few seconds behind the turn's
+  /// closing requests. A read that fails, a grid that answers 404 (its master
+  /// predating the endpoint), or a chat deleted meanwhile all leave the stamped
+  /// value alone — this only ever corrects upward, never blanks.
+  Future<void> _settleModelShares(
+    String chat,
+    NetworkCredential network,
+    int index,
+  ) async {
+    final shares = await ref
+        .read(turnModelUsageProvider.notifier)
+        .end(chat, network);
+    if (shares.isEmpty) return;
+    final current = _find(chat);
+    if (current == null || index < 0 || index >= current.messages.length) return;
+    final messages = [...current.messages];
+    messages[index] = messages[index].copyWith(modelShares: shares);
+    // Whatever the chat is doing now, not an assumed idle: the user may already
+    // have asked the next question, and a correction to the last turn's caption
+    // must not knock that turn's "answering" state off the screen.
+    _commit(
+      current.copyWith(messages: messages),
+      phase: state.phaseFor(chat),
     );
   }
 }
