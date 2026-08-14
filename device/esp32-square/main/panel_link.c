@@ -140,6 +140,13 @@ bool panel_link_send(uint8_t type, const uint8_t *payload, size_t payload_len)
     return false;
 }
 
+bool panel_link_host_present(void)
+{
+    // Guarded on s_running because the driver call is undefined before install, and "no driver" is
+    // indistinguishable from "no host" to everything above: both mean nothing can be said on this port.
+    return s_running && usb_serial_jtag_is_connected();
+}
+
 void panel_link_counters(uint32_t *corrupt_frames, uint32_t *discarded_bytes)
 {
     if (corrupt_frames)  *corrupt_frames  = s_decoder.corrupt_frames;

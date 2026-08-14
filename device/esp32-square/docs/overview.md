@@ -124,7 +124,13 @@ labels are not.
 Built and tested: the framing codec on both sides, the message layer in Dart, and a manual probe
 that drives a real device with no Flutter, no Xcode and no app build.
 
-Not built: the firmware application, the grid-app service, and voice.
+Built but not yet seen working end to end: the firmware's message layer (`main/panel_client.c`) and
+the tile screens (`main/ui/ui_screens.c`) — handshake, project tiles, turn events and Stop. They
+compile and the board runs the build; what nobody has watched yet is a real grid-app on the other
+end of the cable, and the touch orientation the carousel swipe depends on is still unverified
+(`hardware.md`).
+
+Not built: the grid-app service, and voice.
 
 The intended order, and the reasoning for it:
 

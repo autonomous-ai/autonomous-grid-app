@@ -274,6 +274,18 @@ static void run_stream_cases(void)
     panel_decoder_feed(&d, buf + 5, (size_t)n - 5, on_frame, &got);
     ok("reset drops a half-frame so a reopened port starts clean",
        got.count == 0);
+
+    // The counters are a TREND, not a tally: a link that reconnects often is
+    // exactly the one worth measuring, and zeroing on every reconnect erases
+    // the history that separates "the bootloader said hello again" from "these
+    // two disagree about the format".
+    panel_decoder_init(&d);
+    memset(&got, 0, sizeof(got));
+    panel_decoder_feed(&d, (const uint8_t *)"rst:0x1 noise", 13, on_frame, &got);
+    const uint32_t discarded = d.discarded_bytes;
+    panel_decoder_reset(&d);
+    ok("reset keeps the counters, because they are a trend not a tally",
+       discarded > 0 && d.discarded_bytes == discarded);
     panel_decoder_feed(&d, buf, (size_t)n, on_frame, &got);
     ok("and the next whole frame still decodes", got.count == 1);
 }

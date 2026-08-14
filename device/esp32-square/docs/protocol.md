@@ -160,6 +160,27 @@ message.** An agent says a sentence, runs a command, reads the result, says the 
 sending steps as separate events would make the panel reassemble that sequence itself and get it
 wrong the first time one was dropped or arrived late.
 
+**`status` is one of exactly four values**, and the fourth is the one that bites:
+
+| | |
+|---|---|
+| `running` | in flight |
+| `done` | finished |
+| `failed` | finished badly |
+| `unknown` | **the turn ended without this step ever reporting** |
+
+`unknown` is what a step settles to when Stop is pressed mid-command, or the agent's process dies,
+or the stream breaks. A reader that treats an unrecognised status as `running` leaves a spinner
+turning forever on a turn that ended — so **treat anything you do not recognise as finished, never
+as running.**
+
+**Caps.** The sender bounds this message, because §1 says an over-long frame is *refused* rather
+than truncated. Today the app sends at most **12 parts**, each clipped to **200 characters**, and
+then drops oldest-first until the encoded frame fits 8192 bytes — a character cap is an average,
+not a bound, since 200 characters of CJK is three times the bytes of 200 characters of English. A
+reader should not assume the list is complete: it is the tail of the turn, which is what a live
+tile wants anyway.
+
 Sent **whole on every change, not as a delta** — the app's `AgentRun` is replaced wholesale
 upstream and a step mutates in place as it finishes, so there is no append-only stream underneath
 to mirror.
@@ -178,6 +199,20 @@ frame budget on characters this screen cannot show.
 Deliberately thin. The panel draws a name, a state and one line of recap; a project in the app also
 has instructions, memory and a workspace path, and none of that belongs on a tile. `agent`, `model`
 and `recap` are omitted rather than sent as null when absent.
+
+### Turn messages are unsolicited
+
+`turn.*` is **not** a reply to `turn.send`. The app pushes turn state for every turn in every
+project it has told the panel about — including turns started at the desktop keyboard, which the
+panel never asked for and is simply reporting. A reader that only expects them after its own
+`turn.send` will sit idle through most of what the machine actually does.
+
+Two consequences worth handling rather than discovering:
+
+- `turn.done` or `turn.error` can arrive for a project the panel does not think is running — after
+  a panel reboot mid-turn, for instance. Treat it as "that project is idle now", not as an error.
+- `turn.done.recap` may be the empty string: a turn can be stopped before the assistant says
+  anything. Unlike the project shape, where an absent field is omitted, this key is always present.
 
 ### Handshake
 

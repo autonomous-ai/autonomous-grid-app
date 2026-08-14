@@ -281,6 +281,11 @@ static void panel_bringup(void)
         .num_fbs = 1,                  // ONE frame buffer. Two would remove tearing outright but costs
                                        // another 450 KB of PSRAM and doubles the scan-out bandwidth
                                        // pressure; revisit only if tearing turns out to be real.
+                                       //
+                                       // Briefly set to 2 while chasing a stuttering swipe, then put
+                                       // back: the reference firmware swipes smoothly on this same board
+                                       // with ONE buffer and a byte-identical display.c, so the cost was
+                                       // being paid to cover something this file does not cause.
         // NO BOUNCE BUFFERS. The DMA reads the PSRAM frame buffer directly.
         //
         // This started at 480*20 px because Waveshare's BSP defaults to a 20-line bounce buffer, and it

@@ -7,6 +7,7 @@
 // The boot flow is short, and it is short on purpose:
 //
 //   BOOT ─▶ display (I2C → expander → panel reset → RGB → ST7701 → LVGL) ─▶ "Not connected" ─▶ USB link
+//                                                                                              ─▶ hello ─▶ tiles
 //
 // There is NO WiFi here, no provisioning portal, no pairing, no reconnect ladder, and none of that is
 // missing work — it was removed from the design. This panel only ever talks to the one computer it is
@@ -22,6 +23,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "panel_client.h"
 #include "panel_frame.h"
 #include "panel_link.h"
 #include "power.h"
@@ -31,28 +33,9 @@
 
 static const char *TAG = "app";
 
-// Reported to grid-app in the `hello` message once the message layer exists, and printed at boot so a
-// device on someone's desk can be identified from its console alone.
-#define PANEL_FW_VERSION "0.1.0"
-
 // How often the RAM/stack line goes out. Slow: it is a trend instrument, not an alarm, and the interesting
 // number in it is the one that drifts over hours.
 #define TELEMETRY_PERIOD_MS 60000
-
-// Every frame that arrives, until there is a message layer to hand them to.
-//
-// Runs on the link task with the payload pointing into the decoder's buffer — valid for this call only.
-// Logging is the entire body deliberately: a stub that quietly drops frames looks identical to a link
-// that is not receiving, and telling those apart is the first thing anyone bringing this up will need.
-static void on_frame(uint8_t version, uint8_t type, const uint8_t *payload, size_t payload_len, void *ctx)
-{
-    (void)payload;
-    (void)ctx;
-    // An unknown type is NOT an error at this layer — it is handed up with its raw byte so that a
-    // grid-app running ahead of this firmware reads as a version mismatch someone can act on, rather
-    // than as a link that connects and then goes quiet.
-    ESP_LOGI(TAG, "frame: ver=%u type=0x%02X len=%u", version, type, (unsigned)payload_len);
-}
 
 void app_main(void)
 {
@@ -82,9 +65,13 @@ void app_main(void)
     // PMIC's fault — which is worth stating, because a dark panel makes it look guilty.
     power_init();
 
-    // Last: the USB link. Deliberately after the screen, so the panel is already showing "Not connected"
-    // if this fails — the failure and its report are then the same picture.
-    if (!panel_link_start(on_frame, NULL)) {
+    // Last: the link and the conversation on it. Deliberately after the screen, so the panel is already
+    // showing "Not connected" if this fails — the failure and its report are then the same picture.
+    //
+    // panel_client owns the whole of it: it starts panel_link with its own frame handler, says hello
+    // until grid-app answers, and pushes what comes back into the screens. Nothing above it has to know
+    // there is a USB port involved.
+    if (!panel_client_start()) {
         ESP_LOGE(TAG, "no usb link — the panel will show 'Not connected' and stay there");
     }
     ram_telemetry_checkpoint("link_ready");
@@ -97,12 +84,20 @@ void app_main(void)
     // boot are the ROM and bootloader's parting words on this port and are expected; a steady trickle
     // during a session means the two sides disagree about the format, or the cable is bad. Without a
     // count over time those two look exactly alike.
+    //
+    // The message-layer counters are on the same line and are read the same way, but they mean different
+    // things from each other: `bad` is a payload that was not readable JSON — corruption, or a bug on
+    // one side — while `unknown` is a message this build simply has no case for, which is a grid-app
+    // running ahead of this firmware and is not a fault at all.
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(TELEMETRY_PERIOD_MS));
-        uint32_t corrupt = 0, discarded = 0;
+        uint32_t corrupt = 0, discarded = 0, bad = 0, unknown = 0;
         panel_link_counters(&corrupt, &discarded);
-        ESP_LOGI(TAG, "link: corrupt_frames=%u discarded_bytes=%u vsync=%u",
-                 (unsigned)corrupt, (unsigned)discarded, (unsigned)display_vsync_count());
+        panel_client_counters(&bad, &unknown);
+        ESP_LOGI(TAG, "link: %s corrupt_frames=%u discarded_bytes=%u bad_msgs=%u unknown_msgs=%u vsync=%u",
+                 panel_client_is_connected() ? "connected" : "not connected",
+                 (unsigned)corrupt, (unsigned)discarded, (unsigned)bad, (unsigned)unknown,
+                 (unsigned)display_vsync_count());
         ram_telemetry_periodic("idle");
     }
 }

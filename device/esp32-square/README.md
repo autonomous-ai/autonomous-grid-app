@@ -43,6 +43,7 @@ logs the panel's real refresh rate ~2 s in; that line is the first thing to look
 
 ```
 main/          app_main.c (boot flow) · panel_frame.{c,h} (codec) · panel_link.{c,h} (USB transport)
+               panel_client.{c,h} (the message layer: handshake, projects, turn events, stop)
 main/board/    pins, I2C, TCA9554 expander, AXP2101 — lifted from the reference firmware
 main/ui/       display (ST7701+LVGL), touch (GT911), screens, fonts, icons
 scripts/       gen_vectors.py (shared test vectors) · test_frame.sh (host test)

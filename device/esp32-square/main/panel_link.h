@@ -55,6 +55,19 @@ bool panel_link_start(panel_frame_cb cb, void *ctx);
 // costs one message rather than the link.
 bool panel_link_send(uint8_t type, const uint8_t *payload, size_t payload_len);
 
+// Whether a USB HOST is currently driving this port.
+//
+// NOT the same question as "is grid-app talking to me", and the difference is the whole reason this is
+// documented rather than inlined at the call site. The driver answers from USB frame activity, so it is
+// true whenever the cable is in a running computer — including one with grid-app closed, which is where
+// this device spends most of its life.
+//
+// It is therefore useful for exactly one thing: noticing that the cable left, or that the machine went
+// to sleep. The layer above uses it as the end of a session. A session that ends because the APP quit
+// with the cable still in is invisible here, and the protocol carries no heartbeat to see it with
+// (docs/protocol.md §2) — see the hello cadence in panel_client.c for what stands in.
+bool panel_link_host_present(void);
+
 // Framing health. The RATE is the diagnosis, not the totals: a handful of discarded bytes right after
 // boot is the bootloader's parting words and is expected, while a steady trickle during a session means
 // the two sides disagree about the format or the cable is bad. Without a count those look identical.

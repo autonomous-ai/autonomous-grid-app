@@ -48,7 +48,13 @@ void panel_decoder_init(panel_decoder_t *d)
 
 void panel_decoder_reset(panel_decoder_t *d)
 {
-    panel_decoder_init(d);
+    // Only the partial frame goes. The counters deliberately survive: they exist
+    // to show a TREND — a few discarded bytes at every boot is the bootloader
+    // and is expected, a steady trickle means the two sides disagree about the
+    // format or the cable is bad. Delegating to panel_decoder_init() (which this
+    // did) zeroed them on every reconnect, erasing exactly the history that
+    // tells those apart, on precisely the link worth measuring.
+    d->len = 0;
 }
 
 // Take `count` bytes off the front, keeping the rest. Says nothing about why.

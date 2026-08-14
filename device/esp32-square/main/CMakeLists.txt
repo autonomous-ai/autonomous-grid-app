@@ -6,6 +6,7 @@
 idf_component_register(
     SRCS
         "app_main.c"
+        "panel_client.c"
         "panel_frame.c"
         "panel_link.c"
         "ram_telemetry.c"

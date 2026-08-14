@@ -79,6 +79,29 @@ This makes identification nearly free: filter the USB tree for `303a:1001` and r
 number, and the app knows *which* panel is attached before exchanging a byte. No device id to
 invent, no handshake needed to answer "is this the same panel as last time".
 
+### The bring-up chain works, first flash
+
+Measured 2026-08-14: this firmware was flashed and **the panel lit and drew its screen**. That one
+observation confirms the whole inherited chain below at once — the I2C → TCA9554 → panel reset →
+RGB order, the expander constants being used as bitmasks, the ST7701 taking its init over the
+bit-banged 3-wire SPI, and the backlight being **active-low with no hardware PWM**. Each of those
+fails silently and independently, so a lit screen is the only cheap proof that none of them did.
+
+The boot also confirmed the console split. Reading the native port right after reset returned
+**64 bytes and then nothing**:
+
+```
+I (101) esp_image: segment 0: paddr=00020020 vaddr=3c080020 size
+```
+
+That is the second-stage bootloader printing before the app can disable anything — the residue
+described above — followed by silence once the app owns the port. Which is exactly what
+`CONFIG_ESP_CONSOLE_SECONDARY_NONE=y` is supposed to buy, and it is now observed rather than
+assumed.
+
+Still unverified after this flash: **touch orientation** (`swap_xy` / `mirror_x` / `mirror_y` are
+deliberately neutral until someone drags a finger across the real glass) and the I2S pin roles.
+
 ### Headroom
 
 From the telemetry line above, on the reference firmware with everything running:
