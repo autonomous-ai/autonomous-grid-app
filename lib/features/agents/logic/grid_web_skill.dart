@@ -56,13 +56,7 @@ String gridWebSkillMd({
     '''
 ---
 name: $kGridWebSkillName
-description: Search the web and read pages for current, live, or online information — news, recent events, prices, today's facts, a specific article or post, anything past your training. Use whenever the user asks about what's happening now, the latest, to look something up online, or to read a page or link.
-tags: [web-search, news, read, grid]
-triggers:
-  - user asks for news / the latest / current events / today / recent
-  - user asks to look up, search, or find something online
-  - user gives a URL or asks you to read / open a page, article, or post
-  - "tin tức", "tìm trên mạng", "đọc bài", "search the web", "read this", "what's the latest"
+description: Search the web and read pages for current, live, or online information — news, recent events, prices, today's facts, a specific article or post, anything past your training. Use whenever the user asks about what's happening now, the latest, to look something up or find something online, or when they give you a URL or ask you to read or open a page, article or post. "the news", "look it up online", "read this article", "search the web", "read this", "what's the latest".
 ---
 
 # Search and read the web

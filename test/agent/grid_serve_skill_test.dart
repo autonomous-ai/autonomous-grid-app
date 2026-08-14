@@ -29,9 +29,27 @@ void main() {
       expect(md, contains('server'));
       expect(md, contains('localhost'));
       expect(md, contains('stop'));
-      // Vietnamese phrasings ride in the trigger list, since the user asks in
-      // Vietnamese and the frontmatter is all the agent matches against.
-      expect(md, contains('chạy server'));
+      // "Run the app", not only "start a server": the user who lost an
+      // afternoon to this asked for an Electron app to be run, and a
+      // description that only said "server" is one an agent can read past.
+      expect(md, contains('run the app'));
+      expect(md, contains('desktop app'));
+    });
+
+    test('the front matter carries name and description and nothing else — '
+        'Codex drops a skill whose front matter has a key it does not '
+        'know, and says nothing', () {
+      // What that cost: this card shipped with `tags:` and `triggers:`, so it
+      // was missing from the skill list Codex shows the model for ten days,
+      // while a user spent an afternoon on the exact bug it prevents.
+      final front = card().split('---')[1].trim().split('\n');
+      final keys = [
+        for (final line in front)
+          if (!line.startsWith(' ') && line.contains(':'))
+            line.split(':').first,
+      ];
+
+      expect(keys, ['name', 'description']);
     });
 
     test('it names the trap first: a server started with nohup looks alive and '

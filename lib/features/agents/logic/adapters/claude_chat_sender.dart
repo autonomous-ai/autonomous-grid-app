@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/claude_exec_event.dart';
 import '../../../../infrastructure/cli/claude_exec_service.dart';
 import '../../../../infrastructure/cli/chrome_bridge_service.dart';
@@ -18,6 +19,7 @@ import '../../../network/logic/app_guide_snippets.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
+import '../agent_catalog.dart';
 import '../agent_changes.dart';
 import '../agent_prompt.dart';
 import '../agent_providers.dart';
@@ -76,6 +78,19 @@ class ClaudeChatSender implements ChatSender {
 
   final _slots = AgentSessionSlots();
 
+  /// [resume] when it is a Claude Code session opened in [root], else null.
+  ///
+  /// The id alone is not enough to act on. `claude --resume` takes any id it is
+  /// handed, so a Codex id fails and — worse — the *right* id in the wrong
+  /// folder succeeds, carrying on a conversation about files this turn isn't
+  /// looking at.
+  static AgentResumePoint? _adoptable(AgentResumePoint? resume, String root) {
+    if (resume == null) return null;
+    return resume.matches(thisAgent: AgentTool.claude.id, thisWorkdir: root)
+        ? resume
+        : null;
+  }
+
   @override
   Stream<ChatSendUpdate> send({
     required NetworkCredential network,
@@ -91,6 +106,7 @@ class ClaudeChatSender implements ChatSender {
     // Claude Code is driven one-shot per turn; the app has no channel to
     // answer a permission prompt on, so nothing here can constrain it.
     AgentApprovalMode? approval,
+    AgentResumePoint? resume,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
@@ -117,6 +133,11 @@ class ClaudeChatSender implements ChatSender {
       key: '${network.networkId}|$model|$conversationId|$root',
       conversationId: conversationId,
       history: history,
+      // Only a point this agent wrote, for the folder this turn runs in. A
+      // Codex session id means nothing to `claude --resume`, and a session
+      // resumed outside its own folder carries on editing files that aren't
+      // the ones now open.
+      adopt: _adoptable(resume, root),
     );
     final prompt = planFirst ? withPlanPreamble(turn.text) : turn.text;
 
@@ -428,6 +449,9 @@ class ClaudeChatSender implements ChatSender {
         );
 
     final answer = StringBuffer();
+    // The answer up to its last finished block — where the turn may be divided.
+    // See [ClaudeMessageEvent.settled].
+    var settledText = '';
     final updates = StreamController<ChatSendUpdate>();
     // What each file Claude is about to write held beforehand, so a landed write
     // can be shown as a real before/after and undone. Captured from the tool
@@ -448,7 +472,14 @@ class ClaudeChatSender implements ChatSender {
             if (chrome) _checkBrowserServer(statuses);
           case ClaudeActivityEvent(:final activity):
             if (isAgentWork(activity)) workedAtAll = true;
-            runs.upsertStep(chat, activity);
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            //
+            // The *settled* text, not the streaming one: a step — a sub-agent's,
+            // usually — can arrive between two deltas of a sentence Claude is
+            // still typing, and dividing the turn there would split that
+            // sentence around it.
+            runs.upsertStep(chat, activity, answer: settledText);
           case ClaudePlanEvent(:final entries):
             runs.setPlan(chat, entries);
           case ClaudeFileWriteStarted(:final path):
@@ -462,10 +493,11 @@ class ClaudeChatSender implements ChatSender {
           // many times and the last call is where the session actually stands.
           case ClaudeContextUsed(:final tokens):
             slot.usedTokens = tokens;
-          case ClaudeMessageEvent(:final text):
+          case ClaudeMessageEvent(:final text, settled: final blocks):
             answer
               ..clear()
               ..write(text);
+            settledText = blocks;
             updates.add(ChatSendStreaming(text));
           case ClaudeTurnFailed(:final message):
             failure = friendlyClaudeError(message);

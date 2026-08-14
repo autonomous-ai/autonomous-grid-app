@@ -1,3 +1,4 @@
+import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../playground/logic/chat_message.dart';
 import 'agent_prompt.dart';
 import 'agent_providers.dart';
@@ -72,10 +73,19 @@ class AgentSessionSlots {
   /// Decide between resuming this conversation's session and starting fresh.
   ///
   /// [key] is what makes two turns the same session — see [AgentSessionSlot.key].
+  ///
+  /// [adopt] is a session written down beside the conversation, for the case
+  /// this class could never answer on its own: there is nothing in memory,
+  /// because the app has only just started — or because the chat was imported
+  /// from the tool that opened the session in the first place. The caller has
+  /// already checked it belongs to this agent and this folder
+  /// ([AgentResumePoint.matches]); what is decided here is only whether it
+  /// still fits the transcript.
   AgentTurnPlan planTurn({
     required String key,
     required String? conversationId,
     required List<ChatMessage> history,
+    AgentResumePoint? adopt,
   }) {
     // A conversation gets one slot; the key still decides whether what's in it
     // can be resumed.
@@ -102,10 +112,42 @@ class AgentSessionSlots {
       );
     }
 
-    _live.remove(id);
-    while (_live.length >= kMaxLiveAgentSessions) {
-      _live.remove(_live.keys.first);
+    // Nothing in memory for this chat, but something on disk. Picking it up
+    // beats starting over: the agent still holds the whole conversation, so the
+    // alternative is replaying a transcript it already has — which costs the
+    // context the replay fills and, on a long chat, is the difference between
+    // carrying on and starting again.
+    //
+    // Only when there is no live slot at all. A slot whose key no longer
+    // matches means the user changed something this session can't follow, and
+    // reaching past it to an older, written-down id would resume the very
+    // session that mismatch just retired.
+    if (live == null &&
+        adopt != null &&
+        // The mark has to sit inside the transcript, with something after it to
+        // send. Equal means the agent has seen everything and there is nothing
+        // to say; greater means the two have diverged — messages were deleted
+        // here — and only a replay can put that right.
+        adopt.seen < history.length) {
+      _evictToFit();
+      final adopted = AgentSessionSlot(key: key, seen: history.length)
+        ..sessionId = adopt.sessionId;
+      _live[id] = adopted;
+      return (
+        text: buildAgentPrompt(history.sublist(adopt.seen)),
+        resumeSessionId: adopt.sessionId,
+        // Not a fresh *session* — but it is the first turn this app has sent
+        // into it, so it is the moment the project's standing brief is handed
+        // over. That brief has never been in this session: an imported one was
+        // run by another tool entirely, and one from a previous launch was
+        // given the brief as it stood then.
+        freshStart: true,
+        slot: adopted,
+      );
     }
+
+    _live.remove(id);
+    _evictToFit();
     final fresh = AgentSessionSlot(key: key, seen: history.length);
     _live[id] = fresh;
     return (
@@ -114,6 +156,13 @@ class AgentSessionSlots {
       freshStart: true,
       slot: fresh,
     );
+  }
+
+  /// Drop least-recently-used slots until there is room for one more.
+  void _evictToFit() {
+    while (_live.length >= kMaxLiveAgentSessions) {
+      _live.remove(_live.keys.first);
+    }
   }
 
   /// Drop this conversation's slot, so the next turn starts a session and

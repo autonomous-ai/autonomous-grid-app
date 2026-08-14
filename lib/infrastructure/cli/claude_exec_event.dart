@@ -64,8 +64,22 @@ class ClaudeContextUsed extends ClaudeExecEvent {
 /// The answer so far — the full assembled text, not a delta, so the sender
 /// replaces rather than appends.
 class ClaudeMessageEvent extends ClaudeExecEvent {
-  const ClaudeMessageEvent(this.text);
+  const ClaudeMessageEvent(this.text, {String? settled})
+    : settled = settled ?? text;
+
+  /// Everything Claude has written this turn, including the sentence it is
+  /// still typing. What the bubble shows.
   final String text;
+
+  /// The same, cut back to the last **finished** block.
+  ///
+  /// The chat draws [text] but may only *divide* the turn at this: a tool call
+  /// can arrive between two deltas of a live sentence, and the timeline puts a
+  /// step wherever the words stopped — so dividing at [text] cuts the agent's
+  /// own sentence in half around it. Defaults to [text] for the two places that
+  /// carry no half-written state (the closing `result` line, and any event a
+  /// later build adds).
+  final String settled;
 }
 
 /// Claude's to-do list as it stands now, replacing the previous one wholesale

@@ -6,10 +6,12 @@ import '../features/auth/logic/session_expiry_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/onboarding/logic/installer_rows.dart';
 import '../features/onboarding/logic/onboarding_gate.dart';
+import '../features/onboarding/logic/welcome_controller.dart';
 import '../features/onboarding/preflight_providers.dart';
 import '../features/onboarding/preflight_screen.dart';
 import '../features/onboarding/presentation/choice_screen.dart';
 import '../features/onboarding/presentation/installer_screen.dart';
+import '../features/onboarding/presentation/welcome_screen.dart';
 import '../shared/layouts/home_shell.dart';
 import '../shared/widgets/app_spinner.dart';
 
@@ -49,10 +51,17 @@ class RootView extends ConsumerWidget {
             // With the assistant in place, decide where to land: straight into
             // the app when the grid can already chat (or the user has chosen a
             // path before), or the choose-a-model fork when it can't.
+            //
+            // The welcome screen sits in the `home` arm and nowhere else: it is
+            // the last thing before the app, so it must not come between the
+            // user and a setup step they still have to finish.
             return switch (ref.watch(onboardingRouteProvider)) {
               OnboardingRoute.resolving => const _Splash(),
               OnboardingRoute.choose => const OnboardingChoiceScreen(),
-              OnboardingRoute.home => const HomeShell(),
+              OnboardingRoute.home =>
+                ref.watch(welcomeSeenProvider)
+                    ? const HomeShell()
+                    : const WelcomeScreen(),
             };
           },
         );

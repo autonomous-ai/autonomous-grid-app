@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'agent_event.dart';
 import 'claude_exec_event.dart';
 
@@ -50,15 +52,27 @@ class ClaudeStreamParser {
   /// carries nothing (reasoning-token counts, rate-limit notices, a shape from
   /// a newer build we don't know) — the parser stays tolerant rather than
   /// throwing on a stream that shifts between releases.
-  List<ClaudeExecEvent> read(Map<String, dynamic> event) =>
-      switch (event['type']) {
-        'system' => _readSystem(event),
-        'stream_event' => _readStreamEvent(event),
-        'assistant' => _readBlocks(event, assistant: true),
-        'user' => _readBlocks(event, assistant: false),
-        'result' => _readResult(event),
-        _ => const [],
-      };
+  ///
+  /// A line tagged with `parent_tool_use_id` did not come from the agent this
+  /// chat is talking to: it came from a sub-agent the `Task` tool started, whose
+  /// entire working life shares this one stream. Its *steps* are still worth
+  /// showing (they are real work, and a sub-agent can run for minutes), but its
+  /// *words* are not the answer — see [_readBlocks].
+  List<ClaudeExecEvent> read(Map<String, dynamic> event) {
+    final raw = event['parent_tool_use_id'];
+    final parent = raw is String && raw.isNotEmpty ? raw : null;
+    return switch (event['type']) {
+      'system' => _readSystem(event),
+      // Deltas carry no id of their own, so a sub-agent's are told apart only
+      // here — and they must be, or its half-sentences land in the middle of
+      // the agent's own.
+      'stream_event' => parent == null ? _readStreamEvent(event) : const [],
+      'assistant' => _readBlocks(event, assistant: true, parent: parent),
+      'user' => _readBlocks(event, assistant: false, parent: parent),
+      'result' => _readResult(event),
+      _ => const [],
+    };
+  }
 
   List<ClaudeExecEvent> _readSystem(Map<String, dynamic> event) {
     if (event['subtype'] != 'init') return const [];
@@ -82,7 +96,10 @@ class ClaudeStreamParser {
     final text = delta['text'];
     if (text is! String || text.isEmpty) return const [];
     _partial.write(text);
-    return [ClaudeMessageEvent(_answer())];
+    // A delta is by definition unfinished, so what may be divided at is still
+    // the last *closed* block — passing the default here (the whole streaming
+    // text) is what let a step land in the middle of a word.
+    return [ClaudeMessageEvent(_answer(), settled: _settled())];
   }
 
   /// The completed content blocks of one `assistant` or `user` message.
@@ -94,53 +111,74 @@ class ClaudeStreamParser {
   List<ClaudeExecEvent> _readBlocks(
     Map<String, dynamic> event, {
     required bool assistant,
+    String? parent,
   }) {
     final message = event['message'];
     if (message is! Map) return const [];
     final content = message['content'];
     if (content is! List) return const [];
     return [
-      if (assistant)
+      // A sub-agent's request is its own conversation, not this session's, so
+      // its usage says nothing about how full *this* context is — counting it
+      // would have the app compacting a session that had room.
+      if (assistant && parent == null)
         if (claudeContextTokens(message['usage']) case final tokens?)
           ClaudeContextUsed(tokens),
       for (final block in content)
         if (block is Map)
           ...(assistant
-              ? _readAssistantBlock(block.cast<String, dynamic>())
-              : _readUserBlock(block.cast<String, dynamic>())),
+              ? _readAssistantBlock(block.cast<String, dynamic>(), parent)
+              : _readUserBlock(block.cast<String, dynamic>(), parent)),
     ];
   }
 
-  List<ClaudeExecEvent> _readAssistantBlock(Map<String, dynamic> block) {
+  List<ClaudeExecEvent> _readAssistantBlock(
+    Map<String, dynamic> block,
+    String? parent,
+  ) {
     switch (block['type']) {
       case 'text':
+        // A sub-agent's prose is not the answer. It is written *to* the agent
+        // that asked for it — "I'll explore the codebase systematically" — and
+        // folding it in left the reply switching voice (and language) mid-turn,
+        // with the agent's own sentence cut in half around it. What the
+        // sub-agent found still reaches the user: it is the `Task` call's
+        // result, under that step's own row.
+        if (parent != null) return const [];
         final text = '${block['text'] ?? ''}';
         // The whole block is the authority for what the deltas were building.
         _partial.clear();
         if (text.trim().isEmpty) return const [];
         _completed.add(text);
-        return [ClaudeMessageEvent(_answer())];
+        return [ClaudeMessageEvent(_answer(), settled: _settled())];
       case 'thinking':
         final thought = '${block['thinking'] ?? ''}'.trim();
         if (thought.isEmpty) return const [];
         return [
           ClaudeActivityEvent(
             AgentActivity(
-              id: 'thinking-${_thoughts++}',
+              // Namespaced by owner: the agent and its sub-agents number their
+              // thoughts independently, and two rows sharing an id would fold
+              // onto one another in the feed.
+              id: 'thinking-${parent ?? ''}-${_thoughts++}',
               kind: AgentActivityKind.thinking,
               label: thought,
               status: AgentActivityStatus.done,
+              parent: parent,
             ),
           ),
         ];
       case 'tool_use':
-        return _readToolUse(block);
+        return _readToolUse(block, parent);
       default:
         return const [];
     }
   }
 
-  List<ClaudeExecEvent> _readToolUse(Map<String, dynamic> block) {
+  List<ClaudeExecEvent> _readToolUse(
+    Map<String, dynamic> block,
+    String? parent,
+  ) {
     final id = '${block['id'] ?? ''}';
     final name = '${block['name'] ?? 'tool'}';
     final rawInput = block['input'];
@@ -160,9 +198,18 @@ class ClaudeStreamParser {
       kind: claudeToolKind(name),
       label: claudeToolLabel(name, input),
       status: AgentActivityStatus.running,
+      tool: name,
+      parent: parent,
+      // The call's own arguments, kept whole. The label picks one field out of
+      // them for the row; the row can be opened, and what is behind it should be
+      // what Claude actually asked for — a `Bash` step says `Bash · cd … && …`
+      // in one clipped line, and the command it ran is three lines long.
+      request: claudeToolRequest(name, input),
     );
     _calls[id] = activity;
 
+    // Recorded whoever ran it: a sub-agent's write changes the same disk, and
+    // the undo behind it is the only way back for either.
     final path = kClaudeFileWriteTools.contains(name)
         ? '${input['file_path'] ?? input['notebook_path'] ?? ''}'
         : '';
@@ -172,8 +219,13 @@ class ClaudeStreamParser {
   }
 
   /// A `user` message in this stream is Claude reporting back to itself: the
-  /// results of the tools it just called.
-  List<ClaudeExecEvent> _readUserBlock(Map<String, dynamic> block) {
+  /// results of the tools it just called. [parent] is carried for symmetry with
+  /// the call side; the row is found by its own id, which is unique across the
+  /// turn whoever ran it.
+  List<ClaudeExecEvent> _readUserBlock(
+    Map<String, dynamic> block,
+    String? parent,
+  ) {
     if (block['type'] != 'tool_result') return const [];
     final id = '${block['tool_use_id'] ?? ''}';
     final failed = block['is_error'] == true;
@@ -183,13 +235,11 @@ class ClaudeStreamParser {
     if (call != null) {
       events.add(
         ClaudeActivityEvent(
-          AgentActivity(
-            id: call.id,
-            kind: call.kind,
-            label: call.label,
+          call.settled(
             status: failed
                 ? AgentActivityStatus.failed
                 : AgentActivityStatus.done,
+            result: claudeToolResult(block['content']),
           ),
         ),
       );
@@ -217,7 +267,10 @@ class ClaudeStreamParser {
         ..clear()
         ..add(text);
     }
-    return [ClaudeMessageEvent(_answer()), const ClaudeTurnCompleted()];
+    return [
+      ClaudeMessageEvent(_answer(), settled: _settled()),
+      const ClaudeTurnCompleted(),
+    ];
   }
 
   /// The answer as it stands: every finished block, plus whatever of the current
@@ -226,6 +279,15 @@ class ClaudeStreamParser {
     ..._completed,
     if (_partial.isNotEmpty) _partial.toString(),
   ].join('\n\n');
+
+  /// The answer up to the last **finished** block — no half-written sentence.
+  ///
+  /// This is the one the chat may cut a passage at when a step arrives. The
+  /// difference is not cosmetic: a step can land between two deltas of a
+  /// sentence still being typed (a sub-agent's, most often), and cutting there
+  /// splits the agent's own words mid-syllable — "…và chạ" above the step,
+  /// "y vài ph" below it.
+  String _settled() => _completed.join('\n\n');
 }
 
 /// How full the model's context was for one request, from that request's
@@ -294,6 +356,62 @@ const List<String> kBrowserToolPrefixes = [
 /// running — so a browser step reading `mcp__claude-in-chrome__navigate_page`
 /// is a step nobody can act on.
 bool isBrowserTool(String name) => kBrowserToolPrefixes.any(name.startsWith);
+
+/// A tool call's arguments, as the fold under its row shows them.
+///
+/// Verified against the real binary (Claude Code 2.1, `claude -p --output-format
+/// stream-json`): every `tool_use` block carries its whole `input` map — `Bash`
+/// gives `{command, description}`, `Read` gives `{file_path, limit}`, an MCP
+/// call gives whatever that server declared. So the fold shows the call itself,
+/// pretty-printed, rather than the app's own one-line summary of it a second
+/// time.
+///
+/// A lone `command` (which is what `Bash` mostly is) is unwrapped to the bare
+/// command line: a shell command wearing JSON quotes and `\n` escapes is harder
+/// to read than the thing itself, and it is the one payload a user is most
+/// likely to want to copy.
+String? claudeToolRequest(String name, Map<String, dynamic> input) {
+  if (input.isEmpty) return null;
+  final command = input['command'];
+  // Only the shell tool, by name. Gating on "has a `command` key" alone unwrapped
+  // calls that merely happen to have one — a browser server's
+  // `{command: 'click', selector: '#buy'}` came out as the word `click`, with
+  // the half that said what was clicked thrown away.
+  if (name == 'Bash' && command is String && command.trim().isNotEmpty) {
+    return clipToolPayload(command);
+  }
+  try {
+    return clipToolPayload(const JsonEncoder.withIndent('  ').convert(input));
+  } on JsonUnsupportedObjectError {
+    // A shape `dart:convert` can't walk. The row and its title still stand;
+    // only the fold goes, which is better than dropping the step.
+    return null;
+  }
+}
+
+/// What a tool handed back, as the fold under its row shows it.
+///
+/// Verified against the real binary: a `tool_result` block carries `content`,
+/// which is a plain string for the tools people actually watch (`Read` returns
+/// the numbered lines, `Bash` returns its output, and a failure returns
+/// `Exit code 1` and the error). Tools that answer with structured blocks —
+/// images, some MCP servers — send the array form instead, so both are read and
+/// anything that is neither is dropped rather than stringified into `[{…}]`.
+///
+/// Returned **uncapped**: [AgentActivity.settled] is what caps it, and clipping
+/// here as well counted the cut against the already-cut string — a 200KB read
+/// came out saying 26 characters were dropped instead of 196,050.
+String? claudeToolResult(Object? content) {
+  if (content is String) return content;
+  if (content is! List) return null;
+  final buffer = StringBuffer();
+  for (final block in content) {
+    if (block is Map && block['type'] == 'text' && block['text'] is String) {
+      buffer.writeln(block['text'] as String);
+    }
+  }
+  return buffer.toString();
+}
 
 /// The one line the feed shows for a tool call — the thing the call is *about*,
 /// not the tool's name, wherever the input carries it. A row reading "Bash"

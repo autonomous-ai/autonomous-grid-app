@@ -20,6 +20,7 @@ import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
+import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/presentation/agent_picker.dart';
 import '../../agents/presentation/agent_permission_card.dart';
@@ -32,6 +33,7 @@ import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/chat_bubble.dart';
 import '../../playground/presentation/chat_minimap.dart';
+import '../../playground/presentation/message_content.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
 import '../../prompts/logic/prompt_slash.dart';
@@ -1157,10 +1159,11 @@ class _TrailingBubble extends ConsumerWidget {
 /// the finished turn.
 ///
 /// A plain model reply carries the [TypingDots] cue under it so a pause between
-/// bursts reads as "still going", not "stopped". An agent turn shows the live
-/// step feed instead — which already carries its own spinner (a running step,
-/// or the "Thinking…" line) — so the dots would just say the same thing twice
-/// and are dropped.
+/// bursts reads as "still going", not "stopped". An agent turn is drawn as the
+/// turn it is — the passages it has already written, the steps it ran between
+/// them, and the passage still arriving at the end (see [AgentActivityFeed]) —
+/// which already carries its own spinner, so the dots would say the same thing
+/// twice and are dropped.
 ///
 /// Reuses [ChatBubble] rather than re-laying-out the text, so a half-streamed
 /// reply and the same reply once committed are drawn identically — the cue
@@ -1183,7 +1186,7 @@ class _TrailingBubble extends ConsumerWidget {
 /// read (`chat_sessions_controller_test.dart` asserts exactly that, on disk as
 /// well as in state), and the turn's first-token timing goes with it. So state
 /// still sees every token; only the drawing is rationed.
-class _StreamingReply extends StatefulWidget {
+class _StreamingReply extends ConsumerStatefulWidget {
   const _StreamingReply({
     required this.chatId,
     required this.text,
@@ -1196,10 +1199,8 @@ class _StreamingReply extends StatefulWidget {
 
   final String text;
 
-  /// Whether to show the live step feed under the text. On for an agent turn,
-  /// so the commands it keeps running after its first sentence stay visible
-  /// instead of disappearing behind the dots; off for a plain model reply, which
-  /// has no steps to show.
+  /// Whether this turn is an agent's, and so drawn as a live timeline. Off for a
+  /// plain model reply, which has no steps to place its words among.
   final bool showActivity;
 
   /// Called after a redraw that the throttle deferred — the one case where the
@@ -1208,7 +1209,7 @@ class _StreamingReply extends StatefulWidget {
   final VoidCallback? onRedrawn;
 
   @override
-  State<_StreamingReply> createState() => _StreamingReplyState();
+  ConsumerState<_StreamingReply> createState() => _StreamingReplyState();
 }
 
 /// How long the drawn text is allowed to lag the streamed text.
@@ -1226,11 +1227,23 @@ class _StreamingReply extends StatefulWidget {
 /// back the full 50ms, making the slowest models feel the laggiest.
 const Duration _redrawInterval = Duration(milliseconds: 50);
 
-class _StreamingReplyState extends State<_StreamingReply> {
+class _StreamingReplyState extends ConsumerState<_StreamingReply> {
   /// The text currently drawn, which trails [_StreamingReply.text] by at most
   /// [_redrawInterval]. The first chunk is drawn as it arrives — a turn only
   /// reaches this widget once it has text, so there is nothing to ration yet.
   late String _shown = widget.text;
+
+  /// How much of the answer the turn's timeline had already placed when the
+  /// answer widget was built. The open passage is what is left over
+  /// ([unsaidTail]), so a step landing — which closes a passage and moves this
+  /// on — has to rebuild it.
+  String? _placed;
+
+  /// The ink that answer was built with. Held for the same reason [_placed] is:
+  /// the cached widget is handed back untouched on a rebuild, so a theme flipped
+  /// while the agent is between sentences would otherwise leave the passage on
+  /// screen in the old theme's colour until the next token arrived.
+  Color? _ink;
 
   /// Pending redraw, or null when the drawn text is already current.
   Timer? _redraw;
@@ -1239,7 +1252,7 @@ class _StreamingReplyState extends State<_StreamingReply> {
   /// be thrown by the clock changing under a long agent turn.
   final _sinceDrawn = Stopwatch()..start();
 
-  /// The built bubble, held so a rebuild that doesn't change [_shown] hands the
+  /// The built answer, held so a rebuild that doesn't change [_shown] hands the
   /// **same widget instance** back.
   ///
   /// Throttling `_shown` alone would not have been enough: `MessageContent` is a
@@ -1253,6 +1266,11 @@ class _StreamingReplyState extends State<_StreamingReply> {
   @override
   void didUpdateWidget(_StreamingReply old) {
     super.didUpdateWidget(old);
+    // The cached widget is a `ChatBubble` on one branch and a `MessageContent`
+    // on the other, so a turn that changes hands mid-flight — the user attaches
+    // an image while an agent is answering, and the next build is a relay
+    // turn — must not be handed the other branch's widget.
+    if (widget.showActivity != old.showActivity) _bubble = null;
     // A different conversation is not a continuation of this one. Switching
     // between two chats that are both streaming reuses this element, so a
     // pending redraw here would paint the other chat's words into this one.
@@ -1289,7 +1307,7 @@ class _StreamingReplyState extends State<_StreamingReply> {
     });
   }
 
-  /// Adopt the newest streamed text and drop the cached bubble built from the
+  /// Adopt the newest streamed text and drop the cached answer built from the
   /// old one. Call inside `setState` when outside a build, bare when the
   /// framework is about to rebuild anyway.
   void _draw() {
@@ -1307,24 +1325,58 @@ class _StreamingReplyState extends State<_StreamingReply> {
 
   @override
   Widget build(BuildContext context) {
-    _bubble ??= ChatBubble(
-      message: ChatMessage(role: ChatRole.assistant, text: _shown),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _bubble!,
-        // Agent turn: the feed's own spinner is the "still going" cue, so no
-        // dots. Plain reply: no feed, so the dots carry it.
-        if (widget.showActivity)
-          AgentActivityFeed(chatId: widget.chatId)
-        else
+    // A plain model reply has no steps to be placed among, so it stays what it
+    // has always been: the whole answer, with the dots under it carrying "still
+    // going" across a pause between bursts.
+    if (!widget.showActivity) {
+      _bubble ??= ChatBubble(
+        message: ChatMessage(role: ChatRole.assistant, text: _shown),
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _bubble!,
           const Padding(
             padding: EdgeInsets.only(left: 2, bottom: 10),
             child: TypingDots(),
           ),
-      ],
+        ],
+      );
+    }
+
+    // An agent turn is drawn as the turn: the passages already closed off by the
+    // steps that followed them, then whatever it is saying now. Only this last
+    // passage is redrawn per token — the rest is settled, and lives in the run.
+    AppTheme.watch(context);
+    final ink = AppPalette.textPrimary;
+    final placed = ref.watch(
+      agentRunProvider(widget.chatId).select((run) => run.said),
+    );
+    if (_placed != placed || _ink != ink) {
+      _placed = placed;
+      _ink = ink;
+      _bubble = null;
+    }
+    // Empty right after a step closed the passage before it and before the next
+    // word arrives — nothing to draw, rather than a blank block holding a gap
+    // open under the steps.
+    final open = unsaidTail(said: placed, answer: _shown);
+    if (open.isNotEmpty) {
+      _bubble ??= MessageContent(text: open, color: ink);
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      // The same margin [ChatBubble] gives an assistant turn, so the reply
+      // doesn't shift the moment it lands and becomes one.
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: AgentActivityFeed(
+          chatId: widget.chatId,
+          leadingGap: false,
+          answer: open.isEmpty ? null : _bubble,
+        ),
+      ),
     );
   }
 }

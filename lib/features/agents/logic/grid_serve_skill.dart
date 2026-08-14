@@ -38,11 +38,20 @@ GridSkillFiles gridServeSkillFiles(
 
 /// The skill card every agent reads.
 ///
-/// The frontmatter is the only part read before it fires, so the description
-/// carries every phrasing that should trigger it — including "why doesn't
-/// localhost answer", which is how the user meets this bug. The body then leads
-/// with the trap (`nohup` looks like it worked) because an agent that skips that
-/// line will cheerfully report a dead server as running.
+/// **The frontmatter carries `name` and `description` and nothing else.** Codex
+/// validates it against a fixed set of keys and drops the whole skill when it
+/// finds one it doesn't know — silently, with the file still sitting in
+/// `~/.codex/skills/`. This card once carried `tags:` and `triggers:`, which is
+/// why it never appeared in Codex's skill list for ten days while a user spent
+/// three and a half hours hitting exactly the bug it was written to prevent.
+/// Verify with `codex debug prompt-input` after changing this: the skill has to
+/// show up under "Available skills" or it does not exist.
+///
+/// So the description is the only trigger there is, and it has to carry every
+/// phrasing that should fire it — "run the app" as much as "start a server",
+/// and "why doesn't localhost answer", which is how the user meets this bug. The
+/// body then leads with the trap (`nohup` looks like it worked) because an agent
+/// that skips that line will cheerfully report a dead server as running.
 String gridServeSkillMd({
   required String uvPath,
   required String serveScriptPath,
@@ -51,13 +60,7 @@ String gridServeSkillMd({
     '''
 ---
 name: $kGridServeSkillName
-description: Start, check, tail or stop a long-running local service — a dev server, API, watcher, queue worker — so it keeps running after your turn ends and the user can actually open it. Use whenever the user asks you to run or start a server, restart one, find out whether it is up, open localhost, read a server's log, or stop it.
-tags: [server, dev-server, background, localhost, service, grid]
-triggers:
-  - user asks to run / start / restart / stop a server, api, app, worker or watcher
-  - user asks whether the server is up, or why localhost / a port doesn't answer
-  - user asks to see a running service's log
-  - "chạy server", "start server", "khởi động lại server", "mở localhost", "server chết rồi", "xem log server"
+description: Start, check, tail or stop anything long-running on this computer — a dev server, an Electron or desktop app, an API, a watcher, a queue worker — so it keeps running after your turn ends and the user can actually open it. Use whenever the user asks you to run or start an app or a server, restart one, find out whether it is up, open localhost, read its log, or stop it; and whenever a port stops answering or something you started has died between two commands. "run the app", "start the server", "restart the server", "open localhost", "the server is dead", "show me the server log".
 ---
 
 # Run a service that outlives your turn

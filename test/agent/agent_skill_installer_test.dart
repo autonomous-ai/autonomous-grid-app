@@ -52,17 +52,48 @@ void main() {
     }
   });
 
-  test('a skill already on disk is left exactly as it is — the "Last updated" '
-      'the screen sorts by must mean the user, not the last launch', () async {
+  test('an unchanged skill is not written again — the "Last updated" the '
+      'screen sorts by must mean the user, not the last launch', () async {
+    await installHermes();
+    final card = File('${home.path}/.hermes/skills/grid-web/SKILL.md');
+    // Stamped into the past rather than compared against the clock: two
+    // installs in one test can land in the same millisecond, and a test that
+    // passes because the write was fast proves nothing.
+    final untouched = DateTime(2026, 1, 1);
+    card.setLastModifiedSync(untouched);
+
+    await installHermes();
+
+    expect(card.lastModifiedSync(), untouched);
+  });
+
+  test('a card that no longer matches this build is put back — a fixed card '
+      'has to reach a machine that already has the skill', () async {
+    // What this cost when it didn't: `grid-serve`, `grid-host` and `grid-web`
+    // shipped with front-matter Codex rejects, so it dropped all three from the
+    // skill list it shows the model — and no later build could have replaced
+    // them, because the installer only asked whether the folder existed.
     await installHermes();
     final card = File('${home.path}/.hermes/skills/grid-web/SKILL.md');
     await card.writeAsString('---\nname: grid-web\ndescription: mine\n---\n');
-    final edited = card.lastModifiedSync();
 
     await installHermes();
 
-    expect(card.readAsStringSync(), contains('description: mine'));
-    expect(card.lastModifiedSync(), edited);
+    expect(card.readAsStringSync(), isNot(contains('description: mine')));
+    expect(card.readAsStringSync(), contains('Search the web'));
+  });
+
+  test('a stale script is replaced too — a card can match while the code it '
+      'runs is three builds old', () async {
+    await installHermes();
+    final script = File(
+      '${home.path}/.hermes/skills/grid-serve/scripts/serve.py',
+    );
+    await script.writeAsString('print("old")\n');
+
+    await installHermes();
+
+    expect(script.readAsStringSync(), contains('serve.py start'));
   });
 
   test('clears the copy the installer used to write into Hermes\'s own '

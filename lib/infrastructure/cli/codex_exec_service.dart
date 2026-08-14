@@ -413,6 +413,19 @@ CodexExecEvent? parseCodexEvent(
   }
 }
 
+/// An MCP call's arguments or result as text: a string as it stands, anything
+/// structured pretty-printed, and null for the field being absent — which, on
+/// this transport, is the common case.
+String? _codexPayload(Object? raw) {
+  if (raw == null) return null;
+  if (raw is String) return raw;
+  try {
+    return const JsonEncoder.withIndent('  ').convert(raw);
+  } on JsonUnsupportedObjectError {
+    return null;
+  }
+}
+
 CodexExecEvent? _parseItem(
   Map<String, dynamic> item,
   Map<String, String> messages,
@@ -426,6 +439,9 @@ CodexExecEvent? _parseItem(
       return CodexMessageEvent(
         messages.values.where((m) => m.isNotEmpty).join('\n\n'),
       );
+    // Every `item.*` event carries the whole item, so the completed one still
+    // holds the command it ran — nothing has to be remembered between them the
+    // way Claude's and Hermes's split events do.
     case 'command_execution':
       return CodexActivityEvent(
         AgentActivity(
@@ -433,6 +449,17 @@ CodexExecEvent? _parseItem(
           kind: AgentActivityKind.command,
           label: '${item['command'] ?? 'command'}',
           status: _statusOf(item['status']),
+          tool: 'Shell',
+          request: clipToolPayload('${item['command'] ?? ''}'),
+          // TODO(BE): `aggregated_output` is read from the installed binary's
+          // own field list (codex-cli 0.146: `command, cwd, parsed_cmd, …,
+          // stdout, stderr, aggregated_output, exit_code`) and NOT from a
+          // captured run — nothing in test/ has ever seen one. `stdout` is
+          // taken as the fallback. If the fold under a Codex command stays
+          // empty, this pair of names is where to look first.
+          result: clipToolPayload(
+            '${item['aggregated_output'] ?? item['stdout'] ?? ''}',
+          ),
         ),
       );
     case 'web_search':
@@ -442,6 +469,8 @@ CodexExecEvent? _parseItem(
           kind: AgentActivityKind.web,
           label: '${item['query'] ?? 'Web search'}',
           status: _statusOf(item['status']),
+          tool: 'Web search',
+          request: clipToolPayload('${item['query'] ?? ''}'),
         ),
       );
     case 'mcp_tool_call':
@@ -452,6 +481,12 @@ CodexExecEvent? _parseItem(
           kind: AgentActivityKind.tool,
           label: '$tool',
           status: _statusOf(item['status']),
+          tool: '$tool',
+          // Same caveat as the command's output above: the binary's string table
+          // names `server`, `arguments` and `result` on this item, but no
+          // captured run in this repo has ever carried them.
+          request: clipToolPayload(_codexPayload(item['arguments'])),
+          result: clipToolPayload(_codexPayload(item['result'])),
         ),
       );
     case 'reasoning':

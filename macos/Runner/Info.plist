@@ -24,6 +24,10 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
+	<!-- Voice input on the chat composer (record package) — macOS's TCC prompt
+	     needs this even though the app is unsandboxed. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Grid uses the microphone to turn your voice into a chat message.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

@@ -45,8 +45,18 @@ class PiMessageEvent extends PiExecEvent {
 /// file is recorded — the chat can offer to open what the agent just made —
 /// since an edit has no honest before/after to show (mirrors Codex).
 class PiFileChangeEvent extends PiExecEvent {
-  const PiFileChangeEvent(this.paths);
+  const PiFileChangeEvent(this.paths, {this.step});
+
   final List<String> paths;
+
+  /// The write's own step, settled.
+  ///
+  /// It rides along because a completed `write` produces this event *instead of*
+  /// an activity one, and one line of Pi's output becomes exactly one event. So
+  /// without it the row the write opened is never told the write finished, and
+  /// "Writing …" spins for the rest of the turn — and, since a running step is
+  /// what gets saved, for the rest of the transcript's life.
+  final AgentActivity? step;
 }
 
 /// The turn failed for good — the whole exchange settled on an error, or the
@@ -354,6 +364,15 @@ class PiTurnState {
   /// its `tool_execution_start` opened.
   final Map<String, String> toolNames = {};
 
+  /// The row each `tool_execution_start` opened, by call id.
+  ///
+  /// The end event carries the outcome and nothing else, so without this the
+  /// finished row is rebuilt from the tool name alone — which is how a `bash`
+  /// step that started as its command line finished as the bare word "Bash",
+  /// losing the one thing worth reading, and how the call's arguments would be
+  /// dropped between the two events.
+  final Map<String, AgentActivity> calls = {};
+
   /// The path a `write`/`edit` opened with, kept so its completion can be
   /// recorded as a written file.
   final Map<String, String> toolPaths = {};
@@ -498,14 +517,18 @@ PiExecEvent? _parseToolStart(Map<String, dynamic> event, PiTurnState state) {
   final path = _pathArg(args);
   if (path != null) state.toolPaths[id] = path;
 
-  return PiActivityEvent(
-    AgentActivity(
-      id: id,
-      kind: _kindFor(rawName),
-      label: _startLabel(rawName, args, tool),
-      status: AgentActivityStatus.running,
-    ),
+  final activity = AgentActivity(
+    id: id,
+    kind: _kindFor(rawName),
+    label: _startLabel(rawName, args, tool),
+    status: AgentActivityStatus.running,
+    tool: tool,
+    // Pi hands over the whole argument map here, so the fold shows the call
+    // itself rather than the one field the label picked out of it.
+    request: _piRequest(rawName, args),
   );
+  state.calls[id] = activity;
+  return PiActivityEvent(activity);
 }
 
 PiExecEvent? _parseToolEnd(Map<String, dynamic> event, PiTurnState state) {
@@ -515,22 +538,54 @@ PiExecEvent? _parseToolEnd(Map<String, dynamic> event, PiTurnState state) {
   final tool = state.toolNames.remove(id) ?? _piToolName(rawName);
   final isError = event['isError'] == true;
   final path = state.toolPaths.remove(id);
+  final started = state.calls.remove(id);
+  final status = isError
+      ? AgentActivityStatus.failed
+      : AgentActivityStatus.done;
+  // Pi answers with `{content: [{type: text, text}], details, usage}` — the same
+  // text its own renderer shows.
+  final result = _contentText(
+    event['result'] is Map ? (event['result'] as Map)['content'] : null,
+  );
 
   // A file freshly written (not an edit) is offered to the chat to open. Only
   // `write` creates a file with an honest whole-file "after"; an `edit` reports
   // no before, so — like Codex — it isn't recorded.
+  final settledStep =
+      started?.settled(status: status, result: result) ??
+      AgentActivity(
+        id: id,
+        kind: _kindFor(rawName),
+        label: tool,
+        status: status,
+        tool: tool,
+        result: clipToolPayload(result),
+      );
+
   if (rawName.toLowerCase() == 'write' && !isError && path != null) {
-    return PiFileChangeEvent([path]);
+    // Carries the settled row with it — see [PiFileChangeEvent.step].
+    return PiFileChangeEvent([path], step: settledStep);
   }
 
-  return PiActivityEvent(
-    AgentActivity(
-      id: id,
-      kind: _kindFor(rawName),
-      label: tool,
-      status: isError ? AgentActivityStatus.failed : AgentActivityStatus.done,
-    ),
-  );
+  return PiActivityEvent(settledStep);
+}
+
+/// A Pi tool call's arguments as the fold shows them: a bare command line for
+/// `bash` (quoting a shell command as JSON only makes it harder to read), the
+/// whole argument map pretty-printed for everything else.
+String? _piRequest(String rawName, Map<String, dynamic> args) {
+  if (args.isEmpty) return null;
+  if (rawName.toLowerCase() == 'bash') {
+    final command = args['command'];
+    if (command is String && command.trim().isNotEmpty) {
+      return clipToolPayload(command);
+    }
+  }
+  try {
+    return clipToolPayload(const JsonEncoder.withIndent('  ').convert(args));
+  } on JsonUnsupportedObjectError {
+    return null;
+  }
 }
 
 /// Pi's tool → the activity kind that picks its icon. Only `bash` is a command;

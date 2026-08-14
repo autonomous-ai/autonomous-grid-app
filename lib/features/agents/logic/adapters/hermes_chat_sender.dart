@@ -14,6 +14,7 @@ import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
+import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../agent_changes.dart';
 import '../agent_server_error.dart';
 import '../agent_permissions.dart';
@@ -129,6 +130,10 @@ class HermesChatSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    // Hermes holds its conversation in a live ACP process rather than in a file
+    // it can be pointed back at, so there is no session here to resume: when
+    // that process is gone, so is the session.
+    AgentResumePoint? resume,
   }) async* {
     if (modality != PlaygroundModality.text) {
       yield const ChatSendFailure('The agent can only answer in text.');
@@ -375,7 +380,9 @@ class HermesChatSender implements ChatSender {
           case HermesAcpActivity(:final activity):
             armIdle();
             if (isAgentWork(activity)) workedAtAll = true;
-            runs.upsertStep(chat, activity);
+            // With what has been said so far, so the step lands *after* that
+            // passage in the turn's timeline rather than under the whole answer.
+            runs.upsertStep(chat, activity, answer: answer.toString());
           case HermesAcpPermission(:final request):
             // The agent has stopped and is waiting on the user; pause the idle
             // watch (their time isn't a hang) and re-arm it once they answer.

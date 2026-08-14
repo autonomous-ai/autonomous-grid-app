@@ -4,6 +4,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/context_chip.dart';
 import '../../agents/logic/agent_catalog.dart';
+import '../../agents/presentation/agent_turn_view.dart';
 import '../logic/chat_message.dart';
 import 'file_chip.dart';
 import 'message_content.dart';
@@ -44,11 +45,20 @@ class ChatBubble extends StatelessWidget {
               // in the first place. Capping the whole turn squeezed those too:
               // a five-column table measured 1776px of content into 760 and
               // clipped its last column off the right.
-              MessageContent(
-                text: message.text,
-                media: message.media,
-                color: AppPalette.textPrimary,
-              ),
+              //
+              // An agent turn that ran steps is drawn as it happened instead —
+              // same prose, with the work back between the passages it belonged
+              // to (see [AgentTurnView]). Everything else, including every reply
+              // saved before turns recorded their own order, takes the plain
+              // path: [ChatMessage.parts] is empty and the whole text stands.
+              if (message.parts.isEmpty)
+                MessageContent(
+                  text: message.text,
+                  media: message.media,
+                  color: AppPalette.textPrimary,
+                )
+              else
+                AgentTurnView(parts: message.parts),
               if (message.plan.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 MessagePlan(entries: message.plan),
