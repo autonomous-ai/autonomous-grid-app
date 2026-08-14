@@ -135,7 +135,101 @@ mixin _ChatSend on _ChatSessions {
     // and nothing the app sends on its own may pull them back to it.
     _commit(conversation, phase: const SendBusy(), makeActive: into == null);
 
+    return _startCommittedTurn(
+      conversation: conversation,
+      network: network,
+      effectiveModel: effectiveModel,
+      modality: modality,
+      attachments: attachments,
+      planTurn: planTurn,
+      approval: approval,
+      viaAgent: viaAgent,
+      autoChosen: autoChosen,
+      continuedAgent: continuedAgent,
+      question: text,
+    );
+  }
+
+  /// Repeat the open chat's failed turn with the model currently selected.
+  ///
+  /// The original user turn is already persisted, including its pictures and
+  /// files. Retry sends that same turn again instead of appending a duplicate;
+  /// any partial assistant answer from the failed attempt is replaced.
+  Future<void> retry({
+    required NetworkCredential network,
+    required String model,
+    PlaygroundModality modality = PlaygroundModality.text,
+  }) async {
+    final active = state.active;
+    if (active == null || state.sending || state.error == null) return;
+    final retryable = _retryableTurns[active.id];
+    if (retryable == null || retryable.messageCount > active.messages.length) {
+      return;
+    }
+    final messages = active.messages.take(retryable.messageCount).toList();
+    if (messages.isEmpty || messages.last.role != ChatRole.user) return;
+
+    final conversation = active.copyWith(
+      model: model,
+      updatedAt: DateTime.now(),
+      messages: messages,
+    );
+    final autoChosen = ref.read(
+      isAutoAgentChosenForProjectProvider(conversation.projectId),
+    );
+    final effectiveModel = (autoChosen && ref.read(gridServesAutoModelProvider))
+        ? kAutoModelId
+        : model;
+    final viaAgent = agentAnswersTurn(
+      modality: modality,
+      hasAttachments: retryable.attachments.isNotEmpty,
+      agentInstalled: ref.read(anyAgentInstalledProvider),
+    );
+    final approval = approvalFor(
+      conversation,
+      ref.read(chatPrefsProvider).approval,
+    );
+
+    _commit(conversation, phase: const SendBusy());
+    return _startCommittedTurn(
+      conversation: conversation,
+      network: network,
+      effectiveModel: effectiveModel,
+      modality: modality,
+      attachments: retryable.attachments,
+      planTurn: retryable.planTurn && viaAgent,
+      approval: approval,
+      viaAgent: viaAgent,
+      autoChosen: autoChosen,
+      continuedAgent: retryable.continuedAgent,
+      question: messages.last.text,
+    );
+  }
+
+  /// Start a turn whose user message is already present in [conversation].
+  ///
+  /// Both a new Send and Retry land here, so agent routing, project queues and
+  /// cancellation behave identically for the two paths.
+  Future<void> _startCommittedTurn({
+    required Conversation conversation,
+    required NetworkCredential network,
+    required String effectiveModel,
+    required PlaygroundModality modality,
+    required List<MediaAttachment> attachments,
+    required bool planTurn,
+    required AgentApprovalMode approval,
+    required bool viaAgent,
+    required bool autoChosen,
+    required AgentTool? continuedAgent,
+    required String question,
+  }) async {
     final id = conversation.id;
+    _retryableTurns[id] = _RetryableTurn(
+      messageCount: conversation.messages.length,
+      attachments: List.unmodifiable(attachments),
+      planTurn: planTurn,
+      continuedAgent: continuedAgent,
+    );
     // Empty this chat's live feed the moment the turn is committed, not when its
     // sender finally starts. The working bubble is on screen from here, and
     // everything between here and the sender — the grid being asked which
@@ -174,7 +268,7 @@ mixin _ChatSend on _ChatSessions {
       agent = await ref
           .read(autoAgentRouterProvider)
           .route(
-            question: text,
+            question: question,
             candidates: ref.read(autoAgentCandidatesProvider(effectiveModel)),
           );
       // Routing is the one await between committing the turn and sending it, and
@@ -404,6 +498,7 @@ mixin _ChatSend on _ChatSessions {
               awaitingPlan: planTurn,
               outOfSteps: outOfSteps,
             );
+            _retryableTurns.remove(id);
             _adoptAgentName(answered, agentSessionId);
             _announceTurn(answered, body: firstLinePreview(reply.text));
             _lastTurn[id] = (reply: reply.text, failure: null);
