@@ -217,6 +217,29 @@ void main() {
       );
     });
 
+    test('a chat turn drops the skills bundled inside Claude Code — the Skill '
+        'tool loads one whole, and it is bigger than the window', () {
+      // `claude-api`: ~922 KB in one tool result, ~230000 tokens, on a model
+      // holding 262144 — a brand-new chat failing on its first message (#16).
+      final env = claudeCodeEnv(_base, _key, const [
+        _model,
+      ], withoutBundledSkills: true);
+
+      expect(env[kClaudeDisableBundledSkillsEnv], '1');
+    });
+
+    test(
+      "the user's own settings never carry it — the app does not get to take "
+      'skills away from the Claude Code in their terminal',
+      () {
+        final env = claudeCodeEnv(_base, _key, const [_model]);
+        final settings = claudeCodeSettingsSnippet(_base, _key, const [_model]);
+
+        expect(env, isNot(contains(kClaudeDisableBundledSkillsEnv)));
+        expect(settings, isNot(contains(kClaudeDisableBundledSkillsEnv)));
+      },
+    );
+
     test('appSnippets gives it one block naming its settings file', () {
       final blocks = appSnippets(
         kClientApps[ClientApp.claudeCode]!,
