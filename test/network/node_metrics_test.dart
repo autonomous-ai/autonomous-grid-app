@@ -242,6 +242,20 @@ void main() {
       expect(formatCount(1000000), '1M');
       expect(formatCount(1240000), '1.2M');
       expect(formatCount(12400000), '12.4M');
+      // A grid's daily input reaches ten figures; without a B the panel printed
+      // "1285M", which is the right number wearing a unit nobody carried.
+      expect(formatCount(1285000000), '1.3B');
+      expect(formatCount(1000000000), '1B');
+      expect(formatCount(45600000000), '45.6B');
+    });
+
+    test('a unit steps up before it would print four digits', () {
+      // `1000K` and `1000M` are `1M` and `1B` written in a unit that was never
+      // carried. The step happens at 999.5 because that is where the integer
+      // rule below 1000 rounds up and exposes it.
+      expect(formatCount(999999), '1M');
+      expect(formatCount(999499), '999K');
+      expect(formatCount(999999999), '1B');
     });
 
     test('the label names the span the relay actually counted', () {

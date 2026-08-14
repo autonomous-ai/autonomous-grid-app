@@ -237,19 +237,31 @@ List<NodeMetric> nodeBars(OverviewNode node) => [
   usageMetric(node),
 ];
 
-/// A count shortened to something a card can hold — `940`, `12.3K`, `1.2M`.
+/// A count shortened to something a card can hold — `940`, `12.3K`, `1.2M`,
+/// `1.3B`.
 ///
 /// One decimal below 100 of a unit and none above, so the figure never runs
 /// past four characters and two cards side by side stay comparable at a glance.
-/// Token counts span six orders of magnitude between a quiet machine and a busy
-/// one, and printing `1240391` in a column sized for `59.4 GB` would break the
-/// row that the whole dashboard's alignment depends on.
+/// Token counts span nine orders of magnitude between a quiet machine and a busy
+/// grid's daily input, and printing `1285402913` in a column sized for `59.4 GB`
+/// would break the row that the whole dashboard's alignment depends on.
+///
+/// Units step up while the figure would otherwise print four digits, rather than
+/// on fixed thresholds: `1000K` and `1285M` are the same number as `1M` and
+/// `1.3B` but read as a unit that was never carried, which is the one thing a
+/// shortened figure must not do.
 String formatCount(int value) {
   if (value < 0) return '0';
-  if (value < 1000) return '$value';
-  final (scaled, suffix) = value < 1000000
-      ? (value / 1000, 'K')
-      : (value / 1000000, 'M');
+  var scaled = value.toDouble();
+  var suffix = '';
+  for (final unit in const ['K', 'M', 'B']) {
+    // 999.5, not 1000: anything from there rounds to a four-digit `1000` under
+    // the integer rule below, so the step has to happen before the rounding
+    // that would expose it.
+    if (scaled < 999.5) break;
+    scaled /= 1000;
+    suffix = unit;
+  }
   // `formatMetricNumber` already trims a trailing `.0`, so 1,000,000 reads "1M"
   // rather than "1.0M".
   final digits = scaled < 100 ? formatMetricNumber(scaled) : scaled.round();
