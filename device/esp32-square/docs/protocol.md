@@ -42,7 +42,8 @@ including a constant would add nothing to detect.
 | Code | Meaning |
 |---|---|
 | `0x01` | UTF-8 JSON control message (§2) |
-| `0x02` | Raw PCM, one chunk of a voice capture — 8 kHz, mono, 16-bit |
+| `0x02` | Raw PCM, one chunk of a voice capture — **16 kHz**, mono, 16-bit |
+| `0x03` | One slice of a firmware image, app → device only |
 
 **An unrecognised type is not an error.** A reader that does not know a code must surface the frame
 with its raw type byte rather than dropping it, so a peer running ahead reads as a version mismatch
@@ -214,6 +215,92 @@ Two consequences worth handling rather than discovering:
 - `turn.done.recap` may be the empty string: a turn can be stopped before the assistant says
   anything. Unlike the project shape, where an absent field is omitted, this key is always present.
 
+### Voice
+
+The panel captures, the app transcribes. The device holds no cloud credential and never talks to
+one: the app hands the audio to `grid stt transcribe`, which authenticates with the session token
+the CLI already has.
+
+| Direction | `t` | Fields |
+|---|---|---|
+| → app | `voice.begin` | `projectId` — **optional**, absent when the user spoke from a screen that names no project · `cmd` — **optional**, `"goal"` or `"loop"` |
+| → app | *(frames `0x02`)* | 16 kHz mono 16-bit PCM, in order |
+| → app | `voice.end` | — |
+| → device | `voice.transcript` | `routeId`, `text`, `projectId?`, `needsConfirm` |
+| → device | `voice.error` | `message` — a sentence a person can act on |
+| → app | `voice.confirm` | `routeId`, `projectId` |
+
+**Routing is the hard half, not transcription.** When `voice.begin` names a project the transcript
+goes there. When it does not, the app has to guess, and a guess that dispatches itself into a real
+repository is worse than one extra tap — so it answers with `needsConfirm: true` and waits for
+`voice.confirm`. A panel that ignores `needsConfirm` and dispatches anyway defeats the only guard
+there is.
+
+**`cmd` is a prefix, not a mode.** The panel's action bar has three pills — Voice, Goal, Loop — and
+the two modifiers say what *kind* of thing the sentence is. They arrive as `cmd` and the app puts
+`/goal ` or `/loop ` in front of the transcript before sending it as an ordinary turn. Absent means
+none: a plain turn and a modified one differ by the key being there, not by its value, so a panel
+that has never heard of a modifier simply omits it.
+
+> ⚠️ **The grid CLI has no `/goal` or `/loop`** — searched across `lib/` on 2026-08-16 and neither
+> string appears anywhere. A turn started from those two pills therefore most likely reaches the
+> agent with a literal `/goal ` in front of it, read as words. The pills come from the reference
+> device's design and were kept deliberately; this note records what pressing one actually does today
+> so the next person does not have to find out by pressing it.
+
+### Firmware update
+
+The app carries the image its own build was compiled with, so the two halves cannot drift: if
+`hello` reports a version other than the bundled one, the app offers to fix it over the cable it is
+already talking on.
+
+| Direction | `t` | Fields |
+|---|---|---|
+| → device | `fw.offer` | `version`, `size`, `sha256` |
+| → app | `fw.accept` | — |
+| → device | *(frames `0x03`)* | the image, in order, from offset 0 |
+| → app | `fw.progress` | `written` — bytes in flash so far |
+| → app | `fw.done` | — the image verified; the panel reboots into it |
+| → app | `fw.error` | `message` |
+
+**Nothing is sent until `fw.accept`.** The panel decides when it is willing — an update must never
+begin in the middle of a turn the user is watching. Declining is simply not answering; the app
+offers again on the next `hello`.
+
+The device verifies `sha256` over what it actually wrote, not over what it thinks it received, and
+keeps running the old image if it does not match. Two OTA slots exist for exactly this
+(`partitions.csv`), so a failed update costs a reboot and nothing else.
+
+An offer that **fails** is not offered again for the rest of the app's session. Accepting one makes
+the panel erase a flash slot *before* it answers, so retrying on every `hello` would spend erase
+cycles on the user's hardware every fifteen seconds — and nothing about the next `hello` changes what
+went wrong. Unplugging or restarting the app is a deliberate act and gets a fresh attempt.
+
+#### Flow control — three numbers that are one decision
+
+`fw.progress` is **not only a progress bar. It is the ACK that opens the app's credit window**, and
+it goes out **once per slice**. The app keeps at most **16 KB** unacknowledged; the panel's receive
+ring holds **32 KB**.
+
+| Number | Where | Value |
+|---|---|---|
+| Credit window | `kPanelFirmwareWindowBytes`, `panel_firmware_updater.dart` | 16 KB |
+| Ack cadence | `PROGRESS_EVERY`, `fw_update.c` | 1 slice (8192 B) |
+| Receive ring | `USJ_RX_BUF`, `panel_link.c` | 32 KB |
+
+**Changing any one of them alone reintroduces a bug that fails silently and at the far end.** The
+constraint is hardware, not taste: the ESP32-S3 USB Serial/JTAG peripheral has *no back-pressure*.
+Its ISR drains the hardware FIFO unconditionally and pushes into the ring without checking whether
+the push succeeded (`esp_driver_usb_serial_jtag/src/usb_serial_jtag.c`), so bytes that do not fit are
+dropped there and neither side is told — no NAK, no short write, no error. Sending faster than the
+panel reads does not slow the app down, it shreds the stream. The panel's reader task is also the
+task that writes flash, so it is blocked for ~16 ms per slice with nothing draining the port; the
+window must fit in the ring with room to spare for that.
+
+This is measured, not reasoned. The first transfer against a real panel — 128 KB window, ack every
+64 KB — wrote **0 of 1342160 bytes**: the app pushed its whole window before the first ack was due,
+almost none of it survived, and both 30-second watchdogs fired at a transfer that had never started.
+
 ### Handshake
 
 The panel sends `hello` with the protocol version it speaks. The app answers `welcome` with its
@@ -236,7 +323,8 @@ transcribed from either side — so a shared misreading surfaces as a disagreeme
 blessed by both halves. The generator asserts the CRC check value before emitting anything.
 
 The set covers the cases that break naive readers: an empty payload, a payload containing the magic
-bytes, a real-sized PCM chunk (1280 bytes = 80 ms), and a maximum-length payload.
+bytes, a real-sized PCM chunk (1280 bytes = 40 ms at the 16 kHz of §1), and a maximum-length
+payload.
 
 That choice has already paid: the vectors caught three bugs, **all three in the test harnesses
 rather than in the codecs** — including one where `strtok` collapsed a run of tabs and made the

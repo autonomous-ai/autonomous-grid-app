@@ -34,6 +34,15 @@ set(_sdkcfg "${CMAKE_CURRENT_LIST_DIR}/sdkconfig")
 set(_defaults "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
 set(_stamp "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults.stamp")
 if(EXISTS "${_defaults}")
+    # Re-run THIS check whenever sdkconfig.defaults changes. Without it the guard has a hole big enough
+    # to drive the bug through: CMake only re-configures when a file it is watching changes, and it does
+    # not watch sdkconfig.defaults on its own — so editing the defaults and typing `idf.py build` skipped
+    # the check entirely and built the stale config, silently.
+    #
+    # Found the way these things are always found: a debug option was removed from sdkconfig.defaults, the
+    # build said "complete", and the generated sdkconfig still had it set. The guard was written for
+    # exactly that and could not fire.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_defaults}")
     file(SHA256 "${_defaults}" _defaults_hash)
     set(_prev_hash "")
     if(EXISTS "${_stamp}")
@@ -52,5 +61,20 @@ if(EXISTS "${_defaults}")
 endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
+# ── THE FIRMWARE VERSION, and why it is stated here ─────────────────────────────────────────────────
+# IDF stamps PROJECT_VER into the image's esp_app_desc_t. Set it BEFORE project(), which is where that
+# is read, and this is the ONLY place it is written down: main/panel_client.c reports what it finds in
+# the running image rather than a constant of its own, and app_main logs the same call.
+#
+# ⚠️ WITHOUT this line IDF falls back to `git describe`, and that fallback is not a version — it moves on
+# every commit and gains "-dirty" from any uncommitted file. grid-app decides whether to offer an update
+# by comparing the version in `hello` against the one inside the .bin it carries, so a describe string
+# would make the two disagree on almost every build: the app would offer to reflash a panel that is
+# already running the identical image, at every plug, forever. Found on the app side before either half
+# had ever run the update path.
+#
+# Bump this on a release. It is the string a person reads off the panel and the string the app compares.
+set(PROJECT_VER "0.1.2")
 
 project(grid_panel)

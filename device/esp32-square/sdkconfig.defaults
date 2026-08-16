@@ -78,12 +78,36 @@ CONFIG_FREERTOS_HZ=1000
 # down, tune it from the "task=main stack_free_min=" figure in the RAM telemetry line, not from taste.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=10240
 
+# --- Self-update: rollback ---
+# The panel writes its own firmware over the USB cable (docs/protocol.md §2, "Firmware update"), and it
+# has no other way in: no network, no recovery mode, no second channel. An image that does not boot is
+# therefore not a bad update — it is a device that needs a person, a cable and esptool.
+#
+# Rollback is what makes that impossible. The bootloader marks a freshly installed image PENDING_VERIFY
+# and reverts to the previous slot unless the new one confirms itself; app_main calls fw_mark_valid()
+# once the display is up and the USB link is installed, which is exactly the point at which the panel is
+# fixable again. main/fw_update.c #errors if this line ever goes missing, because a stale sdkconfig
+# silently dropping it is how the reference firmware shipped devices that could not update themselves.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
 # --- Log level ---
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
 # --- LVGL v9 ---
 CONFIG_LV_COLOR_DEPTH_16=y
-CONFIG_LV_USE_PERF_MONITOR=n
+# ── LVGL's OWN PERF MONITOR IS OFF, and this is the note that keeps it off ──────────────────────────
+# CONFIG_LV_USE_SYSMON / CONFIG_LV_USE_PERF_MONITOR draw an FPS/CPU counter in the corner. They were
+# switched on to chase a stuttering swipe and left on, which is how they came to be MEASURED as part of
+# the stutter they were meant to explain: the overlay re-renders its own text every frame and its
+# sampling runs inside lv_timer_handler, so it inflates the very number it prints.
+#
+# It also cannot be seen from a desk with one cable: the console is on the other USB port, so nobody
+# reads a corner overlay anyway. display_draw_stats() answers the same question over the link, costs two
+# counters and draws nothing (see the note beside them in ui/display.c).
+#
+# If you do turn them back on: LV_USE_PERF_MONITOR alone is a NO-OP in LVGL 9 — it hangs off
+# LV_USE_SYSMON, so both are needed. Same shape as the console trap in docs/hardware.md: verify in the
+# GENERATED sdkconfig, not here.
 # Montserrat is linked for LV_SYMBOL_* glyphs ONLY (bell, gear, wifi, warning, chevrons) — those live in
 # a private-use range no other font here covers.
 #

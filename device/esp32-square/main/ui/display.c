@@ -1,15 +1,9 @@
-// Display bring-up: ST7701 over 16-bit RGB parallel, 480x480.
+// Display bring-up for the SQUARE S3 board: ST7701 over 16-bit RGB parallel, 480x480.
 //
-// LIFTED, nearly verbatim, from autonomous-code/apps/esp32-square-s3 — the firmware that already lights
-// this exact board. Every measurement and every "do not clean this up" below was paid for there and none
-// of it was re-derived here. What was removed on the way in: the OTA boot mode's cut-down init, the
-// frame-buffer grab used by that repo's screenshot tool, and the sleep/wake power hook its screen-lock
-// needed. Nothing else changed, deliberately — a panel that does not come up is indistinguishable from
-// a panel that came up before someone tidied this file.
-//
-// Comments below that compare against "the round board" or "the P4 board" refer to that reference
-// firmware's siblings. They are kept because they say WHY a value is what it is, which is the only
-// defence against someone changing it back.
+// This is the THIRD panel world in this codebase and it shares no code with the other two: the round
+// board drives a CO5300 over QSPI, the P4 square board drives an ST7703 over MIPI-DSI. `display.h` is
+// UNCHANGED on purpose — the rest of the firmware is written against that contract and must never learn
+// which panel it is talking to.
 //
 // Five things are specific to an RGB panel and worth knowing before touching anything here:
 //
@@ -47,8 +41,10 @@
 #include "esp_lcd_panel_rgb.h"
 #include "esp_lcd_st7701.h"
 #include "driver/gpio.h"
-// No driver/ledc.h. The backlight pad is an ENABLE, not a dimmer — LEDC at 5 kHz produced no light at
-// any duty in either polarity. See the measurements at BL_ON_LEVEL below.
+// No driver/ledc.h. The reference includes it and never calls it — a leftover from when the backlight
+// pad was believed to be a PWM. Measurement 3 below is why nothing uses it: LEDC at 5 kHz produced no
+// light at any duty, in either polarity, because the pad GATES a boost converter rather than modulating
+// one. An include that promises hardware dimming this board does not have is worse than no include.
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -148,6 +144,16 @@ static bool on_vsync(esp_lcd_panel_handle_t p, const esp_lcd_rgb_panel_event_dat
 }
 uint32_t display_vsync_count(void) { return s_vsync_count; }
 
+// The panel's frame buffer. On an RGB panel this IS the displayed image — the peripheral scans it
+// continuously — so reading it back is an exact screenshot. Used by the temporary main/ui_screenshot.c;
+// deliberately not in display.h, so removing that tool touches nothing here but this function.
+void *display_framebuffer(void)
+{
+    void *fb = NULL;
+    if (!s_panel || esp_lcd_rgb_panel_get_frame_buffer(s_panel, 1, &fb) != ESP_OK) return NULL;
+    return fb;
+}
+
 // ── Backlight: an ENABLE pin, ACTIVE-LOW. Not a PWM dimmer. ─────────────────────────────────────────
 // Every word of that was established on the board, because the BSP is wrong about this pad and its own
 // brightness function contradicts itself. The evidence, in the order it arrived:
@@ -204,6 +210,39 @@ void display_set_brightness(uint8_t level)
     if (!s_asleep) backlight_set(level);
 }
 
+// ── THE ONE INSTRUMENT ADDED TO THIS FILE ───────────────────────────────────────────────────────────
+// How much is being repainted, and how much of the LVGL task's wall clock goes into drawing it.
+//
+// Not the reference's — it has no need, because its console shares the port it is debugged over. Here
+// the console is on the OTHER USB port, so on a one-cable desk there is no way to ask this board a
+// question, and "the swipe stutters" is not a question anyone can answer by looking. It has already been
+// answered once by a number of exactly this kind: the carousel was repainting 480×480 per frame instead
+// of 480×385, and no amount of staring said so. Render-bound and starved-of-CPU look identical to the
+// eye and have opposite fixes.
+//
+// Read and reset together by display_draw_stats(), which rides on the `hello` that already goes out
+// every 15 s. Plain uint32_t without a lock: the write is one non-atomic add on the LVGL task and the
+// read is on the link task, so a torn read costs one sample of a statistic. A mutex around a counter
+// whose only consumer is a diagnostic would cost more than it buys.
+static uint32_t s_flush_px;
+static uint32_t s_flush_count;
+static int64_t  s_flush_since;
+static uint64_t s_busy_us;
+static int64_t  s_busy_since;
+
+void display_draw_stats(uint32_t *flushes, uint32_t *pixels, uint32_t *ms, uint32_t *busy_ms)
+{
+    const int64_t now = esp_timer_get_time();
+    *flushes = s_flush_count;
+    *pixels  = s_flush_px;
+    *ms      = s_flush_since ? (uint32_t)((now - s_flush_since) / 1000) : 0;
+    *busy_ms = (uint32_t)(s_busy_us / 1000);
+    s_flush_count = 0;
+    s_flush_px = 0;
+    s_busy_us = 0;
+    s_flush_since = now;
+}
+
 // LVGL flush → copy the rendered area into the frame buffer the panel is scanning.
 //
 // esp_lcd_panel_draw_bitmap() on an RGB panel is a synchronous memcpy into PSRAM, not a DMA hand-off,
@@ -212,6 +251,8 @@ void display_set_brightness(uint8_t level)
 // when the call is synchronous anyway.)
 static void lvgl_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px)
 {
+    s_flush_px += (uint32_t)(area->x2 - area->x1 + 1) * (uint32_t)(area->y2 - area->y1 + 1);
+    s_flush_count++;
     if (!s_asleep) esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px);
     lv_display_flush_ready(disp);
 }
@@ -221,10 +262,16 @@ static void tick_cb(void *arg) { lv_tick_inc(2); }
 static void lvgl_task(void *arg)
 {
     while (1) {
+        s_busy_since = esp_timer_get_time();
         display_lock();
         uint32_t next = lv_timer_handler();
         if (!s_asleep && lv_display_get_inactive_time(s_disp) > IDLE_MS) display_sleep();
         display_unlock();
+        // Everything above is work; everything below is bookkeeping and the sleep. Measured around the
+        // LOCK too, on purpose: time this task spends waiting for another task to release the display is
+        // time the screen is not being redrawn, and it is a real cause of a stutter that has nothing to
+        // do with how expensive the drawing is.
+        s_busy_us += (uint64_t)(esp_timer_get_time() - s_busy_since);
         // Report the panel's real refresh rate once, ~2s in. It costs one line in the log and it is the
         // only signal that distinguishes "the RGB engine is scanning" from "every API returned ESP_OK and
         // nothing left the chip" — a distinction that cost a full bring-up day to make the hard way.
@@ -281,11 +328,6 @@ static void panel_bringup(void)
         .num_fbs = 1,                  // ONE frame buffer. Two would remove tearing outright but costs
                                        // another 450 KB of PSRAM and doubles the scan-out bandwidth
                                        // pressure; revisit only if tearing turns out to be real.
-                                       //
-                                       // Briefly set to 2 while chasing a stuttering swipe, then put
-                                       // back: the reference firmware swipes smoothly on this same board
-                                       // with ONE buffer and a byte-identical display.c, so the cost was
-                                       // being paid to cover something this file does not cause.
         // NO BOUNCE BUFFERS. The DMA reads the PSRAM frame buffer directly.
         //
         // This started at 480*20 px because Waveshare's BSP defaults to a 20-line bounce buffer, and it
@@ -374,6 +416,11 @@ static void panel_bringup(void)
              (int)(sizeof(s_st7701_init_cmds) / sizeof(s_st7701_init_cmds[0])));
 }
 
+// One entry point, where the reference has two. Its second one — display_init_ota() — brought up a
+// cut-down display for a dedicated OTA boot mode, so the big WiFi RX buffers had room. There is no such
+// mode here: the image arrives as 0x03 frames on the cable that is already attached (fw_update.c), with
+// no radio and no download to make room for. So the `draw_lines` and `with_touch` parameters are gone
+// too — a parameter that only ever takes one value reads as a choice that was made somewhere else.
 void display_init(void)
 {
     const int draw_lines = DRAW_LINES;

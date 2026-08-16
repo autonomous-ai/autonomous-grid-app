@@ -1,124 +1,170 @@
-// The panel's screens.
+// LVGL screens for the Grid Panel (square 480x480). Thread-safe: each function takes the LVGL lock
+// internally (display_lock/unlock), so the USB link task may call them directly.
 //
-// Three states, and the panel is always in exactly one of them:
+// This is the reference firmware's ui_screens.h with the screens this device does not have taken out —
+// see the note at the top of ui_screens.c for the full list and why each one went. What remains is the
+// carousel (Overview + one tile per project), the notification drawer, and the two states the link can
+// fail into.
 //
-//   NOT CONNECTED   no machine is talking to this panel — the cable is out, or grid-app is not running
-//   MISMATCH        a machine is talking, but it speaks a different message-layer version
-//   TILES           one swipeable tile per project
-//
-// The layout is borrowed from the reference firmware
-// (autonomous-code/apps/esp32-square-s3/main/ui/ui_screens.c), which runs the SAME 480x480 board. That
-// file's header states two scaling rules and records the bug behind them: it holds a 720px board's
-// layout brought down to 480, PAGE GEOMETRY and TYPE were meant to scale together by 0.667, and a first
-// pass scaled the boxes while reusing the round board's faces by role — a 41px row was then asked to
-// hold a 35px line and most screens overflowed. FINGER SIZES do not scale at all: a row you tap is
-// sized by a fingertip, which knows nothing about the panel.
-//
-// The consequence for THIS file is easy to get wrong in the other direction: the reference is ALREADY
-// at 480, so every constant borrowed from it is taken VERBATIM. Re-applying 0.667 to a number that has
-// already been through it is the same bug wearing the opposite sign. The one number below that is not
-// from that file is ACT_H, and it is not scaled either — it is a fingertip.
-//
-// EVERY function here must be called with display_lock() held, or from the LVGL task. LVGL is not
-// thread-safe and the failure is a corrupted display list rather than an error return.
+// THE VOCABULARY IS grid-app's, and it is the opposite of the reference's: here a `project` is the
+// working unit with a workspace, and an `agent` is the runtime that answers in it. That firmware uses
+// those two words the other way round. Do not copy its labels (docs/overview.md).
 #pragma once
 
 #include <stdbool.h>
-#include <stddef.h>
+#include <stdint.h>
+#include <stddef.h>   // size_t (ui_project_id_at)
 
-// Field caps. Sized from what a 480px tile can actually SHOW, not from what grid-app can hold: a project
-// name that needs 80 characters is a name this screen was never going to render, and a recap longer than
-// the well is scrolled, not stored. Clipping here rather than at draw time keeps the model the same size
-// as the picture of it.
-#define UI_ID_MAX        48
-#define UI_NAME_MAX      64
-#define UI_AGENT_MAX     24
-#define UI_MODEL_MAX     32
-#define UI_RECAP_MAX     256
-// 200 characters is the app's own clip on a turn part (protocol.md §2), and 224 bytes holds that
-// whole for Latin text. Vietnamese or CJK is 2–3 bytes a character and still gets cut — correctly,
-// on a codepoint boundary — which is fine: a step label this long is already past what one line of a
-// 480px tile can show.
-#define UI_ACTIVITY_MAX  224
+// Per-project Model/Effort chips in the header band. Kept from the reference, but DISPLAY ONLY: opening
+// its picker needs a `models_list` RPC that grid-app does not have. Set to 0 to hide the chips entirely,
+// which also re-widens touch.c's notification pull-zone (taps above the project name stop being claimed).
+#define AGENT_CTL_CHIPS 1
 
-// How many tiles the carousel will hold.
-//
-// A hard cap, not a target. The reference firmware supports an unbounded agent count by materialising
-// only the active tile ±1 and leaving an invisible spacer to hold the scroll range — real machinery that
-// exists because its fleet can be large. A panel plugged into one desktop is looking at that desktop's
-// projects, and a person with more than twelve open has a different problem than this screen can solve.
-// Projects past the cap are dropped with a log line rather than silently, so the number is falsifiable.
-#define UI_MAX_PROJECTS  12
+void ui_init(void);
 
-// One project, exactly as a tile draws it — the protocol's project shape (docs/protocol.md §2) with the
-// strings already bounded. `agent` and `model` may be empty: protocol.md omits them rather than sending
-// null when absent, so "" here means "the app did not say", not "the app said nothing".
-typedef struct {
-    char id[UI_ID_MAX];
-    char name[UI_NAME_MAX];
-    char agent[UI_AGENT_MAX];
-    char model[UI_MODEL_MAX];
-    bool busy;
-    char recap[UI_RECAP_MAX];
-} ui_project_t;
+// --- Full-screen states ---
+// The two things that can be on screen instead of the carousel. The reference has seven more — a setup
+// chooser, a pairing code, a WiFi portal, an E2EE handshake — all of which answered "which network and
+// whose account". Plugging the cable in answers both.
+void ui_show_connecting(const char *step);
+void ui_show_error(const char *title, const char *detail);
+// The same screen, but it returns to the carousel on its own after a few seconds. For something that
+// has already finished — a voice press that caught nothing — where staying put would be a screen stuck
+// on old news.
+void ui_show_notice(const char *title, const char *body);
+// If the error screen is currently shown, return to the projects view (used when grid-app reconnects, so
+// a transient drop doesn't leave the device stuck on a stale error).
+void ui_leave_error_screen(void);
 
-// Copy `src` into `dst` (cap bytes including the NUL), cutting on a UTF-8 CODEPOINT boundary.
-//
-// A string utility in a UI header because the REASON is the font. These faces were generated with
-// Vietnamese in their glyph ranges, and every accented Vietnamese character is two or three bytes — a
-// plain strncpy that lands mid-character leaves a lone continuation byte, which LVGL draws as a
-// missing-glyph box or swallows the character after it. The failure is silent and only visible on the
-// panel, which is the worst place to find it. Every string that reaches a label goes through here.
-//
-// Safe to call from any task: it touches no LVGL state.
-void ui_text_clip(char *dst, size_t cap, const char *src);
+// --- The carousel: Overview at ring 0, then one tile per project ---
+void ui_show_projects(void);
+// Boot landing: park on the Overview tile (no "No projects" flash) and arm a landing so that once the
+// first project list arrives, ui_land_after_reload slides to project 0 — or stays on Overview if empty.
+void ui_enter_boot_loading(void);
+void ui_land_after_reload(void);
+// grid-app is not answering on the cable: clear stale tiles and show the Overview "open Grid" guide.
+// When it answers again, switch the guide to the loading spinner; ui_land_after_reload restores the rest.
+void ui_enter_remote_offline(void);
+void ui_leave_remote_offline_loading(void);
+// Whether `welcome` has been seen — drives the tile dots and the "Not connected" badge.
+void ui_set_connected(bool connected);
 
-// Build the screens and show the disconnected state. Call once, after display_init().
-void ui_screens_init(void);
+// Ensure a tile exists for project_id (creates one if new) and set the name shown on it. Safe to call
+// repeatedly — this is how the whole `projects` list is applied.
+void ui_project_set_name(const char *project_id, const char *name);
+// Set the engine mark shown beside the name. Invalid/empty values leave it blank.
+void ui_project_set_engine(const char *project_id, const char *engine);
+// The model the project runs on, as the opaque runtime-v1 profile the chips parse.
+void ui_project_set_selected_model(const char *project_id, const char *runtime_id);
 
-// Register what a Stop press should do. Called with the project id of the tile the user pressed on.
-//
-// A callback rather than a direct call into panel_client because the direction of dependency has to run
-// one way: the message layer knows about the screens, the screens know nothing about USB. The same UI
-// then still builds and draws if the link is ever replaced or removed.
-//
-// The callback runs ON THE LVGL TASK with display_lock() held.
-void ui_set_stop_cb(void (*cb)(const char *project_id));
+// Remove a project's tile. No-op if the id isn't shown.
+void ui_project_remove(const char *project_id);
+// Drop every tile (grid-app went away, or handed over a whole new list).
+void ui_project_clear_all(void);
+// Copy the id of the project tile at index i into buf; false if out of range (used to reconcile a list).
+bool ui_project_id_at(int i, char *buf, size_t n);
+int ui_project_count(void);
+// Current focused project index, or -1 when the carousel is on Overview / empty.
+int ui_get_active_project_index(void);
+// True once this project already has a card, so a caller can skip re-sending one.
+bool ui_project_has_event(const char *project_id);
+// True when a tile for this project already exists. An UNKNOWN id must not be turned into a tile from an
+// event — ask for the authoritative list instead.
+bool ui_project_known(const char *project_id);
+// True while the project's turn is running. A restored recap must not replace that state.
+bool ui_project_is_busy(const char *project_id);
+// Clear any "Working…" tile orphaned when its turn.done was lost or never produced. Acts on absence: a
+// live turn re-emits every few seconds, so a tile silent for >25s is gone. Call from the ~1s loop.
+// Returns how many were cleared.
+int ui_prune_stale_busy(void);
+// Switch the carousel to a project's tile.
+void ui_focus_project(const char *project_id);
+// Show/hide the loading spinner over the carousel while the project list is being (re)built.
+void ui_set_creating(bool on);
 
-// Link state. `machine_name` may be NULL or empty and is only used when connected.
-//
-// Going from connected to not-connected DROPS the tiles. Showing the last known project list under a
-// "Not connected" banner would be worse than showing nothing: every line of it would be a claim about a
-// machine this panel can no longer see, and a stale "Working…" is the exact lie docs/conventions.md §5
-// calls a bug rather than a wording problem.
-void ui_set_connected(bool connected, const char *machine_name);
+// --- What a turn does to a tile ---
+// Append an event as a readable card (keeps the last MAX_EVENTS).
+// kind: "processing" | "say" | "act" | "ask" | "done" | "error".
+// `recap` (optional, may be NULL) is the short headline shown on the tile at a glance; `text` is the
+// fuller body behind the tap-to-read reader. When `recap` is NULL the tile previews `text`.
+void ui_project_emit(const char *project_id, const char *kind, const char *text, const char *recap);
+// Restore a historical card without touching the live busy lifecycle for this project.
+void ui_project_restore_event(const char *project_id, const char *kind, const char *text, const char *recap);
+void ui_project_clear_event(const char *project_id);
+// A turn finished → wake the screen (if off) and either badge the bell or open the drawer.
+void ui_notify_task_done(const char *project_id);
 
-// A machine is talking but speaks a different message-layer version.
-//
-// Its own state, not an error toast: protocol.md §2 makes this a state to display, because the app
-// carries the firmware image and can offer to reflash the panel over the same cable it is complaining on.
-void ui_show_version_mismatch(int app_proto, int panel_proto);
+// --- Gestures (touch.c drives all of these) ---
+// True when the projects carousel is the active screen.
+bool ui_is_projects_active(void);
+// True while the full-text reader is open (touch.c gives it a tight, reader-only gesture set).
+bool ui_reader_is_open(void);
+// Height (px) of the top notification pull-down zone for the CURRENT tile: narrow on a project tile so
+// the Model/Effort chips still get taps, full band on Overview. touch.c reads it per press.
+int ui_notif_pull_zone_px(void);
+void ui_swipe_begin(void);
+void ui_swipe_end(int dir);
+// Vertical edge-swipe: +1 = up (project → open the reader), -1 = down (reader top → close).
+void ui_swipe_vert(int dir);
+// A swipe-up that STARTED at the bottom edge → jump to Overview from anywhere.
+void ui_home_overview(void);
+// A plain tap (when not recording): on the reader → back to the carousel; else no-op.
+void ui_tap(uint16_t x, uint16_t y);
+// True when a screen-space touch begins on a control that must beat the screen-wide gestures — the
+// action bar, and the always-on status-band bell, which sits inside the pull-down zone and would
+// otherwise never receive a tap. touch.c consults this before claiming a press.
+bool ui_action_hit(uint16_t x, uint16_t y);
+// Notification centre: open = pull-down from the top edge; close = swipe-up / tap.
+void ui_notif_open(void);
+void ui_notif_close(void);
+bool ui_notif_is_open(void);
+// A swipe-up inside the open drawer → close it, but only if the list is already scrolled to the top.
+void ui_notif_swipe_up(void);
+// Physical BOOT button. Returns whether the press was CONSUMED: false hands it back so the caller can
+// spend it turning the screen off, which is what the common (idle) case should do.
+bool ui_boot_pressed(void);
 
-// Replace the whole tile model. `count` over UI_MAX_PROJECTS is clipped.
-void ui_projects_replace(const ui_project_t *items, int count);
+// --- Voice ---
+// projectId of the currently-visible tile, or "" from Overview — which is what makes routing the
+// transcript a real question rather than a lookup.
+const char *ui_get_active_project_id(void);
+// Start/stop a voice turn for the visible project. Safe to call from a non-LVGL task.
+void ui_voice_start(void);
+void ui_voice_start_goal(void);   // Goal pill / long-press → voice.begin carries cmd:"goal"
+void ui_voice_start_loop(void);   // Loop pill → voice.begin carries cmd:"loop"
+void ui_voice_stop(void);
+// is_recording = actively capturing (a tap stops it); is_active = recording OR still waiting on the
+// transcript (blocks a new start).
+bool ui_voice_is_recording(void);
+bool ui_voice_is_active(void);
+// grid-app answered a routed (Overview) voice turn. `auto_sent` = it dispatched already, so just focus
+// the tile; otherwise the transcript is held and the panel confirms with panel_client_voice_confirm.
+// `need_new` = nothing fitted.
+void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const char *project_id,
+                     const char *project_name, double confidence);
+// grid-app abandoned a routed voice turn (nothing heard, or transcription failed) → drop the loading
+// overlay now instead of waiting out the routing watchdog.
+void ui_voice_route_abort(void);
 
-// Update one project in place, or append it if the id is new.
-void ui_project_update(const ui_project_t *item);
+// --- Firmware update ---
+// What the screen says while the panel rewrites its own flash. All four run on the connecting screen;
+// see the note on the implementation for why there is no progress bar of its own.
+void ui_fw_updating(const char *version);
+void ui_fw_progress(int pct);
+void ui_fw_verifying(void);
+void ui_fw_restarting(void);
+void ui_fw_failed(const char *message);
+// True if ANY project is mid-turn — the one question fw_update asks before accepting an offer.
+bool ui_any_project_busy(void);
 
-// A turn began on this project — busy indicator on, previous recap cleared.
-void ui_project_turn_started(const char *project_id);
+// Interrupt the running turn of the visible project. No-op if it isn't running. Safe from any task.
+void ui_stop_active_turn(void);
 
-// The live state of a running turn: the last passage the agent wrote and the last step it ran.
-//
-// TWO lines rather than the whole timeline. protocol.md sends `parts` whole on every change, in order,
-// and the order is the message — but a 480px well cannot hold a timeline and re-rendering one on every
-// update would spend the frame budget redrawing text that has not changed. The last of each kind is what
-// a glance across a desk is actually asking for: what is it saying, and what is it doing. Either may be
-// empty.
-void ui_project_turn_activity(const char *project_id, const char *say, const char *step);
+// The machine the panel is plugged into, from `welcome`. Drives the Overview eyebrow and the band title.
+void ui_set_machine_name(const char *name);
 
-// The turn ended. `recap` becomes the tile's standing line.
-void ui_project_turn_done(const char *project_id, const char *recap);
-
-// The turn failed. Shown in place of the recap, in the error colour, until the next turn.
-void ui_project_turn_error(const char *project_id, const char *message);
+// --- Development instrument ---
+// Swipe the whole carousel `passes` times over, so display_draw_stats() has something repeatable to
+// measure. Not product behaviour; see the note on the implementation for what it does and does not
+// prove. Runs on the CALLER's task and blocks it for ~0.6 s per page.
+void ui_scroll_benchmark(int passes);

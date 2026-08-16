@@ -6,16 +6,22 @@
 idf_component_register(
     SRCS
         "app_main.c"
+        "audio_capture.c"
+        "fw_update.c"
         "panel_client.c"
         "panel_frame.c"
         "panel_link.c"
         "ram_telemetry.c"
+        "voice.c"
         "board/board_i2c.c"
         "board/io_expander.c"
         "board/power.c"
         "ui/display.c"
         "ui/touch.c"
         "ui/ui_screens.c"
+        # Development instrument, not product code — see ui/ui_screenshot.c. Compiled in because it costs
+        # one function and no runtime work until the host asks for a shot.
+        "ui/ui_screenshot.c"
         # Fonts and icons: generated C arrays, lifted whole from the reference firmware.
         #
         # Listing all of them costs build time and NOT flash — each is its own object file in libmain.a,
@@ -49,6 +55,12 @@ idf_component_register(
         esp_io_expander
         esp_timer
         driver
+        # Self-update: esp_ota_* writes the spare slot, esp_partition reads it back for the SHA-256, and
+        # mbedtls computes it. Nothing here talks HTTP — the image arrives as 0x03 frames on the cable
+        # that is already attached (docs/protocol.md §2).
+        app_update
+        esp_partition
+        mbedtls
         # cJSON, via ram_telemetry.c's PSRAM-first allocator hooks. Installed at the top of app_main so
         # it is in place before the first parse, not merely before the first message.
         json

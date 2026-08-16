@@ -41,3 +41,14 @@ void display_bump_activity(void);
 // every other signal is an API return code, and those stay ESP_OK whether or not a pixel clock ever
 // leaves the chip.
 uint32_t display_vsync_count(void);
+
+// How much has been repainted since the last call, and over how long. Reads and RESETS.
+//
+// `pixels / ms` is the number that matters: a swipe repaints the scrolling area once per frame, so
+// pixels-per-second divided by the frame rate says how big that area really is — which is what a stutter
+// is usually about and the thing nobody can see. `busy_ms` of the `ms` elapsed went into the LVGL task:
+// LVGL's own "CPU%", but over the wire instead of only off the glass.
+//
+// An instrument, not product behaviour. It exists because the console is on the other USB port (see the
+// note beside the counters in display.c).
+void display_draw_stats(uint32_t *flushes, uint32_t *pixels, uint32_t *ms, uint32_t *busy_ms);

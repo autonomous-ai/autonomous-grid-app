@@ -40,7 +40,7 @@ So: own protocol, own vocabulary, own repo. The reference stays useful as someth
 The device is always plugged into the computer anyway. Given that, the network was never needed.
 
 **Bandwidth was never the question.** The heaviest thing on this link is voice, and the capture is
-8 kHz mono 16-bit — **16 KB/s**. The board's native USB does hundreds of KB/s. Even reflashing the
+16 kHz mono 16-bit — **32 KB/s**. The board's native USB does hundreds of KB/s. Even reflashing the
 whole firmware (2.46 MB) is a matter of seconds. There is more than an order of magnitude of slack.
 
 The question was what dropping the network *removes*, and the answer is roughly a third of the

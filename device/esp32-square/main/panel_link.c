@@ -10,11 +10,34 @@
 
 static const char *TAG = "link";
 
-// Driver FIFOs. RX is one read's worth; TX is sized so the largest thing this link really sends — a
-// PCM chunk of ~1.3 KB plus framing — fits in one go and the write does not have to block halfway
-// through a frame waiting for the host to drain. (PANEL_MAX_PAYLOAD is 8192, but that is a bound on
-// damage from a corrupt length field, not a size anything actually sends.)
-#define USJ_RX_BUF 1024
+// Driver FIFOs.
+//
+// ⚠️ RX IS NOT A CONVENIENCE — IT IS THE ONLY THING STANDING BETWEEN A SLOW READER AND SILENT DATA
+// LOSS. There is no back-pressure on this peripheral. The IDF driver's ISR
+// (esp_driver_usb_serial_jtag/src/usb_serial_jtag.c) does:
+//
+//     rx_fifo_len = usb_serial_jtag_ll_read_rxfifo(buf, USB_SER_JTAG_RX_MAX_SIZE);
+//     xRingbufferSendFromISR(rx_ring_buf, buf, rx_fifo_len, &xTaskWoken);
+//
+// It drains the hardware FIFO unconditionally and ignores the ringbuffer's return value, so a full ring
+// means those bytes are simply gone — and because emptying the HW FIFO is what lets the peripheral ACK
+// the next OUT packet, the host is never NAK'd and never learns anything went missing. Not reading fast
+// enough does not slow the sender down; it shreds the stream.
+//
+// This was measured, not theorised: at 1024 bytes a firmware transfer died at 0 of 1342160 bytes written.
+// Each 8 KB slice takes ~16 ms to reach flash, and at USB full speed ~16 KB arrives while the reader task
+// is inside that write — sixteen times what the ring could hold, every slice.
+//
+// So the rule this file has to keep: RX_BUF ≥ the largest number of bytes the peer may have in flight
+// while this task is blocked. The firmware transfer is the only sender that can saturate the link, and
+// its credit window is 16 KB (docs/protocol.md, "Firmware update"). 32 KB is that window twice over, for
+// scheduling jitter. Changing either number without the other reintroduces exactly this bug.
+#define USJ_RX_BUF (32 * 1024)
+
+// TX is sized so the largest thing this link really sends — a PCM chunk of ~1.3 KB plus framing — fits in
+// one go and the write does not have to block halfway through a frame waiting for the host to drain.
+// (PANEL_MAX_PAYLOAD is 8192, but that is a bound on damage from a corrupt length field, not a size
+// anything actually sends.)
 #define USJ_TX_BUF 2048
 
 // One read's worth of bytes off the port. Small on purpose: the decoder is where reassembly happens, so
@@ -33,10 +56,15 @@ static const char *TAG = "link";
 #define WRITE_WAIT_MS 100
 
 // Reader task stack. The frame callback runs on this task, so it carries whatever the message layer
-// eventually does — JSON parsing and LVGL updates. 4 KiB now; ram_telemetry_periodic() reports this
-// task's high-water mark by name ("panel_link"), which is how the reference firmware caught its own
-// refresh task running 1,332 B from the floor.
-#define READER_STACK 4096
+// eventually does — JSON parsing, LVGL updates, and since firmware self-update landed, esp_ota_write()
+// and an mbedtls SHA-256 over the whole image read back out of flash.
+//
+// 6 KiB, raised from 4 KiB when those last two arrived. NOT a measured number: nobody has watched this
+// task during an install yet. ram_telemetry_periodic() reports its high-water mark by name
+// ("panel_link"), and that is the figure to tune from — the reference firmware's own OTA path overflowed
+// an 8 KiB stack and shipped devices that could not update themselves, which is the failure this margin
+// is against.
+#define READER_STACK 6144
 
 static panel_decoder_t s_decoder;
 static panel_frame_cb  s_cb;

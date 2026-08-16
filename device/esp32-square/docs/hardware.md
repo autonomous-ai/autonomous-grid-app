@@ -35,6 +35,27 @@ a UART bridge and is limited by whatever rate the two ends agree on. Naming the 
 you a link that opens fine and then only ever delivers log text, which reads exactly like a peer
 that is not talking.
 
+⚠️ **Port 2 has no back-pressure, and overrunning it is silent.** No baud ceiling is not the same as
+no limit. The IDF driver's ISR drains the hardware FIFO unconditionally and pushes into the RX ring
+without checking whether the push succeeded
+(`components/esp_driver_usb_serial_jtag/src/usb_serial_jtag.c`):
+
+```c
+rx_fifo_len = usb_serial_jtag_ll_read_rxfifo(buf, USB_SER_JTAG_RX_MAX_SIZE);
+xRingbufferSendFromISR(rx_ring_buf, buf, rx_fifo_len, &xTaskWoken);   // pdFALSE when full
+```
+
+Bytes that do not fit are dropped there, and because emptying the HW FIFO is exactly what lets the
+peripheral ACK the next OUT packet, **the host is never NAK'd and never learns**. Sending faster than
+the device reads does not slow the sender down; it shreds the stream, and the damage shows up much
+later as a CRC failure or a bad hash.
+
+So anything that can saturate this link needs application-level credit, sized against the RX ring and
+against how long the reader task can be blocked. The firmware transfer is the only such sender today
+— see the flow-control table in `protocol.md`. **Measured, not theorised:** the first real transfer,
+with a 1 KB ring and a 128 KB window, wrote 0 of 1342160 bytes. With a 32 KB ring, a 16 KB window and
+an ack per slice it writes 1.34 MB in about three seconds.
+
 ### The console is duplicated onto both ports
 
 Measured: reading both ports simultaneously for 20 s while touching the screen returned **373

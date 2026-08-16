@@ -29,3 +29,11 @@ dependencies:
   # GT911 capacitive touch → LVGL pointer indev. Pulls esp_lcd_touch.
   # This board leaves BOTH the GT911 INT and RST unconnected, so the driver runs POLLED (int = NC).
   espressif/esp_lcd_touch_gt911: "^1"
+
+  # Audio codec abstraction + the ES7210 ADC behind this board's two microphones (main/audio_capture.c).
+  # The ES8311 speaker driver comes with it and is not used: the reference firmware's "done" beep was
+  # left behind, since this panel sits on the desk of the computer whose screen already has the answer.
+  #
+  # Same version the reference firmware resolved and ships on this exact board, and dependencies.lock is
+  # committed so a fresh clone builds against it rather than against whatever the registry offers today.
+  espressif/esp_codec_dev: "^1.6.2"
